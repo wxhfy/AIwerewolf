@@ -2,35 +2,75 @@
 
 > 本文档是给 AI Agent（Claude Code → CLAUDE.md / Codex → AGENTS.md / 其他）的开发速查手册。
 > 当 Agent 接到狼人杀相关开发任务时，**先读本文档**了解全局背景和参考资源。
+> 正式需求文档：`REQUIREMENTS.md`
 
 **项目根目录**: `/home/fyh0106/AIwerewolf/`
 **参考仓库目录**: `/home/fyh0106/AIwerewolf/references/`
 
 ---
 
-## 一、项目背景
+## 一、项目信息
 
-### 课题定位
-**AI 狼人杀 — 多智能体协作与博弈的 Agent Team 实战**
+### 课题
+**Agent Teams 实践 — AI 狼人杀**
 
-基于多 Agent 协作框架，构建一个能够自主完成信息不对称博弈的狼人杀 Agent Team 系统。核心在于多智能体的协作/对抗与交互机制设计：每个 Agent 根据其扮演角色（狼人、预言家、女巫等）拥有独立的目标、策略与行动空间，在严格信息隔离的约束下进行推理、发言与决策。
-
-### 核心模块
-| 模块 | 说明 |
+| 项目 | 内容 |
 |------|------|
-| 对局引擎 | 回合流转、行动校验、胜负裁决 |
-| Agent 系统 | 角色化 AI Agent、信息隔离、独立决策 |
-| 结构化日志 | 全程可观测 EventLog |
-| 观战 UI | 纯 AI 对战 / 人机混战，实时博弈展示 |
+| 开发周期 | **2026.05.20 — 2026.06.10**（21 天） |
+| 答辩时间 | 2026.06.11 — 2026.06.20 |
+| 可用模型 | **方舟 doubao-seed 2.0 pro & code**（项目组统一提供 API Key，不得外泄） |
+| 奖金 | 卓越项目 2 万元 + 优秀奖若干 |
 
-### 进阶方向（三选一，后续确定）
-1. **通用 Agent** — "读懂自己→修改自己→运行自己"自演化
-2. **评测+复盘** — 多维量化评测 + Leaderboard
-3. **自进化 Agent** — "对局→分析→优化→再对局"循环
+### 目标
+做一个能自主完成一局狼人杀的 Agent Team：
+1. **角色 Agent**：狼人、预言家、女巫、猎人、村民，各自独立决策逻辑
+2. **对局引擎**：回合流转、夜间行动、发言、投票、胜负判定
+3. **信息隔离**：每个 Agent 只能看到自己身份允许的信息
+4. **可观测**：对局日志可查看
+5. **前端 UI**：观战或人机混战
+
+### MVP Checklist（6 条验收标准）
+
+| # | 要求 | 达标标准 |
+|---|------|----------|
+| 1 | ≥5 种角色（狼人/预言家/女巫/猎人/村民） | 每种角色有独立决策逻辑 |
+| 2 | 完整对局流程 | 夜晚行动→白天发言→投票→胜负判定，全流程跑通 |
+| 3 | 信息隔离有效 | Agent 无法获取超出身份权限的信息 |
+| 4 | 对局日志完整 | 可回溯每个 Agent 每回合的决策 |
+| 5 | 前端界面 | 至少支持观战模式 |
+| 6 | 进阶课题 | 满足对应方向的具体要求 |
+
+### 进阶方向（三选一）
+
+| 方向 | 核心 | 满分标准 |
+|------|------|----------|
+| **A. 通用 Agent** | Agent 自演化 | 以"玩狼人杀"为目标，自主演化出可运行 Agent Team |
+| **B. 评测+复盘** | 多维量化评测 | 精准定位失误 + Leaderboard 区分不同模型/版本能力 |
+| **C. 自进化 Agent** | 迭代提升胜率 | 终局 vs 初始 20 局胜率显著提升，版本可回溯 |
+
+> **建议选 B（评测+复盘）或 C（自进化）**。A（通用 Agent）跟做狼人杀游戏不是一个范畴，不选。B 与参考最契合、确定性高；C 出彩但需大量对局时间。
+
+### 评分权重（100 分制）
+
+| 维度 | 权重 | 关键 |
+|------|------|------|
+| 单 Agent 能力（Prompt 工程） | **20%** | Prompt 精细度、角色策略差异、CoT/few-shot、推理链路 |
+| 多 Agent 协作 | **20%** | 上下文管理、技能调度抽象、博弈行为（归票/伪装/站队） |
+| 工程完整度 | **30%** | 对局正确性、信息隔离、前端体验、日志、代码质量 |
+| 进阶课题 | **30%** | 依所选方向评定 |
+| **Agent 相关合计 70%，工程 30%** | | |
+
+### 加分项
+1. 策略深度 — 博弈策略设计，角色行为差异显著
+2. 工程超预期 — 错误处理、并发、监控等生产级能力
+3. 前端出色 — 动画、状态可视化，非技术人员能看懂
+4. 可扩展架构 — 加新角色/规则改动量小
+5. 人机交互 — 真人可加入与 Agent 混合博弈
+6. 进阶独创性 — 方案有新意且效果可验证
 
 ---
 
-## 二、技术栈规划
+## 二、技术栈
 
 | 层 | 推荐技术 | 理由 |
 |----|----------|------|
@@ -38,13 +78,45 @@
 | 实时通信 | WebSocket (Socket.IO 或原生) | xiong35/werewolf 用 Socket.IO 很成熟 |
 | 前端 | Next.js + TypeScript + Tailwind CSS | wolfcha 的最佳实践 |
 | Agent | Python + Pydantic | 类型安全、序列化方便 |
-| LLM 接入 | API 代理层（统一多模型） | wolfcha 的 `/api/chat` 模式 |
+| LLM 接入 | API 代理层（统一多模型） | 主力：方舟 doubao-seed 2.0 pro & code |
 | 配置 | YAML | WereWolfPlus 的 YAML 配置体系很灵活 |
 | 日志 | 结构化 JSON | 可序列化、可回放 |
 
 ---
 
-## 三、参考仓库速查（已下载）
+## 三、LLM API 接入
+
+### 主力模型：方舟 doubao-seed 2.0 pro & code（项目组提供）
+
+> API Key 由项目组统一提供，**不得外泄、不得用于非挑战开发**。
+
+**封装客户端**: `backend/llm/deepseek.py`（统一接口，可切换后端）
+
+```python
+from backend.llm.deepseek import DeepSeekClient
+client = DeepSeekClient(api_key="<your-doubao-key>", base_url="<doubao-endpoint>")
+```
+
+### 备用模型：DeepSeek v4 Flash
+
+**配置文件**: `.env`（已 gitignore） / `.env.example`（模板）
+
+```bash
+curl https://api.deepseek.com/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $DEEPSEEK_API_KEY" \
+  -d '{
+    "model": "deepseek-v4-flash",
+    "messages": [...],
+    "thinking": {"type": "enabled"},
+    "reasoning_effort": "high",
+    "stream": false
+  }'
+```
+
+---
+
+## 四、参考仓库速查（已下载，Git Submodules）
 
 > **仓库根目录**: `/home/fyh0106/AIwerewolf/references/`
 > 所有仓库已克隆到此目录下。**不要直接复制代码**，理解设计思路后重写。
@@ -63,7 +135,7 @@
   - `src/lib/game-flow-controller.ts` — FlowToken 模式防止过期回调
   - `src/lib/character-generator.ts` — AI 人格生成器（MBTI + 背景）
 
-#### #2 xiong35/werewolf (`references/werewolf/`)
+#### #2 xiong35/werewolf (`references/xiong35-werewolf/`)
 **线下狼人杀全栈产品** — Koa + Socket.IO + Vue3，真人面杀辅助
 - 前后端分离（werewolf-backend / werewolf-frontend）
 - 共享类型定义在 `werewolf-frontend/shared/`
@@ -138,7 +210,7 @@
 
 ---
 
-## 四、狼人杀游戏开发核心知识点
+## 五、狼人杀游戏开发核心知识点
 
 ### 4.1 基础规则
 
@@ -218,7 +290,7 @@ DAY_RESOLVE（公布投票结果，被放逐者遗言）
 
 ---
 
-## 五、自研核心模块设计
+## 六、自研核心模块设计
 
 ### 5.1 GameState（游戏状态）
 ```python
@@ -286,7 +358,7 @@ class GameEvent(BaseModel):
 
 ---
 
-## 六、Prompt 工程参考（来自 WereWolfPlus）
+## 七、Prompt 工程参考（来自 WereWolfPlus）
 
 ### 6.1 Prompt 分层结构
 ```
@@ -327,7 +399,7 @@ JSON Schema 输出格式
 
 ---
 
-## 七、开发路线图（建议）
+## 八、开发路线图（建议）
 
 ### Phase 1：最小可玩原型 (MVP)
 - [ ] GameState + PhaseMachine（6 人局，基础 6 角色）
@@ -354,7 +426,7 @@ JSON Schema 输出格式
 
 ---
 
-## 八、常见问题排查
+## 九、常见问题排查
 
 ### Q: Agent 接口应该参考什么？
 → `references/AIWolfPy/aiwolfpy/agentproxy.py` — 9 个方法的 Agent 生命周期
@@ -371,18 +443,18 @@ JSON Schema 输出格式
 → `references/wolfcha/src/game/phases/` — 每个 Phase 的实现
 
 ### Q: 信息隔离怎么做？
-→ `references/xiong35/werewolf/werewolf-backend/src/models/PlayerModel.ts` — `getPublic()` 方法
+→ `references/xiong35-werewolf/werewolf-backend/src/models/PlayerModel.ts` — `getPublic()` 方法
 → `references/WereWolfPlus/games/werewolf/model.py` — GameView 类
 
 ### Q: WebSocket 事件怎么定义？
-→ `references/xiong35/werewolf/werewolf-frontend/shared/WSEvents.ts`
+→ `references/xiong35-werewolf/werewolf-frontend/shared/WSEvents.ts`
 
 ### Q: 评测指标有哪些？
 → `references/WereWolfPlus/games/werewolf/metrics.py`（如存在）或 `agent_eval/agent_eval.py`
 
 ---
 
-## 九、禁止行为
+## 十、禁止行为
 
 - ❌ 直接复制参考仓库的代码（理解设计后重写）
 - ❌ 忽略信息隔离（每个 Agent 只能看到其角色允许的信息）
