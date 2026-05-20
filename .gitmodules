@@ -1,6 +1,30 @@
-[submodule "references/xiong35-werewolf"]
+[submodule "references/wolfcha"]
+	path = references/wolfcha
+	url = https://github.com/oil-oil/wolfcha.git
+[submodule "references/WereWolfPlus"]
+	path = references/WereWolfPlus
+	url = https://github.com/Char-lotte-Xia/WereWolfPlus.git
+[submodule "references/AIWolfPy"]
+	path = references/AIWolfPy
+	url = https://github.com/aiwolf/AIWolfPy.git
+[submodule "references/AIWolfSharp"]
+	path = references/AIWolfSharp
+	url = https://github.com/AIWolfSharp/AIWolfSharp.git
+[submodule "xiong35-werewolf"]
 	path = references/xiong35-werewolf
 	url = https://github.com/xiong35/werewolf.git
-[submodule "references/AlecM33-Werewolf"]
+[submodule "references/OpenWerewolf"]
+	path = references/OpenWerewolf
+	url = https://github.com/JamesCraster/OpenWerewolf.git
+[submodule "AlecM33-Werewolf"]
 	path = references/AlecM33-Werewolf
 	url = https://github.com/AlecM33/Werewolf.git
+[submodule "references/werewolf-brain"]
+	path = references/werewolf-brain
+	url = https://github.com/lycan-city/werewolf-brain.git
+[submodule "references/open_mafia_engine"]
+	path = references/open_mafia_engine
+	url = https://github.com/open-mafia/open_mafia_engine.git
+[submodule "references/lykos"]
+	path = references/lykos
+	url = https://github.com/lykoss/lykos.git
