@@ -3,6 +3,9 @@
 > 本文档是给 AI Agent（Claude Code / Codex / 其他）的开发速查手册。
 > 当 Agent 接到狼人杀相关开发任务时，**先读本文档**了解全局背景和参考资源。
 
+**项目根目录**: `/home/fyh0106/AIwerewolf/`
+**参考仓库目录**: `/home/fyh0106/AIwerewolf/references/`
+
 ---
 
 ## 一、项目背景
@@ -43,7 +46,9 @@
 
 ## 三、参考仓库速查（已下载）
 
-> 所有仓库在 `references/` 目录下。**不要直接复制代码**，理解设计思路后重写。
+> **仓库根目录**: `/home/fyh0106/AIwerewolf/references/`
+> 所有仓库已克隆到此目录下。**不要直接复制代码**，理解设计思路后重写。
+> 如需查看具体文件，使用绝对路径：`/home/fyh0106/AIwerewolf/references/<仓库名>/<文件路径>`
 
 ### P0 — 最优先参考
 

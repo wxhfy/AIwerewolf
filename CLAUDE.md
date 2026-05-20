@@ -1,6 +1,8 @@
 # CLAUDE.md — AI Werewolf 项目
 
-> **新 Agent 必读**：接到任务后先读 `SKILLS.md`（完整开发手册），本文档仅作快速速查。
+> **项目根目录**: `/home/fyh0106/AIwerewolf/`
+> **参考仓库**: `/home/fyh0106/AIwerewolf/references/`
+> **新 Agent 必读**: 接到任务后先读 `SKILLS.md`（完整开发手册），本文档仅作快速速查。
 
 ## 项目概述
 
@@ -61,9 +63,9 @@ AIwerewolf/
 
 ### 三个最值得深入阅读的文件
 
-1. `references/WereWolfPlus/agent_manager/prompts/werewolf_prompt.py` — Google 品质的完整 Prompt 模板（所有动作+角色+JSON Schema）
-2. `references/wolfcha/src/types/game.ts` — Phase 枚举、Player 类型、Persona 系统定义
-3. `references/AIWolfPy/aiwolfpy/agentproxy.py` — Agent 接口生命周期（9 个方法）
+1. `/home/fyh0106/AIwerewolf/references/WereWolfPlus/agent_manager/prompts/werewolf_prompt.py` — Google 品质的完整 Prompt 模板（所有动作+角色+JSON Schema）
+2. `/home/fyh0106/AIwerewolf/references/wolfcha/src/types/game.ts` — Phase 枚举、Player 类型、Persona 系统定义
+3. `/home/fyh0106/AIwerewolf/references/AIWolfPy/aiwolfpy/agentproxy.py` — Agent 接口生命周期（9 个方法）
 
 ## 自研核心模块（不可搬参考代码）
 
