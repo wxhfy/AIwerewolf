@@ -1,6 +1,6 @@
 # AI Werewolf 开发技能手册
 
-> 本文档是给 AI Agent（Claude Code / Codex / 其他）的开发速查手册。
+> 本文档是给 AI Agent（Claude Code → CLAUDE.md / Codex → AGENTS.md / 其他）的开发速查手册。
 > 当 Agent 接到狼人杀相关开发任务时，**先读本文档**了解全局背景和参考资源。
 
 **项目根目录**: `/home/fyh0106/AIwerewolf/`
