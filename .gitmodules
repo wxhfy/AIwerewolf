@@ -1,0 +1,6 @@
+[submodule "references/xiong35-werewolf"]
+	path = references/xiong35-werewolf
+	url = https://github.com/xiong35/werewolf.git
+[submodule "references/AlecM33-Werewolf"]
+	path = references/AlecM33-Werewolf
+	url = https://github.com/AlecM33/Werewolf.git
