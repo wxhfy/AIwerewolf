@@ -6,6 +6,7 @@ from typing import Callable
 from uuid import uuid4
 
 from backend.agents.base import Agent
+from backend.agents.characters import Character, Persona, PlayerMind, build_character, build_characters_for_roles
 from backend.agents.heuristic import HeuristicAgent
 from backend.engine.actions import ActionValidator
 from backend.engine.models import (
@@ -56,8 +57,15 @@ class WerewolfGame:
         self.observer = observer
         self.phase_manager = PhaseManager()
         self.pending_hunter_id: str | None = None
+        # Build character assignments for human-like personas
+        roles = [p.role for p in self.state.players]
+        self.characters = build_characters_for_roles(roles, seed=seed or 0)
         self.agents = agents or {
-            player.id: HeuristicAgent(player.id, seed=(seed or 0) + player.seat)
+            player.id: HeuristicAgent(
+                player.id,
+                seed=(seed or 0) + player.seat,
+                character=self.characters.get(player.role.value),
+            )
             for player in self.state.players
         }
 

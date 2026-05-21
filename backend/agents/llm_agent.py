@@ -5,6 +5,7 @@ from random import Random
 from typing import Any
 
 from backend.agents.base import Agent
+from backend.agents.characters import Character
 from backend.agents.heuristic import HeuristicAgent
 from backend.agents.playbooks import build_role_brief
 from backend.agents.profiles import ROLE_PROFILES
@@ -28,6 +29,7 @@ class LLMAgent(Agent):
         seed: int | None = None,
         model: str | None = None,
         temperature: float = 0.4,
+        character: Character | None = None,
     ):
         self.player_id = player_id
         self.view: PlayerView | None = None
@@ -36,12 +38,15 @@ class LLMAgent(Agent):
         self.temperature = temperature
         self.client = create_client(model=model)
         self.client.timeout = 45.0
-        self.fallback = HeuristicAgent(player_id, seed=seed)
+        self.fallback = HeuristicAgent(player_id, seed=seed, character=character)
+        self.character = character
         self.winner: str | None = None
 
     def initialize(self, view: PlayerView, game_setting: dict) -> None:
         self.view = view
         self.fallback.initialize(view, game_setting)
+        char_name = self.character.persona.name if self.character else "玩家"
+        self.memory.append(f"我是{char_name}，扮演{self.role.value}。")
         self.memory.append(build_role_brief(self.role))
 
     def update(self, view: PlayerView, request: str) -> None:
@@ -175,7 +180,14 @@ class LLMAgent(Agent):
         alive_list = [p["name"] for p in view.players if p["alive"] and p["id"] != self.player_id]
         dead_list = [p["name"] for p in view.players if not p["alive"]]
 
+        char_intro = ""
+        if self.character:
+            char_intro = self.character.system_intro
+
         blocks = [
+            "=== 你的人设 ===",
+            char_intro if char_intro else f"你是{view.self_player['name']}，{self.role.value}",
+            "",
             "=== 当前状态 ===",
             f"你叫{view.self_player['name']}，是{self.role.value}",
             f"第{view.day}天 / {view.phase}阶段",

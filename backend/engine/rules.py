@@ -46,7 +46,13 @@ def build_players(
     role_list = list(roles)
     rng = Random(seed)
     rng.shuffle(role_list)
-    default_names = ["Ada", "Bert", "Cora", "Duke", "Eli", "Faye", "Gina", "Hale", "Iris", "Joss"]
+    # Use character names from persona pool for more human feel
+    from backend.agents.characters import PERSONA_POOL
+
+    rng_char = Random(seed)
+    char_pool = [p["name"] for p in PERSONA_POOL]
+    rng_char.shuffle(char_pool)
+    default_names = char_pool[: len(role_list)] if len(char_pool) >= len(role_list) else ["Ada", "Bert", "Cora", "Duke", "Eli", "Faye", "Gina"]
     names = names or default_names
     if len(names) < len(role_list):
         raise ValueError("Not enough names for the configured roles.")
