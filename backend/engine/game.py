@@ -7,7 +7,7 @@ from uuid import uuid4
 
 from backend.agents.base import Agent
 from backend.agents.characters import Character, Persona, PlayerMind, build_character, build_characters_for_roles
-from backend.agents.heuristic import HeuristicAgent
+from backend.agents.factory import create_agents
 from backend.engine.actions import ActionValidator
 from backend.engine.models import (
     ActionType,
@@ -61,14 +61,15 @@ class WerewolfGame:
         # Build character assignments for human-like personas
         roles = [p.role for p in self.state.players]
         self.characters = build_characters_for_roles(roles, seed=seed or 0)
-        self.agents = agents or {
-            player.id: HeuristicAgent(
-                player.id,
-                seed=(seed or 0) + player.seat,
-                character=self.characters.get(player.role.value),
-            )
-            for player in self.state.players
-        }
+        self.agents = agents or create_agents(
+            self.state.players,
+            {"type": "llm", "seed": seed or 0, "temperature": 0.4},
+        )
+        # Attach characters to agents
+        for player in self.state.players:
+            char = self.characters.get(player.role.value)
+            if char and hasattr(self.agents[player.id], 'character'):
+                self.agents[player.id].character = char
 
     def initialize(self) -> None:
         self._log(
@@ -97,6 +98,12 @@ class WerewolfGame:
     def play(self) -> GameState:
         if not self.state.events:
             self.initialize()
+        # Persist game start to database
+        try:
+            from backend.db.persist import save_game_start
+            save_game_start(self.state)
+        except Exception:
+            pass  # DB persistence is best-effort, don't block gameplay
         while self.state.winner is None and self.state.day < self.state.max_days:
             self.phase_manager.run(Phase.NIGHT_START, self)
             if self._check_win():
@@ -109,6 +116,12 @@ class WerewolfGame:
         self._set_phase(Phase.GAME_END)
         for agent in self.agents.values():
             agent.finish(self.state.winner.value if self.state.winner else None)
+        # Persist game end to database
+        try:
+            from backend.db.persist import save_game_end
+            save_game_end(self.state)
+        except Exception:
+            pass
         return self.state
 
     def _begin_night(self) -> None:

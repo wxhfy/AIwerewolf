@@ -221,3 +221,4 @@ __marimo__/
 # Test files (local only)
 scripts/*_smoke.py
 tests/test_llm_config.py
+data/

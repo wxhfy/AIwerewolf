@@ -39,7 +39,7 @@ class LLMAgent(Agent):
         self.temperature = temperature
         self.provider = provider
         self.client = create_client(provider=self.provider, model=model)
-        self.client.timeout = 45.0
+        self.client.timeout = 12.0
         self.fallback = HeuristicAgent(player_id, seed=seed, character=character)
         self.character = character
         self.winner: str | None = None

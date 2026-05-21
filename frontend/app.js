@@ -155,14 +155,13 @@ const state = {
   busy: false,
   roomId: null,
   gameId: null,
-  agentType: getInitialAgentType(),
+  agentType: "llm",
   lastSnapshot: null,
 };
 
 const els = {
   seed: document.querySelector("#seed"),
   speed: document.querySelector("#speed"),
-  agentType: document.querySelector("#agent-type"),
   run: document.querySelector("#run"),
   private: document.querySelector("#private"),
   langZh: document.querySelector("#lang-zh"),
@@ -205,7 +204,6 @@ function bindEvents() {
 
   els.langZh.addEventListener("click", () => setLanguage("zh"));
   els.langEn.addEventListener("click", () => setLanguage("en"));
-  els.agentType.addEventListener("change", () => setAgentType(els.agentType.value));
 }
 
 async function runGame(retryOnRoomLost = true) {
@@ -242,7 +240,7 @@ async function bootstrap() {
     setStatus(
       "loaded",
       t("roomReady"),
-      format(t("roomReadyDetail"), { roomId: shortId(state.roomId), agentType: agentTypeLabel(state.agentType) })
+      format(t("roomReadyDetail"), { roomId: shortId(state.roomId), agentType: "LLM" })
     );
     await refreshRoomHistory();
     updateMeta();
@@ -267,7 +265,6 @@ async function ensureRoom() {
         }
         await refreshRoomHistory();
         updateMeta();
-        syncControls();
         return state.roomId;
       }
     } catch (e) {
@@ -288,7 +285,7 @@ async function ensureRoom() {
 
   const seed = Number(els.seed.value || 7);
   const response = await fetch(
-    `/api/rooms?name=${encodeURIComponent("Demo Room")}&seed=${seed}&player_count=7&agent_type=${encodeURIComponent(state.agentType)}`,
+    `/api/rooms?name=${encodeURIComponent("Demo Room")}&seed=${seed}&player_count=7`,
     {
       method: "POST",
       headers: { Accept: "application/json" },
@@ -303,7 +300,6 @@ async function ensureRoom() {
   const url = new URL(window.location.href);
   url.searchParams.set("room", room.id);
   window.history.replaceState({}, "", url);
-  syncControls();
   await refreshRoomHistory();
   updateMeta();
   return state.roomId;
@@ -344,7 +340,6 @@ async function runGameViaWebSocket() {
         state.roomId = payload.room.id;
         state.agentType = payload.room.agent_type || state.agentType;
         updateMeta(payload.room.current_game_id || state.gameId);
-        syncControls();
       }
       if (payload.type === "snapshot" && payload.state) {
         finalState = payload.state;
@@ -370,7 +365,6 @@ async function runGameViaWebSocket() {
         }
         refreshRoomHistory();
         updateMeta(state.gameId);
-        syncControls();
         socket.close();
         if (finalState) {
           resolve(finalState);
@@ -404,14 +398,6 @@ function setLanguage(lang) {
   }
 }
 
-function setAgentType(agentType) {
-  state.agentType = agentType === "llm" ? "llm" : "heuristic";
-  const url = new URL(window.location.href);
-  url.searchParams.set("agent_type", state.agentType);
-  window.history.replaceState({}, "", url);
-  syncControls();
-  updateMeta();
-}
 
 function applyLanguage() {
   document.documentElement.lang = state.lang === "zh" ? "zh-CN" : "en";
@@ -423,7 +409,6 @@ function applyLanguage() {
   els.private.textContent = state.showPrivate ? t("public") : t("private");
   els.langZh.classList.toggle("active", state.lang === "zh");
   els.langEn.classList.toggle("active", state.lang === "en");
-  syncControls();
   if (els.viewLabel) {
     els.viewLabel.textContent = state.showPrivate ? t("private") : t("publicMode");
   }
@@ -437,7 +422,6 @@ function setBusy(busy) {
   state.busy = busy;
   els.run.disabled = busy;
   els.private.disabled = busy;
-  els.agentType.disabled = busy;
 }
 
 function setLoading() {
@@ -468,7 +452,7 @@ function render(game) {
     els.aliveCount.textContent = String(alive);
   }
   if (els.agentMode) {
-    els.agentMode.textContent = agentTypeLabel(state.agentType);
+    els.agentMode.textContent = "LLM";
   }
   if (els.lastEventTitle || els.lastEventText) {
     const latest = game.last_event || (game.events.length ? game.events[game.events.length - 1] : null);
@@ -628,20 +612,10 @@ function updateMeta() {
   els.roomLabel.textContent = `${t("roomLabel")}: ${shortId(state.roomId)}`;
   els.gameLabel.textContent = `${t("gameLabel")}: ${shortId(state.gameId)}`;
   if (els.agentMode) {
-    els.agentMode.textContent = agentTypeLabel(state.agentType);
+    els.agentMode.textContent = "LLM";
   }
 }
 
-function syncControls() {
-  if (els.agentType) {
-    els.agentType.value = state.agentType;
-    const options = Array.from(els.agentType.options || []);
-    options.forEach((option) => {
-      const key = option.value === "llm" ? "agentLlm" : "agentHeuristic";
-      option.textContent = t(key);
-    });
-  }
-}
 
 function t(key) {
   return dictionary[state.lang][key] || key;
@@ -662,14 +636,7 @@ function getInitialLang() {
   return (navigator.language || "").toLowerCase().startsWith("zh") ? "zh" : "en";
 }
 
-function getInitialAgentType() {
-  const url = new URL(window.location.href);
-  return url.searchParams.get("agent_type") === "llm" ? "llm" : "heuristic";
-}
 
-function agentTypeLabel(value) {
-  return value === "llm" ? t("agentLlm") : t("agentHeuristic");
-}
 
 function shortId(value) {
   if (!value) return "-";

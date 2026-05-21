@@ -33,14 +33,14 @@ def health():
     return {"status": "ok"}
 
 
-def _build_game(seed: int, agent_type: str = "heuristic") -> WerewolfGame:
+def _build_game(seed: int, agent_type: str = "llm") -> WerewolfGame:
     game = WerewolfGame(seed=seed)
     game.agents = create_agents(game.state.players, {"type": agent_type, "seed": seed})
     return game
 
 
 @app.post("/api/games")
-def create_game(seed: int = 7, show_private: bool = False, agent_type: str = "heuristic"):
+def create_game(seed: int = 7, show_private: bool = False, agent_type: str = "llm"):
     game = _build_game(seed=seed, agent_type=agent_type)
     state = game.play()
     _rooms.games[state.id] = state
@@ -62,7 +62,7 @@ def list_games():
 
 
 @app.post("/api/rooms")
-def create_room(name: str = "Demo Room", seed: int = 7, player_count: int = 7, agent_type: str = "heuristic"):
+def create_room(name: str = "Demo Room", seed: int = 7, player_count: int = 7, agent_type: str = "llm"):
     request = RoomCreateRequest(name=name, seed=seed, player_count=player_count, agent_type=agent_type)
     room = _rooms.create_room(request)
     return room.to_dict()
@@ -114,7 +114,7 @@ def create_room_game(room_id: str, show_private: bool = False):
     return snapshot
 
 
-async def stream_game(seed: int, show_private: bool, agent_type: str = "heuristic") -> tuple[list[dict[str, Any]], GameState]:
+async def stream_game(seed: int, show_private: bool, agent_type: str = "llm") -> tuple[list[dict[str, Any]], GameState]:
     snapshots: list[dict[str, Any]] = []
 
     def observe(state: GameState) -> None:
@@ -140,7 +140,7 @@ async def games_ws(websocket: WebSocket) -> None:
                 continue
 
             seed = int(payload.get("seed", 7))
-            agent_type = str(payload.get("agent_type", "heuristic"))
+            agent_type = str(payload.get("agent_type", "llm"))
             show_private = bool(payload.get("show_private", False))
             delay_ms = int(payload.get("delay_ms", 120))
             await websocket.send_json({"type": "status", "status": "starting", "seed": seed, "agent_type": agent_type})
