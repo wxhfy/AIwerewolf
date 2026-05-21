@@ -1,3 +1,16 @@
+"""Context-aware heuristic agent with suspicion tracking and information evaluation.
+
+Each agent maintains:
+- suspicion_scores: per-player suspicion based on accumulated evidence
+- known_facts: what this agent definitively knows (seer checks, wolf teammates, etc.)
+- round_context: what happened this round (deaths, speeches, votes)
+
+Behavior adapts to available information:
+- Day 1 / no info → cautious, observe, ask questions
+- Have evidence → build case, push suspects
+- Late game / close to win → aggressive push
+"""
+
 from __future__ import annotations
 
 from collections import Counter
@@ -6,273 +19,445 @@ from random import Random
 from backend.agents.base import Agent
 from backend.agents.characters import Character
 from backend.agents.playbooks import build_role_brief
-from backend.agents.profiles import ROLE_PROFILES
 from backend.engine.models import ActionType, Decision, Role
 from backend.engine.visibility import PlayerView
 
 
 class HeuristicAgent(Agent):
-    """Deterministic baseline agent with role-specific + character-driven behavior.
+    """Context-aware agent that reasons from available information.
 
-    Uses character personality (from wolfcha-inspired Persona system) to produce
-    diverse, human-like speech patterns across different games.
+    Key principles:
+    - Day 1 with no info → observe, don't accuse blindly
+    - Each piece of evidence updates suspicion incrementally
+    - Speech reflects actual reasoning, not templates
+    - Different roles use different evidence sources
     """
 
     def __init__(self, player_id: str, *, seed: int | None = None, character: Character | None = None):
         self.player_id = player_id
         self.view: PlayerView | None = None
-        self.memory: list[str] = []
         self.rng = Random(seed)
         self.winner: str | None = None
         self.character = character
+        # Suspicion tracking: player_id → score (higher = more suspicious)
+        self.suspicion: dict[str, float] = {}
+        # What we definitively know
+        self.known_wolf_ids: set[str] = set()  # seer checks or wolf teammates
+        self.known_good_ids: set[str] = set()  # seer gold checks
+        # Round tracking
+        self.last_speeches: list[dict] = []  # speeches heard this round
+
+    # ---- Agent lifecycle ----
 
     def initialize(self, view: PlayerView, game_setting: dict) -> None:
         self.view = view
-        char_name = self.character.persona.name if self.character else "Unknown"
-        self.memory.append(f"我是{char_name}，角色是{self.role.value}。")
-        self.memory.append(build_role_brief(self.role))
+        self._init_suspicion()
+        char_name = self.character.persona.name if self.character else "Player"
+        role = self.role.value
+        # Wolves know their teammates
+        if self.role == Role.WEREWOLF:
+            for w in view.known_wolves:
+                if w["id"] != self.player_id:
+                    self.known_good_ids.add(w["id"])  # Wolf teammates are "good" from wolf perspective
 
     def update(self, view: PlayerView, request: str) -> None:
         self.view = view
-        self.memory.append(f"{request} at day {view.day} phase {view.phase}.")
-        # Track recent speeches from other players for cross-referencing
-        recent_speeches = [
-            e for e in view.public_events[-5:]
+        # Track new speeches since last update
+        self.last_speeches = [
+            e for e in view.public_events[-7:]
             if e.get("type") == "CHAT_MESSAGE"
             and e.get("payload", {}).get("actor_id") != self.player_id
         ]
-        for speech in recent_speeches:
-            payload = speech.get("payload", {})
-            speaker = payload.get("actor_name", "?")
-            text = payload.get("speech", "")[:80]
-            self.memory.append(f"听到{speaker}说: {text}")
+        # Update suspicion from public events
+        self._update_suspicion_from_events()
+        # Update private knowledge
+        for e in view.private_events[-3:]:
+            payload = e.get("payload", {})
+            if payload.get("kind") == "seer_result":
+                tid = payload.get("target_id")
+                if tid:
+                    if payload.get("is_wolf"):
+                        self.known_wolf_ids.add(tid)
+                        self.suspicion[tid] = 10.0
+                    else:
+                        self.known_good_ids.add(tid)
+                        self.suspicion[tid] = -10.0
+
+    def _update_suspicion_from_events(self) -> None:
+        """Learn from public events: votes, deaths, speech patterns."""
+        view = self._view()
+        recent = view.public_events[-20:]
+        my_name = view.self_player.get("name", "")
+
+        for e in recent:
+            if e.get("type") == "VOTE_CAST":
+                voter = e.get("payload", {}).get("voter_id")
+                target = e.get("payload", {}).get("target_id")
+                voter_name = e.get("payload", {}).get("voter_name", "")
+                if voter and target and target != self.player_id:
+                    # Voting increases mutual suspicion
+                    self._adjust_suspicion(voter, 0.2, "voted")
+                    # Being voted for increases suspicion
+                    self._adjust_suspicion(target, 0.15, "voted_against")
+                    # If someone voted for a known good player, they're more suspicious
+                    if target in self.known_good_ids:
+                        self._adjust_suspicion(voter, 0.5, "voted_known_good")
+
+            if e.get("type") == "PLAYER_DIED":
+                pid = e.get("payload", {}).get("player_id")
+                reason = e.get("payload", {}).get("reason", "")
+                if pid and pid not in self.known_wolf_ids:
+                    if reason == "wolf":
+                        self._adjust_suspicion(pid, -0.5, "killed_by_wolf")
+                    elif reason == "vote":
+                        self._adjust_suspicion(pid, -0.3, "voted_out")
+
+            if e.get("type") == "CHAT_MESSAGE":
+                speech = e.get("payload", {}).get("speech", "")
+                actor = e.get("payload", {}).get("actor_id")
+                actor_name = e.get("payload", {}).get("actor_name", "")
+                if actor and actor != self.player_id:
+                    # Vague/fence-sitting speech
+                    vague = sum(1 for w in ["可能吧", "不确定", "再看看", "不好说"] if w in speech)
+                    if vague >= 2:
+                        self._adjust_suspicion(actor, 0.15, "vague")
+                    # Aggressive early accusations (day 1) without evidence
+                    if view.day <= 1 and ("是狼" in speech or "查杀" in speech or "票他" in speech):
+                        if actor not in self.known_wolf_ids and actor not in self.known_good_ids:
+                            self._adjust_suspicion(actor, 0.1, "early_aggression")
+                    # Track who mentions our name (could be pushing us)
+                    if my_name in speech:
+                        self._adjust_suspicion(actor, 0.25, f"mentioned_me")
 
     def day_start(self) -> None:
-        self.memory.append("Day started.")
+        pass
+
+    def finish(self, winner: str | None) -> None:
+        self.winner = winner
+
+    # ---- Core decision methods ----
 
     def talk(self) -> Decision:
         view = self._view()
         role = self.role
-        primary = self._most_suspicious_alive()
-        secondary = self._secondary_suspect(primary["id"])
-        suspects = self._suspect_names(primary["id"], secondary["id"] if secondary else None)
-        profile = ROLE_PROFILES[role]
+        my_name = view.self_player.get("name", "Player")
+        day = view.day
+        alive_count = sum(1 for p in view.players if p["alive"])
 
-        # Build base speech from role strategy + character personality
-        char = self.character
-        style = char.persona.style_label if char else "neutral"
-        name = char.persona.name if char else "Player"
+        # STEP 1: Assess what information we actually have
+        info_level = self._assess_information()
 
-        speech, reasoning = self._build_character_speech(
-            role=role, style=style, name=name,
-            primary=primary, secondary=secondary, suspects=suspects,
-            profile=profile,
+        # STEP 2: Build speech based on information + game state + role strategy
+        speech, reasoning = self._build_contextual_speech(
+            role=role, day=day, info_level=info_level,
+            alive_count=alive_count, my_name=my_name,
         )
         return Decision(view.player_id, ActionType.TALK, speech=speech, reasoning=reasoning)
 
-    def _build_character_speech(self, *, role, style, name, primary, secondary, suspects, profile):
-        """Build role-appropriate speech with character personality and cross-references."""
-        primary_name = primary["name"]
-        secondary_name = secondary["name"] if secondary else primary_name
-
-        # Cross-reference: what did the previous speaker say?
-        reference = self._cross_reference(primary_name)
-
-        # Role-specific core content + character-style wrapper
-        if role == Role.WEREWOLF:
-            speech, reasoning = self._wolf_speech(primary_name, secondary_name, suspects, style, name, profile)
-        elif role == Role.SEER:
-            speech, reasoning = self._seer_speech(primary_name, secondary_name, suspects, style, name, profile)
-        elif role == Role.WITCH:
-            speech, reasoning = self._witch_speech(primary_name, secondary_name, suspects, style, name, profile)
-        elif role == Role.HUNTER:
-            speech, reasoning = self._hunter_speech(primary_name, secondary_name, suspects, style, name, profile)
-        elif role == Role.GUARD:
-            speech, reasoning = self._guard_speech(primary_name, secondary_name, suspects, style, name, profile)
-        else:
-            speech, reasoning = self._villager_speech(primary_name, secondary_name, suspects, style, name, profile)
-
-        # Prepend cross-reference if relevant
-        if reference:
-            speech = f"{reference} {speech}"
-        return speech, reasoning
-
-    def _cross_reference(self, my_primary: str) -> str:
-        """Build a short reference to what someone just said, for natural conversation flow."""
-        view = self._view()
-        my_name = view.self_player.get("name", "")
-        heard = [m for m in self.memory[-4:] if m.startswith("听到")]
-        if not heard:
-            return ""
-        import re
-        alive_names = [p["name"] for p in view.players if p["alive"] and p["id"] != self.player_id]
-        for entry in reversed(heard):
-            match = re.match(r"听到(.+?)说: (.+)", entry)
-            if not match:
-                continue
-            speaker = match.group(1)
-            content = match.group(2)
-            if speaker == my_name:
-                continue
-            if my_primary in content:
-                return f"{speaker}刚才点到{my_primary}了，我跟一手——"
-            for other_name in alive_names:
-                if other_name != my_name and other_name != speaker and other_name in content:
-                    if self.rng.random() < 0.4:
-                        return f"{speaker}说的{other_name}我也在看，不过我今天重点还是——"
-            if self.rng.random() < 0.25:
-                return f"接{speaker}的话——"
-            break
-        return ""
-
-    # ---- Character-style speech generators ----
-
-    def _wolf_speech(self, p, s, suspects, style, name, profile):
-        templates = {
-            "analytical": (f"我仔细看了一圈，{p}的逻辑有结构性矛盾。第一天说A可疑，第二天又跟票A，这不是好人的思维。{s}也得解释。", f"{name}伪装成逻辑分析者"),
-            "aggressive": (f"我就直说了——{p}就是狼！走路姿势都是狼！你们不敢点我来点。还有个{s}，也别想跑。", f"{name}装成冲动的平民"),
-            "expressive": (f"天哪你们看不出来吗？{p}那个发言，那个眼神（虽然我看不到），但那个心虚的感觉扑面而来！{s}也是。", f"{name}用表演煽动情绪"),
-            "insightful": (f"我觉得{p}的潜意识在暴露自己。真正的好人不会这样构建怀疑链。{s}配合得很微妙。", f"{name}用心理分析来误导"),
-            "observant": (f"盯了{p}一整天了。不对劲。{s}也不对劲。信我。", f"{name}装成沉默的观察者"),
-            "meticulous": (f"我对了一下{p}第1天和第2天发言的时间线，有三处不一致。{s}有一处。结论很简单。", f"{name}制造伪证据链"),
-            "provocative": (f"笑死，{p}的发言我都能背下来了——'我觉得'、'可能'、'不确定'。哥们你是玩狼人杀还是来相亲的？{s}也来相亲？", f"{name}用幽默掩盖引导"),
-            "persuasive": (f"大家冷静听我说，{p}确实让我有点担心，不是他说的内容有问题，是他为什么要那样说？{s}也是。我们来一起分析一下。", f"{name}假装和事佬来带节奏"),
-        }
-        speech, reasoning = templates.get(style, templates["analytical"])
-        return speech.replace("{p}", p).replace("{s}", s) if "{p}" in speech else speech, reasoning
-
-    def _seer_speech(self, p, s, suspects, style, name, profile):
-        checks = self._seer_checks()
-        if checks:
-            latest = checks[-1]
-            target_name = self._name(latest["target_id"])
-            if latest["is_wolf"]:
-                speech = f"我是预言家。昨晚验了{target_name}，查杀。归票{target_name}，不接受分票。有对跳的现在出来。"
-                reasoning = f"{name}强势归票查杀位"
-            else:
-                speech = f"我是预言家视角。{target_name}是我金水，好人。重点看{suspects}。尤其{s}，你的站边需要解释。"
-                reasoning = f"{name}报金水同时归可疑位"
-        else:
-            speech = f"我还没跳身份但我想说——{suspects}这对组合不干净。{p}先动的手，{s}跟得很默契。各自解释。"
-            reasoning = f"{name}以村民角度分析怀疑链"
-        return speech, reasoning
-
-    def _witch_speech(self, p, s, suspects, style, name, profile):
-        templates = {
-            "calm": (f"今晚的死亡信息很关键。{p}和{s}，我需要你们各说清楚为什么要这么投。不着急，我们有时间。", f"{name}冷静分析票型"),
-            "aggressive": (f"别跟我绕！{p}你昨晚保的人跟你今天的发言对不上！{s}你也是！", f"{name}强势质问"),
-            "default": (f"我不接受模糊票。{p}是我第一嫌疑人，{s}第二。不要跟我说'感觉'，给我逻辑。", f"{name}谨慎分析死亡信息"),
-        }
-        speech, reasoning = templates.get(style, templates["default"])
-        return speech, reasoning
-
-    def _hunter_speech(self, p, s, suspects, style, name, profile):
-        speech = f"听好了——我活着的时候你们不归票{p}，等我死了可别怪枪口不长眼。{s}也在我名单上。"
-        reasoning = f"{name}用猎人威慑逼票"
-        return speech, reasoning
-
-    def _guard_speech(self, p, s, suspects, style, name, profile):
-        speech = f"我特别关注谁在利用信息差带节奏。{p}你推进的方向跟我看到的完全不一样。{s}，别不说话。"
-        reasoning = f"{name}分析信息差制造者"
-        return speech, reasoning
-
-    def _villager_speech(self, p, s, suspects, style, name, profile):
-        templates = {
-            "analytical": (f"从概率上讲，{suspects}里面有至少一狼。我赌{p}。愿意站我的，说一下理由。", f"{name}用朴素逻辑分析"),
-            "aggressive": (f"我就认{p}是狼！你们投不投？不投给我理由！", f"{name}直接冲锋"),
-            "expressive": (f"我真的觉得{p}太可疑了！那个发言就是狼队剧本！{s}还帮他圆，更可疑！", f"{name}凭直觉和氛围"),
-            "insightful": (f"你有没有觉得{p}的语气变了？第一天他在试探，今天他在引导。{s}是配合的。", f"{name}从心理角度分析"),
-            "observant": (f"看{p}。就{p}。理由我整理好了——看票型。", f"{name}少说话但票准"),
-            "meticulous": (f"我统计了{p}三轮发言的关键词——'可能'用了7次，'感觉'用了5次。结论：不敢明确表态。", f"{name}细节式推进"),
-            "provocative": (f"{p}老师，您的狼人杀水平我是认可的，但您今天的演技我只能给3分。{s}给4分，还有进步空间。", f"{name}用幽默推动归票"),
-            "persuasive": (f"我不是针对{p}这个人，我是说他这轮的逻辑确实有问题。大家觉得呢？我们可以一起看。如果他解释清楚了我就换人。", f"{name}温和引导共识"),
-        }
-        speech, reasoning = templates.get(style, templates["analytical"])
-        return speech, reasoning
-
     def vote(self) -> Decision:
         view = self._view()
-        if self.role == Role.WEREWOLF:
-            target = self._choose_non_wolf()
-            reasoning = "Vote a village-aligned player while avoiding visible wolf coordination."
-        else:
-            checked_wolf = self._latest_checked_wolf()
-            target = checked_wolf or self._most_suspicious_alive()
-            reasoning = "Vote the strongest suspect based on private info and public pressure."
-        return Decision(view.player_id, ActionType.VOTE, target_id=target["id"], reasoning=reasoning)
+        target = self._choose_vote_target()
+        return Decision(view.player_id, ActionType.VOTE, target_id=target["id"],
+                       reasoning=f"Voting {target['name']} based on suspicion score {self.suspicion.get(target['id'], 0):.1f}")
 
     def attack(self) -> Decision:
         view = self._view()
-        target = self._choose_priority_village()
-        return Decision(
-            view.player_id,
-            ActionType.ATTACK,
-            target_id=target["id"],
-            reasoning="Wolves prioritize roles that can reveal or block night actions.",
-        )
+        target = self._choose_wolf_kill_target()
+        return Decision(view.player_id, ActionType.ATTACK, target_id=target["id"],
+                       reasoning=f"Wolves target {target['name']} as highest-value village player")
 
     def divine(self) -> Decision:
         view = self._view()
-        candidates = self._alive_others()
-        unchecked = [player for player in candidates if player["id"] not in {check["target_id"] for check in self._seer_checks()}]
-        target = self._prefer_non_self(unchecked or candidates)
-        return Decision(
-            view.player_id,
-            ActionType.DIVINE,
-            target_id=target["id"],
-            reasoning="Check an unverified player who can clarify the vote pool.",
-        )
+        target = self._choose_divine_target()
+        return Decision(view.player_id, ActionType.DIVINE, target_id=target["id"],
+                       reasoning=f"Check {target['name']} to clarify the board")
 
     def guard(self) -> Decision:
         view = self._view()
-        candidates = self._alive_others(include_self=True)
-        seerish = self._find_public_claim("seer")
-        target = seerish or self._prefer_role_name(candidates, ["Seer", "Witch", "Hunter"]) or self._prefer_non_self(candidates)
-        return Decision(
-            view.player_id,
-            ActionType.GUARD,
-            target_id=target["id"],
-            reasoning="Guard a likely high-value village target.",
-        )
+        target = self._choose_guard_target()
+        return Decision(view.player_id, ActionType.GUARD, target_id=target["id"],
+                       reasoning=f"Guard {target['name']} as likely village priority")
 
     def witch_act(self, victim_id: str | None) -> list[Decision]:
         view = self._view()
         decisions: list[Decision] = []
-        if victim_id and view.day <= 1:
-            decisions.append(
-                Decision(
-                    view.player_id,
-                    ActionType.WITCH_SAVE,
-                    target_id=victim_id,
-                    reasoning="Use the heal early to preserve village numbers in the MVP rules.",
-                )
-            )
-        poison_target = self._latest_checked_wolf()
-        if poison_target:
-            decisions.append(
-                Decision(
-                    view.player_id,
-                    ActionType.WITCH_POISON,
-                    target_id=poison_target["id"],
-                    reasoning="Poison a privately confirmed wolf when available.",
-                )
-            )
+        # Save on night 0 or if victim might be important
+        if victim_id and (view.day <= 1):
+            decisions.append(Decision(view.player_id, ActionType.WITCH_SAVE, target_id=victim_id,
+                             reasoning="Save early to preserve village numbers"))
+        # Poison only if we have confirmed wolf info
+        poison_candidates = sorted(self.suspicion.items(), key=lambda x: x[1], reverse=True)
+        for pid, score in poison_candidates:
+            if score >= 3.0 and pid != victim_id:
+                p = self._player(pid)
+                if p and p["alive"]:
+                    decisions.append(Decision(view.player_id, ActionType.WITCH_POISON, target_id=pid,
+                                     reasoning=f"Poison {p['name']} based on high suspicion ({score:.1f})"))
+                    break
         if not decisions:
-            decisions.append(Decision(view.player_id, ActionType.SKIP, reasoning="Hold potions until stronger evidence appears."))
+            decisions.append(Decision(view.player_id, ActionType.SKIP, reasoning="Hold potions, not enough evidence"))
         return decisions
 
     def shoot(self) -> Decision:
         view = self._view()
-        target = self._most_suspicious_alive()
-        return Decision(
-            view.player_id,
-            ActionType.SHOOT,
-            target_id=target["id"],
-            reasoning="Hunter shoots the strongest remaining suspect.",
-        )
+        # Shoot the most suspicious alive player
+        target = self._highest_suspicion_alive()
+        return Decision(view.player_id, ActionType.SHOOT, target_id=target["id"],
+                       reasoning=f"Hunter shoots {target['name']} as strongest suspect")
 
-    def finish(self, winner: str | None) -> None:
-        self.winner = winner
+    # ---- Information assessment ----
+
+    def _assess_information(self) -> str:
+        """Determine how much actionable information we have."""
+        if self.known_wolf_ids:
+            return "strong"
+        view = self._view()
+        if view.day >= 3 and any(s >= 2.0 for s in self.suspicion.values()):
+            return "moderate"
+        if view.day >= 2 and any(s >= 1.0 for s in self.suspicion.values()):
+            return "limited"
+        if view.day >= 2:
+            return "limited"
+        return "none"
+
+    def _init_suspicion(self) -> None:
+        view = self._view()
+        for p in view.players:
+            if p["id"] != self.player_id:
+                self.suspicion[p["id"]] = 0.0
+
+    def _adjust_suspicion(self, player_id: str, delta: float, reason: str = "") -> None:
+        if player_id in self.suspicion:
+            self.suspicion[player_id] += delta
+
+    # ---- Speech construction ----
+
+    def _build_contextual_speech(self, *, role, day, info_level, alive_count, my_name):
+        """Build speech from actual context: what do I know? what just happened?"""
+        view = self._view()
+        char = self.character
+        style = char.persona.style_label if char else "neutral"
+
+        # Gather what just happened
+        deaths_today = [e for e in view.public_events[-5:]
+                       if e.get("type") == "PLAYER_DIED" and e.get("day") == day]
+        recent_speeches = self.last_speeches
+
+        # Build the speech organically
+        parts = []
+
+        # 1. React to deaths
+        if deaths_today:
+            dead_names = [e.get("payload", {}).get("player_name", "?") for e in deaths_today]
+            parts.append(f"昨晚{', '.join(dead_names)}死了。")
+
+        # 2. State our position based on information level
+        if info_level == "none":
+            parts.append(self._day1_observation(style, my_name, recent_speeches, alive_count))
+        elif info_level == "strong":
+            parts.append(self._strong_push(role, my_name, alive_count))
+        else:
+            parts.append(self._developing_case(role, style, my_name, recent_speeches, alive_count))
+
+        # 3. Respond to specific players who spoke
+        response = self._respond_to_others(style, my_name)
+        if response:
+            parts.append(response)
+
+        # 4. Call to action
+        if info_level == "strong":
+            parts.append(self._call_vote())
+        elif day >= 2:
+            parts.append(self._call_discussion())
+        else:
+            parts.append("大家先说说自己的看法吧。")
+
+        speech = " ".join(parts)
+        reasoning = f"{my_name}({role.value}) day{day} info={info_level}: {'push' if info_level == 'strong' else 'observe' if info_level == 'none' else 'analyze'}"
+        return speech, reasoning
+
+    def _day1_observation(self, style: str, my_name: str, speeches: list[dict], alive: int) -> str:
+        """Day 1: no info yet. Observe behavior, ask questions, don't accuse."""
+        # Count who's spoken and who hasn't
+        speakers = set()
+        for s in speeches:
+            speakers.add(s.get("payload", {}).get("actor_name", ""))
+        quiet_count = alive - len(speakers) - 1  # minus self
+
+        observations = {
+            "analytical": f"第一天没什么信息，我先听听大家的发言。{alive}个人，有{quiet_count}个还没说话，我想听听他们的看法。",
+            "observant": f"第一轮，先看。{alive}个人在场，我注意到有人还没开口，不急下定论。",
+            "meticulous": f"第一天信息不足。我建议每人都说一下自己最关注谁，这样后面复盘有依据。现在有{quiet_count}人还没表态。",
+            "insightful": f"第一天是最能看出谁在试探的阶段。我想先听听所有人的发言再做判断，现在{quiet_count}个人还没说话。",
+            "persuasive": f"大家好，第一天我们先互相认识一下。每个人说一下自己怎么看这局，别急着互踩。",
+            "aggressive": f"第一天我不急着定人，但看了一圈，有人已经很活跃有人完全沉默。沉默的别忘了发言。",
+            "expressive": f"哇第一天好紧张！我还不知道该怀疑谁呢，先听听大家都怎么说吧～",
+            "provocative": f"第一天就图一乐，先看看谁会跳、谁会缩。我话放这——今天不发言的人明天我重点关注。",
+        }
+        return observations.get(style, observations["analytical"])
+
+    def _strong_push(self, role: Role, my_name: str, alive: int) -> str:
+        """We have strong evidence — push hard on our target."""
+        if self.known_wolf_ids:
+            wolf_id = next(iter(self.known_wolf_ids))
+            wolf = self._player(wolf_id)
+            if wolf and wolf["alive"]:
+                if role == Role.SEER:
+                    return f"我是预言家，昨晚验了{wolf['name']}，查杀！今天全票出{wolf['name']}，不接受分票。有对跳的出来。"
+                else:
+                    return f"我强烈怀疑{wolf['name']}是狼。今天的票应该集中在他身上。"
+        return "我有比较强的把握，今天的票型要集中。"
+
+    def _developing_case(self, role: Role, style: str, my_name: str, speeches: list[dict], alive: int) -> str:
+        """Some information, building a case but not certain."""
+        top = self._highest_suspicion_alive()
+        score = self.suspicion.get(top["id"], 0)
+
+        if score >= 2.5:
+            lines = [
+                f"我重点怀疑{top['name']}。他的票型和发言对不上，前后矛盾的地方不少。",
+                f"我越来越觉得{top['name']}有问题。大家回去看他之前的发言，逻辑断裂很明显。",
+                f"{top['name']}就是我今天想推的人。理由已经说了——他的行为模式不像是好人。",
+            ]
+            return self.rng.choice(lines)
+        elif score >= 1.5:
+            lines = [
+                f"我比较关注{top['name']}，但还不完全确定。大家也说说对他怎么看。",
+                f"暂时指向{top['name']}，有几个点让我不太舒服。但我愿意听他的解释。",
+                f"{top['name']}的发言让我有点在意，证据还差一点。有人有补充信息吗？",
+            ]
+            return self.rng.choice(lines)
+        elif score >= 0.8:
+            lines = [
+                f"我还不太确定，但{top['name']}稍微引起了我的注意。继续观察。",
+                f"目前线索不多，但{top['name']}的几个举动让我多看了两眼。",
+                f"信息有限，不过{top['name']}有点微妙。先不急着下结论。",
+            ]
+            return self.rng.choice(lines)
+        else:
+            lines = [
+                f"信息还不够，我想再听一轮发言。大家都把自己的怀疑对象说清楚。",
+                f"现在线索比较分散，我建议大家先回顾一下前面的发言，看看有没有矛盾。",
+                f"我还需要更多信息。每个人说说自己最怀疑谁、为什么。",
+                f"现在判断比较困难。我希望这轮发言大家能多给一些具体的信息。",
+            ]
+            return self.rng.choice(lines)
+
+    def _respond_to_others(self, style: str, my_name: str) -> str:
+        """Respond naturally to what other players said."""
+        if not self.last_speeches:
+            return ""
+        latest = self.last_speeches[-1]
+        speaker = latest.get("payload", {}).get("actor_name", "")
+        speech_text = latest.get("payload", {}).get("speech", "")
+
+        # Only react if speaker is actually CLAIMING Seer (not just mentioning the role)
+        claims_seer = any(phrase in speech_text for phrase in [
+            "我是预言家", "我跳预言家", "I am the Seer", "I'm the Seer",
+            "我查了", "昨晚验了", "查杀", "金水",
+        ])
+        if claims_seer:
+            claimed_target = self._extract_name_from_speech(speech_text)
+            if claimed_target and claimed_target != my_name:
+                return f"{speaker}跳预言家说验了{claimed_target}。先记下，看有没有人对跳。"
+            return f"{speaker}跳预言家了。等等看有没有反跳的。"
+
+        # If someone accused us
+        if my_name in speech_text:
+            return f"{speaker}提到我了，我想说我的发言大家可以回头查，我没有矛盾的地方。"
+
+        # If someone accused our suspect
+        top = self._highest_suspicion_alive()
+        if top["name"] in speech_text:
+            return f"{speaker}说的{top['name']}我也有同感。"
+
+        return ""
+
+    def _call_vote(self) -> str:
+        target = self._highest_suspicion_alive()
+        return f"我的票归{target['name']}。"
+
+    def _call_discussion(self) -> str:
+        return "大家各自说说自己的票向，不要跟风。"
+
+    # ---- Target selection ----
+
+    def _choose_vote_target(self) -> dict:
+        """Choose vote target based on actual evidence."""
+        view = self._view()
+        # If we know a wolf (seer check), vote them
+        for wid in self.known_wolf_ids:
+            p = self._player(wid)
+            if p and p["alive"]:
+                return p
+        # Wolves: vote a non-wolf
+        if self.role == Role.WEREWOLF:
+            return self._choose_non_wolf()
+        # Otherwise vote highest suspicion
+        return self._highest_suspicion_alive()
+
+    def _choose_wolf_kill_target(self) -> dict:
+        """Wolves choose kill target: prioritize likely power roles."""
+        candidates = self._alive_others()
+        # Target players who seem like Seer/Witch (those making strong claims)
+        for c in candidates:
+            for e in self._view().public_events[-10:]:
+                if e.get("type") == "CHAT_MESSAGE":
+                    speech = e.get("payload", {}).get("speech", "")
+                    if ("预言家" in speech or "查验" in speech or "查杀" in speech) and c["name"] in speech:
+                        return c
+        # Fallback: highest influence player
+        return self._highest_suspicion_alive() if self.rng.random() < 0.5 else self._choose_non_wolf()
+
+    def _choose_divine_target(self) -> dict:
+        """Seer: check a high-value unknown target."""
+        candidates = self._alive_others()
+        # Prioritize unchecked players who are vocal
+        already_checked = set()
+        for e in self._view().private_events:
+            tid = e.get("payload", {}).get("target_id")
+            if tid:
+                already_checked.add(tid)
+        unchecked = [c for c in candidates if c["id"] not in already_checked]
+        if unchecked:
+            return self.rng.choice(unchecked)
+        return self.rng.choice(candidates)
+
+    def _choose_guard_target(self) -> dict:
+        """Guard: protect likely village power role or self."""
+        candidates = self._alive_others(include_self=True)
+        # Look for Seer claims
+        for c in candidates:
+            for e in self._view().public_events[-10:]:
+                if e.get("type") == "CHAT_MESSAGE":
+                    if "预言家" in e.get("payload", {}).get("speech", "") and c["name"] in e.get("payload", {}).get("speech", ""):
+                        return c
+        # Guard self or random good-looking player
+        me = self._player(self.player_id)
+        return me if me and me["alive"] else self.rng.choice(candidates)
+
+    def _highest_suspicion_alive(self) -> dict:
+        alive = [p for p in self._alive_others() if p["id"] not in self.known_good_ids]
+        if not alive:
+            alive = self._alive_others()
+        if not alive:
+            return {"id": "", "name": "nobody", "alive": True}
+        return max(alive, key=lambda p: self.suspicion.get(p["id"], 0))
+
+    def _choose_non_wolf(self) -> dict:
+        view = self._view()
+        wolf_ids = {p["id"] for p in view.known_wolves}
+        candidates = [p for p in self._alive_others() if p["id"] not in wolf_ids]
+        return self.rng.choice(candidates) if candidates else self._alive_others()[0]
+
+    def _extract_name_from_speech(self, text: str) -> str | None:
+        """Extract a player name mentioned in speech."""
+        for p in self._view().players:
+            if p["name"] in text:
+                return p["name"]
+        return None
+
+    # ---- Helpers ----
 
     @property
     def role(self) -> Role:
@@ -280,111 +465,18 @@ class HeuristicAgent(Agent):
 
     def _view(self) -> PlayerView:
         if self.view is None:
-            raise RuntimeError("Agent has not been initialized.")
+            raise RuntimeError("Agent not initialized")
         return self.view
 
     def _alive_others(self, *, include_self: bool = False) -> list[dict]:
         view = self._view()
-        return [
-            player
-            for player in view.players
-            if player["alive"] and (include_self or player["id"] != view.player_id)
-        ]
+        return [p for p in view.players if p["alive"] and (include_self or p["id"] != view.player_id)]
 
-    def _prefer_non_self(self, players: list[dict]) -> dict:
-        if not players:
-            raise RuntimeError("No legal targets.")
-        return sorted(players, key=lambda player: (player["seat"], player["id"]))[0]
+    def _player(self, player_id: str) -> dict | None:
+        return next((p for p in self._view().players if p["id"] == player_id), None)
 
-    def _choose_non_wolf(self) -> dict:
+    def _init_suspicion(self) -> None:
         view = self._view()
-        wolf_ids = {player["id"] for player in view.known_wolves}
-        candidates = [player for player in self._alive_others() if player["id"] not in wolf_ids]
-        return self._prefer_non_self(candidates)
-
-    def _choose_priority_village(self) -> dict:
-        candidates = self._alive_others()
-        known_roles = ["Seer", "Witch", "Guard", "Hunter"]
-        target = self._prefer_role_name(candidates, known_roles)
-        return target or self._choose_non_wolf()
-
-    def _prefer_role_name(self, candidates: list[dict], roles: list[str]) -> dict | None:
-        for role in roles:
-            for player in candidates:
-                if player.get("role") == role:
-                    return player
-        return None
-
-    def _seer_checks(self) -> list[dict]:
-        checks = []
-        for event in self._view().private_events:
-            payload = event["payload"]
-            if payload.get("kind") == "seer_result":
-                checks.append(payload)
-        return checks
-
-    def _latest_checked_wolf(self) -> dict | None:
-        for check in reversed(self._seer_checks()):
-            if check.get("is_wolf"):
-                player = self._player(check["target_id"])
-                if player and player["alive"]:
-                    return player
-        return None
-
-    def _most_suspicious_alive(self) -> dict:
-        candidates = self._alive_others()
-        if not candidates:
-            raise RuntimeError("No vote target available.")
-        accusations = Counter()
-        for event in self._view().public_events:
-            if event["type"] == "CHAT_MESSAGE":
-                content = str(event["payload"].get("speech", "")).lower()
-                for player in candidates:
-                    if player["name"].lower() in content:
-                        accusations[player["id"]] += 1
-        if accusations:
-            best_id, _ = accusations.most_common(1)[0]
-            player = self._player(best_id)
-            if player:
-                return player
-        return self._prefer_non_self(candidates)
-
-    def _secondary_suspect(self, exclude_id: str) -> dict | None:
-        candidates = [player for player in self._alive_others() if player["id"] != exclude_id]
-        if not candidates:
-            return None
-        accusations = Counter()
-        for event in self._view().public_events:
-            if event["type"] != "CHAT_MESSAGE":
-                continue
-            content = str(event["payload"].get("speech", "")).lower()
-            for player in candidates:
-                if player["name"].lower() in content:
-                    accusations[player["id"]] += 1
-        if accusations:
-            best_id, _ = accusations.most_common(1)[0]
-            return self._player(best_id)
-        return self._prefer_non_self(candidates)
-
-    def _suspect_names(self, primary_id: str, secondary_id: str | None) -> str:
-        primary = self._name(primary_id)
-        if secondary_id is None:
-            return primary
-        return f"{primary} and {self._name(secondary_id)}"
-
-    def _find_public_claim(self, word: str) -> dict | None:
-        for event in reversed(self._view().public_events):
-            if event["type"] == "CHAT_MESSAGE" and word in str(event["payload"].get("speech", "")).lower():
-                player = self._player(event["payload"].get("actor_id"))
-                if player and player["alive"]:
-                    return player
-        return None
-
-    def _player(self, player_id: str | None) -> dict | None:
-        if player_id is None:
-            return None
-        return next((player for player in self._view().players if player["id"] == player_id), None)
-
-    def _name(self, player_id: str) -> str:
-        player = self._player(player_id)
-        return player["name"] if player else player_id
+        for p in view.players:
+            if p["id"] != self.player_id:
+                self.suspicion[p["id"]] = 0.0
