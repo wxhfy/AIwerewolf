@@ -7,7 +7,19 @@ from datetime import datetime, timezone
 from typing import Any
 
 from backend.db.database import SessionLocal
-from backend.db.models import AgentDecision, Evaluation, Game, GameEvent, GameSnapshot, Player, Vote
+from backend.db.models import (
+    AgentDecision,
+    AgentVersion,
+    Evaluation,
+    EvolutionRound,
+    Game,
+    GameEvent,
+    GameSnapshot,
+    LeaderboardEntry,
+    Player,
+    ReviewReport,
+    Vote,
+)
 from backend.engine.models import GameState
 
 
@@ -203,9 +215,81 @@ def save_game_end(state: GameState) -> None:
         except Exception:
             pass
 
+        # Per-player evaluation metrics (Track B baseline) — computed here so the
+        # downstream leaderboard / replay UI has data without a separate worker.
+        db.query(Evaluation).filter(Evaluation.game_id == state.id).delete()
+        for metric in _compute_player_metrics(state):
+            db.add(Evaluation(**metric))
+
+        # Update aggregated leaderboard entries (Track B leaderboard).
+        winner = state.winner.value if state.winner else None
+        for p in state.players:
+            agent_label = f"{p.agent_type or 'ai'}+{p.role.value}"
+            entry = (
+                db.query(LeaderboardEntry)
+                .filter(LeaderboardEntry.name == agent_label, LeaderboardEntry.role == p.role.value)
+                .first()
+            )
+            if entry is None:
+                entry = LeaderboardEntry(name=agent_label, role=p.role.value)
+                db.add(entry)
+                db.flush()
+            entry.games_played = (entry.games_played or 0) + 1
+            won = (winner == "village" and p.alignment.value == "village") or (
+                winner == "wolf" and p.alignment.value == "wolf"
+            )
+            if won:
+                entry.wins = (entry.wins or 0) + 1
+            else:
+                entry.losses = (entry.losses or 0) + 1
+            entry.win_rate = float(entry.wins) / max(1, entry.games_played)
+
         db.commit()
     finally:
         db.close()
+
+
+def _compute_player_metrics(state: GameState) -> list[dict]:
+    """Compute simple per-player KPIs the leaderboard / review surface uses.
+
+    Kept intentionally simple here — Track B's reviewer agent can later add
+    deeper qualitative metrics by writing extra `Evaluation` rows.
+    """
+    metrics: list[dict] = []
+    winner = state.winner.value if state.winner else None
+
+    chat_by_actor: dict[str, int] = {}
+    for event in state.events:
+        if event.type.value == "CHAT_MESSAGE":
+            actor = event.payload.get("actor_id")
+            if actor:
+                chat_by_actor[actor] = chat_by_actor.get(actor, 0) + 1
+
+    for p in state.players:
+        survived = p.alive
+        won = winner is not None and p.alignment.value == winner
+        metrics.append({
+            "game_id": state.id,
+            "player_id": p.id,
+            "metric_name": "win",
+            "metric_value": 1.0 if won else 0.0,
+            "comment": f"role={p.role.value} alignment={p.alignment.value}",
+        })
+        metrics.append({
+            "game_id": state.id,
+            "player_id": p.id,
+            "metric_name": "survived",
+            "metric_value": 1.0 if survived else 0.0,
+            "comment": p.death_reason or "",
+        })
+        metrics.append({
+            "game_id": state.id,
+            "player_id": p.id,
+            "metric_name": "speech_count",
+            "metric_value": float(chat_by_actor.get(p.id, 0)),
+            "comment": "",
+        })
+    return metrics
 
 
 def save_evaluation(game_id: str, player_id: str, metric_name: str, value: float, comment: str = "") -> None:
@@ -314,5 +398,246 @@ def get_game_summary(game_id: str) -> dict | None:
             "created_at": game.created_at.isoformat() if game.created_at else None,
             "finished_at": game.finished_at.isoformat() if game.finished_at else None,
         })
+    finally:
+        db.close()
+
+
+# ---------------------------------------------------------------------------
+# Track B / C accessors — used by the reserved endpoints in backend/app.py.
+# Implementations are intentionally lightweight; the heavy reviewer/evolution
+# logic will live in dedicated modules under backend/eval/ once those tracks
+# are picked up.
+# ---------------------------------------------------------------------------
+
+
+def get_replay(game_id: str, *, show_private: bool = False) -> dict | None:
+    """Return the data the frontend replay UI needs to walk a finished game."""
+    db = SessionLocal()
+    try:
+        game = db.query(Game).filter(Game.id == game_id).first()
+        if game is None:
+            return None
+        snapshot = (
+            db.query(GameSnapshot)
+            .filter(GameSnapshot.game_id == game_id)
+            .order_by(GameSnapshot.day.desc())
+            .first()
+        )
+        events = [
+            {
+                "id": e.id,
+                "day": e.day,
+                "phase": e.phase,
+                "type": e.event_type,
+                "actor_id": e.actor_id,
+                "target_id": e.target_id,
+                "visibility": e.visibility,
+                "content": e.content,
+            }
+            for e in sorted(game.events, key=lambda x: (x.day, x.created_at))
+            if show_private or e.visibility == "public"
+        ]
+        decisions = (
+            db.query(AgentDecision)
+            .filter(AgentDecision.game_id == game_id)
+            .order_by(AgentDecision.day, AgentDecision.created_at)
+            .all()
+        )
+        return _clean({
+            "id": game.id,
+            "winner": game.winner,
+            "day": game.current_day,
+            "phase": game.current_phase,
+            "players": [
+                {"id": p.id, "name": p.name, "seat": p.seat_no, "role": p.role,
+                 "is_alive": p.is_alive, "is_ai": p.is_ai, "agent_type": p.agent_type,
+                 "death_day": p.death_day, "death_reason": p.death_reason}
+                for p in sorted(game.players, key=lambda x: x.seat_no)
+            ],
+            "snapshot": (snapshot.truth_state if show_private else snapshot.public_state) if snapshot else None,
+            "events": events,
+            "decisions": [
+                {
+                    "id": d.id,
+                    "player_id": d.player_id,
+                    "day": d.day,
+                    "phase": d.phase,
+                    "parsed_action": d.parsed_action,
+                    "raw_output": d.raw_output[:400] if d.raw_output else "",
+                    "is_valid": d.is_valid,
+                    "latency_ms": d.latency_ms,
+                }
+                for d in decisions
+            ],
+        })
+    finally:
+        db.close()
+
+
+def get_game_metrics(game_id: str) -> dict | None:
+    """Return the Evaluation rows for one game, grouped by player."""
+    db = SessionLocal()
+    try:
+        game = db.query(Game).filter(Game.id == game_id).first()
+        if game is None:
+            return None
+        rows = db.query(Evaluation).filter(Evaluation.game_id == game_id).all()
+        grouped: dict[str, list[dict]] = {}
+        for row in rows:
+            grouped.setdefault(row.player_id or "_global", []).append({
+                "metric": row.metric_name,
+                "value": row.metric_value,
+                "comment": row.comment,
+            })
+        return {"game_id": game_id, "winner": game.winner, "metrics": grouped}
+    finally:
+        db.close()
+
+
+def get_leaderboard(*, role: str | None = None, limit: int = 20) -> list[dict]:
+    db = SessionLocal()
+    try:
+        query = db.query(LeaderboardEntry)
+        if role:
+            query = query.filter(LeaderboardEntry.role == role)
+        rows = (
+            query.order_by(LeaderboardEntry.win_rate.desc(), LeaderboardEntry.games_played.desc())
+            .limit(limit)
+            .all()
+        )
+        return [
+            {
+                "id": r.id,
+                "agent_version_id": r.agent_version_id,
+                "name": r.name,
+                "role": r.role,
+                "games_played": r.games_played,
+                "wins": r.wins,
+                "losses": r.losses,
+                "win_rate": round(r.win_rate or 0.0, 4),
+                "kpi": {
+                    "speech_quality": r.kpi_speech_quality,
+                    "vote_accuracy": r.kpi_vote_accuracy,
+                    "skill_efficiency": r.kpi_skill_efficiency,
+                    "survival_value": r.kpi_survival_value,
+                },
+                "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+            }
+            for r in rows
+        ]
+    finally:
+        db.close()
+
+
+def get_review_reports(game_id: str) -> list[dict]:
+    db = SessionLocal()
+    try:
+        rows = (
+            db.query(ReviewReport)
+            .filter(ReviewReport.game_id == game_id)
+            .order_by(ReviewReport.day, ReviewReport.created_at)
+            .all()
+        )
+        return [
+            {
+                "id": r.id,
+                "player_id": r.player_id,
+                "severity": r.severity,
+                "day": r.day,
+                "phase": r.phase,
+                "title": r.title,
+                "summary": r.summary,
+                "counterfactual": r.counterfactual,
+                "suggestion": r.suggestion,
+                "metrics": r.metrics,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in rows
+        ]
+    finally:
+        db.close()
+
+
+def list_agent_versions() -> list[dict]:
+    db = SessionLocal()
+    try:
+        rows = db.query(AgentVersion).order_by(AgentVersion.created_at.desc()).all()
+        return [
+            {
+                "id": r.id,
+                "name": r.name,
+                "agent_type": r.agent_type,
+                "model_name": r.model_name,
+                "prompt_version": r.prompt_version,
+                "config": r.config,
+                "parent_version_id": r.parent_version_id,
+                "notes": r.notes,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in rows
+        ]
+    finally:
+        db.close()
+
+
+def register_agent_version(payload: dict) -> dict:
+    name = str(payload.get("name") or "").strip()
+    if not name:
+        raise ValueError("name is required")
+    db = SessionLocal()
+    try:
+        row = AgentVersion(
+            name=name,
+            agent_type=str(payload.get("agent_type") or "llm"),
+            model_name=str(payload.get("model_name") or ""),
+            prompt_version=str(payload.get("prompt_version") or "v1"),
+            config=payload.get("config") or {},
+            parent_version_id=payload.get("parent_version_id"),
+            notes=str(payload.get("notes") or ""),
+        )
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+        return {
+            "id": row.id,
+            "name": row.name,
+            "agent_type": row.agent_type,
+            "model_name": row.model_name,
+            "prompt_version": row.prompt_version,
+            "config": row.config,
+            "parent_version_id": row.parent_version_id,
+            "notes": row.notes,
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+        }
+    finally:
+        db.close()
+
+
+def list_evolution_rounds(*, limit: int = 20) -> list[dict]:
+    db = SessionLocal()
+    try:
+        rows = (
+            db.query(EvolutionRound)
+            .order_by(EvolutionRound.round_no.desc())
+            .limit(limit)
+            .all()
+        )
+        return [
+            {
+                "id": r.id,
+                "round_no": r.round_no,
+                "baseline_version_id": r.baseline_version_id,
+                "challenger_version_id": r.challenger_version_id,
+                "games_per_round": r.games_per_round,
+                "baseline_wins": r.baseline_wins,
+                "challenger_wins": r.challenger_wins,
+                "delta_win_rate": r.delta_win_rate,
+                "accepted": r.accepted,
+                "change_log": r.change_log,
+                "started_at": r.started_at.isoformat() if r.started_at else None,
+                "finished_at": r.finished_at.isoformat() if r.finished_at else None,
+            }
+            for r in rows
+        ]
     finally:
         db.close()
