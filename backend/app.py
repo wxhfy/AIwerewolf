@@ -61,6 +61,31 @@ def list_games():
     return _rooms.list_games()
 
 
+@app.get("/api/history")
+def game_history(limit: int = 20):
+    """Return recent game history from the database for the frontend panel."""
+    from backend.db.persist import list_games as db_list_games
+    try:
+        return db_list_games(limit=limit)
+    except Exception:
+        return []
+
+
+@app.get("/api/history/{game_id}")
+def game_history_detail(game_id: str):
+    """Return one game's summary: players, speeches, votes, deaths."""
+    from backend.db.persist import get_game_summary
+    try:
+        summary = get_game_summary(game_id)
+        if summary is None:
+            raise HTTPException(status_code=404, detail="Game not found")
+        return summary
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to load game history")
+
+
 @app.post("/api/rooms")
 def create_room(name: str = "Demo Room", seed: int = 7, player_count: int = 7, agent_type: str = "llm"):
     request = RoomCreateRequest(name=name, seed=seed, player_count=player_count, agent_type=agent_type)

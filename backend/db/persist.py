@@ -13,7 +13,7 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def save_game_start(state: GameState) -> Game:
+def save_game_start(state: GameState, model_name: str = "", prompt_version: str = "v1") -> Game:
     db = SessionLocal()
     try:
         game = Game(
@@ -34,7 +34,8 @@ def save_game_start(state: GameState) -> Game:
                 role=p.role.value,
                 is_ai=p.is_ai,
                 agent_type="llm",
-                model_name="",
+                model_name=model_name,
+                prompt_version=prompt_version,
                 is_alive=p.alive,
             ))
         db.commit()
@@ -164,10 +165,63 @@ def list_games(limit: int = 20) -> list[dict]:
     db = SessionLocal()
     try:
         games = db.query(Game).order_by(Game.created_at.desc()).limit(limit).all()
-        return [
-            {"id": g.id, "status": g.status, "winner": g.winner,
-             "current_day": g.current_day, "created_at": g.created_at.isoformat() if g.created_at else None}
-            for g in games
+        results = []
+        for g in games:
+            players = [
+                {"name": p.name, "role": p.role, "is_alive": p.is_alive, "seat_no": p.seat_no}
+                for p in g.players
+            ]
+            results.append({
+                "id": g.id,
+                "status": g.status,
+                "winner": g.winner,
+                "current_day": g.current_day,
+                "seed": g.seed,
+                "created_at": g.created_at.isoformat() if g.created_at else None,
+                "player_count": len(players),
+                "players": players,
+            })
+        return results
+    finally:
+        db.close()
+
+
+def get_game_summary(game_id: str) -> dict | None:
+    """Lightweight summary for frontend display."""
+    db = SessionLocal()
+    try:
+        game = db.query(Game).filter(Game.id == game_id).first()
+        if not game:
+            return None
+        speeches = [
+            {"day": e.day, "phase": e.phase, "speaker": e.content.get("actor_name", ""),
+             "text": str(e.content.get("speech", ""))[:200]}
+            for e in game.events
+            if e.event_type == "CHAT_MESSAGE"
         ]
+        votes = [
+            {"day": e.day, "voter": e.content.get("voter_name", ""),
+             "target": e.content.get("target_name", "")}
+            for e in game.events
+            if e.event_type == "VOTE_CAST"
+        ]
+        deaths = [
+            {"day": e.day, "player": e.content.get("player_name", ""),
+             "reason": e.content.get("reason", "")}
+            for e in game.events
+            if e.event_type == "PLAYER_DIED"
+        ]
+        return {
+            "id": game.id,
+            "status": game.status,
+            "winner": game.winner,
+            "day": game.current_day,
+            "seed": game.seed,
+            "players": [{"name": p.name, "role": p.role, "alive": p.is_alive} for p in game.players],
+            "speeches": speeches,
+            "votes": votes,
+            "deaths": deaths,
+            "created_at": game.created_at.isoformat() if game.created_at else None,
+        }
     finally:
         db.close()
