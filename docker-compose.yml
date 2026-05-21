@@ -1,0 +1,48 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: werewolf-pg
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: werewolf
+      POSTGRES_PASSWORD: wolf_secret_2026
+      POSTGRES_DB: werewolf
+    ports:
+      - "5433:5432"
+    volumes:
+      - werewolf-pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U werewolf -d werewolf"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: .
+    container_name: werewolf-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg2://werewolf:wolf_secret_2026@postgres:5432/werewolf
+      LLM_PROVIDER: ${LLM_PROVIDER:-deepseek}
+      DOUBAO_API_KEY: ${DOUBAO_API_KEY:-}
+      DOUBAO_BASE_URL: ${DOUBAO_BASE_URL:-https://ark.cn-beijing.volces.com/api/v3}
+      DOUBAO_MODEL: ${DOUBAO_MODEL:-Doubao-Seed-2.0-pro}
+      DOUBAO_ENDPOINT: ${DOUBAO_ENDPOINT:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+      DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-v4-flash}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app/backend
+      - ./frontend:/app/frontend
+      - ./configs:/app/configs
+
+volumes:
+  werewolf-pg-data:
+    name: werewolf-pg-data

@@ -27,12 +27,23 @@ python -m pip install -r requirements.txt
 # 2. 配置 LLM API（已提供 .env.example，复制后填上 key）
 cp .env.example .env  # 编辑填入 DOUBAO_API_KEY 或 DEEPSEEK_API_KEY
 
-# 3. 本地跑一局（启发式 Agent，秒级出结果）
-python -m backend.run_demo --seed 7
+# 3. 启动本地 Postgres（推荐，跟 .env 默认值对齐；不装也行，会自动 fallback 到 SQLite）
+make db-up
 
-# 4. 启动后端服务
-uvicorn backend.app:app --host 0.0.0.0 --port 8000
+# 4. 本地跑一局（启发式 Agent，秒级出结果）
+make demo
+
+# 5. 启动后端服务
+make dev   # 等价 uvicorn backend.app:app --host 0.0.0.0 --port 8000 --reload
 # 浏览器打开 http://localhost:8000
+```
+
+一条命令拉起全栈（Postgres + 后端）：
+
+```bash
+make compose-up    # 等价 docker compose up -d --build
+make compose-logs  # 看后端日志
+make compose-down
 ```
 
 ## 三种玩法
@@ -49,11 +60,30 @@ uvicorn backend.app:app --host 0.0.0.0 --port 8000
 
 ### C. API 直接调用
 
+#### 核心 (MVP)
 ```bash
 curl -X POST "http://localhost:8000/api/rooms?name=Demo&seed=7&player_count=7&agent_type=llm"
 curl -X POST "http://localhost:8000/api/rooms/<room_id>/games"
 curl "http://localhost:8000/api/history"
 curl "http://localhost:8000/api/history/<game_id>"
+```
+
+#### 进阶预留（B：评测复盘 / C：自进化）
+```bash
+# 整局回放（含全部事件+决策，可加 ?show_private=true 看主持视角）
+curl "http://localhost:8000/api/replay/<game_id>"
+# 单局多维指标（按玩家分组）
+curl "http://localhost:8000/api/games/<game_id>/metrics"
+# 聚合排行榜（按角色 + agent_type 聚合，可加 ?role=Werewolf）
+curl "http://localhost:8000/api/leaderboard"
+# 评测 agent 写入的复盘报告（暂为空，待 Track B reviewer 接入）
+curl "http://localhost:8000/api/games/<game_id>/reviews"
+# Agent 版本注册表（Track C 自进化使用）
+curl "http://localhost:8000/api/agents"
+curl -X POST "http://localhost:8000/api/agents" -H 'Content-Type: application/json' \
+  -d '{"name":"doubao-v1","agent_type":"llm","model_name":"Doubao-Seed-2.0-pro","prompt_version":"v1"}'
+# 自进化迭代日志
+curl "http://localhost:8000/api/evolution"
 ```
 
 ## 项目结构
@@ -103,19 +133,37 @@ tests/
 
 ## 数据库
 
-默认 SQLite，文件在 `data/werewolf.db`。如需切换 Postgres：
+默认 SQLite，文件在 `data/werewolf.db`。生产/团队开发推荐 Postgres：
 
 ```bash
-export DATABASE_URL=postgresql+psycopg2://user:pass@host:5432/werewolf
+# 一键起 docker postgres（端口 5433）
+make db-up
+# 写到 .env：
+# DATABASE_URL=postgresql+psycopg2://werewolf:wolf_secret_2026@127.0.0.1:5433/werewolf
+make db-init   # 建/刷新 schema
+make db-shell  # psql 进入容器
 ```
 
-每局结束时入库的内容：
+或者用 `docker compose up -d` 一键起 backend + postgres。
+
+### Schema（11 张表）
+
+**MVP 用到 (7 张)**
 - `games` — 一行：id / status / winner / day / seed / 时间戳
 - `players` — 每位玩家身份与最终存活状态
-- `game_events` — 全部事件（public + private 标记）
-- `agent_decisions` — 每次询问的观察 / 原始 LLM 输出 / 解析结果 / 是否合法 / 延迟
+- `game_events` — 全部事件（public / private 标记）
+- `agent_decisions` — 每次询问的观察 / 原始 LLM 输出 / 解析结果 / 是否合法 / 延迟 / token 数
 - `votes` — 每日投票
 - `game_snapshots` — 终局完整快照（公开 + 主持双版本）
+- `evaluations` — 每局每玩家的 KPI（win / survived / speech_count，可由 reviewer agent 追加更多）
+
+**Track B 评测复盘预留 (2 张)**
+- `leaderboard_entries` — 按 `(agent_label, role)` 聚合的胜率与 KPI
+- `review_reports` — Reviewer agent 输出的关键决策复盘 / 反事实分析 / 改进建议
+
+**Track C 自进化预留 (2 张)**
+- `agent_versions` — Agent 版本登记表（prompt / model / config 快照），支持 parent 链
+- `evolution_rounds` — 每轮 baseline vs challenger 的 20 局对战结果，可回溯
 
 ## 测试
 

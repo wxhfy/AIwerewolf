@@ -124,6 +124,81 @@ def game_history_detail(game_id: str):
         raise HTTPException(status_code=500, detail="Failed to load game history")
 
 
+# ---------------------------------------------------------------------------
+# Track B reserved endpoints — replay, metrics, leaderboard, review reports
+# ---------------------------------------------------------------------------
+
+@app.get("/api/replay/{game_id}")
+def replay_game(game_id: str, show_private: bool = False):
+    """Return the full replay payload (snapshots + all events + decisions).
+
+    Used by the Track B replay UI. The current implementation returns the
+    final snapshot + every persisted event/decision/vote; once a step-by-step
+    replay UI is built, we can extend this with per-day snapshots.
+    """
+    from backend.db.persist import get_replay
+    payload = get_replay(game_id, show_private=show_private)
+    if payload is None:
+        raise HTTPException(status_code=404, detail="Game not found")
+    return payload
+
+
+@app.get("/api/games/{game_id}/metrics")
+def game_metrics(game_id: str):
+    """Per-game multi-dimensional metrics (Track B). One row per (player, metric)."""
+    from backend.db.persist import get_game_metrics
+    metrics = get_game_metrics(game_id)
+    if metrics is None:
+        raise HTTPException(status_code=404, detail="Game not found")
+    return metrics
+
+
+@app.get("/api/leaderboard")
+def leaderboard(role: Optional[str] = None, limit: int = 20):
+    """Aggregated leaderboard rows (Track B). Filter by role if provided."""
+    from backend.db.persist import get_leaderboard
+    return get_leaderboard(role=role, limit=limit)
+
+
+@app.get("/api/games/{game_id}/reviews")
+def game_reviews(game_id: str):
+    """Reviewer-agent generated post-game reports (Track B)."""
+    from backend.db.persist import get_review_reports
+    return get_review_reports(game_id)
+
+
+# ---------------------------------------------------------------------------
+# Track C reserved endpoints — agent versions + self-evolution chain
+# ---------------------------------------------------------------------------
+
+@app.get("/api/agents")
+def list_agent_versions():
+    """List registered agent versions (Track C)."""
+    from backend.db.persist import list_agent_versions
+    return list_agent_versions()
+
+
+@app.post("/api/agents")
+def register_agent_version(payload: Dict[str, Any]):
+    """Register a new agent version (Track C).
+
+    Body: {name, agent_type, model_name, prompt_version, config, parent_version_id, notes}
+    """
+    from backend.db.persist import register_agent_version
+    try:
+        record = register_agent_version(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return record
+
+
+@app.get("/api/evolution")
+def list_evolution_rounds(limit: int = 20):
+    """List the self-evolution iteration log (Track C)."""
+    from backend.db.persist import list_evolution_rounds
+    return list_evolution_rounds(limit=limit)
+
+
 @app.post("/api/rooms")
 def create_room(
     name: str = "Demo Room",
