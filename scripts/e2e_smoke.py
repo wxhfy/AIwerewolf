@@ -77,11 +77,15 @@ def main() -> int:
         assert status == 200
         assert 'id="run"' in html
         assert 'id="lang-en"' in html
+        assert 'id="agent-type"' in html
 
-        status, room_body = http_post(f"http://127.0.0.1:{port}/api/rooms?name=SmokeRoom&seed=5&player_count=7")
+        status, room_body = http_post(
+            f"http://127.0.0.1:{port}/api/rooms?name=SmokeRoom&seed=5&player_count=7&agent_type=heuristic"
+        )
         assert status == 200
         room = json.loads(room_body)
         assert room["name"] == "SmokeRoom"
+        assert room["agent_type"] == "heuristic"
         room_id = room["id"]
 
         status, fetched_room = http_get(f"http://127.0.0.1:{port}/api/rooms/{room_id}")
@@ -93,11 +97,23 @@ def main() -> int:
         room_game_payload = json.loads(room_game_body)
         assert_match_payload(room_game_payload)
 
+        status, room_games_body = http_get(f"http://127.0.0.1:{port}/api/rooms/{room_id}/games")
+        assert status == 200
+        room_games = json.loads(room_games_body)
+        assert len(room_games) == 1
+        assert room_games[0]["id"] == room_game_payload["id"]
+
+        status, room_snapshot_body = http_get(f"http://127.0.0.1:{port}/api/rooms/{room_id}/snapshot")
+        assert status == 200
+        room_snapshot = json.loads(room_snapshot_body)
+        assert room_snapshot["id"] == room_game_payload["id"]
+
         status, js = http_get(f"http://127.0.0.1:{port}/static/app.js")
         assert status == 200
         assert "const dictionary" in js
         assert "statusLoading" in js
         assert "/ws/rooms/" in js
+        assert "agent_type" in js
 
         status, css = http_get(f"http://127.0.0.1:{port}/static/style.css")
         assert status == 200

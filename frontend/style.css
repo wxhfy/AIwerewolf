@@ -35,7 +35,8 @@ body {
 }
 
 button,
-input {
+input,
+select {
   font: inherit;
 }
 
@@ -97,6 +98,10 @@ h1 {
   background: rgba(255, 255, 255, 0.45);
   font-size: 13px;
   color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 280px;
 }
 
 .hero-stats {
@@ -191,12 +196,17 @@ h1 {
   font-size: 13px;
 }
 
-.controls input {
+.controls input,
+.controls select {
   width: 102px;
   height: 40px;
   border: 1px solid var(--line);
   background: var(--panel-strong);
   padding: 0 10px;
+}
+
+.controls select {
+  min-width: 132px;
 }
 
 .controls button {
@@ -332,12 +342,17 @@ h1 {
 .name {
   font-size: 18px;
   font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .role {
   margin-top: 4px;
   color: var(--muted);
   font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .state {
@@ -375,11 +390,16 @@ h1 {
   margin-bottom: 5px;
   color: var(--accent);
   font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .event p {
   margin: 0;
   line-height: 1.5;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  max-width: 100%;
 }
 
 .notes-list {

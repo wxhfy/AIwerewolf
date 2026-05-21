@@ -82,6 +82,25 @@ def get_room(room_id: str):
     return room.to_dict()
 
 
+@app.get("/api/rooms/{room_id}/games")
+def list_room_games(room_id: str):
+    try:
+        return _rooms.list_room_games(room_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Room not found")
+
+
+@app.get("/api/rooms/{room_id}/snapshot")
+def get_room_snapshot(room_id: str):
+    try:
+        snapshot = _rooms.get_latest_snapshot(room_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Room not found")
+    if snapshot is None:
+        raise HTTPException(status_code=404, detail="Snapshot not found")
+    return snapshot
+
+
 @app.post("/api/rooms/{room_id}/games")
 def create_room_game(room_id: str, show_private: bool = False):
     try:

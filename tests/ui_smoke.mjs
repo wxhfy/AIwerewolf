@@ -38,6 +38,7 @@ try {
   await page.waitForSelector("#run");
   await page.click("#lang-en");
   await page.waitForFunction(() => document.documentElement.lang === "en");
+  await page.selectOption("#agent-type", "heuristic");
   await page.fill("#seed", "11");
   await page.fill("#speed", "0");
   await page.click("#run");
@@ -57,12 +58,14 @@ try {
     players: document.querySelectorAll(".player").length,
     timeline: document.querySelectorAll(".event").length,
     status: document.querySelector("#status-title")?.textContent,
+    agentMode: document.querySelector("#agent-mode")?.textContent,
   }));
 
   if (stateAfterRun.lang !== "en") throw new Error(`Language switch failed: ${stateAfterRun.lang}`);
   if (!["Village", "Wolves"].includes(stateAfterRun.winner)) throw new Error(`Unexpected winner text: ${stateAfterRun.winner}`);
   if (!stateAfterRun.roomLabel || stateAfterRun.roomLabel.endsWith("-")) throw new Error(`Room label not initialized: ${stateAfterRun.roomLabel}`);
   if (!stateAfterRun.gameLabel || stateAfterRun.gameLabel.endsWith("-")) throw new Error(`Game label not initialized: ${stateAfterRun.gameLabel}`);
+  if (stateAfterRun.agentMode !== "Heuristic") throw new Error(`Agent mode not rendered: ${stateAfterRun.agentMode}`);
   if (Number(stateAfterRun.players) !== 7) throw new Error(`Expected 7 players, got ${stateAfterRun.players}`);
   if (Number(stateAfterRun.timeline) < 20) throw new Error(`Expected timeline events, got ${stateAfterRun.timeline}`);
 

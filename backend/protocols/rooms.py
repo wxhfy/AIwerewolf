@@ -25,6 +25,25 @@ class RoomManager:
     def list_rooms(self) -> list[dict]:
         return [room.to_dict() for room in self.rooms.values()]
 
+    def list_room_games(self, room_id: str) -> list[dict]:
+        room = self.get_room(room_id)
+        games: list[dict] = []
+        for game_id in room.game_history:
+            state = self.get_game(game_id)
+            games.append(
+                {
+                    "id": state.id,
+                    "day": state.day,
+                    "phase": state.phase.value,
+                    "winner": state.winner.value if state.winner else None,
+                }
+            )
+        return games
+
+    def get_latest_snapshot(self, room_id: str) -> dict | None:
+        room = self.get_room(room_id)
+        return room.latest_snapshot
+
     def set_room_status(self, room_id: str, status: str) -> RoomRecord:
         room = self.get_room(room_id)
         room.status = status

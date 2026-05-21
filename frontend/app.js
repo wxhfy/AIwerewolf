@@ -4,6 +4,11 @@ const dictionary = {
     brand: "AI Werewolf",
     title: "观战台",
     subtitle: "实时房间观战控制台，可切换公开视角与主持视角，并按阶段查看 AI 对局推进。",
+    agentType: "Agent",
+    agentMode: "Agent 模式",
+    agentHeuristic: "启发式",
+    agentLlm: "LLM",
+    agentDescription: "启发式模式用于稳定回归；LLM 模式会走 .env 中配置的模型，便于做多 Agent 对战和复盘实验。",
     seed: "Seed",
     speed: "速度",
     run: "运行一局",
@@ -41,7 +46,7 @@ const dictionary = {
     roomLabel: "房间",
     gameLabel: "对局",
     roomReady: "房间已创建",
-    roomReadyDetail: "当前房间 {roomId}，可以直接开始新的 AI 对局。",
+    roomReadyDetail: "当前房间 {roomId}，Agent={agentType}，可以直接开始新的 AI 对局。",
     hiddenRole: "身份隐藏",
     alive: "存活",
     dead: "出局",
@@ -61,6 +66,11 @@ const dictionary = {
     brand: "AI Werewolf",
     title: "Spectator Console",
     subtitle: "Live room console for AI werewolf matches with public and moderator perspectives.",
+    agentType: "Agent",
+    agentMode: "Agent Mode",
+    agentHeuristic: "Heuristic",
+    agentLlm: "LLM",
+    agentDescription: "Heuristic mode is for stable regression. LLM mode uses the model configured in .env for multi-agent experiments and replay analysis.",
     seed: "Seed",
     speed: "Speed",
     run: "Run Game",
@@ -98,7 +108,7 @@ const dictionary = {
     roomLabel: "Room",
     gameLabel: "Game",
     roomReady: "Room ready",
-    roomReadyDetail: "Current room {roomId}. You can start a new AI match now.",
+    roomReadyDetail: "Current room {roomId}, agent={agentType}. You can start a new AI match now.",
     hiddenRole: "Role hidden",
     alive: "Alive",
     dead: "Out",
@@ -121,12 +131,14 @@ const state = {
   busy: false,
   roomId: null,
   gameId: null,
+  agentType: getInitialAgentType(),
   lastSnapshot: null,
 };
 
 const els = {
   seed: document.querySelector("#seed"),
   speed: document.querySelector("#speed"),
+  agentType: document.querySelector("#agent-type"),
   run: document.querySelector("#run"),
   private: document.querySelector("#private"),
   langZh: document.querySelector("#lang-zh"),
@@ -147,6 +159,7 @@ const els = {
   lastEventTitle: document.querySelector("#last-event-title"),
   lastEventText: document.querySelector("#last-event-text"),
   aliveCount: document.querySelector("#alive-count"),
+  agentMode: document.querySelector("#agent-mode"),
   dailySummary: document.querySelector("#daily-summary"),
 };
 
@@ -167,6 +180,7 @@ function bindEvents() {
 
   els.langZh.addEventListener("click", () => setLanguage("zh"));
   els.langEn.addEventListener("click", () => setLanguage("en"));
+  els.agentType.addEventListener("change", () => setAgentType(els.agentType.value));
 }
 
 async function runGame(retryOnRoomLost = true) {
@@ -200,7 +214,11 @@ async function runGame(retryOnRoomLost = true) {
 async function bootstrap() {
   try {
     await ensureRoom();
-    setStatus("loaded", t("roomReady"), format(t("roomReadyDetail"), { roomId: shortId(state.roomId) }));
+    setStatus(
+      "loaded",
+      t("roomReady"),
+      format(t("roomReadyDetail"), { roomId: shortId(state.roomId), agentType: agentTypeLabel(state.agentType) })
+    );
     updateMeta();
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -218,7 +236,11 @@ async function ensureRoom() {
       if (check.ok) {
         const room = await check.json();
         state.roomId = room.id;
+        if (room.agent_type) {
+          state.agentType = room.agent_type;
+        }
         updateMeta();
+        syncControls();
         return state.roomId;
       }
     } catch (e) {
@@ -238,18 +260,23 @@ async function ensureRoom() {
   }
 
   const seed = Number(els.seed.value || 7);
-  const response = await fetch(`/api/rooms?name=${encodeURIComponent("Demo Room")}&seed=${seed}&player_count=7`, {
-    method: "POST",
-    headers: { Accept: "application/json" },
-  });
+  const response = await fetch(
+    `/api/rooms?name=${encodeURIComponent("Demo Room")}&seed=${seed}&player_count=7&agent_type=${encodeURIComponent(state.agentType)}`,
+    {
+      method: "POST",
+      headers: { Accept: "application/json" },
+    }
+  );
   if (!response.ok) {
     throw new Error(`Failed to create room: HTTP ${response.status}`);
   }
   const room = await response.json();
   state.roomId = room.id;
+  state.agentType = room.agent_type || state.agentType;
   const url = new URL(window.location.href);
   url.searchParams.set("room", room.id);
   window.history.replaceState({}, "", url);
+  syncControls();
   updateMeta();
   return state.roomId;
 }
@@ -271,6 +298,7 @@ async function runGameViaWebSocket() {
         JSON.stringify({
           action: "start",
           seed,
+          agent_type: state.agentType,
           show_private: state.showPrivate,
           delay_ms: delayMs,
         })
@@ -286,7 +314,9 @@ async function runGameViaWebSocket() {
       }
       if (payload.type === "room" && payload.room) {
         state.roomId = payload.room.id;
+        state.agentType = payload.room.agent_type || state.agentType;
         updateMeta(payload.room.current_game_id || state.gameId);
+        syncControls();
       }
       if (payload.type === "snapshot" && payload.state) {
         finalState = payload.state;
@@ -308,8 +338,10 @@ async function runGameViaWebSocket() {
         if (payload.room) {
           state.roomId = payload.room.id;
           state.gameId = payload.room.current_game_id || state.gameId;
+          state.agentType = payload.room.agent_type || state.agentType;
         }
         updateMeta(state.gameId);
+        syncControls();
         socket.close();
         if (finalState) {
           resolve(finalState);
@@ -343,6 +375,15 @@ function setLanguage(lang) {
   }
 }
 
+function setAgentType(agentType) {
+  state.agentType = agentType === "llm" ? "llm" : "heuristic";
+  const url = new URL(window.location.href);
+  url.searchParams.set("agent_type", state.agentType);
+  window.history.replaceState({}, "", url);
+  syncControls();
+  updateMeta();
+}
+
 function applyLanguage() {
   document.documentElement.lang = state.lang === "zh" ? "zh-CN" : "en";
   document.title = t("pageTitle");
@@ -353,6 +394,7 @@ function applyLanguage() {
   els.private.textContent = state.showPrivate ? t("public") : t("private");
   els.langZh.classList.toggle("active", state.lang === "zh");
   els.langEn.classList.toggle("active", state.lang === "en");
+  syncControls();
   if (els.viewLabel) {
     els.viewLabel.textContent = state.showPrivate ? t("private") : t("publicMode");
   }
@@ -366,6 +408,7 @@ function setBusy(busy) {
   state.busy = busy;
   els.run.disabled = busy;
   els.private.disabled = busy;
+  els.agentType.disabled = busy;
 }
 
 function setLoading() {
@@ -389,10 +432,14 @@ function render(game) {
   els.phase.textContent = game.phase;
   els.eventCount.textContent = String(game.events.length);
   els.players.innerHTML = game.players.map(renderPlayer).join("");
-  els.timeline.innerHTML = game.events.map(renderEvent).join("");
+  els.timeline.innerHTML = [...game.events].reverse().map(renderEvent).join("");
+  els.timeline.scrollTop = 0;  // keep newest events visible at top
   if (els.aliveCount) {
     const alive = game.alive_count ?? game.players.filter((player) => player.alive).length;
     els.aliveCount.textContent = String(alive);
+  }
+  if (els.agentMode) {
+    els.agentMode.textContent = agentTypeLabel(state.agentType);
   }
   if (els.lastEventTitle || els.lastEventText) {
     const latest = game.last_event || (game.events.length ? game.events[game.events.length - 1] : null);
@@ -509,6 +556,20 @@ function setStatus(mode, title, text) {
 function updateMeta() {
   els.roomLabel.textContent = `${t("roomLabel")}: ${shortId(state.roomId)}`;
   els.gameLabel.textContent = `${t("gameLabel")}: ${shortId(state.gameId)}`;
+  if (els.agentMode) {
+    els.agentMode.textContent = agentTypeLabel(state.agentType);
+  }
+}
+
+function syncControls() {
+  if (els.agentType) {
+    els.agentType.value = state.agentType;
+    const options = Array.from(els.agentType.options || []);
+    options.forEach((option) => {
+      const key = option.value === "llm" ? "agentLlm" : "agentHeuristic";
+      option.textContent = t(key);
+    });
+  }
 }
 
 function t(key) {
@@ -528,6 +589,15 @@ function getInitialLang() {
   const lang = url.searchParams.get("lang");
   if (lang === "en" || lang === "zh") return lang;
   return (navigator.language || "").toLowerCase().startsWith("zh") ? "zh" : "en";
+}
+
+function getInitialAgentType() {
+  const url = new URL(window.location.href);
+  return url.searchParams.get("agent_type") === "llm" ? "llm" : "heuristic";
+}
+
+function agentTypeLabel(value) {
+  return value === "llm" ? t("agentLlm") : t("agentHeuristic");
 }
 
 function shortId(value) {

@@ -48,6 +48,13 @@
               <button id="lang-en" type="button" class="lang-btn">EN</button>
             </div>
             <label>
+              <span data-i18n="agentType">Agent</span>
+              <select id="agent-type">
+                <option value="heuristic" data-i18n="agentHeuristic">启发式</option>
+                <option value="llm" data-i18n="agentLlm">LLM</option>
+              </select>
+            </label>
+            <label>
               <span data-i18n="seed">Seed</span>
               <input id="seed" type="number" value="7" min="0" />
             </label>
@@ -75,6 +82,10 @@
           <div class="intel-row">
             <span data-i18n="aliveCount">存活人数</span>
             <strong id="alive-count">-</strong>
+          </div>
+          <div class="intel-row">
+            <span data-i18n="agentMode">Agent</span>
+            <strong id="agent-mode">-</strong>
           </div>
           <div class="intel-row">
             <span data-i18n="viewMode">视角</span>
@@ -112,6 +123,10 @@
             <div class="note-item">
               <span class="note-kicker" data-i18n="roomLabel">房间</span>
               <p data-i18n="roomDescription">每个房间会保留当前对局和历史对局编号，方便后续扩展成多人房间系统。</p>
+            </div>
+            <div class="note-item">
+              <span class="note-kicker" data-i18n="agentMode">Agent</span>
+              <p data-i18n="agentDescription">启发式模式用于稳定回归；LLM 模式会走 `.env` 中配置的模型，便于做多 Agent 对战和复盘实验。</p>
             </div>
             <div class="note-item">
               <span class="note-kicker" data-i18n="viewMode">视角</span>
