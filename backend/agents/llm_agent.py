@@ -235,14 +235,7 @@ class LLMAgent(Agent):
         alive_list = [p["name"] for p in view.players if p["alive"] and p["id"] != self.player_id]
         dead_list = [p["name"] for p in view.players if not p["alive"]]
 
-        char_intro = ""
-        if self.character:
-            char_intro = self.character.system_intro
-
         blocks = [
-            "=== 你的人设 ===",
-            char_intro if char_intro else f"你是{view.self_player['name']}，{self.role.value}",
-            "",
             "=== 当前状态 ===",
             f"你叫{view.self_player['name']}，是{self.role.value}",
             f"第{view.day}天 / {view.phase}阶段",
@@ -284,6 +277,29 @@ class LLMAgent(Agent):
 
         return "\n".join(blocks)
 
+    def _build_system_prompt(self) -> str:
+        """Build system prompt: role rules + self character + constraints."""
+        role_system = get_system_prompt(self.role)
+        char_block = ""
+        if self.character:
+            char = self.character
+            char_block = (
+                f"\n\n你的个人信息（仅描述你自己，不是其他玩家）：\n"
+                f"名字：{char.persona.name}，{char.persona.age}岁\n"
+                f"背景：{char.persona.basic_info}\n"
+                f"发言习惯：{char.persona.speech_length_habit}，{char.persona.vocabulary_style}\n"
+                f"思考方式：{char.persona.reasoning_style}"
+            )
+        constraints = (
+            "\n\n重要约束：\n"
+            "1. 只能根据「公开事件」中实际发生的发言和投票进行推理，不要凭空描述其他玩家的性格或行为\n"
+            "2. 不要说「X玩家话不多」「X看起来很稳」这类没有事实依据的判断\n"
+            "3. 第一天没有信息是正常的，可以说「信息不足，先听听大家发言」\n"
+            "4. 发言要符合狼人杀桌面语言，像真人玩家一样自然说话\n"
+            "5. 不要使用你的个人信息来描述其他玩家"
+        )
+        return role_system + char_block + constraints
+
     def _ask_json(self, prompt: str, default: dict[str, Any], *, max_tokens: int = 320) -> tuple[dict[str, Any], dict[str, Any]]:
         meta = {
             "provider": self.provider,
@@ -292,7 +308,7 @@ class LLMAgent(Agent):
             "fallback": True,
         }
         try:
-            system = get_system_prompt(self.role)
+            system = self._build_system_prompt()
             attempts = [
                 {
                     "messages": [
