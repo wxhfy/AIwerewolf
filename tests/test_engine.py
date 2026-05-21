@@ -1,5 +1,5 @@
 from backend.engine.game import WerewolfGame
-from backend.engine.models import Phase, Role
+from backend.engine.models import ActionType, Alignment, Decision, Phase, Player, Role
 from backend.engine.visibility import Visibility
 
 
@@ -70,3 +70,109 @@ def test_werewolf_knows_only_wolves() -> None:
             assert player["role"] == Role.WEREWOLF.value
         else:
             assert "role" not in player
+
+
+def test_day_vote_tie_enters_pk_and_resolves() -> None:
+    game = WerewolfGame(seed=7)
+    game.initialize()
+    game.state.day = 1
+    game.state.badge.holder_id = None
+
+    first_target = game.state.players[0].id
+    second_target = game.state.players[1].id
+    third_target = game.state.players[2].id
+    first_round = {
+        game.state.players[0].id: second_target,
+        game.state.players[1].id: first_target,
+        game.state.players[2].id: first_target,
+        game.state.players[3].id: second_target,
+        game.state.players[4].id: first_target,
+        game.state.players[5].id: second_target,
+        game.state.players[6].id: third_target,
+    }
+    pk_round = {
+        game.state.players[2].id: first_target,
+        game.state.players[3].id: first_target,
+        game.state.players[4].id: first_target,
+        game.state.players[5].id: first_target,
+        game.state.players[6].id: first_target,
+    }
+
+    def scripted_ask(player, request, call, many=False):
+        if request in {"TALK", "LAST_WORDS"}:
+            return Decision(player.id, ActionType.TALK, speech=f"{player.name} speaks", reasoning="scripted")
+        if request == "VOTE":
+            target = pk_round[player.id] if game.state.pk_targets else first_round[player.id]
+            return Decision(player.id, ActionType.VOTE, target_id=target, reasoning="scripted")
+        raise AssertionError(request)
+
+    game._ask = scripted_ask  # type: ignore[assignment]
+    game._speech_phase()
+    game._vote_phase()
+    game._day_resolve()
+
+    assert game.state.day_history[1]["executed"]["player_id"] == first_target
+    assert any(event.phase == Phase.DAY_PK_SPEECH for event in game.state.events)
+    assert any(event.payload.get("pk_speech") for event in game.state.events if event.type.value == "CHAT_MESSAGE")
+    assert game.state.vote_history[1]
+
+
+def test_sheriff_vote_has_weight() -> None:
+    game = WerewolfGame(seed=7)
+    sheriff_id = game.state.players[0].id
+    target_a = game.state.players[1].id
+    target_b = game.state.players[2].id
+    game.state.badge.holder_id = sheriff_id
+    votes = {
+        sheriff_id: target_a,
+        game.state.players[1].id: target_b,
+        game.state.players[2].id: target_b,
+        game.state.players[3].id: target_a,
+    }
+    tally = game._weighted_tally(votes)
+    assert tally[target_a] == 2.5
+    assert tally[target_b] == 2.0
+
+
+def test_idiot_reveals_and_loses_vote_rights() -> None:
+    players = [
+        Player(id="A", seat=1, name="A", role=Role.IDIOT, alignment=Alignment.VILLAGE),
+        Player(id="B", seat=2, name="B", role=Role.VILLAGER, alignment=Alignment.VILLAGE),
+        Player(id="C", seat=3, name="C", role=Role.WEREWOLF, alignment=Alignment.WOLF),
+        Player(id="D", seat=4, name="D", role=Role.SEER, alignment=Alignment.VILLAGE),
+    ]
+    game = WerewolfGame(players=players, seed=1)
+    game.initialize()
+    game.state.day = 1
+    game.state.votes = {"B": "A", "C": "A", "D": "A"}
+    game._day_resolve()
+    assert game.state.player("A").alive
+    assert game.state.abilities.idiot_revealed is True
+    assert game.state.day_history[1]["idiotRevealed"]["player_id"] == "A"
+    assert all(player.id != "A" for player in game._eligible_day_voters())
+
+
+def test_white_wolf_king_boom_interrupts_day_and_kills_target() -> None:
+    players = [
+        Player(id="W", seat=1, name="W", role=Role.WHITE_WOLF_KING, alignment=Alignment.WOLF),
+        Player(id="V1", seat=2, name="V1", role=Role.VILLAGER, alignment=Alignment.VILLAGE),
+        Player(id="V2", seat=3, name="V2", role=Role.SEER, alignment=Alignment.VILLAGE),
+        Player(id="G", seat=4, name="G", role=Role.GUARD, alignment=Alignment.VILLAGE),
+    ]
+    game = WerewolfGame(players=players, seed=2)
+    game.initialize()
+    game.state.day = 1
+
+    def scripted_ask(player, request, call, many=False):
+        if request in {"TALK", "LAST_WORDS"}:
+            return Decision(player.id, ActionType.TALK, speech=f"{player.name} talks", reasoning="scripted")
+        if request == "BOOM":
+            return Decision(player.id, ActionType.BOOM, target_id="V2", reasoning="boom now")
+        raise AssertionError(request)
+
+    game._ask = scripted_ask  # type: ignore[assignment]
+    game._speech_phase()
+    assert game.state.phase == Phase.WHITE_WOLF_KING_BOOM
+    assert not game.state.player("W").alive
+    assert not game.state.player("V2").alive
+    assert game.state.day_history[1]["whiteWolfKingBoom"]["target_player_id"] == "V2"

@@ -16,7 +16,8 @@ class ActionRule:
 ACTION_RULES: dict[ActionType, ActionRule] = {
     ActionType.TALK: ActionRule(ActionType.TALK, tuple(Role), requires_target=False),
     ActionType.VOTE: ActionRule(ActionType.VOTE, tuple(Role)),
-    ActionType.ATTACK: ActionRule(ActionType.ATTACK, (Role.WEREWOLF,)),
+    ActionType.ATTACK: ActionRule(ActionType.ATTACK, (Role.WEREWOLF, Role.WHITE_WOLF_KING)),
+    ActionType.BOOM: ActionRule(ActionType.BOOM, (Role.WHITE_WOLF_KING,), alive_actor_required=True),
     ActionType.DIVINE: ActionRule(ActionType.DIVINE, (Role.SEER,)),
     ActionType.GUARD: ActionRule(ActionType.GUARD, (Role.GUARD,)),
     ActionType.WITCH_SAVE: ActionRule(ActionType.WITCH_SAVE, (Role.WITCH,)),
@@ -33,6 +34,8 @@ class ActionValidator:
         if rule.alive_actor_required and not actor.alive:
             return False
         if actor.role not in rule.actor_roles:
+            return False
+        if decision.action_type == ActionType.VOTE and actor.role == Role.IDIOT and state.abilities.idiot_revealed:
             return False
         if rule.requires_target:
             if decision.target_id is None:

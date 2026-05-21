@@ -55,7 +55,7 @@ class HeuristicAgent(Agent):
         char_name = self.character.persona.name if self.character else "Player"
         role = self.role.value
         # Wolves know their teammates
-        if self.role == Role.WEREWOLF:
+        if self.role in {Role.WEREWOLF, Role.WHITE_WOLF_KING}:
             for w in view.known_wolves:
                 if w["id"] != self.player_id:
                     self.known_good_ids.add(w["id"])  # Wolf teammates are "good" from wolf perspective
@@ -204,6 +204,20 @@ class HeuristicAgent(Agent):
         target = self._highest_suspicion_alive()
         return Decision(view.player_id, ActionType.SHOOT, target_id=target["id"],
                        reasoning=f"Hunter shoots {target['name']} as strongest suspect")
+
+    def boom(self) -> Decision:
+        view = self._view()
+        if self.role != Role.WHITE_WOLF_KING:
+            return Decision(view.player_id, ActionType.SKIP, reasoning="Not White Wolf King")
+        target = self._highest_suspicion_alive()
+        if self._view().day >= 3 or self.suspicion.get(target["id"], 0.0) >= 2.5:
+            return Decision(
+                view.player_id,
+                ActionType.BOOM,
+                target_id=target["id"],
+                reasoning=f"White Wolf King self-destructs to force out {target['name']}",
+            )
+        return Decision(view.player_id, ActionType.SKIP, reasoning="Hold the boom for a higher-value timing.")
 
     # ---- Information assessment ----
 

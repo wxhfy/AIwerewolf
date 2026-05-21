@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from time import time
 
+from backend.engine.game import WerewolfGame
 from backend.engine.models import GameState
 from backend.protocols.schemas import RoomCreateRequest, RoomRecord
 
@@ -10,9 +11,17 @@ class RoomManager:
     def __init__(self) -> None:
         self.rooms: dict[str, RoomRecord] = {}
         self.games: dict[str, GameState] = {}
+        self.active_games: dict[str, WerewolfGame] = {}
 
     def create_room(self, request: RoomCreateRequest) -> RoomRecord:
-        room = RoomRecord.create(request.name, request.seed, request.player_count, request.agent_type)
+        room = RoomRecord.create(
+            request.name,
+            request.seed,
+            request.player_count,
+            request.agent_type,
+            request.human_seat,
+            request.rule_pack_id,
+        )
         self.rooms[room.id] = room
         return room
 
@@ -63,7 +72,19 @@ class RoomManager:
         room.latest_snapshot = snapshot
         room.status = "completed"
         room.updated_at = time()
+        self.active_games.pop(room_id, None)
         return room
+
+    def set_active_game(self, room_id: str, game: WerewolfGame) -> None:
+        self.active_games[room_id] = game
+        room = self.get_room(room_id)
+        room.status = "running"
+        room.current_game_id = game.state.id
+        room.updated_at = time()
+
+    def get_active_game(self, room_id: str) -> WerewolfGame | None:
+        self.get_room(room_id)
+        return self.active_games.get(room_id)
 
     def get_game(self, game_id: str) -> GameState:
         state = self.games.get(game_id)

@@ -342,3 +342,51 @@ def build_characters_for_roles(roles: list[Role], seed: int = 0) -> dict[str, Ch
         )
         result[role.value] = Character(persona=persona, mind=mind, role=role)
     return result
+
+
+def build_character_roster(players: list, seed: int = 0) -> dict[str, Character]:
+    """Build stable characters per concrete player seat/id.
+
+    Prefer the already-assigned player name so the persona shown in UI and the
+    prompt persona stay aligned.
+    """
+
+    rng = random.Random(seed)
+    mind_indices = list(range(len(MIND_POOL)))
+    rng.shuffle(mind_indices)
+    persona_by_name = {item["name"]: item for item in PERSONA_POOL}
+
+    roster: dict[str, Character] = {}
+    for index, player in enumerate(players):
+        persona_data = persona_by_name.get(player.name)
+        if persona_data is None:
+            persona_data = PERSONA_POOL[index % len(PERSONA_POOL)]
+        mind_data = MIND_POOL[mind_indices[index % len(mind_indices)]]
+        persona = Persona(
+            mbti=persona_data["mbti"],
+            gender=persona_data["gender"],
+            age=persona_data["age"],
+            name=persona_data["name"],
+            basic_info=persona_data["basic_info"],
+            style_label=persona_data["style_label"],
+            voice_rules=list(persona_data.get("voice_rules", [])),
+            vocabulary_style=persona_data["vocabulary_style"],
+            speech_length_habit=persona_data["speech_length_habit"],
+            reasoning_style=persona_data["reasoning_style"],
+            social_habit=persona_data["social_habit"],
+            humor_style=persona_data["humor_style"],
+            pressure_style=persona_data["pressure_style"],
+            uncertainty_style=persona_data["uncertainty_style"],
+            wolf_deception_style=persona_data.get("wolf_deception_style", ""),
+            mistake_pattern=persona_data.get("mistake_pattern", ""),
+        )
+        mind = PlayerMind(
+            courage=mind_data["courage"],
+            memory_bias=mind_data["memory_bias"],
+            suspicion_threshold=mind_data["suspicion_threshold"],
+            self_protection=mind_data["self_protection"],
+            logic_depth=mind_data["logic_depth"],
+            table_presence=mind_data["table_presence"],
+        )
+        roster[player.id] = Character(persona=persona, mind=mind, role=player.role)
+    return roster
