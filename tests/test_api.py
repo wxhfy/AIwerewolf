@@ -10,7 +10,7 @@ def test_create_game_api() -> None:
     assert response.status_code == 200
     data = response.json()
     assert data["winner"] in {"village", "wolf"}
-    assert len(data["players"]) == 6
+    assert len(data["players"]) == 7
     assert data["events"]
 
 

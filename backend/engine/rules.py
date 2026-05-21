@@ -28,6 +28,7 @@ ROLE_SPECS: dict[Role, RoleSpec] = {
 
 DEFAULT_ROLE_SET: tuple[Role, ...] = (
     Role.WEREWOLF,
+    Role.WEREWOLF,
     Role.SEER,
     Role.WITCH,
     Role.HUNTER,

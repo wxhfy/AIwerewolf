@@ -1,7 +1,8 @@
 game:
-  player_count: 6
+  player_count: 7
   max_days: 8
   roles:
+    - Werewolf
     - Werewolf
     - Seer
     - Witch
