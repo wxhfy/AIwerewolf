@@ -217,3 +217,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Test files (local only)
+scripts/*_smoke.py
+tests/test_llm_config.py

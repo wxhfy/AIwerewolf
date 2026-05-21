@@ -6,11 +6,9 @@ from backend.llm.env import load_env_file
 __all__ = ["DeepSeekClient", "create_client", "load_env_file"]
 
 
-HARDCODED_DOUBAO_API_KEY = "ark-4126af52-1fda-4c17-8561-8db89e066502-95563"
-HARDCODED_DOUBAO_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3"
-HARDCODED_DOUBAO_ENDPOINT = "ep-20260514115354-k4jz4"
-HARDCODED_DOUBAO_MODEL = "Doubao-Seed-2.0-pro"
-HARDCODED_LLM_PROVIDER = "doubao"
+_DEFAULT_DOUBAO_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3"
+_DEFAULT_DOUBAO_MODEL = "Doubao-Seed-2.0-pro"
+_DEFAULT_PROVIDER = "doubao"
 
 
 def create_client(provider: str | None = None, **kwargs) -> DeepSeekClient:
@@ -39,18 +37,18 @@ def create_client(provider: str | None = None, **kwargs) -> DeepSeekClient:
             elif "doubao" in model_name:
                 provider = "doubao"
         if provider is None:
-            provider = os.getenv("LLM_PROVIDER", HARDCODED_LLM_PROVIDER)
+            provider = os.getenv("LLM_PROVIDER", _DEFAULT_PROVIDER)
 
     if provider == "doubao":
-        api_key = kwargs.pop("api_key", None) or os.getenv("DOUBAO_API_KEY") or HARDCODED_DOUBAO_API_KEY
-        base_url = kwargs.pop("base_url", None) or os.getenv("DOUBAO_BASE_URL") or HARDCODED_DOUBAO_BASE_URL
+        api_key = kwargs.pop("api_key", None) or os.getenv("DOUBAO_API_KEY", "")
+        base_url = kwargs.pop("base_url", None) or os.getenv("DOUBAO_BASE_URL", _DEFAULT_DOUBAO_BASE_URL)
         model = (
             kwargs.pop("model", None)
-            or os.getenv("DOUBAO_ENDPOINT")
-            or HARDCODED_DOUBAO_ENDPOINT
-            or os.getenv("DOUBAO_MODEL")
-            or HARDCODED_DOUBAO_MODEL
+            or os.getenv("DOUBAO_ENDPOINT", "")
+            or os.getenv("DOUBAO_MODEL", _DEFAULT_DOUBAO_MODEL)
         )
+        if not api_key:
+            raise ValueError("DOUBAO_API_KEY not set in env and not provided as argument")
         return DeepSeekClient(
             api_key=api_key,
             base_url=base_url,
