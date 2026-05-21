@@ -201,11 +201,30 @@ async function bootstrap() {
 }
 
 async function ensureRoom() {
-  if (state.roomId) return state.roomId;
+  // Try URL-cached room first — validate it still exists on server
   const roomIdFromUrl = new URL(window.location.href).searchParams.get("room");
   if (roomIdFromUrl) {
-    state.roomId = roomIdFromUrl;
-    updateMeta();
+    try {
+      const check = await fetch(`/api/rooms/${roomIdFromUrl}`, { headers: { Accept: "application/json" } });
+      if (check.ok) {
+        const room = await check.json();
+        state.roomId = room.id;
+        updateMeta();
+        return state.roomId;
+      }
+    } catch (e) {
+      // Server restarted, room is gone — create a new one below
+    }
+    // Stale room ID: clear from URL and state
+    state.roomId = null;
+    state.gameId = null;
+    const url = new URL(window.location.href);
+    url.searchParams.delete("room");
+    window.history.replaceState({}, "", url);
+  }
+
+  if (state.roomId) {
+    // Already validated above or previously created
     return state.roomId;
   }
 

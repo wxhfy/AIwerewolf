@@ -35,9 +35,17 @@ class HeuristicAgent(Agent):
     def update(self, view: PlayerView, request: str) -> None:
         self.view = view
         self.memory.append(f"{request} at day {view.day} phase {view.phase}.")
-        if view.public_events:
-            last_event = view.public_events[-1]
-            self.memory.append(f"Observed {last_event['type']} at {last_event['phase']}.")
+        # Track recent speeches from other players for cross-referencing
+        recent_speeches = [
+            e for e in view.public_events[-5:]
+            if e.get("type") == "CHAT_MESSAGE"
+            and e.get("payload", {}).get("actor_id") != self.player_id
+        ]
+        for speech in recent_speeches:
+            payload = speech.get("payload", {})
+            speaker = payload.get("actor_name", "?")
+            text = payload.get("speech", "")[:80]
+            self.memory.append(f"听到{speaker}说: {text}")
 
     def day_start(self) -> None:
         self.memory.append("Day started.")
@@ -63,24 +71,59 @@ class HeuristicAgent(Agent):
         return Decision(view.player_id, ActionType.TALK, speech=speech, reasoning=reasoning)
 
     def _build_character_speech(self, *, role, style, name, primary, secondary, suspects, profile):
-        """Build role-appropriate speech with character personality flavor."""
+        """Build role-appropriate speech with character personality and cross-references."""
         primary_name = primary["name"]
         secondary_name = secondary["name"] if secondary else primary_name
 
+        # Cross-reference: what did the previous speaker say?
+        reference = self._cross_reference(primary_name)
+
         # Role-specific core content + character-style wrapper
         if role == Role.WEREWOLF:
-            content = self._wolf_speech(primary_name, secondary_name, suspects, style, name, profile)
+            speech, reasoning = self._wolf_speech(primary_name, secondary_name, suspects, style, name, profile)
         elif role == Role.SEER:
-            content = self._seer_speech(primary_name, secondary_name, suspects, style, name, profile)
+            speech, reasoning = self._seer_speech(primary_name, secondary_name, suspects, style, name, profile)
         elif role == Role.WITCH:
-            content = self._witch_speech(primary_name, secondary_name, suspects, style, name, profile)
+            speech, reasoning = self._witch_speech(primary_name, secondary_name, suspects, style, name, profile)
         elif role == Role.HUNTER:
-            content = self._hunter_speech(primary_name, secondary_name, suspects, style, name, profile)
+            speech, reasoning = self._hunter_speech(primary_name, secondary_name, suspects, style, name, profile)
         elif role == Role.GUARD:
-            content = self._guard_speech(primary_name, secondary_name, suspects, style, name, profile)
+            speech, reasoning = self._guard_speech(primary_name, secondary_name, suspects, style, name, profile)
         else:
-            content = self._villager_speech(primary_name, secondary_name, suspects, style, name, profile)
-        return content
+            speech, reasoning = self._villager_speech(primary_name, secondary_name, suspects, style, name, profile)
+
+        # Prepend cross-reference if relevant
+        if reference:
+            speech = f"{reference} {speech}"
+        return speech, reasoning
+
+    def _cross_reference(self, my_primary: str) -> str:
+        """Build a short reference to what someone just said, for natural conversation flow."""
+        view = self._view()
+        my_name = view.self_player.get("name", "")
+        heard = [m for m in self.memory[-4:] if m.startswith("听到")]
+        if not heard:
+            return ""
+        import re
+        alive_names = [p["name"] for p in view.players if p["alive"] and p["id"] != self.player_id]
+        for entry in reversed(heard):
+            match = re.match(r"听到(.+?)说: (.+)", entry)
+            if not match:
+                continue
+            speaker = match.group(1)
+            content = match.group(2)
+            if speaker == my_name:
+                continue
+            if my_primary in content:
+                return f"{speaker}刚才点到{my_primary}了，我跟一手——"
+            for other_name in alive_names:
+                if other_name != my_name and other_name != speaker and other_name in content:
+                    if self.rng.random() < 0.4:
+                        return f"{speaker}说的{other_name}我也在看，不过我今天重点还是——"
+            if self.rng.random() < 0.25:
+                return f"接{speaker}的话——"
+            break
+        return ""
 
     # ---- Character-style speech generators ----
 
