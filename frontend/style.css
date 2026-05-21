@@ -2,8 +2,8 @@
   --ink: #1a1a2e;
   --muted: #6b7280;
   --line: #e5e7eb;
-  --paper: #faf9f6;
-  --panel: #ffffff;
+  --paper: #fef3e4;
+  --panel: #fffdf9;
   --accent: #dc2626;
   --accent2: #059669;
   --night: #1e293b;
@@ -22,12 +22,14 @@ body {
   min-height: 100vh;
 }
 
-.shell { max-width: 1400px; margin: 0 auto; padding: 0 24px; }
+.shell { max-width: 1400px; margin: 0 auto; padding: 0 24px 40px; }
 
 /* ---- top bar ---- */
 .topbar {
+  position: sticky; top: 0; z-index: 10;
   display: flex; align-items: center; justify-content: space-between;
   padding: 16px 0; border-bottom: 1px solid var(--line);
+  background: var(--paper);
 }
 .brand { font-size: 20px; font-weight: 800; letter-spacing: -0.5px; }
 .topbar-controls { display: flex; align-items: center; gap: 12px; }
@@ -59,13 +61,14 @@ body {
 }
 .status-phase { font-size: 14px; color: var(--muted); }
 
-/* ---- arena: 3-column layout ---- */
+/* ---- arena: 4-column layout ---- */
 .arena {
   display: grid;
   grid-template-columns: 220px 240px 1fr 240px;
   gap: 20px;
   padding: 20px 0;
   min-height: 60vh;
+  align-items: start;
 }
 
 /* ---- player columns ---- */

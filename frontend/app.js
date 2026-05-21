@@ -159,6 +159,7 @@ function renderLive(snapshot) {
   els.statusDay.textContent = day > 0 ? `Day ${day}` : "准备";
   els.statusPhase.textContent = phase;
   if (snapshot.players) renderPlayers(snapshot.players);
+  if (snapshot.events && snapshot.events.length) renderFlow(snapshot);
 }
 
 function render(snapshot) {
@@ -244,8 +245,8 @@ function renderFlow(snapshot) {
         html += `<div class="speech-entry">
           <div class="speech-avatar">${esc((p.actor_name||'?')[0])}</div>
           <div class="speech-body">
-            <div class="speech-speaker">${esc(p.actor_name||'?')}</div>
-            <div class="speech-text">${esc(p.speech||'')}</div>
+            <div class="speech-speaker">${esc(p.actor_name||'?')} 说：</div>
+            <div class="speech-text">"${esc(p.speech||'')}"</div>
           </div>
         </div>`;
       }
