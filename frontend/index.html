@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AI Werewolf Spectator</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="topbar">
+        <div class="headline">
+          <p class="eyebrow" data-i18n="brand">AI Werewolf</p>
+          <h1 data-i18n="title">观战台</h1>
+          <p class="subhead" data-i18n="subtitle">离线 AI 狼人杀演示，可切换公开视角与主持视角。</p>
+        </div>
+        <div class="controls">
+          <div class="lang-switch" aria-label="Language switch">
+            <button id="lang-zh" type="button" class="lang-btn active">中文</button>
+            <button id="lang-en" type="button" class="lang-btn">EN</button>
+          </div>
+          <label>
+            <span data-i18n="seed">Seed</span>
+            <input id="seed" type="number" value="7" min="0" />
+          </label>
+          <button id="run" type="button" data-i18n="run">运行一局</button>
+          <button id="private" type="button" data-i18n="private">主持视角</button>
+        </div>
+      </section>
+
+      <section class="statusbar">
+        <strong id="status-title" data-i18n="statusReady">已就绪</strong>
+        <span id="status-text" data-i18n="statusHint">点击按钮生成一局新的 AI 对局。</span>
+      </section>
+
+      <section class="summary">
+        <div>
+          <span data-i18n="winner">胜者</span>
+          <strong id="winner">-</strong>
+        </div>
+        <div>
+          <span data-i18n="day">天数</span>
+          <strong id="day">-</strong>
+        </div>
+        <div>
+          <span data-i18n="phase">阶段</span>
+          <strong id="phase">-</strong>
+        </div>
+        <div>
+          <span data-i18n="events">事件</span>
+          <strong id="event-count">-</strong>
+        </div>
+      </section>
+
+      <section class="layout">
+        <aside class="panel players-panel">
+          <div class="panel-head">
+            <h2 data-i18n="players">玩家</h2>
+          </div>
+          <div class="players" id="players"></div>
+        </aside>
+        <section class="panel timeline-panel">
+          <div class="panel-head">
+            <h2 data-i18n="timeline">事件时间线</h2>
+          </div>
+          <section class="timeline" id="timeline"></section>
+        </section>
+      </section>
+    </main>
+    <script src="/static/app.js"></script>
+  </body>
+</html>
