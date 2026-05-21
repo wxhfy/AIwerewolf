@@ -1,5 +1,5 @@
 from backend.engine.game import WerewolfGame
-from backend.engine.models import Role
+from backend.engine.models import Phase, Role
 from backend.engine.visibility import Visibility
 
 
@@ -24,6 +24,20 @@ def test_multiple_seeds_finish_without_crashing() -> None:
         state = WerewolfGame(seed=seed).play()
         assert state.winner is not None
         assert state.phase.value == "GAME_END"
+
+
+def test_badge_and_last_words_phases_are_exercised() -> None:
+    state = WerewolfGame(seed=7).play()
+    phases = {event.phase for event in state.events}
+
+    assert Phase.DAY_BADGE_SIGNUP in phases
+    assert Phase.DAY_BADGE_SPEECH in phases
+    assert Phase.DAY_BADGE_ELECTION in phases
+    assert Phase.DAY_LAST_WORDS in phases
+    assert state.badge.holder_id is not None
+    assert state.badge.history
+    assert any(event.payload.get("badge_campaign") for event in state.events if event.type.value == "CHAT_MESSAGE")
+    assert any(event.payload.get("last_words") for event in state.events if event.type.value == "CHAT_MESSAGE")
 
 
 def test_visibility_hides_roles_from_villager() -> None:

@@ -50,14 +50,19 @@ def default_phase_handlers() -> dict[Phase, PhaseHandler]:
         phase=Phase.DAY_START,
         steps=(
             AtomicPhase(Phase.DAY_START, "_begin_day"),
+            AtomicPhase(Phase.DAY_BADGE_SIGNUP, "_badge_signup_phase"),
+            AtomicPhase(Phase.DAY_BADGE_SPEECH, "_badge_speech_phase"),
+            AtomicPhase(Phase.DAY_BADGE_ELECTION, "_badge_election_phase"),
             AtomicPhase(Phase.DAY_SPEECH, "_speech_phase"),
             AtomicPhase(Phase.DAY_VOTE, "_vote_phase"),
             AtomicPhase(Phase.DAY_RESOLVE, "_day_resolve"),
         ),
     )
     hunter = AtomicPhase(Phase.HUNTER_SHOOT, "_hunter_shoot_from_pending")
+    badge_transfer = AtomicPhase(Phase.BADGE_TRANSFER, "_badge_transfer_from_pending")
     return {
         Phase.NIGHT_START: night,
         Phase.DAY_START: day,
         Phase.HUNTER_SHOOT: hunter,
+        Phase.BADGE_TRANSFER: badge_transfer,
     }

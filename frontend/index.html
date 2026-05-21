@@ -7,113 +7,144 @@
     <link rel="stylesheet" href="/static/style.css" />
   </head>
   <body>
+    <div class="atmosphere" aria-hidden="true">
+      <div class="mist mist-a"></div>
+      <div class="mist mist-b"></div>
+      <div class="grain"></div>
+      <div class="corner tl"></div>
+      <div class="corner tr"></div>
+      <div class="corner bl"></div>
+      <div class="corner br"></div>
+    </div>
+
     <main class="shell">
-      <section class="hero">
-        <div class="headline">
+      <header class="topbar">
+        <div class="brand-lockup">
           <p class="eyebrow" data-i18n="brand">AI Werewolf</p>
-          <h1 data-i18n="title">观战台</h1>
-          <p class="subhead" data-i18n="subtitle">离线 AI 狼人杀演示，可切换公开视角与主持视角。</p>
-          <div class="hero-tags">
-            <span class="hero-tag" id="room-label">Room: -</span>
-            <span class="hero-tag" id="game-label">Game: -</span>
-            <span class="hero-tag" id="view-label" data-i18n="publicMode">公开视角</span>
+          <div class="brand-line">
+            <h1 data-i18n="title">观战台</h1>
+            <span class="contract-subtitle" data-i18n="subtitleShort">The Shadow Match</span>
           </div>
         </div>
-        <div class="hero-stats">
-          <div class="hero-stat">
-            <span data-i18n="winner">胜者</span>
-            <strong id="winner">-</strong>
+        <div class="top-actions">
+          <div class="lang-switch" aria-label="Language switch">
+            <button id="lang-zh" type="button" class="lang-btn active">中文</button>
+            <button id="lang-en" type="button" class="lang-btn">EN</button>
           </div>
-          <div class="hero-stat">
-            <span data-i18n="day">天数</span>
-            <strong id="day">-</strong>
-          </div>
-          <div class="hero-stat">
-            <span data-i18n="phase">阶段</span>
-            <strong id="phase">-</strong>
-          </div>
-          <div class="hero-stat">
-            <span data-i18n="events">事件</span>
-            <strong id="event-count">-</strong>
-          </div>
+          <span class="meta-pill" id="room-label">Room: -</span>
+          <span class="meta-pill" id="game-label">Game: -</span>
+          <span class="meta-pill" id="view-label" data-i18n="publicMode">公开视角</span>
         </div>
-      </section>
+      </header>
 
-      <section class="ops-grid">
-        <section class="control-panel">
-          <div class="panel-caption" data-i18n="controlPanel">对局控制</div>
-          <div class="controls">
-            <div class="lang-switch" aria-label="Language switch">
-              <button id="lang-zh" type="button" class="lang-btn active">中文</button>
-              <button id="lang-en" type="button" class="lang-btn">EN</button>
+      <section class="hero-grid">
+        <section class="contract-card">
+          <div class="contract-badge" data-i18n="welcomeBadge">对局誓约</div>
+          <p class="contract-kicker" data-i18n="welcomeKicker">Live Room Protocol</p>
+          <div class="contract-title-wrap">
+            <h2 class="contract-title" data-i18n="heroTitle">在谎言与真相之间，启动一局 AI 狼人杀。</h2>
+            <p class="contract-copy" data-i18n="heroBody">
+              这不是离线回放页，而是一张实时运行的房间契约。你可以选择 Agent、切换主持视角，并沿着阶段流观察每个角色如何发言、投票、伪装与出局。
+            </p>
+          </div>
+
+          <div class="contract-oath">
+            <p data-i18n="oathText">
+              当夜幕降临，身份将被隐藏；当白昼升起，每一句发言都会进入审判记录。
+            </p>
+          </div>
+
+          <div class="control-panel statusbar">
+            <div class="control-head">
+              <div>
+                <span class="panel-caption" data-i18n="controlPanel">对局控制</span>
+                <strong id="status-title" data-i18n="statusReady">已就绪</strong>
+              </div>
+              <span class="status-chip" id="phase">-</span>
             </div>
-            <label>
-              <span data-i18n="agentType">Agent</span>
-              <select id="agent-type">
-                <option value="heuristic" data-i18n="agentHeuristic">启发式</option>
-                <option value="llm" data-i18n="agentLlm">LLM</option>
-              </select>
-            </label>
-            <label>
-              <span data-i18n="seed">Seed</span>
-              <input id="seed" type="number" value="7" min="0" />
-            </label>
-            <label>
-              <span data-i18n="speed">速度</span>
-              <input id="speed" type="number" value="80" min="0" step="20" />
-            </label>
-            <button id="run" type="button" data-i18n="run">运行一局</button>
-            <button id="private" type="button" data-i18n="private">主持视角</button>
+            <p class="status-copy" id="status-text" data-i18n="statusHint">点击按钮生成一局新的 AI 对局。</p>
+
+            <div class="controls">
+              <label>
+                <span data-i18n="agentType">Agent</span>
+                <select id="agent-type">
+                  <option value="heuristic" data-i18n="agentHeuristic">启发式</option>
+                  <option value="llm" data-i18n="agentLlm">LLM</option>
+                </select>
+              </label>
+              <label>
+                <span data-i18n="seed">Seed</span>
+                <input id="seed" type="number" value="7" min="0" />
+              </label>
+              <label>
+                <span data-i18n="speed">速度</span>
+                <input id="speed" type="number" value="80" min="0" step="20" />
+              </label>
+              <button id="run" type="button" class="primary-action" data-i18n="run">运行一局</button>
+              <button id="private" type="button" class="ghost-action" data-i18n="private">主持视角</button>
+            </div>
           </div>
         </section>
 
-        <section class="statusbar">
-          <div class="status-main">
-            <div class="panel-caption" data-i18n="runtimeStatus">运行状态</div>
-            <strong id="status-title" data-i18n="statusReady">已就绪</strong>
-            <span id="status-text" data-i18n="statusHint">点击按钮生成一局新的 AI 对局。</span>
+        <section class="stats-card">
+          <div class="stats-grid">
+            <article class="hero-stat">
+              <span data-i18n="winner">胜者</span>
+              <strong id="winner">-</strong>
+            </article>
+            <article class="hero-stat">
+              <span data-i18n="day">天数</span>
+              <strong id="day">-</strong>
+            </article>
+            <article class="hero-stat">
+              <span data-i18n="events">事件</span>
+              <strong id="event-count">-</strong>
+            </article>
+            <article class="hero-stat">
+              <span data-i18n="aliveCount">存活人数</span>
+              <strong id="alive-count">-</strong>
+            </article>
           </div>
-        </section>
 
-        <section class="intel-card">
-          <div class="panel-caption" data-i18n="latestEvent">最新事件</div>
-          <strong id="last-event-title">-</strong>
-          <p id="last-event-text">-</p>
-          <div class="intel-row">
-            <span data-i18n="aliveCount">存活人数</span>
-            <strong id="alive-count">-</strong>
-          </div>
-          <div class="intel-row">
-            <span data-i18n="agentMode">Agent</span>
-            <strong id="agent-mode">-</strong>
-          </div>
-          <div class="intel-row">
-            <span data-i18n="viewMode">视角</span>
-            <strong id="view-mode" data-i18n="publicMode">公开视角</strong>
+          <div class="intel-card">
+            <div class="panel-caption" data-i18n="latestEvent">最新事件</div>
+            <strong id="last-event-title">-</strong>
+            <p id="last-event-text">-</p>
+            <div class="intel-row">
+              <span data-i18n="agentMode">Agent</span>
+              <strong id="agent-mode">-</strong>
+            </div>
+            <div class="intel-row">
+              <span data-i18n="viewMode">视角</span>
+              <strong id="view-mode" data-i18n="publicMode">公开视角</strong>
+            </div>
           </div>
         </section>
       </section>
 
-      <section class="table-layout">
-        <section class="panel board-panel">
+      <section class="stage-grid">
+        <section class="stage-panel">
           <div class="panel-head">
-            <h2 data-i18n="players">玩家席位</h2>
-            <span class="panel-note" data-i18n="boardHint">实时刷新当前存活与身份状态</span>
+            <div>
+              <h2 data-i18n="players">玩家席位</h2>
+              <span class="panel-note" data-i18n="boardHint">实时刷新当前存活与身份状态</span>
+            </div>
+            <div class="stage-note">
+              <span class="panel-caption" data-i18n="liveTable">实时牌桌</span>
+            </div>
           </div>
-          <div class="players board-grid" id="players"></div>
+          <div class="stage-frame">
+            <div class="stage-ring" aria-hidden="true"></div>
+            <div class="players board-grid" id="players"></div>
+          </div>
         </section>
 
-        <section class="panel timeline-panel">
+        <aside class="notebook-panel">
           <div class="panel-head">
-            <h2 data-i18n="timeline">事件时间线</h2>
-            <span class="panel-note" data-i18n="timelineHint">按阶段追加事件和公开发言</span>
-          </div>
-          <section class="timeline" id="timeline"></section>
-        </section>
-
-        <section class="panel notes-panel">
-          <div class="panel-head">
-            <h2 data-i18n="observerNotes">观战说明</h2>
+            <div>
+              <h2 data-i18n="observerNotes">观战笔记</h2>
+              <span class="panel-note" data-i18n="notesHint">房间、摘要和回放入口</span>
+            </div>
           </div>
           <div class="notes-list">
             <div class="note-item summary-note">
@@ -121,25 +152,31 @@
               <div id="daily-summary">-</div>
             </div>
             <div class="note-item">
-              <span class="note-kicker" data-i18n="roomLabel">房间</span>
-              <p data-i18n="roomDescription">每个房间会保留当前对局和历史对局编号，方便后续扩展成多人房间系统。</p>
+              <span class="note-kicker" data-i18n="roomHistory">房间历史</span>
+              <div id="room-history" class="history-list">-</div>
             </div>
             <div class="note-item">
               <span class="note-kicker" data-i18n="agentMode">Agent</span>
               <p data-i18n="agentDescription">启发式模式用于稳定回归；LLM 模式会走 `.env` 中配置的模型，便于做多 Agent 对战和复盘实验。</p>
             </div>
             <div class="note-item">
-              <span class="note-kicker" data-i18n="viewMode">视角</span>
-              <p data-i18n="viewDescription">公开视角隐藏身份；主持视角直接揭示角色与阵营，用于调试和复盘。</p>
-            </div>
-            <div class="note-item">
               <span class="note-kicker" data-i18n="streamingLabel">实时流</span>
               <p data-i18n="streamingDescription">页面通过 WebSocket 接收快照，不是整局结束后再一次性渲染。</p>
             </div>
           </div>
-        </section>
+        </aside>
+      </section>
+
+      <section class="timeline-panel">
+        <div class="panel-head">
+          <div>
+            <h2 data-i18n="timeline">事件时间线</h2>
+            <span class="panel-note" data-i18n="timelineHint">按阶段追加事件和公开发言</span>
+          </div>
+        </div>
+        <section class="timeline" id="timeline"></section>
       </section>
     </main>
-    <script src="/static/app.js?v=2"></script>
+    <script src="/static/app.js?v=3"></script>
   </body>
 </html>

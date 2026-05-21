@@ -28,10 +28,14 @@ def main() -> int:
     talk = agent.talk()
     print("talk_action=", talk.action_type.value)
     print("talk_has_speech=", bool(talk.speech))
+    print("talk_source=", talk.metadata.get("source"))
+    print("talk_model=", talk.metadata.get("model"))
     agent.update(view, "VOTE")
     vote = agent.vote()
     print("vote_action=", vote.action_type.value)
     print("vote_has_target=", bool(vote.target_id))
+    print("vote_source=", vote.metadata.get("source"))
+    print("vote_model=", vote.metadata.get("model"))
     return 0
 
 
