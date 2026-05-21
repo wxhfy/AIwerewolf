@@ -27,6 +27,7 @@ class LLMAgent(Agent):
         player_id: str,
         *,
         seed: int | None = None,
+        provider: str | None = None,
         model: str | None = None,
         temperature: float = 0.4,
         character: Character | None = None,
@@ -36,11 +37,13 @@ class LLMAgent(Agent):
         self.memory: list[str] = []
         self.rng = Random(seed)
         self.temperature = temperature
-        self.client = create_client(model=model)
+        self.provider = provider
+        self.client = create_client(provider=self.provider, model=model)
         self.client.timeout = 45.0
         self.fallback = HeuristicAgent(player_id, seed=seed, character=character)
         self.character = character
         self.winner: str | None = None
+        self.last_error: str | None = None
 
     def initialize(self, view: PlayerView, game_setting: dict) -> None:
         self.view = view
@@ -68,36 +71,62 @@ class LLMAgent(Agent):
             ],
             options=self._alive_names(),
         )
-        data = self._ask_json(
+        data, meta = self._ask_json(
             prompt,
             {"reasoning": fallback.reasoning, "speech": fallback.speech or ""},
+            max_tokens=520,
         )
         return Decision(
             self.player_id,
             ActionType.TALK,
             speech=str(data.get("speech") or fallback.speech or ""),
             reasoning=str(data.get("reasoning") or fallback.reasoning),
+            metadata=meta,
         )
 
     def vote(self) -> Decision:
         fallback = self.fallback.vote()
         data = self._target_action("vote", fallback, "Choose exactly one vote target from the options.")
-        return Decision(self.player_id, ActionType.VOTE, target_id=data["target_id"], reasoning=data["reasoning"])
+        return Decision(
+            self.player_id,
+            ActionType.VOTE,
+            target_id=data["target_id"],
+            reasoning=data["reasoning"],
+            metadata=data["metadata"],
+        )
 
     def attack(self) -> Decision:
         fallback = self.fallback.attack()
         data = self._target_action("attack", fallback, "As a wolf, choose the highest-value night kill target.")
-        return Decision(self.player_id, ActionType.ATTACK, target_id=data["target_id"], reasoning=data["reasoning"])
+        return Decision(
+            self.player_id,
+            ActionType.ATTACK,
+            target_id=data["target_id"],
+            reasoning=data["reasoning"],
+            metadata=data["metadata"],
+        )
 
     def divine(self) -> Decision:
         fallback = self.fallback.divine()
         data = self._target_action("divine", fallback, "As Seer, choose the best investigation target.")
-        return Decision(self.player_id, ActionType.DIVINE, target_id=data["target_id"], reasoning=data["reasoning"])
+        return Decision(
+            self.player_id,
+            ActionType.DIVINE,
+            target_id=data["target_id"],
+            reasoning=data["reasoning"],
+            metadata=data["metadata"],
+        )
 
     def guard(self) -> Decision:
         fallback = self.fallback.guard()
         data = self._target_action("guard", fallback, "As Guard, choose one player to protect tonight.")
-        return Decision(self.player_id, ActionType.GUARD, target_id=data["target_id"], reasoning=data["reasoning"])
+        return Decision(
+            self.player_id,
+            ActionType.GUARD,
+            target_id=data["target_id"],
+            reasoning=data["reasoning"],
+            metadata=data["metadata"],
+        )
 
     def witch_act(self, victim_id: str | None) -> list[Decision]:
         fallback = self.fallback.witch_act(victim_id)
@@ -117,20 +146,42 @@ class LLMAgent(Agent):
             "save": bool(victim_id and any(item.action_type == ActionType.WITCH_SAVE for item in fallback)),
             "poison_target": self._name(next((item.target_id for item in fallback if item.action_type == ActionType.WITCH_POISON), None)),
         }
-        data = self._ask_json(prompt, default)
+        data, meta = self._ask_json(prompt, default, max_tokens=360)
         decisions: list[Decision] = []
         if victim_id and bool(data.get("save")):
-            decisions.append(Decision(self.player_id, ActionType.WITCH_SAVE, target_id=victim_id, reasoning=str(data.get("reasoning", ""))))
+            decisions.append(
+                Decision(
+                    self.player_id,
+                    ActionType.WITCH_SAVE,
+                    target_id=victim_id,
+                    reasoning=str(data.get("reasoning", "")),
+                    metadata=meta,
+                )
+            )
         poison_name = data.get("poison_target")
         poison_id = self._id_from_name(poison_name) if poison_name else None
         if poison_id and poison_id != victim_id:
-            decisions.append(Decision(self.player_id, ActionType.WITCH_POISON, target_id=poison_id, reasoning=str(data.get("reasoning", ""))))
+            decisions.append(
+                Decision(
+                    self.player_id,
+                    ActionType.WITCH_POISON,
+                    target_id=poison_id,
+                    reasoning=str(data.get("reasoning", "")),
+                    metadata=meta,
+                )
+            )
         return decisions or fallback
 
     def shoot(self) -> Decision:
         fallback = self.fallback.shoot()
         data = self._target_action("shoot", fallback, "As Hunter, choose the best player to shoot immediately.")
-        return Decision(self.player_id, ActionType.SHOOT, target_id=data["target_id"], reasoning=data["reasoning"])
+        return Decision(
+            self.player_id,
+            ActionType.SHOOT,
+            target_id=data["target_id"],
+            reasoning=data["reasoning"],
+            metadata=data["metadata"],
+        )
 
     def finish(self, winner: str | None) -> None:
         self.winner = winner
@@ -140,7 +191,7 @@ class LLMAgent(Agent):
     def role(self) -> Role:
         return Role(self._view().self_player["role"])
 
-    def _target_action(self, action: str, fallback: Decision, instruction: str) -> dict[str, str]:
+    def _target_action(self, action: str, fallback: Decision, instruction: str) -> dict[str, Any]:
         prompt = self._build_action_prompt(
             action=action,
             instructions=[instruction],
@@ -150,10 +201,14 @@ class LLMAgent(Agent):
             "reasoning": fallback.reasoning,
             "target": self._name(fallback.target_id),
         }
-        data = self._ask_json(prompt, default)
+        data, meta = self._ask_json(prompt, default, max_tokens=260)
         target_name = str(data.get("target") or self._name(fallback.target_id))
         target_id = self._id_from_name(target_name) or fallback.target_id
-        return {"reasoning": str(data.get("reasoning") or fallback.reasoning), "target_id": str(target_id)}
+        return {
+            "reasoning": str(data.get("reasoning") or fallback.reasoning),
+            "target_id": str(target_id),
+            "metadata": meta,
+        }
 
     def _build_action_prompt(
         self,
@@ -229,39 +284,76 @@ class LLMAgent(Agent):
 
         return "\n".join(blocks)
 
-    def _ask_json(self, prompt: str, default: dict[str, Any]) -> dict[str, Any]:
+    def _ask_json(self, prompt: str, default: dict[str, Any], *, max_tokens: int = 320) -> tuple[dict[str, Any], dict[str, Any]]:
+        meta = {
+            "provider": self.provider,
+            "model": self.client.model,
+            "source": "fallback",
+            "fallback": True,
+        }
         try:
             system = get_system_prompt(self.role)
-            response = self.client.chat_sync(
-                messages=[
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": prompt},
-                ],
-                temperature=self.temperature,
-                max_tokens=280,
-                thinking=False,
-            )
-            text = self.client.parse_response(response).strip()
-            return self._coerce_json(text, default)
-        except Exception:
-            return default
+            attempts = [
+                {
+                    "messages": [
+                        {"role": "system", "content": system},
+                        {"role": "user", "content": prompt},
+                    ],
+                    "temperature": self.temperature,
+                },
+                {
+                    "messages": [
+                        {"role": "system", "content": system},
+                        {
+                            "role": "user",
+                            "content": f"{prompt}\n\n再次强调：请只输出一个合法 JSON 对象，不要输出代码块，不要输出额外解释，不要留空。",
+                        },
+                    ],
+                    "temperature": 0.2,
+                },
+            ]
+            last_text = ""
+            for attempt in attempts:
+                response = self.client.chat_sync(
+                    messages=attempt["messages"],
+                    temperature=float(attempt["temperature"]),
+                    max_tokens=max_tokens,
+                    thinking=False,
+                )
+                text = self.client.parse_response(response).strip()
+                last_text = text
+                parsed = self._coerce_json(text)
+                if parsed is not None:
+                    self.last_error = None
+                    meta["source"] = "llm"
+                    meta["fallback"] = False
+                    meta["raw_text"] = text[:400]
+                    return parsed, meta
+            self.last_error = "json_parse_failed"
+            meta["error"] = self.last_error
+            meta["raw_text"] = last_text[:400]
+            return default, meta
+        except Exception as exc:
+            self.last_error = f"{type(exc).__name__}: {exc}"
+            meta["error"] = self.last_error
+            return default, meta
 
-    def _coerce_json(self, text: str, default: dict[str, Any]) -> dict[str, Any]:
+    def _coerce_json(self, text: str) -> dict[str, Any] | None:
         if not text:
-            return default
+            return None
         try:
             parsed = json.loads(text)
-            return parsed if isinstance(parsed, dict) else default
+            return parsed if isinstance(parsed, dict) else None
         except json.JSONDecodeError:
             start = text.find("{")
             end = text.rfind("}")
             if start >= 0 and end > start:
                 try:
                     parsed = json.loads(text[start : end + 1])
-                    return parsed if isinstance(parsed, dict) else default
+                    return parsed if isinstance(parsed, dict) else None
                 except json.JSONDecodeError:
-                    return default
-            return default
+                    return None
+            return None
 
     def _view(self) -> PlayerView:
         if self.view is None:

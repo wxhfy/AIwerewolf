@@ -57,6 +57,7 @@ class WerewolfGame:
         self.observer = observer
         self.phase_manager = PhaseManager()
         self.pending_hunter_id: str | None = None
+        self.pending_badge_transfer_from_id: str | None = None
         # Build character assignments for human-like personas
         roles = [p.role for p in self.state.players]
         self.characters = build_characters_for_roles(roles, seed=seed or 0)
@@ -122,6 +123,98 @@ class WerewolfGame:
         for agent in self.agents.values():
             agent.day_start()
         self._log(EventType.SYSTEM_MESSAGE, "public", {"message": f"Day {self.state.day} begins."})
+
+    def _badge_signup_phase(self) -> None:
+        self._set_phase(Phase.DAY_BADGE_SIGNUP)
+        if self.state.day != 1 or self.state.badge.holder_id is not None:
+            return
+        alive = list(self.state.alive_players)
+        if len(alive) <= 2:
+            return
+        candidates = self._pick_badge_candidates(alive)
+        self.state.badge.candidates = [player.id for player in candidates]
+        self.state.badge.signup = {player.id: True for player in candidates}
+        candidate_names = [player.name for player in candidates]
+        self._log(
+            EventType.SYSTEM_MESSAGE,
+            "public",
+            {"message": f"Badge signup opens. Candidates: {', '.join(candidate_names)}."},
+        )
+
+    def _badge_speech_phase(self) -> None:
+        self._set_phase(Phase.DAY_BADGE_SPEECH)
+        if not self.state.badge.candidates:
+            return
+        for candidate_id in self.state.badge.candidates:
+            player = self.state.player(candidate_id)
+            if not player.alive:
+                continue
+            decision = self._ask(player, "BADGE_SPEECH", lambda agent: agent.talk())
+            if not self.validator.validate(self.state, decision):
+                continue
+            self._log(
+                EventType.CHAT_MESSAGE,
+                "public",
+                {
+                    "actor_id": player.id,
+                    "actor_name": player.name,
+                    "speech": decision.speech or "",
+                    "reasoning": decision.reasoning,
+                    "agent_source": decision.metadata.get("source"),
+                    "agent_model": decision.metadata.get("model"),
+                    "agent_provider": decision.metadata.get("provider"),
+                    "agent_fallback": bool(decision.metadata.get("fallback", False)),
+                    "badge_campaign": True,
+                },
+            )
+
+    def _badge_election_phase(self) -> None:
+        self._set_phase(Phase.DAY_BADGE_ELECTION)
+        candidates = [self.state.player(pid) for pid in self.state.badge.candidates if self.state.player(pid).alive]
+        if len(candidates) < 1:
+            self.state.badge.candidates = []
+            self.state.badge.signup = {}
+            return
+        votes: dict[str, str] = {}
+        candidate_ids = {player.id for player in candidates}
+        for voter in self.state.alive_players:
+            decision = self._ask(voter, "BADGE_ELECTION", lambda agent: agent.vote())
+            if decision.target_id not in candidate_ids:
+                decision = Decision(
+                    voter.id,
+                    ActionType.VOTE,
+                    target_id=candidates[0].id,
+                    reasoning="Fallback badge vote.",
+                    metadata={"source": "fallback", "fallback": True},
+                )
+            votes[voter.id] = decision.target_id or candidates[0].id
+            target = self.state.player(votes[voter.id])
+            self._log(
+                EventType.VOTE_CAST,
+                "public",
+                {
+                    "voter_id": voter.id,
+                    "voter_name": voter.name,
+                    "target_id": target.id,
+                    "target_name": target.name,
+                    "reasoning": decision.reasoning,
+                    "agent_source": decision.metadata.get("source"),
+                    "agent_model": decision.metadata.get("model"),
+                    "agent_provider": decision.metadata.get("provider"),
+                    "agent_fallback": bool(decision.metadata.get("fallback", False)),
+                    "badge_election": True,
+                },
+            )
+        self.state.badge.votes = votes
+        self.state.badge.history[self.state.day] = dict(votes)
+        winner_id = self._majority_target(votes)
+        self.state.badge.holder_id = winner_id
+        winner = self.state.player(winner_id)
+        self._log(
+            EventType.SYSTEM_MESSAGE,
+            "public",
+            {"message": f"{winner.name} won the badge election and becomes sheriff."},
+        )
 
     def _guard_phase(self) -> None:
         self._set_phase(Phase.NIGHT_GUARD_ACTION)
@@ -221,6 +314,8 @@ class WerewolfGame:
             self._log(EventType.SYSTEM_MESSAGE, "public", {"message": f"Night deaths: {', '.join(names)}."})
         else:
             self._log(EventType.SYSTEM_MESSAGE, "public", {"message": "No one died last night."})
+        if self.pending_badge_transfer_from_id and self.state.winner is None:
+            self.phase_manager.run(Phase.BADGE_TRANSFER, self)
 
     def _speech_phase(self) -> None:
         self._set_phase(Phase.DAY_SPEECH)
@@ -236,6 +331,10 @@ class WerewolfGame:
                     "actor_name": player.name,
                     "speech": decision.speech or "",
                     "reasoning": decision.reasoning,
+                    "agent_source": decision.metadata.get("source"),
+                    "agent_model": decision.metadata.get("model"),
+                    "agent_provider": decision.metadata.get("provider"),
+                    "agent_fallback": bool(decision.metadata.get("fallback", False)),
                 },
             )
 
@@ -257,6 +356,10 @@ class WerewolfGame:
                     "target_id": target.id,
                     "target_name": target.name,
                     "reasoning": decision.reasoning,
+                    "agent_source": decision.metadata.get("source"),
+                    "agent_model": decision.metadata.get("model"),
+                    "agent_provider": decision.metadata.get("provider"),
+                    "agent_fallback": bool(decision.metadata.get("fallback", False)),
                 },
             )
 
@@ -265,12 +368,15 @@ class WerewolfGame:
         if not self.state.votes:
             return
         target_id = self._majority_target(self.state.votes)
+        self._last_words_phase(target_id)
         self._kill(target_id, "vote")
         target = self.state.player(target_id)
         self._log(EventType.SYSTEM_MESSAGE, "public", {"message": f"{target.name} was voted out."})
         if target.role == Role.HUNTER and self.state.abilities.hunter_can_shoot:
             self.pending_hunter_id = target.id
             self.phase_manager.run(Phase.HUNTER_SHOOT, self)
+        if self.pending_badge_transfer_from_id and self.state.winner is None:
+            self.phase_manager.run(Phase.BADGE_TRANSFER, self)
         self._refresh_day_summary()
 
     def _hunter_shoot_from_pending(self) -> None:
@@ -298,9 +404,58 @@ class WerewolfGame:
                 "target_id": target.id,
                 "target_name": target.name,
                 "reasoning": decision.reasoning,
+                "agent_source": decision.metadata.get("source"),
+                "agent_model": decision.metadata.get("model"),
+                "agent_provider": decision.metadata.get("provider"),
+                "agent_fallback": bool(decision.metadata.get("fallback", False)),
             },
         )
+        if self.pending_badge_transfer_from_id and self.state.winner is None:
+            self.phase_manager.run(Phase.BADGE_TRANSFER, self)
         self._refresh_day_summary()
+
+    def _last_words_phase(self, player_id: str) -> None:
+        player = self.state.player(player_id)
+        if not player.alive:
+            return
+        self._set_phase(Phase.DAY_LAST_WORDS)
+        decision = self._ask(player, "LAST_WORDS", lambda agent: agent.talk())
+        if not self.validator.validate(self.state, decision):
+            return
+        self._log(
+            EventType.CHAT_MESSAGE,
+            "public",
+            {
+                "actor_id": player.id,
+                "actor_name": player.name,
+                "speech": decision.speech or "",
+                "reasoning": decision.reasoning,
+                "agent_source": decision.metadata.get("source"),
+                "agent_model": decision.metadata.get("model"),
+                "agent_provider": decision.metadata.get("provider"),
+                "agent_fallback": bool(decision.metadata.get("fallback", False)),
+                "last_words": True,
+            },
+        )
+
+    def _badge_transfer_from_pending(self) -> None:
+        if self.pending_badge_transfer_from_id is None:
+            return
+        from_id = self.pending_badge_transfer_from_id
+        self.pending_badge_transfer_from_id = None
+        self._set_phase(Phase.BADGE_TRANSFER)
+        alive = [player for player in self.state.alive_players if player.id != from_id]
+        if not alive:
+            self.state.badge.holder_id = None
+            return
+        successor = self._pick_badge_successor(alive)
+        self.state.badge.holder_id = successor.id
+        former = self.state.player(from_id)
+        self._log(
+            EventType.SYSTEM_MESSAGE,
+            "public",
+            {"message": f"{former.name} transfers the badge to {successor.name}."},
+        )
 
     def _ask(self, player: Player, request: str, call, *, many: bool = False):
         view = self.visibility.for_player(self.state, player.id)
@@ -314,6 +469,8 @@ class WerewolfGame:
         if not player.alive:
             return
         player.alive = False
+        if self.state.badge.holder_id == player.id:
+            self.pending_badge_transfer_from_id = player.id
         if player.role == Role.HUNTER and reason == "poison":
             self.state.abilities.hunter_can_shoot = False
         self._log(
@@ -342,6 +499,21 @@ class WerewolfGame:
             self._log(EventType.GAME_END, "public", {"winner": winner.value, "reason": reason})
             return True
         return False
+
+    def _pick_badge_candidates(self, alive: list[Player]) -> list[Player]:
+        priority_roles = {Role.SEER, Role.HUNTER, Role.WEREWOLF, Role.WITCH}
+        candidates = [player for player in alive if player.role in priority_roles]
+        if len(candidates) < 2:
+            remaining = [player for player in alive if player not in candidates]
+            candidates.extend(remaining[: 2 - len(candidates)])
+        if len(candidates) > 3:
+            candidates = sorted(candidates, key=lambda player: (player.seat, player.name))[:3]
+        return candidates
+
+    def _pick_badge_successor(self, alive: list[Player]) -> Player:
+        preferred = [player for player in alive if player.alignment == Alignment.VILLAGE]
+        pool = preferred or alive
+        return sorted(pool, key=lambda player: (player.seat, player.name))[0]
 
     def _alive_role(self, role: Role) -> Player | None:
         return next((player for player in self.state.alive_players if player.role == role), None)
@@ -374,6 +546,10 @@ class WerewolfGame:
             "action_type": decision.action_type.value,
             "target": target,
             "reasoning": decision.reasoning,
+            "agent_source": decision.metadata.get("source"),
+            "agent_model": decision.metadata.get("model"),
+            "agent_provider": decision.metadata.get("provider"),
+            "agent_fallback": bool(decision.metadata.get("fallback", False)),
             **payload,
         }
         self._log(EventType.NIGHT_ACTION, visibility, full_payload, visible_to=visible_to)

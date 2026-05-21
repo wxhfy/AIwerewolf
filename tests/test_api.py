@@ -12,6 +12,7 @@ def test_create_game_api() -> None:
     assert data["winner"] in {"village", "wolf"}
     assert len(data["players"]) == 7
     assert data["events"]
+    assert data["badge"]["holder_id"] is not None
     assert data["daily_summaries"]
     assert data["daily_summary_facts"]
 
@@ -43,6 +44,7 @@ def test_room_api_flow() -> None:
     game = game_response.json()
     assert game["winner"] in {"village", "wolf"}
     assert game["phase"] == "GAME_END"
+    assert game["badge"]["holder_id"] is not None
     assert game["daily_summaries"]
 
     history_response = client.get(f"/api/rooms/{room['id']}/games")

@@ -18,6 +18,7 @@ def create_agents(players: list[Player], agent_config: dict[str, Any] | None = N
             player.id: LLMAgent(
                 player.id,
                 seed=seed + player.seat,
+                provider=str(config["provider"]) if "provider" in config else None,
                 model=config.get("model"),
                 temperature=float(config.get("temperature", 0.4)),
             )

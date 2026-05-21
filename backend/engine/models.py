@@ -30,9 +30,15 @@ class Phase(str, Enum):
     NIGHT_SEER_ACTION = "NIGHT_SEER_ACTION"
     NIGHT_RESOLVE = "NIGHT_RESOLVE"
     DAY_START = "DAY_START"
+    DAY_BADGE_SIGNUP = "DAY_BADGE_SIGNUP"
+    DAY_BADGE_SPEECH = "DAY_BADGE_SPEECH"
+    DAY_BADGE_ELECTION = "DAY_BADGE_ELECTION"
+    DAY_PK_SPEECH = "DAY_PK_SPEECH"
+    DAY_LAST_WORDS = "DAY_LAST_WORDS"
     DAY_SPEECH = "DAY_SPEECH"
     DAY_VOTE = "DAY_VOTE"
     DAY_RESOLVE = "DAY_RESOLVE"
+    BADGE_TRANSFER = "BADGE_TRANSFER"
     HUNTER_SHOOT = "HUNTER_SHOOT"
     GAME_END = "GAME_END"
 
@@ -98,6 +104,27 @@ class Decision:
 
 
 @dataclass
+class DecisionAudit:
+    id: str
+    game_id: str
+    player_id: str
+    day: int
+    phase: str
+    request: str
+    observation: dict[str, Any]
+    legal_actions: list[str]
+    prompt_version: str | None
+    raw_output: str | None
+    parsed_action: dict[str, Any]
+    is_valid: bool
+    error_type: str | None
+    latency_ms: int | None
+    prompt_tokens: int | None
+    completion_tokens: int | None
+    created_at: float
+
+
+@dataclass
 class GameEvent:
     id: str
     ts: float
@@ -151,6 +178,15 @@ class RoleAbilities:
 
 
 @dataclass
+class BadgeState:
+    holder_id: str | None = None
+    candidates: list[str] = field(default_factory=list)
+    signup: dict[str, bool] = field(default_factory=dict)
+    votes: dict[str, str] = field(default_factory=dict)
+    history: dict[int, dict[str, str]] = field(default_factory=dict)
+
+
+@dataclass
 class NightActions:
     guard_target_id: str | None = None
     last_guard_target_id: str | None = None
@@ -170,7 +206,9 @@ class GameState:
     day: int
     players: list[Player]
     events: list[GameEvent] = field(default_factory=list)
+    decision_records: list[DecisionAudit] = field(default_factory=list)
     votes: dict[str, str] = field(default_factory=dict)
+    badge: BadgeState = field(default_factory=BadgeState)
     night_actions: NightActions = field(default_factory=NightActions)
     abilities: RoleAbilities = field(default_factory=RoleAbilities)
     daily_summaries: dict[int, list[str]] = field(default_factory=dict)
@@ -199,6 +237,13 @@ class GameState:
             "players": [player.public_dict() for player in self.players],
             "events": [event.to_dict() for event in self.events if event.visibility == "public"],
             "votes": dict(self.votes),
+            "badge": {
+                "holder_id": self.badge.holder_id,
+                "candidates": list(self.badge.candidates),
+                "signup": dict(self.badge.signup),
+                "votes": dict(self.badge.votes),
+                "history": dict(self.badge.history),
+            },
             "daily_summaries": dict(self.daily_summaries),
             "daily_summary_facts": dict(self.daily_summary_facts),
             "winner": self.winner.value if self.winner else None,

@@ -3,7 +3,14 @@ const dictionary = {
     pageTitle: "AI Werewolf 观战台",
     brand: "AI Werewolf",
     title: "观战台",
+    subtitleShort: "The Shadow Match",
     subtitle: "实时房间观战控制台，可切换公开视角与主持视角，并按阶段查看 AI 对局推进。",
+    welcomeBadge: "对局誓约",
+    welcomeKicker: "Live Room Protocol",
+    heroTitle: "在谎言与真相之间，启动一局 AI 狼人杀。",
+    heroBody:
+      "这不是离线回放页，而是一张实时运行的房间契约。你可以选择 Agent、切换主持视角，并沿着阶段流观察每个角色如何发言、投票、伪装与出局。",
+    oathText: "当夜幕降临，身份将被隐藏；当白昼升起，每一句发言都会进入审判记录。",
     agentType: "Agent",
     agentMode: "Agent 模式",
     agentHeuristic: "启发式",
@@ -27,9 +34,12 @@ const dictionary = {
     aliveCount: "存活人数",
     viewMode: "视角",
     boardHint: "实时刷新当前存活与身份状态",
+    liveTable: "实时牌桌",
     timelineHint: "按阶段追加事件和公开发言",
     observerNotes: "观战说明",
+    notesHint: "房间、摘要和回放入口",
     dailySummary: "当日摘要",
+    roomHistory: "房间历史",
     roomDescription: "每个房间会保留当前对局和历史对局编号，方便后续扩展成多人房间系统。",
     viewDescription: "公开视角隐藏身份；主持视角直接揭示角色与阵营，用于调试和复盘。",
     streamingLabel: "实时流",
@@ -60,12 +70,21 @@ const dictionary = {
     wins: "{winner} 获胜（{reason}）。",
     action: "{actor} 执行了 {action} -> {target}。{reasoning}",
     errorPrefix: "错误",
+    sourceLlm: "LLM",
+    sourceFallback: "回退",
   },
   en: {
     pageTitle: "AI Werewolf Spectator",
     brand: "AI Werewolf",
     title: "Spectator Console",
+    subtitleShort: "The Shadow Match",
     subtitle: "Live room console for AI werewolf matches with public and moderator perspectives.",
+    welcomeBadge: "Match Oath",
+    welcomeKicker: "Live Room Protocol",
+    heroTitle: "Start an AI werewolf match between lies and judgment.",
+    heroBody:
+      "This is not a static replay page. It is a live room contract where you can switch agents, reveal moderator view, and watch speeches, votes, deception, and eliminations phase by phase.",
+    oathText: "When night falls, identities are concealed. When dawn returns, every statement enters the record.",
     agentType: "Agent",
     agentMode: "Agent Mode",
     agentHeuristic: "Heuristic",
@@ -89,9 +108,12 @@ const dictionary = {
     aliveCount: "Alive Count",
     viewMode: "View",
     boardHint: "Live seats, life state, and role visibility",
+    liveTable: "Live Table",
     timelineHint: "Phase-by-phase event and speech stream",
     observerNotes: "Observer Notes",
+    notesHint: "Room, summaries, and replay hooks",
     dailySummary: "Day Summary",
+    roomHistory: "Room History",
     roomDescription: "Each room keeps the current game id and history so the app can grow into a multiplayer room system.",
     viewDescription: "Public view hides roles. Moderator view reveals role and alignment for debugging and replay.",
     streamingLabel: "Streaming",
@@ -122,6 +144,8 @@ const dictionary = {
     wins: "{winner} win ({reason}).",
     action: "{actor} chose {action} -> {target}. {reasoning}",
     errorPrefix: "ERROR",
+    sourceLlm: "LLM",
+    sourceFallback: "fallback",
   },
 };
 
@@ -161,6 +185,7 @@ const els = {
   aliveCount: document.querySelector("#alive-count"),
   agentMode: document.querySelector("#agent-mode"),
   dailySummary: document.querySelector("#daily-summary"),
+  roomHistory: document.querySelector("#room-history"),
 };
 
 bindEvents();
@@ -219,6 +244,7 @@ async function bootstrap() {
       t("roomReady"),
       format(t("roomReadyDetail"), { roomId: shortId(state.roomId), agentType: agentTypeLabel(state.agentType) })
     );
+    await refreshRoomHistory();
     updateMeta();
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -239,6 +265,7 @@ async function ensureRoom() {
         if (room.agent_type) {
           state.agentType = room.agent_type;
         }
+        await refreshRoomHistory();
         updateMeta();
         syncControls();
         return state.roomId;
@@ -277,6 +304,7 @@ async function ensureRoom() {
   url.searchParams.set("room", room.id);
   window.history.replaceState({}, "", url);
   syncControls();
+  await refreshRoomHistory();
   updateMeta();
   return state.roomId;
 }
@@ -340,6 +368,7 @@ async function runGameViaWebSocket() {
           state.gameId = payload.room.current_game_id || state.gameId;
           state.agentType = payload.room.agent_type || state.agentType;
         }
+        refreshRoomHistory();
         updateMeta(state.gameId);
         syncControls();
         socket.close();
@@ -469,6 +498,45 @@ function render(game) {
   updateMeta();
 }
 
+async function refreshRoomHistory() {
+  if (!state.roomId || !els.roomHistory) {
+    return;
+  }
+  try {
+    const response = await fetch(`/api/rooms/${state.roomId}/games`, { headers: { Accept: "application/json" } });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    const games = await response.json();
+    renderRoomHistory(games);
+  } catch {
+    els.roomHistory.textContent = "-";
+  }
+}
+
+function renderRoomHistory(games) {
+  if (!els.roomHistory) {
+    return;
+  }
+  if (!games.length) {
+    els.roomHistory.textContent = "-";
+    return;
+  }
+  els.roomHistory.innerHTML = games
+    .slice()
+    .reverse()
+    .slice(0, 6)
+    .map(
+      (game) => `
+        <div class="history-item">
+          <strong>${escapeHtml(shortId(game.id))}</strong>
+          <div>${escapeHtml(`${t("day")} ${game.day} · ${game.phase} · ${label(game.winner)}`)}</div>
+        </div>
+      `
+    )
+    .join("");
+}
+
 function renderPlayer(player) {
   const role = player.role ? `${player.role} / ${player.alignment}` : t("hiddenRole");
   const alive = player.alive ? t("alive") : t("dead");
@@ -486,7 +554,10 @@ function renderPlayer(player) {
 
 function renderEvent(event) {
   const payload = event.payload || {};
-  const eventLabel = event.visibility === "private" ? `${event.type} · ${t("privateTag")}` : event.type;
+  const sourceTag = payload.agent_source === "llm" ? t("sourceLlm") : payload.agent_fallback ? t("sourceFallback") : "";
+  const privateTag = event.visibility === "private" ? t("privateTag") : "";
+  const parts = [event.type, privateTag, sourceTag].filter(Boolean);
+  const eventLabel = parts.join(" · ");
   return `
     <article class="event">
       <div class="badge">D${event.day}<br>${escapeHtml(event.phase)}</div>
