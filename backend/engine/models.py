@@ -15,10 +15,12 @@ class Alignment(str, Enum):
 class Role(str, Enum):
     VILLAGER = "Villager"
     WEREWOLF = "Werewolf"
+    WHITE_WOLF_KING = "WhiteWolfKing"
     SEER = "Seer"
     WITCH = "Witch"
     HUNTER = "Hunter"
     GUARD = "Guard"
+    IDIOT = "Idiot"
 
 
 class Phase(str, Enum):
@@ -40,6 +42,7 @@ class Phase(str, Enum):
     DAY_RESOLVE = "DAY_RESOLVE"
     BADGE_TRANSFER = "BADGE_TRANSFER"
     HUNTER_SHOOT = "HUNTER_SHOOT"
+    WHITE_WOLF_KING_BOOM = "WHITE_WOLF_KING_BOOM"
     GAME_END = "GAME_END"
 
 
@@ -52,6 +55,7 @@ class ActionType(str, Enum):
     WITCH_SAVE = "witch_save"
     WITCH_POISON = "witch_poison"
     SHOOT = "shoot"
+    BOOM = "boom"
     SKIP = "skip"
 
 
@@ -64,6 +68,7 @@ class EventType(str, Enum):
     VOTE_CAST = "VOTE_CAST"
     PLAYER_DIED = "PLAYER_DIED"
     HUNTER_SHOT = "HUNTER_SHOT"
+    WHITE_WOLF_KING_BOOM = "WHITE_WOLF_KING_BOOM"
     SYSTEM_MESSAGE = "SYSTEM_MESSAGE"
     GAME_END = "GAME_END"
 
@@ -77,6 +82,12 @@ class Player:
     alignment: Alignment
     alive: bool = True
     is_ai: bool = True
+    agent_type: str = "llm"
+    model_name: str = ""
+    prompt_version: str = "v1"
+    persona: dict[str, Any] = field(default_factory=dict)
+    death_day: int | None = None
+    death_reason: str | None = None
 
     def public_dict(self) -> dict[str, Any]:
         return {
@@ -85,11 +96,16 @@ class Player:
             "name": self.name,
             "alive": self.alive,
             "is_ai": self.is_ai,
+            "agent_type": self.agent_type,
+            "persona": {
+                "style_label": self.persona.get("style_label"),
+                "mbti": self.persona.get("mbti"),
+            } if self.persona else None,
         }
 
     def private_dict(self) -> dict[str, Any]:
         data = self.public_dict()
-        data.update({"role": self.role.value, "alignment": self.alignment.value})
+        data.update({"role": self.role.value, "alignment": self.alignment.value, "persona": self.persona or None})
         return data
 
 
@@ -122,6 +138,34 @@ class DecisionAudit:
     prompt_tokens: int | None
     completion_tokens: int | None
     created_at: float
+
+
+@dataclass
+class PendingInput:
+    player_id: str
+    player_name: str
+    seat: int
+    request: str
+    phase: str
+    action_type: str
+    prompt: str
+    options: list[dict[str, Any]] = field(default_factory=list)
+    can_skip: bool = False
+    placeholder: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "player_id": self.player_id,
+            "player_name": self.player_name,
+            "seat": self.seat,
+            "request": self.request,
+            "phase": self.phase,
+            "action_type": self.action_type,
+            "prompt": self.prompt,
+            "options": list(self.options),
+            "can_skip": self.can_skip,
+            "placeholder": self.placeholder,
+        }
 
 
 @dataclass
@@ -175,6 +219,8 @@ class RoleAbilities:
     witch_heal_used: bool = False
     witch_poison_used: bool = False
     hunter_can_shoot: bool = True
+    idiot_revealed: bool = False
+    white_wolf_king_boom_used: bool = False
 
 
 @dataclass
@@ -184,6 +230,7 @@ class BadgeState:
     signup: dict[str, bool] = field(default_factory=dict)
     votes: dict[str, str] = field(default_factory=dict)
     history: dict[int, dict[str, str]] = field(default_factory=dict)
+    revote_count: int = 0
 
 
 @dataclass
@@ -208,11 +255,19 @@ class GameState:
     events: list[GameEvent] = field(default_factory=list)
     decision_records: list[DecisionAudit] = field(default_factory=list)
     votes: dict[str, str] = field(default_factory=dict)
+    vote_history: dict[int, dict[str, str]] = field(default_factory=dict)
+    day_history: dict[int, dict[str, Any]] = field(default_factory=dict)
     badge: BadgeState = field(default_factory=BadgeState)
     night_actions: NightActions = field(default_factory=NightActions)
     abilities: RoleAbilities = field(default_factory=RoleAbilities)
+    current_speaker_id: str | None = None
+    pk_targets: list[str] = field(default_factory=list)
+    pk_source: str | None = None
+    pending_input: PendingInput | None = None
+    phase_cursor: dict[str, Any] = field(default_factory=dict)
     daily_summaries: dict[int, list[str]] = field(default_factory=dict)
     daily_summary_facts: dict[int, list[dict[str, Any]]] = field(default_factory=dict)
+    phase_done: dict[int, list[str]] = field(default_factory=dict)
     winner: Alignment | None = None
     max_days: int = 8
 
@@ -237,15 +292,29 @@ class GameState:
             "players": [player.public_dict() for player in self.players],
             "events": [event.to_dict() for event in self.events if event.visibility == "public"],
             "votes": dict(self.votes),
+            "vote_history": dict(self.vote_history),
+            "day_history": dict(self.day_history),
             "badge": {
                 "holder_id": self.badge.holder_id,
                 "candidates": list(self.badge.candidates),
                 "signup": dict(self.badge.signup),
                 "votes": dict(self.badge.votes),
                 "history": dict(self.badge.history),
+                "revote_count": self.badge.revote_count,
             },
             "daily_summaries": dict(self.daily_summaries),
             "daily_summary_facts": dict(self.daily_summary_facts),
+            "role_abilities": {
+                "witch_heal_used": self.abilities.witch_heal_used,
+                "witch_poison_used": self.abilities.witch_poison_used,
+                "hunter_can_shoot": self.abilities.hunter_can_shoot,
+                "idiot_revealed": self.abilities.idiot_revealed,
+                "white_wolf_king_boom_used": self.abilities.white_wolf_king_boom_used,
+            },
+            "current_speaker_id": self.current_speaker_id,
+            "pk_targets": list(self.pk_targets),
+            "pk_source": self.pk_source,
+            "pending_input": self.pending_input.to_dict() if self.pending_input else None,
             "winner": self.winner.value if self.winner else None,
         }
 
@@ -274,4 +343,5 @@ class GameState:
             "seer_result": self.night_actions.seer_result,
             "deaths": list(self.night_actions.deaths),
         }
+        data["phase_cursor"] = dict(self.phase_cursor)
         return data

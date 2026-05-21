@@ -36,57 +36,56 @@ try {
 
   await page.goto(`http://127.0.0.1:${port}/?lang=zh`, { waitUntil: "networkidle" });
   await page.waitForSelector("#run");
+
   await page.click("#lang-en");
   await page.waitForFunction(() => document.documentElement.lang === "en");
+
+  await page.selectOption("#mode-select", "ai");
   await page.selectOption("#agent-type", "heuristic");
-  await page.fill("#seed", "11");
-  await page.fill("#speed", "0");
   await page.click("#run");
   await page.waitForFunction(() => {
-    const winner = document.querySelector("#winner");
-    return winner && winner.textContent && winner.textContent !== "-" && winner.textContent !== "...";
+    const winner = document.querySelector("#winner-text");
+    return winner && winner.textContent && winner.textContent !== "-";
   }, { timeout: 30000 });
 
-  const stateAfterRun = await page.evaluate(() => ({
+  const aiState = await page.evaluate(() => ({
     lang: document.documentElement.lang,
-    roomLabel: document.querySelector("#room-label")?.textContent,
-    gameLabel: document.querySelector("#game-label")?.textContent,
-    title: document.querySelector("h1")?.textContent,
-    winner: document.querySelector("#winner")?.textContent,
-    day: document.querySelector("#day")?.textContent,
-    events: document.querySelector("#event-count")?.textContent,
-    players: document.querySelectorAll(".player").length,
-    timeline: document.querySelectorAll(".event").length,
-    status: document.querySelector("#status-title")?.textContent,
-    agentMode: document.querySelector("#agent-mode")?.textContent,
+    room: document.querySelector("#status-room")?.textContent,
+    winner: document.querySelector("#winner-text")?.textContent,
+    day: document.querySelector("#status-day")?.textContent,
+    timeline: document.querySelectorAll(".speech-entry, .vote-entry").length,
+    players: document.querySelectorAll(".player-card").length,
   }));
 
-  if (stateAfterRun.lang !== "en") throw new Error(`Language switch failed: ${stateAfterRun.lang}`);
-  if (!["Village", "Wolves"].includes(stateAfterRun.winner)) throw new Error(`Unexpected winner text: ${stateAfterRun.winner}`);
-  if (!stateAfterRun.roomLabel || stateAfterRun.roomLabel.endsWith("-")) throw new Error(`Room label not initialized: ${stateAfterRun.roomLabel}`);
-  if (!stateAfterRun.gameLabel || stateAfterRun.gameLabel.endsWith("-")) throw new Error(`Game label not initialized: ${stateAfterRun.gameLabel}`);
-  if (stateAfterRun.agentMode !== "Heuristic") throw new Error(`Agent mode not rendered: ${stateAfterRun.agentMode}`);
-  if (Number(stateAfterRun.players) !== 7) throw new Error(`Expected 7 players, got ${stateAfterRun.players}`);
-  if (Number(stateAfterRun.timeline) < 20) throw new Error(`Expected timeline events, got ${stateAfterRun.timeline}`);
+  if (aiState.lang !== "en") throw new Error(`Language switch failed: ${aiState.lang}`);
+  if (!["Village", "Wolves"].includes(aiState.winner)) throw new Error(`Unexpected winner text: ${aiState.winner}`);
+  if (!aiState.room || aiState.room.endsWith("-")) throw new Error(`Room label not initialized: ${aiState.room}`);
+  if (Number(aiState.players) !== 7) throw new Error(`Expected 7 players, got ${aiState.players}`);
+  if (Number(aiState.timeline) < 10) throw new Error(`Expected timeline events, got ${aiState.timeline}`);
 
   await page.click("#private");
   await page.waitForFunction(() => {
-    const roles = Array.from(document.querySelectorAll(".role")).map((node) => node.textContent || "");
+    const roles = Array.from(document.querySelectorAll(".player-role")).map((node) => node.textContent || "");
     return roles.some((text) => text.includes("Werewolf") || text.includes("Seer"));
-  }, { timeout: 30000 });
+  }, { timeout: 10000 });
 
-  const moderatorView = await page.evaluate(() => ({
-    buttonText: document.querySelector("#private")?.textContent,
-    roleTexts: Array.from(document.querySelectorAll(".role")).map((node) => node.textContent || ""),
-    timeline: document.querySelectorAll(".event").length,
+  await page.selectOption("#mode-select", "human");
+  await page.selectOption("#human-seat", "1");
+  await page.waitForTimeout(800);
+  await page.click("#run");
+  await page.waitForSelector("#action-panel:not(.hidden)", { timeout: 30000 });
+
+  const humanState = await page.evaluate(() => ({
+    actionTitle: document.querySelector("#action-title")?.textContent,
+    actionPrompt: document.querySelector("#action-prompt")?.textContent,
+    room: document.querySelector("#status-room")?.textContent,
+    phase: document.querySelector("#status-phase")?.textContent,
   }));
 
-  if (moderatorView.buttonText !== "Public View") throw new Error(`Moderator toggle failed: ${moderatorView.buttonText}`);
-  if (!moderatorView.roleTexts.some((text) => text.includes("Werewolf") || text.includes("Seer"))) {
-    throw new Error("Moderator view did not reveal roles");
-  }
+  if (!humanState.actionPrompt) throw new Error("Human action prompt did not render");
+  if (!humanState.room || !humanState.room.includes("Seat")) throw new Error(`Human room seat not rendered: ${humanState.room}`);
 
-  console.log("UI smoke passed", JSON.stringify(stateAfterRun), JSON.stringify(moderatorView));
+  console.log("UI smoke passed", JSON.stringify(aiState), JSON.stringify(humanState));
 } finally {
   if (browser) await browser.close();
   server.kill("SIGTERM");

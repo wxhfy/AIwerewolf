@@ -30,7 +30,7 @@ class CompositePhase:
     def run(self, game: "WerewolfGame") -> None:
         for step in self.steps:
             step.run(game)
-            if game.state.winner is not None:
+            if game.state.winner is not None or getattr(game, "interrupt_phase_cycle", False):
                 break
 
 
@@ -50,6 +50,9 @@ def default_phase_handlers() -> dict[Phase, PhaseHandler]:
         phase=Phase.DAY_START,
         steps=(
             AtomicPhase(Phase.DAY_START, "_begin_day"),
+            AtomicPhase(Phase.DAY_BADGE_SIGNUP, "_badge_signup_phase"),
+            AtomicPhase(Phase.DAY_BADGE_SPEECH, "_badge_speech_phase"),
+            AtomicPhase(Phase.DAY_BADGE_ELECTION, "_badge_election_phase"),
             AtomicPhase(Phase.DAY_SPEECH, "_speech_phase"),
             AtomicPhase(Phase.DAY_VOTE, "_vote_phase"),
             AtomicPhase(Phase.DAY_RESOLVE, "_day_resolve"),

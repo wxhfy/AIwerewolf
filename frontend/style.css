@@ -33,6 +33,13 @@ body {
 }
 .brand { font-size: 20px; font-weight: 800; letter-spacing: -0.5px; }
 .topbar-controls { display: flex; align-items: center; gap: 12px; }
+.top-select {
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+}
 
 .lang-switch { display: flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
 .lang-btn {
@@ -60,6 +67,40 @@ body {
   font-size: 32px; font-weight: 800; color: var(--ink); min-width: 60px;
 }
 .status-phase { font-size: 14px; color: var(--muted); }
+.status-room { margin-left: auto; font-size: 12px; color: var(--muted); }
+
+.action-panel {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 20px;
+  padding: 18px 20px;
+  margin-top: 18px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(255,253,249,0.96), rgba(254,242,242,0.96));
+}
+.action-panel.hidden { display: none; }
+.action-kicker {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--accent);
+  margin-bottom: 6px;
+}
+.action-copy h3 { font-size: 22px; margin-bottom: 6px; }
+.action-copy p { color: var(--muted); line-height: 1.5; }
+.action-form { display: grid; gap: 10px; }
+.action-form textarea,
+.action-form select {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: var(--panel);
+  font: inherit;
+}
+.action-label span { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+.action-check { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink); }
 
 /* ---- arena: 4-column layout ---- */
 .arena {
@@ -177,6 +218,7 @@ body {
   .arena { grid-template-columns: 1fr; }
   .player-column { flex-direction: row; flex-wrap: wrap; }
   .player-card { flex: 1; min-width: 140px; }
+  .action-panel { grid-template-columns: 1fr; }
 }
 
 /* ---- history sidebar ---- */
@@ -201,6 +243,50 @@ body {
 .hist-day { font-size: 12px; color: var(--muted); }
 .hist-date { font-size: 11px; color: var(--muted); }
 .history-empty { font-size: 13px; color: var(--muted); padding: 12px 0; }
+
+/* ---- voice input ---- */
+.action-speech-wrap {
+  position: relative;
+}
+.action-speech-wrap textarea {
+  width: 100%;
+  padding-right: 44px;
+}
+.voice-btn {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+.voice-btn:hover { background: #f3f4f6; }
+.voice-btn.recording {
+  background: #fee2e2;
+  border-color: #dc2626;
+  animation: pulse 1.2s infinite;
+}
+.voice-btn.unsupported { opacity: 0.5; cursor: not-allowed; }
+@keyframes pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.4); }
+  50% { box-shadow: 0 0 0 6px rgba(220, 38, 38, 0); }
+}
+.voice-hint {
+  font-size: 12px;
+  color: #dc2626;
+  margin-top: 4px;
+}
+.voice-hint.hidden { display: none; }
 
 /* ---- responsive: collapse history on narrow screens ---- */
 @media (max-width: 1100px) {

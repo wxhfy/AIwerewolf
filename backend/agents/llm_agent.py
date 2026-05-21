@@ -183,6 +183,34 @@ class LLMAgent(Agent):
             metadata=data["metadata"],
         )
 
+    def boom(self) -> Decision:
+        fallback = self.fallback.boom()
+        if fallback.action_type == ActionType.SKIP:
+            default = {"reasoning": fallback.reasoning, "target": None, "boom": False}
+        else:
+            default = {"reasoning": fallback.reasoning, "target": self._name(fallback.target_id), "boom": True}
+        prompt = self._build_action_prompt(
+            action="boom",
+            instructions=[
+                "Decide whether White Wolf King should self-destruct right now.",
+                "If you choose not to self-destruct, set boom=false and target=null.",
+                "If you choose to self-destruct, choose exactly one target.",
+            ],
+            options=self._alive_names(),
+        )
+        data, meta = self._ask_json(prompt, default, max_tokens=260)
+        if not bool(data.get("boom")):
+            return Decision(self.player_id, ActionType.SKIP, reasoning=str(data.get("reasoning") or fallback.reasoning), metadata=meta)
+        target_name = data.get("target")
+        target_id = self._id_from_name(target_name) or fallback.target_id
+        return Decision(
+            self.player_id,
+            ActionType.BOOM,
+            target_id=target_id,
+            reasoning=str(data.get("reasoning") or fallback.reasoning),
+            metadata=meta,
+        )
+
     def finish(self, winner: str | None) -> None:
         self.winner = winner
         self.fallback.finish(winner)

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, Optional
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,12 +10,14 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from backend.agents.factory import create_agents
+from backend.db.database import init_db
 from backend.engine.game import WerewolfGame
 from backend.engine.models import GameState
+from backend.engine.rules import build_players, get_role_configuration
 from backend.protocols import RoomCreateRequest, RoomManager
 
 
-app = FastAPI(title="AI Werewolf Demo", version="0.1.0")
+app = FastAPI(title="AI Werewolf Demo", version="0.2.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -28,20 +30,56 @@ _frontend_dir = Path(__file__).resolve().parent.parent / "frontend"
 _rooms = RoomManager()
 
 
+@app.on_event("startup")
+def _initialize_database() -> None:
+    try:
+        init_db()
+    except Exception:
+        pass
+
+
 @app.get("/api/health")
 def health():
     return {"status": "ok"}
 
 
-def _build_game(seed: int, agent_type: str = "llm") -> WerewolfGame:
-    game = WerewolfGame(seed=seed)
-    game.agents = create_agents(game.state.players, {"type": agent_type, "seed": seed})
+def _build_game(
+    seed: int,
+    agent_type: str = "llm",
+    human_seat: Optional[int] = None,
+    player_count: int = 7,
+    rule_pack_id: str = "wolfcha-default",
+) -> WerewolfGame:
+    players = build_players(get_role_configuration(player_count), seed=seed)
+    game = WerewolfGame(seed=seed, players=players)
+    game.attach_agents(
+        create_agents(
+            game.state.players,
+            {
+                "type": agent_type,
+                "seed": seed,
+                "human_seat": human_seat,
+                "character_map": game.characters,
+            },
+        )
+    )
     return game
 
 
 @app.post("/api/games")
-def create_game(seed: int = 7, show_private: bool = False, agent_type: str = "llm"):
-    game = _build_game(seed=seed, agent_type=agent_type)
+def create_game(
+    seed: int = 7,
+    show_private: bool = False,
+    agent_type: str = "llm",
+    human_seat: Optional[int] = None,
+    player_count: int = 7,
+    rule_pack_id: str = "wolfcha-default",
+):
+    game = _build_game(seed=seed, agent_type=agent_type, human_seat=human_seat, player_count=player_count, rule_pack_id=rule_pack_id)
+    if human_seat is not None:
+        state = game.play_until_blocked()
+        _rooms.games[state.id] = state
+        return state.snapshot(show_private=show_private)
     state = game.play()
     _rooms.games[state.id] = state
     return state.moderator_dict() if show_private else state.public_dict()
@@ -87,8 +125,22 @@ def game_history_detail(game_id: str):
 
 
 @app.post("/api/rooms")
-def create_room(name: str = "Demo Room", seed: int = 7, player_count: int = 7, agent_type: str = "llm"):
-    request = RoomCreateRequest(name=name, seed=seed, player_count=player_count, agent_type=agent_type)
+def create_room(
+    name: str = "Demo Room",
+    seed: int = 7,
+    player_count: int = 7,
+    agent_type: str = "llm",
+    human_seat: Optional[int] = None,
+    rule_pack_id: str = "wolfcha-default",
+):
+    request = RoomCreateRequest(
+        name=name,
+        seed=seed,
+        player_count=player_count,
+        agent_type=agent_type,
+        human_seat=human_seat,
+        rule_pack_id=rule_pack_id,
+    )
     room = _rooms.create_room(request)
     return room.to_dict()
 
@@ -132,14 +184,79 @@ def create_room_game(room_id: str, show_private: bool = False):
         room = _rooms.get_room(room_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="Room not found")
-    game = _build_game(seed=room.seed, agent_type=room.agent_type)
+    game = _build_game(
+        seed=room.seed,
+        agent_type=room.agent_type,
+        human_seat=room.human_seat,
+        player_count=room.player_count,
+        rule_pack_id=room.rule_pack_id,
+    )
+    if room.human_seat is not None:
+        _rooms.set_active_game(room_id, game)
+        state = game.play_until_blocked()
+        snapshot = state.snapshot(show_private=show_private)
+        _rooms.record_snapshot(room_id, snapshot)
+        if state.winner is not None:
+            _rooms.record_game(room_id, state, snapshot)
+        return snapshot
     state = game.play()
     snapshot = state.snapshot(show_private=show_private)
     _rooms.record_game(room_id, state, snapshot)
     return snapshot
 
 
-async def stream_game(websocket: WebSocket, seed: int, show_private: bool, agent_type: str = "llm", room_id: str | None = None) -> GameState:
+@app.post("/api/rooms/{room_id}/start")
+def start_or_resume_room_game(room_id: str, show_private: bool = False):
+    try:
+        room = _rooms.get_room(room_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Room not found")
+    game = _rooms.get_active_game(room_id)
+    if game is None:
+        game = _build_game(
+            seed=room.seed,
+            agent_type=room.agent_type,
+            human_seat=room.human_seat,
+            player_count=room.player_count,
+            rule_pack_id=room.rule_pack_id,
+        )
+        _rooms.set_active_game(room_id, game)
+    state = game.play_until_blocked()
+    snapshot = state.snapshot(show_private=show_private)
+    _rooms.record_snapshot(room_id, snapshot)
+    if state.winner is not None:
+        _rooms.record_game(room_id, state, snapshot)
+    return snapshot
+
+
+@app.post("/api/rooms/{room_id}/action")
+def submit_room_action(room_id: str, payload: Dict[str, Any], show_private: bool = False):
+    try:
+        game = _rooms.get_active_game(room_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Room not found")
+    if game is None:
+        raise HTTPException(status_code=409, detail="No active game")
+    try:
+        state = game.submit_human_action(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    snapshot = state.snapshot(show_private=show_private)
+    _rooms.record_snapshot(room_id, snapshot)
+    if state.winner is not None:
+        _rooms.record_game(room_id, state, snapshot)
+    return snapshot
+
+
+async def stream_game(
+    websocket: WebSocket,
+    seed: int,
+    show_private: bool,
+    agent_type: str = "llm",
+    room_id: str | None = None,
+    player_count: int = 7,
+    rule_pack_id: str = "wolfcha-default",
+) -> GameState:
     """Stream game snapshots to WebSocket in real-time as the game progresses."""
     import threading
     import asyncio as aio
@@ -155,7 +272,7 @@ async def stream_game(websocket: WebSocket, seed: int, show_private: bool, agent
         with lock:
             queue.append(snapshot)
 
-    game = _build_game(seed=seed, agent_type=agent_type)
+    game = _build_game(seed=seed, agent_type=agent_type, player_count=player_count, rule_pack_id=rule_pack_id)
     game.observer = observe
 
     async def drain_queue() -> None:
@@ -201,7 +318,8 @@ async def games_ws(websocket: WebSocket) -> None:
             agent_type = str(payload.get("agent_type", "llm"))
             show_private = bool(payload.get("show_private", False))
             await websocket.send_json({"type": "status", "status": "starting"})
-            state = await stream_game(websocket, seed, show_private, agent_type=agent_type)
+            player_count = int(payload.get("player_count", 7))
+            state = await stream_game(websocket, seed, show_private, agent_type=agent_type, player_count=player_count)
             final = state.snapshot(show_private=show_private)
             await websocket.send_json({"type": "complete", "state": final})
     except WebSocketDisconnect:
@@ -224,12 +342,23 @@ async def room_ws(websocket: WebSocket, room_id: str) -> None:
             if payload.get("action") != "start":
                 await websocket.send_json({"type": "error", "message": "Unsupported action"})
                 continue
+            if room.human_seat is not None:
+                await websocket.send_json({"type": "error", "message": "Human rooms use /api/rooms/{room_id}/start and /action."})
+                continue
             show_private = bool(payload.get("show_private", False))
             room.seed = int(payload.get("seed", room.seed))
             room.agent_type = str(payload.get("agent_type", room.agent_type))
             _rooms.set_room_status(room_id, "running")
             await websocket.send_json({"type": "room", "room": room.to_dict()})
-            state = await stream_game(websocket, room.seed, show_private, agent_type=room.agent_type, room_id=room_id)
+            state = await stream_game(
+                websocket,
+                room.seed,
+                show_private,
+                agent_type=room.agent_type,
+                room_id=room_id,
+                player_count=room.player_count,
+                rule_pack_id=room.rule_pack_id,
+            )
             final = state.snapshot(show_private=show_private)
             room = _rooms.record_game(room_id, state, final)
             await websocket.send_json({"type": "complete", "state": final, "room": room.to_dict()})

@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>AI Werewolf</title>
-<link rel="stylesheet" href="/static/style.css?v=3" />
+<link rel="stylesheet" href="/static/style.css?v=4" />
 </head>
 <body>
 <main class="shell">
@@ -12,6 +12,31 @@
   <header class="topbar">
     <span class="brand">AI Werewolf</span>
     <div class="topbar-controls">
+      <select id="mode-select" class="top-select" aria-label="game mode">
+        <option value="ai">AI vs AI</option>
+        <option value="human">AI + Human</option>
+      </select>
+      <select id="agent-type" class="top-select" aria-label="agent type">
+        <option value="llm">LLM</option>
+        <option value="heuristic">Heuristic</option>
+      </select>
+      <select id="player-count" class="top-select" aria-label="player count">
+        <option value="7">7P</option>
+        <option value="8">8P</option>
+        <option value="9">9P</option>
+        <option value="10">10P</option>
+        <option value="11">11P</option>
+        <option value="12">12P</option>
+      </select>
+      <select id="human-seat" class="top-select" aria-label="human seat">
+        <option value="1">Seat 1</option>
+        <option value="2">Seat 2</option>
+        <option value="3">Seat 3</option>
+        <option value="4">Seat 4</option>
+        <option value="5">Seat 5</option>
+        <option value="6">Seat 6</option>
+        <option value="7">Seat 7</option>
+      </select>
       <div class="lang-switch">
         <button id="lang-zh" class="lang-btn active">中</button>
         <button id="lang-en" class="lang-btn">EN</button>
@@ -25,7 +50,32 @@
   <div class="game-status" id="game-status">
     <span class="status-day" id="status-day">-</span>
     <span class="status-phase" id="status-phase" data-i18n="statusReady">点击开始游戏</span>
+    <span class="status-room" id="status-room">Room -</span>
   </div>
+
+  <section class="action-panel hidden" id="action-panel">
+    <div class="action-copy">
+      <div class="action-kicker">Human Turn</div>
+      <h3 id="action-title">等待你的行动</h3>
+      <p id="action-prompt"></p>
+    </div>
+    <div class="action-form">
+      <div class="action-speech-wrap">
+        <textarea id="action-speech" rows="3" placeholder="输入你的发言..."></textarea>
+        <button id="action-voice" class="voice-btn" type="button" title="语音输入" aria-label="语音输入">🎤</button>
+      </div>
+      <div class="voice-hint hidden" id="voice-hint">正在聆听…再次点击麦克风停止</div>
+      <label class="action-label">
+        <span>Target</span>
+        <select id="action-target"></select>
+      </label>
+      <label class="action-check">
+        <input id="action-save" type="checkbox" />
+        <span>Use save potion</span>
+      </label>
+      <button id="action-submit" class="btn-primary">提交行动</button>
+    </div>
+  </section>
 
   <!-- MAIN LAYOUT: history + players-left + center + players-right -->
   <div class="arena">
@@ -53,6 +103,6 @@
     <strong class="winner-name" id="winner-text">-</strong>
   </div>
 </main>
-<script src="/static/app.js?v=3"></script>
+<script src="/static/app.js?v=4"></script>
 </body>
 </html>

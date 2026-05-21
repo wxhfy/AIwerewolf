@@ -222,3 +222,8 @@ __marimo__/
 scripts/*_smoke.py
 tests/test_llm_config.py
 data/
+
+# Tool/agent metadata
+.serena/
+skills/
+

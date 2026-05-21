@@ -77,7 +77,8 @@ def main() -> int:
         assert status == 200
         assert 'id="run"' in html
         assert 'id="lang-en"' in html
-        assert 'id="agent-type"' in html
+        assert 'id="mode-select"' in html
+        assert 'id="human-seat"' in html
 
         status, room_body = http_post(
             f"http://127.0.0.1:{port}/api/rooms?name=SmokeRoom&seed=5&player_count=7&agent_type=heuristic"
@@ -110,17 +111,17 @@ def main() -> int:
 
         status, js = http_get(f"http://127.0.0.1:{port}/static/app.js")
         assert status == 200
-        assert "const dictionary" in js
+        assert "const I18N" in js
         assert "statusLoading" in js
         assert "/ws/rooms/" in js
-        assert "agent_type" in js
+        assert "/api/rooms/" in js
 
         status, css = http_get(f"http://127.0.0.1:{port}/static/style.css")
         assert status == 200
-        assert ".statusbar" in css
+        assert ".action-panel" in css
 
         for seed in (3, 7, 11):
-            status, body = http_post(f"http://127.0.0.1:{port}/api/games?seed={seed}")
+            status, body = http_post(f"http://127.0.0.1:{port}/api/games?seed={seed}&agent_type=heuristic")
             assert status == 200
             payload = json.loads(body)
             assert_match_payload(payload)

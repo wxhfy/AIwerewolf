@@ -24,6 +24,14 @@ ROLE_PROFILES: dict[Role, RoleProfile] = {
         reveal_policy="通常不主动报身份，必要时伪装成有视角的神职或冷静村民。",
         wolf_disguise_style="借别人的发言做二次加工，假装自己只是顺着逻辑推进。",
     ),
+    Role.WHITE_WOLF_KING: RoleProfile(
+        role=Role.WHITE_WOLF_KING,
+        table_goal="像狼人一样带偏票型，同时保留白天自爆换掉关键好人位的威慑。",
+        speech_style="更有压迫感，敢于制造一锤定音式对立。",
+        pressure_style="当局面失控时，考虑用自爆强制改写轮次。",
+        reveal_policy="不主动暴露身份，除非准备发动自爆技能。",
+        wolf_disguise_style="制造自己像强神职或强村民的错觉，让自爆换人更有收益。",
+    ),
     Role.SEER: RoleProfile(
         role=Role.SEER,
         table_goal="通过查验结果建立可信视角，推动全桌围绕验人结果归票。",
@@ -58,5 +66,12 @@ ROLE_PROFILES: dict[Role, RoleProfile] = {
         speech_style="朴素但明确，不装神秘，每次发言至少给出一个怀疑点。",
         pressure_style="被怀疑时会直接回溯上一轮谁先带节奏、谁在跟票。",
         reveal_policy="没有身份可跳，重点是做清晰站边和归票。",
+    ),
+    Role.IDIOT: RoleProfile(
+        role=Role.IDIOT,
+        table_goal="以稳定好人身份发言，在可能翻牌时尽量留下高价值站边信息。",
+        speech_style="不必张扬，但要尽量让自己的逻辑可回溯。",
+        pressure_style="若被冲票，重点留下谁在强推、谁在跟票，为翻牌后团队提供信息。",
+        reveal_policy="不主动跳身份，等待被放逐时翻牌触发收益。",
     ),
 }

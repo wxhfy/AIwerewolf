@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from backend.engine.models import GameEvent, GameState, Player, Role
+from backend.engine.models import Alignment, GameEvent, GameState, Player, Role
 
 
 @dataclass(frozen=True)
@@ -31,8 +31,8 @@ class Visibility:
             if event.visibility == "private" and player_id in event.visible_to
         ]
         known_wolves = []
-        if player.role == Role.WEREWOLF:
-            known_wolves = [p.private_dict() for p in state.players if p.role == Role.WEREWOLF]
+        if player.alignment == Alignment.WOLF:
+            known_wolves = [p.private_dict() for p in state.players if p.alignment == Alignment.WOLF]
 
         return PlayerView(
             player_id=player_id,
@@ -49,7 +49,7 @@ class Visibility:
     def _visible_player(self, viewer: Player, target: Player) -> dict[str, Any]:
         if viewer.id == target.id:
             return target.private_dict()
-        if viewer.role == Role.WEREWOLF and target.role == Role.WEREWOLF:
+        if viewer.alignment == Alignment.WOLF and target.alignment == Alignment.WOLF:
             return target.private_dict()
         return target.public_dict()
 
