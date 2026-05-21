@@ -225,5 +225,6 @@ data/
 
 # Tool/agent metadata
 .serena/
-skills/
+# NOTE: project-level team conventions live in skills/ and ARE tracked.
+# Only ignore tool-injected per-user skill caches if they appear elsewhere.
 

@@ -2,7 +2,27 @@
 
 > **项目根目录**: `/home/fyh0106/AIwerewolf/`
 > **参考仓库**: `/home/fyh0106/AIwerewolf/references/`
-> **新 Agent 必读**: 接到任务后先读 `SKILLS.md`（完整开发手册），本文档仅作快速速查。
+
+## AI 助手开工指引（**必读**）
+
+接到任务后，按下面顺序读，缺一不可：
+
+1. **本文件（CLAUDE.md）** — 项目速查
+2. **`SKILLS.md`** — 狼人杀业务知识 + 参考仓库
+3. **`skills/README.md`** → 进入 **团队协作规范** 索引：
+   - `skills/00-team-overview.md` — **全员必读**：三人横向分工、决策权
+   - `skills/10-git-workflow.md` — **全员必读**：分支 / Commit / PR / Review
+   - `skills/70-ai-collaboration.md` — **必读**：你（AI）必须遵守的红线
+   - 改后端代码：`skills/20-backend-conventions.md`
+   - 改前端代码：`skills/30-frontend-conventions.md`
+   - 改 Agent：`skills/40-agent-development.md`
+   - 改 API / Schema：`skills/50-api-contract.md`（任何跨前后端必读）
+   - 写测试：`skills/60-testing-ci.md`
+
+**铁律**：动代码前必须查对应 skills/ 文件；跨模块改动必须先列计划让人类确认。
+**披露**：PR 描述里必须说明哪些代码由 AI 生成（详见 `skills/70`）。
+
+---
 
 ## 项目概述
 
