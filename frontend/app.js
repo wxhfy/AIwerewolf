@@ -169,7 +169,7 @@ function bindEvents() {
   els.langEn.addEventListener("click", () => setLanguage("en"));
 }
 
-async function runGame() {
+async function runGame(retryOnRoomLost = true) {
   setBusy(true);
   setStatus("loading", t("statusLoading"), t("statusHint"));
   setLoading();
@@ -181,6 +181,15 @@ async function runGame() {
     setStatus("loaded", t("statusLoaded"), format(t("statusLoadedDetail"), { day: game.day }));
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    // If room was lost (server restart), auto-retry once
+    if (retryOnRoomLost && message.includes("Room not found")) {
+      state.roomId = null;
+      state.gameId = null;
+      const url = new URL(window.location.href);
+      url.searchParams.delete("room");
+      window.history.replaceState({}, "", url);
+      return runGame(false); // retry exactly once
+    }
     renderError(message);
     setStatus("error", t("statusError"), `${t("statusErrorDetail")} (${message})`);
   } finally {
