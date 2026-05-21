@@ -9,9 +9,18 @@ def test_game_plays_to_winner() -> None:
 
     assert state.winner is not None
     assert state.phase.value == "GAME_END"
+    assert len(state.players) == 7
+    assert len([player for player in state.players if player.role == Role.WEREWOLF]) == 2
     assert any(event.type.value == "CHAT_MESSAGE" for event in state.events)
     assert any(event.type.value == "VOTE_CAST" for event in state.events)
     assert any(event.type.value == "GAME_END" for event in state.events)
+
+
+def test_multiple_seeds_finish_without_crashing() -> None:
+    for seed in range(1, 8):
+        state = WerewolfGame(seed=seed).play()
+        assert state.winner is not None
+        assert state.phase.value == "GAME_END"
 
 
 def test_visibility_hides_roles_from_villager() -> None:
