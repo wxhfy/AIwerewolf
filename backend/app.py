@@ -114,18 +114,53 @@ def create_room_game(room_id: str, show_private: bool = False):
     return snapshot
 
 
-async def stream_game(seed: int, show_private: bool, agent_type: str = "llm") -> tuple[list[dict[str, Any]], GameState]:
-    snapshots: list[dict[str, Any]] = []
+async def stream_game(websocket: WebSocket, seed: int, show_private: bool, agent_type: str = "llm", room_id: str | None = None) -> GameState:
+    """Stream game snapshots to WebSocket in real-time as the game progresses."""
+    import threading
+    import asyncio as aio
+
+    loop = aio.get_running_loop()
+    # Thread-safe queue for real-time snapshot delivery
+    queue: list[dict] = []
+    lock = threading.Lock()
+    done = threading.Event()
 
     def observe(state: GameState) -> None:
-        snapshots.append(state.snapshot(show_private=show_private))
+        snapshot = state.snapshot(show_private=show_private)
+        with lock:
+            queue.append(snapshot)
 
     game = _build_game(seed=seed, agent_type=agent_type)
     game.observer = observe
-    loop = asyncio.get_running_loop()
-    state = await loop.run_in_executor(None, game.play)
+
+    async def drain_queue() -> None:
+        """Send queued snapshots to the WebSocket as they arrive."""
+        last_idx = 0
+        while not done.is_set():
+            with lock:
+                new_snapshots = queue[last_idx:]
+                last_idx = len(queue)
+            for snap in new_snapshots:
+                msg: dict = {"type": "snapshot", "state": snap}
+                if room_id:
+                    msg["room_id"] = room_id
+                    _rooms.record_snapshot(room_id, snap)
+                await websocket.send_json(msg)
+            await aio.sleep(0.3)  # poll every 300ms
+
+    # Run game in thread, drain snapshots in parallel
+    async def run_game() -> GameState:
+        return await loop.run_in_executor(None, game.play)
+
+    drain_task = aio.create_task(drain_queue())
+    try:
+        state = await run_game()
+    finally:
+        done.set()
+        await drain_task
+
     _rooms.games[state.id] = state
-    return snapshots, state
+    return state
 
 
 @app.websocket("/ws/games")
@@ -134,26 +169,16 @@ async def games_ws(websocket: WebSocket) -> None:
     try:
         while True:
             payload = await websocket.receive_json()
-            action = payload.get("action")
-            if action != "start":
+            if payload.get("action") != "start":
                 await websocket.send_json({"type": "error", "message": "Unsupported action"})
                 continue
-
             seed = int(payload.get("seed", 7))
             agent_type = str(payload.get("agent_type", "llm"))
             show_private = bool(payload.get("show_private", False))
-            delay_ms = int(payload.get("delay_ms", 120))
-            await websocket.send_json({"type": "status", "status": "starting", "seed": seed, "agent_type": agent_type})
-            snapshots, _ = await stream_game(seed, show_private, agent_type=agent_type)
-
-            for snapshot in snapshots:
-                await websocket.send_json({"type": "snapshot", "state": snapshot})
-                await asyncio.sleep(max(delay_ms, 0) / 1000)
-
-            if snapshots:
-                await websocket.send_json({"type": "complete", "state": snapshots[-1]})
-            else:
-                await websocket.send_json({"type": "complete", "state": None})
+            await websocket.send_json({"type": "status", "status": "starting"})
+            state = await stream_game(websocket, seed, show_private, agent_type=agent_type)
+            final = state.snapshot(show_private=show_private)
+            await websocket.send_json({"type": "complete", "state": final})
     except WebSocketDisconnect:
         return
 
@@ -171,27 +196,18 @@ async def room_ws(websocket: WebSocket, room_id: str) -> None:
     try:
         while True:
             payload = await websocket.receive_json()
-            action = payload.get("action")
-            if action != "start":
+            if payload.get("action") != "start":
                 await websocket.send_json({"type": "error", "message": "Unsupported action"})
                 continue
-
             show_private = bool(payload.get("show_private", False))
-            delay_ms = int(payload.get("delay_ms", 120))
             room.seed = int(payload.get("seed", room.seed))
             room.agent_type = str(payload.get("agent_type", room.agent_type))
             _rooms.set_room_status(room_id, "running")
             await websocket.send_json({"type": "room", "room": room.to_dict()})
-            snapshots, state = await stream_game(room.seed, show_private, agent_type=room.agent_type)
-
-            for snapshot in snapshots:
-                _rooms.record_snapshot(room_id, snapshot)
-                await websocket.send_json({"type": "snapshot", "state": snapshot, "room_id": room_id})
-                await asyncio.sleep(max(delay_ms, 0) / 1000)
-
-            final_snapshot = snapshots[-1] if snapshots else state.snapshot(show_private=show_private)
-            room = _rooms.record_game(room_id, state, final_snapshot)
-            await websocket.send_json({"type": "complete", "state": final_snapshot, "room": room.to_dict()})
+            state = await stream_game(websocket, room.seed, show_private, agent_type=room.agent_type, room_id=room_id)
+            final = state.snapshot(show_private=show_private)
+            room = _rooms.record_game(room_id, state, final)
+            await websocket.send_json({"type": "complete", "state": final, "room": room.to_dict()})
     except WebSocketDisconnect:
         return
 
