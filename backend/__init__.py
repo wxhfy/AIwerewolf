@@ -1,0 +1,1 @@
+"""AI Werewolf backend package."""
