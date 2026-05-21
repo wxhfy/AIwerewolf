@@ -92,12 +92,25 @@ function renderHistoryPanel() {
   panel.innerHTML = state.historyGames.slice(0, 8).map(g => {
     const w = g.winner === "village" ? "好人" : g.winner === "wolf" ? "狼人" : "?";
     const date = (g.created_at || "").slice(0, 10);
-    return `<div class="history-item" data-id="${g.id}" title="${g.id}">
+    return `<div class="history-item" data-id="${g.id}" title="点击查看对局详情">
       <span class="hist-winner">${w}胜</span>
       <span class="hist-day">第${g.current_day}天</span>
       <span class="hist-date">${date}</span>
     </div>`;
   }).join("");
+  // Click handler: load historical game
+  panel.querySelectorAll(".history-item").forEach(el => {
+    el.addEventListener("click", async () => {
+      const gameId = el.dataset.id;
+      if (!gameId) return;
+      try {
+        const r = await fetch(`/api/history/${gameId}`);
+        if (!r.ok) return;
+        const summary = await r.json();
+        loadHistoryGame(summary);
+      } catch(e) {}
+    });
+  });
 }
 
 async function runGame() {
@@ -183,14 +196,19 @@ function renderPlayers(players) {
 
 function playerCard(p) {
   const status = p.alive ? t("alive") : t("dead");
-  const roleText = state.showPrivate ? (p.role || "?") : (p.alignment === "wolf" ? "狼人" : "好人");
+  // Only show role/alignment in moderator view
+  let roleText = status;
+  let bgColor = "var(--ink)";
+  if (state.showPrivate && p.role) {
+    roleText = p.role + " · " + status;
+    bgColor = p.alignment === "wolf" ? "var(--wolf)" : "var(--village)";
+  }
   const initial = (p.name || "?")[0];
-  const bgColor = p.alignment === "wolf" ? "var(--wolf)" : "var(--village)";
   return `<div class="player-card ${p.alive?'':'dead'}">
-    <div class="player-avatar" style="background:${state.showPrivate?bgColor:'var(--ink)'}">${initial}</div>
+    <div class="player-avatar" style="background:${bgColor}">${initial}</div>
     <div class="player-info">
       <div class="player-name">${esc(p.name||'?')}</div>
-      <div class="player-role">${roleText} · ${status}</div>
+      <div class="player-role">${roleText}</div>
     </div>
   </div>`;
 }
@@ -266,6 +284,75 @@ function renderFlow(snapshot) {
     html += `</div>`;
   }
   els.flow.innerHTML = html || `<div class="flow-placeholder">${t("statusReady")}</div>`;
+}
+
+function loadHistoryGame(summary) {
+  // Clear current live state
+  state.lastSnapshot = summary;
+  state.gameId = summary.id;
+  els.statusDay.textContent = `Day ${summary.day || 0}`;
+  els.statusPhase.textContent = summary.winner === "village" ? "好人阵营获胜" : summary.winner === "wolf" ? "狼人阵营获胜" : "已结束";
+  // Show players
+  renderPlayers(summary.players || []);
+  // Show flow from speeches/votes/deaths
+  renderHistoryFlow(summary);
+  // Show winner
+  if (summary.winner) {
+    els.winnerBanner.classList.remove("hidden");
+    els.winnerText.textContent = summary.winner === "village" ? "好人阵营" : "狼人阵营";
+  }
+}
+
+function renderHistoryFlow(summary) {
+  const days = {};
+  for (const s of (summary.speeches || [])) {
+    const d = s.day || 1;
+    if (!days[d]) days[d] = { speeches: [], votes: [], deaths: [] };
+    days[d].speeches.push(s);
+  }
+  for (const v of (summary.votes || [])) {
+    const d = v.day || 1;
+    if (!days[d]) days[d] = { speeches: [], votes: [], deaths: [] };
+    days[d].votes.push(v);
+  }
+  for (const dd of (summary.deaths || [])) {
+    const d = dd.day || 1;
+    if (!days[d]) days[d] = { speeches: [], votes: [], deaths: [] };
+    days[d].deaths.push(dd);
+  }
+
+  let html = "";
+  for (const [dayNum, d] of Object.entries(days)) {
+    html += `<div class="day-block">
+      <div class="day-header">
+        <span class="day-num">${t("day")} ${dayNum}</span>`;
+    if (d.deaths.length) {
+      html += `<span class="day-deaths">${d.deaths.map(dd=>fmt(t("died"),{player:dd.player,reason:dd.reason})).join(" · ")}</span>`;
+    }
+    html += `</div>`;
+    if (d.speeches.length) {
+      html += `<div class="phase-block"><div class="phase-label">${t("speech")}</div>`;
+      for (const s of d.speeches) {
+        html += `<div class="speech-entry">
+          <div class="speech-avatar">${esc((s.speaker||'?')[0])}</div>
+          <div class="speech-body">
+            <div class="speech-speaker">${esc(s.speaker||'?')} 说：</div>
+            <div class="speech-text">"${esc(s.text||'')}"</div>
+          </div>
+        </div>`;
+      }
+      html += `</div>`;
+    }
+    if (d.votes.length) {
+      html += `<div class="phase-block"><div class="phase-label">${t("vote")}</div>`;
+      for (const v of d.votes) {
+        html += `<div class="vote-entry"><span class="vote-voter">${esc(v.voter||'')}</span> <span class="vote-arrow">→</span> <span class="vote-target">${esc(v.target||'')}</span></div>`;
+      }
+      html += `</div>`;
+    }
+    html += `</div>`;
+  }
+  els.flow.innerHTML = html || `<div class="flow-placeholder">无对局数据</div>`;
 }
 
 function esc(s) { if (!s) return ""; return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }

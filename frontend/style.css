@@ -98,8 +98,11 @@ body {
 /* ---- center flow ---- */
 .flow-column {
   display: flex; flex-direction: column; gap: 20px;
-  overflow-y: auto; max-height: 65vh;
+  overflow-y: auto; max-height: 70vh;
+  padding-right: 8px;
 }
+.flow-column::-webkit-scrollbar { width: 6px; }
+.flow-column::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
 
 .flow-placeholder {
   text-align: center; padding: 60px 20px; color: var(--muted); font-size: 15px;
