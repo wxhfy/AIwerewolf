@@ -327,6 +327,12 @@ class WerewolfGame:
             self._log(EventType.SYSTEM_MESSAGE, "public", {"message": f"Night deaths: {', '.join(names)}."})
         else:
             self._log(EventType.SYSTEM_MESSAGE, "public", {"message": "No one died last night."})
+        # Hunter killed at night can shoot (unless poisoned - handled in _kill)
+        for death in unique_deaths:
+            target = self.state.player(death["player_id"])
+            if target.role == Role.HUNTER and self.state.abilities.hunter_can_shoot:
+                self.pending_hunter_id = target.id
+                self.phase_manager.run(Phase.HUNTER_SHOOT, self)
         if self.pending_badge_transfer_from_id and self.state.winner is None:
             self.phase_manager.run(Phase.BADGE_TRANSFER, self)
 

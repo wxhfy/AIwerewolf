@@ -141,6 +141,9 @@ body {
 .speech-reasoning {
   font-size: 11px; color: var(--muted); margin-top: 2px; font-style: italic;
 }
+.speech-entry.last-words {
+  background: #fef2f2; border-left: 3px solid var(--accent); padding-left: 12px;
+}
 
 .vote-entry {
   display: flex; align-items: center; gap: 6px;

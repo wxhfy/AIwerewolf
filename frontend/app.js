@@ -260,10 +260,11 @@ function renderFlow(snapshot) {
         <div class="phase-label">${t("speech")}</div>`;
       for (const e of d.speeches) {
         const p = e.payload;
-        html += `<div class="speech-entry">
+        const isLast = p.last_words ? " 【遗言】" : "";
+        html += `<div class="speech-entry ${p.last_words?'last-words':''}">
           <div class="speech-avatar">${esc((p.actor_name||'?')[0])}</div>
           <div class="speech-body">
-            <div class="speech-speaker">${esc(p.actor_name||'?')} 说：</div>
+            <div class="speech-speaker">${esc(p.actor_name||'?')} 说：${isLast}</div>
             <div class="speech-text">"${esc(p.speech||'')}"</div>
           </div>
         </div>`;
