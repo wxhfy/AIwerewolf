@@ -4,6 +4,7 @@ from collections import Counter
 from random import Random
 
 from backend.agents.base import Agent
+from backend.agents.characters import Character
 from backend.agents.playbooks import build_role_brief
 from backend.agents.profiles import ROLE_PROFILES
 from backend.engine.models import ActionType, Decision, Role
@@ -11,22 +12,24 @@ from backend.engine.visibility import PlayerView
 
 
 class HeuristicAgent(Agent):
-    """Deterministic baseline agent with role-specific behavior.
+    """Deterministic baseline agent with role-specific + character-driven behavior.
 
-    This agent is intentionally simple and offline. LLM agents can later reuse
-    the same lifecycle and return the same Decision objects.
+    Uses character personality (from wolfcha-inspired Persona system) to produce
+    diverse, human-like speech patterns across different games.
     """
 
-    def __init__(self, player_id: str, *, seed: int | None = None):
+    def __init__(self, player_id: str, *, seed: int | None = None, character: Character | None = None):
         self.player_id = player_id
         self.view: PlayerView | None = None
         self.memory: list[str] = []
         self.rng = Random(seed)
         self.winner: str | None = None
+        self.character = character
 
     def initialize(self, view: PlayerView, game_setting: dict) -> None:
         self.view = view
-        self.memory.append(f"Initialized as {self.role.value}.")
+        char_name = self.character.persona.name if self.character else "Unknown"
+        self.memory.append(f"我是{char_name}，角色是{self.role.value}。")
         self.memory.append(build_role_brief(self.role))
 
     def update(self, view: PlayerView, request: str) -> None:
@@ -46,61 +49,103 @@ class HeuristicAgent(Agent):
         secondary = self._secondary_suspect(primary["id"])
         suspects = self._suspect_names(primary["id"], secondary["id"] if secondary else None)
         profile = ROLE_PROFILES[role]
-        if role == Role.WEREWOLF:
-            target = self._choose_non_wolf()
-            speech = (
-                f"My strongest push today is {target['name']}. {target['name']} has been too comfortable shaping the table "
-                f"without taking real risk. My second watch point is {suspects}. I want the vote to stay on a concrete civilian-looking slot."
-            )
-            reasoning = f"{profile.table_goal} {profile.wolf_disguise_style}"
-        elif role == Role.SEER:
-            checks = self._seer_checks()
-            if checks:
-                latest = checks[-1]
-                result = "wolf" if latest["is_wolf"] else "not wolf"
-                target_name = self._name(latest["target_id"])
-                if latest["is_wolf"]:
-                    speech = (
-                        f"I am claiming Seer. Last night I checked {target_name} and the result is wolf. "
-                        f"My vote is locked there unless someone can overturn the check with a stronger chain."
-                    )
-                else:
-                    speech = (
-                        f"I am reading the board from a Seer perspective. {target_name} checked as not wolf, "
-                        f"so I want pressure on {suspects} instead. Everyone should now state a clear vote path."
-                    )
-                reasoning = profile.table_goal
-            else:
-                speech = (
-                    f"I want every seat to give one hard suspect and one backup suspect. Right now I dislike {suspects} "
-                    f"because the pressure they create is broad but not accountable."
-                )
-                reasoning = profile.speech_style
-        elif role == Role.WITCH:
-            speech = (
-                f"I am not accepting lazy consensus today. {primary['name']} is my first suspect and "
-                f"{secondary['name'] if secondary else primary['name']} is second, because I care more about who is steering votes than who is merely quiet."
-            )
-            reasoning = profile.table_goal
-        elif role == Role.HUNTER:
-            speech = (
-                f"Do not rush a blind pile-on. If this table wants to execute, I want it on {primary['name']}. "
-                f"If that flips wrong, I will remember exactly who protected {secondary['name'] if secondary else primary['name']}."
-            )
-            reasoning = profile.pressure_style
-        elif role == Role.GUARD:
-            speech = (
-                f"The clean path is to compare who opened pressure and who only arrived after it was safe. "
-                f"Right now {primary['name']} and {secondary['name'] if secondary else primary['name']} form the dirtiest pair for me."
-            )
-            reasoning = profile.table_goal
-        else:
-            speech = (
-                f"I do not want a soft day. My vote preference is {primary['name']} first, "
-                f"{secondary['name'] if secondary else primary['name']} second. Anyone opposing that should explain a cleaner wolf line."
-            )
-            reasoning = profile.speech_style
+
+        # Build base speech from role strategy + character personality
+        char = self.character
+        style = char.persona.style_label if char else "neutral"
+        name = char.persona.name if char else "Player"
+
+        speech, reasoning = self._build_character_speech(
+            role=role, style=style, name=name,
+            primary=primary, secondary=secondary, suspects=suspects,
+            profile=profile,
+        )
         return Decision(view.player_id, ActionType.TALK, speech=speech, reasoning=reasoning)
+
+    def _build_character_speech(self, *, role, style, name, primary, secondary, suspects, profile):
+        """Build role-appropriate speech with character personality flavor."""
+        primary_name = primary["name"]
+        secondary_name = secondary["name"] if secondary else primary_name
+
+        # Role-specific core content + character-style wrapper
+        if role == Role.WEREWOLF:
+            content = self._wolf_speech(primary_name, secondary_name, suspects, style, name, profile)
+        elif role == Role.SEER:
+            content = self._seer_speech(primary_name, secondary_name, suspects, style, name, profile)
+        elif role == Role.WITCH:
+            content = self._witch_speech(primary_name, secondary_name, suspects, style, name, profile)
+        elif role == Role.HUNTER:
+            content = self._hunter_speech(primary_name, secondary_name, suspects, style, name, profile)
+        elif role == Role.GUARD:
+            content = self._guard_speech(primary_name, secondary_name, suspects, style, name, profile)
+        else:
+            content = self._villager_speech(primary_name, secondary_name, suspects, style, name, profile)
+        return content
+
+    # ---- Character-style speech generators ----
+
+    def _wolf_speech(self, p, s, suspects, style, name, profile):
+        templates = {
+            "analytical": (f"我仔细看了一圈，{p}的逻辑有结构性矛盾。第一天说A可疑，第二天又跟票A，这不是好人的思维。{s}也得解释。", f"{name}伪装成逻辑分析者"),
+            "aggressive": (f"我就直说了——{p}就是狼！走路姿势都是狼！你们不敢点我来点。还有个{s}，也别想跑。", f"{name}装成冲动的平民"),
+            "expressive": (f"天哪你们看不出来吗？{p}那个发言，那个眼神（虽然我看不到），但那个心虚的感觉扑面而来！{s}也是。", f"{name}用表演煽动情绪"),
+            "insightful": (f"我觉得{p}的潜意识在暴露自己。真正的好人不会这样构建怀疑链。{s}配合得很微妙。", f"{name}用心理分析来误导"),
+            "observant": (f"盯了{p}一整天了。不对劲。{s}也不对劲。信我。", f"{name}装成沉默的观察者"),
+            "meticulous": (f"我对了一下{p}第1天和第2天发言的时间线，有三处不一致。{s}有一处。结论很简单。", f"{name}制造伪证据链"),
+            "provocative": (f"笑死，{p}的发言我都能背下来了——'我觉得'、'可能'、'不确定'。哥们你是玩狼人杀还是来相亲的？{s}也来相亲？", f"{name}用幽默掩盖引导"),
+            "persuasive": (f"大家冷静听我说，{p}确实让我有点担心，不是他说的内容有问题，是他为什么要那样说？{s}也是。我们来一起分析一下。", f"{name}假装和事佬来带节奏"),
+        }
+        speech, reasoning = templates.get(style, templates["analytical"])
+        return speech.replace("{p}", p).replace("{s}", s) if "{p}" in speech else speech, reasoning
+
+    def _seer_speech(self, p, s, suspects, style, name, profile):
+        checks = self._seer_checks()
+        if checks:
+            latest = checks[-1]
+            target_name = self._name(latest["target_id"])
+            if latest["is_wolf"]:
+                speech = f"我是预言家。昨晚验了{target_name}，查杀。归票{target_name}，不接受分票。有对跳的现在出来。"
+                reasoning = f"{name}强势归票查杀位"
+            else:
+                speech = f"我是预言家视角。{target_name}是我金水，好人。重点看{suspects}。尤其{s}，你的站边需要解释。"
+                reasoning = f"{name}报金水同时归可疑位"
+        else:
+            speech = f"我还没跳身份但我想说——{suspects}这对组合不干净。{p}先动的手，{s}跟得很默契。各自解释。"
+            reasoning = f"{name}以村民角度分析怀疑链"
+        return speech, reasoning
+
+    def _witch_speech(self, p, s, suspects, style, name, profile):
+        templates = {
+            "calm": (f"今晚的死亡信息很关键。{p}和{s}，我需要你们各说清楚为什么要这么投。不着急，我们有时间。", f"{name}冷静分析票型"),
+            "aggressive": (f"别跟我绕！{p}你昨晚保的人跟你今天的发言对不上！{s}你也是！", f"{name}强势质问"),
+            "default": (f"我不接受模糊票。{p}是我第一嫌疑人，{s}第二。不要跟我说'感觉'，给我逻辑。", f"{name}谨慎分析死亡信息"),
+        }
+        speech, reasoning = templates.get(style, templates["default"])
+        return speech, reasoning
+
+    def _hunter_speech(self, p, s, suspects, style, name, profile):
+        speech = f"听好了——我活着的时候你们不归票{p}，等我死了可别怪枪口不长眼。{s}也在我名单上。"
+        reasoning = f"{name}用猎人威慑逼票"
+        return speech, reasoning
+
+    def _guard_speech(self, p, s, suspects, style, name, profile):
+        speech = f"我特别关注谁在利用信息差带节奏。{p}你推进的方向跟我看到的完全不一样。{s}，别不说话。"
+        reasoning = f"{name}分析信息差制造者"
+        return speech, reasoning
+
+    def _villager_speech(self, p, s, suspects, style, name, profile):
+        templates = {
+            "analytical": (f"从概率上讲，{suspects}里面有至少一狼。我赌{p}。愿意站我的，说一下理由。", f"{name}用朴素逻辑分析"),
+            "aggressive": (f"我就认{p}是狼！你们投不投？不投给我理由！", f"{name}直接冲锋"),
+            "expressive": (f"我真的觉得{p}太可疑了！那个发言就是狼队剧本！{s}还帮他圆，更可疑！", f"{name}凭直觉和氛围"),
+            "insightful": (f"你有没有觉得{p}的语气变了？第一天他在试探，今天他在引导。{s}是配合的。", f"{name}从心理角度分析"),
+            "observant": (f"看{p}。就{p}。理由我整理好了——看票型。", f"{name}少说话但票准"),
+            "meticulous": (f"我统计了{p}三轮发言的关键词——'可能'用了7次，'感觉'用了5次。结论：不敢明确表态。", f"{name}细节式推进"),
+            "provocative": (f"{p}老师，您的狼人杀水平我是认可的，但您今天的演技我只能给3分。{s}给4分，还有进步空间。", f"{name}用幽默推动归票"),
+            "persuasive": (f"我不是针对{p}这个人，我是说他这轮的逻辑确实有问题。大家觉得呢？我们可以一起看。如果他解释清楚了我就换人。", f"{name}温和引导共识"),
+        }
+        speech, reasoning = templates.get(style, templates["analytical"])
+        return speech, reasoning
 
     def vote(self) -> Decision:
         view = self._view()
