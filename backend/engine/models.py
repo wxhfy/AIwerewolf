@@ -173,6 +173,8 @@ class GameState:
     votes: dict[str, str] = field(default_factory=dict)
     night_actions: NightActions = field(default_factory=NightActions)
     abilities: RoleAbilities = field(default_factory=RoleAbilities)
+    daily_summaries: dict[int, list[str]] = field(default_factory=dict)
+    daily_summary_facts: dict[int, list[dict[str, Any]]] = field(default_factory=dict)
     winner: Alignment | None = None
     max_days: int = 8
 
@@ -197,8 +199,20 @@ class GameState:
             "players": [player.public_dict() for player in self.players],
             "events": [event.to_dict() for event in self.events if event.visibility == "public"],
             "votes": dict(self.votes),
+            "daily_summaries": dict(self.daily_summaries),
+            "daily_summary_facts": dict(self.daily_summary_facts),
             "winner": self.winner.value if self.winner else None,
         }
+
+    def snapshot(self, *, show_private: bool = False) -> dict[str, Any]:
+        data = self.moderator_dict() if show_private else self.public_dict()
+        data["alive_count"] = sum(1 for player in self.players if player.alive)
+        data["event_count"] = len(data["events"])
+        if data["events"]:
+            data["last_event"] = data["events"][-1]
+        else:
+            data["last_event"] = None
+        return data
 
     def moderator_dict(self) -> dict[str, Any]:
         data = self.public_dict()

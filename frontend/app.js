@@ -3,24 +3,45 @@ const dictionary = {
     pageTitle: "AI Werewolf 观战台",
     brand: "AI Werewolf",
     title: "观战台",
-    subtitle: "离线 AI 狼人杀演示，可切换公开视角与主持视角。",
+    subtitle: "实时房间观战控制台，可切换公开视角与主持视角，并按阶段查看 AI 对局推进。",
     seed: "Seed",
+    speed: "速度",
     run: "运行一局",
     private: "主持视角",
     public: "公开视角",
+    publicMode: "公开视角",
     winner: "胜者",
     day: "天数",
     phase: "阶段",
     events: "事件",
-    players: "玩家",
+    players: "玩家席位",
     timeline: "事件时间线",
+    controlPanel: "对局控制",
+    runtimeStatus: "运行状态",
+    latestEvent: "最新事件",
+    aliveCount: "存活人数",
+    viewMode: "视角",
+    boardHint: "实时刷新当前存活与身份状态",
+    timelineHint: "按阶段追加事件和公开发言",
+    observerNotes: "观战说明",
+    dailySummary: "当日摘要",
+    roomDescription: "每个房间会保留当前对局和历史对局编号，方便后续扩展成多人房间系统。",
+    viewDescription: "公开视角隐藏身份；主持视角直接揭示角色与阵营，用于调试和复盘。",
+    streamingLabel: "实时流",
+    streamingDescription: "页面通过 WebSocket 接收快照，不是整局结束后再一次性渲染。",
     statusReady: "已就绪",
     statusHint: "点击按钮生成一局新的 AI 对局。",
     statusLoading: "正在生成对局",
+    statusStreaming: "对局进行中",
     statusLoaded: "对局已生成",
+    statusStreamingDetail: "已推进到第 {day} 天 {phase}，累计 {events} 条事件。",
     statusLoadedDetail: "已载入第 {day} 天结束的完整事件流。",
     statusError: "加载失败",
     statusErrorDetail: "接口请求失败，请确认 FastAPI 服务正在运行。",
+    roomLabel: "房间",
+    gameLabel: "对局",
+    roomReady: "房间已创建",
+    roomReadyDetail: "当前房间 {roomId}，可以直接开始新的 AI 对局。",
     hiddenRole: "身份隐藏",
     alive: "存活",
     dead: "出局",
@@ -39,24 +60,45 @@ const dictionary = {
     pageTitle: "AI Werewolf Spectator",
     brand: "AI Werewolf",
     title: "Spectator Console",
-    subtitle: "Offline AI werewolf demo with public and moderator views.",
+    subtitle: "Live room console for AI werewolf matches with public and moderator perspectives.",
     seed: "Seed",
+    speed: "Speed",
     run: "Run Game",
     private: "Moderator View",
     public: "Public View",
+    publicMode: "Public View",
     winner: "Winner",
     day: "Day",
     phase: "Phase",
     events: "Events",
-    players: "Players",
+    players: "Player Seats",
     timeline: "Event Timeline",
+    controlPanel: "Match Controls",
+    runtimeStatus: "Runtime Status",
+    latestEvent: "Latest Event",
+    aliveCount: "Alive Count",
+    viewMode: "View",
+    boardHint: "Live seats, life state, and role visibility",
+    timelineHint: "Phase-by-phase event and speech stream",
+    observerNotes: "Observer Notes",
+    dailySummary: "Day Summary",
+    roomDescription: "Each room keeps the current game id and history so the app can grow into a multiplayer room system.",
+    viewDescription: "Public view hides roles. Moderator view reveals role and alignment for debugging and replay.",
+    streamingLabel: "Streaming",
+    streamingDescription: "The page renders from WebSocket snapshots instead of waiting for the whole match to finish.",
     statusReady: "Ready",
     statusHint: "Generate a new AI match from the controls.",
     statusLoading: "Generating match",
+    statusStreaming: "Match in progress",
     statusLoaded: "Match loaded",
+    statusStreamingDetail: "Advanced to day {day} {phase} with {events} events.",
     statusLoadedDetail: "Loaded a full event stream ending on day {day}.",
     statusError: "Load failed",
     statusErrorDetail: "API request failed. Confirm the FastAPI server is running.",
+    roomLabel: "Room",
+    gameLabel: "Game",
+    roomReady: "Room ready",
+    roomReadyDetail: "Current room {roomId}. You can start a new AI match now.",
     hiddenRole: "Role hidden",
     alive: "Alive",
     dead: "Out",
@@ -77,10 +119,13 @@ const state = {
   showPrivate: false,
   lang: getInitialLang(),
   busy: false,
+  roomId: null,
+  gameId: null,
 };
 
 const els = {
   seed: document.querySelector("#seed"),
+  speed: document.querySelector("#speed"),
   run: document.querySelector("#run"),
   private: document.querySelector("#private"),
   langZh: document.querySelector("#lang-zh"),
@@ -94,11 +139,19 @@ const els = {
   statusBar: document.querySelector(".statusbar"),
   statusTitle: document.querySelector("#status-title"),
   statusText: document.querySelector("#status-text"),
+  roomLabel: document.querySelector("#room-label"),
+  gameLabel: document.querySelector("#game-label"),
+  viewLabel: document.querySelector("#view-label"),
+  viewMode: document.querySelector("#view-mode"),
+  lastEventTitle: document.querySelector("#last-event-title"),
+  lastEventText: document.querySelector("#last-event-text"),
+  aliveCount: document.querySelector("#alive-count"),
+  dailySummary: document.querySelector("#daily-summary"),
 };
 
 bindEvents();
 applyLanguage();
-runGame();
+bootstrap();
 
 function bindEvents() {
   els.run.addEventListener("click", async () => {
@@ -121,19 +174,8 @@ async function runGame() {
   setLoading();
 
   try {
-    const seed = Number(els.seed.value || 7);
-    const response = await fetch(`/api/games?seed=${seed}&show_private=${state.showPrivate}`, {
-      method: "POST",
-      headers: {
-        Accept: "application/json",
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-
-    const game = await response.json();
+    await ensureRoom();
+    const game = await runGameViaWebSocket();
     render(game);
     setStatus("loaded", t("statusLoaded"), format(t("statusLoadedDetail"), { day: game.day }));
   } catch (error) {
@@ -143,6 +185,121 @@ async function runGame() {
   } finally {
     setBusy(false);
   }
+}
+
+async function bootstrap() {
+  try {
+    await ensureRoom();
+    setStatus("loaded", t("roomReady"), format(t("roomReadyDetail"), { roomId: shortId(state.roomId) }));
+    updateMeta();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    setStatus("error", t("statusError"), `${t("statusErrorDetail")} (${message})`);
+    renderError(message);
+  }
+}
+
+async function ensureRoom() {
+  if (state.roomId) return state.roomId;
+  const roomIdFromUrl = new URL(window.location.href).searchParams.get("room");
+  if (roomIdFromUrl) {
+    state.roomId = roomIdFromUrl;
+    updateMeta();
+    return state.roomId;
+  }
+
+  const seed = Number(els.seed.value || 7);
+  const response = await fetch(`/api/rooms?name=${encodeURIComponent("Demo Room")}&seed=${seed}&player_count=7`, {
+    method: "POST",
+    headers: { Accept: "application/json" },
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to create room: HTTP ${response.status}`);
+  }
+  const room = await response.json();
+  state.roomId = room.id;
+  const url = new URL(window.location.href);
+  url.searchParams.set("room", room.id);
+  window.history.replaceState({}, "", url);
+  updateMeta();
+  return state.roomId;
+}
+
+async function runGameViaWebSocket() {
+  if (!state.roomId) {
+    throw new Error("Room is not initialized");
+  }
+  const seed = Number(els.seed.value || 7);
+  const delayMs = Number(els.speed.value || 80);
+  const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  const socket = new WebSocket(`${wsProtocol}//${window.location.host}/ws/rooms/${state.roomId}`);
+
+  return new Promise((resolve, reject) => {
+    let finalState = null;
+
+    socket.addEventListener("open", () => {
+      socket.send(
+        JSON.stringify({
+          action: "start",
+          seed,
+          show_private: state.showPrivate,
+          delay_ms: delayMs,
+        })
+      );
+    });
+
+    socket.addEventListener("message", (event) => {
+      const payload = JSON.parse(event.data);
+      if (payload.type === "error") {
+        socket.close();
+        reject(new Error(payload.message));
+        return;
+      }
+      if (payload.type === "room" && payload.room) {
+        state.roomId = payload.room.id;
+        updateMeta(payload.room.current_game_id || state.gameId);
+      }
+      if (payload.type === "snapshot" && payload.state) {
+        finalState = payload.state;
+        state.gameId = payload.state.id;
+        render(payload.state);
+        updateMeta(payload.state.id);
+        setStatus(
+          "loading",
+          t("statusStreaming"),
+          format(t("statusStreamingDetail"), {
+            day: payload.state.day,
+            phase: payload.state.phase,
+            events: payload.state.event_count,
+          })
+        );
+      }
+      if (payload.type === "complete") {
+        finalState = payload.state || finalState;
+        if (payload.room) {
+          state.roomId = payload.room.id;
+          state.gameId = payload.room.current_game_id || state.gameId;
+        }
+        updateMeta(state.gameId);
+        socket.close();
+        if (finalState) {
+          resolve(finalState);
+        } else {
+          reject(new Error("No final game state received"));
+        }
+      }
+    });
+
+    socket.addEventListener("error", () => {
+      reject(new Error("WebSocket connection failed"));
+    });
+
+    socket.addEventListener("close", () => {
+      if (!finalState) {
+        reject(new Error("WebSocket closed before match completed"));
+      }
+    });
+  });
 }
 
 function setLanguage(lang) {
@@ -163,14 +320,19 @@ function applyLanguage() {
   els.private.textContent = state.showPrivate ? t("public") : t("private");
   els.langZh.classList.toggle("active", state.lang === "zh");
   els.langEn.classList.toggle("active", state.lang === "en");
+  if (els.viewLabel) {
+    els.viewLabel.textContent = state.showPrivate ? t("private") : t("publicMode");
+  }
+  if (els.viewMode) {
+    els.viewMode.textContent = state.showPrivate ? t("private") : t("publicMode");
+  }
+  updateMeta();
 }
 
 function setBusy(busy) {
   state.busy = busy;
   els.run.disabled = busy;
   els.private.disabled = busy;
-  els.langZh.disabled = busy;
-  els.langEn.disabled = busy;
 }
 
 function setLoading() {
@@ -180,15 +342,50 @@ function setLoading() {
   els.eventCount.textContent = "...";
   els.players.innerHTML = "";
   els.timeline.innerHTML = "";
+  if (els.lastEventTitle) els.lastEventTitle.textContent = "...";
+  if (els.lastEventText) els.lastEventText.textContent = "...";
+  if (els.aliveCount) els.aliveCount.textContent = "...";
+  if (els.dailySummary) els.dailySummary.textContent = "...";
 }
 
 function render(game) {
+  state.gameId = game.id || state.gameId;
   els.winner.textContent = label(game.winner);
   els.day.textContent = String(game.day);
   els.phase.textContent = game.phase;
   els.eventCount.textContent = String(game.events.length);
   els.players.innerHTML = game.players.map(renderPlayer).join("");
   els.timeline.innerHTML = game.events.map(renderEvent).join("");
+  if (els.aliveCount) {
+    const alive = game.alive_count ?? game.players.filter((player) => player.alive).length;
+    els.aliveCount.textContent = String(alive);
+  }
+  if (els.lastEventTitle || els.lastEventText) {
+    const latest = game.last_event || (game.events.length ? game.events[game.events.length - 1] : null);
+    if (latest) {
+      if (els.lastEventTitle) {
+        els.lastEventTitle.textContent = latest.type;
+      }
+      if (els.lastEventText) {
+        els.lastEventText.textContent = eventText(latest.type, latest.payload || {});
+      }
+    } else {
+      if (els.lastEventTitle) els.lastEventTitle.textContent = "-";
+      if (els.lastEventText) els.lastEventText.textContent = "-";
+    }
+  }
+  if (els.dailySummary) {
+    const lines = (game.daily_summaries && game.daily_summaries[game.day]) || [];
+    if (lines.length) {
+      els.dailySummary.innerHTML = lines
+        .slice(-5)
+        .map((line) => `<div class="summary-line">${escapeHtml(line)}</div>`)
+        .join("");
+    } else {
+      els.dailySummary.textContent = "-";
+    }
+  }
+  updateMeta();
 }
 
 function renderPlayer(player) {
@@ -275,6 +472,11 @@ function setStatus(mode, title, text) {
   els.statusText.textContent = text;
 }
 
+function updateMeta() {
+  els.roomLabel.textContent = `${t("roomLabel")}: ${shortId(state.roomId)}`;
+  els.gameLabel.textContent = `${t("gameLabel")}: ${shortId(state.gameId)}`;
+}
+
 function t(key) {
   return dictionary[state.lang][key] || key;
 }
@@ -292,6 +494,11 @@ function getInitialLang() {
   const lang = url.searchParams.get("lang");
   if (lang === "en" || lang === "zh") return lang;
   return (navigator.language || "").toLowerCase().startsWith("zh") ? "zh" : "en";
+}
+
+function shortId(value) {
+  if (!value) return "-";
+  return String(value).slice(0, 8);
 }
 
 function escapeHtml(value) {

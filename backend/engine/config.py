@@ -5,6 +5,7 @@ from typing import Any
 
 import yaml
 
+from backend.agents.factory import create_agents
 from backend.engine.game import WerewolfGame
 from backend.engine.models import Role
 from backend.engine.rules import build_players
@@ -24,9 +25,11 @@ def game_from_config(path: str | Path) -> WerewolfGame:
     agent_config = config.get("agents", {})
     roles = [Role(role) for role in game_config.get("roles", [])]
     seed = agent_config.get("seed", 7)
-    players = build_players(roles, seed=seed) if roles else None
+    players = build_players(roles, seed=seed) if roles else build_players(seed=seed)
+    agents = create_agents(players, agent_config)
     return WerewolfGame(
         players=players,
+        agents=agents,
         seed=seed,
         max_days=int(game_config.get("max_days", 8)),
     )

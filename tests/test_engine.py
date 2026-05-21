@@ -14,6 +14,9 @@ def test_game_plays_to_winner() -> None:
     assert any(event.type.value == "CHAT_MESSAGE" for event in state.events)
     assert any(event.type.value == "VOTE_CAST" for event in state.events)
     assert any(event.type.value == "GAME_END" for event in state.events)
+    assert state.daily_summaries
+    assert state.daily_summary_facts
+    assert any(item for item in state.daily_summaries.values())
 
 
 def test_multiple_seeds_finish_without_crashing() -> None:

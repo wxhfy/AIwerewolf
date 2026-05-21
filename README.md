@@ -11,7 +11,7 @@
 - Agent：AIWolf 风格生命周期接口 + 离线启发式 Agent
 - 信息隔离：普通玩家只看公开信息，狼人只额外知道狼队友，预言家只收到自己的查验结果
 - 可观测：结构化事件日志，支持公开视角和主持视角
-- UI：FastAPI 托管的最小观战页
+- UI：FastAPI 托管的双语观战页，支持房间化会话和 WebSocket 实时推送对局快照
 
 ## 运行
 
@@ -29,9 +29,15 @@ uvicorn backend.app:app --reload --host 0.0.0.0 --port 8000
 
 打开 `http://localhost:8000`，点击“运行一局”生成并查看完整对局。
 
+前端会先创建房间，再通过 WebSocket 按阶段实时刷新事件流。可切换中英文，也可切换主持视角查看全部身份。
+
 ## API
 
 ```bash
+curl -X POST "http://localhost:8000/api/rooms?name=DemoRoom&seed=7&player_count=7"
+curl "http://localhost:8000/api/rooms"
+curl "http://localhost:8000/api/rooms/<room_id>"
+curl -X POST "http://localhost:8000/api/rooms/<room_id>/games"
 curl -X POST "http://localhost:8000/api/games?seed=7"
 curl "http://localhost:8000/api/games"
 curl "http://localhost:8000/api/games/<game_id>?show_private=true"
@@ -42,11 +48,15 @@ curl "http://localhost:8000/api/games/<game_id>?show_private=true"
 - 新角色：在 `backend/engine/rules.py` 添加 `RoleSpec`，再在 `backend/engine/game.py` 增加对应阶段或动作结算。
 - 新 Agent：实现 `backend/agents/base.py` 的 `Agent` 协议并返回 `Decision`，无需改引擎主循环。
 - 新动作：在 `backend/engine/actions.py` 注册 `ActionRule`，由阶段处理器读取并结算。
-- 前端：当前 `frontend/` 是静态观战页，后续可迁移为 Next.js 并沿用 `/api/games` 协议。
+- 房间协议：当前在 `backend/protocols/` 维护房间与会话状态，后续可继续扩展为多人房间系统。
+- 前端：当前 `frontend/` 是静态观战页，后续可迁移为 Next.js 并沿用 `/api/rooms` 和 `/ws/rooms/{room_id}` 协议。
 
 ## 验证
 
 ```bash
 pytest -q
 python scripts/e2e_smoke.py
+npm install
+npx playwright install chromium
+npm run test:ui
 ```

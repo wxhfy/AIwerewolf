@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 DeepSeek API Client
 
@@ -15,6 +17,11 @@ import os
 import json
 import httpx
 from typing import Optional
+
+from backend.llm.env import load_env_file
+
+
+load_env_file()
 
 
 class DeepSeekClient:

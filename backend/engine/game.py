@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import Counter
 from random import Random
+from typing import Callable
 from uuid import uuid4
 
 from backend.agents.base import Agent
@@ -19,7 +20,9 @@ from backend.engine.models import (
     Player,
     Role,
 )
+from backend.engine.phase_manager import PhaseManager
 from backend.engine.rules import DEFAULT_ROLE_SET, build_players
+from backend.engine.summary import build_day_summary
 from backend.engine.visibility import Visibility
 
 
@@ -38,6 +41,7 @@ class WerewolfGame:
         agents: dict[str, Agent] | None = None,
         seed: int | None = None,
         max_days: int = 8,
+        observer: Callable[[GameState], None] | None = None,
     ):
         self.rng = Random(seed)
         self.state = GameState(
@@ -49,6 +53,9 @@ class WerewolfGame:
         )
         self.visibility = Visibility()
         self.validator = ActionValidator()
+        self.observer = observer
+        self.phase_manager = PhaseManager()
+        self.pending_hunter_id: str | None = None
         self.agents = agents or {
             player.id: HeuristicAgent(player.id, seed=(seed or 0) + player.seat)
             for player in self.state.players
@@ -82,10 +89,10 @@ class WerewolfGame:
         if not self.state.events:
             self.initialize()
         while self.state.winner is None and self.state.day < self.state.max_days:
-            self._run_night()
+            self.phase_manager.run(Phase.NIGHT_START, self)
             if self._check_win():
                 break
-            self._run_day()
+            self.phase_manager.run(Phase.DAY_START, self)
             self._check_win()
         if self.state.winner is None:
             self.state.winner = Alignment.WOLF
@@ -95,26 +102,18 @@ class WerewolfGame:
             agent.finish(self.state.winner.value if self.state.winner else None)
         return self.state
 
-    def _run_night(self) -> None:
+    def _begin_night(self) -> None:
         self.state.day += 1
         self.state.votes = {}
         self.state.night_actions = NightActions(last_guard_target_id=self.state.night_actions.last_guard_target_id)
         self._set_phase(Phase.NIGHT_START)
         self._log(EventType.SYSTEM_MESSAGE, "public", {"message": f"Night {self.state.day} begins."})
-        self._guard_phase()
-        self._wolf_phase()
-        self._witch_phase()
-        self._seer_phase()
-        self._night_resolve()
 
-    def _run_day(self) -> None:
+    def _begin_day(self) -> None:
         self._set_phase(Phase.DAY_START)
         for agent in self.agents.values():
             agent.day_start()
         self._log(EventType.SYSTEM_MESSAGE, "public", {"message": f"Day {self.state.day} begins."})
-        self._speech_phase()
-        self._vote_phase()
-        self._day_resolve()
 
     def _guard_phase(self) -> None:
         self._set_phase(Phase.NIGHT_GUARD_ACTION)
@@ -262,7 +261,18 @@ class WerewolfGame:
         target = self.state.player(target_id)
         self._log(EventType.SYSTEM_MESSAGE, "public", {"message": f"{target.name} was voted out."})
         if target.role == Role.HUNTER and self.state.abilities.hunter_can_shoot:
-            self._hunter_shoot(target)
+            self.pending_hunter_id = target.id
+            self.phase_manager.run(Phase.HUNTER_SHOOT, self)
+        self._refresh_day_summary()
+
+    def _hunter_shoot_from_pending(self) -> None:
+        if self.pending_hunter_id is None:
+            return
+        hunter = self.state.player(self.pending_hunter_id)
+        self.pending_hunter_id = None
+        if hunter.alive:
+            return
+        self._hunter_shoot(hunter)
 
     def _hunter_shoot(self, hunter: Player) -> None:
         self._set_phase(Phase.HUNTER_SHOOT)
@@ -282,6 +292,7 @@ class WerewolfGame:
                 "reasoning": decision.reasoning,
             },
         )
+        self._refresh_day_summary()
 
     def _ask(self, player: Player, request: str, call, *, many: bool = False):
         view = self.visibility.for_player(self.state, player.id)
@@ -377,3 +388,12 @@ class WerewolfGame:
                 visible_to=visible_to,
             )
         )
+        if self.observer is not None:
+            self.observer(self.state)
+
+    def _refresh_day_summary(self) -> None:
+        if self.state.day <= 0:
+            return
+        bullets, facts = build_day_summary(self.state.events, self.state.day)
+        self.state.daily_summaries[self.state.day] = bullets
+        self.state.daily_summary_facts[self.state.day] = facts

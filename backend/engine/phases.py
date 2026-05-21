@@ -1,0 +1,63 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Protocol
+
+from backend.engine.models import Phase
+
+
+class PhaseHandler(Protocol):
+    phase: Phase
+
+    def run(self, game: "WerewolfGame") -> None:
+        ...
+
+
+@dataclass(frozen=True)
+class AtomicPhase:
+    phase: Phase
+    runner_name: str
+
+    def run(self, game: "WerewolfGame") -> None:
+        getattr(game, self.runner_name)()
+
+
+@dataclass(frozen=True)
+class CompositePhase:
+    phase: Phase
+    steps: tuple[PhaseHandler, ...]
+
+    def run(self, game: "WerewolfGame") -> None:
+        for step in self.steps:
+            step.run(game)
+            if game.state.winner is not None:
+                break
+
+
+def default_phase_handlers() -> dict[Phase, PhaseHandler]:
+    night = CompositePhase(
+        phase=Phase.NIGHT_START,
+        steps=(
+            AtomicPhase(Phase.NIGHT_START, "_begin_night"),
+            AtomicPhase(Phase.NIGHT_GUARD_ACTION, "_guard_phase"),
+            AtomicPhase(Phase.NIGHT_WOLF_ACTION, "_wolf_phase"),
+            AtomicPhase(Phase.NIGHT_WITCH_ACTION, "_witch_phase"),
+            AtomicPhase(Phase.NIGHT_SEER_ACTION, "_seer_phase"),
+            AtomicPhase(Phase.NIGHT_RESOLVE, "_night_resolve"),
+        ),
+    )
+    day = CompositePhase(
+        phase=Phase.DAY_START,
+        steps=(
+            AtomicPhase(Phase.DAY_START, "_begin_day"),
+            AtomicPhase(Phase.DAY_SPEECH, "_speech_phase"),
+            AtomicPhase(Phase.DAY_VOTE, "_vote_phase"),
+            AtomicPhase(Phase.DAY_RESOLVE, "_day_resolve"),
+        ),
+    )
+    hunter = AtomicPhase(Phase.HUNTER_SHOOT, "_hunter_shoot_from_pending")
+    return {
+        Phase.NIGHT_START: night,
+        Phase.DAY_START: day,
+        Phase.HUNTER_SHOOT: hunter,
+    }

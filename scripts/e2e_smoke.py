@@ -53,6 +53,8 @@ def assert_match_payload(data: dict) -> None:
     assert any(event["type"] == "CHAT_MESSAGE" for event in data["events"])
     assert any(event["type"] == "VOTE_CAST" for event in data["events"])
     assert any(event["type"] == "GAME_END" for event in data["events"])
+    assert data["daily_summaries"]
+    assert data["daily_summary_facts"]
 
 
 def main() -> int:
@@ -76,10 +78,26 @@ def main() -> int:
         assert 'id="run"' in html
         assert 'id="lang-en"' in html
 
+        status, room_body = http_post(f"http://127.0.0.1:{port}/api/rooms?name=SmokeRoom&seed=5&player_count=7")
+        assert status == 200
+        room = json.loads(room_body)
+        assert room["name"] == "SmokeRoom"
+        room_id = room["id"]
+
+        status, fetched_room = http_get(f"http://127.0.0.1:{port}/api/rooms/{room_id}")
+        assert status == 200
+        assert json.loads(fetched_room)["id"] == room_id
+
+        status, room_game_body = http_post(f"http://127.0.0.1:{port}/api/rooms/{room_id}/games")
+        assert status == 200
+        room_game_payload = json.loads(room_game_body)
+        assert_match_payload(room_game_payload)
+
         status, js = http_get(f"http://127.0.0.1:{port}/static/app.js")
         assert status == 200
         assert "const dictionary" in js
         assert "statusLoading" in js
+        assert "/ws/rooms/" in js
 
         status, css = http_get(f"http://127.0.0.1:{port}/static/style.css")
         assert status == 200

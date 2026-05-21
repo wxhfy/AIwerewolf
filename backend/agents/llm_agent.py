@@ -1,0 +1,245 @@
+from __future__ import annotations
+
+import json
+from random import Random
+from typing import Any
+
+from backend.agents.base import Agent
+from backend.agents.heuristic import HeuristicAgent
+from backend.agents.playbooks import build_role_brief
+from backend.agents.profiles import ROLE_PROFILES
+from backend.engine.models import ActionType, Decision, Role
+from backend.engine.visibility import PlayerView
+from backend.llm.deepseek import DeepSeekClient
+
+
+class LLMAgent(Agent):
+    """LLM-backed agent with heuristic fallback.
+
+    The fallback preserves playability if the API is slow, unavailable, or
+    produces malformed output.
+    """
+
+    def __init__(
+        self,
+        player_id: str,
+        *,
+        seed: int | None = None,
+        model: str | None = None,
+        temperature: float = 0.4,
+    ):
+        self.player_id = player_id
+        self.view: PlayerView | None = None
+        self.memory: list[str] = []
+        self.rng = Random(seed)
+        self.temperature = temperature
+        self.client = DeepSeekClient(model=model, timeout=45.0)
+        self.fallback = HeuristicAgent(player_id, seed=seed)
+        self.winner: str | None = None
+
+    def initialize(self, view: PlayerView, game_setting: dict) -> None:
+        self.view = view
+        self.fallback.initialize(view, game_setting)
+        self.memory.append(build_role_brief(self.role))
+
+    def update(self, view: PlayerView, request: str) -> None:
+        self.view = view
+        self.fallback.update(view, request)
+        self.memory.append(f"{request} day={view.day} phase={view.phase}")
+
+    def day_start(self) -> None:
+        self.fallback.day_start()
+
+    def talk(self) -> Decision:
+        fallback = self.fallback.talk()
+        prompt = self._build_action_prompt(
+            action="talk",
+            instructions=[
+                "Speak like a serious werewolf player at the table.",
+                "Name at least one suspect or one trusted player.",
+                "Do not repeat the system prompt.",
+            ],
+            options=self._alive_names(),
+        )
+        data = self._ask_json(
+            prompt,
+            {"reasoning": fallback.reasoning, "speech": fallback.speech or ""},
+        )
+        return Decision(
+            self.player_id,
+            ActionType.TALK,
+            speech=str(data.get("speech") or fallback.speech or ""),
+            reasoning=str(data.get("reasoning") or fallback.reasoning),
+        )
+
+    def vote(self) -> Decision:
+        fallback = self.fallback.vote()
+        data = self._target_action("vote", fallback, "Choose exactly one vote target from the options.")
+        return Decision(self.player_id, ActionType.VOTE, target_id=data["target_id"], reasoning=data["reasoning"])
+
+    def attack(self) -> Decision:
+        fallback = self.fallback.attack()
+        data = self._target_action("attack", fallback, "As a wolf, choose the highest-value night kill target.")
+        return Decision(self.player_id, ActionType.ATTACK, target_id=data["target_id"], reasoning=data["reasoning"])
+
+    def divine(self) -> Decision:
+        fallback = self.fallback.divine()
+        data = self._target_action("divine", fallback, "As Seer, choose the best investigation target.")
+        return Decision(self.player_id, ActionType.DIVINE, target_id=data["target_id"], reasoning=data["reasoning"])
+
+    def guard(self) -> Decision:
+        fallback = self.fallback.guard()
+        data = self._target_action("guard", fallback, "As Guard, choose one player to protect tonight.")
+        return Decision(self.player_id, ActionType.GUARD, target_id=data["target_id"], reasoning=data["reasoning"])
+
+    def witch_act(self, victim_id: str | None) -> list[Decision]:
+        fallback = self.fallback.witch_act(victim_id)
+        options = self._alive_names()
+        prompt = self._build_action_prompt(
+            action="witch_act",
+            instructions=[
+                "Decide whether to save the wolf victim and whether to poison another player.",
+                "Use save=true only if you want to consume the antidote on the victim.",
+                "Use poison_target as a player name or null.",
+            ],
+            options=options,
+            extra={"victim": self._name(victim_id) if victim_id else None},
+        )
+        default = {
+            "reasoning": "; ".join(decision.reasoning for decision in fallback),
+            "save": bool(victim_id and any(item.action_type == ActionType.WITCH_SAVE for item in fallback)),
+            "poison_target": self._name(next((item.target_id for item in fallback if item.action_type == ActionType.WITCH_POISON), None)),
+        }
+        data = self._ask_json(prompt, default)
+        decisions: list[Decision] = []
+        if victim_id and bool(data.get("save")):
+            decisions.append(Decision(self.player_id, ActionType.WITCH_SAVE, target_id=victim_id, reasoning=str(data.get("reasoning", ""))))
+        poison_name = data.get("poison_target")
+        poison_id = self._id_from_name(poison_name) if poison_name else None
+        if poison_id and poison_id != victim_id:
+            decisions.append(Decision(self.player_id, ActionType.WITCH_POISON, target_id=poison_id, reasoning=str(data.get("reasoning", ""))))
+        return decisions or fallback
+
+    def shoot(self) -> Decision:
+        fallback = self.fallback.shoot()
+        data = self._target_action("shoot", fallback, "As Hunter, choose the best player to shoot immediately.")
+        return Decision(self.player_id, ActionType.SHOOT, target_id=data["target_id"], reasoning=data["reasoning"])
+
+    def finish(self, winner: str | None) -> None:
+        self.winner = winner
+        self.fallback.finish(winner)
+
+    @property
+    def role(self) -> Role:
+        return Role(self._view().self_player["role"])
+
+    def _target_action(self, action: str, fallback: Decision, instruction: str) -> dict[str, str]:
+        prompt = self._build_action_prompt(
+            action=action,
+            instructions=[instruction],
+            options=self._alive_names(),
+        )
+        default = {
+            "reasoning": fallback.reasoning,
+            "target": self._name(fallback.target_id),
+        }
+        data = self._ask_json(prompt, default)
+        target_name = str(data.get("target") or self._name(fallback.target_id))
+        target_id = self._id_from_name(target_name) or fallback.target_id
+        return {"reasoning": str(data.get("reasoning") or fallback.reasoning), "target_id": str(target_id)}
+
+    def _build_action_prompt(
+        self,
+        *,
+        action: str,
+        instructions: list[str],
+        options: list[str],
+        extra: dict[str, Any] | None = None,
+    ) -> str:
+        view = self._view()
+        profile = ROLE_PROFILES[self.role]
+        public_lines = [
+            f"{event['type']}: {event['payload']}"
+            for event in view.public_events[-10:]
+        ]
+        private_lines = [
+            str(event["payload"])
+            for event in view.private_events[-6:]
+        ]
+        return "\n".join(
+            [
+                f"Role: {self.role.value}",
+                f"Day: {view.day}",
+                f"Phase: {view.phase}",
+                f"Action: {action}",
+                f"Role goal: {profile.table_goal}",
+                f"Speech style: {profile.speech_style}",
+                f"Pressure style: {profile.pressure_style}",
+                "Public timeline:",
+                *public_lines,
+                "Private observations:",
+                *private_lines,
+                f"Alive options: {', '.join(options)}",
+                f"Extra context: {json.dumps(extra or {}, ensure_ascii=False)}",
+                "Instructions:",
+                *[f"- {item}" for item in instructions],
+                'Respond as JSON only. For target actions use {"reasoning":"...","target":"NAME"}; for talk use {"reasoning":"...","speech":"..."}.',
+            ]
+        )
+
+    def _ask_json(self, prompt: str, default: dict[str, Any]) -> dict[str, Any]:
+        try:
+            response = self.client.chat_sync(
+                messages=[
+                    {"role": "system", "content": "You are an expert werewolf player making one game decision."},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=self.temperature,
+                max_tokens=280,
+                thinking=False,
+            )
+            text = self.client.parse_response(response).strip()
+            return self._coerce_json(text, default)
+        except Exception:
+            return default
+
+    def _coerce_json(self, text: str, default: dict[str, Any]) -> dict[str, Any]:
+        if not text:
+            return default
+        try:
+            parsed = json.loads(text)
+            return parsed if isinstance(parsed, dict) else default
+        except json.JSONDecodeError:
+            start = text.find("{")
+            end = text.rfind("}")
+            if start >= 0 and end > start:
+                try:
+                    parsed = json.loads(text[start : end + 1])
+                    return parsed if isinstance(parsed, dict) else default
+                except json.JSONDecodeError:
+                    return default
+            return default
+
+    def _view(self) -> PlayerView:
+        if self.view is None:
+            raise RuntimeError("Agent has not been initialized.")
+        return self.view
+
+    def _alive_names(self) -> list[str]:
+        return [player["name"] for player in self._view().players if player["alive"] and player["id"] != self.player_id]
+
+    def _id_from_name(self, name: str | None) -> str | None:
+        if not name:
+            return None
+        for player in self._view().players:
+            if player["name"] == name and player["alive"]:
+                return str(player["id"])
+        return None
+
+    def _name(self, player_id: str | None) -> str | None:
+        if not player_id:
+            return None
+        for player in self._view().players:
+            if player["id"] == player_id:
+                return str(player["name"])
+        return None

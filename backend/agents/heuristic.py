@@ -4,6 +4,8 @@ from collections import Counter
 from random import Random
 
 from backend.agents.base import Agent
+from backend.agents.playbooks import build_role_brief
+from backend.agents.profiles import ROLE_PROFILES
 from backend.engine.models import ActionType, Decision, Role
 from backend.engine.visibility import PlayerView
 
@@ -25,10 +27,14 @@ class HeuristicAgent(Agent):
     def initialize(self, view: PlayerView, game_setting: dict) -> None:
         self.view = view
         self.memory.append(f"Initialized as {self.role.value}.")
+        self.memory.append(build_role_brief(self.role))
 
     def update(self, view: PlayerView, request: str) -> None:
         self.view = view
         self.memory.append(f"{request} at day {view.day} phase {view.phase}.")
+        if view.public_events:
+            last_event = view.public_events[-1]
+            self.memory.append(f"Observed {last_event['type']} at {last_event['phase']}.")
 
     def day_start(self) -> None:
         self.memory.append("Day started.")
@@ -36,33 +42,64 @@ class HeuristicAgent(Agent):
     def talk(self) -> Decision:
         view = self._view()
         role = self.role
+        primary = self._most_suspicious_alive()
+        secondary = self._secondary_suspect(primary["id"])
+        suspects = self._suspect_names(primary["id"], secondary["id"] if secondary else None)
+        profile = ROLE_PROFILES[role]
         if role == Role.WEREWOLF:
             target = self._choose_non_wolf()
-            speech = f"I think {target['name']} is steering attention too neatly. We should pressure that seat today."
-            reasoning = "As wolf, redirect suspicion toward a non-wolf while sounding analytical."
+            speech = (
+                f"My strongest push today is {target['name']}. {target['name']} has been too comfortable shaping the table "
+                f"without taking real risk. My second watch point is {suspects}. I want the vote to stay on a concrete civilian-looking slot."
+            )
+            reasoning = f"{profile.table_goal} {profile.wolf_disguise_style}"
         elif role == Role.SEER:
             checks = self._seer_checks()
             if checks:
                 latest = checks[-1]
                 result = "wolf" if latest["is_wolf"] else "not wolf"
                 target_name = self._name(latest["target_id"])
-                speech = f"My read is based on night information: {target_name} checked as {result}."
-                reasoning = "Share seer information to help village converge."
+                if latest["is_wolf"]:
+                    speech = (
+                        f"I am claiming Seer. Last night I checked {target_name} and the result is wolf. "
+                        f"My vote is locked there unless someone can overturn the check with a stronger chain."
+                    )
+                else:
+                    speech = (
+                        f"I am reading the board from a Seer perspective. {target_name} checked as not wolf, "
+                        f"so I want pressure on {suspects} instead. Everyone should now state a clear vote path."
+                    )
+                reasoning = profile.table_goal
             else:
-                speech = "I want claims and vote reasons kept concrete; wolves benefit from vague pressure."
-                reasoning = "No check result yet, so push for accountable discussion."
+                speech = (
+                    f"I want every seat to give one hard suspect and one backup suspect. Right now I dislike {suspects} "
+                    f"because the pressure they create is broad but not accountable."
+                )
+                reasoning = profile.speech_style
         elif role == Role.WITCH:
-            speech = "I am tracking who pushes easy votes. Today I prefer voting from evidence, not silence alone."
-            reasoning = "Witch should protect key village roles and avoid exposing potions too early."
+            speech = (
+                f"I am not accepting lazy consensus today. {primary['name']} is my first suspect and "
+                f"{secondary['name'] if secondary else primary['name']} is second, because I care more about who is steering votes than who is merely quiet."
+            )
+            reasoning = profile.table_goal
         elif role == Role.HUNTER:
-            speech = "Do not force a fast pile-on. If I am pressured, I will still leave a clear suspect list."
-            reasoning = "Hunter can deter opportunistic votes."
+            speech = (
+                f"Do not rush a blind pile-on. If this table wants to execute, I want it on {primary['name']}. "
+                f"If that flips wrong, I will remember exactly who protected {secondary['name'] if secondary else primary['name']}."
+            )
+            reasoning = profile.pressure_style
         elif role == Role.GUARD:
-            speech = "The cleanest path is comparing vote logic across seats, especially sudden switches."
-            reasoning = "Guard should avoid exposing protection choices."
+            speech = (
+                f"The clean path is to compare who opened pressure and who only arrived after it was safe. "
+                f"Right now {primary['name']} and {secondary['name'] if secondary else primary['name']} form the dirtiest pair for me."
+            )
+            reasoning = profile.table_goal
         else:
-            speech = "I am looking for contradictions between speeches and votes. Quiet consensus is dangerous."
-            reasoning = "Villager contributes public pressure without private information."
+            speech = (
+                f"I do not want a soft day. My vote preference is {primary['name']} first, "
+                f"{secondary['name'] if secondary else primary['name']} second. Anyone opposing that should explain a cleaner wolf line."
+            )
+            reasoning = profile.speech_style
         return Decision(view.player_id, ActionType.TALK, speech=speech, reasoning=reasoning)
 
     def vote(self) -> Decision:
@@ -223,6 +260,29 @@ class HeuristicAgent(Agent):
             if player:
                 return player
         return self._prefer_non_self(candidates)
+
+    def _secondary_suspect(self, exclude_id: str) -> dict | None:
+        candidates = [player for player in self._alive_others() if player["id"] != exclude_id]
+        if not candidates:
+            return None
+        accusations = Counter()
+        for event in self._view().public_events:
+            if event["type"] != "CHAT_MESSAGE":
+                continue
+            content = str(event["payload"].get("speech", "")).lower()
+            for player in candidates:
+                if player["name"].lower() in content:
+                    accusations[player["id"]] += 1
+        if accusations:
+            best_id, _ = accusations.most_common(1)[0]
+            return self._player(best_id)
+        return self._prefer_non_self(candidates)
+
+    def _suspect_names(self, primary_id: str, secondary_id: str | None) -> str:
+        primary = self._name(primary_id)
+        if secondary_id is None:
+            return primary
+        return f"{primary} and {self._name(secondary_id)}"
 
     def _find_public_claim(self, word: str) -> dict | None:
         for event in reversed(self._view().public_events):

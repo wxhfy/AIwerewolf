@@ -1,0 +1,10 @@
+{
+  "name": "aiwerewolf",
+  "private": true,
+  "scripts": {
+    "test:ui": "node tests/ui_smoke.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.54.2"
+  }
+}

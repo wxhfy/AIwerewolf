@@ -8,62 +8,120 @@
   </head>
   <body>
     <main class="shell">
-      <section class="topbar">
+      <section class="hero">
         <div class="headline">
           <p class="eyebrow" data-i18n="brand">AI Werewolf</p>
           <h1 data-i18n="title">观战台</h1>
           <p class="subhead" data-i18n="subtitle">离线 AI 狼人杀演示，可切换公开视角与主持视角。</p>
-        </div>
-        <div class="controls">
-          <div class="lang-switch" aria-label="Language switch">
-            <button id="lang-zh" type="button" class="lang-btn active">中文</button>
-            <button id="lang-en" type="button" class="lang-btn">EN</button>
+          <div class="hero-tags">
+            <span class="hero-tag" id="room-label">Room: -</span>
+            <span class="hero-tag" id="game-label">Game: -</span>
+            <span class="hero-tag" id="view-label" data-i18n="publicMode">公开视角</span>
           </div>
-          <label>
-            <span data-i18n="seed">Seed</span>
-            <input id="seed" type="number" value="7" min="0" />
-          </label>
-          <button id="run" type="button" data-i18n="run">运行一局</button>
-          <button id="private" type="button" data-i18n="private">主持视角</button>
+        </div>
+        <div class="hero-stats">
+          <div class="hero-stat">
+            <span data-i18n="winner">胜者</span>
+            <strong id="winner">-</strong>
+          </div>
+          <div class="hero-stat">
+            <span data-i18n="day">天数</span>
+            <strong id="day">-</strong>
+          </div>
+          <div class="hero-stat">
+            <span data-i18n="phase">阶段</span>
+            <strong id="phase">-</strong>
+          </div>
+          <div class="hero-stat">
+            <span data-i18n="events">事件</span>
+            <strong id="event-count">-</strong>
+          </div>
         </div>
       </section>
 
-      <section class="statusbar">
-        <strong id="status-title" data-i18n="statusReady">已就绪</strong>
-        <span id="status-text" data-i18n="statusHint">点击按钮生成一局新的 AI 对局。</span>
+      <section class="ops-grid">
+        <section class="control-panel">
+          <div class="panel-caption" data-i18n="controlPanel">对局控制</div>
+          <div class="controls">
+            <div class="lang-switch" aria-label="Language switch">
+              <button id="lang-zh" type="button" class="lang-btn active">中文</button>
+              <button id="lang-en" type="button" class="lang-btn">EN</button>
+            </div>
+            <label>
+              <span data-i18n="seed">Seed</span>
+              <input id="seed" type="number" value="7" min="0" />
+            </label>
+            <label>
+              <span data-i18n="speed">速度</span>
+              <input id="speed" type="number" value="80" min="0" step="20" />
+            </label>
+            <button id="run" type="button" data-i18n="run">运行一局</button>
+            <button id="private" type="button" data-i18n="private">主持视角</button>
+          </div>
+        </section>
+
+        <section class="statusbar">
+          <div class="status-main">
+            <div class="panel-caption" data-i18n="runtimeStatus">运行状态</div>
+            <strong id="status-title" data-i18n="statusReady">已就绪</strong>
+            <span id="status-text" data-i18n="statusHint">点击按钮生成一局新的 AI 对局。</span>
+          </div>
+        </section>
+
+        <section class="intel-card">
+          <div class="panel-caption" data-i18n="latestEvent">最新事件</div>
+          <strong id="last-event-title">-</strong>
+          <p id="last-event-text">-</p>
+          <div class="intel-row">
+            <span data-i18n="aliveCount">存活人数</span>
+            <strong id="alive-count">-</strong>
+          </div>
+          <div class="intel-row">
+            <span data-i18n="viewMode">视角</span>
+            <strong id="view-mode" data-i18n="publicMode">公开视角</strong>
+          </div>
+        </section>
       </section>
 
-      <section class="summary">
-        <div>
-          <span data-i18n="winner">胜者</span>
-          <strong id="winner">-</strong>
-        </div>
-        <div>
-          <span data-i18n="day">天数</span>
-          <strong id="day">-</strong>
-        </div>
-        <div>
-          <span data-i18n="phase">阶段</span>
-          <strong id="phase">-</strong>
-        </div>
-        <div>
-          <span data-i18n="events">事件</span>
-          <strong id="event-count">-</strong>
-        </div>
-      </section>
-
-      <section class="layout">
-        <aside class="panel players-panel">
+      <section class="table-layout">
+        <section class="panel board-panel">
           <div class="panel-head">
-            <h2 data-i18n="players">玩家</h2>
+            <h2 data-i18n="players">玩家席位</h2>
+            <span class="panel-note" data-i18n="boardHint">实时刷新当前存活与身份状态</span>
           </div>
-          <div class="players" id="players"></div>
-        </aside>
+          <div class="players board-grid" id="players"></div>
+        </section>
+
         <section class="panel timeline-panel">
           <div class="panel-head">
             <h2 data-i18n="timeline">事件时间线</h2>
+            <span class="panel-note" data-i18n="timelineHint">按阶段追加事件和公开发言</span>
           </div>
           <section class="timeline" id="timeline"></section>
+        </section>
+
+        <section class="panel notes-panel">
+          <div class="panel-head">
+            <h2 data-i18n="observerNotes">观战说明</h2>
+          </div>
+          <div class="notes-list">
+            <div class="note-item summary-note">
+              <span class="note-kicker" data-i18n="dailySummary">当日摘要</span>
+              <div id="daily-summary">-</div>
+            </div>
+            <div class="note-item">
+              <span class="note-kicker" data-i18n="roomLabel">房间</span>
+              <p data-i18n="roomDescription">每个房间会保留当前对局和历史对局编号，方便后续扩展成多人房间系统。</p>
+            </div>
+            <div class="note-item">
+              <span class="note-kicker" data-i18n="viewMode">视角</span>
+              <p data-i18n="viewDescription">公开视角隐藏身份；主持视角直接揭示角色与阵营，用于调试和复盘。</p>
+            </div>
+            <div class="note-item">
+              <span class="note-kicker" data-i18n="streamingLabel">实时流</span>
+              <p data-i18n="streamingDescription">页面通过 WebSocket 接收快照，不是整局结束后再一次性渲染。</p>
+            </div>
+          </div>
         </section>
       </section>
     </main>
