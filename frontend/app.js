@@ -121,6 +121,7 @@ const state = {
   busy: false,
   roomId: null,
   gameId: null,
+  lastSnapshot: null,
 };
 
 const els = {
@@ -308,6 +309,10 @@ function setLanguage(lang) {
   url.searchParams.set("lang", lang);
   window.history.replaceState({}, "", url);
   applyLanguage();
+  // Re-render dynamic game content with new language
+  if (state.lastSnapshot) {
+    render(state.lastSnapshot);
+  }
 }
 
 function applyLanguage() {
@@ -349,6 +354,7 @@ function setLoading() {
 }
 
 function render(game) {
+  state.lastSnapshot = game;
   state.gameId = game.id || state.gameId;
   els.winner.textContent = label(game.winner);
   els.day.textContent = String(game.day);

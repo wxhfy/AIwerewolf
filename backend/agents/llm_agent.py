@@ -8,9 +8,10 @@ from backend.agents.base import Agent
 from backend.agents.heuristic import HeuristicAgent
 from backend.agents.playbooks import build_role_brief
 from backend.agents.profiles import ROLE_PROFILES
+from backend.agents.prompts import get_action_strategy, get_output_format, get_system_prompt
 from backend.engine.models import ActionType, Decision, Role
 from backend.engine.visibility import PlayerView
-from backend.llm.deepseek import DeepSeekClient
+from backend.llm import create_client
 
 
 class LLMAgent(Agent):
@@ -33,7 +34,8 @@ class LLMAgent(Agent):
         self.memory: list[str] = []
         self.rng = Random(seed)
         self.temperature = temperature
-        self.client = DeepSeekClient(model=model, timeout=45.0)
+        self.client = create_client(model=model)
+        self.client.timeout = 45.0
         self.fallback = HeuristicAgent(player_id, seed=seed)
         self.winner: str | None = None
 
@@ -156,42 +158,71 @@ class LLMAgent(Agent):
         options: list[str],
         extra: dict[str, Any] | None = None,
     ) -> str:
+        """Build layered prompt: RULES → STATE → OBSERVATIONS → STRATEGY → FORMAT"""
         view = self._view()
         profile = ROLE_PROFILES[self.role]
+        strategy = get_action_strategy(action, self.role)
+
         public_lines = [
-            f"{event['type']}: {event['payload']}"
-            for event in view.public_events[-10:]
+            f"  [{event['type']}] {event['payload']}"
+            for event in view.public_events[-8:]
         ]
         private_lines = [
-            str(event["payload"])
-            for event in view.private_events[-6:]
+            f"  [{event['type']}] {event['payload']}"
+            for event in view.private_events[-5:]
         ]
-        return "\n".join(
-            [
-                f"Role: {self.role.value}",
-                f"Day: {view.day}",
-                f"Phase: {view.phase}",
-                f"Action: {action}",
-                f"Role goal: {profile.table_goal}",
-                f"Speech style: {profile.speech_style}",
-                f"Pressure style: {profile.pressure_style}",
-                "Public timeline:",
-                *public_lines,
-                "Private observations:",
-                *private_lines,
-                f"Alive options: {', '.join(options)}",
-                f"Extra context: {json.dumps(extra or {}, ensure_ascii=False)}",
-                "Instructions:",
-                *[f"- {item}" for item in instructions],
-                'Respond as JSON only. For target actions use {"reasoning":"...","target":"NAME"}; for talk use {"reasoning":"...","speech":"..."}.',
-            ]
-        )
+
+        alive_list = [p["name"] for p in view.players if p["alive"] and p["id"] != self.player_id]
+        dead_list = [p["name"] for p in view.players if not p["alive"]]
+
+        blocks = [
+            "=== 当前状态 ===",
+            f"你叫{view.self_player['name']}，是{self.role.value}",
+            f"第{view.day}天 / {view.phase}阶段",
+            f"存活玩家：{', '.join(alive_list) if alive_list else '无'}",
+            f"已死亡：{', '.join(dead_list) if dead_list else '无'}",
+            "",
+            "=== 角色目标 ===",
+            profile.table_goal,
+            profile.speech_style,
+            "",
+            "=== 最近公开事件 ===",
+        ]
+        if public_lines:
+            blocks.extend(public_lines)
+        else:
+            blocks.append("  (暂无)")
+        blocks.extend([
+            "",
+            "=== 你的私有信息 ===",
+        ])
+        if private_lines:
+            blocks.extend(private_lines)
+        else:
+            blocks.append("  (暂无)")
+
+        if strategy:
+            blocks.extend(["", "=== 行动策略 ===", strategy])
+
+        blocks.extend([
+            "",
+            "=== 当前指令 ===",
+            *[f"- {item}" for item in instructions],
+            "",
+            f"可选择的玩家：{', '.join(options)}",
+            f"附加信息：{json.dumps(extra or {}, ensure_ascii=False)}",
+            "",
+            f"请只输出 JSON：{get_output_format(action)}",
+        ])
+
+        return "\n".join(blocks)
 
     def _ask_json(self, prompt: str, default: dict[str, Any]) -> dict[str, Any]:
         try:
+            system = get_system_prompt(self.role)
             response = self.client.chat_sync(
                 messages=[
-                    {"role": "system", "content": "You are an expert werewolf player making one game decision."},
+                    {"role": "system", "content": system},
                     {"role": "user", "content": prompt},
                 ],
                 temperature=self.temperature,
