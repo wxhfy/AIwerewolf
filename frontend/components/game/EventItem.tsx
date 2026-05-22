@@ -5,82 +5,127 @@ import { GameEvent, EventType } from "@/types";
 import { useAppContext } from "@/context/AppContext";
 import { t, tPhase, format } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-import { Badge } from "@/components/ui/Badge";
 
 interface EventItemProps {
   event: GameEvent;
+  index?: number;
 }
 
-export function EventItem({ event }: EventItemProps) {
-  const { language } = useAppContext();
+const stripColor: Record<string, string> = {
+  [EventType.PHASE_CHANGED]: "bg-primary/60",
+  [EventType.CHAT_MESSAGE]: "bg-accent/60",
+  [EventType.VOTE_CAST]: "bg-accent",
+  [EventType.PLAYER_DIED]: "bg-danger/70",
+  [EventType.HUNTER_SHOT]: "bg-danger/70",
+  [EventType.WHITE_WOLF_KING_BOOM]: "bg-danger/70",
+  [EventType.NIGHT_ACTION]: "bg-info/60",
+  [EventType.PRIVATE_INFO]: "bg-info/40",
+  [EventType.GAME_END]: "bg-accent",
+  [EventType.GAME_START]: "bg-primary/40",
+  [EventType.SYSTEM_MESSAGE]: "bg-text-sub/40",
+};
 
-  function getEventContent() {
-    const payload = event.payload;
+export function EventItem({ event, index = 0 }: EventItemProps) {
+  const { language, viewMode } = useAppContext();
 
-    if (payload.message) {
-      return payload.message;
-    }
+  const isPrivate = event.visibility === "private" && viewMode !== "moderator";
+  if (isPrivate) return null;
+
+  const strip = stripColor[event.type] || "bg-text-sub/30";
+
+  function content() {
+    const p = event.payload;
 
     if (event.type === EventType.CHAT_MESSAGE) {
-      return `${payload.actor_name}: ${payload.speech}`;
-    }
-
-    if (event.type === EventType.VOTE_CAST) {
-      return format(t("voted", language), {
-        voter: payload.voter_name,
-        target: payload.target_name,
-        reasoning: payload.reasoning || "",
-      });
-    }
-
-    if (event.type === EventType.PLAYER_DIED) {
-      return format(t("died", language), {
-        player: payload.player_name,
-        reason: payload.reason,
-      });
-    }
-
-    if (event.type === EventType.GAME_END) {
-      return format(t("wins", language), {
-        winner: payload.winner === "village" ? t("village", language) : t("wolf", language),
-        reason: payload.reason,
-      });
-    }
-
-    if (event.type === EventType.NIGHT_ACTION) {
-      const target = payload.target ? payload.target.name : payload.target_id || t("none", language);
-      return format(t("action", language), {
-        actor: payload.actor_name,
-        action: payload.action_type,
-        target,
-        reasoning: payload.reasoning || "",
-      });
+      return (
+        <span className="text-sm text-textPrimary">
+          <span className="font-medium">{p.actor_name}</span>
+          <span className="text-text-sub mx-1.5">:</span>
+          {p.speech}
+        </span>
+      );
     }
 
     if (event.type === EventType.PHASE_CHANGED) {
-      return format(t("phaseChanged", language), {
-        phase: tPhase(payload.phase, language),
-      });
+      return (
+        <span className="text-xs text-text-sub italic">
+          {format(t("phaseChanged", language), { phase: tPhase(p.phase, language) })}
+        </span>
+      );
     }
 
-    return JSON.stringify(payload);
+    if (event.type === EventType.VOTE_CAST) {
+      return (
+        <span className="text-sm text-textPrimary">
+          <span className="font-medium">{p.voter_name}</span>
+          <span className="text-text-sub"> &#8594; </span>
+          <span className="font-medium">{p.target_name}</span>
+          {p.reasoning && (
+            <span className="text-text-sub ml-1">({p.reasoning})</span>
+          )}
+        </span>
+      );
+    }
+
+    if (
+      event.type === EventType.PLAYER_DIED ||
+      event.type === EventType.HUNTER_SHOT ||
+      event.type === EventType.WHITE_WOLF_KING_BOOM
+    ) {
+      return (
+        <span className="text-sm text-danger font-medium">
+          {format(t("died", language), {
+            player: p.player_name || p.target_name || "",
+            reason: p.reason || event.type.toLowerCase(),
+          })}
+        </span>
+      );
+    }
+
+    if (event.type === EventType.GAME_END) {
+      return (
+        <span className="text-sm font-display font-semibold text-accent">
+          {format(t("wins", language), {
+            winner: p.winner === "village" ? t("village", language) : t("wolf", language),
+            reason: p.reason || "",
+          })}
+        </span>
+      );
+    }
+
+    if (event.type === EventType.NIGHT_ACTION) {
+      return (
+        <span className="text-xs text-text-sub">
+          {format(t("action", language), {
+            actor: p.actor_name || "?",
+            action: p.action_type || "",
+            target: (p.target && p.target.name) || p.target_id || t("none", language),
+            reasoning: p.reasoning || "",
+          })}
+        </span>
+      );
+    }
+
+    return (
+      <span className="text-xs text-text-sub">
+        {p.message || JSON.stringify(p)}
+      </span>
+    );
   }
 
-  const isPrivate = event.visibility === "private";
-
   return (
-    <div className="flex gap-3 py-3 border-b border-border last:border-b-0">
-      <div className="flex flex-col items-center">
-        <Badge variant="default">{`D${event.day}`}</Badge>
-        <span className="mt-1 text-xs text-textSecondary">{tPhase(event.phase, language)}</span>
-      </div>
-      <div className="flex-1">
-        <div className="flex items-center gap-2">
-          <span className="font-medium text-textPrimary">{event.type}</span>
-          {isPrivate && <Badge variant="warning">{t("privateTag", language)}</Badge>}
-        </div>
-        <p className="mt-1 text-sm text-textSecondary">{getEventContent()}</p>
-      </div>
+    <div
+      className={cn(
+        "flex gap-3 py-2.5 animate-slide-in",
+        event.visibility === "private" && "opacity-70"
+      )}
+      style={{ animationDelay: `${index * 50}ms` }}
+    >
+      {/* Color strip */}
+      <div className={cn("w-1 rounded-full flex-shrink-0", strip)} />
+
+      {/* Content */}
+      <div className="flex-1 min-w-0">{content()}</div>
     </div>
   );
 }
