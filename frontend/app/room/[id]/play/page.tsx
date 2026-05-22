@@ -188,7 +188,7 @@ export default function GamePage() {
             {isNight ? <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" /> :
               <><circle cx="12" cy="12" r="5" /><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" /></>}
           </svg>
-          <span className="font-display text-sm font-semibold text-textPrimary">
+          <span className="font-display text-base font-semibold text-textPrimary">
             {gameState ? (language === "zh" ? `第${gameState.day}天` : `Day ${gameState.day}`) : t("statusReady", language)}
             {gameState?.winner && <span className="ml-2 text-accent"> - {gameState.winner === "village" ? t("village", language) : t("wolf", language)}</span>}
           </span>
@@ -209,7 +209,7 @@ export default function GamePage() {
 
       {/* Main */}
       <div className="flex-1 flex relative z-10 overflow-hidden">
-        <aside className="hidden lg:flex flex-col gap-2 p-3 w-[20%] min-w-[130px] max-w-[200px] overflow-y-auto"
+        <aside className="hidden lg:flex flex-col gap-3 p-4 w-[22%] min-w-[160px] overflow-y-auto"
           style={{ borderRight: `1px solid var(--color-border)` }}>
           {(leftPlayers.length > 0 ? leftPlayers : ph(1, 4)).map((p: any, i: number) => (
             <PlayerCard key={p.id || i} player={p}
@@ -239,7 +239,7 @@ export default function GamePage() {
                   <div key={dk} className="mb-5">
                     {/* Day header */}
                     <div className="flex items-center gap-3 mb-3 pb-2 border-b" style={{ borderColor: "var(--color-border)" }}>
-                      <span className="font-display text-base font-bold text-primary">D{dk}</span>
+                      <span className="font-display text-xl font-bold text-primary">D{dk}</span>
                       {deaths.length > 0 && (
                         <span className="text-xs text-danger truncate">
                           {deaths.map((d: any) => d.payload.player_name || d.payload.target_name || "?").join(" · ")} {language === "zh" ? "出局" : "died"}
@@ -303,7 +303,7 @@ export default function GamePage() {
           )}
         </main>
 
-        <aside className="hidden lg:flex flex-col gap-2 p-3 w-[15%] min-w-[110px] max-w-[160px] overflow-y-auto"
+        <aside className="hidden lg:flex flex-col gap-3 p-4 w-[20%] min-w-[150px] overflow-y-auto"
           style={{ borderLeft: `1px solid var(--color-border)` }}>
           {(rightPlayers.length > 0 ? rightPlayers : ph(5, 7)).map((p: any, i: number) => (
             <PlayerCard key={p.id || i} player={p}

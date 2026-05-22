@@ -31,7 +31,7 @@ export function PlayerCard({
   const isVillage = player.alignment === Alignment.VILLAGE;
 
   const containerClass = cn(
-    "relative flex flex-col items-center p-4 rounded-card transition-all duration-200 cursor-pointer select-none",
+    "relative flex flex-col items-center p-5 rounded-card transition-all duration-200 cursor-pointer select-none",
     // Floating effect — layered shadows for depth
     "shadow-[0_4px_16px_rgba(0,0,0,0.06),0_1px_3px_rgba(0,0,0,0.04)]",
     "bg-[var(--color-card)]",
@@ -53,14 +53,14 @@ export function PlayerCard({
       )}
 
       {/* Seat number — large editorial number */}
-      <Badge variant={isDead ? "dead" : "seat"} className="mb-2">
+      <Badge variant={isDead ? "dead" : "seat"} className="mb-2.5 text-base w-10 h-10">
         {isDead ? "✝" : player.seat}
       </Badge>
 
       {/* Name */}
       <p
         className={cn(
-          "font-display text-sm font-semibold text-textPrimary text-center leading-tight",
+          "font-display text-base font-semibold text-textPrimary text-center leading-tight",
           isDead && "text-text-sub"
         )}
       >
@@ -72,14 +72,14 @@ export function PlayerCard({
         {viewMode === "moderator" && player.role ? (
           <p
             className={cn(
-              "text-xs font-medium",
+              "text-sm font-medium",
               isWolf ? "text-danger" : isVillage ? "text-success" : "text-text-sub"
             )}
           >
             {tRole(player.role, language)}
           </p>
         ) : (
-          <p className="text-xs text-text-sub">{t("hiddenRole", language)}</p>
+          <p className="text-sm text-text-sub">{t("hiddenRole", language)}</p>
         )}
       </div>
 
@@ -93,11 +93,11 @@ export function PlayerCard({
       {/* Status tag */}
       <div className="mt-2">
         {isDead ? (
-          <Badge variant="dead" className="text-[10px] px-2 py-0">
+          <Badge variant="dead" className="text-xs px-2.5 py-0.5">
             {t("dead", language)}
           </Badge>
         ) : (
-          <Badge variant="success" className="text-[10px] px-2 py-0">
+          <Badge variant="success" className="text-xs px-2.5 py-0.5">
             {t("alive", language)}
           </Badge>
         )}
