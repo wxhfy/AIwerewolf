@@ -945,7 +945,22 @@ class WerewolfGame:
                 for item in result:
                     self._record_decision(player, request, view.__dict__, item, raw_output="[human]")
             return result
-        result = call(agent)
+        # AI turn — emit a "thinking" snapshot BEFORE we block on the LLM
+        # round-trip. The frontend reads `current_speaker_id` to light up the
+        # PlayerCard with a "思考中" pulse; without this frame the UI looks
+        # frozen for the 4–10s the LLM is actually working.
+        prior_speaker = self.state.current_speaker_id
+        self.state.current_speaker_id = player.id
+        if self.observer is not None:
+            self.observer(self.state)
+        try:
+            result = call(agent)
+        finally:
+            # Only clear if we set it for this _ask — phases like DAY_SPEECH
+            # already manage current_speaker_id externally and we shouldn't
+            # blow it away.
+            if self.state.current_speaker_id == player.id and prior_speaker != player.id:
+                self.state.current_speaker_id = prior_speaker
         if isinstance(result, Decision):
             self._record_decision(player, request, view.__dict__, result, raw_output=str(result.metadata.get("raw_text", "")))
         elif isinstance(result, list):

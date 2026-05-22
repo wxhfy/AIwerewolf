@@ -373,7 +373,7 @@ async def stream_game(
                     msg["room_id"] = room_id
                     _rooms.record_snapshot(room_id, snap)
                 await websocket.send_json(msg)
-            await aio.sleep(0.3)  # poll every 300ms
+            await aio.sleep(0.08)  # poll every 80ms (was 300ms — felt sluggish during LLM turns)
 
     # Run game in thread, drain snapshots in parallel
     async def run_game() -> GameState:

@@ -40,9 +40,12 @@ class LLMAgent(Agent):
         self.provider = provider
         self.client = create_client(provider=self.provider, model=model)
         # DeepSeek-v4-flash uses built-in chain-of-thought; combined with
-        # 600-1000 token responses this can take 8–20s end-to-end. The previous
-        # 12s ceiling tripped ~half the calls into the heuristic fallback path.
-        self.client.timeout = 60.0
+        # 600-1000 token responses this can take 8–20s end-to-end, and on
+        # slow links the second attempt is another 8s on top. 120s gives
+        # the retry chain enough headroom to never time out under normal
+        # conditions; the engine's snapshot drain runs in parallel so the
+        # UI stays responsive while we wait.
+        self.client.timeout = 120.0
         self.fallback = HeuristicAgent(player_id, seed=seed, character=character)
         self.character = character
         self.winner: str | None = None
@@ -482,6 +485,9 @@ class LLMAgent(Agent):
         }
         try:
             system = self._build_system_prompt()
+            # Three escalating attempts. The dominant failure mode is
+            # reasoning_tokens eating the output budget mid-JSON, so each
+            # retry pushes both the token ceiling and the urgency in-prompt.
             attempts = [
                 {
                     "messages": [
@@ -500,14 +506,36 @@ class LLMAgent(Agent):
                     ],
                     "temperature": 0.2,
                 },
+                {
+                    # Last-ditch retry: very strict, minimal-reasoning prompt.
+                    # Most prior failures here were reasoning_tokens=max with
+                    # empty content; this nudges the model toward emitting
+                    # the JSON faster.
+                    "messages": [
+                        {"role": "system", "content": system},
+                        {
+                            "role": "user",
+                            "content": (
+                                f"{prompt}\n\n"
+                                "你之前两次都没有输出可解析的 JSON。这一次：\n"
+                                "1. 不要思考太久——把回答控制在两三句话以内\n"
+                                "2. 直接输出 JSON 对象，第一个字符必须是 '{'\n"
+                                "3. 字段值用合法的 JSON 字符串/数字/null，不要省略字段\n"
+                            ),
+                        },
+                    ],
+                    "temperature": 0.1,
+                },
             ]
             last_text = ""
             last_usage: dict[str, Any] = {}
+            # Token budgets: 1.0× → 1.5× → 2.5× of the base. The big jump on
+            # the final attempt is for cases where the model truly needs a
+            # lot of space (long persona-style speeches) and the first two
+            # rounds were just too tight.
+            budget_multipliers = [1.0, 1.5, 2.5]
             for idx, attempt in enumerate(attempts):
-                # Second attempt gets 1.5× the budget — first failure is usually
-                # because reasoning_tokens ate the output budget, so giving more
-                # room is the cheapest fix.
-                attempt_max = max_tokens if idx == 0 else int(max_tokens * 1.5)
+                attempt_max = int(max_tokens * budget_multipliers[idx])
                 response = self.client.chat_sync(
                     messages=attempt["messages"],
                     temperature=float(attempt["temperature"]),
@@ -523,6 +551,7 @@ class LLMAgent(Agent):
                     meta["source"] = "llm"
                     meta["fallback"] = False
                     meta["raw_text"] = text[:400]
+                    meta["attempts"] = idx + 1
                     meta["usage"] = last_usage
                     return parsed, meta
             self.last_error = "json_parse_failed"
