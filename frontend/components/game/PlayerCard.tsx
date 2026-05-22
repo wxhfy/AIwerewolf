@@ -31,13 +31,12 @@ export function PlayerCard({
   const isVillage = player.alignment === Alignment.VILLAGE;
 
   const containerClass = cn(
-    "relative flex flex-col items-center p-3 rounded-card transition-all duration-200 cursor-pointer select-none",
-    // Floating effect — layered shadows for depth
-    "shadow-[0_4px_16px_rgba(0,0,0,0.06),0_1px_3px_rgba(0,0,0,0.04)]",
+    "relative flex flex-col items-center px-2 py-2.5 rounded-card transition-all duration-200 cursor-pointer select-none",
+    "shadow-[0_2px_8px_rgba(0,0,0,0.05),0_1px_2px_rgba(0,0,0,0.03)]",
     "bg-[var(--color-card)]",
     isDead && "opacity-50 grayscale shadow-none",
     isSpeaking && "ring-2 ring-accent shadow-[0_4px_20px_rgba(212,175,55,0.25),0_0_0_4px_rgba(212,175,55,0.08)]",
-    !isSpeaking && !isDead && "hover:-translate-y-1 hover:shadow-[0_12px_32px_rgba(0,0,0,0.10),0_2px_6px_rgba(0,0,0,0.06)]",
+    !isSpeaking && !isDead && "hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(0,0,0,0.08)]",
     isSelected && "ring-2 ring-primary shadow-[0_4px_16px_rgba(139,90,43,0.2)]",
   );
 
@@ -45,76 +44,51 @@ export function PlayerCard({
     <div className={containerClass} onClick={onClick} role="button" tabIndex={0}>
       {/* Speaking indicator */}
       {isSpeaking && (
-        <div className="absolute -top-2 -right-2">
-          <Badge variant="speech" className="text-xs px-2 py-0.5">
+        <div className="absolute -top-1.5 -right-1.5">
+          <Badge variant="speech" className="text-[10px] px-1.5 py-0">
             &#x1F399;
           </Badge>
         </div>
       )}
 
-      {/* Seat number — large editorial number */}
-      <Badge variant={isDead ? "dead" : "seat"} className="mb-2 text-sm w-8 h-8">
-        {isDead ? "✝" : player.seat}
-      </Badge>
-
-      {/* Name */}
-      <p
-        className={cn(
-          "font-display text-sm font-semibold text-textPrimary text-center leading-tight",
+      {/* Seat + name row */}
+      <div className="flex items-center gap-2 w-full">
+        <span className={cn(
+          "flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold",
+          isDead ? "bg-text-sub/20 text-text-sub" : "bg-primary text-white"
+        )}>
+          {isDead ? "✝" : player.seat}
+        </span>
+        <span className={cn(
+          "font-display text-xs font-semibold text-textPrimary leading-tight truncate",
           isDead && "text-text-sub"
-        )}
-      >
-        {player.name}
-      </p>
+        )}>
+          {player.name}
+        </span>
+      </div>
 
-      {/* Role / hidden */}
-      <div className="mt-1 text-center min-h-[18px]">
+      {/* Role line */}
+      <div className="w-full mt-0.5">
         {viewMode === "moderator" && player.role ? (
-          <p
-            className={cn(
-              "text-sm font-medium",
-              isWolf ? "text-danger" : isVillage ? "text-success" : "text-text-sub"
-            )}
-          >
+          <p className={cn("text-[11px] font-medium leading-tight",
+            isWolf ? "text-danger" : isVillage ? "text-success" : "text-text-sub")}>
+            {tRole(player.role, language)}
+          </p>
+        ) : showOwnRole && player.role ? (
+          <p className={cn("text-[11px] font-medium leading-tight",
+            isWolf ? "text-danger" : isVillage ? "text-success" : "text-text-sub")}>
             {tRole(player.role, language)}
           </p>
         ) : (
-          <p className="text-sm text-text-sub">{t("hiddenRole", language)}</p>
+          <p className="text-[11px] text-text-sub leading-tight">{t("hiddenRole", language)}</p>
         )}
       </div>
 
-      {/* Persona label (if available) */}
-      {player.persona?.style_label && (
-        <p className="mt-1 text-[10px] text-text-sub italic truncate max-w-full">
-          {player.persona.style_label}
+      {/* Wolf teammates */}
+      {showOwnRole && wolfTeammates && wolfTeammates.length > 0 && (
+        <p className="text-[10px] text-text-sub mt-0.5 leading-tight w-full truncate">
+          🐺 {wolfTeammates.join(" · ")}
         </p>
-      )}
-
-      {/* Status tag */}
-      <div className="mt-1.5">
-        {isDead ? (
-          <Badge variant="dead" className="text-xs px-2.5 py-0.5">
-            {t("dead", language)}
-          </Badge>
-        ) : (
-          <Badge variant="success" className="text-xs px-2.5 py-0.5">
-            {t("alive", language)}
-          </Badge>
-        )}
-      </div>
-
-      {/* Own role tag (visible to human player even in public view) */}
-      {showOwnRole && player.role && (
-        <div className="mt-1.5 pt-1.5 border-t w-full text-center" style={{ borderColor: "var(--color-border)" }}>
-          <Badge variant={isWolf ? "danger" : isVillage ? "success" : "default"} className="text-[10px] px-2 py-0.5">
-            {tRole(player.role, language)}
-          </Badge>
-          {wolfTeammates && wolfTeammates.length > 0 && (
-            <p className="text-[9px] text-text-sub mt-1 leading-tight">
-              🐺 {wolfTeammates.join(" · ")}
-            </p>
-          )}
-        </div>
       )}
     </div>
   );
