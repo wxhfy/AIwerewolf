@@ -32,6 +32,7 @@ export default function GamePage() {
     speed, setSpeed, seed, setSeed,
   } = useAppContext();
 
+  const [showWinnerPanel, setShowWinnerPanel] = useState(false);
   const [statusTitle, setStatusTitle] = useState(
     gameState?.winner ? t("statusLoaded", language) : t("statusReady", language)
   );
@@ -227,48 +228,93 @@ export default function GamePage() {
         ))}
       </div>
 
-      {/* ====== Winner Overlay ====== */}
+      {/* ====== Game End: Floating Ball + Expandable Panel ====== */}
       {gameState?.winner && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center"
-          style={{ background: "rgba(0,0,0,0.55)", backdropFilter: "blur(4px)" }}>
-          <div className="text-center animate-scale-in px-6 py-10 rounded-card max-w-sm w-full mx-4"
-            style={{ background: "var(--color-card)", boxShadow: "0 16px 64px rgba(0,0,0,0.25)" }}>
-            <div className="mb-4">
-              <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                strokeWidth="1" strokeLinecap="round" strokeLinejoin="round"
-                className="mx-auto text-accent">
+        <>
+          {/* Floating ball — always visible after game ends */}
+          {!showWinnerPanel && (
+            <button
+              onClick={() => setShowWinnerPanel(true)}
+              className="fixed z-50 bottom-6 right-6 flex items-center gap-2.5 pl-3 pr-4 py-2.5 rounded-full animate-scale-in cursor-pointer border-0 shadow-[0_4px_24px_rgba(0,0,0,0.12)] hover:shadow-[0_6px_32px_rgba(0,0,0,0.16)] hover:-translate-y-0.5 transition-all duration-200"
+              style={{ background: "var(--color-card)", border: "1px solid var(--color-border)" }}
+            >
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
+                className="text-accent animate-breathe">
                 <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5C7 4 8 7 8 7" /><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5C17 4 16 7 16 7" />
                 <path d="M4 22h16" /><path d="M10 22V8c0-1.1.9-2 2-2s2 .9 2 2v14" /><path d="M8 12h8" />
               </svg>
+              <div className="text-left leading-tight">
+                <p className="text-[10px] text-text-sub">{language === "zh" ? "游戏结束" : "Game Over"}</p>
+                <p className={`text-sm font-bold ${gameState.winner === "village" ? "text-success" : "text-danger"}`}>
+                  {gameState.winner === "village" ? t("village", language) : t("wolf", language)}
+                  {language === "zh" ? "获胜" : " Wins"}
+                </p>
+              </div>
+            </button>
+          )}
+
+          {/* Expanded panel */}
+          {showWinnerPanel && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center"
+              style={{ background: "rgba(0,0,0,0.45)", backdropFilter: "blur(3px)" }}
+              onClick={() => setShowWinnerPanel(false)}>
+              <div className="text-center animate-scale-in px-6 py-8 rounded-card max-w-sm w-full mx-4"
+                style={{ background: "var(--color-card)", boxShadow: "0 16px 64px rgba(0,0,0,0.25)" }}
+                onClick={(e) => e.stopPropagation()}>
+                {/* Trophy */}
+                <div className="mb-3">
+                  <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" className="mx-auto text-accent">
+                    <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5C7 4 8 7 8 7" /><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5C17 4 16 7 16 7" />
+                    <path d="M4 22h16" /><path d="M10 22V8c0-1.1.9-2 2-2s2 .9 2 2v14" /><path d="M8 12h8" />
+                  </svg>
+                </div>
+                <p className="text-sm text-text-sub mb-2">{language === "zh" ? "游戏结束" : "Game Over"}</p>
+                <h2 className={`font-display text-3xl font-bold mb-1 ${gameState.winner === "village" ? "text-success" : "text-danger"}`}>
+                  {gameState.winner === "village" ? t("village", language) : t("wolf", language)}
+                </h2>
+                <p className="font-display text-textPrimary mb-5">
+                  {gameState.winner === "village"
+                    ? (language === "zh" ? "好人阵营获胜" : "Village Wins")
+                    : (language === "zh" ? "狼人阵营获胜" : "Wolves Win")}
+                </p>
+
+                {/* Stats */}
+                <div className="grid grid-cols-3 gap-3 mb-5 text-center">
+                  {[
+                    [String(gameState.day), language === "zh" ? "总天数" : "Days"],
+                    [String(aliveCount), language === "zh" ? "存活" : "Alive"],
+                    [String(gameState.event_count || 0), language === "zh" ? "事件" : "Events"],
+                  ].map(([val, label]) => (
+                    <div key={label}>
+                      <p className="font-display text-2xl font-bold text-primary">{val}</p>
+                      <p className="text-xs text-text-sub">{label}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Actions */}
+                <div className="flex gap-3 mb-3">
+                  <Button variant="ghost" onClick={() => router.push("/")} className="flex-1">
+                    {language === "zh" ? "返回大厅" : "Lobby"}
+                  </Button>
+                  <Button onClick={() => router.push("/")} className="flex-1">
+                    {language === "zh" ? "再来一局" : "Play Again"}
+                  </Button>
+                </div>
+
+                {/* Collapse button */}
+                <button
+                  onClick={() => setShowWinnerPanel(false)}
+                  className="text-xs text-text-sub underline hover:text-textPrimary transition-colors"
+                >
+                  {language === "zh" ? "收起面板，留在页面" : "Dismiss, stay on page"}
+                </button>
+              </div>
             </div>
-            <p className="text-sm text-text-sub mb-2">{language === "zh" ? "游戏结束" : "Game Over"}</p>
-            <h2 className={`font-display text-3xl font-bold mb-1 ${gameState.winner === "village" ? "text-success" : "text-danger"}`}>
-              {gameState.winner === "village" ? t("village", language) : t("wolf", language)}
-            </h2>
-            <p className="text-lg font-display text-textPrimary mb-6">
-              {gameState.winner === "village"
-                ? (language === "zh" ? "好人阵营获胜" : "Village Wins")
-                : (language === "zh" ? "狼人阵营获胜" : "Wolves Win")}
-            </p>
-            <div className="grid grid-cols-3 gap-3 mb-6 text-center">
-              {[
-                [String(gameState.day), language === "zh" ? "总天数" : "Days"],
-                [String(aliveCount), language === "zh" ? "存活" : "Alive"],
-                [String(gameState.event_count || 0), language === "zh" ? "事件" : "Events"],
-              ].map(([val, label]) => (
-                <div key={label}><p className="font-display text-2xl font-bold text-primary">{val}</p><p className="text-xs text-text-sub">{label}</p></div>
-              ))}
-            </div>
-            <div className="flex gap-3">
-              <Button variant="ghost" onClick={() => router.push("/")} className="flex-1">
-                {language === "zh" ? "返回大厅" : "Lobby"}
-              </Button>
-              <Button onClick={() => router.push("/")} className="flex-1">
-                {language === "zh" ? "再来一局" : "Play Again"}
-              </Button>
-            </div>
-          </div>
-        </div>
+          )}
+        </>
       )}
     </div>
   );
