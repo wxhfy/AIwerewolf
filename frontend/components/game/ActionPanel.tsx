@@ -1,0 +1,149 @@
+"use client";
+
+import React, { useState, useEffect, useRef } from "react";
+import { Button } from "@/components/ui/Button";
+import { CountdownTimer } from "@/components/game/CountdownTimer";
+import { VoteTargetGrid } from "@/components/game/VoteTargetGrid";
+import { Language } from "@/types";
+
+interface ActionPanelProps {
+  pendingInput: any;
+  onAction: (data: { target_id?: string | null; speech?: string | null; save?: boolean }) => void;
+  language: Language;
+}
+
+const SPEECH_REQUESTS = new Set(["TALK", "BADGE_SPEECH", "LAST_WORDS"]);
+const HUMAN_TIMER_SECONDS = 60;
+
+export function ActionPanel({ pendingInput, onAction, language }: ActionPanelProps) {
+  const pi = pendingInput;
+  if (!pi) return null;
+
+  const isSpeech = pi.action_type === "speech";
+  const isVote = pi.action_type === "vote";
+  const isNight = pi.action_type === "night_action" || pi.action_type === "special";
+  const hasTimer = SPEECH_REQUESTS.has(pi.request);
+  const isWitch = pi.request === "WITCH";
+
+  const [speech, setSpeech] = useState("");
+  const [targetId, setTargetId] = useState("");
+  const [savePotion, setSavePotion] = useState(false);
+  const [timerActive, setTimerActive] = useState(hasTimer);
+  const [submitted, setSubmitted] = useState(false);
+  const timerKey = useRef(0);
+
+  // Reset state when pendingInput changes
+  useEffect(() => {
+    setSpeech("");
+    setTargetId("");
+    setSavePotion(false);
+    setTimerActive(hasTimer);
+    setSubmitted(false);
+    timerKey.current += 1;
+  }, [pi.player_id, pi.request]);
+
+  function submit() {
+    if (submitted) return;
+    setSubmitted(true);
+    setTimerActive(false);
+    onAction({
+      target_id: isSpeech ? null : (targetId || null),
+      speech: isSpeech ? (speech.trim() || null) : null,
+      save: isWitch ? savePotion : false,
+    });
+  }
+
+  function handleTimerExpire() {
+    if (submitted) return;
+    setSubmitted(true);
+    setTimerActive(false);
+    onAction({
+      target_id: isSpeech ? null : (targetId || null),
+      speech: isSpeech ? (speech.trim() || null) : null,
+      save: isWitch ? savePotion : false,
+    });
+  }
+
+  const t = (zh: string, en: string) => (language === "zh" ? zh : en);
+
+  return (
+    <div className="border-t px-4 py-3 space-y-3"
+      style={{ background: "var(--color-card)", borderColor: "var(--color-border)" }}>
+      {/* Guidance */}
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-sm font-semibold text-textPrimary">
+            {pi.player_name} · {pi.phase}
+          </p>
+          <p className="text-xs text-text-sub mt-0.5">
+            {pi.prompt || (isSpeech ? t("轮到你了，输入发言", "Your turn — type your speech") : t("请选择目标", "Please select a target"))}
+          </p>
+        </div>
+        {hasTimer && (
+          <div className="w-40">
+            <CountdownTimer key={timerKey.current} seconds={HUMAN_TIMER_SECONDS} onExpire={handleTimerExpire} isActive={timerActive && !submitted} />
+          </div>
+        )}
+      </div>
+
+      {/* Speech input */}
+      {isSpeech && (
+        <textarea
+          value={speech}
+          onChange={(e) => setSpeech(e.target.value)}
+          placeholder={pi.placeholder || t("输入你的发言...", "Type your speech...")}
+          className="w-full h-24 px-3 py-2 rounded-lg border text-sm resize-none"
+          style={{ background: "var(--color-bg)", borderColor: "var(--color-border)", color: "var(--color-text)" }}
+          disabled={submitted}
+          onKeyDown={(e) => { if (e.key === "Enter" && e.ctrlKey) submit(); }}
+        />
+      )}
+
+      {/* Vote target grid */}
+      {isVote && (
+        <VoteTargetGrid
+          players={pi.options || []}
+          selectedId={targetId}
+          onSelect={setTargetId}
+          disabled={submitted}
+        />
+      )}
+
+      {/* Night action target */}
+      {isNight && !isVote && (
+        <div className="space-y-3">
+          <select value={targetId} onChange={(e) => setTargetId(e.target.value)}
+            disabled={submitted}
+            className="w-full h-10 px-3 rounded-button border text-sm"
+            style={{ background: "var(--color-bg)", borderColor: "var(--color-border)", color: "var(--color-text)" }}>
+            <option value="">- {t("选择目标", "Select target")} -</option>
+            {(pi.options || []).map((o: any) => (
+              <option key={o.id} value={o.id}>{o.name || o.id} {o.seat ? `(seat ${o.seat})` : ""}</option>
+            ))}
+          </select>
+          {isWitch && (
+            <label className="flex items-center gap-2 text-sm text-textPrimary">
+              <input type="checkbox" checked={savePotion} onChange={(e) => setSavePotion(e.target.checked)} disabled={submitted}
+                className="w-4 h-4 rounded" />
+              {t("使用解药", "Use healing potion")}
+            </label>
+          )}
+          {pi.can_skip && (
+            <button onClick={() => { setTargetId(""); submit(); }}
+              disabled={submitted}
+              className="text-xs text-text-sub underline hover:text-textPrimary">
+              {t("跳过", "Skip")}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Submit */}
+      <div className="flex justify-end">
+        <Button onClick={submit} disabled={submitted || (isVote && !targetId)} size="sm">
+          {submitted ? t("已提交", "Submitted") : t("提交", "Submit")}
+        </Button>
+      </div>
+    </div>
+  );
+}
