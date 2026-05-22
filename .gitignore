@@ -15,8 +15,8 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+/lib/
+/lib64/
 parts/
 sdist/
 var/
@@ -221,10 +221,30 @@ __marimo__/
 # Test files (local only)
 scripts/*_smoke.py
 tests/test_llm_config.py
-data/
 
 # Tool/agent metadata
 .serena/
 # NOTE: project-level team conventions live in skills/ and ARE tracked.
-# Only ignore tool-injected per-user skill caches if they appear elsewhere.
 
+# Local configuration files (not synced with git)
+AGENTS.md
+CLAUDE.md
+docs/test-report-*.md
+
+# IDE and editor files
+.trae/
+
+# Build artifacts
+.next/
+tsconfig.tsbuildinfo
+
+# Local data and venv
+data/
+wolf/
+prototype/
+
+# Reference images (large, not code)
+frontend/photos/
+
+# Planning docs (transient)
+plans/

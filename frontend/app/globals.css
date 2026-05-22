@@ -34,16 +34,46 @@
   --center-width: 60%;
 }
 
-/* Night phase overrides */
+/* Night phase overrides — dramatic dark theme */
 [data-phase="night"] {
-  --color-bg: #E8E2D8;
-  --color-card: #EDE8E0;
-  --color-primary: #7A4E20;
-  --color-primary-hover: #8B5A2B;
-  --color-text: #1A1816;
-  --color-text-sub: #4A4540;
-  --color-border: rgba(139, 90, 43, 0.15);
-  --color-overlay: rgba(0, 0, 0, 0.06);
+  --color-bg: #1A1816;
+  --color-card: #24211E;
+  --color-primary: #D4AF37;
+  --color-primary-hover: #E8C84A;
+  --color-text: #EDE8E0;
+  --color-text-sub: #9A9590;
+  --color-border: rgba(212, 175, 55, 0.12);
+  --color-overlay: rgba(0, 0, 0, 0.40);
+}
+
+/* Star particles (visible only in night) */
+.night-stars::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    radial-gradient(1px 1px at 10% 20%, rgba(255,255,255,0.5), transparent),
+    radial-gradient(1px 1px at 30% 10%, rgba(255,255,255,0.4), transparent),
+    radial-gradient(1.5px 1.5px at 70% 15%, rgba(255,255,255,0.6), transparent),
+    radial-gradient(1px 1px at 85% 25%, rgba(255,255,255,0.3), transparent),
+    radial-gradient(1px 1px at 15% 40%, rgba(255,255,255,0.25), transparent),
+    radial-gradient(1px 1px at 55% 8%, rgba(255,255,255,0.45), transparent),
+    radial-gradient(1.5px 1.5px at 90% 5%, rgba(255,255,255,0.55), transparent),
+    radial-gradient(1px 1px at 45% 30%, rgba(255,255,255,0.3), transparent),
+    radial-gradient(1px 1px at 25% 55%, rgba(255,255,255,0.2), transparent),
+    radial-gradient(1.5px 1.5px at 60% 35%, rgba(255,255,255,0.35), transparent);
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0;
+  transition: opacity 800ms var(--ease-in-out);
+}
+[data-phase="night"] .night-stars::before {
+  opacity: 1;
+}
+
+@keyframes twinkle {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; }
 }
 
 body {
@@ -52,32 +82,6 @@ body {
   font-family: var(--font-body);
   transition: background var(--transition-daynight) var(--ease-in-out),
               color var(--transition-daynight) var(--ease-in-out);
-}
-
-/* Subtle noise texture overlay for depth */
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 0;
-  opacity: 0.025;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
-}
-
-/* ---- Card base style ---- */
-.card-panel {
-  background: var(--color-card);
-  border: 1px solid var(--color-border);
-  border-radius: 12px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.03);
-  transition: background var(--transition-daynight) var(--ease-in-out),
-              border var(--transition-daynight) var(--ease-in-out),
-              box-shadow var(--transition-micro) var(--ease-out);
-}
-
-.card-panel:hover {
-  box-shadow: 0 1px 4px rgba(0,0,0,0.06), 0 8px 20px rgba(0,0,0,0.04);
 }
 
 /* ---- Animations ---- */
