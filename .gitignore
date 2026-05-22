@@ -222,4 +222,22 @@ __marimo__/
 AGENTS.md
 CLAUDE.md
 .gitignore
-docs/test-report-2026-05-22.md
+docs/test-report-*.md
+
+# IDE and editor files
+.trae/
+
+# Build artifacts
+.next/
+tsconfig.tsbuildinfo
+
+# Local data and venv
+data/
+wolf/
+prototype/
+
+# Reference images (large, not code)
+frontend/photos/
+
+# Planning docs (transient)
+plans/
