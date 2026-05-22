@@ -209,7 +209,7 @@ export default function GamePage() {
 
       {/* Main */}
       <div className="flex-1 flex relative z-10 overflow-hidden">
-        <aside className="hidden lg:flex flex-col gap-3 p-4 w-[22%] min-w-[160px] overflow-y-auto"
+        <aside className="hidden lg:flex flex-col gap-2 p-3 w-[22%] min-w-[160px] overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
           style={{ borderRight: `1px solid var(--color-border)` }}>
           {(leftPlayers.length > 0 ? leftPlayers : ph(1, 4)).map((p: any, i: number) => (
             <PlayerCard key={p.id || i} player={p}
@@ -303,7 +303,7 @@ export default function GamePage() {
           )}
         </main>
 
-        <aside className="hidden lg:flex flex-col gap-3 p-4 w-[20%] min-w-[150px] overflow-y-auto"
+        <aside className="hidden lg:flex flex-col gap-3 p-4 w-[20%] min-w-[150px] overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
           style={{ borderLeft: `1px solid var(--color-border)` }}>
           {(rightPlayers.length > 0 ? rightPlayers : ph(5, 7)).map((p: any, i: number) => (
             <PlayerCard key={p.id || i} player={p}
