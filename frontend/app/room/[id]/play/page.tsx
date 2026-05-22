@@ -31,8 +31,23 @@ export default function GamePage() {
     speed, setSpeed, seed, setSeed,
   } = useAppContext();
 
-  const [statusTitle, setStatusTitle] = useState(t("statusReady", language));
+  const [statusTitle, setStatusTitle] = useState(
+    gameState?.winner ? t("statusLoaded", language) : t("statusReady", language)
+  );
   const wsRef = useRef<WebSocket | null>(null);
+
+  // Sync status when gameState arrives (e.g., from lobby pre-start)
+  useEffect(() => {
+    if (gameState) {
+      if (gameState.winner) {
+        setStatusTitle(t("statusLoaded", language));
+        setIsPlaying(false);
+      } else if (gameState.pending_input) {
+        setStatusTitle(t("statusStreaming", language));
+        setIsPlaying(true);
+      }
+    }
+  }, [gameState?.id]);
 
   const isNight = useMemo(() => {
     const p = gameState?.phase || "";
@@ -153,8 +168,8 @@ export default function GamePage() {
             <button onClick={() => setViewMode(ViewMode.PUBLIC)} className={`px-2 py-1 text-xs font-medium ${viewMode === ViewMode.PUBLIC ? "bg-primary text-white" : "bg-transparent text-text-sub"}`}>{t("public", language)}</button>
             <button onClick={() => setViewMode(ViewMode.MODERATOR)} className={`px-2 py-1 text-xs font-medium ${viewMode === ViewMode.MODERATOR ? "bg-primary text-white" : "bg-transparent text-text-sub"}`}>{t("private", language)}</button>
           </div>
-          {!isPlaying && !isHumanMode && <Button size="sm" onClick={runGame}>{t("run", language)}</Button>}
-          {!isPlaying && isHumanMode && <Button size="sm" onClick={startHumanGame}>{t("run", language)}</Button>}
+          {!isPlaying && !isHumanMode && !gameState?.winner && <Button size="sm" onClick={runGame}>{t("run", language)}</Button>}
+          {!isPlaying && isHumanMode && !gameState?.winner && <Button size="sm" onClick={startHumanGame}>{t("run", language)}</Button>}
           <div className="flex rounded-button border overflow-hidden" style={{ borderColor: "var(--color-border)" }}>
             <button onClick={() => setLanguage(Language.ZH)} className={`px-2 py-1 text-xs font-medium ${language === "zh" ? "bg-primary text-white" : "bg-transparent text-text-sub"}`}>中</button>
             <button onClick={() => setLanguage(Language.EN)} className={`px-2 py-1 text-xs font-medium ${language === "en" ? "bg-primary text-white" : "bg-transparent text-text-sub"}`}>EN</button>
