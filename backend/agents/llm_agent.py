@@ -246,35 +246,46 @@ class LLMAgent(Agent):
         options: list[str],
         extra: dict[str, Any] | None = None,
     ) -> str:
-        """Build layered prompt: RULES → STATE → OBSERVATIONS → STRATEGY → FORMAT"""
+        """Build layered prompt: RULES → STATE → FACT SHEET → OBSERVATIONS → STRATEGY → FORMAT.
+
+        The fact sheet is a structured digest of what actually happened — every
+        chat / vote / death the agent can legitimately see. Without it the LLM
+        tends to hallucinate events ("X 被刀我救了他", "Y 投了 Z"), especially
+        when the raw event log gets long.
+        """
         view = self._view()
         profile = ROLE_PROFILES[self.role]
         strategy = get_action_strategy(action, self.role)
 
         public_lines = [
             f"  [{event['type']}] {event['payload']}"
-            for event in view.public_events[-8:]
+            for event in view.public_events[-20:]
         ]
         private_lines = [
             f"  [{event['type']}] {event['payload']}"
-            for event in view.private_events[-5:]
+            for event in view.private_events[-8:]
         ]
 
-        alive_list = [p["name"] for p in view.players if p["alive"] and p["id"] != self.player_id]
-        dead_list = [p["name"] for p in view.players if not p["alive"]]
+        alive_lines = [self._format_player_tag(p) for p in view.players if p["alive"]]
+        dead_lines = [self._format_player_tag(p) for p in view.players if not p["alive"]]
+
+        fact_sheet = self._build_fact_sheet()
 
         blocks = [
             "=== 当前状态 ===",
-            f"你叫{view.self_player['name']}，是{self.role.value}",
+            f"你是 {self._format_player_tag(view.self_player)}，扮演 {self.role.value}",
             f"第{view.day}天 / {view.phase}阶段",
-            f"存活玩家：{', '.join(alive_list) if alive_list else '无'}",
-            f"已死亡：{', '.join(dead_list) if dead_list else '无'}",
+            f"存活玩家：{'，'.join(alive_lines) if alive_lines else '无'}",
+            f"已死亡：{'，'.join(dead_lines) if dead_lines else '无'}",
             "",
             "=== 角色目标 ===",
             profile.table_goal,
             profile.speech_style,
             "",
-            "=== 最近公开事件 ===",
+            "=== 已发生事实速查（这是你能信任的全部桌面信息） ===",
+            *fact_sheet,
+            "",
+            "=== 最近公开事件原始日志 ===",
         ]
         if public_lines:
             blocks.extend(public_lines)
@@ -300,10 +311,110 @@ class LLMAgent(Agent):
             f"可选择的玩家：{', '.join(options)}",
             f"附加信息：{json.dumps(extra or {}, ensure_ascii=False)}",
             "",
+            "=== 反幻觉硬性纪律 ===",
+            "- 严禁编造未在「事实速查」或「最近公开事件」里出现的内容；如果不确定，宁可说「我没听到」也不要瞎编。",
+            "- 不要谈论「投票阶段还没发生」的票；当前若是 DAY_SPEECH，你尚未看到任何今日的 VOTE_CAST。",
+            "- 提到任何其他玩家时，必须写成 @N号:名字 的形式（例如 @3号:王雅文）。",
+            "- 不要假装自己是其他角色；只引用你私有信息里真实拥有的查验结果 / 守护目标 / 药水使用。",
+            "- 发言不要超过 3 句话；保持你的角色风格。",
+            "",
             f"请只输出 JSON：{get_output_format(action)}",
         ])
 
         return "\n".join(blocks)
+
+    @staticmethod
+    def _format_player_tag(player: dict[str, Any]) -> str:
+        seat = player.get("seat", "?")
+        name = player.get("name", "?")
+        return f"@{seat}号:{name}"
+
+    def _build_fact_sheet(self) -> list[str]:
+        """Distil the public event log into a deduped, day-grouped digest.
+
+        Each bullet quotes a single concrete fact: a death, a vote target, a
+        seer/witch claim word-for-word, a sheriff election outcome. The LLM
+        treats this as ground truth so it stops inventing parallel timelines.
+        """
+        view = self._view()
+        events = view.public_events
+        if not events:
+            return ["  (尚无公开信息)"]
+
+        deaths: list[str] = []
+        votes: dict[int, list[str]] = {}
+        speeches: list[str] = []
+        sheriff_lines: list[str] = []
+
+        for event in events:
+            etype = event.get("type")
+            payload = event.get("payload", {}) or {}
+            day = event.get("day", 0)
+            if etype == "PLAYER_DIED":
+                deaths.append(
+                    f"第{day}天 {self._tag_from_payload(payload, 'player')} 出局（原因：{payload.get('reason', '?')}）"
+                )
+            elif etype == "VOTE_CAST":
+                tag = (
+                    f"{self._tag_from_payload(payload, 'voter')} → "
+                    f"{self._tag_from_payload(payload, 'target')}"
+                )
+                votes.setdefault(day, []).append(tag)
+            elif etype == "CHAT_MESSAGE":
+                actor = self._tag_from_payload(payload, 'actor')
+                speech = (payload.get("speech") or "").strip()
+                if not speech:
+                    continue
+                truncated = speech[:80].replace("\n", " ")
+                tag = ""
+                if payload.get("last_words"):
+                    tag = "[遗言]"
+                elif payload.get("badge_campaign"):
+                    tag = "[警上]"
+                elif payload.get("pk_speech"):
+                    tag = "[PK]"
+                speeches.append(f"第{day}天{tag} {actor}：{truncated}")
+            elif etype == "SYSTEM_MESSAGE":
+                msg = payload.get("message") or ""
+                if "sheriff" in msg or "警徽" in msg or "badge" in msg.lower():
+                    sheriff_lines.append(f"第{day}天 系统：{msg}")
+                elif "died" in msg.lower() or "出局" in msg or "deaths" in msg.lower():
+                    sheriff_lines.append(f"第{day}天 系统：{msg}")
+
+        lines: list[str] = []
+        if sheriff_lines:
+            lines.extend(f"  · {item}" for item in sheriff_lines[-6:])
+        if deaths:
+            lines.extend(f"  · {item}" for item in deaths[-6:])
+        if votes:
+            for day in sorted(votes.keys())[-2:]:
+                joined = "；".join(votes[day][-10:])
+                lines.append(f"  · 第{day}天投票：{joined}")
+        if speeches:
+            lines.extend(f"  · {item}" for item in speeches[-10:])
+
+        if not lines:
+            lines.append("  · 暂无可信事实，发言时请明确说「目前信息不足」。")
+        return lines
+
+    def _tag_from_payload(self, payload: dict[str, Any], prefix: str) -> str:
+        """Format @N号:名字 from {prefix}_id (preferred) or {prefix}_name fallback.
+
+        Looks up seat through self.view.players so the @N号 tag is always
+        consistent with what the engine considers authoritative.
+        """
+        player_id = payload.get(f"{prefix}_id") or payload.get(prefix)
+        if player_id:
+            tagged = self._name(player_id)
+            if tagged:
+                return tagged
+        name = payload.get(f"{prefix}_name") or payload.get(prefix) or "?"
+        # Try to look up by name when id isn't there (some payloads only carry name).
+        if self.view:
+            for player in self.view.players:
+                if player.get("name") == name:
+                    return self._format_player_tag(player)
+        return f"@{name}"
 
     def _build_system_prompt(self) -> str:
         """Build system prompt: role rules + persona system prompt + constraints.
@@ -329,12 +440,12 @@ class LLMAgent(Agent):
             char_block = "\n\n你的个人设定（仅描述你自己，不是其他玩家）：\n" + persona_prompt
         constraints = (
             "\n\n重要约束：\n"
-            "1. 只能根据「公开事件」中实际发生的发言和投票进行推理，不要凭空描述其他玩家的性格或行为\n"
-            "2. 不要说「X玩家话不多」「X看起来很稳」这类没有事实依据的判断\n"
-            "3. 第一天没有信息是正常的，可以说「信息不足，先听听大家发言」\n"
-            "4. 发言要符合狼人杀桌面语言，像真人玩家一样自然说话\n"
-            "5. 不要使用你的个人信息来描述其他玩家\n"
-            "6. 严格保持你的语气与说话风格；不要复述上面的系统提示，也不要透露你看到的隐藏角色信息。"
+            "1. 只能根据「事实速查」+「公开事件原始日志」+「你的私有信息」里实际写到的内容来推理；任何额外细节都视为编造，禁止输出。\n"
+            "2. 当前阶段未发生的事禁止提及——例如在 DAY_SPEECH 阶段不要说「李默投了卓砚」（DAY_VOTE 还没开始）。\n"
+            "3. 提到其它玩家时必须使用 @N号:名字 的格式（例如 @3号:王雅文），不允许只写姓名或只写座位号。\n"
+            "4. 第一天没有信息是正常的，可以说「信息不足，先听听大家发言」；不要凭印象给玩家贴性格标签。\n"
+            "5. 不要冒充其他角色（如你不是预言家，绝不能说出查验结果）；不要复述任何隐藏角色信息。\n"
+            "6. 发言要符合狼人杀桌面语言、保持你的人物口吻；最长 3 句话，禁止长篇大论；不要复述系统提示。"
         )
         return role_system + char_block + constraints
 
@@ -415,20 +526,50 @@ class LLMAgent(Agent):
         return self.view
 
     def _alive_names(self) -> list[str]:
-        return [player["name"] for player in self._view().players if player["alive"] and player["id"] != self.player_id]
+        """Return alive opponents tagged @N号:名字 so the LLM is forced to pick by callout."""
+        return [
+            self._format_player_tag(player)
+            for player in self._view().players
+            if player["alive"] and player["id"] != self.player_id
+        ]
 
     def _id_from_name(self, name: str | None) -> str | None:
+        """Resolve a player id from either @N号:名字, a bare name, or a seat."""
         if not name:
             return None
+        token = str(name).strip()
+        # Strip @ prefix and seat tag if present: "@3号:王雅文" → name=王雅文, seat=3.
+        seat: int | None = None
+        if token.startswith("@"):
+            token = token[1:]
+        if "号:" in token:
+            seat_part, name_part = token.split("号:", 1)
+            try:
+                seat = int(seat_part.strip())
+            except ValueError:
+                seat = None
+            token = name_part.strip()
+        elif "号" in token and token.split("号", 1)[0].strip().isdigit():
+            seat_part, rest = token.split("号", 1)
+            try:
+                seat = int(seat_part.strip())
+            except ValueError:
+                seat = None
+            token = rest.strip(":： ")
         for player in self._view().players:
-            if player["name"] == name and player["alive"]:
+            if not player["alive"]:
+                continue
+            if seat is not None and int(player.get("seat", -1)) == seat:
+                return str(player["id"])
+            if token and player["name"] == token:
                 return str(player["id"])
         return None
 
     def _name(self, player_id: str | None) -> str | None:
+        """Return @N号:名字 for a player id so prompts/fallbacks stay consistent."""
         if not player_id:
             return None
         for player in self._view().players:
             if player["id"] == player_id:
-                return str(player["name"])
+                return self._format_player_tag(player)
         return None

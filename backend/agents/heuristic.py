@@ -295,18 +295,18 @@ class HeuristicAgent(Agent):
         return speech, reasoning
 
     def _reaction_to_death(self, style: str, dead_names: list[str], rng: Random) -> str:
-        names = "、".join(dead_names)
+        tags = "、".join(self._tag_by_name(name) for name in dead_names)
         templates_by_style = {
-            "analytical": [f"{names}走了，得回看昨晚的目标选择。", f"{names}的离场说明刀型不是随机。"],
-            "observant": [f"{names}死了。", f"{names}走了。"],
-            "meticulous": [f"{names}的死要列入今天的判断依据。", f"先记一笔——{names}昨晚没撑住。"],
-            "insightful": [f"{names}先走，节奏一下子变了。", f"{names}的位置很关键，狼显然有目的。"],
-            "persuasive": [f"我们少了{names}，今天更要凝聚。", f"{names}走了，大家心里都有数。"],
-            "aggressive": [f"{names}死得不冤吧？狼的刀很明显。", f"{names}没了，今天就别再装死。"],
-            "expressive": [f"哇{names}竟然走了！心痛一下。", f"{names}没撑住，我都看哭了。"],
-            "provocative": [f"{names}领盒饭了，狼这刀是要送票。", f"{names}走了，刀型挺直白。"],
+            "analytical": [f"{tags}走了，得回看昨晚的目标选择。", f"{tags}的离场说明刀型不是随机。"],
+            "observant": [f"{tags}死了。", f"{tags}走了。"],
+            "meticulous": [f"{tags}的死要列入今天的判断依据。", f"先记一笔——{tags}昨晚没撑住。"],
+            "insightful": [f"{tags}先走，节奏一下子变了。", f"{tags}的位置很关键，狼显然有目的。"],
+            "persuasive": [f"我们少了{tags}，今天更要凝聚。", f"{tags}走了，大家心里都有数。"],
+            "aggressive": [f"{tags}死得不冤吧？狼的刀很明显。", f"{tags}没了，今天就别再装死。"],
+            "expressive": [f"哇{tags}竟然走了！心痛一下。", f"{tags}没撑住，我都看哭了。"],
+            "provocative": [f"{tags}领盒饭了，狼这刀是要送票。", f"{tags}走了，刀型挺直白。"],
         }
-        lines = templates_by_style.get(style, [f"昨晚{names}死了。"])
+        lines = templates_by_style.get(style, [f"昨晚{tags}死了。"])
         return rng.choice(lines)
 
     def _opening_close(self, style: str, rng: Random) -> str:
@@ -349,41 +349,43 @@ class HeuristicAgent(Agent):
             wolf_id = next(iter(self.known_wolf_ids))
             wolf = self._player(wolf_id)
             if wolf and wolf["alive"]:
+                tag = self._tag(wolf)
                 if role == Role.SEER:
-                    return f"我是预言家，昨晚验了{wolf['name']}，查杀！今天全票出{wolf['name']}，不接受分票。有对跳的出来。"
+                    return f"我是预言家，昨晚验了{tag}，查杀！今天全票出{tag}，不接受分票。有对跳的出来。"
                 else:
-                    return f"我强烈怀疑{wolf['name']}是狼。今天的票应该集中在他身上。"
+                    return f"我强烈怀疑{tag}是狼。今天的票应该集中在他身上。"
         return "我有比较强的把握，今天的票型要集中。"
 
     def _developing_case(self, role: Role, style: str, my_name: str, speeches: list[dict], alive: int, rng: Random) -> str:
         """Some information, building a case but not certain."""
         top = self._highest_suspicion_alive()
         score = self.suspicion.get(top["id"], 0)
+        tag = self._tag(top)
 
         if score >= 2.5:
             lines = [
-                f"我重点怀疑{top['name']}。他的票型和发言对不上，前后矛盾的地方不少。",
-                f"我越来越觉得{top['name']}有问题。大家回去看他之前的发言，逻辑断裂很明显。",
-                f"{top['name']}就是我今天想推的人。理由已经说了——他的行为模式不像是好人。",
-                f"我把票暂时挂在{top['name']}头上。证据链短但方向对，欢迎反驳。",
-                f"{top['name']}的几次站边都比较微妙，我心里基本定了。",
+                f"我重点怀疑{tag}。他的票型和发言对不上，前后矛盾的地方不少。",
+                f"我越来越觉得{tag}有问题。大家回去看他之前的发言，逻辑断裂很明显。",
+                f"{tag}就是我今天想推的人。理由已经说了——他的行为模式不像是好人。",
+                f"我把票暂时挂在{tag}头上。证据链短但方向对，欢迎反驳。",
+                f"{tag}的几次站边都比较微妙，我心里基本定了。",
             ]
             return rng.choice(lines)
         elif score >= 1.5:
             lines = [
-                f"我比较关注{top['name']}，但还不完全确定。大家也说说对他怎么看。",
-                f"暂时指向{top['name']}，有几个点让我不太舒服。但我愿意听他的解释。",
-                f"{top['name']}的发言让我有点在意，证据还差一点。有人有补充信息吗？",
-                f"我对{top['name']}留了个心眼，今天会重点听他怎么回应。",
-                f"目前最像问题选手的是{top['name']}，但我还要再确认。",
+                f"我比较关注{tag}，但还不完全确定。大家也说说对他怎么看。",
+                f"暂时指向{tag}，有几个点让我不太舒服。但我愿意听他的解释。",
+                f"{tag}的发言让我有点在意，证据还差一点。有人有补充信息吗？",
+                f"我对{tag}留了个心眼，今天会重点听他怎么回应。",
+                f"目前最像问题选手的是{tag}，但我还要再确认。",
             ]
             return rng.choice(lines)
         elif score >= 0.8:
             lines = [
-                f"我还不太确定，但{top['name']}稍微引起了我的注意。继续观察。",
-                f"目前线索不多，但{top['name']}的几个举动让我多看了两眼。",
-                f"信息有限，不过{top['name']}有点微妙。先不急着下结论。",
-                f"我把{top['name']}先放在观察名单里，原因后面会展开。",
+                f"我还不太确定，但{tag}稍微引起了我的注意。继续观察。",
+                f"目前线索不多，但{tag}的几个举动让我多看了两眼。",
+                f"信息有限，不过{tag}有点微妙。先不急着下结论。",
+                f"我把{tag}先放在观察名单里，原因后面会展开。",
             ]
             return rng.choice(lines)
         else:
@@ -406,45 +408,84 @@ class HeuristicAgent(Agent):
         if not self.last_speeches:
             return ""
         latest = self.last_speeches[-1]
-        speaker = latest.get("payload", {}).get("actor_name", "")
+        speaker_name = latest.get("payload", {}).get("actor_name", "")
+        speaker_tag = self._tag_by_name(speaker_name)
         speech_text = latest.get("payload", {}).get("speech", "")
 
-        # Only react if speaker is actually CLAIMING Seer (not just mentioning the role)
-        claims_seer = any(phrase in speech_text for phrase in [
-            "我是预言家", "我跳预言家", "I am the Seer", "I'm the Seer",
-            "我查了", "昨晚验了", "查杀", "金水",
-        ])
+        claims_seer = self._detect_seer_self_claim(speech_text)
         if claims_seer:
-            claimed_target = self._extract_name_from_speech(speech_text)
-            if claimed_target and claimed_target != my_name:
-                return f"{speaker}跳预言家说验了{claimed_target}。先记下，看有没有人对跳。"
-            return f"{speaker}跳预言家了。等等看有没有反跳的。"
+            claimed_target = self._extract_seer_target(speech_text, my_name)
+            if claimed_target:
+                target_tag = self._tag_by_name(claimed_target)
+                return f"{speaker_tag}跳预言家说验了{target_tag}。先记下，看有没有人对跳。"
+            return f"{speaker_tag}跳预言家了。等等看有没有反跳的。"
 
-        # If someone called us out — push back, but vary the phrasing.
-        if my_name in speech_text:
+        if my_name and my_name in speech_text:
             pushbacks = [
-                f"{speaker}点我了，我没什么好藏的，发言可以回头查。",
-                f"{speaker}怀疑我，那等会儿我会把我的逻辑摆给你看。",
-                f"我听到了{speaker}的怀疑，先不急着自证，看他下一句怎么接。",
+                f"{speaker_tag}点我了，我没什么好藏的，发言可以回头查。",
+                f"{speaker_tag}怀疑我，那等会儿我会把我的逻辑摆给你看。",
+                f"我听到了{speaker_tag}的怀疑，先不急着自证，看他下一句怎么接。",
             ]
             return rng.choice(pushbacks)
 
-        # If someone accused our suspect — only echo half the time, otherwise
-        # we end up sounding like the same bot in every chair.
         top = self._highest_suspicion_alive()
-        if top["name"] in speech_text and rng.random() < 0.5:
+        top_name = top.get("name") or ""
+        if top_name and top_name in speech_text and rng.random() < 0.5:
+            top_tag = self._tag(top)
             echoes = [
-                f"{speaker}对{top['name']}的怀疑我能接住。",
-                f"{speaker}提到的{top['name']}，我也有类似看法。",
-                f"和{speaker}一样，我也对{top['name']}存疑。",
+                f"{speaker_tag}对{top_tag}的怀疑我能接住。",
+                f"{speaker_tag}提到的{top_tag}，我也有类似看法。",
+                f"和{speaker_tag}一样，我也对{top_tag}存疑。",
             ]
             return rng.choice(echoes)
 
         return ""
 
+    @staticmethod
+    def _detect_seer_self_claim(text: str) -> bool:
+        """Return True only when the speaker EXPLICITLY claims to be the Seer.
+
+        Pure "查杀"/"金水" mentions are too noisy — wolves and villagers parrot
+        those words constantly. We instead require a self-identifier ("我是
+        预言家"/"我跳预言家") OR a paired self-verb ("我查了"/"我验了"/"昨晚
+        验了") within the same speech.
+        """
+        if not text:
+            return False
+        strong = ("我是预言家", "我跳预言家", "我跳预", "我跳P", "I am the Seer", "I'm the Seer")
+        if any(phrase in text for phrase in strong):
+            return True
+        verb_pairs = (
+            ("昨晚", "查"),
+            ("我查", "了"),
+            ("我验", "了"),
+            ("我昨晚", "查"),
+            ("我昨晚", "验"),
+        )
+        for left, right in verb_pairs:
+            if left in text and right in text and text.index(left) < text.index(right):
+                return True
+        return False
+
+    def _extract_seer_target(self, speech_text: str, my_name: str) -> str | None:
+        """Pull the actually-claimed target out of the speech.
+
+        Falls back to None when we can't find any player name in the speech —
+        previously we'd return the speaker's name itself, which produced the
+        nonsense "X 跳预言家说验了 X" lines.
+        """
+        view = self._view()
+        for player in view.players:
+            name = player.get("name")
+            if not name or name == my_name:
+                continue
+            if name in speech_text:
+                return name
+        return None
+
     def _call_vote(self) -> str:
         target = self._highest_suspicion_alive()
-        return f"我的票归{target['name']}。"
+        return f"我的票归{self._tag(target)}。"
 
     def _call_discussion(self, style: str = "neutral", rng: Random | None = None) -> str:
         rng = rng or self.rng
@@ -555,6 +596,24 @@ class HeuristicAgent(Agent):
 
     def _player(self, player_id: str) -> dict | None:
         return next((p for p in self._view().players if p["id"] == player_id), None)
+
+    @staticmethod
+    def _tag(player: dict | None) -> str:
+        """Return @N号:名字 callout for a player dict (or empty string)."""
+        if not player:
+            return ""
+        seat = player.get("seat", "?")
+        name = player.get("name", "?")
+        return f"@{seat}号:{name}"
+
+    def _tag_by_name(self, name: str) -> str:
+        """Resolve raw player name → @N号:名字 (falls back to bare name)."""
+        if not name:
+            return ""
+        for p in self._view().players:
+            if p.get("name") == name:
+                return self._tag(p)
+        return name
 
     def _init_suspicion(self) -> None:
         view = self._view()

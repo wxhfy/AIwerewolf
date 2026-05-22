@@ -209,6 +209,44 @@ function esc(value) {
     .replace(/"/g, "&quot;");
 }
 
+function playerById(id) {
+  if (!id || !state.lastSnapshot) return null;
+  return (state.lastSnapshot.players || []).find((p) => p.id === id) || null;
+}
+
+function playerByName(name) {
+  if (!name || !state.lastSnapshot) return null;
+  return (state.lastSnapshot.players || []).find((p) => p.name === name) || null;
+}
+
+function tagFor({ seat, name }) {
+  if (!name && !seat) return "";
+  const seatPart = seat ? `${seat}号` : "?号";
+  return `@${seatPart}:${name || "?"}`;
+}
+
+function tagFromPayload(payload, prefix) {
+  if (!payload) return "";
+  const name = payload[`${prefix}_name`] || payload[prefix] || "";
+  const id = payload[`${prefix}_id`];
+  const p = playerById(id) || playerByName(name);
+  if (p) return tagFor({ seat: p.seat, name: p.name });
+  return name ? `@?号:${name}` : "";
+}
+
+function fmtTs(ts) {
+  if (!ts) return "";
+  const value = typeof ts === "number" ? ts : Number(ts);
+  if (!value || !isFinite(value)) return "";
+  // Engine ts is unix-seconds float (time()). Convert → Date for hh:mm:ss.
+  const date = new Date(value * 1000);
+  if (isNaN(date.getTime())) return "";
+  const hh = String(date.getHours()).padStart(2, "0");
+  const mm = String(date.getMinutes()).padStart(2, "0");
+  const ss = String(date.getSeconds()).padStart(2, "0");
+  return `${hh}:${mm}:${ss}`;
+}
+
 applyLang();
 bindEvents();
 initVoice();
@@ -445,9 +483,24 @@ function showHistoryModal({ detail, loading, error }) {
   const groupedSpeeches = groupByDay(detail.speeches || []);
   const groupedVotes = groupByDay(detail.votes || []);
 
-  const speechHtml = renderDayBlocks(groupedSpeeches, (item) => `<div class="hist-speech"><strong>${esc(item.speaker)}</strong>${item.phase ? `<span class="hist-tag">${esc(item.phase)}</span>` : ""}<p>${esc(item.text || "")}</p></div>`);
-  const voteHtml = renderDayBlocks(groupedVotes, (item) => `<div class="hist-vote">${esc(item.voter)} → <strong>${esc(item.target)}</strong></div>`);
-  const deathsHtml = (detail.deaths || []).map((death) => `<div class="hist-death">${t("day")} ${esc(death.day)} · ${esc(death.player)} (${esc(death.reason)})</div>`).join("");
+  const speechHtml = renderDayBlocks(groupedSpeeches, (item) => {
+    const tag = item.tag ? `<span class="hist-tag">${esc(item.tag)}</span>` : "";
+    const phaseTag = item.phase ? `<span class="hist-tag">${esc(item.phase)}</span>` : "";
+    const time = item.ts ? `<span class="evt-time">${esc(fmtTs(item.ts))}</span>` : "";
+    const speakerTag = item.speaker_seat ? `@${item.speaker_seat}号:${item.speaker}` : item.speaker || "?";
+    return `<div class="hist-speech"><strong>${esc(speakerTag)}</strong>${tag}${phaseTag}${time}<p>${esc(item.text || "")}</p></div>`;
+  });
+  const voteHtml = renderDayBlocks(groupedVotes, (item) => {
+    const voterTag = item.voter_seat ? `@${item.voter_seat}号:${item.voter}` : item.voter || "?";
+    const targetTag = item.target_seat ? `@${item.target_seat}号:${item.target}` : item.target || "?";
+    const time = item.ts ? `<span class="evt-time">${esc(fmtTs(item.ts))}</span>` : "";
+    return `<div class="hist-vote">${esc(voterTag)} → <strong>${esc(targetTag)}</strong>${time}</div>`;
+  });
+  const deathsHtml = (detail.deaths || []).map((death) => {
+    const tag = death.player_seat ? `@${death.player_seat}号:${death.player}` : death.player || "?";
+    const time = death.ts ? `<span class="evt-time">${esc(fmtTs(death.ts))}</span>` : "";
+    return `<div class="hist-death">${t("day")} ${esc(death.day)} · ${esc(tag)} (${esc(death.reason)})${time}</div>`;
+  }).join("");
 
   body.innerHTML = `
     <div class="hist-meta">
@@ -633,10 +686,11 @@ function playerCard(player, currentSpeakerId) {
   } else if (personaText) {
     roleText = `${status}${personaText}`;
   }
+  const seatBadge = `<span class="seat-badge">@${esc(player.seat || "?")}号</span>`;
   return `<div class="player-card ${player.alive ? "" : "dead"} ${player.id === currentSpeakerId ? "speaking" : ""}">
     <div class="player-avatar" style="background:${avatarColor}">${esc((player.name || "?")[0])}</div>
     <div class="player-info">
-      <div class="player-name">${esc(player.name || "?")}${sheriff}${player.is_ai ? "" : " · HUMAN"}</div>
+      <div class="player-name">${seatBadge}${esc(player.name || "?")}${sheriff}${player.is_ai ? "" : " · HUMAN"}</div>
       <div class="player-role">${esc(roleText)}</div>
     </div>
   </div>`;
@@ -659,7 +713,7 @@ function renderPendingInput(pending) {
   els.actionTarget.parentElement.style.display = showTarget ? "block" : "none";
   els.actionSave.parentElement.style.display = showSave ? "flex" : "none";
   els.actionTarget.innerHTML = `<option value="">-</option>` + (pending.options || []).map((option) => {
-    return `<option value="${esc(option.id)}">${esc(option.seat)} · ${esc(option.name)}</option>`;
+    return `<option value="${esc(option.id)}">@${esc(option.seat)}号:${esc(option.name)}</option>`;
   }).join("");
   // Only run a countdown for speech-style requests — votes & night actions
   // are quick and shouldn't be force-submitted blank.
@@ -748,18 +802,21 @@ function renderFlow(snapshot) {
     if (state.showPrivate && block.night.length) {
       html += `<div class="phase-block"><div class="phase-label">${t("nightPhase")}</div>`;
       block.night.forEach((event) => {
-        html += `<div class="night-entry">${esc(event.payload.actor_name || "system")} → ${esc(event.payload.target_name || event.payload.target_id || "")}</div>`;
+        const actorTag = tagFromPayload(event.payload, "actor") || esc(event.payload.actor_name || "system");
+        const targetTag = tagFromPayload(event.payload, "target") || esc(event.payload.target_name || event.payload.target_id || "");
+        html += `<div class="night-entry"><span class="evt-time">${esc(fmtTs(event.ts))}</span>${actorTag} → ${targetTag}</div>`;
       });
       html += `</div>`;
     }
     if (block.speeches.length) {
       html += `<div class="phase-block"><div class="phase-label">${t("speech")}</div>`;
       block.speeches.forEach((event) => {
-        const tag = event.payload.last_words ? "【LAST】" : event.payload.badge_campaign ? "【BADGE】" : "";
+        const tag = event.payload.last_words ? "【LAST】" : event.payload.badge_campaign ? "【BADGE】" : event.payload.pk_speech ? "【PK】" : "";
+        const speakerTag = tagFromPayload(event.payload, "actor") || esc(event.payload.actor_name || "?");
         html += `<div class="speech-entry ${event.payload.last_words ? "last-words" : ""}">
           <div class="speech-avatar">${esc((event.payload.actor_name || "?")[0])}</div>
           <div class="speech-body">
-            <div class="speech-speaker">${esc(event.payload.actor_name || "?")} ${tag}</div>
+            <div class="speech-speaker">${speakerTag} ${tag}<span class="evt-time">${esc(fmtTs(event.ts))}</span></div>
             <div class="speech-text">${esc(event.payload.speech || "")}</div>
           </div>
         </div>`;
@@ -769,17 +826,24 @@ function renderFlow(snapshot) {
     if (block.system.length) {
       html += `<div class="phase-block"><div class="phase-label">System</div>`;
       block.system.forEach((event) => {
-        const text = event.type === "WHITE_WOLF_KING_BOOM"
-          ? `${event.payload.boom_player_name || ""} → ${event.payload.target_name || ""}`
-          : (event.payload.message || "");
-        html += `<div class="night-entry">${esc(text)}</div>`;
+        let text = "";
+        if (event.type === "WHITE_WOLF_KING_BOOM") {
+          const actorTag = tagFromPayload(event.payload, "boom_player") || esc(event.payload.boom_player_name || "");
+          const targetTag = tagFromPayload(event.payload, "target") || esc(event.payload.target_name || "");
+          text = `${actorTag} → ${targetTag}`;
+        } else {
+          text = esc(event.payload.message || "");
+        }
+        html += `<div class="night-entry"><span class="evt-time">${esc(fmtTs(event.ts))}</span>${text}</div>`;
       });
       html += `</div>`;
     }
     if (block.votes.length) {
       html += `<div class="phase-block"><div class="phase-label">${t("vote")}</div>`;
       block.votes.forEach((event) => {
-        html += `<div class="vote-entry"><span class="vote-voter">${esc(event.payload.voter_name || "")}</span><span class="vote-arrow">→</span><span class="vote-target">${esc(event.payload.target_name || "")}</span></div>`;
+        const voterTag = tagFromPayload(event.payload, "voter") || esc(event.payload.voter_name || "");
+        const targetTag = tagFromPayload(event.payload, "target") || esc(event.payload.target_name || "");
+        html += `<div class="vote-entry"><span class="evt-time">${esc(fmtTs(event.ts))}</span><span class="vote-voter">${voterTag}</span><span class="vote-arrow">→</span><span class="vote-target">${targetTag}</span></div>`;
       });
       html += `</div>`;
     }
