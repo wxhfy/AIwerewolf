@@ -31,7 +31,7 @@ export function PlayerCard({
   const isVillage = player.alignment === Alignment.VILLAGE;
 
   const containerClass = cn(
-    "relative flex flex-col items-center px-2 py-2.5 rounded-card transition-all duration-200 cursor-pointer select-none",
+    "relative flex flex-col items-center px-3 py-3 rounded-card transition-all duration-200 cursor-pointer select-none",
     "shadow-[0_2px_8px_rgba(0,0,0,0.05),0_1px_2px_rgba(0,0,0,0.03)]",
     "bg-[var(--color-card)]",
     isDead && "opacity-50 grayscale shadow-none",
@@ -54,13 +54,13 @@ export function PlayerCard({
       {/* Seat + name row */}
       <div className="flex items-center gap-2 w-full">
         <span className={cn(
-          "flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold",
+          "flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold",
           isDead ? "bg-text-sub/20 text-text-sub" : "bg-primary text-white"
         )}>
           {isDead ? "✝" : player.seat}
         </span>
         <span className={cn(
-          "font-display text-xs font-semibold text-textPrimary leading-tight truncate",
+          "font-display text-sm font-semibold text-textPrimary leading-tight truncate",
           isDead && "text-text-sub"
         )}>
           {player.name}
@@ -70,12 +70,12 @@ export function PlayerCard({
       {/* Role line */}
       <div className="w-full mt-0.5">
         {(viewMode === "moderator" || showOwnRole) && player.role ? (
-          <p className={cn("text-[11px] font-medium leading-tight",
+          <p className={cn("text-xs font-medium leading-tight",
             isWolf ? "text-danger" : isVillage ? "text-success" : "text-text-sub")}>
             {tRole(player.role, language)}
           </p>
         ) : (
-          <p className="text-[11px] text-text-sub leading-tight">{t("hiddenRole", language)}</p>
+          <p className="text-xs text-text-sub leading-tight">{t("hiddenRole", language)}</p>
         )}
       </div>
 

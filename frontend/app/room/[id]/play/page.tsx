@@ -190,7 +190,7 @@ export default function GamePage() {
             {isNight ? <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" /> :
               <><circle cx="12" cy="12" r="5" /><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" /></>}
           </svg>
-          <span className="font-display text-base font-semibold text-textPrimary">
+          <span className="font-display text-lg font-bold text-textPrimary">
             {gameState ? (language === "zh" ? `第${gameState.day}天` : `Day ${gameState.day}`) : t("statusReady", language)}
             {gameState?.winner && <span className="ml-2 text-accent"> - {gameState.winner === "village" ? t("village", language) : t("wolf", language)}</span>}
           </span>
@@ -223,9 +223,9 @@ export default function GamePage() {
         </aside>
 
         <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
-          <div className="px-4 py-1.5 border-b text-xs text-text-sub flex items-center gap-3"
+          <div className="px-4 py-2 border-b text-sm text-text-sub flex items-center gap-3"
             style={{ background: "var(--color-card)", borderColor: "var(--color-border)" }}>
-            <span>{statusTitle}</span>
+            <span className="font-semibold">{statusTitle}</span>
             {gameState?.phase && <span>· {tPhase(gameState.phase, language)}</span>}
             <span>· {t("aliveCount", language)}: {aliveCount}/{gameState?.players?.length || 0}</span>
             <span>· {t("events", language)}: {gameState?.event_count || 0}</span>
@@ -242,7 +242,7 @@ export default function GamePage() {
                   <div key={dk} className="mb-5">
                     {/* Day header */}
                     <div className="flex items-center gap-3 mb-3 pb-2 border-b" style={{ borderColor: "var(--color-border)" }}>
-                      <span className="font-display text-xl font-bold text-primary">D{dk}</span>
+                      <span className="font-display text-2xl font-bold text-primary">D{dk}</span>
                       {deaths.length > 0 && (
                         <span className="text-xs text-danger truncate">
                           {deaths.map((d: any) => d.payload.player_name || d.payload.target_name || "?").join(" · ")} {language === "zh" ? "出局" : "died"}
