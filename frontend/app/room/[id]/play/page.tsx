@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
 import { useAppContext } from "@/context/AppContext";
-import { t } from "@/lib/i18n";
+import { t, tPhase } from "@/lib/i18n";
 import { truncate } from "@/lib/utils";
 import {
   WebSocketMessage,
@@ -17,6 +17,9 @@ import { Button } from "@/components/ui/Button";
 import { PlayerCard } from "@/components/game/PlayerCard";
 import { DayBlock } from "@/components/game/DayBlock";
 import { ActionPanel } from "@/components/game/ActionPanel";
+import { ChatBubble } from "@/components/game/ChatBubble";
+import { EventItem } from "@/components/game/EventItem";
+import { EventType } from "@/types";
 
 export default function GamePage() {
   const router = useRouter();
@@ -199,9 +202,42 @@ export default function GamePage() {
           </div>
           <div className="flex-1 overflow-y-auto px-4 py-3">
             {gameState?.events?.length ? (
-              Object.keys(dayBlocks).sort((a, b) => Number(b) - Number(a)).map((dk) => (
-                <DayBlock key={dk} day={Number(dk)} events={dayBlocks[Number(dk)]} />
-              ))
+              Object.keys(dayBlocks).sort((a, b) => Number(b) - Number(a)).map((dk) => {
+                const dayEvents = dayBlocks[Number(dk)];
+                // Find deaths for day header
+                const deaths = dayEvents.filter((e: any) =>
+                  e.type === EventType.PLAYER_DIED || e.type === EventType.HUNTER_SHOT || e.type === EventType.WHITE_WOLF_KING_BOOM
+                );
+                return (
+                  <div key={dk} className="mb-5">
+                    {/* Day header */}
+                    <div className="flex items-center gap-3 mb-3 pb-2 border-b" style={{ borderColor: "var(--color-border)" }}>
+                      <span className="font-display text-base font-bold text-primary">D{dk}</span>
+                      {deaths.length > 0 && (
+                        <span className="text-xs text-danger truncate">
+                          {deaths.map((d: any) => d.payload.player_name || d.payload.target_name || "?").join(" · ")} {language === "zh" ? "出局" : "died"}
+                        </span>
+                      )}
+                    </div>
+                    {/* Events */}
+                    <div className="space-y-0.5">
+                      {dayEvents.map((ev: any, i: number) =>
+                        ev.type === EventType.CHAT_MESSAGE ? (
+                          <ChatBubble
+                            key={ev.id || i}
+                            speakerName={ev.payload.actor_name || "?"}
+                            content={ev.payload.speech || ""}
+                            isOwn={isHumanMode && ev.payload.actor_id?.startsWith(`P${humanSeat}-`)}
+                            phaseLabel={tPhase(ev.phase, language)}
+                          />
+                        ) : (
+                          <EventItem key={ev.id || i} event={ev} index={i} />
+                        )
+                      )}
+                    </div>
+                  </div>
+                );
+              })
             ) : (
               <div className="flex flex-col items-center justify-center h-full text-center py-20">
                 <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round"
