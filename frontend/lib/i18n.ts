@@ -66,6 +66,12 @@ const translations = {
     action: "{actor} 执行了 {action} -> {target}。{reasoning}",
     errorPrefix: "错误",
 
+    night: "夜晚",
+    dayLabel: "白天",
+    speakerBubble: "{name}: {text}",
+    loading: "加载中",
+    readyHint: "点击「运行一局」开始观战",
+
     lobby: "大厅",
     createRoom: "创建房间",
     joinRoom: "加入房间",
@@ -110,10 +116,12 @@ const translations = {
     roles: {
       Villager: "村民",
       Werewolf: "狼人",
+      WhiteWolfKing: "白狼王",
       Seer: "预言家",
       Witch: "女巫",
       Hunter: "猎人",
       Guard: "守卫",
+      Idiot: "白痴",
     },
     phases: {
       SETUP: "准备中",
@@ -124,10 +132,17 @@ const translations = {
       NIGHT_SEER_ACTION: "预言家行动",
       NIGHT_RESOLVE: "黑夜结算",
       DAY_START: "天亮了",
+      DAY_BADGE_SIGNUP: "警长报名",
+      DAY_BADGE_SPEECH: "警长发言",
+      DAY_BADGE_ELECTION: "警长选举",
+      DAY_PK_SPEECH: "PK发言",
+      DAY_LAST_WORDS: "遗言",
       DAY_SPEECH: "自由发言",
       DAY_VOTE: "投票放逐",
       DAY_RESOLVE: "投票结算",
+      BADGE_TRANSFER: "警徽移交",
       HUNTER_SHOOT: "猎人开枪",
+      WHITE_WOLF_KING_BOOM: "白狼王爆炸",
       GAME_END: "游戏结束",
     },
   },
@@ -193,6 +208,12 @@ const translations = {
     action: "{actor} chose {action} -> {target}. {reasoning}",
     errorPrefix: "ERROR",
 
+    night: "Night",
+    dayLabel: "Day",
+    speakerBubble: "{name}: {text}",
+    loading: "Loading",
+    readyHint: "Click \"Run Game\" to start spectating",
+
     lobby: "Lobby",
     createRoom: "Create Room",
     joinRoom: "Join Room",
@@ -237,10 +258,12 @@ const translations = {
     roles: {
       Villager: "Villager",
       Werewolf: "Werewolf",
+      WhiteWolfKing: "White Wolf King",
       Seer: "Seer",
       Witch: "Witch",
       Hunter: "Hunter",
       Guard: "Guard",
+      Idiot: "Idiot",
     },
     phases: {
       SETUP: "Setup",
@@ -251,10 +274,17 @@ const translations = {
       NIGHT_SEER_ACTION: "Seer Action",
       NIGHT_RESOLVE: "Night Resolve",
       DAY_START: "Day Breaks",
+      DAY_BADGE_SIGNUP: "Badge Signup",
+      DAY_BADGE_SPEECH: "Badge Speech",
+      DAY_BADGE_ELECTION: "Badge Election",
+      DAY_PK_SPEECH: "PK Speech",
+      DAY_LAST_WORDS: "Last Words",
       DAY_SPEECH: "Free Speech",
       DAY_VOTE: "Vote Exile",
       DAY_RESOLVE: "Vote Resolve",
+      BADGE_TRANSFER: "Badge Transfer",
       HUNTER_SHOOT: "Hunter Shoots",
+      WHITE_WOLF_KING_BOOM: "White Wolf King Boom",
       GAME_END: "Game End",
     },
   },
@@ -266,7 +296,7 @@ type Translations = typeof translations[Language.ZH];
  * 获取翻译文本
  */
 export function t(key: keyof Translations, lang: Language = Language.ZH): string {
-  return translations[lang][key] || key;
+  return (translations[lang] as any)[key] || key;
 }
 
 /**
