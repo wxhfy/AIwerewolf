@@ -203,9 +203,17 @@ export default function SpectatorPage() {
         <div className="flex flex-col lg:flex-row gap-6">
           {/* Left column — Players 1-3 */}
           <aside className="hidden lg:flex flex-col gap-3 w-full lg:w-[20%] min-w-[140px]">
-            {leftPlayers.map((player) => (
-              <PlayerCard key={player.id} player={player} />
-            ))}
+            {leftPlayers.length > 0 ? (
+              leftPlayers.map((player) => (
+                <PlayerCard key={player.id} player={player} />
+              ))
+            ) : (
+              <div className="flex-1 flex items-center justify-center">
+                <p className="text-xs text-text-sub/40 italic text-center">
+                  {t("players", language)}<br/>1–3
+                </p>
+              </div>
+            )}
           </aside>
 
           {/* Center column — Controls + Timeline */}
@@ -339,9 +347,23 @@ export default function SpectatorPage() {
                       />
                     ))
                 ) : (
-                  <div className="text-center py-12 text-textSecondary">
-                    <p className="font-display text-lg mb-2">{t("readyHint", language)}</p>
-                    <p className="text-sm">{t("statusHint", language)}</p>
+                  <div className="text-center py-16 text-text-sub">
+                    {/* Decorative moon SVG */}
+                    <svg
+                      width="48" height="48" viewBox="0 0 24 24"
+                      fill="none" stroke="currentColor" strokeWidth="1"
+                      strokeLinecap="round" strokeLinejoin="round"
+                      className="mx-auto mb-5 opacity-30"
+                      aria-hidden="true"
+                    >
+                      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+                    </svg>
+                    <p className="font-display text-xl text-textPrimary mb-2">
+                      {t("readyHint", language)}
+                    </p>
+                    <p className="text-sm max-w-xs mx-auto leading-relaxed">
+                      {t("statusHint", language)}
+                    </p>
                   </div>
                 )}
               </div>
@@ -350,9 +372,17 @@ export default function SpectatorPage() {
 
           {/* Right column — Players 4-6 */}
           <aside className="hidden lg:flex flex-col gap-3 w-full lg:w-[20%] min-w-[140px]">
-            {rightPlayers.map((player) => (
-              <PlayerCard key={player.id} player={player} />
-            ))}
+            {rightPlayers.length > 0 ? (
+              rightPlayers.map((player) => (
+                <PlayerCard key={player.id} player={player} />
+              ))
+            ) : (
+              <div className="flex-1 flex items-center justify-center">
+                <p className="text-xs text-text-sub/40 italic text-center">
+                  {t("players", language)}<br/>4–6
+                </p>
+              </div>
+            )}
           </aside>
         </div>
 
