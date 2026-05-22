@@ -218,13 +218,6 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# Test files (local only)
-scripts/*_smoke.py
-tests/test_llm_config.py
-data/
-
-# Tool/agent metadata
-.serena/
-# NOTE: project-level team conventions live in skills/ and ARE tracked.
-# Only ignore tool-injected per-user skill caches if they appear elsewhere.
-
+# Local configuration files (not synced with git)
+AGENTS.md
+CLAUDE.md
