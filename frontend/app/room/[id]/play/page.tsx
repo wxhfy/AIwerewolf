@@ -33,7 +33,7 @@ export default function GamePage() {
   } = useAppContext();
 
   const [showWinnerPanel, setShowWinnerPanel] = useState(false);
-  const [ballPos, setBallPos] = useState({ x: 0, y: 0 });
+  const [ballPos, setBallPos] = useState<{ x: number; y: number } | null>(null);
   const dragRef = useRef({ dragging: false, startX: 0, startY: 0, origX: 0, origY: 0, moved: false });
   const [statusTitle, setStatusTitle] = useState(
     gameState?.winner ? t("statusLoaded", language) : t("statusReady", language)
@@ -238,8 +238,12 @@ export default function GamePage() {
             <button
               onClick={() => { if (!dragRef.current.moved) setShowWinnerPanel(true); }}
               onPointerDown={(e) => {
-                dragRef.current = { dragging: true, startX: e.clientX, startY: e.clientY, origX: ballPos.x, origY: ballPos.y, moved: false };
-                (e.target as HTMLElement).setPointerCapture(e.pointerId);
+                const el = e.currentTarget;
+                const rect = el.getBoundingClientRect();
+                const ox = ballPos?.x ?? rect.left;
+                const oy = ballPos?.y ?? rect.top;
+                dragRef.current = { dragging: true, startX: e.clientX, startY: e.clientY, origX: ox, origY: oy, moved: false };
+                el.setPointerCapture(e.pointerId);
               }}
               onPointerMove={(e) => {
                 if (!dragRef.current.dragging) return;
@@ -255,9 +259,9 @@ export default function GamePage() {
               style={{
                 background: "var(--color-card)",
                 border: "1px solid var(--color-border)",
-                right: ballPos.x ? undefined : 24,
-                bottom: ballPos.y ? undefined : 24,
-                transform: ballPos.x ? `translate(${ballPos.x}px, ${-ballPos.y}px)` : undefined,
+                ...(ballPos
+                  ? { left: ballPos.x, top: ballPos.y }
+                  : { right: 24, bottom: 24 }),
               }}
             >
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
