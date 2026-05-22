@@ -10,12 +10,14 @@ interface ActionPanelProps {
   pendingInput: any;
   onAction: (data: { target_id?: string | null; speech?: string | null; save?: boolean }) => void;
   language: Language;
+  votes?: Record<string, string>;
+  players?: Array<{ id: string; name: string; seat: number }>;
 }
 
 const SPEECH_REQUESTS = new Set(["TALK", "BADGE_SPEECH", "LAST_WORDS"]);
 const HUMAN_TIMER_SECONDS = 60;
 
-export function ActionPanel({ pendingInput, onAction, language }: ActionPanelProps) {
+export function ActionPanel({ pendingInput, onAction, language, votes, players }: ActionPanelProps) {
   const pi = pendingInput;
   if (!pi) return null;
 
@@ -97,6 +99,27 @@ export function ActionPanel({ pendingInput, onAction, language }: ActionPanelPro
           disabled={submitted}
           onKeyDown={(e) => { if (e.key === "Enter" && e.ctrlKey) submit(); }}
         />
+      )}
+
+      {/* Vote / Night action progress */}
+      {(isVote || isNight) && votes && Object.keys(votes).length > 0 && (
+        <div className="space-y-1 mb-2">
+          <p className="text-[11px] text-text-sub font-medium mb-1.5">
+            {isVote ? (language === "zh" ? "已投票：" : "Votes cast:") : (language === "zh" ? "狼队选择：" : "Wolf picks:")}
+          </p>
+          {Object.entries(votes).map(([voterId, targetId]) => {
+            const voter = players?.find((p: any) => p.id === voterId);
+            const target = players?.find((p: any) => p.id === targetId);
+            return (
+              <div key={voterId} className="flex items-center gap-1.5 text-xs">
+                <span className="font-medium text-textPrimary">{voter?.name || voterId}</span>
+                <span className="text-text-sub">→</span>
+                <span className="font-medium text-textPrimary">{target?.name || targetId}</span>
+                {target && <span className="text-text-sub">({target.seat}{language === "zh" ? "号" : ""})</span>}
+              </div>
+            );
+          })}
+        </div>
       )}
 
       {/* Vote target grid */}

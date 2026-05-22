@@ -12,6 +12,8 @@ interface PlayerCardProps {
   isSpeaking?: boolean;
   isSelected?: boolean;
   onClick?: () => void;
+  showOwnRole?: boolean;
+  wolfTeammates?: string[];
 }
 
 export function PlayerCard({
@@ -19,6 +21,8 @@ export function PlayerCard({
   isSpeaking = false,
   isSelected = false,
   onClick,
+  showOwnRole = false,
+  wolfTeammates,
 }: PlayerCardProps) {
   const { viewMode, language } = useAppContext();
 
@@ -98,6 +102,20 @@ export function PlayerCard({
           </Badge>
         )}
       </div>
+
+      {/* Own role tag (visible to human player even in public view) */}
+      {showOwnRole && player.role && (
+        <div className="mt-2 pt-2 border-t w-full text-center" style={{ borderColor: "var(--color-border)" }}>
+          <Badge variant={isWolf ? "danger" : isVillage ? "success" : "default"} className="text-[10px] px-2 py-0.5">
+            {tRole(player.role, language)}
+          </Badge>
+          {wolfTeammates && wolfTeammates.length > 0 && (
+            <p className="text-[9px] text-text-sub mt-1 leading-tight">
+              🐺 {wolfTeammates.join(" · ")}
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }

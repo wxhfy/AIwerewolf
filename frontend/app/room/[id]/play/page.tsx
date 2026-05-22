@@ -37,10 +37,26 @@ export default function GamePage() {
   const [showWinnerPanel, setShowWinnerPanel] = useState(false);
   const [ballPos, setBallPos] = useState<{ x: number; y: number } | null>(null);
   const dragRef = useRef({ dragging: false, startX: 0, startY: 0, origX: 0, origY: 0, moved: false });
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const autoScrollRef = useRef(true);
   const [statusTitle, setStatusTitle] = useState(
     gameState?.winner ? t("statusLoaded", language) : t("statusReady", language)
   );
   const wsRef = useRef<WebSocket | null>(null);
+
+  // Auto-scroll to latest messages, pause when user scrolls up
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || !autoScrollRef.current) return;
+    el.scrollTop = el.scrollHeight;
+  }, [gameState?.events?.length]);
+
+  const handleScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+    autoScrollRef.current = atBottom;
+  };
 
   // Sync status when gameState arrives (e.g., from lobby pre-start)
   useEffect(() => {
@@ -137,6 +153,15 @@ export default function GamePage() {
   const pendingInput = gameState?.pending_input;
   const isHumanMode = mode === "human";
 
+  // Find human player's role and wolf teammates for PlayerCard own-role display
+  const humanPlayer = useMemo(() => (gameState?.players || []).find((p: any) => p.seat === humanSeat), [gameState?.players, humanSeat]);
+  const wolfTeammates = useMemo(() => {
+    if (!isHumanMode || humanPlayer?.alignment !== "wolf") return undefined;
+    return (gameState?.players || [])
+      .filter((p: any) => p.alignment === "wolf" && p.seat !== humanSeat)
+      .map((p: any) => p.name);
+  }, [gameState?.players, humanPlayer, humanSeat, isHumanMode]);
+
   function ph(from: number, to: number) {
     const arr = [];
     for (let s = from; s <= to; s++) arr.push({ id: `ph-${s}`, seat: s, name: language === "zh" ? `玩家 ${s}` : `Player ${s}`, alive: true, is_ai: s !== humanSeat } as any);
@@ -188,7 +213,11 @@ export default function GamePage() {
         <aside className="hidden lg:flex flex-col gap-2 p-3 w-[20%] min-w-[130px] max-w-[200px] overflow-y-auto"
           style={{ borderRight: `1px solid var(--color-border)` }}>
           {(leftPlayers.length > 0 ? leftPlayers : ph(1, 4)).map((p: any, i: number) => (
-            <PlayerCard key={p.id || i} player={p} isSpeaking={pendingInput?.player_id === p.id} />
+            <PlayerCard key={p.id || i} player={p}
+              isSpeaking={pendingInput?.player_id === p.id}
+              showOwnRole={isHumanMode && p.seat === humanSeat && viewMode !== "moderator"}
+              wolfTeammates={isHumanMode && p.seat === humanSeat ? wolfTeammates : undefined}
+            />
           ))}
         </aside>
 
@@ -199,7 +228,7 @@ export default function GamePage() {
             <span>· {t("aliveCount", language)}: {aliveCount}/{gameState?.players?.length || 0}</span>
             <span>· {t("events", language)}: {gameState?.event_count || 0}</span>
           </div>
-          <div className="flex-1 overflow-y-auto px-4 py-3">
+          <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-4 py-3">
             {gameState?.events?.length ? (
               Object.keys(dayBlocks).sort((a, b) => Number(b) - Number(a)).map((dk) => {
                 const dayEvents = dayBlocks[Number(dk)];
@@ -220,19 +249,40 @@ export default function GamePage() {
                     </div>
                     {/* Events */}
                     <div className="space-y-0.5">
-                      {dayEvents.map((ev: any, i: number) =>
-                        ev.type === EventType.CHAT_MESSAGE ? (
-                          <ChatBubble
-                            key={ev.id || i}
-                            speakerName={ev.payload.actor_name || "?"}
-                            content={ev.payload.speech || ""}
-                            isOwn={isHumanMode && ev.payload.actor_id?.startsWith(`P${humanSeat}-`)}
-                            phaseLabel={tPhase(ev.phase, language)}
-                          />
-                        ) : (
-                          <EventItem key={ev.id || i} event={ev} index={i} />
-                        )
-                      )}
+                      {dayEvents.map((ev: any, i: number) => {
+                        const isSystem = ev.type === EventType.PHASE_CHANGED || ev.type === EventType.GAME_START
+                          || ev.type === EventType.GAME_END || ev.type === EventType.SYSTEM_MESSAGE;
+                        const isChat = ev.type === EventType.CHAT_MESSAGE;
+
+                        if (isSystem) {
+                          const iconMap: Record<string, string> = {
+                            GAME_START: "\u{1F3AE}", PHASE_CHANGED: "", GAME_END: "\u{1F3C6}", SYSTEM_MESSAGE: "\u{1F4E2}",
+                          };
+                          const msg = ev.payload.message || ev.payload.phase
+                            ? tPhase(ev.payload.phase, language) : "";
+                          const icon = iconMap[ev.type] || "";
+                          return (
+                            <ChatBubble
+                              key={ev.id || i}
+                              speakerName=""
+                              content={icon ? `${icon} ${msg}` : msg}
+                              isSystem
+                            />
+                          );
+                        }
+                        if (isChat) {
+                          return (
+                            <ChatBubble
+                              key={ev.id || i}
+                              speakerName={ev.payload.actor_name || "?"}
+                              content={ev.payload.speech || ""}
+                              isOwn={isHumanMode && ev.payload.actor_id?.startsWith(`P${humanSeat}-`)}
+                              phaseLabel={tPhase(ev.phase, language)}
+                            />
+                          );
+                        }
+                        return <EventItem key={ev.id || i} event={ev} index={i} />;
+                      })}
                     </div>
                   </div>
                 );
@@ -247,21 +297,32 @@ export default function GamePage() {
             )}
           </div>
           {pendingInput && (
-            <ActionPanel pendingInput={pendingInput} onAction={handleHumanAction} language={language} />
+            <ActionPanel pendingInput={pendingInput} onAction={handleHumanAction} language={language}
+              votes={gameState?.votes}
+              players={gameState?.players}
+            />
           )}
         </main>
 
         <aside className="hidden lg:flex flex-col gap-2 p-3 w-[15%] min-w-[110px] max-w-[160px] overflow-y-auto"
           style={{ borderLeft: `1px solid var(--color-border)` }}>
           {(rightPlayers.length > 0 ? rightPlayers : ph(5, 7)).map((p: any, i: number) => (
-            <PlayerCard key={p.id || i} player={p} isSpeaking={pendingInput?.player_id === p.id} />
+            <PlayerCard key={p.id || i} player={p}
+              isSpeaking={pendingInput?.player_id === p.id}
+              showOwnRole={isHumanMode && p.seat === humanSeat && viewMode !== "moderator"}
+              wolfTeammates={isHumanMode && p.seat === humanSeat ? wolfTeammates : undefined}
+            />
           ))}
         </aside>
       </div>
 
       <div className="lg:hidden relative z-10 flex gap-2 overflow-x-auto px-4 py-2">
         {((gameState?.players?.length || 0) > 0 ? gameState!.players : ph(1, 7)).map((p: any, i: number) => (
-          <div key={p.id || i} className="flex-shrink-0 w-[100px]"><PlayerCard player={p} isSpeaking={pendingInput?.player_id === p.id} /></div>
+          <div key={p.id || i} className="flex-shrink-0 w-[100px]"><PlayerCard player={p}
+            isSpeaking={pendingInput?.player_id === p.id}
+            showOwnRole={isHumanMode && p.seat === humanSeat && viewMode !== "moderator"}
+            wolfTeammates={isHumanMode && p.seat === humanSeat ? wolfTeammates : undefined}
+          /></div>
         ))}
       </div>
 
