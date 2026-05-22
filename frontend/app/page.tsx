@@ -1,398 +1,220 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState } from "react";
+import { useRouter } from "next/navigation";
 import { useAppContext } from "@/context/AppContext";
-import { t } from "@/lib/i18n";
-import { truncate } from "@/lib/utils";
-import {
-  WebSocketMessage,
-  WebSocketRequest,
-  Language,
-  AgentType,
-  ViewMode,
-  Phase,
-} from "@/types";
+import { Language, AgentType } from "@/types";
 import { Button } from "@/components/ui/Button";
-import { Badge } from "@/components/ui/Badge";
-import { PhaseBanner } from "@/components/game/PhaseBanner";
-import { PlayerCard } from "@/components/game/PlayerCard";
-import { DayBlock } from "@/components/game/DayBlock";
 
-export default function SpectatorPage() {
-  const {
-    language,
-    setLanguage,
-    viewMode,
-    setViewMode,
-    agentType,
-    setAgentType,
-    room,
-    setRoom,
-    gameState,
-    setGameState,
-    isPlaying,
-    setIsPlaying,
-    speed,
-    setSpeed,
-    seed,
-    setSeed,
-  } = useAppContext();
+export default function LobbyPage() {
+  const router = useRouter();
+  const { language, setLanguage, agentType, setAgentType, setGameState } = useAppContext();
 
-  const [statusTitle, setStatusTitle] = useState(t("statusReady", language));
-  const wsRef = useRef<WebSocket | null>(null);
+  const [playerCount, setPlayerCount] = useState(7);
+  const [mode, setMode] = useState<"ai" | "human">("ai");
+  const [humanSeat, setHumanSeat] = useState(1);
+  const [seed, setSeed] = useState(Math.floor(Math.random() * 1000));
+  const [isCreating, setIsCreating] = useState(false);
+  const [error, setError] = useState("");
 
-  // Detect night phase for CSS attribute
-  const isNight = useMemo(() => {
-    const phase = gameState?.phase || "";
-    return phase.startsWith("NIGHT") || phase === Phase.NIGHT_START || phase === Phase.NIGHT_RESOLVE;
-  }, [gameState?.phase]);
+  // Modal state
+  const [showModal, setShowModal] = useState(false);
+  const [createdRoom, setCreatedRoom] = useState<any>(null);
+  const [isStarting, setIsStarting] = useState(false);
 
-  // Apply data-phase to document for CSS variables
-  useEffect(() => {
-    document.documentElement.setAttribute("data-phase", isNight ? "night" : "day");
-  }, [isNight]);
+  const t = (zh: string, en: string) => (language === "zh" ? zh : en);
 
-  // Create room
-  async function createRoom() {
+  // Step 1: Create room → show modal
+  async function handleCreateRoom() {
+    setIsCreating(true);
+    setError("");
     try {
-      setStatusTitle(t("statusLoading", language));
-      const response = await fetch(
-        `/api/rooms?name=Demo+Room&seed=${seed}&player_count=7&agent_type=${agentType}`,
-        { method: "POST", headers: { Accept: "application/json" } }
-      );
-      if (!response.ok) throw new Error(`Failed to create room: ${response.status}`);
-      const roomData = await response.json();
-      setRoom(roomData);
-      setStatusTitle(t("roomReady", language));
-    } catch (error) {
-      console.error("Failed to create room:", error);
-      setStatusTitle(t("statusError", language));
+      const params = new URLSearchParams({
+        name: "Demo Room",
+        seed: String(seed),
+        player_count: String(playerCount),
+        agent_type: agentType,
+      });
+      if (mode === "human") params.set("human_seat", String(humanSeat));
+      const res = await fetch(`/api/rooms?${params.toString()}`, { method: "POST" });
+      if (!res.ok) throw new Error(`Failed to create room (${res.status})`);
+      const room = await res.json();
+      setCreatedRoom(room);
+      setShowModal(true);
+    } catch (e: any) {
+      setError(e.message || "创建房间失败");
+    } finally {
+      setIsCreating(false);
     }
   }
 
-  // Run game via WebSocket
-  function runGame() {
-    if (!room) {
-      createRoom().then(() => setTimeout(runGame, 100));
-      return;
+  // Step 2: Confirm → start game → navigate
+  async function handleConfirmStart() {
+    setIsStarting(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/rooms/${createdRoom.id}/start?show_private=true`, { method: "POST" });
+      if (!res.ok) throw new Error(`Start failed (${res.status})`);
+      const snapshot = await res.json();
+      setGameState(snapshot);
+      router.push(`/room/${createdRoom.id}/play?human_seat=${humanSeat}&mode=${mode}`);
+    } catch (e: any) {
+      setError(e.message || "启动失败");
+      setIsStarting(false);
     }
-    if (wsRef.current) wsRef.current.close();
-    setIsPlaying(true);
-    setStatusTitle(t("statusStreaming", language));
-    setGameState(null);
-
-    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const ws = new WebSocket(`${proto}//${window.location.host}/ws/rooms/${room.id}`);
-    wsRef.current = ws;
-
-    ws.onopen = () => {
-      ws.send(
-        JSON.stringify({
-          action: "start",
-          seed,
-          agent_type: agentType,
-          show_private: viewMode === ViewMode.MODERATOR,
-          delay_ms: speed,
-        } as WebSocketRequest)
-      );
-    };
-
-    ws.onmessage = (event) => {
-      const msg: WebSocketMessage = JSON.parse(event.data);
-      if (msg.type === "room" && msg.room) setRoom(msg.room);
-      if (msg.type === "snapshot" && msg.state) setGameState(msg.state);
-      if (msg.type === "complete") {
-        if (msg.state) setGameState(msg.state);
-        if (msg.room) setRoom(msg.room);
-        setIsPlaying(false);
-        setStatusTitle(t("statusLoaded", language));
-      }
-      if (msg.type === "error") {
-        console.error("WS error:", msg.message);
-        setIsPlaying(false);
-        setStatusTitle(t("statusError", language));
-      }
-    };
-
-    ws.onerror = () => { setIsPlaying(false); setStatusTitle(t("statusError", language)); };
-    ws.onclose = () => setIsPlaying(false);
   }
-
-  // Restore room from URL
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const params = new URLSearchParams(window.location.search);
-    const roomId = params.get("room");
-    if (roomId && !room) {
-      fetch(`/api/rooms/${roomId}`, { headers: { Accept: "application/json" } })
-        .then((res) => (res.ok ? res.json() : null))
-        .then((data) => { if (data) setRoom(data); })
-        .catch(() => {});
-    }
-  }, []);
-
-  // Group events by day
-  const dayBlocks = useMemo(() => {
-    if (!gameState?.events) return {};
-    const blocks: Record<number, typeof gameState.events> = {};
-    for (const event of gameState.events) {
-      const d = event.day || 0;
-      if (!blocks[d]) blocks[d] = [];
-      blocks[d].push(event);
-    }
-    return blocks;
-  }, [gameState?.events]);
-
-  // Split players: seats 1-3 left, 4-6 right
-  const leftPlayers = useMemo(
-    () => (gameState?.players || []).filter((p) => p.seat <= 3),
-    [gameState?.players]
-  );
-  const rightPlayers = useMemo(
-    () => (gameState?.players || []).filter((p) => p.seat > 3),
-    [gameState?.players]
-  );
-
-  const aliveCount =
-    gameState?.alive_count ||
-    gameState?.players.filter((p) => p.alive).length ||
-    0;
 
   return (
-    <div className="min-h-screen" style={{ background: "var(--color-bg)", transition: "background var(--transition-daynight) var(--ease-in-out)" }}>
-      {/* Night overlay */}
-      <div
-        className="fixed inset-0 pointer-events-none z-0"
-        style={{
-          background: "var(--color-overlay)",
-          transition: "background var(--transition-daynight) var(--ease-in-out)",
-        }}
-      />
+    <div className="min-h-screen flex flex-col items-center justify-center px-4"
+      style={{ background: "var(--color-bg)", transition: "background var(--transition-daynight) var(--ease-in-out)" }}>
+      {/* Language toggle */}
+      <div className="absolute top-4 right-4 flex rounded-button border overflow-hidden"
+        style={{ borderColor: "var(--color-border)" }}>
+        <button onClick={() => setLanguage(Language.ZH)}
+          className={`px-3 py-1.5 text-xs font-medium ${language === "zh" ? "bg-primary text-white" : "bg-transparent text-text-sub"}`}>中文</button>
+        <button onClick={() => setLanguage(Language.EN)}
+          className={`px-3 py-1.5 text-xs font-medium ${language === "en" ? "bg-primary text-white" : "bg-transparent text-text-sub"}`}>EN</button>
+      </div>
 
-      <div className="relative z-10 max-w-screen-2xl mx-auto px-4 md:px-6 lg:px-8 py-6">
-        {/* === Phase Banner === */}
-        <PhaseBanner
-          day={gameState?.day || 0}
-          phase={gameState?.phase || "SETUP"}
-          isNight={isNight}
-        />
+      {/* Brand */}
+      <div className="text-center mb-10">
+        <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1"
+          strokeLinecap="round" strokeLinejoin="round" className="mx-auto mb-4 text-primary">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+        </svg>
+        <h1 className="font-display text-3xl font-bold text-primary">AI Werewolf</h1>
+        <p className="mt-2 text-text-sub text-sm max-w-xs mx-auto">
+          {t("配置游戏参数，开始一局 AI 狼人杀对战", "Configure your game and start an AI Werewolf match")}
+        </p>
+      </div>
 
-        {/* === Info badges row === */}
-        <div className="flex flex-wrap items-center justify-center gap-2 mb-6 -mt-2">
-          <Badge variant="default">
-            {t("roomLabel", language)}: {room ? truncate(room.id) : "-"}
-          </Badge>
-          <Badge variant="default">
-            {t("gameLabel", language)}: {gameState ? truncate(gameState.id) : "-"}
-          </Badge>
-          <Badge variant={viewMode === "moderator" ? "warning" : "default"}>
-            {viewMode === "moderator" ? t("private", language) : t("publicMode", language)}
-          </Badge>
-          <Badge variant="default">
-            {t("aliveCount", language)}: {aliveCount} / {gameState?.players.length || 0}
-          </Badge>
-          {gameState?.winner && (
-            <Badge variant="warning">
-              {t("winner", language)}:{" "}
-              {gameState.winner === "village" ? t("village", language) : t("wolf", language)}
-            </Badge>
-          )}
+      {/* Config Card */}
+      <div className="w-full max-w-md rounded-card p-6 space-y-5"
+        style={{ background: "var(--color-card)", border: "1px solid var(--color-border)", boxShadow: "0 4px 24px rgba(0,0,0,0.05)" }}>
+        {/* Mode */}
+        <div>
+          <label className="block text-sm font-medium text-textPrimary mb-2">{t("游戏模式", "Game Mode")}</label>
+          <div className="flex rounded-button border overflow-hidden" style={{ borderColor: "var(--color-border)" }}>
+            {(["ai", "human"] as const).map((m) => (
+              <button key={m} onClick={() => setMode(m)}
+                className={`flex-1 py-2 text-sm font-medium ${mode === m ? "bg-primary text-white" : "bg-transparent text-text-sub"}`}>
+                {m === "ai" ? t("AI 对战", "AI vs AI") : t("真人参与", "Human Play")}
+              </button>
+            ))}
+          </div>
         </div>
 
-        {/* === Main Three-Column Layout === */}
-        <div className="flex flex-col lg:flex-row gap-6">
-          {/* Left column — Players 1-3 */}
-          <aside className="hidden lg:flex flex-col gap-3 w-full lg:w-[20%] min-w-[140px]">
-            {leftPlayers.length > 0 ? (
-              leftPlayers.map((player) => (
-                <PlayerCard key={player.id} player={player} />
-              ))
-            ) : (
-              <div className="flex-1 flex items-center justify-center">
-                <p className="text-xs text-text-sub/40 italic text-center">
-                  {t("players", language)}<br/>1–3
-                </p>
-              </div>
-            )}
-          </aside>
+        {/* Player count */}
+        <div>
+          <label className="block text-sm font-medium text-textPrimary mb-2">{t("玩家数量", "Player Count")}</label>
+          <select value={playerCount} onChange={(e) => { const n = Number(e.target.value); setPlayerCount(n); if (humanSeat > n) setHumanSeat(n); }}
+            className="w-full h-10 px-3 rounded-button border text-sm text-textPrimary"
+            style={{ background: "var(--color-bg)", borderColor: "var(--color-border)" }}>
+            {[7, 8, 9, 10, 11, 12].map((n) => <option key={n} value={n}>{n} {t("人", " players")}</option>)}
+          </select>
+        </div>
 
-          {/* Center column — Controls + Timeline */}
-          <main className="flex-1 lg:w-[60%] space-y-6">
-            {/* Control Panel */}
-            <div
-              className="rounded-card p-4 md:p-6 space-y-4"
-              style={{
-                background: "var(--color-card)",
-                border: "1px solid var(--color-border)",
-                transition: "background var(--transition-daynight) var(--ease-in-out), border var(--transition-daynight) var(--ease-in-out)",
-              }}
-            >
-              <div className="flex flex-wrap items-center gap-3">
-                {/* Run button */}
-                <Button
-                  onClick={runGame}
-                  disabled={isPlaying}
-                  className={isPlaying ? "animate-pulse-loading" : ""}
-                >
-                  {isPlaying ? t("statusStreaming", language) : t("run", language)}
-                </Button>
+        {/* Human seat */}
+        {mode === "human" && (
+          <div>
+            <label className="block text-sm font-medium text-textPrimary mb-2">{t("你的座位号", "Your Seat")}</label>
+            <select value={humanSeat} onChange={(e) => setHumanSeat(Number(e.target.value))}
+              className="w-full h-10 px-3 rounded-button border text-sm text-textPrimary"
+              style={{ background: "var(--color-bg)", borderColor: "var(--color-border)" }}>
+              {Array.from({ length: playerCount }, (_, i) => i + 1).map((s) => <option key={s} value={s}>{t("座位", "Seat")} {s}</option>)}
+            </select>
+          </div>
+        )}
 
-                {/* Language */}
-                <div className="flex rounded-button border border-border overflow-hidden">
-                  <button
-                    onClick={() => setLanguage(Language.ZH)}
-                    className={`px-3 py-1.5 text-xs font-medium transition-colors ${
-                      language === "zh" ? "bg-primary text-white" : "bg-transparent text-textSecondary hover:text-textPrimary"
-                    }`}
-                  >
-                    中文
-                  </button>
-                  <button
-                    onClick={() => setLanguage(Language.EN)}
-                    className={`px-3 py-1.5 text-xs font-medium transition-colors ${
-                      language === "en" ? "bg-primary text-white" : "bg-transparent text-textSecondary hover:text-textPrimary"
-                    }`}
-                  >
-                    EN
-                  </button>
-                </div>
+        {/* Agent type */}
+        <div>
+          <label className="block text-sm font-medium text-textPrimary mb-2">{t("AI 类型", "Agent Type")}</label>
+          <div className="flex rounded-button border overflow-hidden" style={{ borderColor: "var(--color-border)" }}>
+            {(["heuristic", "llm"] as const).map((at) => (
+              <button key={at} onClick={() => setAgentType(at as AgentType)}
+                className={`flex-1 py-2 text-sm font-medium ${agentType === at ? "bg-primary text-white" : "bg-transparent text-text-sub"}`}>
+                {at === "heuristic" ? t("启发式", "Heuristic") : "LLM"}
+              </button>
+            ))}
+          </div>
+        </div>
 
-                {/* Agent type */}
-                <select
-                  value={agentType}
-                  onChange={(e) => setAgentType(e.target.value === "llm" ? AgentType.LLM : AgentType.HEURISTIC)}
-                  disabled={isPlaying}
-                  className="h-9 px-3 rounded-button border border-border text-sm text-textPrimary disabled:opacity-50"
-                  style={{ background: "var(--color-bg)" }}
-                >
-                  <option value="heuristic">{t("agentHeuristic", language)}</option>
-                  <option value="llm">{t("agentLlm", language)}</option>
-                </select>
+        {/* Seed */}
+        <div>
+          <label className="block text-sm font-medium text-textPrimary mb-2">Seed</label>
+          <input type="number" value={seed} onChange={(e) => setSeed(Number(e.target.value) || 0)}
+            className="w-full h-10 px-3 rounded-button border text-sm text-textPrimary"
+            style={{ background: "var(--color-bg)", borderColor: "var(--color-border)" }} />
+        </div>
 
-                {/* Seed */}
-                <input
-                  type="number"
-                  value={seed}
-                  onChange={(e) => setSeed(parseInt(e.target.value) || 7)}
-                  disabled={isPlaying}
-                  className="h-9 w-20 px-2 rounded-button border border-border text-sm text-textPrimary disabled:opacity-50"
-                  style={{ background: "var(--color-bg)" }}
-                  title={t("seed", language)}
-                />
+        {error && <p className="text-sm text-danger text-center">{error}</p>}
 
-                {/* Speed */}
-                <input
-                  type="number"
-                  value={speed}
-                  onChange={(e) => setSpeed(parseInt(e.target.value) || 80)}
-                  disabled={isPlaying}
-                  className="h-9 w-20 px-2 rounded-button border border-border text-sm text-textPrimary disabled:opacity-50"
-                  style={{ background: "var(--color-bg)" }}
-                  title={t("speed", language)}
-                />
+        <Button onClick={handleCreateRoom} disabled={isCreating} className="w-full h-11 text-base">
+          {isCreating ? t("创建中...", "Creating...") : t("开始游戏", "Start Game")}
+        </Button>
+      </div>
 
-                {/* View toggle */}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() =>
-                    setViewMode(viewMode === ViewMode.MODERATOR ? ViewMode.PUBLIC : ViewMode.MODERATOR)
-                  }
-                  disabled={isPlaying}
-                >
-                  {viewMode === ViewMode.MODERATOR ? t("public", language) : t("private", language)}
-                </Button>
-              </div>
+      <p className="mt-8 text-xs text-text-sub">
+        <span className="font-display">AI Werewolf</span><span className="mx-2">·</span>
+        <span>{t("观战 & 对战", "Spectate & Play")}</span>
+      </p>
 
-              {/* Status */}
-              {statusTitle && (
-                <p className="text-xs text-textSecondary">
-                  <span className="font-medium">{statusTitle}</span>
-                </p>
-              )}
+      {/* ====== Preparation Modal ====== */}
+      {showModal && createdRoom && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: "rgba(0,0,0,0.45)", backdropFilter: "blur(2px)" }}
+          onClick={(e) => { if (e.target === e.currentTarget) setShowModal(false); }}>
+          <div className="w-full max-w-sm rounded-card p-6 space-y-5 animate-scale-in"
+            style={{ background: "var(--color-card)", border: "1px solid var(--color-border)", boxShadow: "0 16px 48px rgba(0,0,0,0.12)" }}
+            onClick={(e) => e.stopPropagation()}>
+            <div className="text-center">
+              <h2 className="font-display text-xl font-bold text-primary">{t("准备开始", "Ready to Start")}</h2>
+              <p className="mt-1 text-sm text-text-sub">{t("确认以下设置后开始游戏", "Confirm settings to start")}</p>
             </div>
 
-            {/* Mobile players */}
-            <div className="lg:hidden">
-              <div className="flex gap-2 overflow-x-auto pb-2">
-                {(gameState?.players || []).map((player) => (
-                  <div key={player.id} className="flex-shrink-0 w-[120px]">
-                    <PlayerCard player={player} />
+            {/* Room info */}
+            <div className="space-y-2 text-sm">
+              {[
+                [t("房间", "Room"), createdRoom.id.slice(0, 8) + "..."],
+                [t("模式", "Mode"), mode === "human" ? t("真人参与", "Human Play") : t("AI 对战", "AI vs AI")],
+                [t("人数", "Players"), String(playerCount)],
+                [t("AI 类型", "Agent"), agentType === "heuristic" ? t("启发式", "Heuristic") : "LLM"],
+                ...(mode === "human" ? [[t("你的座位", "Your Seat"), `${t("座位", "Seat")} ${humanSeat}`]] as any : []),
+              ].map(([label, value]: any) => (
+                <div key={label} className="flex justify-between py-1.5 border-b" style={{ borderColor: "var(--color-border)" }}>
+                  <span className="text-text-sub">{label}</span>
+                  <span className="font-medium text-textPrimary">{value}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Seat preview */}
+            <div>
+              <p className="text-sm font-medium text-textPrimary mb-2">{t("座位分布", "Seat Layout")}</p>
+              <div className="grid grid-cols-4 gap-1.5">
+                {Array.from({ length: playerCount }, (_, i) => i + 1).map((s) => (
+                  <div key={s} className="flex flex-col items-center p-2 rounded-lg border text-xs"
+                    style={{ borderColor: s === humanSeat && mode === "human" ? "var(--color-primary)" : "var(--color-border)", background: s === humanSeat && mode === "human" ? "rgba(139,90,43,0.08)" : "var(--color-bg)" }}>
+                    <span className="font-medium text-textPrimary">{s}</span>
+                    <span className="text-text-sub mt-0.5">{mode === "human" && s === humanSeat ? t("你", "YOU") : "AI"}</span>
                   </div>
                 ))}
               </div>
             </div>
 
-            {/* Event Timeline */}
-            <div
-              className="rounded-card p-4 md:p-6"
-              style={{
-                background: "var(--color-card)",
-                border: "1px solid var(--color-border)",
-                transition: "background var(--transition-daynight) var(--ease-in-out), border var(--transition-daynight) var(--ease-in-out)",
-              }}
-            >
-              <h2 className="font-display text-lg font-semibold text-textPrimary mb-4">
-                {t("timeline", language)}
-              </h2>
-              <div className="max-h-[55vh] overflow-y-auto">
-                {gameState?.events.length ? (
-                  Object.keys(dayBlocks)
-                    .sort((a, b) => Number(b) - Number(a))
-                    .map((dayKey) => (
-                      <DayBlock
-                        key={dayKey}
-                        day={Number(dayKey)}
-                        events={dayBlocks[Number(dayKey)]}
-                      />
-                    ))
-                ) : (
-                  <div className="text-center py-16 text-text-sub">
-                    {/* Decorative moon SVG */}
-                    <svg
-                      width="48" height="48" viewBox="0 0 24 24"
-                      fill="none" stroke="currentColor" strokeWidth="1"
-                      strokeLinecap="round" strokeLinejoin="round"
-                      className="mx-auto mb-5 opacity-30"
-                      aria-hidden="true"
-                    >
-                      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-                    </svg>
-                    <p className="font-display text-xl text-textPrimary mb-2">
-                      {t("readyHint", language)}
-                    </p>
-                    <p className="text-sm max-w-xs mx-auto leading-relaxed">
-                      {t("statusHint", language)}
-                    </p>
-                  </div>
-                )}
-              </div>
+            {error && <p className="text-sm text-danger text-center">{error}</p>}
+
+            <div className="flex gap-3 pt-1">
+              <Button variant="ghost" onClick={() => { setShowModal(false); setError(""); }} className="flex-1">
+                {t("取消", "Cancel")}
+              </Button>
+              <Button onClick={handleConfirmStart} disabled={isStarting} className="flex-1">
+                {isStarting ? t("启动中...", "Starting...") : t("确认开始", "Confirm & Start")}
+              </Button>
             </div>
-          </main>
-
-          {/* Right column — Players 4-6 */}
-          <aside className="hidden lg:flex flex-col gap-3 w-full lg:w-[20%] min-w-[140px]">
-            {rightPlayers.length > 0 ? (
-              rightPlayers.map((player) => (
-                <PlayerCard key={player.id} player={player} />
-              ))
-            ) : (
-              <div className="flex-1 flex items-center justify-center">
-                <p className="text-xs text-text-sub/40 italic text-center">
-                  {t("players", language)}<br/>4–6
-                </p>
-              </div>
-            )}
-          </aside>
+          </div>
         </div>
-
-        {/* Footer */}
-        <footer className="mt-8 text-center text-xs text-textSecondary">
-          <span className="font-display">AI Werewolf</span>
-          <span className="mx-2">·</span>
-          <span>{t("streamingLabel", language)}</span>
-        </footer>
-      </div>
+      )}
     </div>
   );
 }
