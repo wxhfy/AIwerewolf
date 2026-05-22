@@ -41,6 +41,25 @@ def _clean(value: Any) -> Any:
     return value
 
 
+def _seat_of(players, player_id: str | None) -> int | None:
+    if not player_id:
+        return None
+    for p in players:
+        if getattr(p, "id", None) == player_id:
+            return getattr(p, "seat_no", None)
+    return None
+
+
+def _speech_tag(content: dict) -> str:
+    if content.get("last_words"):
+        return "LAST"
+    if content.get("badge_campaign"):
+        return "BADGE"
+    if content.get("pk_speech"):
+        return "PK"
+    return ""
+
+
 def save_game_start(state: GameState, model_name: str = "", prompt_version: str = "v1") -> Game:
     db = SessionLocal()
     try:
@@ -365,20 +384,38 @@ def get_game_summary(game_id: str) -> dict | None:
         if not game:
             return None
         speeches = [
-            {"day": e.day, "phase": e.phase, "speaker": (e.content or {}).get("actor_name", ""),
-             "text": _clean(str((e.content or {}).get("speech", "")))[:400]}
+            {
+                "day": e.day,
+                "phase": e.phase,
+                "ts": float(e.ts or 0.0),
+                "speaker": (e.content or {}).get("actor_name", ""),
+                "speaker_seat": _seat_of(game.players, (e.content or {}).get("actor_id")),
+                "text": _clean(str((e.content or {}).get("speech", "")))[:400],
+                "tag": _speech_tag(e.content or {}),
+            }
             for e in sorted(game.events, key=lambda x: (x.seq or 0, x.created_at))
             if e.event_type == "CHAT_MESSAGE"
         ]
         votes = [
-            {"day": e.day, "voter": (e.content or {}).get("voter_name", ""),
-             "target": (e.content or {}).get("target_name", "")}
+            {
+                "day": e.day,
+                "ts": float(e.ts or 0.0),
+                "voter": (e.content or {}).get("voter_name", ""),
+                "voter_seat": _seat_of(game.players, (e.content or {}).get("voter_id")),
+                "target": (e.content or {}).get("target_name", ""),
+                "target_seat": _seat_of(game.players, (e.content or {}).get("target_id")),
+            }
             for e in sorted(game.events, key=lambda x: (x.seq or 0, x.created_at))
             if e.event_type == "VOTE_CAST"
         ]
         deaths = [
-            {"day": e.day, "player": (e.content or {}).get("player_name", ""),
-             "reason": (e.content or {}).get("reason", "")}
+            {
+                "day": e.day,
+                "ts": float(e.ts or 0.0),
+                "player": (e.content or {}).get("player_name", ""),
+                "player_seat": _seat_of(game.players, (e.content or {}).get("player_id")),
+                "reason": (e.content or {}).get("reason", ""),
+            }
             for e in sorted(game.events, key=lambda x: (x.seq or 0, x.created_at))
             if e.event_type == "PLAYER_DIED"
         ]
