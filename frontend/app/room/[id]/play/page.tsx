@@ -33,6 +33,8 @@ export default function GamePage() {
   } = useAppContext();
 
   const [showWinnerPanel, setShowWinnerPanel] = useState(false);
+  const [ballPos, setBallPos] = useState({ x: 0, y: 0 });
+  const dragRef = useRef({ dragging: false, startX: 0, startY: 0, origX: 0, origY: 0, moved: false });
   const [statusTitle, setStatusTitle] = useState(
     gameState?.winner ? t("statusLoaded", language) : t("statusReady", language)
   );
@@ -234,9 +236,29 @@ export default function GamePage() {
           {/* Floating ball — always visible after game ends */}
           {!showWinnerPanel && (
             <button
-              onClick={() => setShowWinnerPanel(true)}
-              className="fixed z-50 bottom-6 right-6 flex items-center gap-2.5 pl-3 pr-4 py-2.5 rounded-full animate-scale-in cursor-pointer border-0 shadow-[0_4px_24px_rgba(0,0,0,0.12)] hover:shadow-[0_6px_32px_rgba(0,0,0,0.16)] hover:-translate-y-0.5 transition-all duration-200"
-              style={{ background: "var(--color-card)", border: "1px solid var(--color-border)" }}
+              onClick={() => { if (!dragRef.current.moved) setShowWinnerPanel(true); }}
+              onPointerDown={(e) => {
+                dragRef.current = { dragging: true, startX: e.clientX, startY: e.clientY, origX: ballPos.x, origY: ballPos.y, moved: false };
+                (e.target as HTMLElement).setPointerCapture(e.pointerId);
+              }}
+              onPointerMove={(e) => {
+                if (!dragRef.current.dragging) return;
+                const dx = e.clientX - dragRef.current.startX;
+                const dy = e.clientY - dragRef.current.startY;
+                if (Math.abs(dx) > 3 || Math.abs(dy) > 3) dragRef.current.moved = true;
+                if (dragRef.current.moved) {
+                  setBallPos({ x: dragRef.current.origX + dx, y: dragRef.current.origY + dy });
+                }
+              }}
+              onPointerUp={() => { dragRef.current.dragging = false; }}
+              className="fixed z-50 flex items-center gap-2.5 pl-3 pr-4 py-2.5 rounded-full animate-scale-in cursor-grab active:cursor-grabbing border-0 shadow-[0_4px_24px_rgba(0,0,0,0.12)] hover:shadow-[0_6px_32px_rgba(0,0,0,0.16)] select-none transition-shadow duration-200"
+              style={{
+                background: "var(--color-card)",
+                border: "1px solid var(--color-border)",
+                right: ballPos.x ? undefined : 24,
+                bottom: ballPos.y ? undefined : 24,
+                transform: ballPos.x ? `translate(${ballPos.x}px, ${-ballPos.y}px)` : undefined,
+              }}
             >
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                 strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
