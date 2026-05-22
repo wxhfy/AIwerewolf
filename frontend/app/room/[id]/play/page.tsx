@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useMemo } from "react";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams, useSearchParams, useRouter } from "next/navigation";
 import { useAppContext } from "@/context/AppContext";
 import { t } from "@/lib/i18n";
 import { truncate } from "@/lib/utils";
@@ -19,6 +19,7 @@ import { DayBlock } from "@/components/game/DayBlock";
 import { ActionPanel } from "@/components/game/ActionPanel";
 
 export default function GamePage() {
+  const router = useRouter();
   const params = useParams<{ id: string }>();
   const searchParams = useSearchParams();
   const roomId = params.id;
@@ -225,6 +226,50 @@ export default function GamePage() {
           <div key={p.id || i} className="flex-shrink-0 w-[100px]"><PlayerCard player={p} /></div>
         ))}
       </div>
+
+      {/* ====== Winner Overlay ====== */}
+      {gameState?.winner && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center"
+          style={{ background: "rgba(0,0,0,0.55)", backdropFilter: "blur(4px)" }}>
+          <div className="text-center animate-scale-in px-6 py-10 rounded-card max-w-sm w-full mx-4"
+            style={{ background: "var(--color-card)", boxShadow: "0 16px 64px rgba(0,0,0,0.25)" }}>
+            <div className="mb-4">
+              <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                strokeWidth="1" strokeLinecap="round" strokeLinejoin="round"
+                className="mx-auto text-accent">
+                <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5C7 4 8 7 8 7" /><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5C17 4 16 7 16 7" />
+                <path d="M4 22h16" /><path d="M10 22V8c0-1.1.9-2 2-2s2 .9 2 2v14" /><path d="M8 12h8" />
+              </svg>
+            </div>
+            <p className="text-sm text-text-sub mb-2">{language === "zh" ? "游戏结束" : "Game Over"}</p>
+            <h2 className={`font-display text-3xl font-bold mb-1 ${gameState.winner === "village" ? "text-success" : "text-danger"}`}>
+              {gameState.winner === "village" ? t("village", language) : t("wolf", language)}
+            </h2>
+            <p className="text-lg font-display text-textPrimary mb-6">
+              {gameState.winner === "village"
+                ? (language === "zh" ? "好人阵营获胜" : "Village Wins")
+                : (language === "zh" ? "狼人阵营获胜" : "Wolves Win")}
+            </p>
+            <div className="grid grid-cols-3 gap-3 mb-6 text-center">
+              {[
+                [String(gameState.day), language === "zh" ? "总天数" : "Days"],
+                [String(aliveCount), language === "zh" ? "存活" : "Alive"],
+                [String(gameState.event_count || 0), language === "zh" ? "事件" : "Events"],
+              ].map(([val, label]) => (
+                <div key={label}><p className="font-display text-2xl font-bold text-primary">{val}</p><p className="text-xs text-text-sub">{label}</p></div>
+              ))}
+            </div>
+            <div className="flex gap-3">
+              <Button variant="ghost" onClick={() => router.push("/")} className="flex-1">
+                {language === "zh" ? "返回大厅" : "Lobby"}
+              </Button>
+              <Button onClick={() => router.push("/")} className="flex-1">
+                {language === "zh" ? "再来一局" : "Play Again"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
