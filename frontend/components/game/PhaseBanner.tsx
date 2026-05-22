@@ -4,7 +4,6 @@ import React from "react";
 import { useAppContext } from "@/context/AppContext";
 import { t, tPhase } from "@/lib/i18n";
 import { Badge } from "@/components/ui/Badge";
-import { Language } from "@/types";
 
 interface PhaseBannerProps {
   day: number;
@@ -90,15 +89,4 @@ export function PhaseBanner({ day, phase, isNight }: PhaseBannerProps) {
       )}
     </div>
   );
-}
-
-function formatDayLabel(
-  day: number,
-  phase: string,
-  isNight: boolean,
-  lang: Language
-): string {
-  const phaseLabel = tPhase(phase, lang);
-  const prefix = lang === "zh" ? `第${day}天` : `Day ${day}`;
-  return `${prefix} · ${phaseLabel}`;
 }
