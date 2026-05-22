@@ -152,13 +152,15 @@ def save_game_end(state: GameState) -> None:
 
         # Idempotent bulk-save of events: clear and re-insert (run once at game_end).
         db.query(GameEvent).filter(GameEvent.game_id == state.id).delete()
-        for event in state.events:
+        for seq, event in enumerate(state.events):
             payload = _clean(event.payload) if isinstance(event.payload, dict) else {}
             phase = event.phase.value if hasattr(event.phase, "value") else str(event.phase)
             event_type = event.type.value if hasattr(event.type, "value") else str(event.type)
             db.add(GameEvent(
                 id=event.id,
                 game_id=state.id,
+                seq=seq,
+                ts=float(event.ts or 0.0),
                 day=event.day,
                 phase=phase,
                 event_type=event_type,
@@ -365,19 +367,19 @@ def get_game_summary(game_id: str) -> dict | None:
         speeches = [
             {"day": e.day, "phase": e.phase, "speaker": (e.content or {}).get("actor_name", ""),
              "text": _clean(str((e.content or {}).get("speech", "")))[:400]}
-            for e in game.events
+            for e in sorted(game.events, key=lambda x: (x.seq or 0, x.created_at))
             if e.event_type == "CHAT_MESSAGE"
         ]
         votes = [
             {"day": e.day, "voter": (e.content or {}).get("voter_name", ""),
              "target": (e.content or {}).get("target_name", "")}
-            for e in game.events
+            for e in sorted(game.events, key=lambda x: (x.seq or 0, x.created_at))
             if e.event_type == "VOTE_CAST"
         ]
         deaths = [
             {"day": e.day, "player": (e.content or {}).get("player_name", ""),
              "reason": (e.content or {}).get("reason", "")}
-            for e in game.events
+            for e in sorted(game.events, key=lambda x: (x.seq or 0, x.created_at))
             if e.event_type == "PLAYER_DIED"
         ]
         decision_count = db.query(AgentDecision).filter(AgentDecision.game_id == game_id).count()
@@ -426,6 +428,8 @@ def get_replay(game_id: str, *, show_private: bool = False) -> dict | None:
         events = [
             {
                 "id": e.id,
+                "seq": e.seq,
+                "ts": e.ts,
                 "day": e.day,
                 "phase": e.phase,
                 "type": e.event_type,
@@ -434,7 +438,7 @@ def get_replay(game_id: str, *, show_private: bool = False) -> dict | None:
                 "visibility": e.visibility,
                 "content": e.content,
             }
-            for e in sorted(game.events, key=lambda x: (x.day, x.created_at))
+            for e in sorted(game.events, key=lambda x: (x.seq or 0, x.created_at))
             if show_private or e.visibility == "public"
         ]
         decisions = (

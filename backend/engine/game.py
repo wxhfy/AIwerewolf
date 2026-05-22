@@ -97,7 +97,18 @@ class WerewolfGame:
         self.pending_badge_transfer_from_id: str | None = None
         self.human_action_buffer: dict[str, list[Decision]] = {}
         self.interrupt_phase_cycle = False
-        self.characters = build_character_roster(self.state.players, seed=seed or 0)
+        sampled_personas = self._sample_personas_from_db(len(self.state.players), seed)
+        if sampled_personas:
+            # Adopt the sampled persona's display name onto the seat so the
+            # in-game card, system prompt and audit log all reference the
+            # same identity.
+            for player, persona_data in zip(self.state.players, sampled_personas):
+                player.name = persona_data.get("name", player.name)
+        self.characters = build_character_roster(
+            self.state.players,
+            seed=seed or 0,
+            sampled_personas=sampled_personas,
+        )
         self.agents = {}
         self.attach_agents(
             agents or create_agents(
@@ -110,6 +121,19 @@ class WerewolfGame:
                 },
             )
         )
+
+    @staticmethod
+    def _sample_personas_from_db(count: int, seed: int | None) -> list[dict] | None:
+        """Try to pull a random persona roster from the DB.
+
+        Returns None on any failure so the in-repo PERSONA_POOL takes over —
+        DB sampling is an enhancement, never a hard requirement.
+        """
+        try:
+            from backend.db.persona_db import sample_personas
+            return sample_personas(count, seed=seed)
+        except Exception:
+            return None
 
     def attach_agents(self, agents: dict[str, Agent]) -> None:
         self.agents = agents
@@ -153,6 +177,55 @@ class WerewolfGame:
         for phase in phases:
             if phase.value in bucket:
                 bucket.remove(phase.value)
+
+    def _seat_sorted(self, players: list[Player]) -> list[Player]:
+        """Return players ordered by seat number.
+
+        Speech / vote phases all funnel through this so the audience sees a
+        deterministic clockwise flow even if internal lists ever drift.
+        """
+        return sorted(players, key=lambda p: p.seat)
+
+    def _day_speech_order(self) -> list[Player]:
+        """Order alive players for the daytime speech round.
+
+        Standard table convention:
+          * day 1 — start at the sheriff's left neighbour (or seat 1 if no
+            badge); otherwise plain seat ascending.
+          * day 2+ — start at the player just after the most recent corpse so
+            the table feels like a wake-up walk around the seats.
+        Whatever the entry point, we rotate around the table so the order is
+        still strictly by seat — only the starting offset changes.
+        """
+        alive = self._seat_sorted(self.state.alive_players)
+        if len(alive) <= 1:
+            return alive
+        anchor_seat = self._speech_anchor_seat()
+        if anchor_seat is None:
+            return alive
+        anchor_index = next(
+            (i for i, p in enumerate(alive) if p.seat >= anchor_seat),
+            0,
+        )
+        return alive[anchor_index:] + alive[:anchor_index]
+
+    def _speech_anchor_seat(self) -> int | None:
+        if self.state.day <= 1:
+            holder_id = self.state.badge.holder_id
+            if holder_id:
+                holder = self.state.player(holder_id)
+                return holder.seat + 1
+            return None
+        # Find the most recent corpse from yesterday or this morning.
+        recent_deaths = [
+            player
+            for player in self.state.players
+            if not player.alive and player.death_day in (self.state.day - 1, self.state.day)
+        ]
+        if not recent_deaths:
+            return None
+        recent_deaths.sort(key=lambda p: (p.death_day or 0, p.seat))
+        return recent_deaths[-1].seat + 1
 
     def initialize(self) -> None:
         self._log(
@@ -277,9 +350,14 @@ class WerewolfGame:
             return
         self._set_phase(Phase.DAY_BADGE_SIGNUP)
         if self.state.day != 1 or self.state.badge.holder_id is not None:
+            # Badge campaign only happens on day 1. Wipe residual day-1 state
+            # so DAY_BADGE_SPEECH / DAY_BADGE_ELECTION don't re-run for day 2+.
+            self.state.badge.candidates = []
+            self.state.badge.signup = {}
+            self.state.badge.votes = {}
             self._mark_phase_done(Phase.DAY_BADGE_SIGNUP)
             return
-        alive = list(self.state.alive_players)
+        alive = self._seat_sorted(self.state.alive_players)
         if len(alive) <= 2:
             self._mark_phase_done(Phase.DAY_BADGE_SIGNUP)
             return
@@ -301,7 +379,10 @@ class WerewolfGame:
         if not self.state.badge.candidates:
             self._mark_phase_done(Phase.DAY_BADGE_SPEECH)
             return
-        candidates = [self.state.player(candidate_id) for candidate_id in self.state.badge.candidates]
+        # Speak in seat order so the audience sees a coherent flow.
+        candidates = self._seat_sorted(
+            [self.state.player(candidate_id) for candidate_id in self.state.badge.candidates]
+        )
 
         def handle(player: Player) -> None:
             if not player.alive:
@@ -333,13 +414,15 @@ class WerewolfGame:
         if self._phase_done(Phase.DAY_BADGE_ELECTION):
             return
         self._set_phase(Phase.DAY_BADGE_ELECTION)
-        candidates = [self.state.player(pid) for pid in self.state.badge.candidates if self.state.player(pid).alive]
+        candidates = self._seat_sorted(
+            [self.state.player(pid) for pid in self.state.badge.candidates if self.state.player(pid).alive]
+        )
         if len(candidates) < 1:
             self.state.badge.candidates = []
             self.state.badge.signup = {}
             self._mark_phase_done(Phase.DAY_BADGE_ELECTION)
             return
-        votes = dict(self.state.badge.votes)
+        votes: dict[str, str] = {}
         candidate_ids = {player.id for player in candidates}
 
         def handle(voter: Player) -> None:
@@ -374,10 +457,20 @@ class WerewolfGame:
             )
             self.state.badge.votes = dict(votes)
 
-        self._run_actor_sequence(Phase.DAY_BADGE_ELECTION, list(self.state.alive_players), handle)
+        # Voters speak in seat order, candidates excluded.
+        voters = self._seat_sorted(
+            [player for player in self.state.alive_players if player.id not in candidate_ids]
+        )
+        if not voters:
+            voters = self._seat_sorted(self.state.alive_players)
+        self._run_actor_sequence(Phase.DAY_BADGE_ELECTION, voters, handle)
         self.state.badge.votes = votes
         self.state.badge.history[self.state.day] = dict(votes)
-        winner_id = self._majority_target(votes)
+        if not votes:
+            # No usable ballots — first candidate wins by default.
+            winner_id = candidates[0].id
+        else:
+            winner_id = self._majority_target(votes)
         self.state.badge.holder_id = winner_id
         winner = self.state.player(winner_id)
         self._log(
@@ -385,6 +478,9 @@ class WerewolfGame:
             "public",
             {"message": f"{winner.name} won the badge election and becomes sheriff."},
         )
+        # Election done — clear ballot/candidate roster so day 2+ won't loop.
+        self.state.badge.candidates = []
+        self.state.badge.signup = {}
         self._mark_phase_done(Phase.DAY_BADGE_ELECTION)
 
     def _guard_phase(self) -> None:
@@ -424,7 +520,7 @@ class WerewolfGame:
             if self.validator.validate(self.state, decision):
                 self.state.night_actions.wolf_votes[wolf.id] = decision.target_id or ""
                 self._log_decision(decision, "private", {"target_id": decision.target_id}, [w.id for w in wolves])
-        self._run_actor_sequence(Phase.NIGHT_WOLF_ACTION, wolves, handle)
+        self._run_actor_sequence(Phase.NIGHT_WOLF_ACTION, self._seat_sorted(wolves), handle)
         if self.state.night_actions.wolf_votes:
             self.state.night_actions.wolf_target_id = self._majority_target(self.state.night_actions.wolf_votes)
         self._mark_phase_done(Phase.NIGHT_WOLF_ACTION)
@@ -545,7 +641,8 @@ class WerewolfGame:
             )
             if self._maybe_white_wolf_king_boom(player):
                 return
-        self._run_actor_sequence(Phase.DAY_SPEECH, list(self.state.alive_players), handle)
+        speakers = self._day_speech_order()
+        self._run_actor_sequence(Phase.DAY_SPEECH, speakers, handle)
         self._mark_phase_done(Phase.DAY_SPEECH)
 
     def _pk_speech_phase(self, target_ids: list[str]) -> None:
@@ -578,7 +675,7 @@ class WerewolfGame:
             if self._maybe_white_wolf_king_boom(player):
                 return
 
-        self._run_actor_sequence(Phase.DAY_PK_SPEECH, pk_players, handle)
+        self._run_actor_sequence(Phase.DAY_PK_SPEECH, self._seat_sorted(pk_players), handle)
 
     def _vote_phase(self) -> None:
         if self._phase_done(Phase.DAY_VOTE):
@@ -615,7 +712,7 @@ class WerewolfGame:
                     "is_pk_vote": bool(self.state.pk_targets),
                 },
             )
-        self._run_actor_sequence(Phase.DAY_VOTE, eligible_voters, handle)
+        self._run_actor_sequence(Phase.DAY_VOTE, self._seat_sorted(eligible_voters), handle)
         self._mark_phase_done(Phase.DAY_VOTE)
 
     def _day_resolve(self) -> None:

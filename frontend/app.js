@@ -28,6 +28,8 @@ const I18N = {
     actionPlaceholder: "输入你的发言...",
     winnerVillage: "好人阵营",
     winnerWolf: "狼人阵营",
+    timeLeft: "剩余时间",
+    timeOut: "时间到，自动提交",
   },
   en: {
     run: "Start Game",
@@ -58,6 +60,8 @@ const I18N = {
     actionPlaceholder: "Type your speech...",
     winnerVillage: "Village",
     winnerWolf: "Wolves",
+    timeLeft: "Time left",
+    timeOut: "Time up — auto submit",
   },
 };
 
@@ -104,6 +108,17 @@ const els = {
   actionSubmit: $("#action-submit"),
   actionVoice: $("#action-voice"),
   voiceHint: $("#voice-hint"),
+  actionTimer: $("#action-timer"),
+  actionTimerValue: $("#action-timer-value"),
+};
+
+// --- Speech countdown for human players (60s default) ---
+const HUMAN_TIMER_SECONDS = 60;
+const TIMER_REQUESTS = new Set(["TALK", "BADGE_SPEECH", "LAST_WORDS"]);
+const timer = {
+  intervalId: null,
+  deadline: 0,
+  active: false,
 };
 
 // --- Voice input (Web Speech API) ---
@@ -344,11 +359,136 @@ function renderHistoryPanel() {
   }
   els.historyPanel.innerHTML = state.historyGames.slice(0, 8).map((game) => {
     const winner = game.winner === "village" ? t("winnerVillage") : game.winner === "wolf" ? t("winnerWolf") : "?";
-    return `<div class="history-item">
+    return `<div class="history-item" data-id="${esc(game.id)}" role="button" tabindex="0">
       <span class="hist-winner">${esc(winner)}</span>
       <span class="hist-day">${t("day")} ${esc(game.current_day || 0)}</span>
       <span class="hist-date">${esc((game.created_at || "").slice(0, 10))}</span>
     </div>`;
+  }).join("");
+  els.historyPanel.querySelectorAll(".history-item[data-id]").forEach((node) => {
+    node.addEventListener("click", () => openHistoryDetail(node.dataset.id));
+    node.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        openHistoryDetail(node.dataset.id);
+      }
+    });
+  });
+}
+
+async function openHistoryDetail(gameId) {
+  if (!gameId) return;
+  showHistoryModal({ loading: true });
+  try {
+    const response = await fetch(`/api/history/${gameId}`);
+    if (!response.ok) {
+      showHistoryModal({ error: t("statusError") });
+      return;
+    }
+    const detail = await response.json();
+    showHistoryModal({ detail });
+  } catch (err) {
+    showHistoryModal({ error: String(err && err.message ? err.message : err) });
+  }
+}
+
+function showHistoryModal({ detail, loading, error }) {
+  let overlay = document.getElementById("history-modal");
+  if (!overlay) {
+    overlay = document.createElement("div");
+    overlay.id = "history-modal";
+    overlay.className = "history-modal hidden";
+    overlay.innerHTML = `
+      <div class="history-modal-card" role="dialog" aria-modal="true">
+        <div class="history-modal-header">
+          <h3 id="history-modal-title">${esc(t("history"))}</h3>
+          <button id="history-modal-close" class="btn-ghost" aria-label="close">×</button>
+        </div>
+        <div class="history-modal-body" id="history-modal-body"></div>
+      </div>`;
+    document.body.appendChild(overlay);
+    overlay.addEventListener("click", (event) => {
+      if (event.target === overlay) overlay.classList.add("hidden");
+    });
+    overlay.querySelector("#history-modal-close").addEventListener("click", () => {
+      overlay.classList.add("hidden");
+    });
+  }
+  overlay.classList.remove("hidden");
+  const body = overlay.querySelector("#history-modal-body");
+  const title = overlay.querySelector("#history-modal-title");
+  if (loading) {
+    title.textContent = t("history");
+    body.innerHTML = `<div class="history-modal-loading">${esc(t("statusLoading"))}</div>`;
+    return;
+  }
+  if (error) {
+    title.textContent = t("history");
+    body.innerHTML = `<div class="history-modal-error">${esc(error)}</div>`;
+    return;
+  }
+  if (!detail) {
+    body.innerHTML = "";
+    return;
+  }
+  const winnerText = detail.winner === "village" ? t("winnerVillage")
+    : detail.winner === "wolf" ? t("winnerWolf")
+    : "?";
+  title.textContent = `${t("history")} · ${detail.id ? detail.id.slice(0, 8) : ""}`;
+
+  const playerRows = (detail.players || []).map((player) => {
+    const status = player.alive ? t("alive") : t("dead");
+    const death = player.death_day ? ` · ${t("day")}${player.death_day} ${esc(player.death_reason || "")}` : "";
+    return `<li><span class="hist-seat">#${esc(player.seat)}</span> ${esc(player.name)} · ${esc(player.role)} · ${esc(status)}${death}</li>`;
+  }).join("");
+
+  const groupedSpeeches = groupByDay(detail.speeches || []);
+  const groupedVotes = groupByDay(detail.votes || []);
+
+  const speechHtml = renderDayBlocks(groupedSpeeches, (item) => `<div class="hist-speech"><strong>${esc(item.speaker)}</strong>${item.phase ? `<span class="hist-tag">${esc(item.phase)}</span>` : ""}<p>${esc(item.text || "")}</p></div>`);
+  const voteHtml = renderDayBlocks(groupedVotes, (item) => `<div class="hist-vote">${esc(item.voter)} → <strong>${esc(item.target)}</strong></div>`);
+  const deathsHtml = (detail.deaths || []).map((death) => `<div class="hist-death">${t("day")} ${esc(death.day)} · ${esc(death.player)} (${esc(death.reason)})</div>`).join("");
+
+  body.innerHTML = `
+    <div class="hist-meta">
+      <span><strong>${esc(winnerText)}</strong></span>
+      <span>${t("day")} ${esc(detail.day || 0)}</span>
+      <span>${esc(detail.event_count || 0)} events</span>
+      <span>${esc(detail.decision_count || 0)} decisions</span>
+    </div>
+    <div class="hist-section">
+      <h4>${esc(t("players"))}</h4>
+      <ul class="hist-list">${playerRows || `<li class="hist-empty">${esc(t("noHistory"))}</li>`}</ul>
+    </div>
+    <div class="hist-section">
+      <h4>${esc(t("speech"))}</h4>
+      ${speechHtml || `<div class="hist-empty">${esc(t("noHistory"))}</div>`}
+    </div>
+    <div class="hist-section">
+      <h4>${esc(t("vote"))}</h4>
+      ${voteHtml || `<div class="hist-empty">${esc(t("noHistory"))}</div>`}
+    </div>
+    <div class="hist-section">
+      <h4>${esc(t("nightPhase"))}</h4>
+      ${deathsHtml || `<div class="hist-empty">${esc(t("noHistory"))}</div>`}
+    </div>`;
+}
+
+function groupByDay(rows) {
+  const map = new Map();
+  for (const row of rows || []) {
+    const day = row.day || 0;
+    if (!map.has(day)) map.set(day, []);
+    map.get(day).push(row);
+  }
+  return [...map.entries()].sort((a, b) => a[0] - b[0]);
+}
+
+function renderDayBlocks(grouped, formatter) {
+  if (!grouped.length) return "";
+  return grouped.map(([day, rows]) => {
+    const items = rows.map(formatter).join("");
+    return `<div class="hist-day-block"><div class="hist-day-label">${t("day")} ${esc(day)}</div>${items}</div>`;
   }).join("");
 }
 
@@ -423,6 +563,7 @@ function runAiRoom() {
 
 async function submitHumanAction() {
   if (!state.pendingInput) return;
+  stopActionTimer();
   const payload = {
     target_id: els.actionTarget.value || null,
     speech: els.actionSpeech.value.trim() || null,
@@ -520,11 +661,60 @@ function renderPendingInput(pending) {
   els.actionTarget.innerHTML = `<option value="">-</option>` + (pending.options || []).map((option) => {
     return `<option value="${esc(option.id)}">${esc(option.seat)} · ${esc(option.name)}</option>`;
   }).join("");
+  // Only run a countdown for speech-style requests — votes & night actions
+  // are quick and shouldn't be force-submitted blank.
+  if (TIMER_REQUESTS.has(pending.request)) {
+    startActionTimer(HUMAN_TIMER_SECONDS);
+  } else {
+    stopActionTimer();
+  }
 }
 
 function hideActionPanel() {
   els.actionPanel.classList.add("hidden");
   state.pendingInput = null;
+  stopActionTimer();
+}
+
+function startActionTimer(seconds) {
+  stopActionTimer();
+  if (!els.actionTimer || !els.actionTimerValue) return;
+  timer.deadline = Date.now() + seconds * 1000;
+  timer.active = true;
+  els.actionTimer.classList.remove("hidden", "warn", "danger");
+  paintTimer(seconds);
+  timer.intervalId = window.setInterval(() => {
+    const remaining = Math.max(0, Math.round((timer.deadline - Date.now()) / 1000));
+    paintTimer(remaining);
+    if (remaining <= 0) {
+      timer.active = false;
+      window.clearInterval(timer.intervalId);
+      timer.intervalId = null;
+      els.actionTimerValue.textContent = t("timeOut");
+      // Auto-submit whatever the user already typed; backend's coerce will
+      // turn empty speech into the fallback "..." placeholder.
+      submitHumanAction();
+    }
+  }, 250);
+}
+
+function stopActionTimer() {
+  if (timer.intervalId) {
+    window.clearInterval(timer.intervalId);
+    timer.intervalId = null;
+  }
+  timer.active = false;
+  if (els.actionTimer) {
+    els.actionTimer.classList.add("hidden");
+    els.actionTimer.classList.remove("warn", "danger");
+  }
+}
+
+function paintTimer(remainingSeconds) {
+  if (!els.actionTimer || !els.actionTimerValue) return;
+  els.actionTimerValue.textContent = `${remainingSeconds}s`;
+  els.actionTimer.classList.toggle("warn", remainingSeconds <= 20 && remainingSeconds > 10);
+  els.actionTimer.classList.toggle("danger", remainingSeconds <= 10);
 }
 
 function renderFlow(snapshot) {
