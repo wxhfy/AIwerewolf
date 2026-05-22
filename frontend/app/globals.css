@@ -16,7 +16,7 @@
   --color-text: #2D2A24;
   --color-text-sub: #5B564D;
   --color-border: rgba(139, 90, 43, 0.10);
-  --color-overlay: transparent;
+  --color-overlay: rgba(0, 0, 0, 0);
 
   /* Typography */
   --font-display: 'Noto Serif SC', serif;
@@ -39,6 +39,7 @@
   --color-bg: #E8E2D8;
   --color-card: #EDE8E0;
   --color-primary: #7A4E20;
+  --color-primary-hover: #8B5A2B;
   --color-text: #1A1816;
   --color-text-sub: #4A4540;
   --color-border: rgba(139, 90, 43, 0.15);

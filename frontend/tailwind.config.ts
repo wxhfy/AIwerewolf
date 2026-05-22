@@ -19,14 +19,6 @@ const config: Config = {
         textPrimary: "#2D2A24",
         textSecondary: "#5B564D",
         danger: "#B91C1C",
-        success: "#2E7D32",
-        warning: "#D4AF37",
-        info: "#3B82F6",
-        nightBackground: "#E8E2D8",
-        nightCardBackground: "#EDE8E0",
-        nightBorder: "rgba(139,90,43,0.15)",
-        nightTextPrimary: "#1A1816",
-        nightTextSecondary: "#4A4540",
       },
       borderRadius: {
         card: "12px",
@@ -40,7 +32,6 @@ const config: Config = {
     },
   },
   plugins: [],
-  darkMode: "class",
 };
 
 export default config;
