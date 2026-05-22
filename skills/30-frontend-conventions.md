@@ -2,15 +2,15 @@
 name: frontend-conventions
 description: Next.js 14 App Router + React 18 + TypeScript 5 + Tailwind 3 前端开发规范
 audience: claude, codex, human
-version: 2.0.0
+version: 2.1.0
 updated: 2026-05-22
 ---
 
 # 前端开发规范
 
-> v2.0 — 2026-05-22 起前端切换到 **Next.js + TS + Tailwind**。v1 (vanilla JS) 规范保留在 git 历史里。
+> v2.1 — 老的 vanilla 三件套 (`index.html` / `app.js` / `style.css`) **已删除**。前端唯一形态是 Next.js。
+> v1.0 规范（"vanilla, no framework"）已彻底作废,仅在 git 历史中保留。
 > 适用范围：`frontend/` 目录。
-> 老的 `frontend/index.html` + `app.js` + `style.css` 暂时**并行保留**（uvicorn `/` 路径仍然托管它们），但**新功能一律走 Next.js 端**。
 
 ---
 
@@ -76,9 +76,6 @@ frontend/
 ├── tsconfig.json           # paths: "@/*" → "./*"
 ├── package.json
 └── package-lock.json
-
-# 兼容旧版（暂时保留,不要改）
-├── index.html, app.js, style.css   # v1 vanilla 三件套(:8000 仍托管)
 ```
 
 ### 文件命名
@@ -393,39 +390,7 @@ npm run start      # 起 next start，:3001
 
 ---
 
-## 十二、与 v1 vanilla 前端并行的过渡期
-
-当前两套前端并存：
-
-| 入口 | 位置 | 状态 |
-|------|------|------|
-| `http://host:8000/` | `frontend/index.html` + `app.js` + `style.css` | 老的 vanilla，**仅维护性 bugfix**，不接新功能 |
-| `http://host:3001/` | `frontend/app/page.tsx` 及 Next.js 全树 | 新的，**所有新功能在这** |
-
-### 过渡期纪律
-
-- 新功能 PR **必须**在 Next.js 侧实现，不要回头改 vanilla
-- 老 vanilla 仅在出现"严重影响 demo"的 bug 时打补丁（如 API 字段对齐这种小修）
-- v1 vanilla **不删**（保留作为对比 / 答辩 fallback），但**不再算"前端"的代表**
-- 文档里讲"前端"默认指 Next.js 那个
-
-### 何时彻底退役 v1
-
-`docs/superpowers/plans/2026-05-22-spectator-redesign.md` 是 redesign 的实施计划。Next.js 端把以下功能都覆盖后，**单独发 PR 删除 v1 三件套**：
-
-- [ ] 观战 UI 三栏布局
-- [ ] AI vs AI 启动 + 实时事件流
-- [ ] AI + Human 模式（人类输入面板 + 语音）
-- [ ] 主持/公开视角切换
-- [ ] 中英双语
-- [ ] 历史对局列表 + 详情
-- [ ] 房间管理
-
-**未全部覆盖前不要删 v1**。
-
----
-
-## 十三、AI 改前端的红线
+## 十二、AI 改前端的红线
 
 让 AI 写 Next.js 代码时，**至少检查**：
 
@@ -440,11 +405,11 @@ npm run start      # 起 next start，:3001
 - [ ] 没引入 Redux / styled-components / 大库
 - [ ] 单组件 < 200 行
 - [ ] 文件名 `PascalCase.tsx`（组件）/ `camelCase.ts`（lib）
-- [ ] 没改 v1 vanilla 三件套（除非是过渡期 bugfix）
+- [ ] 没改 v1 vanilla 三件套（已被删除,不会再出现）
 - [ ] 没留 `console.log` debug 输出
 
 详见 `skills/70-ai-collaboration.md`。
 
 ---
 
-*Version 2.0.0 — 2026-05-22 — 从 vanilla JS 切到 Next.js + TS + Tailwind。v1 (vanilla) 规范保留在 git 历史。*
+*Version 2.1.0 — 2026-05-22 — vanilla 三件套已删除,Next.js 是唯一前端。v2.0 (并行过渡期版) 和 v1 (vanilla) 规范保留在 git 历史。*

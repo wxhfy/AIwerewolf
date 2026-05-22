@@ -1,13 +1,10 @@
 from __future__ import annotations
 
 import asyncio
-from pathlib import Path
 from typing import Any, Dict, Optional
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
 
 from backend.agents.factory import create_agents
 from backend.db.database import init_db
@@ -26,7 +23,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-_frontend_dir = Path(__file__).resolve().parent.parent / "frontend"
 _rooms = RoomManager()
 
 
@@ -455,13 +451,11 @@ async def room_ws(websocket: WebSocket, room_id: str) -> None:
         return
 
 
-if _frontend_dir.exists():
-    app.mount("/static", StaticFiles(directory=_frontend_dir), name="static")
-
-
 @app.get("/")
 def index():
-    index_file = _frontend_dir / "index.html"
-    if index_file.exists():
-        return FileResponse(index_file)
-    return {"message": "AI Werewolf backend is running."}
+    """Backend root — the UI lives in the Next.js app on port 3002."""
+    return {
+        "message": "AI Werewolf backend is running.",
+        "ui": "http://localhost:3002",
+        "docs": "/docs",
+    }
