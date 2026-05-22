@@ -348,15 +348,19 @@ class WerewolfGame:
     def _badge_signup_phase(self) -> None:
         if self._phase_done(Phase.DAY_BADGE_SIGNUP):
             return
-        self._set_phase(Phase.DAY_BADGE_SIGNUP)
         if self.state.day != 1 or self.state.badge.holder_id is not None:
-            # Badge campaign only happens on day 1. Wipe residual day-1 state
-            # so DAY_BADGE_SPEECH / DAY_BADGE_ELECTION don't re-run for day 2+.
+            # Badge campaign only happens on day 1 and only if no sheriff exists
+            # yet. Wipe any residual state and short-circuit without emitting
+            # PHASE_CHANGED (no UI flicker for skipped phases), and mark the
+            # downstream badge phases done so they don't re-run on day 2+.
             self.state.badge.candidates = []
             self.state.badge.signup = {}
             self.state.badge.votes = {}
             self._mark_phase_done(Phase.DAY_BADGE_SIGNUP)
+            self._mark_phase_done(Phase.DAY_BADGE_SPEECH)
+            self._mark_phase_done(Phase.DAY_BADGE_ELECTION)
             return
+        self._set_phase(Phase.DAY_BADGE_SIGNUP)
         alive = self._seat_sorted(self.state.alive_players)
         if len(alive) <= 2:
             self._mark_phase_done(Phase.DAY_BADGE_SIGNUP)
