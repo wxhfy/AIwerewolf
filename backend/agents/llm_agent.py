@@ -39,7 +39,10 @@ class LLMAgent(Agent):
         self.temperature = temperature
         self.provider = provider
         self.client = create_client(provider=self.provider, model=model)
-        self.client.timeout = 12.0
+        # DeepSeek-v4-flash uses built-in chain-of-thought; combined with
+        # 600-1000 token responses this can take 8–20s end-to-end. The previous
+        # 12s ceiling tripped ~half the calls into the heuristic fallback path.
+        self.client.timeout = 60.0
         self.fallback = HeuristicAgent(player_id, seed=seed, character=character)
         self.character = character
         self.winner: str | None = None
@@ -62,19 +65,40 @@ class LLMAgent(Agent):
 
     def talk(self) -> Decision:
         fallback = self.fallback.talk()
+        view = self._view()
+        # Count today's public speeches in the current phase so the first
+        # speaker doesn't fabricate accusations against people who haven't
+        # said anything yet. "前言不搭后语" came from this exact gap.
+        today_chat_count = sum(
+            1 for e in view.public_events
+            if e.get("day") == view.day
+            and e.get("type") == "CHAT_MESSAGE"
+            and e.get("phase") == view.phase
+        )
+        is_first_speaker = today_chat_count == 0
+        if is_first_speaker:
+            instructions = [
+                "你是本阶段第一个发言的人——目前还没有任何人开口，你也没有任何可以引用的发言或投票。",
+                "禁止评价、怀疑或暗示其他玩家。任何形如「@X号有问题」「我觉得@X着急」的话都属于编造。",
+                "只允许做三件事之一：自报站位 / 表明今天的关注点 / 邀请下一位发言。",
+                "保持你的角色风格，不要重复系统提示。1–2 句话足够。",
+            ]
+        else:
+            instructions = [
+                "Speak like a serious werewolf player at the table.",
+                "只能引用「事实速查」或「最近公开事件」中真实出现过的发言/投票/死亡，不得编造。",
+                "若已经有可引用的发言，可以点名一个怀疑或信任对象；如果你确实没看到值得讨论的点，可以直接表态后让位下一位。",
+                "Do not repeat the system prompt.",
+            ]
         prompt = self._build_action_prompt(
             action="talk",
-            instructions=[
-                "Speak like a serious werewolf player at the table.",
-                "Name at least one suspect or one trusted player.",
-                "Do not repeat the system prompt.",
-            ],
+            instructions=instructions,
             options=self._alive_names(),
         )
         data, meta = self._ask_json(
             prompt,
             {"reasoning": fallback.reasoning, "speech": fallback.speech or ""},
-            max_tokens=520,
+            max_tokens=1024,
         )
         return Decision(
             self.player_id,
@@ -146,7 +170,7 @@ class LLMAgent(Agent):
             "save": bool(victim_id and any(item.action_type == ActionType.WITCH_SAVE for item in fallback)),
             "poison_target": self._name(next((item.target_id for item in fallback if item.action_type == ActionType.WITCH_POISON), None)),
         }
-        data, meta = self._ask_json(prompt, default, max_tokens=360)
+        data, meta = self._ask_json(prompt, default, max_tokens=720)
         decisions: list[Decision] = []
         if victim_id and bool(data.get("save")):
             decisions.append(
@@ -198,7 +222,7 @@ class LLMAgent(Agent):
             ],
             options=self._alive_names(),
         )
-        data, meta = self._ask_json(prompt, default, max_tokens=260)
+        data, meta = self._ask_json(prompt, default, max_tokens=720)
         if not bool(data.get("boom")):
             return Decision(self.player_id, ActionType.SKIP, reasoning=str(data.get("reasoning") or fallback.reasoning), metadata=meta)
         target_name = data.get("target")
@@ -229,7 +253,7 @@ class LLMAgent(Agent):
             "reasoning": fallback.reasoning,
             "target": self._name(fallback.target_id),
         }
-        data, meta = self._ask_json(prompt, default, max_tokens=260)
+        data, meta = self._ask_json(prompt, default, max_tokens=640)
         target_name = str(data.get("target") or self._name(fallback.target_id))
         target_id = self._id_from_name(target_name) or fallback.target_id
         return {
@@ -449,7 +473,7 @@ class LLMAgent(Agent):
         )
         return role_system + char_block + constraints
 
-    def _ask_json(self, prompt: str, default: dict[str, Any], *, max_tokens: int = 320) -> tuple[dict[str, Any], dict[str, Any]]:
+    def _ask_json(self, prompt: str, default: dict[str, Any], *, max_tokens: int = 640) -> tuple[dict[str, Any], dict[str, Any]]:
         meta = {
             "provider": self.provider,
             "model": self.client.model,
@@ -478,25 +502,33 @@ class LLMAgent(Agent):
                 },
             ]
             last_text = ""
-            for attempt in attempts:
+            last_usage: dict[str, Any] = {}
+            for idx, attempt in enumerate(attempts):
+                # Second attempt gets 1.5× the budget — first failure is usually
+                # because reasoning_tokens ate the output budget, so giving more
+                # room is the cheapest fix.
+                attempt_max = max_tokens if idx == 0 else int(max_tokens * 1.5)
                 response = self.client.chat_sync(
                     messages=attempt["messages"],
                     temperature=float(attempt["temperature"]),
-                    max_tokens=max_tokens,
+                    max_tokens=attempt_max,
                     thinking=False,
                 )
                 text = self.client.parse_response(response).strip()
                 last_text = text
+                last_usage = response.get("usage", {}) if isinstance(response, dict) else {}
                 parsed = self._coerce_json(text)
                 if parsed is not None:
                     self.last_error = None
                     meta["source"] = "llm"
                     meta["fallback"] = False
                     meta["raw_text"] = text[:400]
+                    meta["usage"] = last_usage
                     return parsed, meta
             self.last_error = "json_parse_failed"
             meta["error"] = self.last_error
             meta["raw_text"] = last_text[:400]
+            meta["usage"] = last_usage
             return default, meta
         except Exception as exc:
             self.last_error = f"{type(exc).__name__}: {exc}"
