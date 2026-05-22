@@ -251,6 +251,9 @@ class HeuristicAgent(Agent):
         view = self._view()
         char = self.character
         style = char.persona.style_label if char else "neutral"
+        # Re-seed per-turn so different days produce different picks even when
+        # the underlying suspicion landscape barely changed.
+        local_rng = Random(hash((self.player_id, view.day, view.phase, info_level)))
 
         # Gather what just happened
         deaths_today = [e for e in view.public_events[-5:]
@@ -258,12 +261,12 @@ class HeuristicAgent(Agent):
         recent_speeches = self.last_speeches
 
         # Build the speech organically
-        parts = []
+        parts: list[str] = []
 
         # 1. React to deaths
         if deaths_today:
             dead_names = [e.get("payload", {}).get("player_name", "?") for e in deaths_today]
-            parts.append(f"昨晚{', '.join(dead_names)}死了。")
+            parts.append(self._reaction_to_death(style, dead_names, local_rng))
 
         # 2. State our position based on information level
         if info_level == "none":
@@ -271,24 +274,54 @@ class HeuristicAgent(Agent):
         elif info_level == "strong":
             parts.append(self._strong_push(role, my_name, alive_count))
         else:
-            parts.append(self._developing_case(role, style, my_name, recent_speeches, alive_count))
+            parts.append(self._developing_case(role, style, my_name, recent_speeches, alive_count, local_rng))
 
-        # 3. Respond to specific players who spoke
-        response = self._respond_to_others(style, my_name)
+        # 3. Respond to specific players — keep it sparse so it doesn't drown
+        # the speech in echo lines.
+        response = self._respond_to_others(style, my_name, local_rng)
         if response:
             parts.append(response)
 
-        # 4. Call to action
+        # 4. Call to action — single closer per speech, style-aware.
         if info_level == "strong":
             parts.append(self._call_vote())
         elif day >= 2:
-            parts.append(self._call_discussion())
+            parts.append(self._call_discussion(style, local_rng))
         else:
-            parts.append("大家先说说自己的看法吧。")
+            parts.append(self._opening_close(style, local_rng))
 
-        speech = " ".join(parts)
+        speech = " ".join(parts).strip()
         reasoning = f"{my_name}({role.value}) day{day} info={info_level}: {'push' if info_level == 'strong' else 'observe' if info_level == 'none' else 'analyze'}"
         return speech, reasoning
+
+    def _reaction_to_death(self, style: str, dead_names: list[str], rng: Random) -> str:
+        names = "、".join(dead_names)
+        templates_by_style = {
+            "analytical": [f"{names}走了，得回看昨晚的目标选择。", f"{names}的离场说明刀型不是随机。"],
+            "observant": [f"{names}死了。", f"{names}走了。"],
+            "meticulous": [f"{names}的死要列入今天的判断依据。", f"先记一笔——{names}昨晚没撑住。"],
+            "insightful": [f"{names}先走，节奏一下子变了。", f"{names}的位置很关键，狼显然有目的。"],
+            "persuasive": [f"我们少了{names}，今天更要凝聚。", f"{names}走了，大家心里都有数。"],
+            "aggressive": [f"{names}死得不冤吧？狼的刀很明显。", f"{names}没了，今天就别再装死。"],
+            "expressive": [f"哇{names}竟然走了！心痛一下。", f"{names}没撑住，我都看哭了。"],
+            "provocative": [f"{names}领盒饭了，狼这刀是要送票。", f"{names}走了，刀型挺直白。"],
+        }
+        lines = templates_by_style.get(style, [f"昨晚{names}死了。"])
+        return rng.choice(lines)
+
+    def _opening_close(self, style: str, rng: Random) -> str:
+        templates = {
+            "analytical": ["大家先把信息摆出来，方便我比对。", "我倾向先听完一轮再下判断。"],
+            "observant": ["先看一圈。", "我先听。"],
+            "meticulous": ["每个人最好都说一个最关注的对象。", "我会把今天的发言记下来对照。"],
+            "insightful": ["先听听大家对桌面的感觉。", "今天的微表情比内容更值得在意。"],
+            "persuasive": ["大家放松，按顺序说就好。", "想到什么先说什么，别憋。"],
+            "aggressive": ["不要划水，话讲明白。", "今天谁含糊我就盯谁。"],
+            "expressive": ["来嘛大家轮流说说～", "我超想知道你们怎么看的！"],
+            "provocative": ["谁先怂谁先说。", "我等着有人来跟我对线。"],
+        }
+        lines = templates.get(style, ["大家先说说自己的看法吧。"])
+        return rng.choice(lines)
 
     def _day1_observation(self, style: str, my_name: str, speeches: list[dict], alive: int) -> str:
         """Day 1: no info yet. Observe behavior, ask questions, don't accuse."""
@@ -322,7 +355,7 @@ class HeuristicAgent(Agent):
                     return f"我强烈怀疑{wolf['name']}是狼。今天的票应该集中在他身上。"
         return "我有比较强的把握，今天的票型要集中。"
 
-    def _developing_case(self, role: Role, style: str, my_name: str, speeches: list[dict], alive: int) -> str:
+    def _developing_case(self, role: Role, style: str, my_name: str, speeches: list[dict], alive: int, rng: Random) -> str:
         """Some information, building a case but not certain."""
         top = self._highest_suspicion_alive()
         score = self.suspicion.get(top["id"], 0)
@@ -332,33 +365,44 @@ class HeuristicAgent(Agent):
                 f"我重点怀疑{top['name']}。他的票型和发言对不上，前后矛盾的地方不少。",
                 f"我越来越觉得{top['name']}有问题。大家回去看他之前的发言，逻辑断裂很明显。",
                 f"{top['name']}就是我今天想推的人。理由已经说了——他的行为模式不像是好人。",
+                f"我把票暂时挂在{top['name']}头上。证据链短但方向对，欢迎反驳。",
+                f"{top['name']}的几次站边都比较微妙，我心里基本定了。",
             ]
-            return self.rng.choice(lines)
+            return rng.choice(lines)
         elif score >= 1.5:
             lines = [
                 f"我比较关注{top['name']}，但还不完全确定。大家也说说对他怎么看。",
                 f"暂时指向{top['name']}，有几个点让我不太舒服。但我愿意听他的解释。",
                 f"{top['name']}的发言让我有点在意，证据还差一点。有人有补充信息吗？",
+                f"我对{top['name']}留了个心眼，今天会重点听他怎么回应。",
+                f"目前最像问题选手的是{top['name']}，但我还要再确认。",
             ]
-            return self.rng.choice(lines)
+            return rng.choice(lines)
         elif score >= 0.8:
             lines = [
                 f"我还不太确定，但{top['name']}稍微引起了我的注意。继续观察。",
                 f"目前线索不多，但{top['name']}的几个举动让我多看了两眼。",
                 f"信息有限，不过{top['name']}有点微妙。先不急着下结论。",
+                f"我把{top['name']}先放在观察名单里，原因后面会展开。",
             ]
-            return self.rng.choice(lines)
+            return rng.choice(lines)
         else:
             lines = [
                 f"信息还不够，我想再听一轮发言。大家都把自己的怀疑对象说清楚。",
                 f"现在线索比较分散，我建议大家先回顾一下前面的发言，看看有没有矛盾。",
                 f"我还需要更多信息。每个人说说自己最怀疑谁、为什么。",
                 f"现在判断比较困难。我希望这轮发言大家能多给一些具体的信息。",
+                f"信息密度不够，我想多听几个人的真实想法。",
             ]
-            return self.rng.choice(lines)
+            return rng.choice(lines)
 
-    def _respond_to_others(self, style: str, my_name: str) -> str:
-        """Respond naturally to what other players said."""
+    def _respond_to_others(self, style: str, my_name: str, rng: Random) -> str:
+        """Respond naturally to what other players said.
+
+        Capped so the speech doesn't end up as a long echo chain — at most
+        one response is appended, and even that only when something specific
+        actually triggers it.
+        """
         if not self.last_speeches:
             return ""
         latest = self.last_speeches[-1]
@@ -376,14 +420,25 @@ class HeuristicAgent(Agent):
                 return f"{speaker}跳预言家说验了{claimed_target}。先记下，看有没有人对跳。"
             return f"{speaker}跳预言家了。等等看有没有反跳的。"
 
-        # If someone accused us
+        # If someone called us out — push back, but vary the phrasing.
         if my_name in speech_text:
-            return f"{speaker}提到我了，我想说我的发言大家可以回头查，我没有矛盾的地方。"
+            pushbacks = [
+                f"{speaker}点我了，我没什么好藏的，发言可以回头查。",
+                f"{speaker}怀疑我，那等会儿我会把我的逻辑摆给你看。",
+                f"我听到了{speaker}的怀疑，先不急着自证，看他下一句怎么接。",
+            ]
+            return rng.choice(pushbacks)
 
-        # If someone accused our suspect
+        # If someone accused our suspect — only echo half the time, otherwise
+        # we end up sounding like the same bot in every chair.
         top = self._highest_suspicion_alive()
-        if top["name"] in speech_text:
-            return f"{speaker}说的{top['name']}我也有同感。"
+        if top["name"] in speech_text and rng.random() < 0.5:
+            echoes = [
+                f"{speaker}对{top['name']}的怀疑我能接住。",
+                f"{speaker}提到的{top['name']}，我也有类似看法。",
+                f"和{speaker}一样，我也对{top['name']}存疑。",
+            ]
+            return rng.choice(echoes)
 
         return ""
 
@@ -391,8 +446,20 @@ class HeuristicAgent(Agent):
         target = self._highest_suspicion_alive()
         return f"我的票归{target['name']}。"
 
-    def _call_discussion(self) -> str:
-        return "大家各自说说自己的票向，不要跟风。"
+    def _call_discussion(self, style: str = "neutral", rng: Random | None = None) -> str:
+        rng = rng or self.rng
+        templates = {
+            "analytical": ["大家把票型说清楚，不要随便挂。", "我希望听到大家具体的怀疑链条。"],
+            "observant": ["谁有要补的，先说。", "都讲完再投。"],
+            "meticulous": ["请大家说一下今天最值得复盘的发言。", "把今天的票向理由列一下。"],
+            "insightful": ["想听听大家心里真正在意的人。", "把心里最沉的那一票讲出来。"],
+            "persuasive": ["不要互相伤害，每人讲讲自己的判断。", "大家心平气和地把怀疑摆出来。"],
+            "aggressive": ["话讲明白，不准划水。", "谁含糊我下个就盯谁。"],
+            "expressive": ["来嘛把心里话都说出来呀～", "别藏！都说说！"],
+            "provocative": ["不发言的我已经记本上了。", "今天谁敢不站队？"],
+        }
+        lines = templates.get(style, ["大家各自说说自己的票向，不要跟风。"])
+        return rng.choice(lines)
 
     # ---- Target selection ----
 

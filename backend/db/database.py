@@ -35,6 +35,14 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 def init_db() -> None:
     from backend.db.models import Base
     Base.metadata.create_all(bind=engine)
+    # Seed the persona library on first boot so games can sample from DB even
+    # before any human ever adds a custom persona.
+    try:
+        from backend.db.persona_db import seed_personas
+        seed_personas()
+    except Exception:
+        # Seeding is best-effort — never block startup on it.
+        pass
 
 
 def get_db() -> Session:

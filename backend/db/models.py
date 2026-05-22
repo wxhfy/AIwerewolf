@@ -75,6 +75,8 @@ class GameEvent(Base):
 
     id = Column(String, primary_key=True, default=_uuid)
     game_id = Column(String, ForeignKey("games.id"), nullable=False, index=True)
+    seq = Column(Integer, default=0, index=True)  # monotonic ordering inside one game
+    ts = Column(Float, default=0.0)  # engine-side timestamp (time()) for replay ordering
     day = Column(Integer, default=0)
     phase = Column(String, default="")
     event_type = Column(String, nullable=False)
@@ -249,3 +251,41 @@ class EvolutionRound(Base):
     change_log = Column(Text, default="")
     started_at = Column(DateTime, default=_utcnow)
     finished_at = Column(DateTime, nullable=True)
+
+
+class Persona(Base):
+    """Persistent persona library — sampled per game to populate AI players.
+
+    Fields mirror wolfcha's Persona interface so any wolfcha-authored persona
+    can be ingested as-is. New personas can be added with seed_personas() at
+    init time or via Track B/C tools later.
+    """
+
+    __tablename__ = "personas"
+
+    id = Column(String, primary_key=True, default=_uuid)
+    name = Column(String, nullable=False, unique=True, index=True)
+    mbti = Column(String, default="")
+    gender = Column(String, default="")
+    age = Column(Integer, default=0)
+    basic_info = Column(Text, default="")
+    style_label = Column(String, default="")
+    voice_rules = Column(JSON, default=list)
+    relationships = Column(JSON, default=list)
+    vocabulary_style = Column(String, default="")
+    speech_length_habit = Column(String, default="")
+    reasoning_style = Column(String, default="")
+    social_habit = Column(String, default="")
+    humor_style = Column(String, default="")
+    pressure_style = Column(String, default="")
+    uncertainty_style = Column(String, default="")
+    wolf_deception_style = Column(String, default="")
+    mistake_pattern = Column(String, default="")
+    logic_style = Column(String, default="")
+    trigger_topics = Column(JSON, default=list)
+    werewolf_experience = Column(String, default="")
+    system_prompt = Column(Text, default="")  # ready-to-use system prompt
+    is_active = Column(Boolean, default=True)
+    source = Column(String, default="wolfcha")  # provenance tag
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)

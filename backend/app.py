@@ -199,6 +199,20 @@ def list_evolution_rounds(limit: int = 20):
     return list_evolution_rounds(limit=limit)
 
 
+@app.get("/api/personas")
+def list_personas_endpoint():
+    """List the persona library used to populate AI players.
+
+    The frontend persona viewer + Track B/C tools consume this. Empty list
+    when the DB hasn't been seeded yet — never raises.
+    """
+    try:
+        from backend.db.persona_db import list_personas
+        return list_personas()
+    except Exception:
+        return []
+
+
 @app.post("/api/rooms")
 def create_room(
     name: str = "Demo Room",

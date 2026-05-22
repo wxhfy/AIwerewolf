@@ -89,6 +89,43 @@ body {
 }
 .action-copy h3 { font-size: 22px; margin-bottom: 6px; }
 .action-copy p { color: var(--muted); line-height: 1.5; }
+.action-timer {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+.action-timer.hidden { display: none; }
+.action-timer .timer-label {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 11px;
+  color: var(--muted);
+}
+.action-timer .timer-value { font-variant-numeric: tabular-nums; }
+.action-timer.warn {
+  background: rgba(245, 158, 11, 0.12);
+  border-color: rgba(245, 158, 11, 0.4);
+  color: var(--gold);
+}
+.action-timer.danger {
+  background: rgba(220, 38, 38, 0.12);
+  border-color: rgba(220, 38, 38, 0.5);
+  color: var(--accent);
+  animation: timer-pulse 1s ease-in-out infinite;
+}
+@keyframes timer-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.35); }
+  50% { box-shadow: 0 0 0 6px rgba(220, 38, 38, 0); }
+}
 .action-form { display: grid; gap: 10px; }
 .action-form textarea,
 .action-form select {
@@ -243,6 +280,82 @@ body {
 .hist-day { font-size: 12px; color: var(--muted); }
 .hist-date { font-size: 11px; color: var(--muted); }
 .history-empty { font-size: 13px; color: var(--muted); padding: 12px 0; }
+
+/* ---- history detail modal ---- */
+.history-modal {
+  position: fixed; inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 100;
+  padding: 24px;
+}
+.history-modal.hidden { display: none; }
+.history-modal-card {
+  background: var(--panel);
+  border-radius: 14px;
+  max-width: 900px;
+  width: 100%;
+  max-height: 88vh;
+  display: flex; flex-direction: column;
+  border: 1px solid var(--line);
+  box-shadow: 0 24px 48px rgba(15, 23, 42, 0.25);
+}
+.history-modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 20px; border-bottom: 1px solid var(--line);
+}
+.history-modal-header h3 { font-size: 16px; }
+.history-modal-header button {
+  width: 32px; height: 32px; border-radius: 50%; border: 0;
+  background: transparent; font-size: 22px; line-height: 1; cursor: pointer;
+}
+.history-modal-header button:hover { background: rgba(15, 23, 42, 0.06); }
+.history-modal-body {
+  padding: 16px 20px;
+  overflow-y: auto;
+  display: flex; flex-direction: column; gap: 16px;
+}
+.history-modal-loading, .history-modal-error {
+  color: var(--muted); font-size: 14px; padding: 12px 0;
+}
+.history-modal-error { color: var(--accent); }
+.hist-meta {
+  display: flex; flex-wrap: wrap; gap: 12px;
+  font-size: 13px; color: var(--muted);
+}
+.hist-meta strong { color: var(--ink); }
+.hist-section h4 {
+  font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--muted); margin-bottom: 8px;
+}
+.hist-list { list-style: none; display: grid; gap: 6px; font-size: 13px; }
+.hist-list .hist-seat { color: var(--muted); margin-right: 4px; }
+.hist-day-block {
+  border: 1px solid var(--line); border-radius: 10px;
+  padding: 10px 12px; margin-bottom: 8px; background: var(--paper);
+}
+.hist-day-label {
+  font-size: 11px; font-weight: 700; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px;
+}
+.hist-speech { padding: 6px 0; border-bottom: 1px dashed rgba(0,0,0,0.05); }
+.hist-speech:last-child { border-bottom: 0; }
+.hist-speech strong { color: var(--ink); }
+.hist-speech .hist-tag {
+  margin-left: 6px; font-size: 10px; padding: 2px 6px;
+  border-radius: 999px; background: rgba(0,0,0,0.05); color: var(--muted);
+}
+.hist-speech p { color: var(--ink); font-size: 13px; line-height: 1.5; margin-top: 2px; }
+.hist-vote {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 10px; border-radius: 999px;
+  background: var(--paper); border: 1px solid var(--line);
+  font-size: 12px; margin: 2px 4px 2px 0;
+}
+.hist-death {
+  padding: 4px 0; font-size: 13px; color: var(--ink);
+}
+.hist-empty { color: var(--muted); font-size: 13px; }
 
 /* ---- voice input ---- */
 .action-speech-wrap {
