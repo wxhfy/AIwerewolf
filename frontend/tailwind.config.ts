@@ -18,7 +18,11 @@ const config: Config = {
         border: "rgba(139,90,43,0.10)",
         textPrimary: "#2D2A24",
         textSecondary: "#5B564D",
+        "text-sub": "#8A8580",
         danger: "#B91C1C",
+        success: "#2E7D32",
+        warning: "#D4AF37",
+        info: "#1976D2",
       },
       borderRadius: {
         card: "12px",
