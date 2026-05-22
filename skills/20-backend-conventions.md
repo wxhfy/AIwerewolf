@@ -215,6 +215,54 @@ def _initialize_database() -> None:
 - 写入接口在 `backend/db/persist.py`，**所有 commit / rollback 都在这一层**
 - `app.py` / `engine/` 不直接 `session.add()`，必须通过 `persist.py` 暴露的函数
 
+### 后端选择（生产 = PG，开发 fallback = SQLite）
+
+`backend/db/database.py` 按 `DATABASE_URL` 环境变量自动路由：
+
+```python
+if os.getenv("DATABASE_URL"):
+    engine = create_engine(DATABASE_URL, pool_pre_ping=True, pool_recycle=1800)
+else:
+    engine = create_engine(f"sqlite:///data/werewolf.db", ...)
+```
+
+- **当前默认 PG**：`.env` 已配 `DATABASE_URL=postgresql+psycopg2://werewolf:****@127.0.0.1:5433/werewolf`
+- **三人共享同一台 PG**：5433 容器（`werewolf-pg`，docker volume `werewolf-pg-data` 持久化），同机不同账号都连这一个 db
+- **快速命令**：`make db-up` / `make db-shell` / `make db-init` / `make db-migrate`
+
+### 写新表时
+
+- 在 `backend/db/models.py` 新增 `Base` 子类
+- `Column(..., index=True)` 给单列加索引
+- 复合索引或 DESC 索引用 `Index()` + `__table_args__`：
+
+```python
+__table_args__ = (
+    Index("ix_events_game_seq", "game_id", "seq"),
+    Index("ix_games_created_at_desc", created_at.desc()),
+)
+```
+
+- **JSON 字段**已自动按 dialect 切换（PG 用 `JSONB`、SQLite 用 `JSON`），不要手写 `JSONB`
+- 加完字段或索引后跑 `make db-init`（已存在的表会跳过，新索引需走 `scripts/` 或手工 `Index.create(checkfirst=True)` 推到运行中的 PG）
+
+### 索引设计原则
+
+- **查询驱动**：每个索引要对应一个真实的查询模式（在注释里点名是哪个 API/复盘点）
+- **复合索引列序**：选择性高的列在前（如 `game_id` 比 `day` 选择性高）
+- **不要为低基数列单建索引**（如 `is_alive` 只有 true/false），复合在前列即可
+- 改 `models.py` 的索引必须在 PG 上验证：`docker exec werewolf-pg psql -U werewolf -d werewolf -c "\d <table>"`
+
+### Schema 迁移（轻量手工）
+
+项目目前**没有 Alembic**——21 天小项目，schema 变化用以下流程：
+
+1. 改 `backend/db/models.py`（加列 / 加索引 / 加表）
+2. 跑 `make db-init` 让 SQLAlchemy 创建尚未存在的对象
+3. **现有表加列要手工 `ALTER TABLE`**（SQLAlchemy 默认不会改已存在表的列）
+4. PR 描述写清楚 schema 变更，方便队友 `make db-init` 同步
+5. 破坏性变更（删列、改类型）→ 先发群里，避免别人没同步导致跑挂
+
 ### 失败容忍
 
 DB 操作要**包 try/except 给出降级**——游戏对局本身能跑就行，DB 是观测层。例：
@@ -228,6 +276,19 @@ def game_history(limit: int = 20):
     except Exception:
         return []
 ```
+
+### 历史数据迁移
+
+如果之前用 SQLite 跑过，切到 PG 时：
+
+```bash
+make db-migrate    # 等价 python scripts/migrate_sqlite_to_pg.py
+```
+
+脚本特性：
+- **幂等**：按 `id` 跳过已存在行，可重复跑
+- **列对齐**：源表缺少的列由模型默认值补齐（适配早期 SQLite schema）
+- **自动备份**：完成后把 `data/werewolf.db` 拷贝为 `data/werewolf.db.bak`
 
 ---
 
