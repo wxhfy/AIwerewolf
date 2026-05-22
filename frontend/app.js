@@ -514,7 +514,7 @@ async function runGame() {
 }
 
 async function startHumanRoom() {
-  const response = await fetch(`/api/rooms/${state.roomId}/start`, { method: "POST" });
+  const response = await fetch(`/api/rooms/${state.roomId}/start?show_private=${state.showPrivate}`, { method: "POST" });
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: "Failed to start room" }));
     throw new Error(error.detail || "Failed to start room");
@@ -732,7 +732,7 @@ function renderFlow(snapshot) {
     const type = event.type;
     if (type === "CHAT_MESSAGE") days[day].speeches.push(event);
     if (type === "VOTE_CAST") days[day].votes.push(event);
-    if (type === "PLAYER_DIED") days[day].deaths.push(event);
+    if (type === "PLAYER_DIED" || type === "HUNTER_SHOT") days[day].deaths.push(event);
     if (type === "SYSTEM_MESSAGE" || type === "WHITE_WOLF_KING_BOOM") days[day].system.push(event);
     if (type === "NIGHT_ACTION" || type === "PRIVATE_INFO") days[day].night.push(event);
   }

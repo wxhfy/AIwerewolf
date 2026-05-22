@@ -11,10 +11,12 @@ export enum Alignment {
 export enum Role {
   VILLAGER = "Villager",
   WEREWOLF = "Werewolf",
+  WHITE_WOLF_KING = "WhiteWolfKing",
   SEER = "Seer",
   WITCH = "Witch",
   HUNTER = "Hunter",
   GUARD = "Guard",
+  IDIOT = "Idiot",
 }
 
 export enum Phase {
@@ -26,10 +28,17 @@ export enum Phase {
   NIGHT_SEER_ACTION = "NIGHT_SEER_ACTION",
   NIGHT_RESOLVE = "NIGHT_RESOLVE",
   DAY_START = "DAY_START",
+  DAY_BADGE_SIGNUP = "DAY_BADGE_SIGNUP",
+  DAY_BADGE_SPEECH = "DAY_BADGE_SPEECH",
+  DAY_BADGE_ELECTION = "DAY_BADGE_ELECTION",
+  DAY_PK_SPEECH = "DAY_PK_SPEECH",
+  DAY_LAST_WORDS = "DAY_LAST_WORDS",
   DAY_SPEECH = "DAY_SPEECH",
   DAY_VOTE = "DAY_VOTE",
   DAY_RESOLVE = "DAY_RESOLVE",
+  BADGE_TRANSFER = "BADGE_TRANSFER",
   HUNTER_SHOOT = "HUNTER_SHOOT",
+  WHITE_WOLF_KING_BOOM = "WHITE_WOLF_KING_BOOM",
   GAME_END = "GAME_END",
 }
 
@@ -42,6 +51,7 @@ export enum ActionType {
   WITCH_SAVE = "witch_save",
   WITCH_POISON = "witch_poison",
   SHOOT = "shoot",
+  BOOM = "boom",
   SKIP = "skip",
 }
 
@@ -54,6 +64,7 @@ export enum EventType {
   VOTE_CAST = "VOTE_CAST",
   PLAYER_DIED = "PLAYER_DIED",
   HUNTER_SHOT = "HUNTER_SHOT",
+  WHITE_WOLF_KING_BOOM = "WHITE_WOLF_KING_BOOM",
   SYSTEM_MESSAGE = "SYSTEM_MESSAGE",
   GAME_END = "GAME_END",
 }
@@ -66,6 +77,8 @@ export interface Player {
   alignment?: Alignment;
   alive: boolean;
   is_ai: boolean;
+  agent_type?: string;
+  persona?: { style_label?: string; mbti?: string } | null;
 }
 
 export interface GameEvent {
@@ -91,6 +104,36 @@ export interface NightActions {
   deaths: Array<{ player_id: string; reason: string }>;
 }
 
+export interface BadgeState {
+  holder_id?: string | null;
+  candidates: string[];
+  signup: Record<string, boolean>;
+  votes: Record<string, string>;
+  history: Record<number, Record<string, string>>;
+  revote_count: number;
+}
+
+export interface RoleAbilities {
+  witch_heal_used: boolean;
+  witch_poison_used: boolean;
+  hunter_can_shoot: boolean;
+  idiot_revealed: boolean;
+  white_wolf_king_boom_used: boolean;
+}
+
+export interface PendingInput {
+  player_id: string;
+  player_name: string;
+  seat: number;
+  request: string;
+  phase: string;
+  action_type: string;
+  prompt: string;
+  options: Array<Record<string, any>>;
+  can_skip: boolean;
+  placeholder?: string | null;
+}
+
 export interface GameState {
   id: string;
   phase: string;
@@ -98,7 +141,17 @@ export interface GameState {
   players: Player[];
   events: GameEvent[];
   votes: Record<string, string>;
+  vote_history: Record<number, Record<string, string>>;
+  day_history: Record<number, Record<string, any>>;
+  badge?: BadgeState;
   night_actions?: NightActions;
+  role_abilities?: RoleAbilities;
+  current_speaker_id?: string | null;
+  pk_targets?: string[];
+  pk_source?: string | null;
+  pending_input?: PendingInput | null;
+  phase_cursor?: Record<string, any>;
+  decision_records?: Array<Record<string, any>>;
   daily_summaries: Record<number, string[]>;
   daily_summary_facts: Record<number, any[]>;
   winner?: Alignment;
