@@ -87,6 +87,22 @@ export default function GamePage() {
     }
   }, [roomId]);
 
+  // Auto-start the game on first entry when in AI mode and no game state yet.
+  // Without this, the user sees placeholder cards ("玩家 1, 玩家 2…") with no
+  // real names until they click "运行一局" — which feels broken.
+  const autoStartedRef = useRef(false);
+  useEffect(() => {
+    if (autoStartedRef.current) return;
+    if (mode !== "ai") return;
+    if (gameState?.players?.length) return;
+    if (isPlaying) return;
+    autoStartedRef.current = true;
+    // Small delay so the WS handler is attached and AppContext is settled.
+    const id = setTimeout(() => runGame(), 200);
+    return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, roomId]);
+
   function runGame() {
     if (mode === "human") { startHumanGame(); return; }
     if (wsRef.current) wsRef.current.close();
@@ -152,6 +168,10 @@ export default function GamePage() {
   const rightPlayers = useMemo(() => (gameState?.players || []).filter((p: any) => p.seat > splitPoint), [gameState?.players, splitPoint]);
   const aliveCount = gameState?.alive_count || gameState?.players?.filter((p: any) => p.alive).length || 0;
   const pendingInput = gameState?.pending_input;
+  // Highlight whoever is currently taking a turn — pendingInput covers human
+  // turns (waiting for input), current_speaker_id covers AI turns being
+  // generated. The PlayerCard uses this flag to glow.
+  const activeSpeakerId = pendingInput?.player_id || gameState?.current_speaker_id || null;
   const isHumanMode = mode === "human";
 
   // Find human player's role and wolf teammates for PlayerCard own-role display
@@ -215,7 +235,8 @@ export default function GamePage() {
           style={{ borderRight: `1px solid var(--color-border)` }}>
           {(leftPlayers.length > 0 ? leftPlayers : ph(1, Math.ceil((gameState?.players?.length || 7) / 2))).map((p: any, i: number) => (
             <PlayerCard key={p.id || i} player={p}
-              isSpeaking={pendingInput?.player_id === p.id}
+              isSpeaking={activeSpeakerId === p.id}
+              isThinking={!pendingInput && activeSpeakerId === p.id}
               showOwnRole={isHumanMode && p.seat === humanSeat && viewMode !== "moderator"}
               wolfTeammates={isHumanMode && p.seat === humanSeat ? wolfTeammates : undefined}
             />
@@ -260,8 +281,7 @@ export default function GamePage() {
                           const iconMap: Record<string, string> = {
                             GAME_START: "\u{1F3AE}", PHASE_CHANGED: "", GAME_END: "\u{1F3C6}", SYSTEM_MESSAGE: "\u{1F4E2}",
                           };
-                          const msg = ev.payload.message || ev.payload.phase
-                            ? tPhase(ev.payload.phase, language) : "";
+                          const msg = ev.payload.message ?? (ev.payload.phase ? tPhase(ev.payload.phase, language) : "");
                           const icon = iconMap[ev.type] || "";
                           return (
                             <ChatBubble
@@ -310,7 +330,8 @@ export default function GamePage() {
           style={{ borderLeft: `1px solid var(--color-border)` }}>
           {(rightPlayers.length > 0 ? rightPlayers : ph(splitPoint + 1, gameState?.players?.length || 7)).map((p: any, i: number) => (
             <PlayerCard key={p.id || i} player={p}
-              isSpeaking={pendingInput?.player_id === p.id}
+              isSpeaking={activeSpeakerId === p.id}
+              isThinking={!pendingInput && activeSpeakerId === p.id}
               showOwnRole={isHumanMode && p.seat === humanSeat && viewMode !== "moderator"}
               wolfTeammates={isHumanMode && p.seat === humanSeat ? wolfTeammates : undefined}
             />
@@ -321,7 +342,8 @@ export default function GamePage() {
       <div className="lg:hidden relative z-10 flex gap-2 overflow-x-auto px-4 py-2">
         {((gameState?.players?.length || 0) > 0 ? gameState!.players : ph(1, gameState?.players?.length || 7)).map((p: any, i: number) => (
           <div key={p.id || i} className="flex-shrink-0 w-[100px]"><PlayerCard player={p}
-            isSpeaking={pendingInput?.player_id === p.id}
+            isSpeaking={activeSpeakerId === p.id}
+              isThinking={!pendingInput && activeSpeakerId === p.id}
             showOwnRole={isHumanMode && p.seat === humanSeat && viewMode !== "moderator"}
             wolfTeammates={isHumanMode && p.seat === humanSeat ? wolfTeammates : undefined}
           /></div>
