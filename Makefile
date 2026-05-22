@@ -1,7 +1,7 @@
 # AI Werewolf — common dev/ops shortcuts
 # Run `make help` to see the full list.
 
-.PHONY: help install demo dev test smoke human-smoke db-up db-down db-shell db-init \
+.PHONY: help install demo dev test smoke human-smoke db-up db-down db-shell db-init db-migrate \
         compose-up compose-down compose-logs lint clean
 
 PYTHON ?= python
@@ -21,6 +21,7 @@ help:
 	@echo "  make db-down       — stop the Postgres container"
 	@echo "  make db-shell      — psql shell into the container"
 	@echo "  make db-init       — create / refresh schema in the configured DB"
+	@echo "  make db-migrate    — copy historical games from data/werewolf.db into PG (idempotent)"
 	@echo "  make compose-up    — bring up the full stack (postgres + backend)"
 	@echo "  make compose-down  — tear the full stack down"
 	@echo "  make compose-logs  — tail backend logs"
@@ -59,6 +60,9 @@ db-shell:
 
 db-init:
 	$(PYTHON) -c "from backend.db.database import init_db; init_db(); print('schema created')"
+
+db-migrate:
+	$(PYTHON) scripts/migrate_sqlite_to_pg.py
 
 compose-up:
 	docker compose up -d --build

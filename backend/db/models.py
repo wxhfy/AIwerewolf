@@ -6,7 +6,7 @@ import os
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, relationship
 
 # Pick a JSON type that works on both Postgres (JSONB, indexable) and SQLite.
@@ -33,12 +33,12 @@ class Game(Base):
 
     id = Column(String, primary_key=True, default=_uuid)
     rule_pack_id = Column(String, default="standard")
-    status = Column(String, default="waiting")  # waiting, running, finished
+    status = Column(String, default="waiting", index=True)  # waiting, running, finished
     current_day = Column(Integer, default=0)
     current_phase = Column(String, default="SETUP")
-    winner = Column(String, nullable=True)
+    winner = Column(String, nullable=True, index=True)
     seed = Column(String, default="")
-    created_at = Column(DateTime, default=_utcnow)
+    created_at = Column(DateTime, default=_utcnow, index=True)
     started_at = Column(DateTime, nullable=True)
     finished_at = Column(DateTime, nullable=True)
 
@@ -48,6 +48,13 @@ class Game(Base):
     snapshots = relationship("GameSnapshot", back_populates="game", cascade="all, delete-orphan")
     votes = relationship("Vote", back_populates="game", cascade="all, delete-orphan")
     evaluations = relationship("Evaluation", back_populates="game", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        # History listing: ORDER BY created_at DESC LIMIT N (api/history)
+        Index("ix_games_created_at_desc", created_at.desc()),
+        # Leaderboard / win-rate per rule pack: WHERE status='finished' AND rule_pack_id=?
+        Index("ix_games_status_rulepack", "status", "rule_pack_id"),
+    )
 
 
 class Player(Base):
@@ -69,6 +76,13 @@ class Player(Base):
 
     game = relationship("Game", back_populates="players")
 
+    __table_args__ = (
+        # Roster lookup by seat (frontend renders players grid)
+        Index("ix_players_game_seat", "game_id", "seat_no"),
+        # Aggregate role win-rate / KPI per (model, role) — used by leaderboard
+        Index("ix_players_model_role", "model_name", "role"),
+    )
+
 
 class GameEvent(Base):
     __tablename__ = "game_events"
@@ -87,6 +101,15 @@ class GameEvent(Base):
     created_at = Column(DateTime, default=_utcnow)
 
     game = relationship("Game", back_populates="events")
+
+    __table_args__ = (
+        # Replay: pull every event of one game in sequence order
+        Index("ix_events_game_seq", "game_id", "seq"),
+        # Filter "all votes / kills / chat in one game"
+        Index("ix_events_game_type", "game_id", "event_type"),
+        # Phase-level slicing (used by daily-summary builder)
+        Index("ix_events_game_day_phase", "game_id", "day", "phase"),
+    )
 
 
 class AgentDecision(Base):
@@ -111,6 +134,13 @@ class AgentDecision(Base):
 
     game = relationship("Game", back_populates="decisions")
 
+    __table_args__ = (
+        # Per-player decision timeline within a game (review tooling)
+        Index("ix_decisions_game_player_day", "game_id", "player_id", "day"),
+        # Failure analytics: WHERE is_valid=false GROUP BY error_type
+        Index("ix_decisions_invalid", "is_valid", "error_type"),
+    )
+
 
 class GameSnapshot(Base):
     __tablename__ = "game_snapshots"
@@ -125,6 +155,11 @@ class GameSnapshot(Base):
 
     game = relationship("Game", back_populates="snapshots")
 
+    __table_args__ = (
+        # Replay panel: jump to a (day, phase) snapshot in one game
+        Index("ix_snapshots_game_day_phase", "game_id", "day", "phase"),
+    )
+
 
 class Vote(Base):
     __tablename__ = "votes"
@@ -132,12 +167,17 @@ class Vote(Base):
     id = Column(String, primary_key=True, default=_uuid)
     game_id = Column(String, ForeignKey("games.id"), nullable=False, index=True)
     day = Column(Integer, default=0)
-    voter_id = Column(String, ForeignKey("players.id"), nullable=False)
+    voter_id = Column(String, ForeignKey("players.id"), nullable=False, index=True)
     target_id = Column(String, nullable=True)
     is_valid = Column(Boolean, default=True)
     created_at = Column(DateTime, default=_utcnow)
 
     game = relationship("Game", back_populates="votes")
+
+    __table_args__ = (
+        # Daily tally / herd-vote detection
+        Index("ix_votes_game_day", "game_id", "day"),
+    )
 
 
 class Evaluation(Base):
@@ -152,6 +192,11 @@ class Evaluation(Base):
     created_at = Column(DateTime, default=_utcnow)
 
     game = relationship("Game", back_populates="evaluations")
+
+    __table_args__ = (
+        # Slice metric across all games for leaderboard math
+        Index("ix_eval_metric_player", "metric_name", "player_id"),
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -133,20 +133,36 @@ tests/
 
 ## 数据库
 
-默认 SQLite，文件在 `data/werewolf.db`。生产/团队开发推荐 Postgres：
+**生产/团队开发：PostgreSQL 16（Docker，端口 5433）— 当前默认配置**。SQLite 仅作为零依赖 fallback（`DATABASE_URL` 未设时启用）。
+
+### 起 PG + 接入
 
 ```bash
-# 一键起 docker postgres（端口 5433）
+# 1. 起 docker postgres（已有同名容器会复用）
 make db-up
-# 写到 .env：
+
+# 2. .env 已默认指向本地 PG：
 # DATABASE_URL=postgresql+psycopg2://werewolf:wolf_secret_2026@127.0.0.1:5433/werewolf
-make db-init   # 建/刷新 schema
-make db-shell  # psql 进入容器
+
+# 3. 初始化 schema + 索引
+make db-init
+
+# 4. (可选) 从旧 SQLite 迁移历史对局到 PG（幂等，可重复跑）
+make db-migrate
+
+# 5. 进 psql shell 排查
+make db-shell
 ```
 
-或者用 `docker compose up -d` 一键起 backend + postgres。
+或者一行起完整栈：`make compose-up`（postgres + backend）。
 
-### Schema（11 张表）
+### 三人共享同一台 PG
+
+5433 端口已绑 `0.0.0.0`，**同机不同账号**的队友直接连同一个 `werewolf-pg` 容器即可——三人对局数据汇集到一个 db，评测/Leaderboard 自动跨人聚合。
+
+> ⚠️ 默认密码 `wolf_secret_2026` 强度一般，仅适用内网/同机访问。若 5433 对外公网开放，**先**改强密码（同时改 `docker run` env、`.env`、`docker-compose.yml`）。
+
+### Schema（11 张表 + 24 个索引）
 
 **MVP 用到 (7 张)**
 - `games` — 一行：id / status / winner / day / seed / 时间戳
@@ -164,6 +180,20 @@ make db-shell  # psql 进入容器
 **Track C 自进化预留 (2 张)**
 - `agent_versions` — Agent 版本登记表（prompt / model / config 快照），支持 parent 链
 - `evolution_rounds` — 每轮 baseline vs challenger 的 20 局对战结果，可回溯
+
+### 索引（PG 上自动建立）
+
+按高频查询模式建了 24 个索引：
+
+| 表 | 复合索引 | 用途 |
+|---|---|---|
+| `games` | `created_at DESC` / `(status, rule_pack_id)` | 历史列表 / 板子级胜率 |
+| `players` | `(game_id, seat_no)` / `(model_name, role)` | 座位渲染 / 模型×角色 KPI |
+| `game_events` | `(game_id, seq)` / `(game_id, event_type)` / `(game_id, day, phase)` | Replay / 事件筛 / 阶段切片 |
+| `agent_decisions` | `(game_id, player_id, day)` / `(is_valid, error_type)` | 复盘 / 失败归因 |
+| `game_snapshots` | `(game_id, day, phase)` | 跳到任意阶段 |
+| `votes` | `(game_id, day)` / `voter_id` | 票型分析 / 玩家投票画像 |
+| `evaluations` | `(metric_name, player_id)` | 跨局指标聚合 |
 
 ## 测试
 
