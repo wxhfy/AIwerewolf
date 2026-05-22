@@ -2,7 +2,7 @@
 
 import React from "react";
 import { useAppContext } from "@/context/AppContext";
-import { t, tPhase } from "@/lib/i18n";
+import { tPhase } from "@/lib/i18n";
 import { Badge } from "@/components/ui/Badge";
 import { Language } from "@/types";
 

@@ -9,7 +9,6 @@ import {
   WebSocketMessage,
   WebSocketRequest,
   Language,
-  AgentType,
   ViewMode,
   Phase,
 } from "@/types";
@@ -29,9 +28,9 @@ export default function GamePage() {
   const humanSeat = Number(searchParams.get("human_seat") || 1);
 
   const {
-    language, setLanguage, viewMode, setViewMode, agentType, setAgentType,
+    language, setLanguage, viewMode, setViewMode, agentType,
     room, setRoom, gameState, setGameState, isPlaying, setIsPlaying,
-    speed, setSpeed, seed, setSeed,
+    speed, seed,
   } = useAppContext();
 
   const [showWinnerPanel, setShowWinnerPanel] = useState(false);
