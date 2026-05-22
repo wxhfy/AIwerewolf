@@ -146,8 +146,10 @@ export default function GamePage() {
     return b;
   }, [gameState?.events]);
 
-  const leftPlayers = useMemo(() => (gameState?.players || []).filter((p: any) => p.seat <= 4), [gameState?.players]);
-  const rightPlayers = useMemo(() => (gameState?.players || []).filter((p: any) => p.seat > 4), [gameState?.players]);
+  // Split players evenly: ceil(N/2) left, floor(N/2) right
+  const splitPoint = useMemo(() => Math.ceil((gameState?.players?.length || 7) / 2), [gameState?.players?.length]);
+  const leftPlayers = useMemo(() => (gameState?.players || []).filter((p: any) => p.seat <= splitPoint), [gameState?.players, splitPoint]);
+  const rightPlayers = useMemo(() => (gameState?.players || []).filter((p: any) => p.seat > splitPoint), [gameState?.players, splitPoint]);
   const aliveCount = gameState?.alive_count || gameState?.players?.filter((p: any) => p.alive).length || 0;
   const pendingInput = gameState?.pending_input;
   const isHumanMode = mode === "human";
@@ -209,9 +211,9 @@ export default function GamePage() {
 
       {/* Main */}
       <div className="flex-1 flex relative z-10 overflow-hidden">
-        <aside className="hidden lg:flex flex-col gap-2 p-3 w-[22%] min-w-[160px] overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
+        <aside className="hidden lg:flex flex-col gap-2 p-3 w-[21%] min-w-[150px] overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
           style={{ borderRight: `1px solid var(--color-border)` }}>
-          {(leftPlayers.length > 0 ? leftPlayers : ph(1, 4)).map((p: any, i: number) => (
+          {(leftPlayers.length > 0 ? leftPlayers : ph(1, Math.ceil((gameState?.players?.length || 7) / 2))).map((p: any, i: number) => (
             <PlayerCard key={p.id || i} player={p}
               isSpeaking={pendingInput?.player_id === p.id}
               showOwnRole={isHumanMode && p.seat === humanSeat && viewMode !== "moderator"}
@@ -303,9 +305,9 @@ export default function GamePage() {
           )}
         </main>
 
-        <aside className="hidden lg:flex flex-col gap-3 p-4 w-[20%] min-w-[150px] overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
+        <aside className="hidden lg:flex flex-col gap-3 p-4 w-[21%] min-w-[150px] overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
           style={{ borderLeft: `1px solid var(--color-border)` }}>
-          {(rightPlayers.length > 0 ? rightPlayers : ph(5, 7)).map((p: any, i: number) => (
+          {(rightPlayers.length > 0 ? rightPlayers : ph(splitPoint + 1, gameState?.players?.length || 7)).map((p: any, i: number) => (
             <PlayerCard key={p.id || i} player={p}
               isSpeaking={pendingInput?.player_id === p.id}
               showOwnRole={isHumanMode && p.seat === humanSeat && viewMode !== "moderator"}
@@ -316,7 +318,7 @@ export default function GamePage() {
       </div>
 
       <div className="lg:hidden relative z-10 flex gap-2 overflow-x-auto px-4 py-2">
-        {((gameState?.players?.length || 0) > 0 ? gameState!.players : ph(1, 7)).map((p: any, i: number) => (
+        {((gameState?.players?.length || 0) > 0 ? gameState!.players : ph(1, gameState?.players?.length || 7)).map((p: any, i: number) => (
           <div key={p.id || i} className="flex-shrink-0 w-[100px]"><PlayerCard player={p}
             isSpeaking={pendingInput?.player_id === p.id}
             showOwnRole={isHumanMode && p.seat === humanSeat && viewMode !== "moderator"}
