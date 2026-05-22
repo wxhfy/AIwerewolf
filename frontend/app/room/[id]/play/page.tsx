@@ -186,7 +186,7 @@ export default function GamePage() {
         </div>
         <div className="flex items-center gap-2 mx-auto">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
-            className={isNight ? "text-accent" : "text-accent"}>
+            className={isNight ? "text-primary" : "text-accent"}>
             {isNight ? <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" /> :
               <><circle cx="12" cy="12" r="5" /><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" /></>}
           </svg>
@@ -226,6 +226,7 @@ export default function GamePage() {
           <div className="px-4 py-1.5 border-b text-xs text-text-sub flex items-center gap-3"
             style={{ background: "var(--color-card)", borderColor: "var(--color-border)" }}>
             <span>{statusTitle}</span>
+            {gameState?.phase && <span>· {tPhase(gameState.phase, language)}</span>}
             <span>· {t("aliveCount", language)}: {aliveCount}/{gameState?.players?.length || 0}</span>
             <span>· {t("events", language)}: {gameState?.event_count || 0}</span>
           </div>
@@ -305,7 +306,7 @@ export default function GamePage() {
           )}
         </main>
 
-        <aside className="hidden lg:flex flex-col gap-3 p-4 w-[21%] min-w-[150px] overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
+        <aside className="hidden lg:flex flex-col gap-2 p-3 w-[21%] min-w-[150px] overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
           style={{ borderLeft: `1px solid var(--color-border)` }}>
           {(rightPlayers.length > 0 ? rightPlayers : ph(splitPoint + 1, gameState?.players?.length || 7)).map((p: any, i: number) => (
             <PlayerCard key={p.id || i} player={p}

@@ -68,12 +68,14 @@ export function ChatBubble({
         </div>
 
         {/* Bubble */}
-        <div
-          className="px-4 py-2.5 text-base leading-relaxed"
-          style={bubbleStyle}
-        >
-          {content || (isOwn ? "..." : "")}
-        </div>
+        {content && (
+          <div
+            className="px-4 py-2.5 text-base leading-relaxed"
+            style={bubbleStyle}
+          >
+            {content}
+          </div>
+        )}
       </div>
     </div>
   );

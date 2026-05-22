@@ -69,12 +69,7 @@ export function PlayerCard({
 
       {/* Role line */}
       <div className="w-full mt-0.5">
-        {viewMode === "moderator" && player.role ? (
-          <p className={cn("text-[11px] font-medium leading-tight",
-            isWolf ? "text-danger" : isVillage ? "text-success" : "text-text-sub")}>
-            {tRole(player.role, language)}
-          </p>
-        ) : showOwnRole && player.role ? (
+        {(viewMode === "moderator" || showOwnRole) && player.role ? (
           <p className={cn("text-[11px] font-medium leading-tight",
             isWolf ? "text-danger" : isVillage ? "text-success" : "text-text-sub")}>
             {tRole(player.role, language)}

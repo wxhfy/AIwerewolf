@@ -105,7 +105,7 @@ export function ActionPanel({ pendingInput, onAction, language, votes, players }
       {(isVote || isNight) && votes && Object.keys(votes).length > 0 && (
         <div className="space-y-1 mb-2">
           <p className="text-[11px] text-text-sub font-medium mb-1.5">
-            {isVote ? (language === "zh" ? "已投票：" : "Votes cast:") : (language === "zh" ? "狼队选择：" : "Wolf picks:")}
+            {isVote ? t("已投票：", "Votes cast:") : t("狼队选择：", "Wolf picks:")}
           </p>
           {Object.entries(votes).map(([voterId, targetId]) => {
             const voter = players?.find((p: any) => p.id === voterId);
@@ -132,18 +132,15 @@ export function ActionPanel({ pendingInput, onAction, language, votes, players }
         />
       )}
 
-      {/* Night action target */}
+      {/* Night action target — visual grid like vote */}
       {isNight && !isVote && (
         <div className="space-y-3">
-          <select value={targetId} onChange={(e) => setTargetId(e.target.value)}
+          <VoteTargetGrid
+            players={pi.options || []}
+            selectedId={targetId}
+            onSelect={setTargetId}
             disabled={submitted}
-            className="w-full h-10 px-3 rounded-button border text-sm"
-            style={{ background: "var(--color-bg)", borderColor: "var(--color-border)", color: "var(--color-text)" }}>
-            <option value="">- {t("选择目标", "Select target")} -</option>
-            {(pi.options || []).map((o: any) => (
-              <option key={o.id} value={o.id}>{o.name || o.id} {o.seat ? `(seat ${o.seat})` : ""}</option>
-            ))}
-          </select>
+          />
           {isWitch && (
             <label className="flex items-center gap-2 text-sm text-textPrimary">
               <input type="checkbox" checked={savePotion} onChange={(e) => setSavePotion(e.target.checked)} disabled={submitted}
