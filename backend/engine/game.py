@@ -769,11 +769,15 @@ class WerewolfGame:
         self._kill(target_id, "vote")
         target = self.state.player(target_id)
         self._log(EventType.SYSTEM_MESSAGE, "public", {"message": f"{target.name} was voted out."})
+        # Defensive: when the recursive PK path runs with no usable ballots,
+        # vote_history[day] may not have been written this round. Fall back to
+        # the empty dict so the executed-summary still serializes.
+        day_votes = self.state.vote_history.get(self.state.day, {})
         self.state.day_history[self.state.day] = {
             "executed": {
                 "player_id": target.id,
                 "seat": target.seat,
-                "votes": self._weighted_tally(self.state.vote_history[self.state.day])[target.id],
+                "votes": self._weighted_tally(day_votes).get(target.id, 0.0),
             }
         }
         self.state.pk_targets = []

@@ -48,15 +48,24 @@ export default function LobbyPage() {
     }
   }
 
-  // Step 2: Confirm → start game → navigate
+  // Step 2: Confirm → for human mode call /start (needs first human turn ready);
+  // for AI-vs-AI just navigate — the play page opens a WebSocket and streams.
+  // (Calling /start for AI-vs-AI LLM would block the HTTP request for the entire
+  // game; the proxy/browser kills it long before that returns, which is what
+  // surfaced as "后端连接失败" in the UI.)
   async function handleConfirmStart() {
     setIsStarting(true);
     setError("");
     try {
-      const res = await fetch(`/api/rooms/${createdRoom.id}/start?show_private=true`, { method: "POST" });
-      if (!res.ok) throw new Error(`Start failed (${res.status})`);
-      const snapshot = await res.json();
-      setGameState(snapshot);
+      if (mode === "human") {
+        const res = await fetch(`/api/rooms/${createdRoom.id}/start?show_private=true`, { method: "POST" });
+        if (!res.ok) throw new Error(`Start failed (${res.status})`);
+        const snapshot = await res.json();
+        setGameState(snapshot);
+      } else {
+        // AI-vs-AI: hand off to the play page; it opens a WS for streamed updates.
+        setGameState(null);
+      }
       router.push(`/room/${createdRoom.id}/play?human_seat=${humanSeat}&mode=${mode}`);
     } catch (e: any) {
       setError(e.message || "启动失败");
