@@ -221,7 +221,6 @@ __marimo__/
 # Local configuration files (not synced with git)
 AGENTS.md
 CLAUDE.md
-.gitignore
 docs/test-report-*.md
 
 # IDE and editor files
