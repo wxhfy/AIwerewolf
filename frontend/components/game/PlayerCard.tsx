@@ -27,12 +27,14 @@ export function PlayerCard({
   const isVillage = player.alignment === Alignment.VILLAGE;
 
   const containerClass = cn(
-    "relative flex flex-col items-center p-4 rounded-card border transition-all cursor-pointer select-none",
-    isDead && "opacity-50 grayscale",
-    isSpeaking && "border-accent shadow-[0_0_12px_rgba(212,175,55,0.25)]",
-    !isSpeaking && !isDead && "border-border hover:-translate-y-0.5 hover:shadow-md",
-    isSelected && "border-primary ring-1 ring-primary",
-    isDead && "border-border/50"
+    "relative flex flex-col items-center p-4 rounded-card transition-all duration-200 cursor-pointer select-none",
+    // Floating effect — layered shadows for depth
+    "shadow-[0_4px_16px_rgba(0,0,0,0.06),0_1px_3px_rgba(0,0,0,0.04)]",
+    "bg-[var(--color-card)]",
+    isDead && "opacity-50 grayscale shadow-none",
+    isSpeaking && "ring-2 ring-accent shadow-[0_4px_20px_rgba(212,175,55,0.25),0_0_0_4px_rgba(212,175,55,0.08)]",
+    !isSpeaking && !isDead && "hover:-translate-y-1 hover:shadow-[0_12px_32px_rgba(0,0,0,0.10),0_2px_6px_rgba(0,0,0,0.06)]",
+    isSelected && "ring-2 ring-primary shadow-[0_4px_16px_rgba(139,90,43,0.2)]",
   );
 
   return (
