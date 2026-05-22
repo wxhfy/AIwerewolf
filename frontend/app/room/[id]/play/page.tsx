@@ -15,7 +15,6 @@ import {
 } from "@/types";
 import { Button } from "@/components/ui/Button";
 import { PlayerCard } from "@/components/game/PlayerCard";
-import { DayBlock } from "@/components/game/DayBlock";
 import { ActionPanel } from "@/components/game/ActionPanel";
 import { ChatBubble } from "@/components/game/ChatBubble";
 import { EventItem } from "@/components/game/EventItem";
@@ -189,7 +188,7 @@ export default function GamePage() {
         <aside className="hidden lg:flex flex-col gap-2 p-3 w-[20%] min-w-[130px] max-w-[200px] overflow-y-auto"
           style={{ borderRight: `1px solid var(--color-border)` }}>
           {(leftPlayers.length > 0 ? leftPlayers : ph(1, 4)).map((p: any, i: number) => (
-            <PlayerCard key={p.id || i} player={p} />
+            <PlayerCard key={p.id || i} player={p} isSpeaking={pendingInput?.player_id === p.id} />
           ))}
         </aside>
 
@@ -255,14 +254,14 @@ export default function GamePage() {
         <aside className="hidden lg:flex flex-col gap-2 p-3 w-[15%] min-w-[110px] max-w-[160px] overflow-y-auto"
           style={{ borderLeft: `1px solid var(--color-border)` }}>
           {(rightPlayers.length > 0 ? rightPlayers : ph(5, 7)).map((p: any, i: number) => (
-            <PlayerCard key={p.id || i} player={p} />
+            <PlayerCard key={p.id || i} player={p} isSpeaking={pendingInput?.player_id === p.id} />
           ))}
         </aside>
       </div>
 
       <div className="lg:hidden relative z-10 flex gap-2 overflow-x-auto px-4 py-2">
         {((gameState?.players?.length || 0) > 0 ? gameState!.players : ph(1, 7)).map((p: any, i: number) => (
-          <div key={p.id || i} className="flex-shrink-0 w-[100px]"><PlayerCard player={p} /></div>
+          <div key={p.id || i} className="flex-shrink-0 w-[100px]"><PlayerCard player={p} isSpeaking={pendingInput?.player_id === p.id} /></div>
         ))}
       </div>
 
