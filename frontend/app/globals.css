@@ -76,13 +76,26 @@
   50% { opacity: 1; }
 }
 
-/* Global day↔night transition for all elements using CSS variables */
-*, *::before, *::after {
+/* Day↔night transition only on phase-aware containers, not every element */
+[data-phase-aware] {
   transition:
     background-color var(--transition-daynight) var(--ease-in-out),
     color var(--transition-daynight) var(--ease-in-out),
-    border-color var(--transition-daynight) var(--ease-in-out),
-    box-shadow var(--transition-daynight) var(--ease-in-out);
+    border-color var(--transition-daynight) var(--ease-in-out);
+}
+
+/* Mobile player scroll affordance */
+@media (max-width: 1023px) {
+  .player-scroll-row::after {
+    content: "";
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 40px;
+    background: linear-gradient(to right, transparent, var(--color-bg));
+    pointer-events: none;
+  }
 }
 
 body {

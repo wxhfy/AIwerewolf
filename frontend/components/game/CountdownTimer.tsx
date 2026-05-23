@@ -12,6 +12,8 @@ export function CountdownTimer({ seconds, onExpire, isActive }: CountdownTimerPr
   const [remaining, setRemaining] = useState(seconds);
   const expiredRef = useRef(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const onExpireRef = useRef(onExpire);
+  onExpireRef.current = onExpire;  // Always current, never triggers re-render
 
   useEffect(() => {
     if (!isActive) {
@@ -27,14 +29,14 @@ export function CountdownTimer({ seconds, onExpire, isActive }: CountdownTimerPr
         const next = prev - 0.25;
         if (next <= 0 && !expiredRef.current) {
           expiredRef.current = true;
-          setTimeout(onExpire, 0);
+          setTimeout(() => onExpireRef.current(), 0);
           return 0;
         }
         return next <= 0 ? 0 : next;
       });
     }, 250);
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
-  }, [isActive, seconds, onExpire]);
+  }, [isActive, seconds]);
 
   const pct = Math.max(0, (remaining / seconds) * 100);
   const isWarn = remaining <= 20 && remaining > 10;

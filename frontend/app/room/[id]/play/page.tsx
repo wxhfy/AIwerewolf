@@ -18,6 +18,7 @@ import { ActionPanel } from "@/components/game/ActionPanel";
 import { ChatBubble } from "@/components/game/ChatBubble";
 import { EventItem } from "@/components/game/EventItem";
 import { EventType } from "@/types";
+import { PhaseAnnouncement } from "@/components/game/PhaseAnnouncement";
 
 export default function GamePage() {
   const router = useRouter();
@@ -36,6 +37,9 @@ export default function GamePage() {
   const [showWinnerPanel, setShowWinnerPanel] = useState(false);
   const [ballPos, setBallPos] = useState<{ x: number; y: number } | null>(null);
   const dragRef = useRef({ dragging: false, startX: 0, startY: 0, origX: 0, origY: 0, moved: false });
+  // Phase announcement state
+  const [announcePhase, setAnnouncePhase] = useState<{phase: string; prev: string} | null>(null);
+  const lastPhaseRef = useRef("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const autoScrollRef = useRef(true);
   const [statusTitle, setStatusTitle] = useState(
@@ -56,6 +60,13 @@ export default function GamePage() {
     const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
     autoScrollRef.current = atBottom;
   };
+
+  // Auto-start human mode when no gameState (direct URL access or refresh)
+  useEffect(() => {
+    if (mode === "human" && !gameState && !isPlaying) {
+      startHumanGame();
+    }
+  }, [mode, roomId]);
 
   // Sync status when gameState arrives (e.g., from lobby pre-start)
   useEffect(() => {
@@ -98,12 +109,20 @@ export default function GamePage() {
     wsRef.current = ws;
     ws.onopen = () => ws.send(JSON.stringify({
       action: "start", seed, agent_type: agentType,
-      show_private: viewMode === ViewMode.MODERATOR, delay_ms: speed,
+      show_private: true, delay_ms: speed,  // Always request full data; frontend filters by viewMode
     } as WebSocketRequest));
     ws.onmessage = (e) => {
       const msg: WebSocketMessage = JSON.parse(e.data);
       if (msg.type === "room" && msg.room) setRoom(msg.room);
-      if (msg.type === "snapshot" && msg.state) setGameState(msg.state);
+      if (msg.type === "snapshot" && msg.state) {
+        setGameState(msg.state);
+        // Detect phase changes for announcement
+        const newPhase = msg.state.phase;
+        if (newPhase && newPhase !== lastPhaseRef.current) {
+          setAnnouncePhase({ phase: newPhase, prev: lastPhaseRef.current });
+          lastPhaseRef.current = newPhase;
+        }
+      }
       if (msg.type === "complete") {
         if (msg.state) setGameState(msg.state);
         if (msg.room) setRoom(msg.room);
@@ -150,7 +169,7 @@ export default function GamePage() {
   const splitPoint = useMemo(() => Math.ceil((gameState?.players?.length || 7) / 2), [gameState?.players?.length]);
   const leftPlayers = useMemo(() => (gameState?.players || []).filter((p: any) => p.seat <= splitPoint), [gameState?.players, splitPoint]);
   const rightPlayers = useMemo(() => (gameState?.players || []).filter((p: any) => p.seat > splitPoint), [gameState?.players, splitPoint]);
-  const aliveCount = gameState?.alive_count || gameState?.players?.filter((p: any) => p.alive).length || 0;
+  const aliveCount = gameState?.alive_count ?? (gameState?.players?.filter((p: any) => p.alive).length ?? 0);
   const pendingInput = gameState?.pending_input;
   const isHumanMode = mode === "human";
 
@@ -170,16 +189,26 @@ export default function GamePage() {
   }
 
   return (
-    <div className="h-screen flex flex-col overflow-hidden"
-      style={{ background: "var(--color-bg)", transition: "background var(--transition-daynight) var(--ease-in-out)" }}>
+    <div className="h-screen flex flex-col overflow-hidden night-stars" data-phase-aware
+      style={{ background: "var(--color-bg)" }}>
+
+      {/* Phase Announcement Overlay */}
+      {announcePhase && (
+        <PhaseAnnouncement
+          phase={announcePhase.phase}
+          prevPhase={announcePhase.prev}
+          onDone={() => setAnnouncePhase(null)}
+        />
+      )}
+
       {isNight && (
         <div className="fixed inset-0 pointer-events-none z-0 transition-opacity duration-800"
           style={{ background: "radial-gradient(ellipse at 50% 0%, rgba(25,25,35,0.25) 0%, rgba(0,0,0,0.55) 100%)", opacity: 1 }} />
       )}
 
       {/* Header */}
-      <header className="relative z-10 flex items-center gap-3 px-4 md:px-6 py-2.5 border-b flex-wrap"
-        style={{ background: "var(--color-card)", borderColor: "var(--color-border)", transition: "background var(--transition-daynight) var(--ease-in-out)" }}>
+      <header className="relative z-10 flex items-center gap-3 px-4 md:px-6 py-2.5 border-b flex-wrap" data-phase-aware
+        style={{ background: "var(--color-card)", borderColor: "var(--color-border)" }}>
         <div className="flex items-center gap-3">
           <span className="font-display text-lg font-semibold text-primary">AI Werewolf</span>
           <span className="text-xs text-text-sub">{t("roomLabel", language)}: {truncate(roomId, 8)}</span>
@@ -216,7 +245,7 @@ export default function GamePage() {
           {(leftPlayers.length > 0 ? leftPlayers : ph(1, Math.ceil((gameState?.players?.length || 7) / 2))).map((p: any, i: number) => (
             <PlayerCard key={p.id || i} player={p}
               isSpeaking={pendingInput?.player_id === p.id}
-              showOwnRole={isHumanMode && p.seat === humanSeat && viewMode !== "moderator"}
+              showOwnRole={isHumanMode && p.seat === humanSeat}
               wolfTeammates={isHumanMode && p.seat === humanSeat ? wolfTeammates : undefined}
             />
           ))}
@@ -232,7 +261,7 @@ export default function GamePage() {
           </div>
           <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-4 py-3">
             {gameState?.events?.length ? (
-              Object.keys(dayBlocks).sort((a, b) => Number(b) - Number(a)).map((dk) => {
+              Object.keys(dayBlocks).sort((a, b) => Number(a) - Number(b)).map((dk) => {
                 const dayEvents = dayBlocks[Number(dk)];
                 // Find deaths for day header
                 const deaths = dayEvents.filter((e: any) =>
@@ -311,7 +340,7 @@ export default function GamePage() {
           {(rightPlayers.length > 0 ? rightPlayers : ph(splitPoint + 1, gameState?.players?.length || 7)).map((p: any, i: number) => (
             <PlayerCard key={p.id || i} player={p}
               isSpeaking={pendingInput?.player_id === p.id}
-              showOwnRole={isHumanMode && p.seat === humanSeat && viewMode !== "moderator"}
+              showOwnRole={isHumanMode && p.seat === humanSeat}
               wolfTeammates={isHumanMode && p.seat === humanSeat ? wolfTeammates : undefined}
             />
           ))}
@@ -322,7 +351,7 @@ export default function GamePage() {
         {((gameState?.players?.length || 0) > 0 ? gameState!.players : ph(1, gameState?.players?.length || 7)).map((p: any, i: number) => (
           <div key={p.id || i} className="flex-shrink-0 w-[100px]"><PlayerCard player={p}
             isSpeaking={pendingInput?.player_id === p.id}
-            showOwnRole={isHumanMode && p.seat === humanSeat && viewMode !== "moderator"}
+            showOwnRole={isHumanMode && p.seat === humanSeat}
             wolfTeammates={isHumanMode && p.seat === humanSeat ? wolfTeammates : undefined}
           /></div>
         ))}

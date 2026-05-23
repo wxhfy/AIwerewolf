@@ -105,7 +105,10 @@ export function ActionPanel({ pendingInput, onAction, language, votes, players }
       {(isVote || isNight) && votes && Object.keys(votes).length > 0 && (
         <div className="space-y-1 mb-2">
           <p className="text-[11px] text-text-sub font-medium mb-1.5">
-            {isVote ? t("已投票：", "Votes cast:") : t("狼队选择：", "Wolf picks:")}
+            {isVote ? t("已投票：", "Votes cast:")
+              : pi.request === "ATTACK" ? t("狼队选择：", "Wolf picks:")
+              : pi.request === "HUNTER_SHOOT" ? t("猎人目标：", "Hunter target:")
+              : t("选择目标：", "Select target:")}
           </p>
           {Object.entries(votes).map(([voterId, targetId]) => {
             const voter = players?.find((p: any) => p.id === voterId);
