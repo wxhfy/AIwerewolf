@@ -87,18 +87,33 @@ export default function GamePage() {
     }
   }, [roomId]);
 
+  useEffect(() => {
+    if (mode !== "human") {
+      setViewMode(ViewMode.MODERATOR);
+    }
+  }, [mode, setViewMode]);
+
   // Auto-start the game on first entry when in AI mode and no game state yet.
   // Without this, the user sees placeholder cards ("玩家 1, 玩家 2…") with no
   // real names until they click "运行一局" — which feels broken.
+  //
+  // We DON'T mark `autoStartedRef = true` until the setTimeout actually fires,
+  // because React 18 Strict Mode (dev) double-mounts: the first mount sets the
+  // ref and schedules the timer, the cleanup clears the timer, then the
+  // second mount sees ref=true and bails — so nothing ever starts. By only
+  // setting the ref inside the timer callback, the cleanup cancels the
+  // first attempt cleanly and the second mount re-schedules.
   const autoStartedRef = useRef(false);
   useEffect(() => {
     if (autoStartedRef.current) return;
     if (mode !== "ai") return;
     if (gameState?.players?.length) return;
     if (isPlaying) return;
-    autoStartedRef.current = true;
     // Small delay so the WS handler is attached and AppContext is settled.
-    const id = setTimeout(() => runGame(), 200);
+    const id = setTimeout(() => {
+      autoStartedRef.current = true;
+      runGame();
+    }, 200);
     return () => clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, roomId]);
@@ -128,7 +143,23 @@ export default function GamePage() {
       if (msg.type === "error") { setIsPlaying(false); setStatusTitle(t("statusError", language)); }
     };
     ws.onerror = () => setIsPlaying(false);
-    ws.onclose = () => setIsPlaying(false);
+    ws.onclose = (ev) => {
+      setIsPlaying(false);
+      // Auto-reconnect when the socket dies mid-game (network blip, server
+      // hiccup, browser pausing tabs). The backend keeps the game running and
+      // buffers snapshots, so the reconnect picks up where we left off.
+      // We skip reconnect when: (a) the game already finished, (b) we hold
+      // the most recent gameState that includes a winner, or (c) we
+      // intentionally closed the socket because the user navigated away.
+      const finished = gameState?.winner != null;
+      const cleanClose = ev.code === 1000 || ev.code === 1001;
+      if (!finished && !cleanClose && wsRef.current === ws) {
+        setStatusTitle(language === "zh" ? "连接断开，自动重连..." : "Reconnecting…");
+        setTimeout(() => {
+          if (wsRef.current === ws) runGame();
+        }, 800);
+      }
+    };
   }
 
   async function startHumanGame() {
@@ -173,6 +204,14 @@ export default function GamePage() {
   // generated. The PlayerCard uses this flag to glow.
   const activeSpeakerId = pendingInput?.player_id || gameState?.current_speaker_id || null;
   const isHumanMode = mode === "human";
+
+  // Badge state — exposed so PlayerCard can render the sheriff badge and the
+  // "竞选警长" marker for active candidates during DAY_BADGE_* phases. We
+  // resolve these once per render instead of inside every map() iteration.
+  const sheriffId: string | null = (gameState as any)?.badge?.holder_id || null;
+  const badgeCandidateIds: string[] = Array.isArray((gameState as any)?.badge?.candidates)
+    ? (gameState as any).badge.candidates
+    : [];
 
   // Find human player's role and wolf teammates for PlayerCard own-role display
   const humanPlayer = useMemo(() => (gameState?.players || []).find((p: any) => p.seat === humanSeat), [gameState?.players, humanSeat]);
@@ -237,6 +276,8 @@ export default function GamePage() {
             <PlayerCard key={p.id || i} player={p}
               isSpeaking={activeSpeakerId === p.id}
               isThinking={!pendingInput && activeSpeakerId === p.id}
+              isSheriff={sheriffId === p.id}
+              isBadgeCandidate={badgeCandidateIds.includes(p.id)}
               showOwnRole={isHumanMode && p.seat === humanSeat && viewMode !== "moderator"}
               wolfTeammates={isHumanMode && p.seat === humanSeat ? wolfTeammates : undefined}
             />
@@ -332,6 +373,8 @@ export default function GamePage() {
             <PlayerCard key={p.id || i} player={p}
               isSpeaking={activeSpeakerId === p.id}
               isThinking={!pendingInput && activeSpeakerId === p.id}
+              isSheriff={sheriffId === p.id}
+              isBadgeCandidate={badgeCandidateIds.includes(p.id)}
               showOwnRole={isHumanMode && p.seat === humanSeat && viewMode !== "moderator"}
               wolfTeammates={isHumanMode && p.seat === humanSeat ? wolfTeammates : undefined}
             />
@@ -344,6 +387,8 @@ export default function GamePage() {
           <div key={p.id || i} className="flex-shrink-0 w-[100px]"><PlayerCard player={p}
             isSpeaking={activeSpeakerId === p.id}
               isThinking={!pendingInput && activeSpeakerId === p.id}
+            isSheriff={sheriffId === p.id}
+            isBadgeCandidate={badgeCandidateIds.includes(p.id)}
             showOwnRole={isHumanMode && p.seat === humanSeat && viewMode !== "moderator"}
             wolfTeammates={isHumanMode && p.seat === humanSeat ? wolfTeammates : undefined}
           /></div>

@@ -219,6 +219,34 @@ class HeuristicAgent(Agent):
             )
         return Decision(view.player_id, ActionType.SKIP, reasoning="Hold the boom for a higher-value timing.")
 
+    def transfer_badge(self, candidates: list[str]) -> Decision:
+        """Pick a successor for the sheriff badge from the given candidate ids.
+
+        Fallback heuristic: prefer a village-aligned candidate, then lowest
+        seat. Empty candidate list → SKIP (badge destroyed).
+        """
+        view = self._view()
+        if not candidates:
+            return Decision(view.player_id, ActionType.SKIP, reasoning="No alive successor available; badge destroyed.")
+        cand_players = [p for p in view.players if p["id"] in candidates]
+        # Village preference uses whatever we know — for own-team it's confident,
+        # for others we just lean on the `alignment` field if present (only true
+        # in moderator/private views; otherwise this is a no-op and seat order wins).
+        village_first = sorted(
+            cand_players,
+            key=lambda p: (
+                0 if str(p.get("alignment") or "").lower() == "village" else 1,
+                int(p.get("seat") or 999),
+            ),
+        )
+        winner = village_first[0]
+        return Decision(
+            view.player_id,
+            ActionType.VOTE,
+            target_id=winner["id"],
+            reasoning=f"Transfer badge to seat {winner.get('seat')} ({winner.get('name')}) by seat order, village preference.",
+        )
+
     # ---- Information assessment ----
 
     def _assess_information(self) -> str:

@@ -73,11 +73,11 @@ try {
   }
 
   await page.goto(`http://127.0.0.1:${frontendPort}/?lang=en`, { waitUntil: "networkidle" });
-  await page.getByRole("button", { name: "Human Play" }).click();
-  await page.getByText("Your Seat").waitFor();
-  await page.getByRole("button", { name: "Start Game" }).click();
-  await page.getByText("Ready to Start").waitFor();
-  await page.getByRole("button", { name: "Confirm & Start" }).click();
+  await page.getByRole("button", { name: /Human Play|真人参与/ }).click();
+  await page.getByText(/Your Seat|你的座位号/).waitFor();
+  await page.getByRole("button", { name: /Start Game|开始游戏/ }).click();
+  await page.getByText(/Ready to Start|准备开始/).waitFor();
+  await page.getByRole("button", { name: /Confirm & Start|确认开始/ }).click();
   await page.waitForURL(/mode=human/);
   await page.waitForFunction(() => {
     const text = document.body.innerText;

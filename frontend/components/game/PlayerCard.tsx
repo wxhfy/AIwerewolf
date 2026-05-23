@@ -18,6 +18,10 @@ interface PlayerCardProps {
   // player's decision (works for both the human seat with pending_input and
   // for AI agents whose turn it currently is in the night sequence).
   isThinking?: boolean;
+  // Sheriff (badge holder) — show a gold badge marker.
+  isSheriff?: boolean;
+  // Currently campaigning for the badge during DAY_BADGE_* phases.
+  isBadgeCandidate?: boolean;
 }
 
 export function PlayerCard({
@@ -28,6 +32,8 @@ export function PlayerCard({
   showOwnRole = false,
   wolfTeammates,
   isThinking = false,
+  isSheriff = false,
+  isBadgeCandidate = false,
 }: PlayerCardProps) {
   const { viewMode, language } = useAppContext();
 
@@ -78,6 +84,40 @@ export function PlayerCard({
         <div className="absolute -top-1.5 -left-1.5">
           <Badge variant="info" className="text-[10px] px-1.5 py-0">
             {language === "zh" ? "思考中" : "Thinking"}
+          </Badge>
+        </div>
+      )}
+      {/* Sheriff badge — gold, top-center. Persistent for the whole game once
+          awarded; survives BADGE_TRANSFER because the snapshot's holder_id
+          updates to the new sheriff. */}
+      {isSheriff && (
+        <div className="absolute -top-2 left-1/2 -translate-x-1/2">
+          <Badge
+            className="text-[10px] px-1.5 py-0 font-bold"
+            style={{
+              background: "linear-gradient(135deg, #FFD700 0%, #FFA500 100%)",
+              color: "#5C3A00",
+              border: "1px solid #C69200",
+              boxShadow: "0 2px 6px rgba(255,165,0,0.35)",
+            }}
+          >
+            {language === "zh" ? "警长" : "Sheriff"}
+          </Badge>
+        </div>
+      )}
+      {/* Badge candidate marker — only during DAY_BADGE_SIGNUP/SPEECH/ELECTION.
+          Smaller, less attention-grabbing than the sheriff badge. */}
+      {isBadgeCandidate && !isSheriff && (
+        <div className="absolute -top-2 left-1/2 -translate-x-1/2">
+          <Badge
+            className="text-[10px] px-1.5 py-0"
+            style={{
+              background: "rgba(255,215,0,0.18)",
+              color: "#8B5A2B",
+              border: "1px dashed #C69200",
+            }}
+          >
+            {language === "zh" ? "竞选警长" : "Running"}
           </Badge>
         </div>
       )}

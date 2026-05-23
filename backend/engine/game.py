@@ -914,16 +914,66 @@ class WerewolfGame:
         self.pending_badge_transfer_from_id = None
         self._set_phase(Phase.BADGE_TRANSFER)
         alive = [player for player in self.state.alive_players if player.id != from_id]
-        if not alive:
-            self.state.badge.holder_id = None
-            return
-        successor = self._pick_badge_successor(alive)
-        self.state.badge.holder_id = successor.id
         former = self.state.player(from_id)
+        if not alive:
+            # Nobody left to inherit — badge effectively destroyed.
+            self.state.badge.holder_id = None
+            self._log(
+                EventType.SYSTEM_MESSAGE,
+                "public",
+                {
+                    "message": f"{former.name} 出局，但场上已无可继承的玩家，警徽消失。",
+                    "from_id": former.id,
+                    "from_name": former.name,
+                    "from_seat": former.seat,
+                    "to_id": None,
+                    "to_name": None,
+                    "to_seat": None,
+                    "destroyed": True,
+                    "reason": "no_eligible_successor",
+                },
+            )
+            return
+        # Ask the dying sheriff (LLM/human/heuristic) to choose a successor or
+        # destroy the badge. The agent contract returns ActionType.SKIP for
+        # "撕警徽" and ActionType.VOTE with target_id for "传给某某".
+        candidate_ids = [p.id for p in alive]
+        decision = self._ask(
+            former,
+            "TRANSFER_BADGE",
+            lambda agent: agent.transfer_badge(candidate_ids),
+        )
+        successor: Player | None = None
+        destroyed = False
+        if decision.action_type == ActionType.SKIP or not decision.target_id:
+            destroyed = True
+        else:
+            chosen_id = decision.target_id
+            if chosen_id in candidate_ids:
+                successor = self.state.player(chosen_id)
+            else:
+                # Agent picked someone invalid (dead or self) — fall back to
+                # the heuristic preference so the game keeps moving.
+                successor = self._pick_badge_successor(alive)
+        self.state.badge.holder_id = successor.id if successor else None
+        if destroyed:
+            msg = f"{former.name} 撕掉了警徽，本局警徽功能失效。"
+        else:
+            msg = f"{former.name} 将警徽传给了 {successor.name}（座位 {successor.seat}）。"
         self._log(
             EventType.SYSTEM_MESSAGE,
             "public",
-            {"message": f"{former.name} transfers the badge to {successor.name}."},
+            {
+                "message": msg,
+                "from_id": former.id,
+                "from_name": former.name,
+                "from_seat": former.seat,
+                "to_id": successor.id if successor else None,
+                "to_name": successor.name if successor else None,
+                "to_seat": successor.seat if successor else None,
+                "destroyed": destroyed,
+                "reasoning": decision.reasoning,
+            },
         )
 
     def _ask(self, player: Player, request: str, call, *, many: bool = False):
@@ -986,6 +1036,13 @@ class WerewolfGame:
             return [Decision(player.id, ActionType.SHOOT, target_id=target_id, reasoning=reasoning, metadata={"source": "human"})]
         if pending.request == "BOOM":
             return [Decision(player.id, ActionType.BOOM, target_id=target_id, reasoning=reasoning, metadata={"source": "human"})]
+        if pending.request == "TRANSFER_BADGE":
+            # SKIP target_id=None means destroy the badge; otherwise the human
+            # picked a successor from the option list. We mirror the LLM agent
+            # by using VOTE as the carrier action for "pick this player".
+            if target_id is None:
+                return [Decision(player.id, ActionType.SKIP, reasoning=reasoning or "撕警徽", metadata={"source": "human"})]
+            return [Decision(player.id, ActionType.VOTE, target_id=target_id, reasoning=reasoning or "传给该玩家", metadata={"source": "human"})]
         if pending.request == "WITCH":
             decisions: list[Decision] = []
             if bool(payload.get("save")) and self.state.night_actions.wolf_target_id:

@@ -33,4 +33,9 @@ class Agent(Protocol):
 
     def boom(self) -> Decision: ...
 
+    # Called when this player WAS the sheriff and just died. The agent picks
+    # who inherits the badge (target_id = successor player id) or destroys it
+    # (target_id = None). Successor must be alive and != self.player_id.
+    def transfer_badge(self, candidates: list[str]) -> Decision: ...
+
     def finish(self, winner: str | None) -> None: ...

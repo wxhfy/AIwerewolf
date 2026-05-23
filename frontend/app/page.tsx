@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAppContext } from "@/context/AppContext";
 import { Language, AgentType } from "@/types";
@@ -9,6 +9,13 @@ import { Button } from "@/components/ui/Button";
 export default function LobbyPage() {
   const router = useRouter();
   const { language, setLanguage, agentType, setAgentType, setGameState } = useAppContext();
+
+  // Force LLM as the only public agent type. The user wants every game to be
+  // LLM-driven; the heuristic agent stays in the codebase but only as the
+  // automatic fallback inside LLMAgent (triggered after 3 LLM retries fail).
+  useEffect(() => {
+    if (agentType !== "llm") setAgentType("llm" as AgentType);
+  }, [agentType, setAgentType]);
 
   const [playerCount, setPlayerCount] = useState(7);
   const [mode, setMode] = useState<"ai" | "human">("ai");
@@ -135,18 +142,10 @@ export default function LobbyPage() {
           </div>
         )}
 
-        {/* Agent type */}
-        <div>
-          <label className="block text-sm font-medium text-textPrimary mb-2">{t("AI 类型", "Agent Type")}</label>
-          <div className="flex rounded-button border overflow-hidden" style={{ borderColor: "var(--color-border)" }}>
-            {(["heuristic", "llm"] as const).map((at) => (
-              <button key={at} onClick={() => setAgentType(at as AgentType)}
-                className={`flex-1 py-2 text-sm font-medium ${agentType === at ? "bg-primary text-white" : "bg-transparent text-text-sub"}`}>
-                {at === "heuristic" ? t("启发式", "Heuristic") : "LLM"}
-              </button>
-            ))}
-          </div>
-        </div>
+        {/* Agent type — fixed to LLM. The toggle was confusing because the
+            heuristic option was meant as the in-LLM fallback, not a top-level
+            choice. We keep AgentType in the context (still used by the play
+            page when opening the WebSocket) but force it to "llm". */}
 
         {/* Seed */}
         <div>

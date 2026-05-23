@@ -16,7 +16,7 @@ from backend.engine.rules import build_players
 def main() -> int:
     seed = 9
     players = build_players(seed=seed)
-    agents = create_agents(players, {"type": "llm", "provider": "deepseek", "model": "deepseek-v4-flash", "seed": seed})
+    agents = create_agents(players, {"type": "llm", "seed": seed})
     game = WerewolfGame(players=players, agents=agents, seed=seed)
     state = game.play()
 

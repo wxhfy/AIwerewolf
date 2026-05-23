@@ -342,7 +342,13 @@ async def stream_game(
     player_count: int = 7,
     rule_pack_id: str = "wolfcha-default",
 ) -> GameState:
-    """Stream game snapshots to WebSocket in real-time as the game progresses."""
+    """Stream game snapshots to WebSocket in real-time as the game progresses.
+
+    Supports reconnect: if the room already has an active (running) game, we
+    attach to it instead of starting a second parallel game. Reconnecting
+    clients first receive the entire snapshot buffer accumulated so far, then
+    follow live frames until the game finishes.
+    """
     import threading
     import asyncio as aio
 
@@ -352,13 +358,37 @@ async def stream_game(
     lock = threading.Lock()
     done = threading.Event()
 
+    # Reconnect path: if an unfinished game already runs for this room, attach
+    # to it instead of building a fresh one. The original stream_game call is
+    # still awaiting game.play() in another executor; we just tail snapshots.
+    is_reused = False
+    game: WerewolfGame | None = None
+    if room_id:
+        existing = _rooms.get_active_game(room_id)
+        if existing is not None and existing.state.winner is None:
+            game = existing
+            is_reused = True
+
+    if game is None:
+        game = _build_game(seed=seed, agent_type=agent_type, player_count=player_count, rule_pack_id=rule_pack_id)
+        if room_id:
+            _rooms.set_active_game(room_id, game)
+            _rooms.reset_snapshot_buffer(room_id)
+
     def observe(state: GameState) -> None:
         snapshot = state.snapshot(show_private=show_private)
+        if room_id:
+            _rooms.append_snapshot(room_id, snapshot)
         with lock:
             queue.append(snapshot)
 
-    game = _build_game(seed=seed, agent_type=agent_type, player_count=player_count, rule_pack_id=rule_pack_id)
+    # The engine only supports one observer; the previous WS's observer (if
+    # any) is now disconnected and its drain task is dead, so overwriting is
+    # safe — but we still pre-load this client with the full history first.
     game.observer = observe
+    if is_reused and room_id:
+        with lock:
+            queue.extend(_rooms.get_snapshot_buffer(room_id))
 
     async def drain_queue() -> None:
         """Send queued snapshots to the WebSocket as they arrive."""
@@ -374,17 +404,37 @@ async def stream_game(
                     _rooms.record_snapshot(room_id, snap)
                 await websocket.send_json(msg)
             await aio.sleep(0.08)  # poll every 80ms (was 300ms — felt sluggish during LLM turns)
-
-    # Run game in thread, drain snapshots in parallel
-    async def run_game() -> GameState:
-        return await loop.run_in_executor(None, game.play)
+        # Final flush so we don't drop snapshots queued between the last loop
+        # iteration and done.set().
+        with lock:
+            new_snapshots = queue[last_idx:]
+        for snap in new_snapshots:
+            msg = {"type": "snapshot", "state": snap}
+            if room_id:
+                msg["room_id"] = room_id
+                _rooms.record_snapshot(room_id, snap)
+            try:
+                await websocket.send_json(msg)
+            except Exception:
+                break
 
     drain_task = aio.create_task(drain_queue())
     try:
-        state = await run_game()
+        if is_reused:
+            # The game is already executing in another thread; just tail the
+            # snapshot stream until it finishes. Poll cadence is generous —
+            # what matters for UX is drain_queue's 80ms cycle.
+            while game.state.winner is None:
+                await aio.sleep(0.5)
+            state = game.state
+        else:
+            state = await loop.run_in_executor(None, game.play)
     finally:
         done.set()
-        await drain_task
+        try:
+            await drain_task
+        except Exception:
+            pass
 
     _rooms.games[state.id] = state
     return state

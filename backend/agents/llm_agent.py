@@ -79,7 +79,20 @@ class LLMAgent(Agent):
             and e.get("phase") == view.phase
         )
         is_first_speaker = today_chat_count == 0
-        if is_first_speaker:
+        # Last words are spoken by a just-eliminated player; they don't have a
+        # turn to pass and aren't supposed to invite the next speaker, since
+        # the floor goes back to the moderator after they finish. Without this
+        # branch the LLM kept tacking on "接下来有请@X号:名字 发言" because the
+        # generic speech template encourages floor handoff.
+        is_last_words = view.phase == "DAY_LAST_WORDS"
+        if is_last_words:
+            instructions = [
+                "你已经出局，现在是你的遗言时间——这是你最后一次开口的机会，结束后场上不会再有发言权。",
+                "禁止使用「接下来有请」「请下一位」等任何传递话筒的句式；你没有下一位可以传。",
+                "可以做的事：交代自己的真实身份/阵营、留下查杀或站边信息、点出最可疑的玩家、给好人提建议。",
+                "保持角色风格，不要重复系统提示，2-3 句话即可。",
+            ]
+        elif is_first_speaker:
             instructions = [
                 "你是本阶段第一个发言的人——目前还没有任何人开口，你也没有任何可以引用的发言或投票。",
                 "禁止评价、怀疑或暗示其他玩家。任何形如「@X号有问题」「我觉得@X着急」的话都属于编造。",
@@ -241,6 +254,75 @@ class LLMAgent(Agent):
     def finish(self, winner: str | None) -> None:
         self.winner = winner
         self.fallback.finish(winner)
+
+    def transfer_badge(self, candidates: list[str]) -> Decision:
+        """Pick a successor for the sheriff badge, or destroy it.
+
+        The dying sheriff is asked to choose from the alive candidates.
+        Returns a Decision with target_id=successor, or target_id=None +
+        ActionType.SKIP for "撕警徽" (badge destroyed).
+
+        Three-tier resilience:
+        - LLM produces a valid candidate name → use that.
+        - LLM picks "撕"/"none"/null → destroy the badge.
+        - LLM fails after 3 retries OR returns an unknown name → fallback to
+          heuristic (village preference by seat).
+        """
+        fallback = self.fallback.transfer_badge(candidates)
+        if not candidates:
+            return fallback
+        view = self._view()
+        cand_names = [
+            self._format_player_tag(p)
+            for p in view.players
+            if p["id"] in candidates and p["alive"]
+        ]
+        if not cand_names:
+            return fallback
+        prompt = self._build_action_prompt(
+            action="transfer_badge",
+            instructions=[
+                "你刚刚作为警长出局，需要决定警徽的去向。",
+                "可以做的事：把警徽传给一个你信任的好人（target=对应玩家），或者选择「撕警徽」让本局警徽失效（target=null）。",
+                "传警徽：选择你认为最可信、能继续主持归票的玩家，通常是已经跳出来的金水或座位上信息量大的好人。",
+                "撕警徽：当你怀疑场上没有足够可信的好人，或不希望警徽落入潜在的狼坑时使用。",
+                "用一两句话说明你的选择理由，不要长篇大论。",
+            ],
+            options=cand_names,
+        )
+        default = {
+            "reasoning": fallback.reasoning,
+            "target": self._name(fallback.target_id) if fallback.target_id else None,
+            "destroy": fallback.action_type == ActionType.SKIP,
+        }
+        data, meta = self._ask_json(prompt, default, max_tokens=640)
+        destroy = bool(data.get("destroy"))
+        target_name = data.get("target")
+        # "撕"/"none" / null all mean destroy the badge.
+        if destroy or not target_name or str(target_name).strip().lower() in {"none", "null", "撕", "撕警徽"}:
+            return Decision(
+                self.player_id,
+                ActionType.SKIP,
+                reasoning=str(data.get("reasoning") or fallback.reasoning),
+                metadata=meta,
+            )
+        target_id = self._id_from_name(target_name)
+        if target_id not in candidates:
+            # LLM hallucinated a name not on the candidate list — fall back.
+            return Decision(
+                fallback.actor_id,
+                fallback.action_type,
+                target_id=fallback.target_id,
+                reasoning=fallback.reasoning,
+                metadata=meta,
+            )
+        return Decision(
+            self.player_id,
+            ActionType.VOTE,
+            target_id=target_id,
+            reasoning=str(data.get("reasoning") or fallback.reasoning),
+            metadata=meta,
+        )
 
     @property
     def role(self) -> Role:
