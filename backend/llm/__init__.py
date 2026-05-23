@@ -11,6 +11,21 @@ _DEFAULT_DOUBAO_MODEL = "Doubao-Seed-2.0-pro"
 _DEFAULT_PROVIDER = "doubao"
 
 
+class _UnavailableLLMClient:
+    """Offline fallback client that forces LLMAgent into heuristic mode quickly."""
+
+    def __init__(self, provider: str, model: str):
+        self.provider = provider
+        self.model = model
+        self.timeout = 0.01
+
+    def chat_sync(self, *args, **kwargs):
+        raise RuntimeError(f"{self.provider} client unavailable: missing API key")
+
+    async def chat(self, *args, **kwargs):
+        raise RuntimeError(f"{self.provider} client unavailable: missing API key")
+
+
 def create_client(provider: str | None = None, **kwargs) -> DeepSeekClient:
     """Create an LLM client based on LLM_PROVIDER env or explicit provider.
 
@@ -48,7 +63,7 @@ def create_client(provider: str | None = None, **kwargs) -> DeepSeekClient:
             or os.getenv("DOUBAO_MODEL", _DEFAULT_DOUBAO_MODEL)
         )
         if not api_key:
-            raise ValueError("DOUBAO_API_KEY not set in env and not provided as argument")
+            return _UnavailableLLMClient(provider="doubao", model=model)
         return DeepSeekClient(
             api_key=api_key,
             base_url=base_url,
@@ -59,6 +74,8 @@ def create_client(provider: str | None = None, **kwargs) -> DeepSeekClient:
         api_key = kwargs.pop("api_key", None) or os.getenv("DEEPSEEK_API_KEY", "")
         base_url = kwargs.pop("base_url", None) or os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
         model = kwargs.pop("model", None) or os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash")
+        if not api_key:
+            return _UnavailableLLMClient(provider="deepseek", model=model)
         return DeepSeekClient(
             api_key=api_key,
             base_url=base_url,
