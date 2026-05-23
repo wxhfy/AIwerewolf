@@ -76,12 +76,19 @@
   50% { opacity: 1; }
 }
 
+/* Global day↔night transition for all elements using CSS variables */
+*, *::before, *::after {
+  transition:
+    background-color var(--transition-daynight) var(--ease-in-out),
+    color var(--transition-daynight) var(--ease-in-out),
+    border-color var(--transition-daynight) var(--ease-in-out),
+    box-shadow var(--transition-daynight) var(--ease-in-out);
+}
+
 body {
   color: var(--color-text);
   background: var(--color-bg);
   font-family: var(--font-body);
-  transition: background var(--transition-daynight) var(--ease-in-out),
-              color var(--transition-daynight) var(--ease-in-out);
 }
 
 /* ---- Animations ---- */

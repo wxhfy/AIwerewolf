@@ -243,3 +243,4 @@ frontend/photos/
 
 # Planning docs (transient)
 plans/
+.claude/skills/
