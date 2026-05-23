@@ -78,6 +78,14 @@ updated: 2026-05-23
 - **涉及文件**：`backend/engine/game.py`。
 - **教训**：递归阶段切换前**先把跨轮共享的字典补齐键**，否则后一轮读会炸。
 
+### 问题 A6：Lobby → Play 进场闪 placeholder + WS 重头跑 game
+- **Session**：632cb44d
+- **现象**：用户「点游戏开始进来，应该是游戏开始了……游戏角色应该是在开始界面点击开始游戏的时候就分配好了」。实际进场 200-500 ms 看到 `玩家 1...玩家 7` 占位卡片，等 WS first snapshot 才出真名/角色。
+- **根因**：Lobby Confirm 对 AI 模式只 `setGameState(null)` 然后导航；play 页 mount 后等 WS first snapshot；同时 `stream_game` 每次 WS open 都 `_build_game` 一份新 game，与 reuse 路径互斥。
+- **解决方案**：(a) 新增 `POST /api/rooms/{id}/prepare` — `_build_game` + `game.initialize()` + 注册 `active_game` + reset `snapshot_buffer`，返回 SETUP snapshot（GAME_START + 7 个 PRIVATE_INFO 角色分配事件齐全）；(b) `WerewolfGame` 加 `_play_started` / `play_done` / `_play_start_lock`，`play()` 第一行 idempotent 守卫；(c) `stream_game` 区分 `is_reused_running`（game.play 已在另一 thread 跑 → 仅 tail 直到 `play_done`）vs 「准备好但未跑」（自己 `run_in_executor(game.play)`）；(d) lobby Confirm 调 `/prepare` 拿 snapshot → `setGameState(snap)` → 跳转；(e) play 页 auto-start 条件改用 `winner / isPlaying / wsRef` 而非 `players.length`，因为 prepare 已经填好 players；(f) `runGame()` 只在 `gameState?.winner` 存在时清 state，避免覆盖 prepare 帧造成闪烁。
+- **涉及文件**：`backend/app.py`、`backend/engine/game.py`、`frontend/app/page.tsx`、`frontend/app/room/[id]/play/page.tsx`。
+- **教训**：lobby 与 play 间的「过渡帧」必须由服务端提供（`/prepare`），客户端不能假装"立即就有数据"；长生命周期对象（`WerewolfGame`）必须自带"是否已启动"标记 + 完成事件，否则 reuse / restart / reconnect 三种路径无法共用同一段调度代码。
+
 ---
 
 ## §B. 前端 / UI 渲染
