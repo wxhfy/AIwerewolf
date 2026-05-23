@@ -3,7 +3,8 @@
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAppContext } from "@/context/AppContext";
-import { Language, AgentType } from "@/types";
+import { Language, AgentType, Alignment } from "@/types";
+import { tRole } from "@/lib/i18n";
 import { Button } from "@/components/ui/Button";
 
 export default function LobbyPage() {
@@ -27,26 +28,42 @@ export default function LobbyPage() {
   // Modal state
   const [showModal, setShowModal] = useState(false);
   const [createdRoom, setCreatedRoom] = useState<any>(null);
+  // Snapshot returned by /api/rooms/{id}/prepare — populated for AI mode at
+  // create time so the confirm modal can show the assigned roles + personas
+  // before the user clicks "确认开始". For human mode it stays null and the
+  // modal falls back to the seat-only layout.
+  const [prepareSnapshot, setPrepareSnapshot] = useState<any>(null);
   const [isStarting, setIsStarting] = useState(false);
 
   const t = (zh: string, en: string) => (language === "zh" ? zh : en);
 
-  // Step 1: Create room → show modal
+  // Step 1: Create room → (AI) call /prepare so the modal can show real roles
+  // → show modal. We hardcode agent_type="llm" instead of reading from
+  // context: the lobby toggle is gone and the underlying agentType state may
+  // still be HEURISTIC for a tick on first paint before the useEffect above
+  // settles it.
   async function handleCreateRoom() {
     setIsCreating(true);
     setError("");
+    setPrepareSnapshot(null);
     try {
       const params = new URLSearchParams({
         name: "Demo Room",
         seed: String(seed),
         player_count: String(playerCount),
-        agent_type: agentType,
+        agent_type: "llm",
       });
       if (mode === "human") params.set("human_seat", String(humanSeat));
       const res = await fetch(`/api/rooms?${params.toString()}`, { method: "POST" });
       if (!res.ok) throw new Error(`Failed to create room (${res.status})`);
       const room = await res.json();
       setCreatedRoom(room);
+      if (mode === "ai") {
+        const prep = await fetch(`/api/rooms/${room.id}/prepare?show_private=true`, { method: "POST" });
+        if (!prep.ok) throw new Error(`Prepare failed (${prep.status})`);
+        const snap = await prep.json();
+        setPrepareSnapshot(snap);
+      }
       setShowModal(true);
     } catch (e: any) {
       setError(e.message || "创建房间失败");
@@ -55,11 +72,10 @@ export default function LobbyPage() {
     }
   }
 
-  // Step 2: Confirm → for human mode call /start (needs first human turn ready);
-  // for AI-vs-AI call /prepare so the play page lands with all seats / roles /
-  // personas already filled in. The play page then opens a WebSocket which
-  // takes over driving the game (stream_game detects the prepared active_game
-  // and calls game.play() itself — no second build, no parallel run).
+  // Step 2: Confirm → for human mode call /start (needs first human turn
+  // ready); for AI-vs-AI we already have the prepared snapshot from step 1,
+  // just plant it into context and navigate. The play page sees gameState
+  // populated and auto-opens the WebSocket which streams the live game.
   async function handleConfirmStart() {
     setIsStarting(true);
     setError("");
@@ -69,11 +85,14 @@ export default function LobbyPage() {
         if (!res.ok) throw new Error(`Start failed (${res.status})`);
         const snapshot = await res.json();
         setGameState(snapshot);
+      } else if (prepareSnapshot) {
+        setGameState(prepareSnapshot);
       } else {
-        const res = await fetch(`/api/rooms/${createdRoom.id}/prepare?show_private=true`, { method: "POST" });
-        if (!res.ok) throw new Error(`Prepare failed (${res.status})`);
-        const snapshot = await res.json();
-        setGameState(snapshot);
+        // Defensive: prepare may have failed silently — refetch now so the
+        // play page still gets a baseline.
+        const prep = await fetch(`/api/rooms/${createdRoom.id}/prepare?show_private=true`, { method: "POST" });
+        if (!prep.ok) throw new Error(`Prepare failed (${prep.status})`);
+        setGameState(await prep.json());
       }
       router.push(`/room/${createdRoom.id}/play?human_seat=${humanSeat}&mode=${mode}`);
     } catch (e: any) {
@@ -188,7 +207,7 @@ export default function LobbyPage() {
                 [t("房间", "Room"), createdRoom.id.slice(0, 8) + "..."],
                 [t("模式", "Mode"), mode === "human" ? t("真人参与", "Human Play") : t("AI 对战", "AI vs AI")],
                 [t("人数", "Players"), String(playerCount)],
-                [t("AI 类型", "Agent"), agentType === "heuristic" ? t("启发式", "Heuristic") : "LLM"],
+                [t("AI 类型", "Agent"), "LLM"],
                 ...(mode === "human" ? [[t("你的座位", "Your Seat"), `${t("座位", "Seat")} ${humanSeat}`]] as any : []),
               ].map(([label, value]: any) => (
                 <div key={label} className="flex justify-between py-1.5 border-b" style={{ borderColor: "var(--color-border)" }}>
@@ -198,18 +217,52 @@ export default function LobbyPage() {
               ))}
             </div>
 
-            {/* Seat preview */}
+            {/* Seat + role + persona preview.
+                For AI mode the snapshot from /prepare gives us name + role +
+                alignment + persona for every seat — we render those instead
+                of a generic "AI" placeholder so the user can confirm the
+                assignment before kicking off the game. Falls back to the
+                anonymous grid when prepareSnapshot isn't ready (human mode
+                or prepare failed). */}
             <div>
               <p className="text-sm font-medium text-textPrimary mb-2">{t("座位分布", "Seat Layout")}</p>
-              <div className="grid grid-cols-4 gap-1.5">
-                {Array.from({ length: playerCount }, (_, i) => i + 1).map((s) => (
-                  <div key={s} className="flex flex-col items-center p-2 rounded-lg border text-xs"
-                    style={{ borderColor: s === humanSeat && mode === "human" ? "var(--color-primary)" : "var(--color-border)", background: s === humanSeat && mode === "human" ? "rgba(139,90,43,0.08)" : "var(--color-bg)" }}>
-                    <span className="font-medium text-textPrimary">{s}</span>
-                    <span className="text-text-sub mt-0.5">{mode === "human" && s === humanSeat ? t("你", "YOU") : "AI"}</span>
-                  </div>
-                ))}
-              </div>
+              {mode === "ai" && prepareSnapshot?.players ? (
+                <div className="grid grid-cols-2 gap-1.5">
+                  {prepareSnapshot.players.map((p: any) => {
+                    const isWolf = p.alignment === Alignment.WOLF;
+                    const isVillage = p.alignment === Alignment.VILLAGE;
+                    return (
+                      <div key={p.id} className="flex flex-col items-start p-2 rounded-lg border text-xs leading-tight"
+                        style={{ borderColor: "var(--color-border)", background: "var(--color-bg)" }}>
+                        <div className="flex items-center gap-1.5 w-full">
+                          <span className="font-bold text-textPrimary">{p.seat}</span>
+                          <span className="font-medium text-textPrimary truncate flex-1">{p.name}</span>
+                        </div>
+                        <span className={
+                          isWolf ? "text-danger font-medium mt-0.5"
+                          : isVillage ? "text-success font-medium mt-0.5"
+                          : "text-text-sub font-medium mt-0.5"
+                        }>{p.role ? tRole(p.role, language) : "—"}</span>
+                        {p.persona?.mbti && (
+                          <span className="text-text-sub/70 text-[10px] mt-0.5 truncate w-full">
+                            {p.persona.mbti}{p.persona.style_label ? ` · ${p.persona.style_label}` : ""}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="grid grid-cols-4 gap-1.5">
+                  {Array.from({ length: playerCount }, (_, i) => i + 1).map((s) => (
+                    <div key={s} className="flex flex-col items-center p-2 rounded-lg border text-xs"
+                      style={{ borderColor: s === humanSeat && mode === "human" ? "var(--color-primary)" : "var(--color-border)", background: s === humanSeat && mode === "human" ? "rgba(139,90,43,0.08)" : "var(--color-bg)" }}>
+                      <span className="font-medium text-textPrimary">{s}</span>
+                      <span className="text-text-sub mt-0.5">{mode === "human" && s === humanSeat ? t("你", "YOU") : "AI"}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {error && <p className="text-sm text-danger text-center">{error}</p>}

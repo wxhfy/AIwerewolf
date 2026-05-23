@@ -138,7 +138,9 @@ export function PlayerCard({
         </span>
       </div>
 
-      {/* Role line */}
+      {/* Role line — "查看身份" only gates the role itself (狼人/村民/预言家…).
+          Persona intro is shown below unconditionally because the user
+          considers it part of "进入房间立即可见" rather than a hidden identity. */}
       <div className="w-full mt-0.5">
         {roleVisible && player.role ? (
           <p className={cn("text-xs font-medium leading-tight",
@@ -161,10 +163,11 @@ export function PlayerCard({
         </p>
       )}
 
-      {/* Persona intro — only when role is visible (moderator view or own seat).
-          Shows MBTI label + basic_info one-liner so the user can read the
-          character profile at a glance. */}
-      {roleVisible && (player as any).persona && (
+      {/* Persona intro — always visible when the snapshot carries persona data.
+          The user explicitly wants the character profile shown immediately on
+          entry; gating it behind the role-reveal toggle was confusing because
+          the persona doesn't actually leak alignment, only personality. */}
+      {(player as any).persona && (
         <div className="w-full mt-1 space-y-0.5">
           {(player as any).persona.mbti && (
             <p className="text-[10px] text-text-sub leading-tight">

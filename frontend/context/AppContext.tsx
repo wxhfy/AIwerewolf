@@ -29,7 +29,10 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [language, setLanguage] = useState<Language>(Language.ZH);
   const [viewMode, setViewMode] = useState<ViewMode>(ViewMode.PUBLIC);
-  const [agentType, setAgentType] = useState<AgentType>(AgentType.HEURISTIC);
+  // The user wants every game LLM-driven. Heuristic remains a code path only
+  // as LLMAgent's automatic fallback after 3 retry failures, never as a
+  // user-selectable mode. Default to LLM and reject any URL override below.
+  const [agentType, setAgentType] = useState<AgentType>(AgentType.LLM);
   const [room, setRoom] = useState<RoomRecord | null>(null);
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [isConnected, setIsConnected] = useState(false);
@@ -42,15 +45,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
       const langParam = params.get("lang");
-      const agentParam = params.get("agent_type");
       const roomParam = params.get("room");
 
       if (langParam === "en" || langParam === "zh") {
         setLanguage(langParam as Language);
       }
-      if (agentParam === "llm" || agentParam === "heuristic") {
-        setAgentType(agentParam as AgentType);
-      }
+      // We intentionally ignore ?agent_type=heuristic from old links — the
+      // public surface is LLM-only now; honoring stale URLs would silently
+      // downgrade users back to heuristic.
     }
   }, []);
 
