@@ -3,6 +3,27 @@
 > **项目根目录**: `/home/fyh0106/AIwerewolf/`
 > **参考仓库**: `/home/fyh0106/AIwerewolf/references/`
 
+## 项目运行模式（**最高优先级，覆盖 skills/ 中的多人协作规则**）
+
+**当前阶段：单人开发**（owner: wxhfy / 付一涵）。
+
+- AI 可在用户授权后**直接 `git push` 到 main**：**无需** PR、**无需** review、**无需** 2 人 approve；merge / rebase / squash / cherry-pick 可自主决定。
+- 仍保留的护栏（**任何阶段都不放松**）：
+  1. 修改"重灾区"文件（`backend/engine/*`、`backend/protocols/schemas.py`、`backend/db/models.py`、`CLAUDE.md`、`AGENTS.md`、`SKILLS.md`、`skills/*`）前用一句话告知用户范围；
+  2. 不得 `git push --force` 到 main；
+  3. 不得跳过 hook（`--no-verify` / `--no-gpg-sign`）；
+  4. 不得把 API Key、`.env`、Prompt 全文写进 commit / PR / 代码注释；
+  5. commit message 仍走 Conventional Commits（`feat / fix / docs / chore / refactor / test / perf`）。
+- **当团队规模 ≥ 2 时本段失效**，恢复 `skills/10-git-workflow.md` §一 / §三 / §七 与 `skills/70-ai-collaboration.md` §四的多人 PR 规则。
+
+> 本段显式覆盖：
+> - `skills/10-git-workflow.md` §一"main 受保护、禁止直推"
+> - `skills/10-git-workflow.md` §三"至少 1 人 approve" + 重灾区"2 人 approve"
+> - `skills/10-git-workflow.md` §七"禁止 AI 直接 `git push` 到 main"
+> - `skills/70-ai-collaboration.md` §四"AI 必须先问人 → `git push origin main`"
+
+---
+
 ## AI 助手开工指引（**必读**）
 
 接到任务后，按下面顺序读，缺一不可：
