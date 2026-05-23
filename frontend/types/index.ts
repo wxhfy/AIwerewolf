@@ -17,6 +17,16 @@ export enum Role {
   HUNTER = "Hunter",
   GUARD = "Guard",
   IDIOT = "Idiot",
+  // Template roles — mirror backend Role enum (engine/models.py). Marked
+  // `playable=False` in the backend registry; not yet selectable by the
+  // 7-12P configs. Added here so future roster-preview UIs / role-pack
+  // selectors can already filter by these values.
+  CUPID = "Cupid",
+  BIG_BAD_WOLF = "BigBadWolf",
+  WOLF_CUB = "WolfCub",
+  WOLF_KING = "WolfKing",
+  KNIGHT = "Knight",
+  ELDER = "Elder",
 }
 
 export enum Phase {

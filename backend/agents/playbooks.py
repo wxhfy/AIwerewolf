@@ -160,6 +160,117 @@ ACTION_PLAYBOOKS: dict[Role, ActionPlaybook] = {
             "翻牌后失去投票权，重心转为信息交换和保护神职。",
         ],
     ),
+    # ----------------------------------------------------------------------
+    # Template roles below — playable=False in the registry. Playbooks ship
+    # so the LLM has strategy text the moment any of these gets wired up; the
+    # engine doesn't route their abilities yet so they won't appear in any
+    # WOLFCHA_ROLE_CONFIGS entry.
+    # ----------------------------------------------------------------------
+    # Cupid — village; night 0 picks two lovers. When one of the lovers dies
+    # the other dies too. Strong influence but no daytime tells beyond
+    # voting carefully to protect both lovers.
+    Role.CUPID: ActionPlaybook(
+        role=Role.CUPID,
+        public_debate=[
+            "白天伪装成普通村民，避免暴露挑选情侣的视角。",
+            "情侣若进入高票位，可侧面引导别的怀疑对象出局。",
+        ],
+        vote_logic=[
+            "优先投像狼的发言位，但避免把票投到自己挑的情侣身上。",
+        ],
+        night_logic=[
+            "第 0 夜挑选两名情侣，优先选互相能形成视角的好人组合。",
+            "之后夜里无技能，按好人逻辑参与白天即可。",
+        ],
+        reveal_logic=[
+            "情侣关系暴露会失去隐蔽优势，除非殉情发生不要主动跳。",
+        ],
+    ),
+    # Big Bad Wolf — wolf; once all four village gods (Seer/Witch/Hunter/Guard)
+    # are dead, gets a solo extra kill on top of the pack's nightly kill.
+    Role.BIG_BAD_WOLF: ActionPlaybook(
+        role=Role.BIG_BAD_WOLF,
+        public_debate=[
+            "白天发言节奏与普通狼一致，不暗示自己掌握额外刀杀。",
+            "神职即将全部死亡时，避免在白天暴露过强的攻击性，防止被针对。",
+        ],
+        vote_logic=[
+            "和狼队一致把票导向好人位，避免出现狼内分票。",
+        ],
+        night_logic=[
+            "神职全亡前严格按狼队投票刀人。",
+            "神职全亡后挑选最具威胁的好人独立追刀，制造好人阵营崩盘节奏。",
+        ],
+        reveal_logic=[
+            "默认不跳，神职全亡后也不必暴露技能，让额外死亡看起来像普通狼刀。",
+        ],
+    ),
+    # Wolf Cub — wolf; if killed by villagers (vote or witch poison), wolves
+    # gain a second kill the following night. Useful to absorb suspicion.
+    Role.WOLF_CUB: ActionPlaybook(
+        role=Role.WOLF_CUB,
+        public_debate=[
+            "发言风格类似普通狼，必要时可吸引票位换取下一晚双刀。",
+            "避免硬撕队友，让自己的死亡看起来像好人的成功验证。",
+        ],
+        vote_logic=[
+            "可以接受被推上高票位以触发双刀收益，但要评估剩余狼力是否承担得起。",
+        ],
+        night_logic=[
+            "夜里按狼队节奏行动，不暴露自己的死亡触发机制。",
+        ],
+        reveal_logic=[
+            "默认不跳；死亡当日狼队即获得加成，无需主动暴露身份。",
+        ],
+    ),
+    # Wolf King — wolf; on any death (except poison) shoots one player.
+    # Mirrors Hunter from the opposing side.
+    Role.WOLF_KING: ActionPlaybook(
+        role=Role.WOLF_KING,
+        public_debate=[
+            "可以使用更具压迫感的发言节奏，让好人忌惮投票后的反杀。",
+            "必要时伪装成猎人或预言家骗信任。",
+        ],
+        vote_logic=[
+            "跟好人主流票坑减少痕迹，避免被狼队队友单独保护。",
+        ],
+        night_logic=[
+            "和狼队一同选择刀杀目标，不必特别保留自己。",
+        ],
+        reveal_logic=[
+            "被投出局时再确定开枪目标，重点带走带队位或验出狼的关键好人。",
+        ],
+    ),
+    # Knight — village; one-shot daytime duel. Risky but information-rich.
+    Role.KNIGHT: ActionPlaybook(
+        role=Role.KNIGHT,
+        public_debate=[
+            "发言要给出清晰的怀疑链，让决斗的目标有充分依据。",
+            "决斗前最好让对方再发言一次，减少误杀风险。",
+        ],
+        vote_logic=[
+            "可以延迟到决斗后再发力投票，使决斗结果直接影响票型。",
+        ],
+        night_logic=[],
+        reveal_logic=[
+            "决斗发动瞬间被动跳身份；不到时机不要主动暴露。",
+        ],
+    ),
+    # Elder — village; first wolf attack fails. Easy to hide first night.
+    Role.ELDER: ActionPlaybook(
+        role=Role.ELDER,
+        public_debate=[
+            "发言风格平稳，不暗示自己的免疫机制。",
+            "第二天若意外存活而其他人死亡，可侧面引导好人继续怀疑攻击者。",
+        ],
+        vote_logic=[
+            "按好人逻辑投票，避免因为身份特殊而显得过于自信。",
+        ],
+        night_logic=[],
+        reveal_logic=[
+            "若第一次被刀未死，可以择机暴露身份以稳定好人节奏。",
+        ],
+    ),
 }
 
 

@@ -23,6 +23,19 @@ from backend.engine.models import ActionType, Decision, Role
 from backend.engine.visibility import PlayerView
 
 
+# Wolf-family role set — kept in one place so the heuristic agent doesn't
+# silently downgrade new wolf roles (WhiteWolfKing, WolfKing, BigBadWolf,
+# WolfCub) to villager logic. The registry is the source of truth at runtime
+# but this constant lets the heuristic short-circuit without re-importing.
+WOLF_FAMILY: frozenset[Role] = frozenset({
+    Role.WEREWOLF,
+    Role.WHITE_WOLF_KING,
+    Role.WOLF_KING,
+    Role.BIG_BAD_WOLF,
+    Role.WOLF_CUB,
+})
+
+
 class HeuristicAgent(Agent):
     """Context-aware agent that reasons from available information.
 
@@ -55,7 +68,7 @@ class HeuristicAgent(Agent):
         char_name = self.character.persona.name if self.character else "Player"
         role = self.role.value
         # Wolves know their teammates
-        if self.role in {Role.WEREWOLF, Role.WHITE_WOLF_KING}:
+        if self.role in WOLF_FAMILY:
             for w in view.known_wolves:
                 if w["id"] != self.player_id:
                     self.known_good_ids.add(w["id"])  # Wolf teammates are "good" from wolf perspective
@@ -540,8 +553,11 @@ class HeuristicAgent(Agent):
             p = self._player(wid)
             if p and p["alive"]:
                 return p
-        # Wolves: vote a non-wolf
-        if self.role == Role.WEREWOLF:
+        # Wolves: vote a non-wolf. Use WOLF_FAMILY (not just WEREWOLF) so
+        # WhiteWolfKing / future WolfKing / BigBadWolf / WolfCub all get the
+        # same teammate-protecting vote logic instead of falling through to
+        # the highest-suspicion branch.
+        if self.role in WOLF_FAMILY:
             return self._choose_non_wolf()
         # Otherwise vote highest suspicion
         return self._highest_suspicion_alive()

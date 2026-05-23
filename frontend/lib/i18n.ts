@@ -122,6 +122,14 @@ const translations = {
       Hunter: "猎人",
       Guard: "守卫",
       Idiot: "白痴",
+      // Template roles (playable=False in backend registry). Translated so
+      // future role-pack UIs and moderator panels can already render them.
+      Cupid: "丘比特",
+      BigBadWolf: "大恶狼",
+      WolfCub: "小狼狗",
+      WolfKing: "狼王",
+      Knight: "骑士",
+      Elder: "长老",
     },
     phases: {
       SETUP: "准备中",
@@ -264,6 +272,13 @@ const translations = {
       Hunter: "Hunter",
       Guard: "Guard",
       Idiot: "Idiot",
+      // Template roles — see backend/engine/roles/registry.py.
+      Cupid: "Cupid",
+      BigBadWolf: "Big Bad Wolf",
+      WolfCub: "Wolf Cub",
+      WolfKing: "Wolf King",
+      Knight: "Knight",
+      Elder: "Elder",
     },
     phases: {
       SETUP: "Setup",
