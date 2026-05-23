@@ -97,6 +97,15 @@ class WerewolfGame:
         self.pending_badge_transfer_from_id: str | None = None
         self.human_action_buffer: dict[str, list[Decision]] = {}
         self.interrupt_phase_cycle = False
+        # `_play_started` flips True the moment someone calls play() so a
+        # reconnecting WebSocket can tell "this game is already running, just
+        # tail it" apart from "this game was prepared but never started — I
+        # should start it now". play_done fires when play() returns so tailing
+        # clients have a definite signal to stop polling.
+        import threading as _threading
+        self._play_started: bool = False
+        self.play_done: _threading.Event = _threading.Event()
+        self._play_start_lock: _threading.Lock = _threading.Lock()
         sampled_personas = self._sample_personas_from_db(len(self.state.players), seed)
         if sampled_personas:
             # Adopt the sampled persona's display name onto the seat so the
@@ -252,11 +261,23 @@ class WerewolfGame:
         self._check_win()
 
     def play(self) -> GameState:
-        while self.state.winner is None:
-            self.play_until_blocked()
-            if self.state.pending_input is not None:
-                raise RuntimeError("Human input required; use play_until_blocked/submit_human_action for mixed games.")
-        return self.state
+        # Idempotent start: if play() was already entered (e.g. another thread
+        # is mid-game), return the current state immediately. A reconnecting
+        # WebSocket detects this case earlier via `_play_started` and switches
+        # to tail-only mode, but the lock here is the authoritative guard
+        # against two threads trying to drive the same game in parallel.
+        with self._play_start_lock:
+            if self._play_started:
+                return self.state
+            self._play_started = True
+        try:
+            while self.state.winner is None:
+                self.play_until_blocked()
+                if self.state.pending_input is not None:
+                    raise RuntimeError("Human input required; use play_until_blocked/submit_human_action for mixed games.")
+            return self.state
+        finally:
+            self.play_done.set()
 
     def play_until_blocked(self) -> GameState:
         if not self.state.events:
@@ -348,15 +369,19 @@ class WerewolfGame:
     def _badge_signup_phase(self) -> None:
         if self._phase_done(Phase.DAY_BADGE_SIGNUP):
             return
-        self._set_phase(Phase.DAY_BADGE_SIGNUP)
         if self.state.day != 1 or self.state.badge.holder_id is not None:
-            # Badge campaign only happens on day 1. Wipe residual day-1 state
-            # so DAY_BADGE_SPEECH / DAY_BADGE_ELECTION don't re-run for day 2+.
+            # Badge campaign only happens on day 1 and only if no sheriff exists
+            # yet. Wipe any residual state and short-circuit without emitting
+            # PHASE_CHANGED (no UI flicker for skipped phases), and mark the
+            # downstream badge phases done so they don't re-run on day 2+.
             self.state.badge.candidates = []
             self.state.badge.signup = {}
             self.state.badge.votes = {}
             self._mark_phase_done(Phase.DAY_BADGE_SIGNUP)
+            self._mark_phase_done(Phase.DAY_BADGE_SPEECH)
+            self._mark_phase_done(Phase.DAY_BADGE_ELECTION)
             return
+        self._set_phase(Phase.DAY_BADGE_SIGNUP)
         alive = self._seat_sorted(self.state.alive_players)
         if len(alive) <= 2:
             self._mark_phase_done(Phase.DAY_BADGE_SIGNUP)
@@ -765,11 +790,15 @@ class WerewolfGame:
         self._kill(target_id, "vote")
         target = self.state.player(target_id)
         self._log(EventType.SYSTEM_MESSAGE, "public", {"message": f"{target.name} was voted out."})
+        # Defensive: when the recursive PK path runs with no usable ballots,
+        # vote_history[day] may not have been written this round. Fall back to
+        # the empty dict so the executed-summary still serializes.
+        day_votes = self.state.vote_history.get(self.state.day, {})
         self.state.day_history[self.state.day] = {
             "executed": {
                 "player_id": target.id,
                 "seat": target.seat,
-                "votes": self._weighted_tally(self.state.vote_history[self.state.day])[target.id],
+                "votes": self._weighted_tally(day_votes).get(target.id, 0.0),
             }
         }
         self.state.pk_targets = []
@@ -906,16 +935,66 @@ class WerewolfGame:
         self.pending_badge_transfer_from_id = None
         self._set_phase(Phase.BADGE_TRANSFER)
         alive = [player for player in self.state.alive_players if player.id != from_id]
-        if not alive:
-            self.state.badge.holder_id = None
-            return
-        successor = self._pick_badge_successor(alive)
-        self.state.badge.holder_id = successor.id
         former = self.state.player(from_id)
+        if not alive:
+            # Nobody left to inherit — badge effectively destroyed.
+            self.state.badge.holder_id = None
+            self._log(
+                EventType.SYSTEM_MESSAGE,
+                "public",
+                {
+                    "message": f"{former.name} 出局，但场上已无可继承的玩家，警徽消失。",
+                    "from_id": former.id,
+                    "from_name": former.name,
+                    "from_seat": former.seat,
+                    "to_id": None,
+                    "to_name": None,
+                    "to_seat": None,
+                    "destroyed": True,
+                    "reason": "no_eligible_successor",
+                },
+            )
+            return
+        # Ask the dying sheriff (LLM/human/heuristic) to choose a successor or
+        # destroy the badge. The agent contract returns ActionType.SKIP for
+        # "撕警徽" and ActionType.VOTE with target_id for "传给某某".
+        candidate_ids = [p.id for p in alive]
+        decision = self._ask(
+            former,
+            "TRANSFER_BADGE",
+            lambda agent: agent.transfer_badge(candidate_ids),
+        )
+        successor: Player | None = None
+        destroyed = False
+        if decision.action_type == ActionType.SKIP or not decision.target_id:
+            destroyed = True
+        else:
+            chosen_id = decision.target_id
+            if chosen_id in candidate_ids:
+                successor = self.state.player(chosen_id)
+            else:
+                # Agent picked someone invalid (dead or self) — fall back to
+                # the heuristic preference so the game keeps moving.
+                successor = self._pick_badge_successor(alive)
+        self.state.badge.holder_id = successor.id if successor else None
+        if destroyed:
+            msg = f"{former.name} 撕掉了警徽，本局警徽功能失效。"
+        else:
+            msg = f"{former.name} 将警徽传给了 {successor.name}（座位 {successor.seat}）。"
         self._log(
             EventType.SYSTEM_MESSAGE,
             "public",
-            {"message": f"{former.name} transfers the badge to {successor.name}."},
+            {
+                "message": msg,
+                "from_id": former.id,
+                "from_name": former.name,
+                "from_seat": former.seat,
+                "to_id": successor.id if successor else None,
+                "to_name": successor.name if successor else None,
+                "to_seat": successor.seat if successor else None,
+                "destroyed": destroyed,
+                "reasoning": decision.reasoning,
+            },
         )
 
     def _ask(self, player: Player, request: str, call, *, many: bool = False):
@@ -937,7 +1016,22 @@ class WerewolfGame:
                 for item in result:
                     self._record_decision(player, request, view.__dict__, item, raw_output="[human]")
             return result
-        result = call(agent)
+        # AI turn — emit a "thinking" snapshot BEFORE we block on the LLM
+        # round-trip. The frontend reads `current_speaker_id` to light up the
+        # PlayerCard with a "思考中" pulse; without this frame the UI looks
+        # frozen for the 4–10s the LLM is actually working.
+        prior_speaker = self.state.current_speaker_id
+        self.state.current_speaker_id = player.id
+        if self.observer is not None:
+            self.observer(self.state)
+        try:
+            result = call(agent)
+        finally:
+            # Only clear if we set it for this _ask — phases like DAY_SPEECH
+            # already manage current_speaker_id externally and we shouldn't
+            # blow it away.
+            if self.state.current_speaker_id == player.id and prior_speaker != player.id:
+                self.state.current_speaker_id = prior_speaker
         if isinstance(result, Decision):
             self._record_decision(player, request, view.__dict__, result, raw_output=str(result.metadata.get("raw_text", "")))
         elif isinstance(result, list):
@@ -963,6 +1057,13 @@ class WerewolfGame:
             return [Decision(player.id, ActionType.SHOOT, target_id=target_id, reasoning=reasoning, metadata={"source": "human"})]
         if pending.request == "BOOM":
             return [Decision(player.id, ActionType.BOOM, target_id=target_id, reasoning=reasoning, metadata={"source": "human"})]
+        if pending.request == "TRANSFER_BADGE":
+            # SKIP target_id=None means destroy the badge; otherwise the human
+            # picked a successor from the option list. We mirror the LLM agent
+            # by using VOTE as the carrier action for "pick this player".
+            if target_id is None:
+                return [Decision(player.id, ActionType.SKIP, reasoning=reasoning or "撕警徽", metadata={"source": "human"})]
+            return [Decision(player.id, ActionType.VOTE, target_id=target_id, reasoning=reasoning or "传给该玩家", metadata={"source": "human"})]
         if pending.request == "WITCH":
             decisions: list[Decision] = []
             if bool(payload.get("save")) and self.state.night_actions.wolf_target_id:

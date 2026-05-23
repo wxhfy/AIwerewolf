@@ -12,6 +12,11 @@ class RoomManager:
         self.rooms: dict[str, RoomRecord] = {}
         self.games: dict[str, GameState] = {}
         self.active_games: dict[str, WerewolfGame] = {}
+        # Live snapshot streams keyed by room id. We append every snapshot the
+        # engine emits so that a reconnecting WebSocket can catch up on the
+        # entire game so far before subscribing to fresh frames. Cleared in
+        # record_game() once the game finishes.
+        self.snapshot_buffers: dict[str, list[dict]] = {}
 
     def create_room(self, request: RoomCreateRequest) -> RoomRecord:
         room = RoomRecord.create(
@@ -68,12 +73,28 @@ class RoomManager:
         room = self.get_room(room_id)
         self.games[state.id] = state
         room.current_game_id = state.id
-        room.game_history.append(state.id)
+        # Idempotent: if a reconnecting WebSocket also calls record_game with
+        # the same finished state, we don't want game_history to grow twice.
+        if state.id not in room.game_history:
+            room.game_history.append(state.id)
         room.latest_snapshot = snapshot
         room.status = "completed"
         room.updated_at = time()
         self.active_games.pop(room_id, None)
+        # Game over — drop the live stream buffer so the next game starts fresh.
+        self.snapshot_buffers.pop(room_id, None)
         return room
+
+    def append_snapshot(self, room_id: str, snapshot: dict) -> None:
+        """Append a live snapshot to the room's reconnect buffer."""
+        self.snapshot_buffers.setdefault(room_id, []).append(snapshot)
+
+    def get_snapshot_buffer(self, room_id: str) -> list[dict]:
+        """Return the live snapshot buffer (empty list if none)."""
+        return list(self.snapshot_buffers.get(room_id, []))
+
+    def reset_snapshot_buffer(self, room_id: str) -> None:
+        self.snapshot_buffers[room_id] = []
 
     def set_active_game(self, room_id: str, game: WerewolfGame) -> None:
         self.active_games[room_id] = game

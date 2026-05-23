@@ -73,12 +73,12 @@ def main() -> int:
     try:
         wait_for_server(f"http://127.0.0.1:{port}/api/health")
 
-        status, html = http_get(f"http://127.0.0.1:{port}/")
+        status, root_body = http_get(f"http://127.0.0.1:{port}/")
         assert status == 200
-        assert 'id="run"' in html
-        assert 'id="lang-en"' in html
-        assert 'id="mode-select"' in html
-        assert 'id="human-seat"' in html
+        root_payload = json.loads(root_body)
+        assert root_payload["message"] == "AI Werewolf backend is running."
+        assert root_payload["ui"].startswith("http://localhost:")
+        assert root_payload["docs"] == "/docs"
 
         status, room_body = http_post(
             f"http://127.0.0.1:{port}/api/rooms?name=SmokeRoom&seed=5&player_count=7&agent_type=heuristic"
@@ -108,17 +108,6 @@ def main() -> int:
         assert status == 200
         room_snapshot = json.loads(room_snapshot_body)
         assert room_snapshot["id"] == room_game_payload["id"]
-
-        status, js = http_get(f"http://127.0.0.1:{port}/static/app.js")
-        assert status == 200
-        assert "const I18N" in js
-        assert "statusLoading" in js
-        assert "/ws/rooms/" in js
-        assert "/api/rooms/" in js
-
-        status, css = http_get(f"http://127.0.0.1:{port}/static/style.css")
-        assert status == 200
-        assert ".action-panel" in css
 
         for seed in (3, 7, 11):
             status, body = http_post(f"http://127.0.0.1:{port}/api/games?seed={seed}&agent_type=heuristic")

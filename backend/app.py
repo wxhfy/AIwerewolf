@@ -1,13 +1,10 @@
 from __future__ import annotations
 
 import asyncio
-from pathlib import Path
 from typing import Any, Dict, Optional
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
 
 from backend.agents.factory import create_agents
 from backend.db.database import init_db
@@ -26,7 +23,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-_frontend_dir = Path(__file__).resolve().parent.parent / "frontend"
 _rooms = RoomManager()
 
 
@@ -294,6 +290,52 @@ def create_room_game(room_id: str, show_private: bool = False):
     return snapshot
 
 
+@app.post("/api/rooms/{room_id}/prepare")
+def prepare_room_game(room_id: str, show_private: bool = False):
+    """Create the game shell so the lobby has roles + personas to show
+    immediately, without advancing past SETUP.
+
+    Flow: lobby Confirm → POST /prepare → setGameState(snapshot) → navigate to
+    play page → play page sees full roster → WebSocket connects → stream_game
+    detects the prepared active_game and starts game.play() itself.
+
+    Idempotent for a given room: if a game is already prepared but not started
+    (or even already running), we just return its current snapshot.
+    """
+    try:
+        room = _rooms.get_room(room_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Room not found")
+    existing = _rooms.get_active_game(room_id)
+    if existing is not None and existing.state.winner is None:
+        # Either already prepared or already running — return the current
+        # snapshot rather than building a second game with the same seed.
+        snapshot = existing.state.snapshot(show_private=show_private)
+        _rooms.record_snapshot(room_id, snapshot)
+        return snapshot
+    game = _build_game(
+        seed=room.seed,
+        agent_type=room.agent_type,
+        human_seat=room.human_seat,
+        player_count=room.player_count,
+        rule_pack_id=room.rule_pack_id,
+    )
+    _rooms.set_active_game(room_id, game)
+    _rooms.reset_snapshot_buffer(room_id)
+
+    # Wire the observer BEFORE initialize() so the GAME_START event and the
+    # role-assignment private events are captured in the room's snapshot
+    # buffer — a reconnecting client picks them up via the WS reuse path.
+    def _observer(state):
+        _rooms.append_snapshot(room_id, state.snapshot(show_private=show_private))
+
+    game.observer = _observer
+    game.initialize()
+    snapshot = game.state.snapshot(show_private=show_private)
+    _rooms.record_snapshot(room_id, snapshot)
+    return snapshot
+
+
 @app.post("/api/rooms/{room_id}/start")
 def start_or_resume_room_game(room_id: str, show_private: bool = False):
     try:
@@ -346,7 +388,13 @@ async def stream_game(
     player_count: int = 7,
     rule_pack_id: str = "wolfcha-default",
 ) -> GameState:
-    """Stream game snapshots to WebSocket in real-time as the game progresses."""
+    """Stream game snapshots to WebSocket in real-time as the game progresses.
+
+    Supports reconnect: if the room already has an active (running) game, we
+    attach to it instead of starting a second parallel game. Reconnecting
+    clients first receive the entire snapshot buffer accumulated so far, then
+    follow live frames until the game finishes.
+    """
     import threading
     import asyncio as aio
 
@@ -356,13 +404,50 @@ async def stream_game(
     lock = threading.Lock()
     done = threading.Event()
 
+    # Reconnect path: if an unfinished game already runs for this room, attach
+    # to it instead of building a fresh one. There are now TWO reconnect
+    # sub-cases:
+    #   - "prepared, not started" — POST /prepare built the game and called
+    #     initialize() but nobody called play() yet. We're the first WS, so we
+    #     should drive game.play() ourselves.
+    #   - "started, running" — another stream_game call is already executing
+    #     game.play() in its executor. We just tail snapshots.
+    # We distinguish via game._play_started, set inside play()'s start lock.
+    is_reused_running = False
+    game: WerewolfGame | None = None
+    if room_id:
+        existing = _rooms.get_active_game(room_id)
+        if existing is not None and existing.state.winner is None:
+            game = existing
+            is_reused_running = game._play_started
+
+    if game is None:
+        game = _build_game(seed=seed, agent_type=agent_type, player_count=player_count, rule_pack_id=rule_pack_id)
+        if room_id:
+            _rooms.set_active_game(room_id, game)
+            _rooms.reset_snapshot_buffer(room_id)
+
     def observe(state: GameState) -> None:
         snapshot = state.snapshot(show_private=show_private)
+        if room_id:
+            _rooms.append_snapshot(room_id, snapshot)
         with lock:
             queue.append(snapshot)
 
-    game = _build_game(seed=seed, agent_type=agent_type, player_count=player_count, rule_pack_id=rule_pack_id)
+    # The engine only supports one observer; the previous WS's observer (if
+    # any) is now disconnected and its drain task is dead, so overwriting is
+    # safe — but we still pre-load this client with the full history first.
     game.observer = observe
+    if room_id and (is_reused_running or game._play_started):
+        with lock:
+            queue.extend(_rooms.get_snapshot_buffer(room_id))
+    elif room_id and game.state.events:
+        # Prepared-not-started: the initialize() call emitted GAME_START and
+        # role_assignment events that the lobby already showed via the
+        # /prepare response. Replay them so the WS client sees the same
+        # baseline before live frames start streaming.
+        with lock:
+            queue.extend(_rooms.get_snapshot_buffer(room_id))
 
     async def drain_queue() -> None:
         """Send queued snapshots to the WebSocket as they arrive."""
@@ -377,18 +462,41 @@ async def stream_game(
                     msg["room_id"] = room_id
                     _rooms.record_snapshot(room_id, snap)
                 await websocket.send_json(msg)
-            await aio.sleep(0.3)  # poll every 300ms
-
-    # Run game in thread, drain snapshots in parallel
-    async def run_game() -> GameState:
-        return await loop.run_in_executor(None, game.play)
+            await aio.sleep(0.08)  # poll every 80ms (was 300ms — felt sluggish during LLM turns)
+        # Final flush so we don't drop snapshots queued between the last loop
+        # iteration and done.set().
+        with lock:
+            new_snapshots = queue[last_idx:]
+        for snap in new_snapshots:
+            msg = {"type": "snapshot", "state": snap}
+            if room_id:
+                msg["room_id"] = room_id
+                _rooms.record_snapshot(room_id, snap)
+            try:
+                await websocket.send_json(msg)
+            except Exception:
+                break
 
     drain_task = aio.create_task(drain_queue())
     try:
-        state = await run_game()
+        if is_reused_running:
+            # The game is already executing in another thread; just tail the
+            # snapshot stream until it finishes. Poll cadence is generous —
+            # what matters for UX is drain_queue's 80ms cycle.
+            while game.state.winner is None and not game.play_done.is_set():
+                await aio.sleep(0.5)
+            state = game.state
+        else:
+            # Either fresh game or prepared-but-not-started — we drive
+            # game.play() ourselves. The idempotent guard inside play()
+            # makes this safe even if a second WS races us.
+            state = await loop.run_in_executor(None, game.play)
     finally:
         done.set()
-        await drain_task
+        try:
+            await drain_task
+        except Exception:
+            pass
 
     _rooms.games[state.id] = state
     return state
@@ -455,13 +563,11 @@ async def room_ws(websocket: WebSocket, room_id: str) -> None:
         return
 
 
-if _frontend_dir.exists():
-    app.mount("/static", StaticFiles(directory=_frontend_dir), name="static")
-
-
 @app.get("/")
 def index():
-    index_file = _frontend_dir / "index.html"
-    if index_file.exists():
-        return FileResponse(index_file)
-    return {"message": "AI Werewolf backend is running."}
+    """Backend root — the UI lives in the Next.js app on port 3002."""
+    return {
+        "message": "AI Werewolf backend is running.",
+        "ui": "http://localhost:3002",
+        "docs": "/docs",
+    }

@@ -118,7 +118,9 @@ updated: 2026-05-22
 
 ### AI 必须先问人
 
-- `git push origin main` 或类似改主干
+> **单人模式覆盖**：第一条 `git push origin main` 在单人阶段豁免（见 `CLAUDE.md` 顶部"项目运行模式"）；其他条款仍生效。
+
+- ~~`git push origin main` 或类似改主干~~ <sup>单人模式豁免</sup>
 - 创建 PR(可以草拟描述,但点"Create" 由人按)
 - 改 `requirements.txt`、`.gitignore`、`pyproject.toml`(若存在)
 - 删除现有测试 / 让现有测试 disable
