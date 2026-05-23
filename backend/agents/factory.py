@@ -35,7 +35,7 @@ def create_agents(players: list[Player], agent_config: dict[str, Any] | None = N
                 provider=config.get("provider"),
                 model=config.get("model"),
                 temperature=float(config.get("temperature", 0.4)),
-                speech_temperature=float(config.get("speech_temperature", 1.0)),
+                speech_temperature=float(config.get("speech_temperature", 1.1)),
                 character=character,
             )
     return agents
