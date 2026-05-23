@@ -137,31 +137,20 @@ class LLMAgent(Agent):
     # ============================================================
 
     def _build_talk_system_parts(self, is_last_words: bool) -> list[dict]:
-        """Build wolfcha-style system prompt parts (identity + comm profile + mind + task + guidelines)."""
+        """Build wolfcha-style system prompt parts (identity + light persona + guidelines)."""
         view = self._view()
         seat = view.self_player.get("seat", "?")
         name = view.self_player.get("name", "?")
 
-        # Part 1: Base identity + persona (wolfcha: prompts.daySpeech.base)
+        # Part 1: Base identity + light persona hint
         win_cond = self._build_win_condition()
-        persona_text = self._build_persona_section()
+        persona_hint = self._build_persona_hint()
         base = (
             f"【身份】\n你是 {seat}号「{name}」\n身份: {self.role.value}\n\n"
-            f"【场景】\n这是一个线上狼人杀游戏，玩家通过打字交流。\n\n"
-            f"{win_cond}\n\n{persona_text}"
+            f"{win_cond}\n\n{persona_hint}"
         )
 
-        # Part 2: Hidden communication profile (controls HOW you speak)
-        comm_profile = self._build_communication_profile()
-        player_mind = self._build_player_mind_section()
-        behavior = comm_profile + player_mind
-
-        # Part 3: Role-specific strategy
-        from backend.agents.prompts import get_action_strategy
-        strategy = get_action_strategy("talk", self.role)
-        strategy_section = f"【你的策略指引】\n{strategy}" if strategy else ""
-
-        # Part 4: Task section
+        # Part 2: Task section
         if is_last_words:
             task_line = "你已经出局，现在发表遗言。"
         else:
@@ -169,50 +158,101 @@ class LLMAgent(Agent):
         task = (
             "【当前处境】\n"
             "你正在参与一局实时狼人杀。你不是旁观解说，也不是裁判。\n"
-            "你只知道自己视角内的信息。你有自己的性格、记忆、阵营目标和当下压力。\n"
+            "你只知道自己视角内的信息。你有自己的性格和判断方式。\n"
             f"现在轮到你发言。{task_line}"
         )
 
-        # Part 5: Guidelines (wolfcha: prompts.daySpeech.guidelines.default, adapted)
+        # Part 3: Lightweight behavior hint (not a rigid template)
+        behavior_hint = self._build_behavior_hint()
+
+        # Part 4: Guidelines
         guidelines = (
             "【底线规则】\n"
-            "- 只基于本局实际信息发言，严禁编造不存在的发言、投票、查验或死亡。\n"
-            "- 只讨论当前存活玩家；涉及已出局玩家时只引用公开事实。\n"
-            "- 第一个发言不要引用「前面」的话。\n"
-            "- 时间线约束：昨夜刀口在今天白天发言前已确定，禁止把今天的发言当作昨夜被刀的原因。\n"
+            "- 只基于本局实际信息发言，严禁编造。\n"
             "- 用「X号」称呼玩家。\n"
-            "- 严禁职业相关类比、行业术语和场外经历，只说狼人杀桌上的话。\n"
-            "- 你是玩家，不是主持人。不要引导发言流程、不要传递发言权、不要宣布下一位发言者。\n"
-            "\n"
-            "【常见逻辑陷阱——发言前请自检】\n"
-            "- 首夜（第一天白天）：狼人刀人时没有任何信息，刀口是随机的。不要在发言中说「如果X是真预言家，首夜狼为什么不刀他」——首夜狼根本不知道谁是预言家。\n"
-            "- 信息不对称：狼人知道队友是谁但不能公开说；预言家知道查验结果但只有自己知道；村民什么都不知道。发言时要站在你自己角色的信息视角，不要用上帝视角推理。\n"
-            "- 不要把「没人跳身份」当作「某人是真预言家」的证据——第一天没人跳身份是正常的。\n"
-            "- 不要用今天发生的事情去解释昨晚的行为——时间顺序不能颠倒。\n"
-            "- 不要假设其他玩家知道你不知道的信息。\n"
+            "- 你是玩家不是主持人。不要引导发言流程。\n"
+            "- 严禁职业相关类比、行业术语和场外经历。\n"
             "\n"
             "【发言方式】\n"
-            "你可以坦诚、含糊、试探、反驳、带节奏、保护别人、隐藏信息，或者暂时保留判断。\n"
-            "你的发言不需要覆盖所有玩家，也不需要显得完美。\n"
-            "只说你此刻会在桌上说的话。\n"
-            "根据你的发言长度习惯，自然地说话。可以分成 2-4 条消息气泡，每条 1-2 句话。\n"
-            "偶尔可以有语气词、犹豫、反问——像真人一样。\n"
+            "你可以坦诚、含糊、试探、反驳、带节奏、保护别人，或者暂时保留判断。\n"
+            "不需要每次都完美全面，只说此刻在桌上会说的话。\n"
+            "可以自然地说 1-4 句话，分成多条消息。语气像真人聊天，不是写作文。\n"
+            "\n"
+            "【重要：避免重复套路】\n"
+            "不要每轮都用同样的句式开头（如每次都先说「我是X号玩家」再分析）。\n"
+            "不要每句话都套用你的人设比喻。用你自己的话自然地表达，不要刻意表演。\n"
+            "每个人的发言应该有自己的侧重点，不要大家都说一模一样的内容。\n"
+            "\n"
+            "【常见逻辑陷阱】\n"
+            "- 首夜的狼刀和查验都是盲的——不要说「为什么首夜刀/验了X」。\n"
+            "- 不要用今天发生的事解释昨晚的行为。\n"
+            "- 站在你自己角色的信息视角说话，不要用上帝视角。\n"
             "\n"
             "【输出格式】\n"
             "返回 JSON 字符串数组，每个元素是一条消息气泡。\n"
-            "例如：[\"我觉得3号有点可疑\", \"他今天的发言和昨天对不上\", \"你们有没有注意到？\"]"
+            '例如：["我觉得3号有点可疑", "他今天的发言和昨天对不上", "你们有没有注意到？"]'
         )
 
         parts = [
             {"text": base, "cacheable": True},
         ]
-        if behavior:
-            parts.append({"text": behavior, "cacheable": True})
-        if strategy_section:
-            parts.append({"text": strategy_section, "cacheable": True})
+        if behavior_hint:
+            parts.append({"text": behavior_hint, "cacheable": True})
         parts.append({"text": task, "cacheable": False})
         parts.append({"text": guidelines, "cacheable": True})
         return parts
+
+    def _build_behavior_hint(self) -> str:
+        """Lightweight behavior hint — influences tone without rigid templates."""
+        if not self.character:
+            return ""
+        p = self.character.persona
+        m = self.character.mind
+
+        # Map English mind values to natural Chinese behavioral hints
+        courage_hints = {
+            "bold": "你不怕得罪人，敢直接点名怀疑对象",
+            "cautious": "你比较谨慎，不会轻易站边",
+            "calculated": "你有把握时才表态，先观察再判断",
+        }
+        suspicion_hints = {
+            "low": "你比较容易怀疑别人",
+            "medium": "你需要看到连续可疑行为才会锁定目标",
+            "high": "你倾向于先相信别人，除非证据确凿",
+        }
+
+        lines = ["<hidden_traits>"]
+        if p.speech_length_habit:
+            lines.append(f"说话习惯：{p.speech_length_habit}")
+        if p.pressure_style:
+            lines.append(f"被怀疑时：{p.pressure_style}")
+        if m.courage in courage_hints:
+            lines.append(courage_hints[m.courage])
+        if m.suspicion_threshold in suspicion_hints:
+            lines.append(suspicion_hints[m.suspicion_threshold])
+        if p.wolf_deception_style and self.role.value.lower() in ("werewolf", "white_wolf_king"):
+            lines.append(f"你拿狼时的风格：{p.wolf_deception_style}")
+
+        # Add random round-to-round variation to break repetition
+        import random
+        moods = [
+            "这轮可以轻松一点，不用太正式",
+            "这轮直接说重点，不用铺垫",
+            "这轮可以先回应前一个人的发言再表态",
+            "这轮可以从一个具体细节切入",
+        ]
+        lines.append(moods[self.rng.randint(0, len(moods) - 1)])
+
+        lines.append("以上只是你的底色，不需要刻意表演——自然说话就好。</hidden_traits>")
+        return "\n".join(lines)
+
+    def _build_persona_hint(self) -> str:
+        """Minimal persona hint — just enough to establish character voice."""
+        if not self.character:
+            return ""
+        p = self.character.persona
+        # One-line character summary, no verbose description
+        return f"你的说话风格：{p.vocabulary_style or '自然口语'}。{p.basic_info or ''}"
 
     def _build_game_context(self) -> str:
         """Build wolfcha-style YAML game context."""
@@ -376,8 +416,7 @@ class LLMAgent(Agent):
 
     def _build_win_condition(self) -> str:
         """Wolfcha-style win condition text."""
-        view = self._view()
-        role = self.role.value
+        role = self.role.value.lower()
         win_map = {
             "werewolf": "【获胜条件】狼人数量 >= 好人数量 时狼人胜利。",
             "white_wolf_king": "【获胜条件】狼人数量 >= 好人数量 时狼人胜利。你白天可选择自爆带走一名玩家，预言家查验你为狼人。",
