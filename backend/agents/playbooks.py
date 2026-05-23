@@ -121,11 +121,58 @@ ACTION_PLAYBOOKS: dict[Role, ActionPlaybook] = {
             "没有身份可跳，重点是让自己的票和发言前后一致。",
         ],
     ),
+    # White Wolf King — a wolf with a one-shot self-destruct that takes one
+    # villager out simultaneously. Strategy is wolf-like in the day but adds
+    # the boom timing decision; we keep the day playbook close to plain wolf.
+    Role.WHITE_WOLF_KING: ActionPlaybook(
+        role=Role.WHITE_WOLF_KING,
+        public_debate=[
+            "白天发言节奏跟标准狼一致：制造怀疑、混票坑、不暴露身份。",
+            "若已被预言家查杀或场上局势对狼极不利，可考虑在白天发言阶段提前自爆带走核心好人。",
+        ],
+        vote_logic=[
+            "跟好人主流票坑，避免让自己成为狼队的唯一硬保对象。",
+            "若局面已锁定要出狼，宁可弃票或转投他人。",
+        ],
+        night_logic=[
+            "夜里不参与刀人投票（自爆是日间技能），但可统一狼队认知。",
+        ],
+        reveal_logic=[
+            "默认不报身份。",
+            "只有在自爆瞬间才暴露白狼王身份，并锁定一个核心好人带走。",
+        ],
+    ),
+    # Idiot — village alignment, his vote does not count but he survives being
+    # voted out the FIRST time (then becomes a vote-disabled villager). His
+    # strength is information: revealing post-exile clears one slot of suspicion.
+    Role.IDIOT: ActionPlaybook(
+        role=Role.IDIOT,
+        public_debate=[
+            "白天发言不要硬跳预言家或猎人——一旦伪跳就失去翻牌优势。",
+            "正常给出怀疑对象和站边逻辑，让好人愿意带你一起归票。",
+        ],
+        vote_logic=[
+            "你的票不计入归票，但要表态明确，避免被当作摇摆位推走。",
+        ],
+        night_logic=[],
+        reveal_logic=[
+            "只在被投出去触发翻牌时被动暴露身份；不要主动跳白痴。",
+            "翻牌后失去投票权，重心转为信息交换和保护神职。",
+        ],
+    ),
 }
 
 
 def build_role_brief(role: Role) -> str:
-    playbook = ACTION_PLAYBOOKS[role]
+    # Defensive lookup: if a role is added to engine.rules but not yet given a
+    # playbook, fall back to a generic village/wolf brief based on alignment
+    # so the agent can still play instead of crashing the whole game.
+    playbook = ACTION_PLAYBOOKS.get(role)
+    if playbook is None:
+        return (
+            f"角色目标：{role.value}\n"
+            "（该角色暂无专属策略指引，请按基本身份逻辑发言/投票，避免暴露身份信息。）"
+        )
     lines = [
         f"角色目标：{role.value}",
         "白天策略：",

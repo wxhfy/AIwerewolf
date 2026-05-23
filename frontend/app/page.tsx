@@ -3,8 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAppContext } from "@/context/AppContext";
-import { Language, AgentType, Alignment } from "@/types";
-import { tRole } from "@/lib/i18n";
+import { Language, AgentType } from "@/types";
 import { Button } from "@/components/ui/Button";
 
 export default function LobbyPage() {
@@ -217,40 +216,35 @@ export default function LobbyPage() {
               ))}
             </div>
 
-            {/* Seat + role + persona preview.
-                For AI mode the snapshot from /prepare gives us name + role +
-                alignment + persona for every seat — we render those instead
-                of a generic "AI" placeholder so the user can confirm the
-                assignment before kicking off the game. Falls back to the
-                anonymous grid when prepareSnapshot isn't ready (human mode
-                or prepare failed). */}
+            {/* Seat + persona preview.
+                For AI mode we render name + MBTI/style label from the
+                /prepare snapshot. We deliberately DO NOT show role
+                (狼人 / 村民 / 预言家 …) here — confirming a game with the
+                full role table would spoil it. The role line is only
+                exposed inside the play page's moderator view. */}
             <div>
               <p className="text-sm font-medium text-textPrimary mb-2">{t("座位分布", "Seat Layout")}</p>
               {mode === "ai" && prepareSnapshot?.players ? (
                 <div className="grid grid-cols-2 gap-1.5">
-                  {prepareSnapshot.players.map((p: any) => {
-                    const isWolf = p.alignment === Alignment.WOLF;
-                    const isVillage = p.alignment === Alignment.VILLAGE;
-                    return (
-                      <div key={p.id} className="flex flex-col items-start p-2 rounded-lg border text-xs leading-tight"
-                        style={{ borderColor: "var(--color-border)", background: "var(--color-bg)" }}>
-                        <div className="flex items-center gap-1.5 w-full">
-                          <span className="font-bold text-textPrimary">{p.seat}</span>
-                          <span className="font-medium text-textPrimary truncate flex-1">{p.name}</span>
-                        </div>
-                        <span className={
-                          isWolf ? "text-danger font-medium mt-0.5"
-                          : isVillage ? "text-success font-medium mt-0.5"
-                          : "text-text-sub font-medium mt-0.5"
-                        }>{p.role ? tRole(p.role, language) : "—"}</span>
-                        {p.persona?.mbti && (
-                          <span className="text-text-sub/70 text-[10px] mt-0.5 truncate w-full">
-                            {p.persona.mbti}{p.persona.style_label ? ` · ${p.persona.style_label}` : ""}
-                          </span>
-                        )}
+                  {prepareSnapshot.players.map((p: any) => (
+                    <div key={p.id} className="flex flex-col items-start p-2 rounded-lg border text-xs leading-tight"
+                      style={{ borderColor: "var(--color-border)", background: "var(--color-bg)" }}>
+                      <div className="flex items-center gap-1.5 w-full">
+                        <span className="font-bold text-textPrimary">{p.seat}</span>
+                        <span className="font-medium text-textPrimary truncate flex-1">{p.name}</span>
                       </div>
-                    );
-                  })}
+                      {p.persona?.mbti && (
+                        <span className="text-text-sub/80 text-[10px] mt-0.5 truncate w-full">
+                          {p.persona.mbti}{p.persona.style_label ? ` · ${p.persona.style_label}` : ""}
+                        </span>
+                      )}
+                      {p.persona?.basic_info && (
+                        <span className="text-text-sub/60 text-[10px] mt-0.5 line-clamp-2 w-full">
+                          {p.persona.basic_info}
+                        </span>
+                      )}
+                    </div>
+                  ))}
                 </div>
               ) : (
                 <div className="grid grid-cols-4 gap-1.5">
