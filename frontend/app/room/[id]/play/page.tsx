@@ -93,9 +93,15 @@ export default function GamePage() {
     }
   }, [mode, setViewMode]);
 
-  // Auto-start the game on first entry when in AI mode and no game state yet.
-  // Without this, the user sees placeholder cards ("玩家 1, 玩家 2…") with no
-  // real names until they click "运行一局" — which feels broken.
+  // Auto-start the game on first entry in AI mode.
+  //
+  // The lobby calls /api/rooms/{id}/prepare before navigating here, so
+  // gameState already has all players + roles + personas populated when we
+  // mount — we can't use "gameState empty" as the trigger anymore (it never
+  // is). We instead rely on three signals:
+  //   - mode === "ai"
+  //   - the game hasn't already ended (winner set)
+  //   - we haven't already opened a WebSocket for this room
   //
   // We DON'T mark `autoStartedRef = true` until the setTimeout actually fires,
   // because React 18 Strict Mode (dev) double-mounts: the first mount sets the
@@ -107,8 +113,9 @@ export default function GamePage() {
   useEffect(() => {
     if (autoStartedRef.current) return;
     if (mode !== "ai") return;
-    if (gameState?.players?.length) return;
+    if (gameState?.winner) return;
     if (isPlaying) return;
+    if (wsRef.current) return;
     // Small delay so the WS handler is attached and AppContext is settled.
     const id = setTimeout(() => {
       autoStartedRef.current = true;
@@ -123,7 +130,10 @@ export default function GamePage() {
     if (wsRef.current) wsRef.current.close();
     setIsPlaying(true);
     setStatusTitle(t("statusStreaming", language));
-    setGameState(null);
+    // Don't wipe gameState if /prepare already populated the roster — it
+    // would flash empty placeholders for the 100-300ms before the WS replays
+    // baseline frames. Only clear when this is a fresh "run again" click.
+    if (gameState?.winner) setGameState(null);
     const proto = location.protocol === "https:" ? "wss:" : "ws:";
     const ws = new WebSocket(`${proto}//${location.host}/ws/rooms/${roomId}`);
     wsRef.current = ws;
