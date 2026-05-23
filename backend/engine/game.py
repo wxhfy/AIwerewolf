@@ -97,6 +97,15 @@ class WerewolfGame:
         self.pending_badge_transfer_from_id: str | None = None
         self.human_action_buffer: dict[str, list[Decision]] = {}
         self.interrupt_phase_cycle = False
+        # `_play_started` flips True the moment someone calls play() so a
+        # reconnecting WebSocket can tell "this game is already running, just
+        # tail it" apart from "this game was prepared but never started — I
+        # should start it now". play_done fires when play() returns so tailing
+        # clients have a definite signal to stop polling.
+        import threading as _threading
+        self._play_started: bool = False
+        self.play_done: _threading.Event = _threading.Event()
+        self._play_start_lock: _threading.Lock = _threading.Lock()
         sampled_personas = self._sample_personas_from_db(len(self.state.players), seed)
         if sampled_personas:
             # Adopt the sampled persona's display name onto the seat so the
@@ -252,11 +261,23 @@ class WerewolfGame:
         self._check_win()
 
     def play(self) -> GameState:
-        while self.state.winner is None:
-            self.play_until_blocked()
-            if self.state.pending_input is not None:
-                raise RuntimeError("Human input required; use play_until_blocked/submit_human_action for mixed games.")
-        return self.state
+        # Idempotent start: if play() was already entered (e.g. another thread
+        # is mid-game), return the current state immediately. A reconnecting
+        # WebSocket detects this case earlier via `_play_started` and switches
+        # to tail-only mode, but the lock here is the authoritative guard
+        # against two threads trying to drive the same game in parallel.
+        with self._play_start_lock:
+            if self._play_started:
+                return self.state
+            self._play_started = True
+        try:
+            while self.state.winner is None:
+                self.play_until_blocked()
+                if self.state.pending_input is not None:
+                    raise RuntimeError("Human input required; use play_until_blocked/submit_human_action for mixed games.")
+            return self.state
+        finally:
+            self.play_done.set()
 
     def play_until_blocked(self) -> GameState:
         if not self.state.events:
