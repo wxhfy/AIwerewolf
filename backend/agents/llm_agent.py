@@ -363,7 +363,11 @@ class LLMAgent(Agent):
         when the raw event log gets long.
         """
         view = self._view()
-        profile = ROLE_PROFILES[self.role]
+        # `.get` with a VILLAGER fallback so adding a Role enum member (e.g. a
+        # not-yet-wired template role) doesn't crash the prompt builder. The
+        # registry validator already catches missing profiles in test, this
+        # is the runtime safety net.
+        profile = ROLE_PROFILES.get(self.role, ROLE_PROFILES[Role.VILLAGER])
         strategy = get_action_strategy(action, self.role)
 
         public_lines = [

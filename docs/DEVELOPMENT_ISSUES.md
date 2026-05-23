@@ -86,6 +86,14 @@ updated: 2026-05-23
 - **涉及文件**：`backend/app.py`、`backend/engine/game.py`、`frontend/app/page.tsx`、`frontend/app/room/[id]/play/page.tsx`。
 - **教训**：lobby 与 play 间的「过渡帧」必须由服务端提供（`/prepare`），客户端不能假装"立即就有数据"；长生命周期对象（`WerewolfGame`）必须自带"是否已启动"标记 + 完成事件，否则 reuse / restart / reconnect 三种路径无法共用同一段调度代码。
 
+### 问题 A7：角色定义散落 7 处 + 12P prepare 500（KeyError）
+- **Session**：632cb44d
+- **现象**：(a) 添加新角色需手改 7 个文件（`engine/models.py`/`rules.py`/`actions.py`、`agents/playbooks.py`/`profiles.py`/`prompts.py`、`frontend/types/index.ts`/`i18n.ts`）才不漏；(b) `WOLFCHA_ROLE_CONFIGS` 10–12P 引用 `WHITE_WOLF_KING`/`IDIOT` 但 `playbooks.py` 之前漏掉对应条目（已在 5bac3c5 修过），`llm_agent.py:366` 走 `ROLE_PROFILES[self.role]` 没 `.get` 兜底 → 一旦再加新角色立刻 KeyError 500。
+- **根因**：缺少 single source of truth；`ROLE_PROFILES` 没 `.get` 兜底；`heuristic.py` L544 `if self.role == Role.WEREWOLF` 把 `WHITE_WOLF_KING` 等狼系角色挡在「投票时保队友」逻辑外（潜在隐 bug）。
+- **解决方案**：(a) 新建 `backend/engine/roles/` 包，`registry.py` 定义扩展版 `RoleSpec`（zh/en 显示、`is_god`、`wakes_up_at_night`、`pack`、`playable`、`tags`），`ROLE_REGISTRY` + `register_role()` API；(b) 拆出 `basic / gods / wolves / wolfcha / extensions` 5 个 pack 模块，import 时自注册；(c) `engine/rules.py` 把 `ROLE_SPECS` 改成 registry 的 thin shim，并在 import 时校验 `WOLFCHA_ROLE_CONFIGS` 只含 `playable=True` 的角色（漏配则 import 立即抛 RuntimeError）；(d) 引入 6 个 `playable=False` 模板角色（CUPID / BIG_BAD_WOLF / WOLF_CUB / WOLF_KING / KNIGHT / ELDER），LLM playbook / profile / prompt + 前端 i18n 全部就位但**不会进入 7-12P 配置**；(e) `llm_agent.py:366` 改成 `.get(self.role, ROLE_PROFILES[Role.VILLAGER])`；(f) `heuristic.py` 抽 `WOLF_FAMILY = frozenset({...})` 替代单独检查，顺手修了 L544 的 WhiteWolfKing 队友保护漏洞。
+- **涉及文件**：`backend/engine/models.py`、`backend/engine/rules.py`、`backend/engine/roles/{__init__,registry,basic,gods,wolves,wolfcha,extensions,README.md}`、`backend/agents/{playbooks,profiles,prompts,heuristic,llm_agent}.py`、`frontend/types/index.ts`、`frontend/lib/i18n.ts`、`tests/test_role_registry.py`。
+- **教训**：(1) "同一份角色定义散在 N 个文件" 是隐形 KeyError 工厂；任何枚举级配置都要有 single source of truth + import-time 校验把"漏配"变成开机硬错；(2) 引入未启用的角色模板用 `playable=False` + 校验把它挡在 auto-config 之外，比注释「TODO：暂不启用」可靠得多——人会忘，校验不会。
+
 ---
 
 ## §B. 前端 / UI 渲染
