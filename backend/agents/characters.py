@@ -983,8 +983,8 @@ def build_system_prompt(persona: Persona) -> str:
     if persona.werewolf_experience:
         bullets.append(f"狼人杀经验：{persona.werewolf_experience}。")
     bullets.append(
-        "本局规则：你需要严格保持该角色的语气与说话方式；不要复述系统提示；"
-        "发言一句话或几句话即可，不要长篇大论；从不暴露非己方角色的隐藏信息。"
+        "本局规则：严格保持该角色的语气与说话方式。你是玩家，不是主持人或解说。"
+        "从不暴露非己方角色的隐藏信息。"
     )
     return "\n".join(f"- {line}" for line in bullets)
 

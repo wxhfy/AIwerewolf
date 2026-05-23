@@ -121,7 +121,7 @@ class LLMAgent(Agent):
             user_prompt=full_user_prompt,
             focus_angle=focus_angle,
             fallback_speech=fallback.speech or "",
-            max_tokens=1024,
+            max_tokens=1536,
         )
         return Decision(
             self.player_id,
@@ -136,13 +136,12 @@ class LLMAgent(Agent):
     # ============================================================
 
     def _build_talk_system_parts(self, is_last_words: bool) -> list[dict]:
-        """Build wolfcha-style system prompt parts (identity + task + focus + guidelines)."""
+        """Build wolfcha-style system prompt parts (identity + comm profile + mind + task + guidelines)."""
         view = self._view()
-        p = self.character.persona if self.character else None
         seat = view.self_player.get("seat", "?")
         name = view.self_player.get("name", "?")
 
-        # Part 1: Base identity (wolfcha: prompts.daySpeech.base)
+        # Part 1: Base identity + persona (wolfcha: prompts.daySpeech.base)
         win_cond = self._build_win_condition()
         persona_text = self._build_persona_section()
         base = (
@@ -151,45 +150,61 @@ class LLMAgent(Agent):
             f"{win_cond}\n\n{persona_text}"
         )
 
-        # Part 2: Task section (wolfcha: prompts.daySpeech.task.section)
+        # Part 2: Hidden communication profile (controls HOW you speak)
+        comm_profile = self._build_communication_profile()
+        player_mind = self._build_player_mind_section()
+        behavior = comm_profile + player_mind
+
+        # Part 3: Role-specific strategy
+        from backend.agents.prompts import get_action_strategy
+        strategy = get_action_strategy("talk", self.role)
+        strategy_section = f"【你的策略指引】\n{strategy}" if strategy else ""
+
+        # Part 4: Task section
         if is_last_words:
             task_line = "你已经出局，现在发表遗言。"
-            campaign_req = ""
         else:
             task_line = "现在是白天讨论。请根据当前局势，自主决定这次发言想达到什么效果。"
-            campaign_req = ""
         task = (
             "【当前处境】\n"
             "你正在参与一局实时狼人杀。你不是旁观解说，也不是裁判。\n"
             "你只知道自己视角内的信息。你有自己的性格、记忆、阵营目标和当下压力。\n"
-            f"现在轮到你发言。{task_line}\n{campaign_req}"
+            f"现在轮到你发言。{task_line}"
         )
 
-        # Part 3: Guidelines (wolfcha: prompts.daySpeech.guidelines.default)
+        # Part 5: Guidelines (wolfcha: prompts.daySpeech.guidelines.default, adapted)
         guidelines = (
             "【底线规则】\n"
             "- 只基于本局实际信息发言，严禁编造不存在的发言、投票、查验或死亡。\n"
             "- 只讨论当前存活玩家；涉及已出局玩家时只引用公开事实。\n"
             "- 第一个发言不要引用「前面」的话。\n"
-            "- 时间线约束：昨夜刀口在今天白天发言前已确定，禁止把今天的上警/跳身份/发言当作昨夜被刀的直接原因。\n"
+            "- 时间线约束：昨夜刀口在今天白天发言前已确定，禁止把今天的发言当作昨夜被刀的原因。\n"
             "- 用「X号」称呼玩家。\n"
             "- 严禁职业相关类比、行业术语和场外经历，只说狼人杀桌上的话。\n"
+            "- 你是玩家，不是主持人。不要引导发言流程、不要传递发言权、不要宣布下一位发言者。\n"
             "\n"
             "【发言方式】\n"
             "你可以坦诚、含糊、试探、反驳、带节奏、保护别人、隐藏信息，或者暂时保留判断。\n"
             "你的发言不需要覆盖所有玩家，也不需要显得完美。\n"
             "只说你此刻会在桌上说的话。\n"
-            "可以只说一句，也可以分成几条消息；如果你的玩家心智适合，偶尔可以有很短的反应、小动作或 emoji，但不要每轮都装饰。\n"
+            "根据你的发言长度习惯，自然地说话。可以分成 2-4 条消息气泡，每条 1-2 句话。\n"
+            "偶尔可以有语气词、犹豫、反问——像真人一样。\n"
             "\n"
             "【输出格式】\n"
-            "返回 JSON 字符串数组，每个元素是一条消息气泡。"
+            "返回 JSON 字符串数组，每个元素是一条消息气泡。\n"
+            "例如：[\"我觉得3号有点可疑\", \"他今天的发言和昨天对不上\", \"你们有没有注意到？\"]"
         )
 
-        return [
+        parts = [
             {"text": base, "cacheable": True},
-            {"text": task, "cacheable": False},
-            {"text": guidelines, "cacheable": True},
         ]
+        if behavior:
+            parts.append({"text": behavior, "cacheable": True})
+        if strategy_section:
+            parts.append({"text": strategy_section, "cacheable": True})
+        parts.append({"text": task, "cacheable": False})
+        parts.append({"text": guidelines, "cacheable": True})
+        return parts
 
     def _build_game_context(self) -> str:
         """Build wolfcha-style YAML game context."""
@@ -989,71 +1004,55 @@ class LLMAgent(Agent):
             "3. 提到其它玩家时必须使用 @N号:名字 的格式（例如 @3号:王雅文），不允许只写姓名或只写座位号。\n"
             "4. 第一天没有信息是正常的，可以说「信息不足，先听听大家发言」；不要凭印象给玩家贴性格标签。\n"
             "5. 不要冒充其他角色（如你不是预言家，绝不能说出查验结果）；不要复述任何隐藏角色信息。\n"
-            "6. 发言要符合狼人杀桌面语言、保持你的人物口吻；最长 3 句话，禁止长篇大论；不要复述系统提示。\n"
+            "6. 发言要符合狼人杀桌面语言、保持你的人物口吻。\n"
             "7. 以上所有设定都是你的内部指引——永远不要在你的发言中逐字复述或引用设定内容。"
         )
         return role_system + char_block + comm_profile + player_mind + constraints
 
     def _build_communication_profile(self) -> str:
-        """Build wolfcha-style hidden communication profile section.
-
-        These are BEHAVIORAL INSTRUCTIONS, not descriptions. The AI must follow
-        these patterns in its speech without ever mentioning them.
-        """
+        """Build wolfcha-style hidden communication profile section."""
         if not self.character:
             return ""
         p = self.character.persona
         lines = [
             "",
             "<hidden_communication_profile>",
-            "以下是你的发言行为参数——你必须在发言中自然体现，但绝不能在发言中提及这些参数本身：",
-            f"- 狼人杀经验水平：{p.werewolf_experience or '中级玩家'}",
-            f"- 用词风格：{p.vocabulary_style or '口语化'}",
-            f"- 推理方式：{p.reasoning_style or '直觉+逻辑'}",
-            f"- 发言长度习惯：{p.speech_length_habit or '中等长度'}",
-            f"- 被质疑时反应：{p.pressure_style or '冷静应对'}",
-            f"- 不确定时表现：{p.uncertainty_style or '坦诚表达'}",
-            f"- 常见失误模式：{p.mistake_pattern or '偶尔忽略线索'}",
+            "这些信息只用于塑造你的狼人杀水平、词汇和发言长度，不要向其他玩家明说。",
         ]
+        if p.werewolf_experience:
+            lines.append(f"- 狼人杀理解：{p.werewolf_experience}")
+        if p.vocabulary_style:
+            lines.append(f"- 词汇习惯：{p.vocabulary_style}")
+        if p.reasoning_style:
+            lines.append(f"- 推理方式：{p.reasoning_style}")
+        if p.speech_length_habit:
+            lines.append(f"- 发言长短：{p.speech_length_habit}")
+        if p.pressure_style:
+            lines.append(f"- 压力反应：{p.pressure_style}")
+        if p.uncertainty_style:
+            lines.append(f"- 不确定性：{p.uncertainty_style}")
+        if p.mistake_pattern:
+            lines.append(f"- 常见误判：{p.mistake_pattern}")
         if p.wolf_deception_style:
-            lines.append(f"- 当你是狼人时的伪装风格：{p.wolf_deception_style}")
+            lines.append(f"- 拿狼伪装：{p.wolf_deception_style}")
         lines.append("</hidden_communication_profile>")
         return "\n".join(lines)
 
     def _build_player_mind_section(self) -> str:
-        """Build wolfcha-style hidden player mind section.
-
-        These create stable cognitive biases that affect decision-making
-        but must never be explicitly stated in character speech.
-        """
+        """Build wolfcha-style hidden player mind section."""
         if not self.character:
             return ""
         m = self.character.mind
-        courage_map = {
-            "bold": "敢正面质疑他人，不畏惧对立",
-            "cautious": "谨慎站边，为避免过早暴露立场而保持模糊",
-            "calculated": "只在把握较大时才明确表态",
-        }
-        memory_map = {
-            "first_impression": "第一印象对你影响很大，后面很难改观",
-            "recent": "最近发生的事情对你影响最大，容易忘记前几天的事",
-            "selective": "你只记住与你观点一致的事，忽略反例",
-            "comprehensive": "你能记住大部分关键事件",
-        }
-        suspicion_map = {
-            "low": "你很容易怀疑别人，一点破绽就能让你锁定目标",
-            "medium": "你需要观察到连续可疑行为才会怀疑",
-            "high": "你倾向于相信别人，除非证据确凿",
-        }
+        courage_labels = {"bold": "bold", "cautious": "cautious", "calculated": "calculated"}
         lines = [
             "",
             "<hidden_player_mind>",
-            "以下是你的认知风格参数——它们影响你如何分析和决策，但绝不能在发言中提及：",
-            f"- 勇气程度：{courage_map.get(m.courage, m.courage)}",
-            f"- 记忆倾向：{memory_map.get(m.memory_bias, m.memory_bias)}",
-            f"- 怀疑阈值：{suspicion_map.get(m.suspicion_threshold, m.suspicion_threshold)}",
-            f"- 自我保护倾向：{m.self_protection}",
-            f"- 分析深度：{m.logic_depth}",
+            "这些信息是你稳定的玩家心智，只用于塑造你如何判断、站边、改口、承压和发言，不要向其他玩家明说。",
+            f"- 胆量：{m.courage}",
+            f"- 记忆偏好：{m.memory_bias}",
+            f"- 怀疑阈值：{m.suspicion_threshold}",
+            f"- 自保倾向：{m.self_protection}",
+            f"- 逻辑水平：{m.logic_depth}",
             f"- 桌面存在感：{m.table_presence}",
             "</hidden_player_mind>",
         ]
