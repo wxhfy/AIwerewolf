@@ -49,5 +49,12 @@ class HumanAgent(Agent):
     def boom(self) -> Decision:
         return Decision(self.player_id, ActionType.BOOM, target_id=None)
 
+    def transfer_badge(self, candidates: list[str]) -> Decision:
+        # Same placeholder pattern as the other actions — the engine intercepts
+        # the human's actual choice before this runs. We return SKIP so the
+        # default outcome is "badge destroyed" if no input is buffered, which
+        # is the safer no-op (a wrong successor pick is far harder to undo).
+        return Decision(self.player_id, ActionType.SKIP, reasoning="Awaiting human badge transfer input.")
+
     def finish(self, winner: str | None) -> None:
         return

@@ -6,8 +6,16 @@ from typing import Iterable
 from uuid import uuid4
 
 from backend.engine.models import Alignment, Player, Role
+# Importing the roles package triggers each module's `register_role(...)` so
+# `ROLE_REGISTRY` is fully populated before anything below reads it.
+from backend.engine.roles import ROLE_REGISTRY, get_playable_roles
+from backend.engine.roles.registry import RoleSpec as _RegistryRoleSpec
 
 
+# Legacy `RoleSpec` shape — kept for back-compat with callers that read
+# `ROLE_SPECS[role].night_action` / `.alignment` / `.description`. The
+# authoritative spec is `backend.engine.roles.registry.RoleSpec`; we down-cast
+# at import time so the old call sites keep working unchanged.
 @dataclass(frozen=True)
 class RoleSpec:
     role: Role
@@ -16,15 +24,17 @@ class RoleSpec:
     description: str = ""
 
 
+def _legacy_spec(spec: _RegistryRoleSpec) -> RoleSpec:
+    return RoleSpec(
+        role=spec.role,
+        alignment=spec.alignment,
+        night_action=spec.night_action,
+        description=spec.description_en,
+    )
+
+
 ROLE_SPECS: dict[Role, RoleSpec] = {
-    Role.WEREWOLF: RoleSpec(Role.WEREWOLF, Alignment.WOLF, "attack", "Works with wolves to remove villagers."),
-    Role.WHITE_WOLF_KING: RoleSpec(Role.WHITE_WOLF_KING, Alignment.WOLF, "attack", "Wolf role that can self-destruct during the day and take one player."),
-    Role.SEER: RoleSpec(Role.SEER, Alignment.VILLAGE, "divine", "Checks one player's alignment each night."),
-    Role.WITCH: RoleSpec(Role.WITCH, Alignment.VILLAGE, "potion", "Can save one night victim and poison one player once per game."),
-    Role.HUNTER: RoleSpec(Role.HUNTER, Alignment.VILLAGE, None, "Can shoot once when eliminated, unless poisoned."),
-    Role.GUARD: RoleSpec(Role.GUARD, Alignment.VILLAGE, "guard", "Protects one player each night."),
-    Role.VILLAGER: RoleSpec(Role.VILLAGER, Alignment.VILLAGE, None, "Finds wolves by speech and voting."),
-    Role.IDIOT: RoleSpec(Role.IDIOT, Alignment.VILLAGE, None, "Immune to the first exile, then loses voting rights after revealing."),
+    role: _legacy_spec(spec) for role, spec in ROLE_REGISTRY.items()
 }
 
 
@@ -108,6 +118,25 @@ def get_role_configuration(player_count: int) -> tuple[Role, ...]:
     if player_count not in WOLFCHA_ROLE_CONFIGS:
         raise ValueError(f"Unsupported player count: {player_count}")
     return WOLFCHA_ROLE_CONFIGS[player_count]
+
+
+# Sanity check: the 7-12P configs are locked to playable roles only. Template
+# roles (playable=False in the registry) must never sneak into the auto-config
+# until their engine wiring lands. Validated at import time so the failure is
+# loud rather than surfacing as a half-broken game three days later.
+def _validate_configs_only_use_playable_roles() -> None:
+    playable = set(get_playable_roles())
+    for n, roles in WOLFCHA_ROLE_CONFIGS.items():
+        unplayable = [r for r in roles if r not in playable]
+        if unplayable:
+            names = ", ".join(r.value for r in unplayable)
+            raise RuntimeError(
+                f"{n}P config contains template roles ({names}). "
+                "Mark them playable=True in the registry, or remove from the config."
+            )
+
+
+_validate_configs_only_use_playable_roles()
 
 
 def build_players(

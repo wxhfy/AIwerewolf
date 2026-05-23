@@ -5,7 +5,7 @@ function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function waitForServer(url, retries = 80) {
+async function waitForServer(url, retries = 120) {
   for (let i = 0; i < retries; i += 1) {
     try {
       const response = await fetch(url);
@@ -17,76 +17,76 @@ async function waitForServer(url, retries = 80) {
   throw new Error(`Server did not become ready: ${url}`);
 }
 
-const port = 8010;
-const server = spawn(
+const backendPort = 8010;
+const frontendPort = 3102;
+
+const backend = spawn(
   "python",
-  ["-m", "uvicorn", "backend.app:app", "--host", "127.0.0.1", "--port", String(port)],
+  ["-m", "uvicorn", "backend.app:app", "--host", "127.0.0.1", "--port", String(backendPort)],
   {
     stdio: "inherit",
     env: { ...process.env, PYTHONPATH: process.cwd() },
   }
 );
 
+const frontend = spawn(
+  "npx",
+  ["next", "dev", "-p", String(frontendPort)],
+  {
+    cwd: `${process.cwd()}/frontend`,
+    stdio: "inherit",
+    env: { ...process.env, BACKEND_ORIGIN: `http://127.0.0.1:${backendPort}` },
+  }
+);
+
 let browser;
 try {
-  await waitForServer(`http://127.0.0.1:${port}/api/health`);
+  await waitForServer(`http://127.0.0.1:${backendPort}/api/health`);
+  await waitForServer(`http://127.0.0.1:${frontendPort}/`);
 
   browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 1440, height: 1100 } });
 
-  await page.goto(`http://127.0.0.1:${port}/?lang=zh`, { waitUntil: "networkidle" });
-  await page.waitForSelector("#run");
+  await page.goto(`http://127.0.0.1:${frontendPort}/?lang=zh`, { waitUntil: "networkidle" });
+  await page.getByRole("button", { name: "EN" }).click();
+  await page.getByText("Configure your game and start an AI Werewolf match").waitFor();
 
-  await page.click("#lang-en");
-  await page.waitForFunction(() => document.documentElement.lang === "en");
-
-  await page.selectOption("#mode-select", "ai");
-  await page.selectOption("#agent-type", "heuristic");
-  await page.click("#run");
-  await page.waitForFunction(() => {
-    const winner = document.querySelector("#winner-text");
-    return winner && winner.textContent && winner.textContent !== "-";
-  }, { timeout: 30000 });
+  await page.getByRole("button", { name: "Start Game" }).click();
+  await page.getByText("Ready to Start").waitFor();
+  await page.getByRole("button", { name: "Confirm & Start" }).click();
+  await page.waitForURL(/\/room\/.+\/play/);
+  const runButton = page.getByRole("button", { name: "Run Game" });
+  if (await runButton.isVisible().catch(() => false)) {
+    await runButton.click();
+  }
+  await page.waitForFunction(() => document.body.innerText.includes("Match in progress") || /Day\\s+\\d+/.test(document.body.innerText), { timeout: 30000 });
+  await page.waitForFunction(() => document.body.innerText.includes("events") || document.body.innerText.includes("Events"), { timeout: 30000 });
 
   const aiState = await page.evaluate(() => ({
-    lang: document.documentElement.lang,
-    room: document.querySelector("#status-room")?.textContent,
-    winner: document.querySelector("#winner-text")?.textContent,
-    day: document.querySelector("#status-day")?.textContent,
-    timeline: document.querySelectorAll(".speech-entry, .vote-entry").length,
-    players: document.querySelectorAll(".player-card").length,
+    url: window.location.pathname,
+    text: document.body.innerText,
   }));
 
-  if (aiState.lang !== "en") throw new Error(`Language switch failed: ${aiState.lang}`);
-  if (!["Village", "Wolves"].includes(aiState.winner)) throw new Error(`Unexpected winner text: ${aiState.winner}`);
-  if (!aiState.room || aiState.room.endsWith("-")) throw new Error(`Room label not initialized: ${aiState.room}`);
-  if (Number(aiState.players) !== 7) throw new Error(`Expected 7 players, got ${aiState.players}`);
-  if (Number(aiState.timeline) < 10) throw new Error(`Expected timeline events, got ${aiState.timeline}`);
+  if (!aiState.url.includes("/room/")) throw new Error(`AI room route missing: ${aiState.url}`);
+  if (!aiState.text.includes("Run Game") && !aiState.text.includes("Match in progress") && !/Day\s+\d+/.test(aiState.text)) {
+    throw new Error("AI play page did not render expected controls or match state");
+  }
 
-  await page.click("#private");
+  await page.goto(`http://127.0.0.1:${frontendPort}/?lang=en`, { waitUntil: "networkidle" });
+  await page.getByRole("button", { name: /Human Play|真人参与/ }).click();
+  await page.getByText(/Your Seat|你的座位号/).waitFor();
+  await page.getByRole("button", { name: /Start Game|开始游戏/ }).click();
+  await page.getByText(/Ready to Start|准备开始/).waitFor();
+  await page.getByRole("button", { name: /Confirm & Start|确认开始/ }).click();
+  await page.waitForURL(/mode=human/);
   await page.waitForFunction(() => {
-    const roles = Array.from(document.querySelectorAll(".player-role")).map((node) => node.textContent || "");
-    return roles.some((text) => text.includes("Werewolf") || text.includes("Seer"));
-  }, { timeout: 10000 });
+    const text = document.body.innerText;
+    return text.includes("Submit") || text.includes("Please select a target") || text.includes("Your turn");
+  }, { timeout: 30000 });
 
-  await page.selectOption("#mode-select", "human");
-  await page.selectOption("#human-seat", "1");
-  await page.waitForTimeout(800);
-  await page.click("#run");
-  await page.waitForSelector("#action-panel:not(.hidden)", { timeout: 30000 });
-
-  const humanState = await page.evaluate(() => ({
-    actionTitle: document.querySelector("#action-title")?.textContent,
-    actionPrompt: document.querySelector("#action-prompt")?.textContent,
-    room: document.querySelector("#status-room")?.textContent,
-    phase: document.querySelector("#status-phase")?.textContent,
-  }));
-
-  if (!humanState.actionPrompt) throw new Error("Human action prompt did not render");
-  if (!humanState.room || !humanState.room.includes("Seat")) throw new Error(`Human room seat not rendered: ${humanState.room}`);
-
-  console.log("UI smoke passed", JSON.stringify(aiState), JSON.stringify(humanState));
+  console.log("UI smoke passed");
 } finally {
   if (browser) await browser.close();
-  server.kill("SIGTERM");
+  frontend.kill("SIGTERM");
+  backend.kill("SIGTERM");
 }

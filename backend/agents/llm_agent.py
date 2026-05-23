@@ -39,7 +39,13 @@ class LLMAgent(Agent):
         self.temperature = temperature
         self.provider = provider
         self.client = create_client(provider=self.provider, model=model)
-        self.client.timeout = 12.0
+        # DeepSeek-v4-flash uses built-in chain-of-thought; combined with
+        # 600-1000 token responses this can take 8–20s end-to-end, and on
+        # slow links the second attempt is another 8s on top. 120s gives
+        # the retry chain enough headroom to never time out under normal
+        # conditions; the engine's snapshot drain runs in parallel so the
+        # UI stays responsive while we wait.
+        self.client.timeout = 120.0
         self.fallback = HeuristicAgent(player_id, seed=seed, character=character)
         self.character = character
         self.winner: str | None = None
@@ -62,19 +68,53 @@ class LLMAgent(Agent):
 
     def talk(self) -> Decision:
         fallback = self.fallback.talk()
+        view = self._view()
+        # Count today's public speeches in the current phase so the first
+        # speaker doesn't fabricate accusations against people who haven't
+        # said anything yet. "前言不搭后语" came from this exact gap.
+        today_chat_count = sum(
+            1 for e in view.public_events
+            if e.get("day") == view.day
+            and e.get("type") == "CHAT_MESSAGE"
+            and e.get("phase") == view.phase
+        )
+        is_first_speaker = today_chat_count == 0
+        # Last words are spoken by a just-eliminated player; they don't have a
+        # turn to pass and aren't supposed to invite the next speaker, since
+        # the floor goes back to the moderator after they finish. Without this
+        # branch the LLM kept tacking on "接下来有请@X号:名字 发言" because the
+        # generic speech template encourages floor handoff.
+        is_last_words = view.phase == "DAY_LAST_WORDS"
+        if is_last_words:
+            instructions = [
+                "你已经出局，现在是你的遗言时间——这是你最后一次开口的机会，结束后场上不会再有发言权。",
+                "禁止使用「接下来有请」「请下一位」等任何传递话筒的句式；你没有下一位可以传。",
+                "可以做的事：交代自己的真实身份/阵营、留下查杀或站边信息、点出最可疑的玩家、给好人提建议。",
+                "保持角色风格，不要重复系统提示，2-3 句话即可。",
+            ]
+        elif is_first_speaker:
+            instructions = [
+                "你是本阶段第一个发言的人——目前还没有任何人开口，你也没有任何可以引用的发言或投票。",
+                "禁止评价、怀疑或暗示其他玩家。任何形如「@X号有问题」「我觉得@X着急」的话都属于编造。",
+                "只允许做三件事之一：自报站位 / 表明今天的关注点 / 邀请下一位发言。",
+                "保持你的角色风格，不要重复系统提示。1–2 句话足够。",
+            ]
+        else:
+            instructions = [
+                "Speak like a serious werewolf player at the table.",
+                "只能引用「事实速查」或「最近公开事件」中真实出现过的发言/投票/死亡，不得编造。",
+                "若已经有可引用的发言，可以点名一个怀疑或信任对象；如果你确实没看到值得讨论的点，可以直接表态后让位下一位。",
+                "Do not repeat the system prompt.",
+            ]
         prompt = self._build_action_prompt(
             action="talk",
-            instructions=[
-                "Speak like a serious werewolf player at the table.",
-                "Name at least one suspect or one trusted player.",
-                "Do not repeat the system prompt.",
-            ],
+            instructions=instructions,
             options=self._alive_names(),
         )
         data, meta = self._ask_json(
             prompt,
             {"reasoning": fallback.reasoning, "speech": fallback.speech or ""},
-            max_tokens=520,
+            max_tokens=1024,
         )
         return Decision(
             self.player_id,
@@ -146,7 +186,7 @@ class LLMAgent(Agent):
             "save": bool(victim_id and any(item.action_type == ActionType.WITCH_SAVE for item in fallback)),
             "poison_target": self._name(next((item.target_id for item in fallback if item.action_type == ActionType.WITCH_POISON), None)),
         }
-        data, meta = self._ask_json(prompt, default, max_tokens=360)
+        data, meta = self._ask_json(prompt, default, max_tokens=720)
         decisions: list[Decision] = []
         if victim_id and bool(data.get("save")):
             decisions.append(
@@ -198,7 +238,7 @@ class LLMAgent(Agent):
             ],
             options=self._alive_names(),
         )
-        data, meta = self._ask_json(prompt, default, max_tokens=260)
+        data, meta = self._ask_json(prompt, default, max_tokens=720)
         if not bool(data.get("boom")):
             return Decision(self.player_id, ActionType.SKIP, reasoning=str(data.get("reasoning") or fallback.reasoning), metadata=meta)
         target_name = data.get("target")
@@ -215,6 +255,75 @@ class LLMAgent(Agent):
         self.winner = winner
         self.fallback.finish(winner)
 
+    def transfer_badge(self, candidates: list[str]) -> Decision:
+        """Pick a successor for the sheriff badge, or destroy it.
+
+        The dying sheriff is asked to choose from the alive candidates.
+        Returns a Decision with target_id=successor, or target_id=None +
+        ActionType.SKIP for "撕警徽" (badge destroyed).
+
+        Three-tier resilience:
+        - LLM produces a valid candidate name → use that.
+        - LLM picks "撕"/"none"/null → destroy the badge.
+        - LLM fails after 3 retries OR returns an unknown name → fallback to
+          heuristic (village preference by seat).
+        """
+        fallback = self.fallback.transfer_badge(candidates)
+        if not candidates:
+            return fallback
+        view = self._view()
+        cand_names = [
+            self._format_player_tag(p)
+            for p in view.players
+            if p["id"] in candidates and p["alive"]
+        ]
+        if not cand_names:
+            return fallback
+        prompt = self._build_action_prompt(
+            action="transfer_badge",
+            instructions=[
+                "你刚刚作为警长出局，需要决定警徽的去向。",
+                "可以做的事：把警徽传给一个你信任的好人（target=对应玩家），或者选择「撕警徽」让本局警徽失效（target=null）。",
+                "传警徽：选择你认为最可信、能继续主持归票的玩家，通常是已经跳出来的金水或座位上信息量大的好人。",
+                "撕警徽：当你怀疑场上没有足够可信的好人，或不希望警徽落入潜在的狼坑时使用。",
+                "用一两句话说明你的选择理由，不要长篇大论。",
+            ],
+            options=cand_names,
+        )
+        default = {
+            "reasoning": fallback.reasoning,
+            "target": self._name(fallback.target_id) if fallback.target_id else None,
+            "destroy": fallback.action_type == ActionType.SKIP,
+        }
+        data, meta = self._ask_json(prompt, default, max_tokens=640)
+        destroy = bool(data.get("destroy"))
+        target_name = data.get("target")
+        # "撕"/"none" / null all mean destroy the badge.
+        if destroy or not target_name or str(target_name).strip().lower() in {"none", "null", "撕", "撕警徽"}:
+            return Decision(
+                self.player_id,
+                ActionType.SKIP,
+                reasoning=str(data.get("reasoning") or fallback.reasoning),
+                metadata=meta,
+            )
+        target_id = self._id_from_name(target_name)
+        if target_id not in candidates:
+            # LLM hallucinated a name not on the candidate list — fall back.
+            return Decision(
+                fallback.actor_id,
+                fallback.action_type,
+                target_id=fallback.target_id,
+                reasoning=fallback.reasoning,
+                metadata=meta,
+            )
+        return Decision(
+            self.player_id,
+            ActionType.VOTE,
+            target_id=target_id,
+            reasoning=str(data.get("reasoning") or fallback.reasoning),
+            metadata=meta,
+        )
+
     @property
     def role(self) -> Role:
         return Role(self._view().self_player["role"])
@@ -229,7 +338,7 @@ class LLMAgent(Agent):
             "reasoning": fallback.reasoning,
             "target": self._name(fallback.target_id),
         }
-        data, meta = self._ask_json(prompt, default, max_tokens=260)
+        data, meta = self._ask_json(prompt, default, max_tokens=640)
         target_name = str(data.get("target") or self._name(fallback.target_id))
         target_id = self._id_from_name(target_name) or fallback.target_id
         return {
@@ -246,35 +355,50 @@ class LLMAgent(Agent):
         options: list[str],
         extra: dict[str, Any] | None = None,
     ) -> str:
-        """Build layered prompt: RULES → STATE → OBSERVATIONS → STRATEGY → FORMAT"""
+        """Build layered prompt: RULES → STATE → FACT SHEET → OBSERVATIONS → STRATEGY → FORMAT.
+
+        The fact sheet is a structured digest of what actually happened — every
+        chat / vote / death the agent can legitimately see. Without it the LLM
+        tends to hallucinate events ("X 被刀我救了他", "Y 投了 Z"), especially
+        when the raw event log gets long.
+        """
         view = self._view()
-        profile = ROLE_PROFILES[self.role]
+        # `.get` with a VILLAGER fallback so adding a Role enum member (e.g. a
+        # not-yet-wired template role) doesn't crash the prompt builder. The
+        # registry validator already catches missing profiles in test, this
+        # is the runtime safety net.
+        profile = ROLE_PROFILES.get(self.role, ROLE_PROFILES[Role.VILLAGER])
         strategy = get_action_strategy(action, self.role)
 
         public_lines = [
             f"  [{event['type']}] {event['payload']}"
-            for event in view.public_events[-8:]
+            for event in view.public_events[-20:]
         ]
         private_lines = [
             f"  [{event['type']}] {event['payload']}"
-            for event in view.private_events[-5:]
+            for event in view.private_events[-8:]
         ]
 
-        alive_list = [p["name"] for p in view.players if p["alive"] and p["id"] != self.player_id]
-        dead_list = [p["name"] for p in view.players if not p["alive"]]
+        alive_lines = [self._format_player_tag(p) for p in view.players if p["alive"]]
+        dead_lines = [self._format_player_tag(p) for p in view.players if not p["alive"]]
+
+        fact_sheet = self._build_fact_sheet()
 
         blocks = [
             "=== 当前状态 ===",
-            f"你叫{view.self_player['name']}，是{self.role.value}",
+            f"你是 {self._format_player_tag(view.self_player)}，扮演 {self.role.value}",
             f"第{view.day}天 / {view.phase}阶段",
-            f"存活玩家：{', '.join(alive_list) if alive_list else '无'}",
-            f"已死亡：{', '.join(dead_list) if dead_list else '无'}",
+            f"存活玩家：{'，'.join(alive_lines) if alive_lines else '无'}",
+            f"已死亡：{'，'.join(dead_lines) if dead_lines else '无'}",
             "",
             "=== 角色目标 ===",
             profile.table_goal,
             profile.speech_style,
             "",
-            "=== 最近公开事件 ===",
+            "=== 已发生事实速查（这是你能信任的全部桌面信息） ===",
+            *fact_sheet,
+            "",
+            "=== 最近公开事件原始日志 ===",
         ]
         if public_lines:
             blocks.extend(public_lines)
@@ -300,10 +424,110 @@ class LLMAgent(Agent):
             f"可选择的玩家：{', '.join(options)}",
             f"附加信息：{json.dumps(extra or {}, ensure_ascii=False)}",
             "",
+            "=== 反幻觉硬性纪律 ===",
+            "- 严禁编造未在「事实速查」或「最近公开事件」里出现的内容；如果不确定，宁可说「我没听到」也不要瞎编。",
+            "- 不要谈论「投票阶段还没发生」的票；当前若是 DAY_SPEECH，你尚未看到任何今日的 VOTE_CAST。",
+            "- 提到任何其他玩家时，必须写成 @N号:名字 的形式（例如 @3号:王雅文）。",
+            "- 不要假装自己是其他角色；只引用你私有信息里真实拥有的查验结果 / 守护目标 / 药水使用。",
+            "- 发言不要超过 3 句话；保持你的角色风格。",
+            "",
             f"请只输出 JSON：{get_output_format(action)}",
         ])
 
         return "\n".join(blocks)
+
+    @staticmethod
+    def _format_player_tag(player: dict[str, Any]) -> str:
+        seat = player.get("seat", "?")
+        name = player.get("name", "?")
+        return f"@{seat}号:{name}"
+
+    def _build_fact_sheet(self) -> list[str]:
+        """Distil the public event log into a deduped, day-grouped digest.
+
+        Each bullet quotes a single concrete fact: a death, a vote target, a
+        seer/witch claim word-for-word, a sheriff election outcome. The LLM
+        treats this as ground truth so it stops inventing parallel timelines.
+        """
+        view = self._view()
+        events = view.public_events
+        if not events:
+            return ["  (尚无公开信息)"]
+
+        deaths: list[str] = []
+        votes: dict[int, list[str]] = {}
+        speeches: list[str] = []
+        sheriff_lines: list[str] = []
+
+        for event in events:
+            etype = event.get("type")
+            payload = event.get("payload", {}) or {}
+            day = event.get("day", 0)
+            if etype == "PLAYER_DIED":
+                deaths.append(
+                    f"第{day}天 {self._tag_from_payload(payload, 'player')} 出局（原因：{payload.get('reason', '?')}）"
+                )
+            elif etype == "VOTE_CAST":
+                tag = (
+                    f"{self._tag_from_payload(payload, 'voter')} → "
+                    f"{self._tag_from_payload(payload, 'target')}"
+                )
+                votes.setdefault(day, []).append(tag)
+            elif etype == "CHAT_MESSAGE":
+                actor = self._tag_from_payload(payload, 'actor')
+                speech = (payload.get("speech") or "").strip()
+                if not speech:
+                    continue
+                truncated = speech[:80].replace("\n", " ")
+                tag = ""
+                if payload.get("last_words"):
+                    tag = "[遗言]"
+                elif payload.get("badge_campaign"):
+                    tag = "[警上]"
+                elif payload.get("pk_speech"):
+                    tag = "[PK]"
+                speeches.append(f"第{day}天{tag} {actor}：{truncated}")
+            elif etype == "SYSTEM_MESSAGE":
+                msg = payload.get("message") or ""
+                if "sheriff" in msg or "警徽" in msg or "badge" in msg.lower():
+                    sheriff_lines.append(f"第{day}天 系统：{msg}")
+                elif "died" in msg.lower() or "出局" in msg or "deaths" in msg.lower():
+                    sheriff_lines.append(f"第{day}天 系统：{msg}")
+
+        lines: list[str] = []
+        if sheriff_lines:
+            lines.extend(f"  · {item}" for item in sheriff_lines[-6:])
+        if deaths:
+            lines.extend(f"  · {item}" for item in deaths[-6:])
+        if votes:
+            for day in sorted(votes.keys())[-2:]:
+                joined = "；".join(votes[day][-10:])
+                lines.append(f"  · 第{day}天投票：{joined}")
+        if speeches:
+            lines.extend(f"  · {item}" for item in speeches[-10:])
+
+        if not lines:
+            lines.append("  · 暂无可信事实，发言时请明确说「目前信息不足」。")
+        return lines
+
+    def _tag_from_payload(self, payload: dict[str, Any], prefix: str) -> str:
+        """Format @N号:名字 from {prefix}_id (preferred) or {prefix}_name fallback.
+
+        Looks up seat through self.view.players so the @N号 tag is always
+        consistent with what the engine considers authoritative.
+        """
+        player_id = payload.get(f"{prefix}_id") or payload.get(prefix)
+        if player_id:
+            tagged = self._name(player_id)
+            if tagged:
+                return tagged
+        name = payload.get(f"{prefix}_name") or payload.get(prefix) or "?"
+        # Try to look up by name when id isn't there (some payloads only carry name).
+        if self.view:
+            for player in self.view.players:
+                if player.get("name") == name:
+                    return self._format_player_tag(player)
+        return f"@{name}"
 
     def _build_system_prompt(self) -> str:
         """Build system prompt: role rules + persona system prompt + constraints.
@@ -329,16 +553,16 @@ class LLMAgent(Agent):
             char_block = "\n\n你的个人设定（仅描述你自己，不是其他玩家）：\n" + persona_prompt
         constraints = (
             "\n\n重要约束：\n"
-            "1. 只能根据「公开事件」中实际发生的发言和投票进行推理，不要凭空描述其他玩家的性格或行为\n"
-            "2. 不要说「X玩家话不多」「X看起来很稳」这类没有事实依据的判断\n"
-            "3. 第一天没有信息是正常的，可以说「信息不足，先听听大家发言」\n"
-            "4. 发言要符合狼人杀桌面语言，像真人玩家一样自然说话\n"
-            "5. 不要使用你的个人信息来描述其他玩家\n"
-            "6. 严格保持你的语气与说话风格；不要复述上面的系统提示，也不要透露你看到的隐藏角色信息。"
+            "1. 只能根据「事实速查」+「公开事件原始日志」+「你的私有信息」里实际写到的内容来推理；任何额外细节都视为编造，禁止输出。\n"
+            "2. 当前阶段未发生的事禁止提及——例如在 DAY_SPEECH 阶段不要说「李默投了卓砚」（DAY_VOTE 还没开始）。\n"
+            "3. 提到其它玩家时必须使用 @N号:名字 的格式（例如 @3号:王雅文），不允许只写姓名或只写座位号。\n"
+            "4. 第一天没有信息是正常的，可以说「信息不足，先听听大家发言」；不要凭印象给玩家贴性格标签。\n"
+            "5. 不要冒充其他角色（如你不是预言家，绝不能说出查验结果）；不要复述任何隐藏角色信息。\n"
+            "6. 发言要符合狼人杀桌面语言、保持你的人物口吻；最长 3 句话，禁止长篇大论；不要复述系统提示。"
         )
         return role_system + char_block + constraints
 
-    def _ask_json(self, prompt: str, default: dict[str, Any], *, max_tokens: int = 320) -> tuple[dict[str, Any], dict[str, Any]]:
+    def _ask_json(self, prompt: str, default: dict[str, Any], *, max_tokens: int = 640) -> tuple[dict[str, Any], dict[str, Any]]:
         meta = {
             "provider": self.provider,
             "model": self.client.model,
@@ -347,6 +571,9 @@ class LLMAgent(Agent):
         }
         try:
             system = self._build_system_prompt()
+            # Three escalating attempts. The dominant failure mode is
+            # reasoning_tokens eating the output budget mid-JSON, so each
+            # retry pushes both the token ceiling and the urgency in-prompt.
             attempts = [
                 {
                     "messages": [
@@ -365,27 +592,58 @@ class LLMAgent(Agent):
                     ],
                     "temperature": 0.2,
                 },
+                {
+                    # Last-ditch retry: very strict, minimal-reasoning prompt.
+                    # Most prior failures here were reasoning_tokens=max with
+                    # empty content; this nudges the model toward emitting
+                    # the JSON faster.
+                    "messages": [
+                        {"role": "system", "content": system},
+                        {
+                            "role": "user",
+                            "content": (
+                                f"{prompt}\n\n"
+                                "你之前两次都没有输出可解析的 JSON。这一次：\n"
+                                "1. 不要思考太久——把回答控制在两三句话以内\n"
+                                "2. 直接输出 JSON 对象，第一个字符必须是 '{'\n"
+                                "3. 字段值用合法的 JSON 字符串/数字/null，不要省略字段\n"
+                            ),
+                        },
+                    ],
+                    "temperature": 0.1,
+                },
             ]
             last_text = ""
-            for attempt in attempts:
+            last_usage: dict[str, Any] = {}
+            # Token budgets: 1.0× → 1.5× → 2.5× of the base. The big jump on
+            # the final attempt is for cases where the model truly needs a
+            # lot of space (long persona-style speeches) and the first two
+            # rounds were just too tight.
+            budget_multipliers = [1.0, 1.5, 2.5]
+            for idx, attempt in enumerate(attempts):
+                attempt_max = int(max_tokens * budget_multipliers[idx])
                 response = self.client.chat_sync(
                     messages=attempt["messages"],
                     temperature=float(attempt["temperature"]),
-                    max_tokens=max_tokens,
+                    max_tokens=attempt_max,
                     thinking=False,
                 )
                 text = self.client.parse_response(response).strip()
                 last_text = text
+                last_usage = response.get("usage", {}) if isinstance(response, dict) else {}
                 parsed = self._coerce_json(text)
                 if parsed is not None:
                     self.last_error = None
                     meta["source"] = "llm"
                     meta["fallback"] = False
                     meta["raw_text"] = text[:400]
+                    meta["attempts"] = idx + 1
+                    meta["usage"] = last_usage
                     return parsed, meta
             self.last_error = "json_parse_failed"
             meta["error"] = self.last_error
             meta["raw_text"] = last_text[:400]
+            meta["usage"] = last_usage
             return default, meta
         except Exception as exc:
             self.last_error = f"{type(exc).__name__}: {exc}"
@@ -415,20 +673,50 @@ class LLMAgent(Agent):
         return self.view
 
     def _alive_names(self) -> list[str]:
-        return [player["name"] for player in self._view().players if player["alive"] and player["id"] != self.player_id]
+        """Return alive opponents tagged @N号:名字 so the LLM is forced to pick by callout."""
+        return [
+            self._format_player_tag(player)
+            for player in self._view().players
+            if player["alive"] and player["id"] != self.player_id
+        ]
 
     def _id_from_name(self, name: str | None) -> str | None:
+        """Resolve a player id from either @N号:名字, a bare name, or a seat."""
         if not name:
             return None
+        token = str(name).strip()
+        # Strip @ prefix and seat tag if present: "@3号:王雅文" → name=王雅文, seat=3.
+        seat: int | None = None
+        if token.startswith("@"):
+            token = token[1:]
+        if "号:" in token:
+            seat_part, name_part = token.split("号:", 1)
+            try:
+                seat = int(seat_part.strip())
+            except ValueError:
+                seat = None
+            token = name_part.strip()
+        elif "号" in token and token.split("号", 1)[0].strip().isdigit():
+            seat_part, rest = token.split("号", 1)
+            try:
+                seat = int(seat_part.strip())
+            except ValueError:
+                seat = None
+            token = rest.strip(":： ")
         for player in self._view().players:
-            if player["name"] == name and player["alive"]:
+            if not player["alive"]:
+                continue
+            if seat is not None and int(player.get("seat", -1)) == seat:
+                return str(player["id"])
+            if token and player["name"] == token:
                 return str(player["id"])
         return None
 
     def _name(self, player_id: str | None) -> str | None:
+        """Return @N号:名字 for a player id so prompts/fallbacks stay consistent."""
         if not player_id:
             return None
         for player in self._view().players:
             if player["id"] == player_id:
-                return str(player["name"])
+                return self._format_player_tag(player)
         return None

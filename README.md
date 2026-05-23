@@ -21,30 +21,36 @@ AI 狼人杀多智能体对战系统。每个 Agent 根据扮演角色（狼人 
 ## 快速开始
 
 ```bash
-# 1. 安装依赖
+# 1. 后端依赖
 python -m pip install -r requirements.txt
 
-# 2. 配置 LLM API（已提供 .env.example，复制后填上 key）
+# 2. 配置 LLM + DB（已提供 .env.example，复制后填上 key）
 cp .env.example .env  # 编辑填入 DOUBAO_API_KEY 或 DEEPSEEK_API_KEY
 
-# 3. 启动本地 Postgres（推荐，跟 .env 默认值对齐；不装也行，会自动 fallback 到 SQLite）
+# 3. 起本地 Postgres（推荐；不装也行,会 fallback 到 SQLite）
 make db-up
 
 # 4. 本地跑一局（启发式 Agent，秒级出结果）
 make demo
 
-# 5. 启动后端服务
+# 5. 启动后端 API + WebSocket（端口 8000）
 make dev   # 等价 uvicorn backend.app:app --host 0.0.0.0 --port 8000 --reload
-# 浏览器打开 http://localhost:8000
+
+# 6. 启动前端 Next.js dev server（端口 3001 / 占用就 3002）
+cd frontend && npm install --legacy-peer-deps && npm run dev
+# 浏览器打开 http://localhost:3001 (或 :3002)
 ```
 
-一条命令拉起全栈（Postgres + 后端）：
+一条命令拉起全栈（Postgres + 后端 + 前端）：
 
 ```bash
 make compose-up    # 等价 docker compose up -d --build
 make compose-logs  # 看后端日志
 make compose-down
 ```
+
+> **入口说明**：后端 `http://localhost:8000/` 现在只返回 JSON 提示（指向 :3001/:3002）；
+> 真正的 UI 在 Next.js dev server 上，所有页面、组件、样式都在 `frontend/app/` 与 `frontend/components/` 下。
 
 ## 三种玩法
 
@@ -57,6 +63,8 @@ make compose-down
   - 文字输入：直接打字。
   - **语音输入**：点麦克风按钮（🎤），浏览器调用 Web Speech API（Chrome/Edge 支持），识别后自动填入输入框，再次点击停止。
 - 投票/夜晚动作时面板会切换为目标选择。
+
+> 上述 UI 全部由 Next.js 前端实现，运行在 `:3001` / `:3002`。
 
 ### C. API 直接调用
 
@@ -116,15 +124,22 @@ backend/
     persist.py            # 对局结束时批量入库 + history 查询
   protocols/
     rooms.py / schemas.py # RoomManager
-frontend/
-  index.html              # 单页观战 / 互动 UI
-  app.js                  # 状态机、WebSocket、语音输入、i18n
-  style.css               # wolfcha 风格视觉
+frontend/                 # Next.js 14 + React 18 + TS 5 + Tailwind 3
+  app/                    # App Router 页面（page.tsx / layout.tsx / globals.css）
+  components/
+    ui/                   # 通用元件（Badge / Button / Card）
+    game/                 # 业务组件（PhaseBanner / PlayerCard / EventItem / DayBlock）
+  lib/                    # i18n.ts + utils.ts（cn() 等）
+  context/AppContext.tsx  # 全局状态（语言 / 视角 / 当前对局 / WS）
+  types/index.ts          # 后端 schema 的 TS 镜像（Phase / Role / EventType / ...）
+  tailwind.config.ts      # 极简素雅主题 token
+  package.json
 configs/
   demo.yaml               # 默认 7 人板子配置
 scripts/
   e2e_smoke.py            # AI vs AI 端到端
   human_smoke.py          # 真人座位端到端
+  migrate_sqlite_to_pg.py # SQLite → PG 历史数据迁移
 tests/
   test_engine.py          # 引擎单元测试（PK / 警徽 / 信息隔离 / 白痴 / 白狼王）
   test_api.py             # FastAPI 集成测试

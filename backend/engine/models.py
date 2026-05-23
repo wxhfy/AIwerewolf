@@ -21,6 +21,16 @@ class Role(str, Enum):
     HUNTER = "Hunter"
     GUARD = "Guard"
     IDIOT = "Idiot"
+    # Template roles (playable=False in the registry — present so the registry,
+    # LLM prompts and frontend i18n have entries, but excluded from the locked
+    # 7–12P configs. Engine wiring (night actions, lover deaths, "all gods
+    # dead" triggers, etc.) is a follow-up per role.
+    CUPID = "Cupid"
+    BIG_BAD_WOLF = "BigBadWolf"
+    WOLF_CUB = "WolfCub"
+    WOLF_KING = "WolfKing"
+    KNIGHT = "Knight"
+    ELDER = "Elder"
 
 
 class Phase(str, Enum):
