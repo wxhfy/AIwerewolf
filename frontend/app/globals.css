@@ -34,16 +34,16 @@
   --center-width: 60%;
 }
 
-/* Night phase overrides — dramatic dark theme */
+/* Night phase overrides — dramatic dark theme with high contrast */
 [data-phase="night"] {
-  --color-bg: #1A1816;
-  --color-card: #24211E;
-  --color-primary: #D4AF37;
-  --color-primary-hover: #E8C84A;
-  --color-text: #EDE8E0;
-  --color-text-sub: #9A9590;
-  --color-border: rgba(212, 175, 55, 0.12);
-  --color-overlay: rgba(0, 0, 0, 0.40);
+  --color-bg: #0F0E0C;
+  --color-card: #1C1A17;
+  --color-primary: #E8C84A;
+  --color-primary-hover: #F0D060;
+  --color-text: #F5F0E8;
+  --color-text-sub: #B5AFA5;
+  --color-border: rgba(212, 175, 55, 0.15);
+  --color-overlay: rgba(0, 0, 0, 0.50);
 }
 
 /* Star particles (visible only in night) */
@@ -98,10 +98,16 @@
   }
 }
 
+html {
+  font-size: 17px;  /* Larger base for readability (default is 16px) */
+}
+
 body {
   color: var(--color-text);
   background: var(--color-bg);
   font-family: var(--font-body);
+  font-size: 1rem;
+  line-height: 1.6;
 }
 
 /* ---- Animations ---- */
