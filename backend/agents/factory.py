@@ -29,11 +29,15 @@ def create_agents(players: list[Player], agent_config: dict[str, Any] | None = N
         if agent_type == "heuristic":
             agents[player.id] = HeuristicAgent(player.id, seed=seed + player.seat, character=character)
         else:
+            # Only pass model if explicitly configured and non-empty.
+            # For doubao, DOUBAO_ENDPOINT from env is the correct model ID
+            # (Volcengine Ark endpoint), not "Doubao-Seed-2.0-pro".
+            model_override = config.get("model")
             agents[player.id] = LLMAgent(
                 player.id,
                 seed=seed + player.seat,
                 provider=config.get("provider"),
-                model=config.get("model"),
+                model=model_override if model_override else None,
                 temperature=float(config.get("temperature", 0.4)),
                 speech_temperature=float(config.get("speech_temperature", 1.1)),
                 character=character,

@@ -103,10 +103,11 @@ class LLMAgent(Agent):
 
         # --- User prompt assembly (wolfcha format) ---
         user_prompt_parts = [game_context]
-        if today_transcript:
-            user_prompt_parts.append("【本日讨论记录】\n" + today_transcript)
+        transcript_text = "\n".join(today_transcript) if isinstance(today_transcript, list) else (today_transcript or "")
+        if transcript_text:
+            user_prompt_parts.append("【本日讨论记录】\n" + transcript_text)
         else:
-            user_prompt_parts.append(f"【本日讨论记录】\n（暂无，你是第{speak_order_hint.split('个')[0] if '第' in speak_order_hint else '?'}个发言）")
+            user_prompt_parts.append("【本日讨论记录】\n（暂无）")
         user_prompt_parts.append("【你本日已说过的话】\n" + (self_speech or "（无）"))
         if phase_hint:
             user_prompt_parts.append(phase_hint)
