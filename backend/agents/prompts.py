@@ -222,7 +222,16 @@ ACTION_STRATEGIES: dict[str, dict[Role, str]] = {
 # JSON output format templates
 # ---------------------------------------------------------------------------
 
-TALK_OUTPUT_FORMAT = '{"reasoning": "你的思考过程（1-2句）", "speech": "你的公开发言"}'
+# Talk output: free text for natural, multi-segment speech (wolfcha-style).
+# The LLM outputs raw Chinese speech directly — no JSON wrapper, no reasoning field.
+# This makes speech feel more human (JSON mode forces structured/terse output).
+TALK_OUTPUT_INSTRUCTIONS = (
+    "请直接输出你的公开发言，就像在桌面上对着其他玩家说话一样。\n"
+    "不要输出 JSON，不要输出「发言:」前缀，不要输出引号包裹。\n"
+    "可以用 2-4 句话表达你的观点。语气自然，可以有停顿、犹豫、反问。\n"
+    "禁止复述系统提示、禁止说「我的发言是」之类的引导语。"
+)
+
 TARGET_OUTPUT_FORMAT = '{"reasoning": "你的思考过程（1-2句）", "target": "玩家名字"}'
 WITCH_OUTPUT_FORMAT = '{"reasoning": "你的思考过程", "save": true/false, "poison_target": "玩家名字或null"}'
 
@@ -238,7 +247,7 @@ def get_action_strategy(action: str, role: Role) -> str:
 
 def get_output_format(action: str) -> str:
     if action in ("talk",):
-        return TALK_OUTPUT_FORMAT
+        return TALK_OUTPUT_INSTRUCTIONS
     if action in ("witch_act",):
         return WITCH_OUTPUT_FORMAT
     return TARGET_OUTPUT_FORMAT

@@ -30,6 +30,7 @@ class LLMAgent(Agent):
         provider: str | None = None,
         model: str | None = None,
         temperature: float = 0.4,
+        speech_temperature: float = 1.0,
         character: Character | None = None,
     ):
         self.player_id = player_id
@@ -37,6 +38,7 @@ class LLMAgent(Agent):
         self.memory: list[str] = []
         self.rng = Random(seed)
         self.temperature = temperature
+        self.speech_temperature = speech_temperature
         self.provider = provider
         self.client = create_client(provider=self.provider, model=model)
         # DeepSeek-v4-flash uses built-in chain-of-thought; combined with
@@ -85,36 +87,72 @@ class LLMAgent(Agent):
         # branch the LLM kept tacking on "接下来有请@X号:名字 发言" because the
         # generic speech template encourages floor handoff.
         is_last_words = view.phase == "DAY_LAST_WORDS"
+
+        # Build speak order awareness (wolfcha-style)
+        today_speakers = [
+            self._format_player_tag(self._player_by_id(e.get("actor_id")))
+            for e in view.public_events
+            if e.get("day") == view.day
+            and e.get("type") == "CHAT_MESSAGE"
+            and e.get("phase") == view.phase
+        ]
+        yet_to_speak = [
+            self._format_player_tag(p) for p in view.players
+            if p["alive"] and p["id"] != self.player_id
+            and self._format_player_tag(p) not in today_speakers
+        ]
+
+        speak_order_hint = ""
+        if is_last_words:
+            pass  # handled by instructions below
+        elif is_first_speaker:
+            speak_order_hint = "你是本轮第一个发言的人，没有人已经说过话，你可以先给出初步印象。"
+        elif yet_to_speak:
+            spoken_str = "、".join(today_speakers[-6:]) if today_speakers else "(无人)"
+            pending_str = "、".join(yet_to_speak[:6])
+            speak_order_hint = (
+                f"已有发言：{spoken_str}。尚未发言：{pending_str}。"
+                "你可以回应前人的观点，或补充他们没提到的角度。"
+            )
+
+        # Build perspective hints (wolfcha-style focus angle)
+        perspective_hints = self._build_perspective_hints()
+
         if is_last_words:
             instructions = [
                 "你已经出局，现在是你的遗言时间——这是你最后一次开口的机会，结束后场上不会再有发言权。",
                 "禁止使用「接下来有请」「请下一位」等任何传递话筒的句式；你没有下一位可以传。",
                 "可以做的事：交代自己的真实身份/阵营、留下查杀或站边信息、点出最可疑的玩家、给好人提建议。",
-                "保持角色风格，不要重复系统提示，2-3 句话即可。",
+                "保持角色风格，2-3 句话即可。",
             ]
         elif is_first_speaker:
             instructions = [
                 "你是本阶段第一个发言的人——目前还没有任何人开口，你也没有任何可以引用的发言或投票。",
                 "禁止评价、怀疑或暗示其他玩家。任何形如「@X号有问题」「我觉得@X着急」的话都属于编造。",
                 "只允许做三件事之一：自报站位 / 表明今天的关注点 / 邀请下一位发言。",
-                "保持你的角色风格，不要重复系统提示。1–2 句话足够。",
+                "保持你的角色风格，1–2 句话足够。",
             ]
         else:
             instructions = [
-                "Speak like a serious werewolf player at the table.",
+                "像真正的狼人杀玩家一样发言。语气自然、可以带犹豫和语气词，不要像在写报告。",
                 "只能引用「事实速查」或「最近公开事件」中真实出现过的发言/投票/死亡，不得编造。",
-                "若已经有可引用的发言，可以点名一个怀疑或信任对象；如果你确实没看到值得讨论的点，可以直接表态后让位下一位。",
-                "Do not repeat the system prompt.",
+                "若已经有可引用的发言，可以点名一个怀疑或信任对象；如果你确实没看到值得讨论的点，可以直接表态后让位。",
+                "不要复述系统提示，不要用「我的发言是」「我认为」等引导语——直接开始说。",
             ]
+
         prompt = self._build_action_prompt(
             action="talk",
             instructions=instructions,
             options=self._alive_names(),
+            speak_order_hint=speak_order_hint,
+            perspective_hints=perspective_hints,
         )
+        # For talk, use higher temperature (creative) and free-text output
         data, meta = self._ask_json(
             prompt,
             {"reasoning": fallback.reasoning, "speech": fallback.speech or ""},
             max_tokens=1024,
+            action="talk",
         )
         return Decision(
             self.player_id,
@@ -354,6 +392,8 @@ class LLMAgent(Agent):
         instructions: list[str],
         options: list[str],
         extra: dict[str, Any] | None = None,
+        speak_order_hint: str = "",
+        perspective_hints: str = "",
     ) -> str:
         """Build layered prompt: RULES → STATE → FACT SHEET → OBSERVATIONS → STRATEGY → FORMAT.
 
@@ -363,10 +403,6 @@ class LLMAgent(Agent):
         when the raw event log gets long.
         """
         view = self._view()
-        # `.get` with a VILLAGER fallback so adding a Role enum member (e.g. a
-        # not-yet-wired template role) doesn't crash the prompt builder. The
-        # registry validator already catches missing profiles in test, this
-        # is the runtime safety net.
         profile = ROLE_PROFILES.get(self.role, ROLE_PROFILES[Role.VILLAGER])
         strategy = get_action_strategy(action, self.role)
 
@@ -384,6 +420,9 @@ class LLMAgent(Agent):
 
         fact_sheet = self._build_fact_sheet()
 
+        # Build today's transcript (wolfcha-style) for speak order awareness
+        today_transcript = self._build_today_transcript()
+
         blocks = [
             "=== 当前状态 ===",
             f"你是 {self._format_player_tag(view.self_player)}，扮演 {self.role.value}",
@@ -397,9 +436,24 @@ class LLMAgent(Agent):
             "",
             "=== 已发生事实速查（这是你能信任的全部桌面信息） ===",
             *fact_sheet,
+        ]
+
+        # Add today's transcript (wolfcha-style)
+        if today_transcript:
+            blocks.extend(["", "=== 今日发言记录 ===", *today_transcript])
+
+        # Add speak order hint
+        if speak_order_hint:
+            blocks.extend(["", "=== 发言顺序 ===", speak_order_hint])
+
+        # Add perspective hints
+        if perspective_hints:
+            blocks.extend(["", "=== 本轮关注角度 ===", perspective_hints])
+
+        blocks.extend([
             "",
             "=== 最近公开事件原始日志 ===",
-        ]
+        ])
         if public_lines:
             blocks.extend(public_lines)
         else:
@@ -441,6 +495,90 @@ class LLMAgent(Agent):
         seat = player.get("seat", "?")
         name = player.get("name", "?")
         return f"@{seat}号:{name}"
+
+    def _player_by_id(self, player_id: str | None) -> dict[str, Any] | None:
+        """Find a player dict by id from the current view."""
+        if not player_id:
+            return None
+        for p in self._view().players:
+            if p["id"] == player_id:
+                return p
+        return None
+
+    def _build_today_transcript(self) -> list[str]:
+        """Build today's speech transcript (wolfcha-style)."""
+        view = self._view()
+        today_chats = [
+            e for e in view.public_events
+            if e.get("day") == view.day
+            and e.get("type") == "CHAT_MESSAGE"
+            and e.get("phase") == view.phase
+        ]
+        if not today_chats:
+            return []
+
+        lines: list[str] = []
+        for e in today_chats[-10:]:
+            actor_id = e.get("actor_id") or ""
+            payload = e.get("payload", {}) or {}
+            speech_text = (payload.get("speech") or "").strip()
+            if not speech_text:
+                continue
+            tag = self._format_player_tag(self._player_by_id(actor_id) or {"seat": "?", "name": actor_id})
+            truncated = speech_text[:120].replace("\n", " ")
+            lines.append(f"  {tag}：{truncated}")
+        return lines
+
+    def _build_perspective_hints(self) -> str:
+        """Generate unique analytical angles for each player (wolfcha-style focus angle).
+
+        Returns a string with 1-2 specific hints so every player doesn't say the
+        same thing. Uses seat number and day as seeds for deterministic variation.
+        """
+        view = self._view()
+        seat = int(view.self_player.get("seat", 0))
+        day = view.day
+        hints: list[str] = []
+
+        # Check if this player was mentioned by others
+        for e in view.public_events:
+            if e.get("type") == "CHAT_MESSAGE" and e.get("day") == day:
+                payload = e.get("payload", {}) or {}
+                speech = str(payload.get("speech", ""))
+                if f"@{seat}号" in speech or f"{seat}号" in speech:
+                    mentioner_id = e.get("actor_id") or ""
+                    mentioner = self._player_by_id(mentioner_id)
+                    if mentioner:
+                        hints.append(f"玩家 {self._format_player_tag(mentioner)} 提到了你，可以考虑回应。")
+                    break
+
+        # Adjacent to dead player
+        dead_seats = [int(p.get("seat", -1)) for p in view.players if not p["alive"]]
+        if any(abs(seat - ds) == 1 or abs(seat - ds) == len(view.players) - 1 for ds in dead_seats if ds > 0):
+            hints.append("你坐在一位已出局玩家的旁边，可以评论这个位置的局势。")
+
+        # Sheriff angle
+        is_sheriff = view.self_player.get("is_sheriff", False) or view.self_player.get("badge")
+        if is_sheriff:
+            hints.append("你是警长，发言有影响力。可以给归票方向。")
+        elif seat % 2 == view.day % 2:
+            hints.append("关注警长的归票，看是否合理。")
+        else:
+            hints.append("警长的发言是否让你信服？可以表态。")
+
+        # Voting pattern (day 2+)
+        if day >= 2:
+            hints.append(f"回顾昨天的投票和发言，看有没有人前后不一致。")
+
+        # Select at most 2 hints deterministically
+        selected = []
+        for i, h in enumerate(hints):
+            if (seat + day + i) % len(hints) < 2:
+                selected.append(h)
+        if not selected:
+            selected = hints[:1]
+
+        return "\n".join(f"- {h}" for h in selected[:2])
 
     def _build_fact_sheet(self) -> list[str]:
         """Distil the public event log into a deduped, day-grouped digest.
@@ -530,19 +668,17 @@ class LLMAgent(Agent):
         return f"@{name}"
 
     def _build_system_prompt(self) -> str:
-        """Build system prompt: role rules + persona system prompt + constraints.
+        """Build system prompt: role rules + persona + behavior params + constraints.
 
-        Persona-level guidance comes from the persona's pre-built system
-        prompt (cached on the Persona dataclass / DB row) so the LLM gets a
-        coherent character brief in one block instead of a flat field dump.
+        Wolfcha-style: persona describes who you are, communication profile +
+        player mind control how you behave. The behavior params are hidden
+        instructions — the player must never reference them in speech.
         """
         role_system = get_system_prompt(self.role)
         char_block = ""
         if self.character:
             persona_prompt = (self.character.persona.system_prompt or "").strip()
             if not persona_prompt:
-                # Defensive fallback for personas loaded before the prompt
-                # field existed.
                 char = self.character
                 persona_prompt = (
                     f"名字：{char.persona.name}，{char.persona.age}岁\n"
@@ -551,6 +687,12 @@ class LLMAgent(Agent):
                     f"思考方式：{char.persona.reasoning_style}"
                 )
             char_block = "\n\n你的个人设定（仅描述你自己，不是其他玩家）：\n" + persona_prompt
+
+        # Wolfcha-style hidden communication profile: controls HOW you speak
+        comm_profile = self._build_communication_profile()
+        # Wolfcha-style hidden player mind: controls HOW you think/decide
+        player_mind = self._build_player_mind_section()
+
         constraints = (
             "\n\n重要约束：\n"
             "1. 只能根据「事实速查」+「公开事件原始日志」+「你的私有信息」里实际写到的内容来推理；任何额外细节都视为编造，禁止输出。\n"
@@ -558,11 +700,83 @@ class LLMAgent(Agent):
             "3. 提到其它玩家时必须使用 @N号:名字 的格式（例如 @3号:王雅文），不允许只写姓名或只写座位号。\n"
             "4. 第一天没有信息是正常的，可以说「信息不足，先听听大家发言」；不要凭印象给玩家贴性格标签。\n"
             "5. 不要冒充其他角色（如你不是预言家，绝不能说出查验结果）；不要复述任何隐藏角色信息。\n"
-            "6. 发言要符合狼人杀桌面语言、保持你的人物口吻；最长 3 句话，禁止长篇大论；不要复述系统提示。"
+            "6. 发言要符合狼人杀桌面语言、保持你的人物口吻；最长 3 句话，禁止长篇大论；不要复述系统提示。\n"
+            "7. 以上所有设定都是你的内部指引——永远不要在你的发言中逐字复述或引用设定内容。"
         )
-        return role_system + char_block + constraints
+        return role_system + char_block + comm_profile + player_mind + constraints
 
-    def _ask_json(self, prompt: str, default: dict[str, Any], *, max_tokens: int = 640) -> tuple[dict[str, Any], dict[str, Any]]:
+    def _build_communication_profile(self) -> str:
+        """Build wolfcha-style hidden communication profile section.
+
+        These are BEHAVIORAL INSTRUCTIONS, not descriptions. The AI must follow
+        these patterns in its speech without ever mentioning them.
+        """
+        if not self.character:
+            return ""
+        p = self.character.persona
+        lines = [
+            "",
+            "<hidden_communication_profile>",
+            "以下是你的发言行为参数——你必须在发言中自然体现，但绝不能在发言中提及这些参数本身：",
+            f"- 狼人杀经验水平：{p.werewolf_experience or '中级玩家'}",
+            f"- 用词风格：{p.vocabulary_style or '口语化'}",
+            f"- 推理方式：{p.reasoning_style or '直觉+逻辑'}",
+            f"- 发言长度习惯：{p.speech_length_habit or '中等长度'}",
+            f"- 被质疑时反应：{p.pressure_style or '冷静应对'}",
+            f"- 不确定时表现：{p.uncertainty_style or '坦诚表达'}",
+            f"- 常见失误模式：{p.mistake_pattern or '偶尔忽略线索'}",
+        ]
+        if p.wolf_deception_style:
+            lines.append(f"- 当你是狼人时的伪装风格：{p.wolf_deception_style}")
+        lines.append("</hidden_communication_profile>")
+        return "\n".join(lines)
+
+    def _build_player_mind_section(self) -> str:
+        """Build wolfcha-style hidden player mind section.
+
+        These create stable cognitive biases that affect decision-making
+        but must never be explicitly stated in character speech.
+        """
+        if not self.character:
+            return ""
+        m = self.character.mind
+        courage_map = {
+            "bold": "敢正面质疑他人，不畏惧对立",
+            "cautious": "谨慎站边，为避免过早暴露立场而保持模糊",
+            "calculated": "只在把握较大时才明确表态",
+        }
+        memory_map = {
+            "first_impression": "第一印象对你影响很大，后面很难改观",
+            "recent": "最近发生的事情对你影响最大，容易忘记前几天的事",
+            "selective": "你只记住与你观点一致的事，忽略反例",
+            "comprehensive": "你能记住大部分关键事件",
+        }
+        suspicion_map = {
+            "low": "你很容易怀疑别人，一点破绽就能让你锁定目标",
+            "medium": "你需要观察到连续可疑行为才会怀疑",
+            "high": "你倾向于相信别人，除非证据确凿",
+        }
+        lines = [
+            "",
+            "<hidden_player_mind>",
+            "以下是你的认知风格参数——它们影响你如何分析和决策，但绝不能在发言中提及：",
+            f"- 勇气程度：{courage_map.get(m.courage, m.courage)}",
+            f"- 记忆倾向：{memory_map.get(m.memory_bias, m.memory_bias)}",
+            f"- 怀疑阈值：{suspicion_map.get(m.suspicion_threshold, m.suspicion_threshold)}",
+            f"- 自我保护倾向：{m.self_protection}",
+            f"- 分析深度：{m.logic_depth}",
+            f"- 桌面存在感：{m.table_presence}",
+            "</hidden_player_mind>",
+        ]
+        return "\n".join(lines)
+
+    def _ask_json(self, prompt: str, default: dict[str, Any], *, max_tokens: int = 640, action: str = "") -> tuple[dict[str, Any], dict[str, Any]]:
+        if action == "talk":
+            return self._ask_talk(prompt, default, max_tokens=max_tokens)
+        return self._ask_json_inner(prompt, default, max_tokens=max_tokens, action=action)
+
+    def _ask_talk(self, prompt: str, default: dict[str, Any], *, max_tokens: int = 640) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Handle talk action with free-text output at high temperature."""
         meta = {
             "provider": self.provider,
             "model": self.client.model,
@@ -571,16 +785,93 @@ class LLMAgent(Agent):
         }
         try:
             system = self._build_system_prompt()
-            # Three escalating attempts. The dominant failure mode is
-            # reasoning_tokens eating the output budget mid-JSON, so each
-            # retry pushes both the token ceiling and the urgency in-prompt.
+            # First attempt: free text at speech temperature
+            response = self.client.chat_sync(
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=self.speech_temperature,
+                max_tokens=max_tokens,
+                thinking=False,
+            )
+            text = self.client.parse_response(response).strip()
+            usage = response.get("usage", {}) if isinstance(response, dict) else {}
+            # Remove common prefixes (model sometimes adds them despite instructions)
+            for prefix in ["发言：", "发言:", "我说：", "我说:", "speech：", "speech:"]:
+                if text.startswith(prefix):
+                    text = text[len(prefix):].strip()
+            # Remove surrounding quotes
+            if (text.startswith('"') and text.endswith('"')) or (text.startswith("'") and text.endswith("'")):
+                text = text[1:-1].strip()
+            # Remove ``` blocks
+            if text.startswith("```"):
+                lines = text.split("\n")
+                text = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:]).strip()
+
+            if text and len(text) >= 2:
+                self.last_error = None
+                meta["source"] = "llm"
+                meta["fallback"] = False
+                meta["raw_text"] = text[:400]
+                meta["attempts"] = 1
+                meta["usage"] = usage
+                return {"speech": text, "reasoning": ""}, meta
+
+            # Second attempt: try JSON format (some models prefer structured output)
+            json_prompt = prompt + "\n\n输出格式：{\"speech\": \"你的发言\"}"
+            response2 = self.client.chat_sync(
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": json_prompt},
+                ],
+                temperature=0.8,
+                max_tokens=max_tokens,
+                thinking=False,
+            )
+            text2 = self.client.parse_response(response2).strip()
+            usage2 = response2.get("usage", {}) if isinstance(response2, dict) else {}
+            parsed = self._coerce_json(text2)
+            if parsed and parsed.get("speech"):
+                self.last_error = None
+                meta["source"] = "llm"
+                meta["fallback"] = False
+                meta["raw_text"] = text2[:400]
+                meta["attempts"] = 2
+                meta["usage"] = usage2
+                return {"speech": str(parsed["speech"]), "reasoning": str(parsed.get("reasoning", ""))}, meta
+
+            self.last_error = "talk_parse_failed"
+            meta["error"] = self.last_error
+            meta["raw_text"] = text[:400]
+            meta["usage"] = usage
+            return default, meta
+        except Exception as exc:
+            self.last_error = f"{type(exc).__name__}: {exc}"
+            meta["error"] = self.last_error
+            return default, meta
+
+    def _ask_json_inner(self, prompt: str, default: dict[str, Any], *, max_tokens: int = 640, action: str = "") -> tuple[dict[str, Any], dict[str, Any]]:
+        meta = {
+            "provider": self.provider,
+            "model": self.client.model,
+            "source": "fallback",
+            "fallback": True,
+        }
+        try:
+            system = self._build_system_prompt()
+            # Use high temperature for speech, normal for other actions
+            is_talk = (action == "talk")
+            base_temp = self.speech_temperature if is_talk else self.temperature
+            # Three escalating attempts. For talk, we don't drop temperature as
+            # aggressively because we want to preserve natural variation.
             attempts = [
                 {
                     "messages": [
                         {"role": "system", "content": system},
                         {"role": "user", "content": prompt},
                     ],
-                    "temperature": self.temperature,
+                    "temperature": base_temp,
                 },
                 {
                     "messages": [
@@ -590,13 +881,9 @@ class LLMAgent(Agent):
                             "content": f"{prompt}\n\n再次强调：请只输出一个合法 JSON 对象，不要输出代码块，不要输出额外解释，不要留空。",
                         },
                     ],
-                    "temperature": 0.2,
+                    "temperature": max(0.4, base_temp - 0.3) if is_talk else 0.2,
                 },
                 {
-                    # Last-ditch retry: very strict, minimal-reasoning prompt.
-                    # Most prior failures here were reasoning_tokens=max with
-                    # empty content; this nudges the model toward emitting
-                    # the JSON faster.
                     "messages": [
                         {"role": "system", "content": system},
                         {
@@ -610,15 +897,12 @@ class LLMAgent(Agent):
                             ),
                         },
                     ],
-                    "temperature": 0.1,
+                    "temperature": 0.3 if is_talk else 0.1,
                 },
             ]
             last_text = ""
             last_usage: dict[str, Any] = {}
-            # Token budgets: 1.0× → 1.5× → 2.5× of the base. The big jump on
-            # the final attempt is for cases where the model truly needs a
-            # lot of space (long persona-style speeches) and the first two
-            # rounds were just too tight.
+            # Token budgets: 1.0× → 1.5× → 2.5× of the base.
             budget_multipliers = [1.0, 1.5, 2.5]
             for idx, attempt in enumerate(attempts):
                 attempt_max = int(max_tokens * budget_multipliers[idx])
