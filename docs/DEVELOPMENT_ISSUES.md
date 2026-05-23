@@ -307,6 +307,17 @@ updated: 2026-05-23
 - **解决方案**：先 `ExitWorktree({action:"remove", discard_changes:true})` 退出并清掉临时分支，回主仓把 WIP 一次性提交为基线（commit `7317b98`），再重新 `EnterWorktree` 拉一个干净的 worktree 接续工作。
 - **教训**：**进 worktree 前必须先 `git status` 检查并落盘主仓 WIP**，否则 worktree 基线就是错的。
 
+### 问题 G9：worktree 默认从 `origin/main` 拉，本地领先 origin 时会缺 commit
+- **发生时间 / Session**：2026-05-23 ｜ 本 session（写 DEVELOPMENT_ISSUES.md 时遇到）
+- **现象**：进 worktree 后 `git log --oneline` 显示 HEAD 父提交是 `bf7e07a`，但项目主仓 `main` 已经在 `7317b98`，缺一个最新 commit。
+- **根因**：`EnterWorktree` 默认 `worktree.baseRef: fresh`——从 `origin/<default-branch>` 拉而非从本地 `main` 拉。本地 `7317b98` 还没 push 到 origin，所以 worktree 看不到它。
+- **解决方案**：三选一
+  1. 进 worktree 前先 `git push origin main` 把本地 commit 推上去
+  2. 改 setting `worktree.baseRef: head` 从本地 HEAD 拉
+  3. 进 worktree 后手动 `git merge main` 把本地领先的 commit 合进来
+- **本次影响**：仅文档改动，未触碰 `7317b98` 改过的 backend/frontend 文件，所以无冲突；但 PR 合并时**目标分支应该是 origin/main 而不是本地 main**，且 push 顺序要小心——先把本地 main 推上去，再 push 本 feature 分支，否则 PR 基线对不上。
+- **教训**：进 worktree 前确认 **本地 main 已与 origin/main 同步**；未 push 的 commit 进 worktree 后看不到，可能在不知不觉中基于过期基线。
+
 ---
 
 ## §H. 工具调用与流程踩坑（小但常踩）
