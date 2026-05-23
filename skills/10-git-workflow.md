@@ -8,9 +8,11 @@ updated: 2026-05-22
 
 # Git 工作流 + PR 规范
 
+> **⚠️ 单人模式覆盖**：本文件 §一 / §三 / §七 中关于"main 受保护、禁止直推、要 PR、要 N 人 approve"的条款，**在当前单人开发阶段被 `CLAUDE.md / AGENTS.md` 顶部"项目运行模式"段覆盖**。AI 可在用户授权下直接 push 到 main。团队 ≥ 2 人时本覆盖失效、恢复本文件原规则。
+
 ## 一、分支模型
 
-**主干**：`main`（受保护，禁止直推）。
+**主干**：`main`（受保护，禁止直推）。<sup>单人模式下豁免——见 `CLAUDE.md` 顶部"项目运行模式"</sup>
 
 **功能分支命名**：
 
@@ -179,7 +181,9 @@ WIP                          ← 不要在 main/PR 上出现
 
 ## 七、AI 助手在 Git 操作上的红线
 
-- **禁止** AI 直接 `git push` 到 main
+> **单人模式覆盖**：第一条"禁止 AI 直接 push 到 main"在单人阶段豁免（见 `CLAUDE.md` 顶部"项目运行模式"）；其他条款仍生效。
+
+- ~~**禁止** AI 直接 `git push` 到 main~~ <sup>单人模式豁免</sup>
 - **禁止** AI 自主创建 PR 不告知人类
 - **禁止** AI 修改 `.git/`、`.gitignore` 添加排除规则把秘密"藏起来"
 - AI 可以：写 commit message 草稿、跑 `git status`/`git diff`/`git log`、在 feature 分支上 commit/push

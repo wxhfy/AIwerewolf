@@ -384,7 +384,8 @@ updated: 2026-05-23
 - **持久化是 MVP 必选项** —— 历史对局、日志信息都要入库（pgsql 优先，SQLite fallback）。
 
 ### 关于流程纪律
-- **走 feature 分支 + PR**，不直推 main；commit 走 Conventional Commits。
+- **【2026-05-23 准则更新】单人开发阶段，AI 可在用户授权下直接 `git push` 到 main**，无需 PR / 无需 2 人 approve；护栏见 `CLAUDE.md` 顶部"项目运行模式"段（不得 `--force`、不得跳 hook、改重灾区前先告知）。团队 ≥ 2 人时恢复 PR 流程。
+- 旧规则（多人阶段沿用）：**走 feature 分支 + PR**，不直推 main；commit 仍走 Conventional Commits。
 - **入口 / 规范文件**（`CLAUDE.md / AGENTS.md / SKILLS.md / skills/*`）必须永远 tracked，重灾区。
 - **AI 动手前必须列计划** —— 列读哪些文件 / 改哪些文件 / 影响面，人类点头后才动手。
 - **披露**：PR 描述里说明哪些代码 / 哪些段由 AI 生成。
