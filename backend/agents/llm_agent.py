@@ -12,7 +12,6 @@ from backend.agents.profiles import ROLE_PROFILES
 from backend.agents.prompts import get_action_strategy, get_output_format, get_system_prompt
 from backend.engine.models import ActionType, Decision, Role
 from backend.engine.visibility import PlayerView
-from backend.eval.evolution import RetrievedKnowledge, retrieve_strategy_knowledge_for_view
 from backend.llm import create_client
 
 
@@ -54,7 +53,7 @@ class LLMAgent(Agent):
         self.winner: str | None = None
         self.last_error: str | None = None
         self.recent_openings: list[str] = []
-        self.current_retrieval: list[RetrievedKnowledge] = []
+        self.current_retrieval: list = []
 
     def initialize(self, view: PlayerView, game_setting: dict) -> None:
         self.view = view
@@ -67,7 +66,12 @@ class LLMAgent(Agent):
         self.view = view
         self.fallback.update(view, request)
         self.memory.append(f"{request} day={view.day} phase={view.phase}")
-        self.current_retrieval = retrieve_strategy_knowledge_for_view(view, top_k=3)
+        try:
+            from backend.eval.evolution import StrategyKnowledgeStore, StrategyRetrievalQuery
+            self.current_retrieval = StrategyKnowledgeStore().retrieve(
+                StrategyRetrievalQuery(role=self.role.value, phase=view.phase, observation_summary=""))
+        except Exception:
+            self.current_retrieval = []
 
     def day_start(self) -> None:
         self.fallback.day_start()

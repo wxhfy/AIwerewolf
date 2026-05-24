@@ -32,16 +32,16 @@ from backend.db.models import (
 )
 from backend.engine.models import GameState
 from backend.eval.evolution import (
+    ABComparison,
     DreamJob,
     HermesEvolutionHook,
-    InMemoryStrategyKnowledgeStore,
     PatchValidationResult,
-    RetrievedKnowledge,
+    RetrievedStrategyLesson,
     RoleStrategyCard as RoleStrategyCardData,
     StrategyKnowledgeDoc as StrategyKnowledgeDocData,
+    StrategyKnowledgeStore,
     StrategyPatch as StrategyPatchData,
     StrategyRetrievalQuery,
-    TournamentComparison,
 )
 from backend.eval.review import LeaderboardAggregator
 from backend.eval.track_b import generate_published_review_document, reconstruct_review_report
@@ -831,7 +831,7 @@ def extract_strategy_knowledge_from_game(game_id: str) -> list[dict[str, Any]]:
     payload = get_review_reports(game_id)
     if not payload or payload.get("status") != "approved":
         return []
-    from backend.eval.evolution import StrategyKnowledgeExtractor
+    from backend.eval.review import StrategyKnowledgeExtractor
 
     docs = StrategyKnowledgeExtractor().extract(payload)
     db = SessionLocal()
@@ -879,7 +879,7 @@ def retrieve_strategy_knowledge(query: StrategyRetrievalQuery) -> list[dict[str,
             .filter(StrategyKnowledgeDoc.status.in_(["active", "candidate"]))
             .all()
         )
-        store = InMemoryStrategyKnowledgeStore()
+        store = StrategyKnowledgeStore()
         docs = [StrategyKnowledgeDocData(**_knowledge_row_to_dict(row)) for row in rows]
         store.upsert_many(docs)
         return _clean([item.to_dict() for item in store.search(query)])
