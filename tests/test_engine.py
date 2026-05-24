@@ -176,3 +176,39 @@ def test_white_wolf_king_boom_interrupts_day_and_kills_target() -> None:
     assert not game.state.player("W").alive
     assert not game.state.player("V2").alive
     assert game.state.day_history[1]["whiteWolfKingBoom"]["target_player_id"] == "V2"
+
+
+def test_wolf_phase_has_private_discussion_vote_and_tally() -> None:
+    players = [
+        Player(id="W1", seat=1, name="WolfOne", role=Role.WEREWOLF, alignment=Alignment.WOLF),
+        Player(id="W2", seat=2, name="WolfTwo", role=Role.WEREWOLF, alignment=Alignment.WOLF),
+        Player(id="V1", seat=3, name="VillagerOne", role=Role.VILLAGER, alignment=Alignment.VILLAGE),
+        Player(id="V2", seat=4, name="VillagerTwo", role=Role.SEER, alignment=Alignment.VILLAGE),
+        Player(id="V3", seat=5, name="VillagerThree", role=Role.WITCH, alignment=Alignment.VILLAGE),
+    ]
+    game = WerewolfGame(players=players, seed=3)
+    game.initialize()
+    game.state.day = 1
+
+    def scripted_ask(player, request, call, many=False):
+        assert request == "WOLF_TEAM_VOTE"
+        return Decision(player.id, ActionType.ATTACK, target_id="V2", reasoning=f"{player.name} votes V2")
+
+    game._ask = scripted_ask  # type: ignore[assignment]
+    game._wolf_phase()
+
+    assert game.state.night_actions.wolf_votes == {"W1": "V2", "W2": "V2"}
+    assert game.state.night_actions.wolf_target_id == "V2"
+
+    wolf_events = [event for event in game.state.events if event.visibility == "private" and set(event.visible_to) == {"W1", "W2"}]
+    kinds = {event.payload.get("kind") for event in wolf_events}
+    assert "wolf_chat_start" in kinds
+    assert "wolf_discussion_turn" in kinds
+    assert "wolf_attack_vote" in kinds
+    assert "wolf_attack_tally" in kinds
+
+    villager_view = Visibility().for_player(game.state, "V1")
+    assert all(event["payload"].get("kind") not in kinds for event in villager_view.private_events)
+    wolf_view = Visibility().for_player(game.state, "W1")
+    wolf_private_kinds = {event["payload"].get("kind") for event in wolf_view.private_events}
+    assert "wolf_attack_tally" in wolf_private_kinds

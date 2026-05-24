@@ -523,17 +523,74 @@ class WerewolfGame:
         if not wolves:
             self._mark_phase_done(Phase.NIGHT_WOLF_ACTION)
             return
+        wolf_ids = [wolf.id for wolf in wolves]
+        self._log(
+            EventType.PRIVATE_INFO,
+            "private",
+            {
+                "kind": "wolf_chat_start",
+                "message": "Wolf team discussion begins. Discuss the night kill target, then each wolf casts an internal attack vote.",
+                "wolf_ids": wolf_ids,
+                "wolf_names": [wolf.name for wolf in wolves],
+            },
+            visible_to=wolf_ids,
+        )
 
         def handle(wolf: Player) -> None:
             if wolf.id in self.state.night_actions.wolf_votes:
                 return
-            decision = self._ask(wolf, "ATTACK", lambda agent: agent.attack())
+            visible_votes = [
+                {
+                    "wolf_id": voter_id,
+                    "wolf_name": self.state.player(voter_id).name,
+                    "target_id": target_id,
+                    "target_name": self.state.player(target_id).name if target_id else None,
+                }
+                for voter_id, target_id in self.state.night_actions.wolf_votes.items()
+                if target_id
+            ]
+            self._log(
+                EventType.PRIVATE_INFO,
+                "private",
+                {
+                    "kind": "wolf_discussion_turn",
+                    "actor_id": wolf.id,
+                    "actor_name": wolf.name,
+                    "message": f"{wolf.name} is choosing a proposed kill target for the wolf team.",
+                    "previous_votes": visible_votes,
+                },
+                visible_to=wolf_ids,
+            )
+            decision = self._ask(wolf, "WOLF_TEAM_VOTE", lambda agent: agent.attack())
             if self.validator.validate(self.state, decision):
                 self.state.night_actions.wolf_votes[wolf.id] = decision.target_id or ""
-                self._log_decision(decision, "private", {"target_id": decision.target_id}, [w.id for w in wolves])
+                self._log_decision(
+                    decision,
+                    "private",
+                    {
+                        "kind": "wolf_attack_vote",
+                        "target_id": decision.target_id,
+                        "target_name": self.state.player(decision.target_id).name if decision.target_id else None,
+                        "current_votes": dict(self.state.night_actions.wolf_votes),
+                    },
+                    wolf_ids,
+                )
         self._run_actor_sequence(Phase.NIGHT_WOLF_ACTION, self._seat_sorted(wolves), handle)
         if self.state.night_actions.wolf_votes:
             self.state.night_actions.wolf_target_id = self._majority_target(self.state.night_actions.wolf_votes)
+            final_target = self.state.player(self.state.night_actions.wolf_target_id)
+            self._log(
+                EventType.PRIVATE_INFO,
+                "private",
+                {
+                    "kind": "wolf_attack_tally",
+                    "message": f"Wolf team final attack target is {final_target.name}.",
+                    "target_id": final_target.id,
+                    "target_name": final_target.name,
+                    "votes": dict(self.state.night_actions.wolf_votes),
+                },
+                visible_to=wolf_ids,
+            )
         self._mark_phase_done(Phase.NIGHT_WOLF_ACTION)
 
     def _witch_phase(self) -> None:

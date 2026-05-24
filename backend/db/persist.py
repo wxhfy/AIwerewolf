@@ -699,6 +699,9 @@ def get_review_reports(game_id: str) -> dict | None:
             .all()
         )
         return {
+            "status": "approved" if rows else "missing",
+            "game_id": game_id,
+            "publish_allowed": bool(rows),
             "legacy": [
             {
                 "id": r.id,
