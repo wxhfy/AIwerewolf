@@ -170,7 +170,7 @@ export default function GamePage() {
   useEffect(() => {
     if (autoStartedRef.current) return;
     if (mode !== "ai") return;
-    if (!snapshotHydrated) return;
+    if (!snapshotHydrated && !gameState) return;
     if (gameState?.winner) return;
     if (isPlaying) return;
     if (wsRef.current) return;
@@ -181,7 +181,7 @@ export default function GamePage() {
     }, 200);
     return () => clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, roomId]);
+  }, [mode, roomId, snapshotHydrated, gameState?.winner, isPlaying]);
 
   function runGame() {
     if (mode === "human") { startHumanGame(); return; }
