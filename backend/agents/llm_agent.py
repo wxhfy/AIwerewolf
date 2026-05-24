@@ -144,6 +144,7 @@ class LLMAgent(Agent):
         view = self._view()
         seat = view.self_player.get("seat", "?")
         name = view.self_player.get("name", "?")
+        phase = view.phase
 
         # Part 1: Base identity + light persona hint
         win_cond = self._build_win_condition()
@@ -153,19 +154,28 @@ class LLMAgent(Agent):
             f"{win_cond}\n\n{persona_hint}"
         )
 
-        # Part 2: Task section
+        # Part 2: Task section (varies by phase)
         if is_last_words:
-            task_line = "你已经出局，现在发表遗言。"
+            task_line = "你已经出局，现在发表遗言——交代身份、留下信息、点出最可疑的人。"
+        elif "BADGE" in str(phase):
+            task_line = (
+                "现在是警徽竞选发言。你不是来点评别人的——你是来争取警徽的。"
+                "说明你为什么想拿警徽、你此刻更想看谁、你能不能带队。"
+                "像桌上一名真实玩家那样说出你此刻想争取的东西，不需要像演讲稿。"
+            )
         else:
-            task_line = "现在是白天讨论。请根据当前局势，自主决定这次发言想达到什么效果。"
+            task_line = (
+                "现在是白天自由发言。你不是在做总结报告——你是桌子上的玩家。"
+                "从上一个发言者的观点切入，认同、质疑、补充都可以。"
+                "不需要面面俱到，只说此刻你最在意的一点。"
+            )
         task = (
             "【当前处境】\n"
             "你正在参与一局实时狼人杀。你不是旁观解说，也不是裁判。\n"
-            "你只知道自己视角内的信息。你有自己的性格和判断方式。\n"
             f"现在轮到你发言。{task_line}"
         )
 
-        # Part 3: Lightweight behavior hint (not a rigid template)
+        # Part 3: Lightweight behavior hint
         behavior_hint = self._build_behavior_hint()
 
         # Part 4: Guidelines
@@ -173,13 +183,13 @@ class LLMAgent(Agent):
             "【底线规则】\n"
             "- 只基于本局实际信息发言，严禁编造。\n"
             "- 用「X号」称呼玩家。\n"
-            "- 你是玩家不是主持人。不要引导发言流程。\n"
+            "- 绝对不要说「请X号发言」「过」「下一位」「接下来有请」——你不是主持人！\n"
             "- 严禁职业相关类比、行业术语和场外经历。\n"
             "\n"
             "【发言方式】\n"
-            "你可以坦诚、含糊、试探、反驳、带节奏、保护别人，或者暂时保留判断。\n"
-            "你的发言不需要覆盖所有玩家，也不需要显得完美。\n"
-            "只说你此刻会在桌上说的话。\n"
+            "从上一人的观点切入——回应他说的内容，然后自然过渡到你自己的判断。\n"
+            "不需要总结全场、不需要逐一点评每个玩家。\n"
+            "不需要每次都说「我是X号玩家」开头。\n"
             "可以分成 2-3 条消息气泡，每条 1-2 句完整的思考。\n"
             "语气像真人聊天，可以有语气词、停顿、反问。\n"
             "\n"
@@ -473,34 +483,41 @@ class LLMAgent(Agent):
         return "\n".join(f"  · {s[:120]}" for s in my_speeches[-3:])
 
     def _build_speak_order_hint(self, is_first: bool, is_last: bool) -> str:
-        """Build wolfcha-style speak order hint."""
+        """Build wolfcha-style speak order hint with 'respond to last speaker' guidance."""
         view = self._view()
         if is_last:
-            # Count today's speakers
             today_speakers = set()
             for e in view.public_events:
                 if e.get("day") == view.day and e.get("type") == "CHAT_MESSAGE" and e.get("phase") == view.phase:
                     today_speakers.add(e.get("actor_id", ""))
             total = len(today_speakers) + 1
-            return f"你是最后一个发言（第{total}/{total}个），所有人都已经发言完毕，不要说「等X号发言」或「看X号接下来怎么说」这类话。"
+            return (
+                f"你是最后一个发言（第{total}/{total}个），所有人都已经发言完毕。"
+                "不要说「等X号发言」或「看X号接下来怎么说」。"
+            )
 
-        # Get today's speakers in order
+        # Get today's speakers in order with their speeches
         today_spoken = []
+        last_speaker = None
+        last_speech = ""
         for e in view.public_events:
             if e.get("day") == view.day and e.get("type") == "CHAT_MESSAGE" and e.get("phase") == view.phase:
                 actor_id = e.get("actor_id", "")
                 p = self._player_by_id(actor_id)
                 if p:
                     tag = self._format_player_tag(p)
-                    if tag not in today_spoken:
-                        today_spoken.append(tag)
+                    if tag not in [s[0] for s in today_spoken]:
+                        payload = e.get("payload", {}) or {}
+                        speech = str(payload.get("speech", ""))[:80]
+                        today_spoken.append((tag, speech))
+                        last_speaker = tag
+                        last_speech = speech
 
-        # Not-yet-spoken alive players
         yet_to_speak = []
         for p in view.players:
             if p["alive"] and p["id"] != self.player_id:
                 tag = self._format_player_tag(p)
-                if tag not in today_spoken:
+                if tag not in [s[0] for s in today_spoken]:
                     yet_to_speak.append(tag)
 
         my_pos = len(today_spoken) + 1
@@ -509,10 +526,17 @@ class LLMAgent(Agent):
         if is_first or not today_spoken:
             return "你是第1个发言，其他人都还没发言。"
 
-        spoken_list = "、".join(today_spoken[-8:]) if today_spoken else "(无)"
-        unspoken_list = "、".join(yet_to_speak[:8]) if yet_to_speak else "(无)"
+        spoken_list = "、".join(s[0] for s in today_spoken[-8:])
+        unspoken_list = "、".join(yet_to_speak[:8])
 
-        return f"你是第{my_pos}/{total}个发言。已发言: {spoken_list}；未发言: {unspoken_list}。"
+        hint = f"你是第{my_pos}/{total}个发言。已发言: {spoken_list}；未发言: {unspoken_list}。"
+        # Add "respond to last speaker" guidance
+        if last_speaker:
+            hint += (
+                f"\n上一个发言的是{last_speaker}，他说：「{last_speech}」。"
+                "你可以从回应他的观点开始——认同、质疑、补充都可以。"
+            )
+        return hint
 
     def _build_phase_hint(self) -> str:
         """Build phase hint section."""
