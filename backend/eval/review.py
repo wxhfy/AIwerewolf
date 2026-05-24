@@ -1129,6 +1129,7 @@ class MetricsCalculator:
                 "bad_case_reports": bad_case_reports,
                 "review_bonuses": review_bonuses,
                 "mvp_results": mvp_results,
+                "wolf_team_votes": self._wolf_team_votes(state),
                 "role_score_formula": (
                     "0.25*camp + 0.25*role_task + 0.20*vote + "
                     "0.10*speech + 0.10*skill + 0.10*survival - mistake_penalty"
@@ -1136,6 +1137,23 @@ class MetricsCalculator:
                 "final_adjusted_formula": "RuleBasedScore + ImpactBonus + SemanticHighlightBonus - ReviewPenalty",
             },
         )
+
+
+    def _wolf_team_votes(self, state: GameState) -> list[dict[str, Any]]:
+        tallies: list[dict[str, Any]] = []
+        for event in state.events:
+            if event.type != EventType.PRIVATE_INFO or event.payload.get("kind") != "wolf_attack_tally":
+                continue
+            votes = dict(event.payload.get("votes", {}))
+            tallies.append({
+                "day": event.day,
+                "target_id": event.payload.get("target_id"),
+                "target_name": event.payload.get("target_name"),
+                "votes": votes,
+                "voter_count": len(votes),
+                "unanimous": len(set(votes.values())) == 1 if votes else False,
+            })
+        return tallies
 
     def detect_bad_cases(self, state: GameState) -> list[BadCaseReport]:
         contexts = self._build_contexts(state)
@@ -2060,6 +2078,7 @@ class ReviewReportBuilder:
                 "leaderboard_available": True,
                 "leaderboard_note": "跨局表现请查看 Leaderboard 输出；跨局 Leaderboard 由 LeaderboardAggregator 单独生成，本报告仅针对当前单局。",
                 "player_scores": [asdict(score) for score in metrics.player_scores],
+                "wolf_team_votes": metrics.metadata.get("wolf_team_votes", []),
                 "source_metadata": dict(metrics.metadata),
                 # TODO: allow an LLM review narrator to append richer natural-language summaries.
             },
@@ -3804,6 +3823,23 @@ class GraphRAGReviewProvider:
 
     def compute_metrics(self, state: GameState) -> GameMetrics:
         return self.calculator.compute(state)
+
+
+    def _wolf_team_votes(self, state: GameState) -> list[dict[str, Any]]:
+        tallies: list[dict[str, Any]] = []
+        for event in state.events:
+            if event.type != EventType.PRIVATE_INFO or event.payload.get("kind") != "wolf_attack_tally":
+                continue
+            votes = dict(event.payload.get("votes", {}))
+            tallies.append({
+                "day": event.day,
+                "target_id": event.payload.get("target_id"),
+                "target_name": event.payload.get("target_name"),
+                "votes": votes,
+                "voter_count": len(votes),
+                "unanimous": len(set(votes.values())) == 1 if votes else False,
+            })
+        return tallies
 
     def detect_bad_cases(self, state: GameState) -> list[BadCaseReport]:
         return self.calculator.detect_bad_cases(state)

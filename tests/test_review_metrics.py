@@ -1398,3 +1398,39 @@ def test_langgraph_report_optimizer_matches_plain_optimizer_core_output() -> Non
     graph = LangGraphReportOptimizer(generator=ReportGenerator(review_llm=MockReviewLLM())).optimize(report, max_iterations=2)
     assert graph.quality_passed == plain.quality_passed
     assert graph.final_markdown == plain.final_markdown
+
+
+def test_review_pipeline_exposes_wolf_team_internal_votes() -> None:
+    wolf1 = make_player("P1", "WolfOne", Role.WEREWOLF, alive=True)
+    wolf2 = make_player("P2", "WolfTwo", Role.WEREWOLF, alive=True)
+    seer = make_player("P3", "SeerA", Role.SEER, alive=False)
+    villager = make_player("P4", "VillagerA", Role.VILLAGER, alive=True)
+    state = make_state(
+        [wolf1, wolf2, seer, villager],
+        [
+            GameEvent.create(
+                day=1,
+                phase=Phase.NIGHT_WOLF_ACTION,
+                type=EventType.PRIVATE_INFO,
+                visibility="private",
+                payload={
+                    "kind": "wolf_attack_tally",
+                    "target_id": seer.id,
+                    "target_name": seer.name,
+                    "votes": {wolf1.id: seer.id, wolf2.id: seer.id},
+                },
+                visible_to=[wolf1.id, wolf2.id],
+            ),
+            make_night_action(1, wolf1, "attack", seer),
+            make_night_action(1, wolf2, "attack", seer),
+            make_death(1, seer, "wolf"),
+        ],
+        winner=Alignment.WOLF,
+    )
+    metrics = MetricsCalculator().compute(state)
+    assert metrics.metadata["wolf_team_votes"]
+    assert metrics.metadata["wolf_team_votes"][0]["unanimous"] is True
+
+    report = ReviewReportBuilder().build(state, metrics)
+    assert report.metadata["wolf_team_votes"]
+    assert report.metadata["wolf_team_votes"][0]["target_name"] == "SeerA"
