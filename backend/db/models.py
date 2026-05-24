@@ -274,6 +274,31 @@ class ReviewReport(Base):
     created_at = Column(DateTime, default=_utcnow)
 
 
+class PublishedReview(Base):
+    """Full Track B review artifact with validation + publish status."""
+
+    __tablename__ = "published_reviews"
+
+    id = Column(String, primary_key=True, default=_uuid)
+    game_id = Column(String, ForeignKey("games.id"), nullable=False, unique=True, index=True)
+    status = Column(String, default="draft", index=True)  # draft / approved / needs_revision / rejected
+    view_scope = Column(String, default="moderator_view")
+    grade = Column(String, default="needs_revision")
+    score = Column(Float, default=0.0)
+    publish_allowed = Column(Boolean, default=False)
+    report_json = Column(JSON, default=dict)
+    markdown = Column(Text, default="")
+    validation_result = Column(JSON, default=dict)
+    replay_bundle = Column(JSON, default=dict)
+    speech_acts = Column(JSON, default=list)
+    suspicion_matrix = Column(JSON, default=list)
+    repair_history = Column(JSON, default=list)
+    extra_metadata = Column("metadata", JSON, default=dict)
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+    published_at = Column(DateTime, nullable=True)
+
+
 class EvolutionRound(Base):
     """One iteration of the self-evolution loop (Track C).
 

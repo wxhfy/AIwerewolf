@@ -191,6 +191,52 @@ export interface RoomCreateRequest {
   agent_type?: string;
 }
 
+export interface ValidationIssue {
+  issue_id: string;
+  severity: string;
+  gate: string;
+  issue_type: string;
+  location: Record<string, any>;
+  message: string;
+  evidence: string[];
+  required_fix: string;
+  repair_tool?: string | null;
+  blocking: boolean;
+}
+
+export interface ValidationResult {
+  report_id: string;
+  game_id: string;
+  passed: boolean;
+  grade: string;
+  score: number;
+  issues: ValidationIssue[];
+  required_tools: string[];
+  revision_instructions: string[];
+  publish_allowed: boolean;
+}
+
+export interface TrackBReviewDocument {
+  report_id: string;
+  game_id: string;
+  status: string;
+  view_scope: string;
+  grade: string;
+  score: number;
+  publish_allowed: boolean;
+  review_report: Record<string, any>;
+  markdown: string;
+  validation_result: ValidationResult;
+  replay_bundle: Record<string, any>;
+  speech_acts: Array<Record<string, any>>;
+  suspicion_matrix: Array<Record<string, any>>;
+  repair_history: Array<Record<string, any>>;
+  html_report?: string | null;
+  metadata: Record<string, any>;
+  created_at?: string | null;
+  published_at?: string | null;
+}
+
 export type WebSocketMessage =
   | { type: "status"; status: string; seed?: number; agent_type?: string }
   | { type: "snapshot"; state: GameState; room_id?: string }

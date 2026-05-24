@@ -51,6 +51,55 @@ try {
   browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 1440, height: 1100 } });
 
+  const completedRoomResponse = await fetch(
+    `http://127.0.0.1:${backendPort}/api/rooms?name=SmokeReview&seed=34&player_count=7&agent_type=heuristic`,
+    { method: "POST" }
+  );
+  const completedRoom = await completedRoomResponse.json();
+  await fetch(`http://127.0.0.1:${backendPort}/api/rooms/${completedRoom.id}/games?show_private=true`, { method: "POST" });
+
+  await page.goto(`http://127.0.0.1:${frontendPort}/room/${completedRoom.id}/play?mode=ai&lang=en`, { waitUntil: "networkidle" });
+  await page.waitForFunction(() => {
+    const text = document.body.innerText;
+    return (
+      (text.includes("Track B Review") || text.includes("Track B 复盘")) &&
+      (text.includes("Validated and published") || text.includes("已通过校验并发布"))
+    );
+  }, { timeout: 30000 });
+
+  const reviewState = await page.evaluate(() => ({
+    text: document.body.innerText,
+    url: window.location.pathname,
+  }));
+  if (!reviewState.url.includes(`/room/${completedRoom.id}/play`)) {
+    throw new Error(`Completed room route missing: ${reviewState.url}`);
+  }
+  if (
+    !reviewState.text.includes("Scoreboard") &&
+    !reviewState.text.includes("玩家评分榜") &&
+    !reviewState.text.includes("Track B Review") &&
+    !reviewState.text.includes("Track B 复盘")
+  ) {
+    throw new Error("Completed room did not render the Track B review panel");
+  }
+  const htmlLink = page.getByRole("link", { name: /Open HTML Report|打开 HTML 报告/ });
+  const htmlHref = await htmlLink.getAttribute("href");
+  if (!htmlHref || !htmlHref.includes(`/api/games/`)) {
+    throw new Error("HTML review link was not rendered");
+  }
+  const htmlPage = await browser.newPage();
+  const htmlUrl = htmlHref.startsWith("http") ? htmlHref : `http://127.0.0.1:${frontendPort}${htmlHref}`;
+  await htmlPage.goto(htmlUrl, { waitUntil: "networkidle" });
+  const htmlText = await htmlPage.textContent("body");
+  if (!htmlText?.includes("AI Werewolf 复盘报告")) {
+    throw new Error("HTML review page did not render the exported report");
+  }
+  const hasSvgVisual = await htmlPage.locator("svg").count();
+  if (!hasSvgVisual) {
+    throw new Error("HTML review page did not render visual-agent SVG assets");
+  }
+  await htmlPage.close();
+
   await page.goto(`http://127.0.0.1:${frontendPort}/?lang=zh`, { waitUntil: "networkidle" });
   await page.getByRole("button", { name: "EN" }).click();
   await page.getByText("Configure your game and start an AI Werewolf match").waitFor();
@@ -65,7 +114,6 @@ try {
   }
   await page.waitForFunction(() => document.body.innerText.includes("Match in progress") || /Day\\s+\\d+/.test(document.body.innerText), { timeout: 30000 });
   await page.waitForFunction(() => document.body.innerText.includes("events") || document.body.innerText.includes("Events"), { timeout: 30000 });
-
   const aiState = await page.evaluate(() => ({
     url: window.location.pathname,
     text: document.body.innerText,
