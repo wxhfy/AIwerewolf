@@ -19,6 +19,7 @@ import { ChatBubble } from "@/components/game/ChatBubble";
 import { EventItem } from "@/components/game/EventItem";
 import { EventType } from "@/types";
 import { PhaseAnnouncement } from "@/components/game/PhaseAnnouncement";
+import { apiUrl, wsUrl } from "@/lib/api";
 
 export default function GamePage() {
   const router = useRouter();
@@ -92,7 +93,7 @@ export default function GamePage() {
 
   useEffect(() => {
     if (!room || room.id !== roomId) {
-      fetch(`/api/rooms/${roomId}`)
+      fetch(apiUrl(`/api/rooms/${roomId}`))
         .then((r) => (r.ok ? r.json() : null))
         .then((d) => { if (d) setRoom(d); }).catch(() => {});
     }
@@ -145,8 +146,7 @@ export default function GamePage() {
     // would flash empty placeholders for the 100-300ms before the WS replays
     // baseline frames. Only clear when this is a fresh "run again" click.
     if (gameState?.winner) setGameState(null);
-    const proto = location.protocol === "https:" ? "wss:" : "ws:";
-    const ws = new WebSocket(`${proto}//${location.host}/ws/rooms/${roomId}`);
+    const ws = new WebSocket(wsUrl(`/ws/rooms/${roomId}`));
     wsRef.current = ws;
     ws.onopen = () => ws.send(JSON.stringify({
       action: "start", seed, agent_type: agentType,
@@ -194,7 +194,7 @@ export default function GamePage() {
   async function startHumanGame() {
     setIsPlaying(true); setStatusTitle(t("statusStreaming", language)); setGameState(null);
     try {
-      const res = await fetch(`/api/rooms/${roomId}/start?show_private=true`, { method: "POST" });
+      const res = await fetch(apiUrl(`/api/rooms/${roomId}/start?show_private=true`), { method: "POST" });
       if (!res.ok) throw new Error("Start failed");
       const snap = await res.json();
       setGameState(snap);
@@ -204,7 +204,7 @@ export default function GamePage() {
 
   async function handleHumanAction(data: { target_id?: string | null; speech?: string | null; save?: boolean }) {
     try {
-      const res = await fetch(`/api/rooms/${roomId}/action`, {
+      const res = await fetch(apiUrl(`/api/rooms/${roomId}/action`), {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ target_id: data.target_id || null, speech: data.speech || null, save: data.save || false, reasoning: "Human action from UI" }),
       });

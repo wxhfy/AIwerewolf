@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAppContext } from "@/context/AppContext";
 import { Language, AgentType } from "@/types";
 import { Button } from "@/components/ui/Button";
+import { apiUrl } from "@/lib/api";
 
 export default function LobbyPage() {
   const router = useRouter();
@@ -53,12 +54,12 @@ export default function LobbyPage() {
         agent_type: "llm",
       });
       if (mode === "human") params.set("human_seat", String(humanSeat));
-      const res = await fetch(`/api/rooms?${params.toString()}`, { method: "POST" });
+      const res = await fetch(apiUrl(`/api/rooms?${params.toString()}`), { method: "POST" });
       if (!res.ok) throw new Error(`Failed to create room (${res.status})`);
       const room = await res.json();
       setCreatedRoom(room);
       if (mode === "ai") {
-        const prep = await fetch(`/api/rooms/${room.id}/prepare?show_private=true`, { method: "POST" });
+        const prep = await fetch(apiUrl(`/api/rooms/${room.id}/prepare?show_private=true`), { method: "POST" });
         if (!prep.ok) throw new Error(`Prepare failed (${prep.status})`);
         const snap = await prep.json();
         setPrepareSnapshot(snap);
@@ -80,7 +81,7 @@ export default function LobbyPage() {
     setError("");
     try {
       if (mode === "human") {
-        const res = await fetch(`/api/rooms/${createdRoom.id}/start?show_private=true`, { method: "POST" });
+        const res = await fetch(apiUrl(`/api/rooms/${createdRoom.id}/start?show_private=true`), { method: "POST" });
         if (!res.ok) throw new Error(`Start failed (${res.status})`);
         const snapshot = await res.json();
         setGameState(snapshot);
@@ -89,7 +90,7 @@ export default function LobbyPage() {
       } else {
         // Defensive: prepare may have failed silently — refetch now so the
         // play page still gets a baseline.
-        const prep = await fetch(`/api/rooms/${createdRoom.id}/prepare?show_private=true`, { method: "POST" });
+        const prep = await fetch(apiUrl(`/api/rooms/${createdRoom.id}/prepare?show_private=true`), { method: "POST" });
         if (!prep.ok) throw new Error(`Prepare failed (${prep.status})`);
         setGameState(await prep.json());
       }

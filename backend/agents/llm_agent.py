@@ -52,6 +52,7 @@ class LLMAgent(Agent):
         self.character = character
         self.winner: str | None = None
         self.last_error: str | None = None
+        self.recent_openings: list[str] = []
 
     def initialize(self, view: PlayerView, game_setting: dict) -> None:
         self.view = view
@@ -101,6 +102,13 @@ class LLMAgent(Agent):
         # --- Focus angle (wolfcha exact phrasing) ---
         focus_angle = self._build_perspective_hints_xml()
 
+        # --- Table-language examples ---
+        dialogue_examples = self._build_dialogue_examples(is_first_speaker, is_last_words)
+
+        # --- Style guardrails ---
+        style_guardrails = self._build_style_guardrails()
+        repeat_guardrails = self._build_repeat_guardrails()
+
         # --- User prompt assembly (wolfcha format) ---
         user_prompt_parts = [game_context]
         transcript_text = "\n".join(today_transcript) if isinstance(today_transcript, list) else (today_transcript or "")
@@ -111,7 +119,13 @@ class LLMAgent(Agent):
         user_prompt_parts.append("【你本日已说过的话】\n" + (self_speech or "（无）"))
         if phase_hint:
             user_prompt_parts.append(phase_hint)
+        if style_guardrails:
+            user_prompt_parts.append(style_guardrails)
+        if repeat_guardrails:
+            user_prompt_parts.append(repeat_guardrails)
         user_prompt_parts.append("【发言顺序】\n" + speak_order_hint)
+        if dialogue_examples:
+            user_prompt_parts.append(dialogue_examples)
         user_prompt_parts.append("\n轮到你发言，返回JSON数组：")
 
         full_user_prompt = "\n\n".join(user_prompt_parts)
@@ -127,6 +141,7 @@ class LLMAgent(Agent):
         # Preserve segment_texts for multi-bubble emission
         if meta.get("segment_texts"):
             meta["segments"] = meta["segment_texts"]
+            self._remember_opening(meta["segment_texts"])
         return Decision(
             self.player_id,
             ActionType.TALK,
@@ -164,11 +179,16 @@ class LLMAgent(Agent):
                 "说明你为什么想拿警徽、你此刻更想看谁、你能不能带队。"
                 "像桌上一名真实玩家那样说出你此刻想争取的东西，不需要像演讲稿。"
             )
+        elif str(phase) == "DAY_PK_SPEECH":
+            task_line = (
+                "现在是PK发言。场上已经缩到少数焦点位，你需要更明确地打一个方向。"
+                "可以直接反驳冲你的人，也可以解释为什么另一个PK位更该出。"
+            )
         else:
             task_line = (
                 "现在是白天自由发言。你不是在做总结报告——你是桌子上的玩家。"
                 "从上一个发言者的观点切入，认同、质疑、补充都可以。"
-                "不需要面面俱到，只说此刻你最在意的一点。"
+                "不需要面面俱到，只说此刻你最在意的一点，并顺手给出你的站边或保留意见。"
             )
         task = (
             "【当前处境】\n"
@@ -186,13 +206,19 @@ class LLMAgent(Agent):
             "- 用「X号」称呼玩家。\n"
             "- 绝对不要说「请X号发言」「过」「下一位」「接下来有请」——你不是主持人！\n"
             "- 严禁职业相关类比、行业术语和场外经历。\n"
+            "- 这是线上打字局。你看不到表情、眼神、手势、语速、小动作、摸牌动作；除非聊天记录里明确写出来，否则禁止提这些观察。\n"
+            "- 不要虚构自己“听出来”“看出来”的场外细节，也不要写成剧本旁白。\n"
             "\n"
             "【发言方式】\n"
             "从上一人的观点切入——回应他说的内容，然后自然过渡到你自己的判断。\n"
             "不需要总结全场、不需要逐一点评每个玩家。\n"
             "不需要每次都说「我是X号玩家」开头。\n"
-            "可以分成 2-3 条消息气泡，每条 1-2 句完整的思考。\n"
-            "语气像真人聊天，可以有语气词、停顿、反问。\n"
+            "至少点名 1 位存活玩家，最好直接说清你更像在保谁、踩谁、还是先观望谁。\n"
+            "尽量挂住 1 条真实桌面事实：某人的一句发言、一次投票、一次死亡信息、一次警徽动作。\n"
+            "可以分成 2-4 条消息气泡，每条 1-2 句完整的思考；首日信息少时也不要只说空话，要给出一个轻度方向。\n"
+            "如果你是第一个发言，第一句不要先解释‘信息少’或‘先观察’，而是直接抛一个你要抓的行为模式、玩家类型或警徽态度。\n"
+            "允许保留判断，但保留判断也要说明你接下来重点听谁、盯谁、或者为什么暂时不跟票。\n"
+            "语气像真人聊天，可以有语气词、停顿、反问，但不要喊口号，也不要写成总结报告。\n"
             "\n"
             "【输出格式】\n"
             "返回 JSON 字符串数组，每个元素是一条消息气泡。"
@@ -559,6 +585,120 @@ class LLMAgent(Agent):
             return ""
         return f"【当前环节】\n{hint}"
 
+    def _build_dialogue_examples(self, is_first: bool, is_last_words: bool) -> str:
+        """Short table-style examples to anchor 'human-like but grounded' speech."""
+        phase = self._view().phase
+        if is_last_words:
+            return (
+                "【参考语气】\n"
+                "- “我这张如果走了，你们重点回头看3号和6号，今天这两张的站边最不干净。”\n"
+                "- “身份我先不展开复盘了，就留一句：别把警徽流断在4号这里。”"
+            )
+        if phase == "DAY_BADGE_SPEECH":
+            return (
+                "【参考语气】\n"
+                "- “这把警徽我想拿，因为我今天能把票型和发言都记住，不会乱归。”\n"
+                "- “如果警徽给我，我第一天会先盯2号和5号，这两张的起跳空间最大。”"
+            )
+        if phase == "DAY_PK_SPEECH":
+            return (
+                "【参考语气】\n"
+                "- “PK到我头上可以，但你们得先解释为什么3号那轮跟票比我还轻却没人追。”\n"
+                "- “我这张先不求你们保死，只说一点：今天真要出我，明天请回头看一直顺着我冲的人。”"
+            )
+        if is_first:
+            return "【参考语气】\n" + "\n".join(self._first_speaker_examples())
+        return (
+            "【参考语气】\n"
+            "- “你刚那句我不太认，尤其是你把4号直接保掉这一下有点快。”\n"
+            "- “我这轮先不跟着冲6号，我更想听5号为什么昨天那票能下得这么轻。”"
+        )
+
+    def _first_speaker_examples(self) -> list[str]:
+        """Style-specific openers so first-speaker lines don't all collapse into one template."""
+        style = self.character.persona.style_label if self.character else ""
+        samples = {
+            "aggressive": [
+                "- “首麦我先把话放这，等下谁发言太滑，我第一轮就追着打。”",
+                "- “别都拿第一天当挡箭牌，后面谁急着抱团我先记一笔。”",
+            ],
+            "analytical": [
+                "- “我先给个筛选标准：谁先偷换概念、谁先乱保人，我就从谁开始盘。”",
+                "- “样本少不代表没法听，我先看谁后面发言会和自己的立场对不上。”",
+            ],
+            "insightful": [
+                "- “我今天更想听动机，不是谁声音大，而是谁一开口就在替自己留后路。”",
+                "- “首置位先不锤人，但谁急着证明自己是好人，我会先多看一眼。”",
+            ],
+            "playful": [
+                "- “先说好，谁一上来端着正义脸乱保人，我今天先给他挂个问号。”",
+                "- “第一麦没材料硬锤，但我可以先埋个钩子，后面谁自己往上撞我就接。”",
+            ],
+            "observant": [
+                "- “我先不站边，等下谁发言像提前备好稿子，我会先记他。”",
+                "- “这一轮我只抓不自然的点，谁说得太顺了反而容易进我视线。”",
+            ],
+            "poetic": [
+                "- “今天先不急着下刀口结论，我更想看谁的话像借来的，谁的话是从心里出来的。”",
+                "- “第一天像雾里看人，但雾最厚的地方，往往也最值得多盯两眼。”",
+            ],
+        }
+        return samples.get(
+            style,
+            [
+                "- “我先留个观察方向，后面谁最先抢结论、谁最先躲判断，我都会记。”",
+                "- “第一天信息少不等于只能过，我更在意谁开口先把自己摘干净。”",
+            ],
+        )
+
+    def _build_style_guardrails(self) -> str:
+        """Map persona traits into concrete table-language constraints."""
+        if not self.character:
+            return ""
+        p = self.character.persona
+        rules: list[str] = []
+        style = p.style_label
+        voice = set(p.voice_rules or [])
+
+        if style in {"aggressive", "commander", "ranger", "tactical", "interrogator"}:
+            rules.append("你可以更强势，但强势要落在具体对象和理由上，不要空喊。")
+        if style in {"analytical", "matrix", "precise", "meticulous", "strategist", "theorist"}:
+            rules.append("你说话要更像在对账：少抒情，多点‘因为/所以/如果’。")
+        if style in {"warm", "harmonizer", "mediator", "caretaker", "rallier"}:
+            rules.append("你的语气可以柔和，但最后还是要给出一个方向，不要只有安抚。")
+        if style in {"poetic", "lyrical", "sensitive"}:
+            rules.append("你可以带一点意象或情绪色彩，但核心判断必须清楚，别把发言写成散文。")
+        if style in {"playful", "provocative", "tricky", "cosmopolitan", "curious"}:
+            rules.append("可以带一点调侃或小钩子，但不要为了有趣牺牲清晰度。")
+        if style in {"veteran", "observant", "still_water", "gentle", "observer"}:
+            rules.append("你不需要说太多，但短发言里要留一个明确观察点。")
+
+        if "minimal" in voice or p.speech_length_habit.startswith("极短") or p.speech_length_habit == "短":
+            rules.append("控制在 2-3 条短气泡内，不要突然变成长篇大论。")
+        if "structured" in voice or "precise" in voice or "formal" in voice:
+            rules.append("尽量使用先判断后补一句依据的结构。")
+        if "comedic" in voice or "witty" in voice or p.humor_style == "sarcastic":
+            rules.append("允许一点玩笑或反讽，但整轮最多一句，别每句都抖机灵。")
+        if p.uncertainty_style:
+            rules.append(f"不确定时，按你的习惯处理：{p.uncertainty_style}。")
+        if p.social_habit:
+            rules.append(f"桌面互动习惯：{p.social_habit}。")
+
+        if not rules:
+            return ""
+        return "【你的这轮说话手感】\n" + "\n".join(f"- {item}" for item in rules[:5])
+
+    def _build_repeat_guardrails(self) -> str:
+        samples = [item for item in self.recent_openings[-3:] if item]
+        if not samples:
+            return ""
+        return (
+            "【避免重复】\n"
+            "不要再用你最近几轮这些开头方式：\n"
+            + "\n".join(f"- {item}" for item in samples)
+            + "\n这轮请换一个切入口。"
+        )
+
     def _build_perspective_hints_xml(self) -> str:
         """Build wolfcha-style focus angle XML block."""
         hints_text = self._build_perspective_hints()
@@ -568,7 +708,16 @@ class LLMAgent(Agent):
 
     def vote(self) -> Decision:
         fallback = self.fallback.vote()
-        data = self._target_action("vote", fallback, "Choose exactly one vote target from the options.")
+        data = self._target_action(
+            "vote",
+            fallback,
+            "今天必须从存活玩家里投出 1 人。",
+            extra_instructions=[
+                "优先根据今天桌面上已经发生的真实信息投票：发言矛盾、站边摇摆、警徽表现、历史票型都可以。",
+                "reasoning 用 2-4 句中文说清楚：你为什么投这个人、你不投另一个焦点位的原因、你希望好人接下来观察什么。",
+                "如果信息仍然不足，也要给出一个当前最差选项，而不是空泛地说都可疑。",
+            ],
+        )
         return Decision(
             self.player_id,
             ActionType.VOTE,
@@ -770,10 +919,20 @@ class LLMAgent(Agent):
     def role(self) -> Role:
         return Role(self._view().self_player["role"])
 
-    def _target_action(self, action: str, fallback: Decision, instruction: str) -> dict[str, Any]:
+    def _target_action(
+        self,
+        action: str,
+        fallback: Decision,
+        instruction: str,
+        *,
+        extra_instructions: list[str] | None = None,
+    ) -> dict[str, Any]:
+        instructions = [instruction]
+        if extra_instructions:
+            instructions.extend(extra_instructions)
         prompt = self._build_action_prompt(
             action=action,
-            instructions=[instruction],
+            instructions=instructions,
             options=self._alive_names(),
         )
         default = {
@@ -1242,19 +1401,20 @@ class LLMAgent(Agent):
             # Parse JSON string array: ["msg1", "msg2"]
             segments = self._parse_speech_array(text)
             if segments:
-                speech = "\n\n".join(segments)
-                self.last_error = None
-                meta["source"] = "llm"
-                meta["fallback"] = False
-                meta["raw_text"] = text[:400]
-                meta["attempts"] = 1
-                meta["segment_count"] = len(segments)
-                meta["segment_texts"] = segments
-                meta["usage"] = usage
-                return speech, meta
+                if not self._looks_generic_speech(segments):
+                    speech = "\n\n".join(segments)
+                    self.last_error = None
+                    meta["source"] = "llm"
+                    meta["fallback"] = False
+                    meta["raw_text"] = text[:400]
+                    meta["attempts"] = 1
+                    meta["segment_count"] = len(segments)
+                    meta["segment_texts"] = segments
+                    meta["usage"] = usage
+                    return speech, meta
 
             # Second attempt: retry with lower temp
-            retry_prompt = user_prompt + "\n\n请输出JSON字符串数组。"
+            retry_prompt = user_prompt + "\n\n" + self._anti_generic_retry_note() + "\n\n请输出JSON字符串数组。"
             resp2 = self.client.chat_sync(
                 messages=[
                     {"role": "system", "content": system_content},
@@ -1268,20 +1428,21 @@ class LLMAgent(Agent):
             usage2 = resp2.get("usage", {}) if isinstance(resp2, dict) else {}
             segments2 = self._parse_speech_array(text2)
             if segments2:
-                speech = "\n\n".join(segments2)
-                self.last_error = None
-                meta["source"] = "llm"
-                meta["fallback"] = False
-                meta["raw_text"] = text2[:400]
-                meta["attempts"] = 2
-                meta["segment_count"] = len(segments2)
-                meta["segment_texts"] = segments2
-                meta["usage"] = usage2
-                return speech, meta
+                if not self._looks_generic_speech(segments2):
+                    speech = "\n\n".join(segments2)
+                    self.last_error = None
+                    meta["source"] = "llm"
+                    meta["fallback"] = False
+                    meta["raw_text"] = text2[:400]
+                    meta["attempts"] = 2
+                    meta["segment_count"] = len(segments2)
+                    meta["segment_texts"] = segments2
+                    meta["usage"] = usage2
+                    return speech, meta
 
             # Third attempt: just use raw text as speech (free-text fallback)
             cleaned = self._clean_speech_text(text)
-            if cleaned and len(cleaned) >= 2:
+            if cleaned and len(cleaned) >= 2 and not self._looks_generic_speech([cleaned]):
                 meta["source"] = "llm"
                 meta["fallback"] = False
                 meta["raw_text"] = text[:400]
@@ -1306,6 +1467,55 @@ class LLMAgent(Agent):
         if focus_angle:
             text_parts.append(focus_angle)
         return "\n\n".join(text_parts)
+
+    def _anti_generic_retry_note(self) -> str:
+        return (
+            "【去模板要求】\n"
+            "不要再把“信息少、先观察、重点听X号、暂时不站边”当成整段主体。\n"
+            "不要用“第一天……”“首置位信息少……”这类万能开场白起手。\n"
+            "请换一种更像真人桌游的起手：\n"
+            "1. 直接点一个你要追的行为模式；或\n"
+            "2. 明确说你这轮更保谁/踩谁；或\n"
+            "3. 直接回应上一位最不合理的一句。\n"
+            "允许保留判断，但不能整段都停留在‘再听听看’。"
+        )
+
+    def _looks_generic_speech(self, segments: list[str]) -> bool:
+        text = " ".join(s.strip() for s in segments if s.strip())
+        if not text:
+            return True
+        generic_markers = [
+            "信息少",
+            "没有信息",
+            "先观察",
+            "先听",
+            "重点听",
+            "暂时不站边",
+            "不给站边",
+            "不给结论",
+            "再听听",
+        ]
+        opening_markers = ["第一天", "首置位", "首麦", "今天信息少", "首置位信息少"]
+        hits = sum(1 for item in generic_markers if item in text)
+        opening = text[:20]
+        # Strongly discourage the same safe first-day disclaimer pattern.
+        starts_generic = any(opening.startswith(item) for item in opening_markers) and (
+            "信息" in opening or "观察" in opening or "不站边" in opening or "不给" in opening
+        )
+        return (
+            starts_generic
+            or hits >= 3
+            or (hits >= 2 and len(text) < 90 and "因为" not in text and "所以" not in text and "但" not in text)
+        )
+
+    def _remember_opening(self, segments: list[str]) -> None:
+        for segment in segments:
+            text = segment.strip().replace("\n", " ")
+            if not text:
+                continue
+            self.recent_openings.append(text[:24])
+            self.recent_openings = self.recent_openings[-6:]
+            break
 
     def _parse_speech_array(self, text: str) -> list[str]:
         """Parse LLM output as JSON string array (wolfcha format): [\"msg1\", \"msg2\"]."""

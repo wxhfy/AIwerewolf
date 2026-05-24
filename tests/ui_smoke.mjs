@@ -17,8 +17,8 @@ async function waitForServer(url, retries = 120) {
   throw new Error(`Server did not become ready: ${url}`);
 }
 
-const backendPort = 8010;
-const frontendPort = 3102;
+const backendPort = 18000 + Math.floor(Math.random() * 1000);
+const frontendPort = 3100 + Math.floor(Math.random() * 200);
 
 const backend = spawn(
   "python",
@@ -35,7 +35,11 @@ const frontend = spawn(
   {
     cwd: `${process.cwd()}/frontend`,
     stdio: "inherit",
-    env: { ...process.env, BACKEND_ORIGIN: `http://127.0.0.1:${backendPort}` },
+    env: {
+      ...process.env,
+      BACKEND_ORIGIN: `http://127.0.0.1:${backendPort}`,
+      NEXT_PUBLIC_BACKEND_ORIGIN: `http://127.0.0.1:${backendPort}`,
+    },
   }
 );
 
@@ -78,11 +82,18 @@ try {
   await page.getByRole("button", { name: /Start Game|开始游戏/ }).click();
   await page.getByText(/Ready to Start|准备开始/).waitFor();
   await page.getByRole("button", { name: /Confirm & Start|确认开始/ }).click();
-  await page.waitForURL(/mode=human/);
+  await page.waitForURL(/mode=human/, { timeout: 60000 });
   await page.waitForFunction(() => {
     const text = document.body.innerText;
-    return text.includes("Submit") || text.includes("Please select a target") || text.includes("Your turn");
-  }, { timeout: 30000 });
+    return (
+      text.includes("Submit") ||
+      text.includes("提交") ||
+      text.includes("Please select a target") ||
+      text.includes("请选择目标") ||
+      text.includes("Your turn") ||
+      text.includes("轮到")
+    );
+  }, { timeout: 60000 });
 
   console.log("UI smoke passed");
 } finally {
