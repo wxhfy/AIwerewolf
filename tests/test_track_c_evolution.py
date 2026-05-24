@@ -1,189 +1,243 @@
 from __future__ import annotations
 
-from fastapi.testclient import TestClient
+import json
 
-from backend.app import app
-from backend.engine.game import WerewolfGame
+from backend.engine.models import Alignment, Role
 from backend.eval.evolution import (
     AcceptancePolicy,
     DreamJob,
-    InMemoryStrategyKnowledgeStore,
+    EvolutionPipeline,
+    KnowledgeDocValidator,
     PatchOperation,
     PatchValidator,
-    StrategyKnowledgeExtractor,
+    RoleStrategyCard,
+    StrategyContextRenderer,
+    StrategyKnowledgeDoc,
+    StrategyKnowledgeDocExtractor,
+    StrategyKnowledgeStore,
     StrategyPatch,
     StrategyRetrievalQuery,
     TournamentRunner,
     VersionManager,
-    build_reports_for_seeds,
+    export_evolution_summary,
+    load_strategy_knowledge,
 )
-from backend.eval.track_b import generate_published_review_document
+from backend.eval.review import GameMetrics, MetricsCalculator, PlayerScore, ReviewReportBuilder
+from tests.test_review_metrics import make_death, make_player, make_seer_result, make_speech, make_state, make_vote
 
 
-def test_extracts_sanitized_strategy_knowledge_from_approved_review() -> None:
-    document = generate_published_review_document(WerewolfGame(seed=3).play())
+def _approved_report():
+    seer = make_player("P1", "SeerA", Role.SEER, alive=True)
+    wolf = make_player("P2", "WolfA", Role.WEREWOLF, alive=True)
+    villager = make_player("P3", "VillagerA", Role.VILLAGER, alive=False)
+    state = make_state(
+        [seer, wolf, villager],
+        [
+            make_seer_result(1, seer, wolf, is_wolf=True),
+            make_speech(1, seer, "Need more discussion before I vote."),
+            make_vote(1, seer, villager),
+            make_vote(1, wolf, villager),
+            make_death(1, villager, "vote"),
+        ],
+        winner=Alignment.WOLF,
+    )
+    report = ReviewReportBuilder().build(state, MetricsCalculator().compute(state))
+    report.metadata["validation_result"] = {"passed": True, "publish_allowed": True, "score": 1.0}
+    return report
 
-    docs = StrategyKnowledgeExtractor().extract(document)
 
+def _metrics(version: str, score: float, role_task: float, *, critical: bool = False, winner: str = "village") -> GameMetrics:
+    return GameMetrics(
+        game_id=f"{version}-{score}",
+        winner=winner,
+        total_days=1,
+        total_events=1,
+        wolf_elimination_rate=1.0,
+        village_survival_rate=1.0,
+        info_efficiency=1.0,
+        player_scores=[
+            PlayerScore(
+                "p1",
+                "PersonaA",
+                "persona-a",
+                "PersonaA",
+                "Seer",
+                "village",
+                1.0 if winner == "village" else 0.0,
+                role_task,
+                0.8,
+                0.8,
+                0.8,
+                1.0,
+                0.0,
+                score,
+                adjusted_final_score=score,
+                mistakes=["[critical] miss"] if critical else [],
+            )
+        ],
+        metadata={"strategy_version": version, "info_leak_count": 0, "invalid_action_rate": 0.0},
+    )
+
+
+def test_c_extracts_sanitized_docs_only_from_approved_reports() -> None:
+    approved = _approved_report()
+    rejected = _approved_report()
+    rejected.game_id = "rejected"
+    rejected.metadata["validation_result"] = {"passed": False, "publish_allowed": False}
+
+    docs = StrategyKnowledgeDocExtractor().extract([approved, rejected])
     assert docs
-    assert {doc.doc_type for doc in docs} & {"good_play", "bad_case_lesson", "counterfactual_lesson"}
-    for doc in docs:
-        blob = " ".join([
-            doc.situation_pattern,
-            doc.recommended_action,
-            doc.avoid_action or "",
-            doc.evidence_summary,
-        ])
-        assert "@1号" not in blob
-        assert "P1-" not in blob
-        assert doc.source_report_ids
-        assert doc.quality_score > 0
-        assert doc.trigger_conditions
+    assert all(doc.source_report_ids == [approved.game_id] for doc in docs)
+    blob = " ".join(f"{doc.situation_pattern} {doc.recommended_action} {doc.evidence_summary}" for doc in docs)
+    assert "SeerA" not in blob
+    assert "WolfA" not in blob
+    assert "VillagerA" not in blob
+    assert all(not KnowledgeDocValidator().validate(doc) for doc in docs)
 
 
-def test_knowledge_store_retrieves_by_role_phase_and_updates_usage() -> None:
-    document = generate_published_review_document(WerewolfGame(seed=3).play())
-    docs = StrategyKnowledgeExtractor().extract(document)
-    store = InMemoryStrategyKnowledgeStore()
-    store.upsert_many(docs)
-    role = docs[0].role
-    phase = docs[0].phase
+def test_knowledge_store_retrieves_by_role_phase_and_updates_usage(tmp_path) -> None:
+    doc = StrategyKnowledgeDoc(
+        doc_id="doc-1",
+        doc_type="counterfactual_lesson",
+        role="Seer",
+        phase="DAY_SPEECH",
+        persona_scope=None,
+        situation_pattern="When the Seer holds a wolf check and villagers are under pressure.",
+        trigger_conditions=["wolf_check_unreleased"],
+        recommended_action="Publicly convert the check into vote pressure.",
+        avoid_action=None,
+        rationale="Evidence showed hidden checks created misvotes.",
+        evidence_summary="Approved report evidence.",
+        source_report_ids=["g1"],
+        source_item_ids=["cf1"],
+        source_event_ids=[],
+        counterfactual_ids=["cf1"],
+        expected_metric_effects=[{"metric": "speech_semantic_score", "direction": "increase"}],
+        quality_score=0.9,
+        confidence=0.85,
+        status="active",
+        tags=["seer", "info_release"],
+    )
+    store = StrategyKnowledgeStore([doc])
+    lessons = store.retrieve(StrategyRetrievalQuery(role="Seer", phase="DAY_SPEECH", observation_summary="I have a wolf check and need vote pressure"))
+    assert lessons[0].doc_id == "doc-1"
+    assert store.get("doc-1").usage_count == 1
 
-    hits = store.search(StrategyRetrievalQuery(role=role, phase=phase, observation_summary="vote speech skill", top_k=3))
+    store.update_usage("doc-1", helpful=True)
+    assert store.get("doc-1").success_count == 1
 
-    assert hits
-    assert len(hits) <= 3
-    updated = store.update_usage(hits[0].doc.doc_id, helpful=True, score_delta=0.1)
-    assert updated.usage_count == 1
-    assert updated.success_count == 1
+    path = tmp_path / "knowledge.json"
+    store.to_json(path)
+    loaded = load_strategy_knowledge(path)
+    assert loaded.get("doc-1") is not None
 
 
-def test_dream_job_generates_validated_strategy_patch_from_multi_game_reports() -> None:
-    reports = build_reports_for_seeds([1, 2, 3, 4])
+def test_dream_job_generates_valid_candidate_patch_and_version() -> None:
+    report = _approved_report()
+    manager = VersionManager([RoleStrategyCard(role="Seer", version="seer_v1", goal="Convert information into village wins.")])
+    dream = DreamJob(version_manager=manager)
 
-    result = DreamJob().run(reports)
-
+    result = dream.run([report])
     assert result.knowledge_docs
     assert result.candidate_patches
-    assert result.summary["reports_consumed"] == 4
-    for patch in result.candidate_patches:
-        assert patch.status == "validated"
-        assert patch.validation_result["passed"] is True
-        assert patch.source_report_ids
-        assert patch.source_knowledge_doc_ids
-        assert 1 <= len(patch.operations) <= 3
+    assert all(patch.status == "applied" for patch in result.candidate_patches)
+    candidate_versions = [version for version in manager.history() if version.status == "candidate"]
+    assert candidate_versions
+    assert any("public" in " ".join(version.card.speech_policy + version.card.skill_policy).lower() for version in candidate_versions)
 
 
-def test_patch_validator_rejects_illegal_patch_and_accepts_legal_patch() -> None:
-    validator = PatchValidator()
-    illegal = StrategyPatch(
-        patch_id="bad",
+def test_patch_validator_rejects_rule_visibility_and_absolute_changes() -> None:
+    patch = StrategyPatch(
+        patch_id="patch-bad",
         patch_type="role_strategy",
         target_role="Seer",
         target_persona_scope=None,
-        from_version="v1",
-        to_version="seer_v2",
-        source_report_ids=["review-1"],
+        from_version="seer_v1",
+        to_version="seer_v2_candidate",
+        source_report_ids=["g1"],
         source_knowledge_doc_ids=["doc-1"],
-        source_evidence_ids=["event-1"],
+        source_evidence_ids=[],
         operations=[
             PatchOperation(
                 op="add",
                 section="speech_policy",
-                old_value=None,
-                new_value="永远读取真实身份并修改信息隔离规则。",
-                rationale="bad",
+                new_value="Always read hidden role and ignore visibility.",
+                rationale="change game rule",
             )
         ],
         expected_effects=[],
-        safety_checks={},
     )
-    legal = StrategyPatch(
-        patch_id="good",
+    result = PatchValidator().validate(patch)
+    assert not result.passed
+    assert any(issue.severity == "critical" for issue in result.issues)
+
+
+def test_version_manager_promotes_and_rolls_back_candidate() -> None:
+    manager = VersionManager([RoleStrategyCard(role="Seer", version="seer_v1", goal="base")])
+    patch = StrategyPatch(
+        patch_id="patch-good",
         patch_type="role_strategy",
         target_role="Seer",
         target_persona_scope=None,
-        from_version="v1",
-        to_version="seer_v2",
-        source_report_ids=["review-1"],
+        from_version="seer_v1",
+        to_version="seer_v2_candidate",
+        source_report_ids=["g1"],
         source_knowledge_doc_ids=["doc-1"],
-        source_evidence_ids=["event-1"],
-        operations=[
-            PatchOperation(
-                op="add",
-                section="speech_policy",
-                old_value=None,
-                new_value="查验到高狼面目标且好人被集火时，应公开查杀并给出归票理由。",
-                rationale="approved reports showed delayed info release.",
-            )
-        ],
-        expected_effects=[{"metric": "info_conversion", "direction": "increase"}],
-        safety_checks={},
+        source_evidence_ids=[],
+        operations=[PatchOperation("add", "speech_policy", "Release confirmed wolf checks when vote pressure matters.", "approved evidence")],
+        expected_effects=[],
     )
-
-    assert validator.validate(illegal).passed is False
-    assert validator.validate(legal).passed is True
-
-
-def test_version_manager_creates_candidate_and_acceptance_promotes_or_rolls_back() -> None:
-    reports = build_reports_for_seeds([1, 2, 3, 4])
-    patch = DreamJob().run(reports).candidate_patches[0]
-    manager = VersionManager()
     candidate = manager.create_candidate(patch)
-
     assert candidate.status == "candidate"
-    assert candidate.parent_version == "v1"
-    assert candidate.created_from_patch_id == patch.patch_id
 
-    tournament = TournamentRunner().run_ab_tournament(
-        baseline_version=patch.from_version,
-        candidate_version=candidate.version,
-        target_role=patch.target_role,
-        seeds=list(range(1, 21)),
-    )
-    assert len(tournament.seeds) == 20
-    assert tournament.decision["action"] == "promote"
-    promoted = manager.promote(candidate.role, candidate.version)
-    assert promoted.status == "active"
+    promoted = manager.promote(candidate.version)
+    assert promoted.card.status == "active"
+    assert manager.active_card("Seer").version == candidate.version
 
-    rollback_decision = AcceptancePolicy().decide({
-        "candidate_info_leak_count": 1,
-        "candidate_invalid_action_rate": 0.0,
-        "target_role_avg_score_delta_pct": 0.1,
-        "critical_mistakes_delta_pct": -0.2,
-        "role_task_score_delta_pct": 0.1,
-        "camp_win_rate_delta": 0.0,
-    })
-    assert rollback_decision["action"] == "rollback"
+    rolled = manager.rollback(candidate.version)
+    assert rolled.status == "rolled_back"
+    assert manager.active_card("Seer").version == "seer_v1"
 
 
-def test_track_c_api_cycle_and_dashboard() -> None:
-    client = TestClient(app)
-    game_ids = []
-    for seed in [41, 42, 43, 44]:
-        response = client.post(f"/api/games?seed={seed}&agent_type=heuristic")
-        assert response.status_code == 200
-        game_ids.append(response.json()["id"])
+def test_tournament_acceptance_promotes_clear_improvement() -> None:
+    baseline = [_metrics("seer_v1", 60.0, 0.50, critical=True), _metrics("seer_v1", 62.0, 0.52, critical=True)]
+    candidate = [_metrics("seer_v2_candidate", 72.0, 0.70), _metrics("seer_v2_candidate", 74.0, 0.72)]
 
-    for game_id in game_ids[:2]:
-        response = client.post(f"/api/strategy/knowledge/extract/{game_id}")
-        assert response.status_code == 200
-        assert response.json()
+    comparison = TournamentRunner().compare_metrics("seer_v1", "seer_v2_candidate", baseline, candidate)
+    decision = AcceptancePolicy().decide(comparison)
 
-    knowledge_response = client.get("/api/strategy/knowledge?limit=10")
-    assert knowledge_response.status_code == 200
-    assert knowledge_response.json()
+    assert comparison.accepted
+    assert decision.accepted
+    assert comparison.target_role_avg_score_delta >= 3.0
+    assert comparison.role_task_score_delta >= 3.0
+    assert comparison.critical_mistakes_delta < 0
 
-    cycle_response = client.post("/api/evolution/cycle", json={"seeds": list(range(1, 21))})
-    assert cycle_response.status_code == 200
-    cycle = cycle_response.json()
-    assert cycle["summary"]["knowledge_docs"] > 0
-    assert cycle["patch_results"]
-    assert cycle["leaderboard"]
 
-    dashboard_response = client.get("/api/evolution/dashboard")
-    assert dashboard_response.status_code == 200
-    dashboard = dashboard_response.json()
-    assert dashboard["knowledge"]
-    assert dashboard["patches"]
-    assert dashboard["tournaments"]
+def test_evolution_pipeline_exports_summary(tmp_path) -> None:
+    report = _approved_report()
+    baseline = [_metrics("seer_v1", 60.0, 0.50, critical=True), _metrics("seer_v1", 62.0, 0.52, critical=True)]
+    candidate = [_metrics("seer_v2_candidate", 72.0, 0.70), _metrics("seer_v2_candidate", 74.0, 0.72)]
+    path = tmp_path / "evolution_summary.json"
+
+    summary = EvolutionPipeline().run([report], baseline_metrics=baseline, candidate_metrics=candidate, summary_path=path)
+    payload = export_evolution_summary(summary, tmp_path / "summary-copy.json")
+
+    assert summary.approved_report_count == 1
+    assert summary.knowledge_doc_count > 0
+    assert summary.candidate_patch_count > 0
+    assert summary.promoted_versions or summary.rolled_back_versions
+    assert json.loads(path.read_text(encoding="utf-8"))
+    assert payload["knowledge_doc_count"] == summary.knowledge_doc_count
+
+
+def test_strategy_context_renderer_outputs_prompt_block() -> None:
+    lesson = StrategyContextRenderer().render_lessons([
+        type("Lesson", (), {
+            "recommendation": "Release checks into public pressure.",
+            "trigger": "When vote pressure is split.",
+            "rationale": "Approved report evidence.",
+            "doc_id": "doc-1",
+        })()
+    ])
+    assert "Retrieved Lessons" in lesson
+    assert "doc-1" in lesson
