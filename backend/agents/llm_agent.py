@@ -124,6 +124,9 @@ class LLMAgent(Agent):
             fallback_speech=fallback.speech or "",
             max_tokens=1536,
         )
+        # Preserve segment_texts for multi-bubble emission
+        if meta.get("segment_texts"):
+            meta["segments"] = meta["segment_texts"]
         return Decision(
             self.player_id,
             ActionType.TALK,
@@ -175,22 +178,13 @@ class LLMAgent(Agent):
             "\n"
             "【发言方式】\n"
             "你可以坦诚、含糊、试探、反驳、带节奏、保护别人，或者暂时保留判断。\n"
-            "不需要每次都完美全面，只说此刻在桌上会说的话。\n"
-            "可以自然地说 1-4 句话，分成多条消息。语气像真人聊天，不是写作文。\n"
-            "\n"
-            "【重要：避免重复套路】\n"
-            "不要每轮都用同样的句式开头（如每次都先说「我是X号玩家」再分析）。\n"
-            "不要每句话都套用你的人设比喻。用你自己的话自然地表达，不要刻意表演。\n"
-            "每个人的发言应该有自己的侧重点，不要大家都说一模一样的内容。\n"
-            "\n"
-            "【常见逻辑陷阱】\n"
-            "- 首夜的狼刀和查验都是盲的——不要说「为什么首夜刀/验了X」。\n"
-            "- 不要用今天发生的事解释昨晚的行为。\n"
-            "- 站在你自己角色的信息视角说话，不要用上帝视角。\n"
+            "你的发言不需要覆盖所有玩家，也不需要显得完美。\n"
+            "只说你此刻会在桌上说的话。\n"
+            "可以分成 2-3 条消息气泡，每条 1-2 句完整的思考。\n"
+            "语气像真人聊天，可以有语气词、停顿、反问。\n"
             "\n"
             "【输出格式】\n"
-            "返回 JSON 字符串数组，每个元素是一条消息气泡。\n"
-            '例如：["我觉得3号有点可疑", "他今天的发言和昨天对不上", "你们有没有注意到？"]'
+            "返回 JSON 字符串数组，每个元素是一条消息气泡。"
         )
 
         parts = [
@@ -908,17 +902,17 @@ class LLMAgent(Agent):
         return lines
 
     def _build_perspective_hints(self) -> str:
-        """Generate unique analytical angles for each player (wolfcha-style focus angle).
+        """Generate game-state-aware focus angles (wolfcha-style).
 
-        Returns a string with 1-2 specific hints so every player doesn't say the
-        same thing. Uses seat number and day as seeds for deterministic variation.
+        Each player gets a unique perspective based on: mentions, seat neighbors,
+        sheriff status, voting patterns, and speak order position.
         """
         view = self._view()
         seat = int(view.self_player.get("seat", 0))
         day = view.day
         hints: list[str] = []
 
-        # Check if this player was mentioned by others
+        # 1. Check if mentioned by others today (highest priority)
         for e in view.public_events:
             if e.get("type") == "CHAT_MESSAGE" and e.get("day") == day:
                 payload = e.get("payload", {}) or {}
@@ -927,34 +921,69 @@ class LLMAgent(Agent):
                     mentioner_id = e.get("actor_id") or ""
                     mentioner = self._player_by_id(mentioner_id)
                     if mentioner:
-                        hints.append(f"玩家 {self._format_player_tag(mentioner)} 提到了你，可以考虑回应。")
+                        who = self._format_player_tag(mentioner)
+                        hints.append(f"你被{who}点名提到了，可以考虑回应")
                     break
 
-        # Adjacent to dead player
+        # 2. Adjacent to dead player
+        total = len(view.players)
         dead_seats = [int(p.get("seat", -1)) for p in view.players if not p["alive"]]
-        if any(abs(seat - ds) == 1 or abs(seat - ds) == len(view.players) - 1 for ds in dead_seats if ds > 0):
-            hints.append("你坐在一位已出局玩家的旁边，可以评论这个位置的局势。")
+        for ds in dead_seats:
+            if ds > 0 and (abs(seat - ds) == 1 or abs(seat - ds) == total - 1):
+                dead_player = next((p for p in view.players if int(p.get("seat", -1)) == ds), None)
+                if dead_player:
+                    hints.append(f"你和出局的{self._format_player_tag(dead_player)}座位相邻，可以从这个角度聊一句")
+                else:
+                    hints.append("你和出局的玩家座位相邻，可以从这个角度聊一句")
+                break
 
-        # Sheriff angle
-        is_sheriff = view.self_player.get("is_sheriff", False) or view.self_player.get("badge")
+        # 3. Sheriff angle (more specific)
+        is_sheriff = view.self_player.get("is_sheriff") or view.self_player.get("badge")
         if is_sheriff:
-            hints.append("你是警长，发言有影响力。可以给归票方向。")
-        elif seat % 2 == view.day % 2:
-            hints.append("关注警长的归票，看是否合理。")
+            hints.append("你是警长，你的发言会影响别人，可以自然给出你的方向")
         else:
-            hints.append("警长的发言是否让你信服？可以表态。")
+            # Alternate: respond to sheriff vs question sheriff
+            if (seat + day) % 2 == 0:
+                hints.append("可以回应一下警长的方向，说明你是否认同")
+            else:
+                hints.append("如果你不认同警长，可以自然提出疑问")
 
-        # Voting pattern (day 2+)
+        # 4. Voting alignment (day 2+)
         if day >= 2:
-            hints.append(f"回顾昨天的投票和发言，看有没有人前后不一致。")
+            my_votes = []
+            for e in view.public_events:
+                if e.get("type") == "VOTE_CAST" and e.get("day") == day - 1:
+                    payload = e.get("payload", {}) or {}
+                    if payload.get("voter_id") == self.player_id:
+                        my_votes.append(payload.get("target_id", ""))
+            if my_votes:
+                # Find who voted the same way
+                same_voters = []
+                for e in view.public_events:
+                    if e.get("type") == "VOTE_CAST" and e.get("day") == day - 1:
+                        payload = e.get("payload", {}) or {}
+                        if payload.get("target_id") in my_votes and payload.get("voter_id") != self.player_id:
+                            v = self._player_by_id(payload.get("voter_id", ""))
+                            if v:
+                                same_voters.append(self._format_player_tag(v))
+                if same_voters:
+                    names = "、".join(same_voters[:3])
+                    hints.append(f"昨天{names}和你投了同一个目标，可以想想这件事要不要提")
 
-        # Select at most 2 hints deterministically
-        selected = []
-        for i, h in enumerate(hints):
-            if (seat + day + i) % len(hints) < 2:
-                selected.append(h)
+        # 5. Speak position (determined by counting today's speakers)
+        today_spoken = sum(
+            1 for e in view.public_events
+            if e.get("day") == day and e.get("type") == "CHAT_MESSAGE" and e.get("phase") == view.phase
+        )
+        if today_spoken == 0:
+            hints.append("你是第一个发言，没有人可以参考，可以先抛出一个起手判断")
+        elif today_spoken >= 3:
+            hints.append("你已经听了大部分人的发言，可以挑你最在意的一点回应")
+
+        # Select at most 2 hints
+        selected = hints[:2] if len(hints) >= 2 else hints
         if not selected:
-            selected = hints[:1]
+            return ""
 
         return "\n".join(f"- {h}" for h in selected[:2])
 
@@ -1187,12 +1216,13 @@ class LLMAgent(Agent):
                 meta["fallback"] = False
                 meta["raw_text"] = text[:400]
                 meta["attempts"] = 1
-                meta["segments"] = len(segments)
+                meta["segment_count"] = len(segments)
+                meta["segment_texts"] = segments
                 meta["usage"] = usage
                 return speech, meta
 
-            # Second attempt: retry with lower temp and explicit reminder
-            retry_prompt = user_prompt + "\n\n请务必只输出JSON字符串数组，例如: [\"我觉得3号很可疑\", \"他的发言前后矛盾\"]"
+            # Second attempt: retry with lower temp
+            retry_prompt = user_prompt + "\n\n请输出JSON字符串数组。"
             resp2 = self.client.chat_sync(
                 messages=[
                     {"role": "system", "content": system_content},
@@ -1212,7 +1242,8 @@ class LLMAgent(Agent):
                 meta["fallback"] = False
                 meta["raw_text"] = text2[:400]
                 meta["attempts"] = 2
-                meta["segments"] = len(segments2)
+                meta["segment_count"] = len(segments2)
+                meta["segment_texts"] = segments2
                 meta["usage"] = usage2
                 return speech, meta
 

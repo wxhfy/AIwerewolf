@@ -820,11 +820,12 @@ class WerewolfGame:
         self.state.current_speaker_id = None
 
     def _emit_speech(self, player: Player, decision: Decision, extra_fields: dict) -> None:
-        """Emit CHAT_MESSAGE events, splitting multi-segment speech into separate bubbles."""
-        speech_text = decision.speech or ""
-        segments = [s.strip() for s in speech_text.split("\n\n") if s.strip()]
-        if not segments:
-            segments = [speech_text] if speech_text else [""]
+        """Emit CHAT_MESSAGE events. Uses pre-parsed segments from metadata if available."""
+        raw_segments = decision.metadata.get("segments")
+        if raw_segments and isinstance(raw_segments, list) and len(raw_segments) > 0:
+            segments = [str(s) for s in raw_segments]
+        else:
+            segments = [decision.speech or ""]
         for i, segment in enumerate(segments):
             payload = {
                 "actor_id": player.id,
