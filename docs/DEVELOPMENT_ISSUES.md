@@ -385,6 +385,22 @@ updated: 2026-05-23
 - **Session**：a9b3dd5d
 - **解决方案**：测试目录命名 + `conftest.py` 补齐。
 
+### 问题 H9：Python 3.8 下测试文件类型注解直接炸
+- **发生时间 / Session**：2026-05-24
+- **现象**：`pytest -q tests/test_review_metrics.py` 在收集阶段直接报 `TypeError: 'type' object is not subscriptable`，还没进任何断言。
+- **根因**：测试文件用了 `list[Player]` 这类 3.9+ 内建泛型语法，而当前环境实际是 Python 3.8。
+- **解决方案**：给 `tests/test_review_metrics.py` 补 `from __future__ import annotations`，把注解延迟求值，恢复 3.8 兼容。
+- **涉及文件 / 模块**：`tests/test_review_metrics.py`
+- **教训**：项目运行 Python 版本没有统一到 3.11 之前，测试文件也必须按最低兼容版本写。
+
+### 问题 H10：Track B 新表只靠 startup create_all 不够稳
+- **发生时间 / Session**：2026-05-24
+- **现象**：真实调 `/api/games/{id}/reviews` 时 PG 直接报 `relation "published_reviews" does not exist`，但本地单测因为没碰到该接口之前一直没暴露。
+- **根因**：项目没有 migration 层，新加 `PublishedReview` 表后仅依赖 FastAPI startup 的 `init_db()`，一旦测试或脚本在未完整触发 startup 的路径上直接查表，就会遇到表不存在。
+- **解决方案**：在 Track B 的持久化 / 读取入口（`save_published_review`、`get_review_reports`、`get_game_metrics`、`get_leaderboard`）显式补一次 `init_db()`，确保新表存在。
+- **涉及文件 / 模块**：`backend/db/models.py`、`backend/db/persist.py`
+- **教训**：当前没有 Alembic 时，新增表不能假设所有入口都会先完整走 startup。
+
 ---
 
 ## §I. 用户反复强调或纠正的偏好（沉淀）
@@ -406,6 +422,8 @@ updated: 2026-05-23
 ### 关于规则正确性
 - **猎人死亡 → 开枪、遗言环节、信息隔离**一个都不能漏。
 - **持久化是 MVP 必选项** —— 历史对局、日志信息都要入库（pgsql 优先，SQLite fallback）。
+- **复盘系统不能太瘦** —— 高光、失误、反事实、怀疑矩阵这些类别要尽量丰富，不要只停在少数固定标签上。
+- **复盘最终展示要带 HTML + 图像** —— 图像由专门的 visual agent 生成，再嵌进模板，不要只停在纯文本和普通卡片。
 
 ### 关于流程纪律
 - **【2026-05-23 准则更新】单人开发阶段，AI 可在用户授权下直接 `git push` 到 main**，无需 PR / 无需 2 人 approve；护栏见 `CLAUDE.md` 顶部"项目运行模式"段（不得 `--force`、不得跳 hook、改重灾区前先告知）。团队 ≥ 2 人时恢复 PR 流程。

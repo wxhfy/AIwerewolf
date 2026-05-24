@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from backend.db.database import SessionLocal
+from backend.db.database import init_db
 from backend.db.models import (
     AgentDecision,
     AgentVersion,
@@ -17,10 +18,13 @@ from backend.db.models import (
     GameSnapshot,
     LeaderboardEntry,
     Player,
+    PublishedReview,
     ReviewReport,
     Vote,
 )
 from backend.engine.models import GameState
+from backend.eval.review import LeaderboardAggregator
+from backend.eval.track_b import generate_published_review_document, reconstruct_review_report
 
 
 _CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
@@ -268,6 +272,10 @@ def save_game_end(state: GameState) -> None:
         db.commit()
     finally:
         db.close()
+    try:
+        save_published_review(state)
+    except Exception:
+        pass
 
 
 def _compute_player_metrics(state: GameState) -> list[dict]:
@@ -516,12 +524,29 @@ def get_replay(game_id: str, *, show_private: bool = False) -> dict | None:
 
 
 def get_game_metrics(game_id: str) -> dict | None:
-    """Return the Evaluation rows for one game, grouped by player."""
+    """Return Track B metrics for one game.
+
+    Prefer the rich published review artifact when available; otherwise fall
+    back to the lightweight Evaluation rows used by the earlier MVP.
+    """
     db = SessionLocal()
     try:
+        init_db()
         game = db.query(Game).filter(Game.id == game_id).first()
         if game is None:
             return None
+        review = db.query(PublishedReview).filter(PublishedReview.game_id == game_id).first()
+        if review is not None:
+            payload = review.report_json or {}
+            return _clean({
+                "game_id": game_id,
+                "winner": game.winner,
+                "scoreboard": payload.get("scoreboard", []),
+                "player_scores": payload.get("metadata", {}).get("player_scores", []),
+                "speech_acts": review.speech_acts or [],
+                "suspicion_matrix": review.suspicion_matrix or [],
+                "validation": review.validation_result or {},
+            })
         rows = db.query(Evaluation).filter(Evaluation.game_id == game_id).all()
         grouped: dict[str, list[dict]] = {}
         for row in rows:
@@ -538,6 +563,27 @@ def get_game_metrics(game_id: str) -> dict | None:
 def get_leaderboard(*, role: str | None = None, limit: int = 20) -> list[dict]:
     db = SessionLocal()
     try:
+        init_db()
+        approved = (
+            db.query(PublishedReview)
+            .filter(PublishedReview.publish_allowed.is_(True))
+            .order_by(PublishedReview.published_at.desc(), PublishedReview.created_at.desc())
+            .all()
+        )
+        if approved:
+            reports = [reconstruct_review_report(row.report_json or {}) for row in approved if row.report_json]
+            aggregated = LeaderboardAggregator().aggregate_all(reports)
+            payload = {key: value.to_dict() for key, value in aggregated.items()}
+            if role:
+                payload["role"]["entries"] = [
+                    entry for entry in payload["role"]["entries"]
+                    if entry["display_name"] == role or entry["key"] == role
+                ][:limit]
+            else:
+                for key in payload:
+                    payload[key]["entries"] = payload[key]["entries"][:limit]
+            return _clean(payload)
+
         query = db.query(LeaderboardEntry)
         if role:
             query = query.filter(LeaderboardEntry.role == role)
@@ -546,40 +592,66 @@ def get_leaderboard(*, role: str | None = None, limit: int = 20) -> list[dict]:
             .limit(limit)
             .all()
         )
-        return [
-            {
-                "id": r.id,
-                "agent_version_id": r.agent_version_id,
-                "name": r.name,
-                "role": r.role,
-                "games_played": r.games_played,
-                "wins": r.wins,
-                "losses": r.losses,
-                "win_rate": round(r.win_rate or 0.0, 4),
-                "kpi": {
-                    "speech_quality": r.kpi_speech_quality,
-                    "vote_accuracy": r.kpi_vote_accuracy,
-                    "skill_efficiency": r.kpi_skill_efficiency,
-                    "survival_value": r.kpi_survival_value,
-                },
-                "updated_at": r.updated_at.isoformat() if r.updated_at else None,
-            }
-            for r in rows
-        ]
+        return _clean({
+            "legacy": [
+                {
+                    "id": r.id,
+                    "agent_version_id": r.agent_version_id,
+                    "name": r.name,
+                    "role": r.role,
+                    "games_played": r.games_played,
+                    "wins": r.wins,
+                    "losses": r.losses,
+                    "win_rate": round(r.win_rate or 0.0, 4),
+                    "kpi": {
+                        "speech_quality": r.kpi_speech_quality,
+                        "vote_accuracy": r.kpi_vote_accuracy,
+                        "skill_efficiency": r.kpi_skill_efficiency,
+                        "survival_value": r.kpi_survival_value,
+                    },
+                    "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+                }
+                for r in rows
+            ]
+        })
     finally:
         db.close()
 
 
-def get_review_reports(game_id: str) -> list[dict]:
+def get_review_reports(game_id: str) -> dict | None:
     db = SessionLocal()
     try:
+        init_db()
+        published = db.query(PublishedReview).filter(PublishedReview.game_id == game_id).first()
+        if published is not None:
+            return _clean({
+                "report_id": published.id,
+                "game_id": published.game_id,
+                "status": published.status,
+                "view_scope": published.view_scope,
+                "grade": published.grade,
+                "score": published.score,
+                "publish_allowed": published.publish_allowed,
+                "review_report": published.report_json or {},
+                "markdown": published.markdown,
+                "validation_result": published.validation_result or {},
+                "replay_bundle": published.replay_bundle or {},
+                "speech_acts": published.speech_acts or [],
+                "suspicion_matrix": published.suspicion_matrix or [],
+                "repair_history": published.repair_history or [],
+                "metadata": published.extra_metadata or {},
+                "html_report": (published.extra_metadata or {}).get("html_report"),
+                "created_at": published.created_at.isoformat() if published.created_at else None,
+                "published_at": published.published_at.isoformat() if published.published_at else None,
+            })
         rows = (
             db.query(ReviewReport)
             .filter(ReviewReport.game_id == game_id)
             .order_by(ReviewReport.day, ReviewReport.created_at)
             .all()
         )
-        return [
+        return {
+            "legacy": [
             {
                 "id": r.id,
                 "player_id": r.player_id,
@@ -594,7 +666,47 @@ def get_review_reports(game_id: str) -> list[dict]:
                 "created_at": r.created_at.isoformat() if r.created_at else None,
             }
             for r in rows
-        ]
+            ]
+        }
+    finally:
+        db.close()
+
+
+def get_review_html(game_id: str) -> str | None:
+    payload = get_review_reports(game_id)
+    if not payload:
+        return None
+    html_report = payload.get("html_report")
+    if isinstance(html_report, str) and html_report:
+        return html_report
+    return None
+
+
+def save_published_review(state: GameState) -> dict[str, Any]:
+    document = generate_published_review_document(state)
+    init_db()
+    db = SessionLocal()
+    try:
+        row = db.query(PublishedReview).filter(PublishedReview.game_id == state.id).first()
+        if row is None:
+            row = PublishedReview(game_id=state.id)
+            db.add(row)
+        row.status = document.status
+        row.view_scope = document.view_scope
+        row.grade = str(document.validation_result.get("grade") or document.status)
+        row.score = float(document.validation_result.get("score") or 0.0)
+        row.publish_allowed = bool(document.validation_result.get("publish_allowed"))
+        row.report_json = document.review_report
+        row.markdown = document.markdown
+        row.validation_result = document.validation_result
+        row.replay_bundle = document.replay_bundle
+        row.speech_acts = document.speech_acts
+        row.suspicion_matrix = document.suspicion_matrix
+        row.repair_history = document.repair_history
+        row.extra_metadata = document.metadata
+        row.published_at = _now() if row.publish_allowed else None
+        db.commit()
+        return document.to_dict()
     finally:
         db.close()
 

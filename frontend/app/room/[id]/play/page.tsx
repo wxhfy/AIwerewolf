@@ -11,6 +11,7 @@ import {
   Language,
   ViewMode,
   Phase,
+  TrackBReviewDocument,
 } from "@/types";
 import { Button } from "@/components/ui/Button";
 import { PlayerCard } from "@/components/game/PlayerCard";
@@ -36,6 +37,9 @@ export default function GamePage() {
   } = useAppContext();
 
   const [showWinnerPanel, setShowWinnerPanel] = useState(false);
+  const [reviewDoc, setReviewDoc] = useState<TrackBReviewDocument | null>(null);
+  const [reviewError, setReviewError] = useState<string | null>(null);
+  const [snapshotHydrated, setSnapshotHydrated] = useState(false);
   const [ballPos, setBallPos] = useState<{ x: number; y: number } | null>(null);
   const dragRef = useRef({ dragging: false, startX: 0, startY: 0, origX: 0, origY: 0, moved: false });
   // Phase announcement state
@@ -82,6 +86,29 @@ export default function GamePage() {
     }
   }, [gameState?.id]);
 
+  useEffect(() => {
+    if (!gameState?.winner || !gameState?.id) return;
+    let cancelled = false;
+    setReviewError(null);
+    fetch(apiUrl(`/api/games/${gameState.id}/reviews`))
+      .then((res) => {
+        if (!res.ok) throw new Error("review_fetch_failed");
+        return res.json();
+      })
+      .then((payload) => {
+        if (!cancelled) setReviewDoc(payload);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setReviewDoc(null);
+          setReviewError(language === "zh" ? "复盘报告暂未就绪" : "Review report is not ready yet");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [gameState?.winner, gameState?.id, language]);
+
   const isNight = useMemo(() => {
     const p = gameState?.phase || "";
     return p.startsWith("NIGHT") || p === Phase.NIGHT_START || p === Phase.NIGHT_RESOLVE;
@@ -98,6 +125,24 @@ export default function GamePage() {
         .then((d) => { if (d) setRoom(d); }).catch(() => {});
     }
   }, [roomId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (gameState || snapshotHydrated) return;
+    fetch(apiUrl(`/api/rooms/${roomId}/snapshot`))
+      .then((r) => (r.ok ? r.json() : null))
+      .then((snapshot) => {
+        if (cancelled) return;
+        if (snapshot) setGameState(snapshot);
+        setSnapshotHydrated(true);
+      })
+      .catch(() => {
+        if (!cancelled) setSnapshotHydrated(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [roomId, gameState, snapshotHydrated, setGameState]);
 
   useEffect(() => {
     if (mode !== "human") {
@@ -125,6 +170,7 @@ export default function GamePage() {
   useEffect(() => {
     if (autoStartedRef.current) return;
     if (mode !== "ai") return;
+    if (!snapshotHydrated) return;
     if (gameState?.winner) return;
     if (isPlaying) return;
     if (wsRef.current) return;
@@ -142,6 +188,8 @@ export default function GamePage() {
     if (wsRef.current) wsRef.current.close();
     setIsPlaying(true);
     setStatusTitle(t("statusStreaming", language));
+    setReviewDoc(null);
+    setReviewError(null);
     // Don't wipe gameState if /prepare already populated the roster — it
     // would flash empty placeholders for the 100-300ms before the WS replays
     // baseline frames. Only clear when this is a fresh "run again" click.
@@ -193,6 +241,7 @@ export default function GamePage() {
 
   async function startHumanGame() {
     setIsPlaying(true); setStatusTitle(t("statusStreaming", language)); setGameState(null);
+    setReviewDoc(null); setReviewError(null);
     try {
       const res = await fetch(apiUrl(`/api/rooms/${roomId}/start?show_private=true`), { method: "POST" });
       if (!res.ok) throw new Error("Start failed");
@@ -228,6 +277,11 @@ export default function GamePage() {
   const rightPlayers = useMemo(() => (gameState?.players || []).filter((p: any) => p.seat > splitPoint), [gameState?.players, splitPoint]);
   const aliveCount = gameState?.alive_count ?? (gameState?.players?.filter((p: any) => p.alive).length ?? 0);
   const pendingInput = gameState?.pending_input;
+  const reviewScoreboard = reviewDoc?.review_report?.scoreboard || [];
+  const reviewBadCases = reviewDoc?.review_report?.bad_cases || [];
+  const reviewCounterfactuals = reviewDoc?.review_report?.counterfactuals || [];
+  const reviewTurningPoints = reviewDoc?.review_report?.turning_points || [];
+  const latestSuspicion = reviewDoc?.suspicion_matrix?.[reviewDoc.suspicion_matrix.length - 1];
   // Highlight whoever is currently taking a turn — pendingInput covers human
   // turns (waiting for input), current_speaker_id covers AI turns being
   // generated. The PlayerCard uses this flag to glow.
@@ -333,7 +387,8 @@ export default function GamePage() {
           </div>
           <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-4 py-3">
             {gameState?.events?.length ? (
-              Object.keys(dayBlocks).sort((a, b) => Number(a) - Number(b)).map((dk) => {
+              <>
+              {Object.keys(dayBlocks).sort((a, b) => Number(a) - Number(b)).map((dk) => {
                 const dayEvents = dayBlocks[Number(dk)];
                 // Find deaths for day header
                 const deaths = dayEvents.filter((e: any) =>
@@ -388,7 +443,137 @@ export default function GamePage() {
                     </div>
                   </div>
                 );
-              })
+              })}
+              {gameState?.winner && (
+                <section className="mt-6 rounded-card border px-4 py-4" style={{ background: "var(--color-card)", borderColor: "var(--color-border)" }}>
+                  <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                    <div>
+                      <p className="font-display text-xl text-textPrimary">{language === "zh" ? "Track B 复盘" : "Track B Review"}</p>
+                      <p className="text-sm text-text-sub">
+                        {reviewDoc
+                          ? (language === "zh"
+                            ? `状态 ${reviewDoc.status} / 校验 ${reviewDoc.validation_result.grade} / 分数 ${reviewDoc.validation_result.score.toFixed(2)}`
+                            : `Status ${reviewDoc.status} / Validation ${reviewDoc.validation_result.grade} / Score ${reviewDoc.validation_result.score.toFixed(2)}`)
+                          : (reviewError || (language === "zh" ? "正在加载复盘..." : "Loading review..."))}
+                      </p>
+                    </div>
+                    {reviewDoc && (
+                      <div className="flex items-center gap-2">
+                        <div className={`px-3 py-1.5 rounded-full text-xs font-semibold ${reviewDoc.publish_allowed ? "bg-emerald-500/15 text-emerald-300" : "bg-amber-500/15 text-amber-300"}`}>
+                          {reviewDoc.publish_allowed
+                            ? (language === "zh" ? "已通过校验并发布" : "Validated and published")
+                            : (language === "zh" ? "未通过校验" : "Validation failed")}
+                        </div>
+                        <a
+                          href={apiUrl(`/api/games/${gameState.id}/reviews/html`)}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="px-3 py-1.5 rounded-full text-xs font-semibold border"
+                          style={{ borderColor: "var(--color-border)", color: "var(--color-textPrimary)" }}
+                        >
+                          {language === "zh" ? "打开 HTML 报告" : "Open HTML Report"}
+                        </a>
+                      </div>
+                    )}
+                  </div>
+
+                  {reviewDoc && (
+                    <div className="grid gap-4 xl:grid-cols-[1.2fr,1fr]">
+                      <div className="space-y-4">
+                        <div>
+                          <p className="text-sm font-semibold text-textPrimary mb-2">{language === "zh" ? "玩家评分榜" : "Scoreboard"}</p>
+                          <div className="space-y-2">
+                            {reviewScoreboard.slice(0, 4).map((entry: any) => (
+                              <div key={entry.player_id} className="flex items-center justify-between rounded-button px-3 py-2" style={{ background: "rgba(255,255,255,0.03)" }}>
+                                <div>
+                                  <p className="text-sm font-medium text-textPrimary">#{entry.rank} {entry.player_name}</p>
+                                  <p className="text-xs text-text-sub">{entry.role} · {entry.alignment}</p>
+                                </div>
+                                <div className="text-right">
+                                  <p className="text-sm font-semibold text-primary">{Number(entry.adjusted_final_score || 0).toFixed(2)}</p>
+                                  <p className="text-xs text-text-sub">{language === "zh" ? "最终分" : "Final"}</p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div>
+                          <p className="text-sm font-semibold text-textPrimary mb-2">{language === "zh" ? "关键高光 / 转折点" : "Highlights / Turning Points"}</p>
+                          <div className="space-y-2">
+                            {reviewTurningPoints.slice(0, 3).map((item: any, index: number) => (
+                              <div key={`${item.title}-${index}`} className="rounded-button px-3 py-2" style={{ background: "rgba(255,255,255,0.03)" }}>
+                                <p className="text-sm text-textPrimary">{item.title}</p>
+                                <p className="text-xs text-text-sub mt-1">{item.description}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="space-y-4">
+                        <div>
+                          <p className="text-sm font-semibold text-textPrimary mb-2">{language === "zh" ? "校验问题" : "Validation Issues"}</p>
+                          <div className="space-y-2">
+                            {(reviewDoc.validation_result.issues.length
+                              ? reviewDoc.validation_result.issues.slice(0, 4)
+                              : [{ gate: language === "zh" ? "通过" : "Pass", message: language === "zh" ? "没有阻塞问题，报告已发布。" : "No blocking issues. Report published." }]).map((issue: any, index: number) => (
+                              <div key={`${issue.gate}-${index}`} className="rounded-button px-3 py-2" style={{ background: "rgba(255,255,255,0.03)" }}>
+                                <p className="text-xs font-semibold text-accent">{issue.gate}</p>
+                                <p className="text-xs text-text-sub mt-1">{issue.message}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div>
+                          <p className="text-sm font-semibold text-textPrimary mb-2">{language === "zh" ? "关键失误" : "Bad Cases"}</p>
+                          <div className="space-y-2">
+                            {reviewBadCases.slice(0, 3).map((item: any, index: number) => (
+                              <div key={`${item.player_name}-${index}`} className="rounded-button px-3 py-2" style={{ background: "rgba(255,255,255,0.03)" }}>
+                                <p className="text-sm text-textPrimary">{item.player_name} · {item.severity}</p>
+                                <p className="text-xs text-text-sub mt-1">{item.description}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div>
+                          <p className="text-sm font-semibold text-textPrimary mb-2">{language === "zh" ? "公共怀疑矩阵" : "Public Suspicion Matrix"}</p>
+                          {latestSuspicion ? (
+                            <div className="grid grid-cols-2 gap-2">
+                              {Object.entries(latestSuspicion.target_scores || {}).slice(0, 6).map(([playerId, value]) => {
+                                const player = gameState.players.find((item: any) => item.id === playerId);
+                                return (
+                                  <div key={playerId} className="rounded-button px-3 py-2" style={{ background: "rgba(255,255,255,0.03)" }}>
+                                    <p className="text-xs text-text-sub">{player?.name || playerId}</p>
+                                    <p className="text-sm font-semibold text-primary">{Number(value).toFixed(2)}</p>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <p className="text-xs text-text-sub">{language === "zh" ? "暂无矩阵数据" : "No matrix data yet"}</p>
+                          )}
+                        </div>
+
+                        <div>
+                          <p className="text-sm font-semibold text-textPrimary mb-2">{language === "zh" ? "局部反事实" : "Counterfactuals"}</p>
+                          <div className="space-y-2">
+                            {reviewCounterfactuals.slice(0, 2).map((item: any, index: number) => (
+                              <div key={`${item.case_id || index}`} className="rounded-button px-3 py-2" style={{ background: "rgba(255,255,255,0.03)" }}>
+                                <p className="text-xs font-semibold text-accent">{item.counterfactual_type}</p>
+                                <p className="text-xs text-text-sub mt-1">{item.expected_effect}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </section>
+              )}
+              </>
             ) : (
               <div className="flex flex-col items-center justify-center h-full text-center py-20">
                 <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round"

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 import pytest
 
@@ -982,6 +984,55 @@ def test_markdown_player_review_no_longer_renders_debug_style_subscores() -> Non
     assert "得分解读" in markdown
     assert "| 维度 | 说明 |" in markdown
     assert "| 类别 | 分值 | 说明 |" in markdown
+
+
+def test_guard_successful_block_generates_review_bonus_and_turning_point() -> None:
+    guard = make_player("P1", "GuardA", Role.GUARD, alive=True)
+    wolf_a = make_player("P2", "WolfA", Role.WEREWOLF, alive=True)
+    wolf_b = make_player("P3", "WolfB", Role.WEREWOLF, alive=True)
+    seer = make_player("P4", "SeerA", Role.SEER, alive=True)
+
+    state = make_state(
+        [guard, wolf_a, wolf_b, seer],
+        [
+            make_night_action(1, guard, "guard", seer, phase=Phase.NIGHT_GUARD_ACTION),
+            make_night_action(1, wolf_a, "attack", seer),
+            make_night_action(1, wolf_b, "attack", seer),
+            make_speech(1, seer, "I survived the night and still have information."),
+        ],
+        winner=Alignment.VILLAGE,
+        day=1,
+    )
+
+    metrics = MetricsCalculator().compute(state)
+    guard_bonuses = bonuses_for_player(metrics, guard.id)
+    assert any(bonus.bonus_type == "guard_block_kill" for bonus in guard_bonuses)
+
+    report = ReviewReportBuilder().build(state, metrics)
+    assert any("守卫挡刀" in point.title for point in report.turning_points)
+
+
+def test_villager_vote_chain_bonus_appears_after_multiple_correct_votes() -> None:
+    villager = make_player("P1", "VillagerA", Role.VILLAGER, alive=True)
+    wolf_a = make_player("P2", "WolfA", Role.WEREWOLF, alive=False)
+    wolf_b = make_player("P3", "WolfB", Role.WEREWOLF, alive=False)
+    seer = make_player("P4", "SeerA", Role.SEER, alive=True)
+
+    state = make_state(
+        [villager, wolf_a, wolf_b, seer],
+        [
+            make_vote(1, villager, wolf_a),
+            make_death(1, wolf_a, "vote"),
+            make_vote(2, villager, wolf_b),
+            make_death(2, wolf_b, "vote"),
+        ],
+        winner=Alignment.VILLAGE,
+        day=2,
+    )
+
+    metrics = MetricsCalculator().compute(state)
+    villager_bonuses = bonuses_for_player(metrics, villager.id)
+    assert any(bonus.bonus_type == "villager_vote_chain" for bonus in villager_bonuses)
 
 
 def test_no_evidence_no_template_suggestions() -> None:

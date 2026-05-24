@@ -5,6 +5,7 @@ from typing import Any, Dict, Optional
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 
 from backend.agents.factory import create_agents
 from backend.db.database import init_db
@@ -160,7 +161,19 @@ def leaderboard(role: Optional[str] = None, limit: int = 20):
 def game_reviews(game_id: str):
     """Reviewer-agent generated post-game reports (Track B)."""
     from backend.db.persist import get_review_reports
-    return get_review_reports(game_id)
+    payload = get_review_reports(game_id)
+    if payload is None:
+        raise HTTPException(status_code=404, detail="Review not found")
+    return payload
+
+
+@app.get("/api/games/{game_id}/reviews/html", response_class=HTMLResponse)
+def game_review_html(game_id: str):
+    from backend.db.persist import get_review_html
+    payload = get_review_html(game_id)
+    if payload is None:
+        raise HTTPException(status_code=404, detail="HTML review not found")
+    return HTMLResponse(payload)
 
 
 # ---------------------------------------------------------------------------

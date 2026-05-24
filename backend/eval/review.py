@@ -542,9 +542,12 @@ class ReviewBonusDetector:
         bonuses: list[ReviewBonus] = []
         bonuses.extend(self._detect_key_vote_bonuses(state, contexts))
         bonuses.extend(self._detect_seer_conversion_bonus(state, contexts))
+        bonuses.extend(self._detect_seer_support_bonuses(state, contexts))
         bonuses.extend(self._detect_witch_bonuses(state, contexts))
+        bonuses.extend(self._detect_guard_bonuses(state, contexts))
         bonuses.extend(self._detect_hunter_bonuses(state, contexts))
         bonuses.extend(self._detect_wolf_bonuses(state, contexts))
+        bonuses.extend(self._detect_villager_bonuses(state, contexts))
         bonuses.extend(self._detect_review_penalties(state, contexts, reports_by_player, score_by_player))
         return bonuses
 
@@ -664,6 +667,54 @@ class ReviewBonusDetector:
                     )
         return bonuses
 
+    def _detect_seer_support_bonuses(
+        self,
+        state: GameState,
+        contexts: dict[str, "_PlayerContext"],
+    ) -> list[ReviewBonus]:
+        bonuses: list[ReviewBonus] = []
+        for player_id, ctx in contexts.items():
+            if ctx.player.role != Role.SEER:
+                continue
+            good_checks = [
+                event for event in ctx.private_info_events
+                if event.payload.get("kind") == "seer_result" and not event.payload.get("is_wolf")
+            ]
+            for check_event in good_checks:
+                target_name = str(check_event.payload.get("target_name") or "")
+                if not target_name:
+                    continue
+                support_speech = next(
+                    (
+                        speech for speech in ctx.speech_events
+                        if speech.day >= check_event.day and target_name in str(speech.payload.get("speech", ""))
+                    ),
+                    None,
+                )
+                if support_speech is None:
+                    continue
+                target_player = next((player for player in state.players if player.name == target_name), None)
+                if target_player is None or not target_player.alive:
+                    continue
+                bonuses.append(
+                    ReviewBonus(
+                        player_id=player_id,
+                        bonus_type="seer_good_clear_guidance",
+                        score_delta=1.2,
+                        reason="预言家将金水或偏好人信息转化成了对白天站边的稳定支撑。",
+                        evidence=[
+                            f"第 {check_event.day} 夜查验结果确认 {target_name} 为好人倾向。",
+                            f"第 {support_speech.day} 天公开发言中明确为 {target_name} 提供了站边支撑。",
+                        ],
+                        confidence=0.72,
+                        day=support_speech.day,
+                        phase=support_speech.phase.value,
+                        category="semantic",
+                    )
+                )
+                break
+        return bonuses
+
     def _detect_witch_bonuses(
         self,
         state: GameState,
@@ -744,6 +795,59 @@ class ReviewBonusDetector:
                     )
         return bonuses
 
+    def _detect_guard_bonuses(
+        self,
+        state: GameState,
+        contexts: dict[str, "_PlayerContext"],
+    ) -> list[ReviewBonus]:
+        bonuses: list[ReviewBonus] = []
+        for player_id, ctx in contexts.items():
+            if ctx.player.role != Role.GUARD:
+                continue
+            guard_events = [
+                event for event in ctx.night_action_events
+                if event.payload.get("action_type") == "guard"
+            ]
+            protected_power_roles = 0
+            for event in guard_events:
+                target = self._event_target(state, event)
+                if target is None:
+                    continue
+                if target.role in {Role.SEER, Role.WITCH, Role.HUNTER, Role.GUARD}:
+                    protected_power_roles += 1
+                if self._is_majority_wolf_target(state, target.id, event.day) and not self._died_by_reason(state, target.id, "wolf", event.day):
+                    bonuses.append(
+                        ReviewBonus(
+                            player_id=player_id,
+                            bonus_type="guard_block_kill",
+                            score_delta=2.0,
+                            reason="守卫在狼刀位上成功守住目标，直接阻断了一次夜间减员。",
+                            evidence=[
+                                f"第 {event.day} 夜守卫选择守护 {target.name}。",
+                                f"{target.name} 同夜是主要狼刀目标，但并未因狼刀死亡。",
+                            ],
+                            confidence=0.82,
+                            day=event.day,
+                            phase=event.phase.value,
+                            category="impact",
+                        )
+                    )
+            if protected_power_roles >= 2:
+                bonuses.append(
+                    ReviewBonus(
+                        player_id=player_id,
+                        bonus_type="guard_key_role_cover",
+                        score_delta=1.1,
+                        reason="守卫多次把守护资源放在高价值神职身上，提升了好人信息链稳定性。",
+                        evidence=[f"本局守卫至少两次守护关键神职，共计 {protected_power_roles} 次。"],
+                        confidence=0.74,
+                        day=state.day,
+                        phase=state.phase.value,
+                        category="semantic",
+                    )
+                )
+        return bonuses
+
     def _detect_wolf_bonuses(
         self,
         state: GameState,
@@ -778,6 +882,35 @@ class ReviewBonusDetector:
                             category="impact",
                         )
                     )
+        return bonuses
+
+    def _detect_villager_bonuses(
+        self,
+        state: GameState,
+        contexts: dict[str, "_PlayerContext"],
+    ) -> list[ReviewBonus]:
+        bonuses: list[ReviewBonus] = []
+        for player_id, ctx in contexts.items():
+            if ctx.player.role != Role.VILLAGER:
+                continue
+            correct_votes = [
+                event for event in sorted(ctx.vote_events, key=lambda item: (item.day, item.ts))
+                if (target := self._event_target(state, event)) is not None and target.alignment == Alignment.WOLF
+            ]
+            if len(correct_votes) >= 2:
+                bonuses.append(
+                    ReviewBonus(
+                        player_id=player_id,
+                        bonus_type="villager_vote_chain",
+                        score_delta=1.3,
+                        reason="村民连续多轮把票稳定投在狼人阵营，形成了高质量的公共归票贡献。",
+                        evidence=[f"第 {event.day} 天命中狼人票型。" for event in correct_votes[:3]],
+                        confidence=0.76,
+                        day=correct_votes[-1].day,
+                        phase=correct_votes[-1].phase.value,
+                        category="semantic",
+                    )
+                )
         return bonuses
 
     def _detect_review_penalties(
@@ -902,6 +1035,36 @@ class ReviewBonusDetector:
             and event.payload.get("reason") == "vote"
             for event in state.events
         )
+
+    def _died_by_reason(self, state: GameState, player_id: str, reason: str, day: int | None = None) -> bool:
+        return any(
+            event.type == EventType.PLAYER_DIED
+            and event.payload.get("player_id") == player_id
+            and event.payload.get("reason") == reason
+            and (day is None or event.day == day)
+            for event in state.events
+        )
+
+    def _is_majority_wolf_target(self, state: GameState, target_id: str, day: int) -> bool:
+        attack_events = [
+            event
+            for event in state.events
+            if event.type == EventType.NIGHT_ACTION
+            and event.day == day
+            and event.payload.get("action_type") == "attack"
+        ]
+        if not attack_events:
+            return False
+        counts: dict[str, int] = defaultdict(int)
+        for event in attack_events:
+            voted_target = event.payload.get("target_id")
+            if voted_target:
+                counts[str(voted_target)] += 1
+        if not counts:
+            return False
+        best_count = max(counts.values())
+        winners = sorted(pid for pid, count in counts.items() if count == best_count)
+        return bool(winners and winners[0] == target_id)
 
 
 @dataclass
@@ -1072,6 +1235,61 @@ class MetricsCalculator:
                                 "critical",
                             )
                         )
+
+            if player.role == Role.GUARD:
+                repeated_target = self._repeated_guard_target(state, ctx)
+                if repeated_target is not None:
+                    reports.append(
+                        self._report(
+                            state,
+                            state.day,
+                            player,
+                            "ability",
+                            f"{player.name} repeated the same guard target {repeated_target.name} on consecutive nights.",
+                            "Rotate the guard target or justify the repeat with a strong wolf-read spike instead of auto-piloting the same protection.",
+                            "major",
+                        )
+                    )
+
+            fallback_count = sum(
+                1
+                for record in state.decision_records
+                if record.player_id == player.id and (
+                    not record.is_valid or str((record.parsed_action or {}).get("source", "")) == "fallback"
+                )
+            )
+            if fallback_count >= 3:
+                reports.append(
+                    self._report(
+                        state,
+                        state.day,
+                        player,
+                        "robustness",
+                        f"{player.name} triggered invalid parsing or fallback handling {fallback_count} times during the game.",
+                        "Reduce parser failures and fallback overuse so the agent can keep its intended reasoning path online.",
+                        "major",
+                    )
+                )
+
+            risky_speech = next(
+                (
+                    event for event in ctx.speech_events
+                    if any(token in str(event.payload.get("speech", "")) for token in ["队友", "昨晚刀", "狼队"])
+                ),
+                None,
+            )
+            if risky_speech is not None:
+                reports.append(
+                    self._report(
+                        state,
+                        risky_speech.day,
+                        player,
+                        "speech",
+                        f"{player.name} mentioned private night-side information in a public speech.",
+                        "Public speech should avoid directly exposing private night information, especially teammate or knife details.",
+                        "major",
+                    )
+                )
 
             if player.role == Role.VILLAGER:
                 consecutive_good_votes = self._consecutive_votes_on_alignment(state, ctx.vote_events, Alignment.VILLAGE)
@@ -1613,6 +1831,16 @@ class MetricsCalculator:
             last_target = target_id
         return self._clamp(1.0 - repeated / len(guard_events))
 
+    def _repeated_guard_target(self, state: GameState, ctx: _PlayerContext) -> Player | None:
+        guard_events = [event for event in sorted(ctx.night_action_events, key=lambda item: (item.day, item.ts)) if event.payload.get("action_type") == "guard"]
+        last_target_id: str | None = None
+        for event in guard_events:
+            target_id = event.payload.get("target_id")
+            if target_id and target_id == last_target_id:
+                return state.player(str(target_id))
+            last_target_id = str(target_id) if target_id else None
+        return None
+
     def _villager_logic_consistency(self, state: GameState, ctx: _PlayerContext) -> float:
         if not ctx.vote_events:
             return 0.4
@@ -1904,7 +2132,11 @@ class ReviewReportBuilder:
     ) -> list[TurningPoint]:
         turning_points: list[TurningPoint] = []
         for bonus in bonuses:
-            if bonus.category != "impact" or bonus.score_delta <= 0 or not bonus.evidence:
+            if bonus.score_delta <= 0 or not bonus.evidence:
+                continue
+            if bonus.category == "semantic" and bonus.score_delta < 1.0:
+                continue
+            if bonus.category not in {"impact", "semantic"}:
                 continue
             score = score_map.get(bonus.player_id)
             related = [score.player_name] if score is not None else [bonus.player_id]
@@ -2014,7 +2246,7 @@ class ReviewReportBuilder:
             if bonus.category != "impact" or bonus.score_delta <= 0 or not bonus.evidence:
                 continue
             score = score_by_id.get(bonus.player_id)
-            if score is None or bonus.bonus_type not in {"seer_info_conversion", "key_role_save", "final_wolf_shot", "wolf_power_role_push"}:
+            if score is None or bonus.bonus_type not in {"seer_info_conversion", "seer_good_clear_guidance", "key_role_save", "guard_block_kill", "guard_key_role_cover", "final_wolf_shot", "wolf_power_role_push", "villager_vote_chain"}:
                 continue
             suggestions.append(
                 StrategySuggestion(
@@ -2196,22 +2428,34 @@ class ReviewReportBuilder:
     def _reusable_bonus_suggestion(self, role: str, bonus: ReviewBonus) -> str:
         if bonus.bonus_type == "seer_info_conversion":
             return "预言家查到狼人后，应尽快把查验结果、狼坑判断和归票目标在同一轮发言中说完整。"
+        if bonus.bonus_type == "seer_good_clear_guidance":
+            return "预言家报金水时不要只报结果，还要明确这个好人位接下来为什么值得被信任。"
         if bonus.bonus_type == "key_role_save":
             return "女巫在关键轮次应优先评估神职存活价值，能保住后续还能继续产出信息或保护收益的角色时，救人优先级更高。"
+        if bonus.bonus_type == "guard_block_kill":
+            return "守卫一旦判断出高概率刀口，应优先保住会继续产出信息或节奏价值的目标，把夜间守护直接变成白天优势。"
+        if bonus.bonus_type == "guard_key_role_cover":
+            return "守卫在前中期应尽量让守护资源覆盖高价值神职，避免信息链在夜里过早断掉。"
         if bonus.bonus_type == "final_wolf_shot":
             return "猎人临死前应优先瞄准能够直接锁定胜负的高狼面目标，把开枪收益最大化。"
         if bonus.bonus_type == "wolf_power_role_push":
             return "狼人白天推进关键神职出局时，最好让发言逻辑、票型方向和队友配合保持一致，避免推进成功后立刻暴露自己的狼面。"
+        if bonus.bonus_type == "villager_vote_chain":
+            return "村民在多轮中持续命中狼人时，应把自己的票型理由讲得更完整，帮助全桌更快形成稳定共识。"
         return f"{self._role_label(role)}在关键轮次应主动把优势行为沉淀为可复用节奏。"
 
     def _covered_dimensions(self, bonus_types: set[str]) -> set[str]:
         mapping = {
             "seer_info_conversion": "speech",
+            "seer_good_clear_guidance": "speech",
             "decisive_vote": "vote",
             "last_wolf_poison": "skill",
             "key_role_save": "skill",
+            "guard_block_kill": "skill",
+            "guard_key_role_cover": "skill",
             "final_wolf_shot": "skill",
             "wolf_power_role_push": "speech",
+            "villager_vote_chain": "vote",
         }
         return {mapping[item] for item in bonus_types if item in mapping}
 
@@ -2264,6 +2508,9 @@ class ReviewReportBuilder:
             "Avoid same-camp cross voting unless the sacrifice is clearly strategic and profitable.": "除非能形成明确收益，否则不要做无意义的队友互投。",
             "Replay layer penalizes missing a high-value public conversion window after a wolf check.": "复盘层惩罚预言家在查杀狼人后错失高价值的公开转化窗口。",
             "Replay penalizes repeatedly driving pressure onto a key villager-side target.": "复盘层惩罚反复将压力推向好人阵营关键角色。",
+            "Public speech should avoid directly exposing private night information, especially teammate or knife details.": "公开发言应避免直接泄露夜间私密信息，尤其是队友与刀口细节。",
+            "Reduce parser failures and fallback overuse so the agent can keep its intended reasoning path online.": "应减少解析失败和 fallback 过度使用，尽量保持原始决策链稳定在线。",
+            "Rotate the guard target or justify the repeat with a strong wolf-read spike instead of auto-piloting the same protection.": "不要机械地连续守同一目标，除非你有足够强的狼刀判断依据。",
         }
         result = replacements.get(text, text)
         # Regex replacements run FIRST on the original English text,
@@ -2274,6 +2521,9 @@ class ReviewReportBuilder:
             (r"^(?P<actor>.+?) repeatedly voted villager-side players \((?P<count>\d+) times\)\.?$", r"\g<actor>连续\g<count>次把票投在好人阵营玩家身上"),
             (r"^(?P<actor>.+?) poisoned villager-side player (?P<target>.+?)\.?$", r"\g<actor>毒杀了好人阵营玩家\g<target>"),
             (r"^(?P<actor>.+?) shot villager-side player (?P<target>.+?)\.?$", r"\g<actor>开枪打中了好人阵营玩家\g<target>"),
+            (r"^(?P<actor>.+?) repeated the same guard target (?P<target>.+?) on consecutive nights\.?$", r"\g<actor>连续多夜重复守护同一目标\g<target>"),
+            (r"^(?P<actor>.+?) triggered invalid parsing or fallback handling (?P<count>\d+) times during the game\.?$", r"\g<actor>在本局中触发了解析失败或 fallback 共\g<count>次"),
+            (r"^(?P<actor>.+?) mentioned private night-side information in a public speech\.?$", r"\g<actor>在公开发言中提到了夜间私密信息"),
             (r"^The table exiled villager-side player (?P<target>.+?) on day (?P<day>\d+)\.?$", r"第\g<day>天场上错误放逐了好人阵营玩家\g<target>"),
             (r"^If one additional vote had moved onto (?P<target>.+?), the day could have resolved against a wolf instead\.?$", r"如果再有一票转投给\g<target>，这轮白天可能就会改为放逐狼人"),
             (r"^The wrong exile on (?P<target>.+?) may have been avoided by consolidating onto (?P<wolf>.+?)\.?$", r"如果把票型集中到\g<wolf>身上，原本对\g<target>的错误放逐可能可以避免"),
@@ -2330,10 +2580,14 @@ class ReviewReportBuilder:
         title_map = {
             "decisive_vote": "关键一票",
             "seer_info_conversion": "查验信息转化",
+            "seer_good_clear_guidance": "金水支撑建立",
             "last_wolf_poison": "最后一狼毒杀",
             "key_role_save": "关键救人",
+            "guard_block_kill": "守卫挡刀",
+            "guard_key_role_cover": "关键神职保护",
             "final_wolf_shot": "最后一狼击杀",
             "wolf_power_role_push": "关键神职放逐推进",
+            "villager_vote_chain": "稳定归票链",
         }
         return title_map.get(bonus.bonus_type, bonus.bonus_type.replace("_", " ").title())
 
