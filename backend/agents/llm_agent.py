@@ -203,56 +203,77 @@ class LLMAgent(Agent):
         return parts
 
     def _build_behavior_hint(self) -> str:
-        """Lightweight behavior hint — influences tone without rigid templates."""
+        """Behavior traits that make this character play differently from others."""
         if not self.character:
             return ""
         p = self.character.persona
         m = self.character.mind
 
-        # Map English mind values to natural Chinese behavioral hints
-        courage_hints = {
-            "bold": "你不怕得罪人，敢直接点名怀疑对象",
-            "cautious": "你比较谨慎，不会轻易站边",
-            "calculated": "你有把握时才表态，先观察再判断",
+        # Map cognitive values to natural Chinese behavioral descriptions
+        courage_map = {
+            "bold": "你不怕站边、敢带节奏",
+            "cautious": "你比较谨慎，不会第一个冲票",
+            "calculated": "你有把握时才明确表态",
         }
-        suspicion_hints = {
-            "low": "你比较容易怀疑别人",
-            "medium": "你需要看到连续可疑行为才会锁定目标",
-            "high": "你倾向于先相信别人，除非证据确凿",
+        suspicion_map = {
+            "low": "你比较容易起疑，小破绽就能让你锁定目标",
+            "medium": "你需要看到连续的可疑行为才会下判断",
+            "high": "你倾向于先相信别人的解释",
+        }
+        logic_map = {
+            "shallow": "你凭直觉做判断，不太深究逻辑链条",
+            "moderate": "你会盘基本逻辑，但不钻牛角尖",
+            "deep": "你喜欢多角度分析，会反复推敲每个细节",
+        }
+        table_map = {
+            "dominant": "你喜欢主导讨论节奏",
+            "balanced": "你在场上既会表达也会倾听",
+            "quiet": "你话不多，但发言往往切中要害",
         }
 
         lines = ["<hidden_traits>"]
-        if p.speech_length_habit:
-            lines.append(f"说话习惯：{p.speech_length_habit}")
-        if p.pressure_style:
-            lines.append(f"被怀疑时：{p.pressure_style}")
-        if m.courage in courage_hints:
-            lines.append(courage_hints[m.courage])
-        if m.suspicion_threshold in suspicion_hints:
-            lines.append(suspicion_hints[m.suspicion_threshold])
+        lines.append(f"发言特点：{p.speech_length_habit or '自然长度'}")
+        lines.append(f"压力下的反应：{p.pressure_style or '冷静回应'}")
+        lines.append(f"推理深度：{logic_map.get(m.logic_depth, '中等')}")
+        lines.append(f"态度：{courage_map.get(m.courage, '看情况表态')}")
+        lines.append(f"对他人的信任度：{suspicion_map.get(m.suspicion_threshold, '中等')}")
+        lines.append(f"桌面风格：{table_map.get(m.table_presence, '随和')}")
         if p.wolf_deception_style and self.role.value.lower() in ("werewolf", "white_wolf_king"):
-            lines.append(f"你拿狼时的风格：{p.wolf_deception_style}")
+            lines.append(f"拿狼时的打法：{p.wolf_deception_style}")
+        if p.mistake_pattern:
+            lines.append(f"你的一个弱点：{p.mistake_pattern}")
 
-        # Add random round-to-round variation to break repetition
-        import random
+        # Round-to-round variation
         moods = [
-            "这轮可以轻松一点，不用太正式",
-            "这轮直接说重点，不用铺垫",
-            "这轮可以先回应前一个人的发言再表态",
-            "这轮可以从一个具体细节切入",
+            "这轮可以轻松一点",
+            "这轮直接说重点",
+            "这轮先回应前一个人再表态",
+            "这轮从一个具体的观察切入",
         ]
         lines.append(moods[self.rng.randint(0, len(moods) - 1)])
 
-        lines.append("以上只是你的底色，不需要刻意表演——自然说话就好。</hidden_traits>")
+        lines.append("以上是你的内在特质——发言时自然流露，不要背诵。</hidden_traits>")
         return "\n".join(lines)
 
     def _build_persona_hint(self) -> str:
-        """Minimal persona hint — just enough to establish character voice."""
+        """Character identity — narrative, not bullet points."""
         if not self.character:
             return ""
         p = self.character.persona
-        # One-line character summary, no verbose description
-        return f"你的说话风格：{p.vocabulary_style or '自然口语'}。{p.basic_info or ''}"
+        # Use the pre-built narrative system_prompt for rich identity
+        if p.system_prompt:
+            return (
+                "【你的角色】\n"
+                + p.system_prompt
+                + "\n\n以上是你的角色设定。这是你的底色——自然内化，不要在发言中逐字复述。"
+            )
+        # Fallback: build a minimal identity
+        lines = [f"你是{p.name}，{p.age}岁{p.gender}。{p.basic_info or ''}"]
+        if p.vocabulary_style:
+            lines.append(f"说话风格：{p.vocabulary_style}")
+        if p.reasoning_style:
+            lines.append(f"思考方式：{p.reasoning_style}")
+        return "【你的角色】\n" + "\n".join(lines)
 
     def _build_game_context(self) -> str:
         """Build wolfcha-style YAML game context."""
