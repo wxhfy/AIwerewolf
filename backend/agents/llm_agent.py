@@ -146,12 +146,13 @@ class LLMAgent(Agent):
         name = view.self_player.get("name", "?")
         phase = view.phase
 
-        # Part 1: Base identity + light persona hint
+        # Part 1: Identity + Role strategy + Persona (wolfcha-style combined prompt)
         win_cond = self._build_win_condition()
         persona_hint = self._build_persona_hint()
         base = (
-            f"【身份】\n你是 {seat}号「{name}」\n身份: {self.role.value}\n\n"
-            f"{win_cond}\n\n{persona_hint}"
+            f"你是 {seat}号「{name}」，身份: {self.role.value}。\n\n"
+            f"{win_cond}\n\n"
+            f"{persona_hint}"
         )
 
         # Part 2: Task section (varies by phase)
@@ -440,19 +441,26 @@ class LLMAgent(Agent):
         return ""
 
     def _build_win_condition(self) -> str:
-        """Wolfcha-style win condition text."""
+        """Wolfcha-style win condition + role strategy combined."""
         role = self.role.value.lower()
         win_map = {
-            "werewolf": "【获胜条件】狼人数量 >= 好人数量 时狼人胜利。",
-            "white_wolf_king": "【获胜条件】狼人数量 >= 好人数量 时狼人胜利。你白天可选择自爆带走一名玩家，预言家查验你为狼人。",
-            "seer": "【获胜条件】放逐所有狼人时好人胜利。你的查验结果只有你知道。",
-            "witch": "【获胜条件】放逐所有狼人时好人胜利。你有一瓶解药和一瓶毒药。",
-            "hunter": "【获胜条件】放逐所有狼人时好人胜利。你被投票放逐或被狼人击杀时可以开枪；被女巫毒杀时无法开枪。",
-            "guard": "【获胜条件】放逐所有狼人时好人胜利。你每晚可以守护一名玩家，不能连续两晚守护同一人。",
-            "villager": "【获胜条件】放逐所有狼人时好人胜利。",
-            "idiot": "【获胜条件】放逐所有狼人时好人胜利。你被投票放逐时会翻牌免疫，之后失去投票权。",
+            "werewolf": "【你的阵营】狼人。狼人数量 >= 好人数量时胜利。你知道狼队友是谁，白天伪装好人，夜晚和队友协调刀人。",
+            "white_wolf_king": "【你的阵营】白狼王。狼人数量 >= 好人数量时胜利。你白天可自爆带走一名玩家。",
+            "seer": "【你的阵营】预言家。放逐所有狼人时好人胜利。每晚查验一人，结果只有你知道。",
+            "witch": "【你的阵营】女巫。放逐所有狼人时好人胜利。有一瓶解药和一瓶毒药，各限一次。",
+            "hunter": "【你的阵营】猎人。放逐所有狼人时好人胜利。死亡时可开枪带走一人（被毒杀除外）。",
+            "guard": "【你的阵营】守卫。放逐所有狼人时好人胜利。每晚守护一人，不能连守同一人。",
+            "villager": "【你的阵营】村民。放逐所有狼人时好人胜利。没有特殊能力，靠推理和投票。",
+            "idiot": "【你的阵营】白痴。放逐所有狼人时好人胜利。被投票放逐时翻牌免疫，之后失去投票权。",
         }
-        return win_map.get(role, "【获胜条件】放逐所有狼人时好人胜利。")
+        base = win_map.get(role, "【你的阵营】好人。放逐所有狼人时胜利。")
+
+        # Add role-specific talk strategy from prompts.py
+        from backend.agents.prompts import get_action_strategy
+        strategy = get_action_strategy("talk", self.role)
+        if strategy:
+            base += f"\n\n【你的玩法】{strategy}"
+        return base
 
     def _build_persona_section(self) -> str:
         """Wolfcha-style persona section."""
