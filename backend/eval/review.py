@@ -2571,7 +2571,7 @@ class CounterfactualAnalyzer:
                         counterfactual_type="info_release",
                         original_decision=f"{player.name} held the wolf result on {target_name} instead of releasing it publicly.",
                         alternative_decision=f"If {player.name} had announced the wolf check on {target_name} during day {day}, the village might align votes earlier.",
-                        expected_effect=f"Publicly releasing the check could improve vote convergence onto {target_name} and reduce good-player misvotes.",
+                        expected_effect=f"Publicly releasing the check would likely improve vote convergence onto {target_name} and reduce good-player misvotes; this is an estimated local effect.",
                         affected_players=[player.name, target_name],
                         confidence=0.84,
                         evidence=[
@@ -3620,6 +3620,16 @@ def generate_review_report(
     from backend.eval.report_graph import create_report_optimizer
     optimizer = create_report_optimizer()
     opt_state = optimizer.optimize(report, max_iterations=max_iterations)
+
+    validation_result = {
+        "passed": opt_state.quality_passed,
+        "grade": opt_state.evaluator_result.grade if opt_state.evaluator_result else "fail",
+        "score": opt_state.evaluator_result.score if opt_state.evaluator_result else 0.0,
+        "issues": opt_state.evaluator_result.issues if opt_state.evaluator_result else [],
+        "publish_allowed": opt_state.quality_passed,
+    }
+    report.metadata["validation_result"] = validation_result
+    report.metadata["quality_passed"] = opt_state.quality_passed
 
     final_markdown = MarkdownReportRenderer().render(
         report,

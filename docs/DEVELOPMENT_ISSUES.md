@@ -208,6 +208,14 @@ updated: 2026-05-23
 - **涉及文件 / 模块**：`backend/llm/__init__.py`、`tests/test_llm_config.py`
 - **教训**：配置层测试必须显式隔离环境变量；fallback client 也要和真实 client 暴露同一组审计字段。
 
+### 问题 C7：Track C 只有占位实现 + B 缺机器可读批准门
+- **发生时间 / Session**：2026-05-24
+- **现象**：用户要求“完整实现 C，在 B 已完整实现的情况下；B 还要完整规格测试”。检查发现 `backend/eval/evolution.py` 只有 placeholder 风格的 `HermesEvolutionHook` / `SimpleEvolutionLoop`，无法真正完成 ApprovedReviewReport → 策略知识 → Patch → Version → A/B → promote/rollback 的闭环；B 虽已有复盘主体，但 `generate_review_report()` 没把 Valid/Approved 状态写成 C 可消费的结构化字段。
+- **根因**：B/C 早期先预留接口，未把 Track C 文档里的 23 个执行项落成可运行对象；B 的校验结果停留在优化状态返回值，没有回写进 `ReviewReport.metadata.validation_result`。
+- **解决方案**：实现 `StrategyKnowledgeDocExtractor`、`StrategyKnowledgeStore`、`DreamJob`、`StrategyPatchGenerator`、`PatchValidator`、`VersionManager`、`TournamentRunner`、`AcceptancePolicy`、`EvolutionPipeline`；`generate_review_report()` 回写 `validation_result` / `quality_passed`，并新增 B/C 规格测试覆盖证据链、反事实边界、策略建议来源、C 只消费 ApprovedReport、知识脱敏、检索、补丁校验、版本晋升/回滚和 summary 导出。
+- **涉及文件 / 模块**：`backend/eval/evolution.py`、`backend/eval/review.py`、`backend/eval/__init__.py`、`tests/test_review_metrics.py`、`tests/test_track_c_evolution.py`
+- **教训**：Track C 不能直接吃“看起来像报告”的对象，必须吃机器可判定的 ApprovedReviewReport；高级方向的文档计划必须配套规格测试，否则 placeholder 很容易伪装成已实现。
+
 ---
 
 ## §D. 数据库 / 持久化
