@@ -6,7 +6,6 @@ import { cn } from "@/lib/utils";
 interface ChatBubbleProps {
   speakerName: string;
   content: string;
-  phase?: string;
   phaseLabel?: string;
   isOwn?: boolean;
   isSystem?: boolean;
@@ -15,35 +14,21 @@ interface ChatBubbleProps {
 export function ChatBubble({
   speakerName,
   content,
-  phase,
   phaseLabel,
   isOwn = false,
   isSystem = false,
 }: ChatBubbleProps) {
   const avatarLetter = speakerName.charAt(0);
 
-  // System message — centered muted text
   if (isSystem) {
     return (
       <div className="flex justify-center py-2.5">
-        <span className="text-sm text-text-sub/70 italic px-5 py-1.5 rounded-full"
-          style={{ background: "var(--color-bg)" }}>
+        <span className="rounded-full bg-background px-5 py-1.5 text-sm italic text-text-sub/70">
           {content}
         </span>
       </div>
     );
   }
-
-  const bubbleStyle = isOwn
-    ? {
-        background: "var(--color-primary)",
-        color: "#fff",
-        borderRadius: "16px 4px 16px 16px",
-      }
-    : {
-        background: "var(--color-bg)",
-        borderRadius: "4px 16px 16px 16px",
-      };
 
   return (
     <div className={cn("flex gap-2.5 py-2 animate-slide-in", isOwn && "flex-row-reverse")}>
@@ -70,8 +55,10 @@ export function ChatBubble({
         {/* Bubble */}
         {content && (
           <div
-            className="px-4 py-2.5 text-base leading-relaxed"
-            style={bubbleStyle}
+            className={cn(
+              "px-4 py-2.5 text-base leading-relaxed",
+              isOwn ? "rounded-[16px_4px_16px_16px] bg-primary text-white" : "rounded-[4px_16px_16px_16px] bg-background text-textPrimary",
+            )}
           >
             {content}
           </div>
