@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 import pytest
 
@@ -1200,6 +1202,111 @@ def test_mock_review_llm_pipeline_runs_without_real_llm() -> None:
     state_result = optimizer.optimize(report)
     assert state_result.final_markdown.startswith("# 本局复盘报告")
     assert state_result.feedback_history
+
+
+def test_b_full_spec_report_has_validation_result_and_single_game_evidence(tmp_path) -> None:
+    seer = make_player("P1", "SeerA", Role.SEER, alive=True)
+    wolf = make_player("P2", "WolfA", Role.WEREWOLF, alive=True)
+    villager = make_player("P3", "VillagerA", Role.VILLAGER, alive=False)
+    state = make_state(
+        [seer, wolf, villager],
+        [
+            make_seer_result(1, seer, wolf, is_wolf=True),
+            make_speech(1, seer, "Need more discussion before I vote."),
+            make_vote(1, seer, villager),
+            make_vote(1, wolf, villager),
+            make_death(1, villager, "vote"),
+        ],
+        winner=Alignment.WOLF,
+    )
+
+    from backend.eval.review import generate_review_report
+
+    payload = generate_review_report(
+        state,
+        json_path=tmp_path / "review.json",
+        markdown_path=tmp_path / "review.md",
+    )
+    report = payload["report"]
+    markdown = payload["final_markdown"]
+    validation = report["metadata"]["validation_result"]
+
+    assert validation["passed"] is True
+    assert validation["publish_allowed"] is True
+    assert payload["quality_passed"] is True
+    assert report["scoreboard"]
+    assert report["mvp_results"]
+    assert report["bad_cases"]
+    assert report["counterfactuals"]
+    assert report["strategy_suggestions"]
+    assert "本局复盘报告" in markdown
+    assert "玩家评分榜" in markdown
+    assert "反事实推演" in markdown
+    assert "SeerA" in markdown
+    assert "WolfA" in markdown
+    assert json.loads((tmp_path / "review.json").read_text(encoding="utf-8"))
+    assert (tmp_path / "review.md").read_text(encoding="utf-8") == markdown
+
+
+def test_b_quality_checker_rejects_missing_sections_and_score_drift() -> None:
+    wolf = make_player("P1", "WolfA", Role.WEREWOLF, alive=True)
+    seer = make_player("P2", "SeerA", Role.SEER, alive=False)
+    villager = make_player("P3", "VillagerA", Role.VILLAGER, alive=True)
+    state = make_state(
+        [wolf, seer, villager],
+        [make_vote(1, wolf, seer), make_vote(1, villager, seer), make_death(1, seer, "vote")],
+        winner=Alignment.WOLF,
+    )
+    report = ReviewReportBuilder().build(state, MetricsCalculator().compute(state))
+    bad_markdown = "# 本局复盘报告\n\n## 1. 本局概览\n- global_mvp\n"
+
+    result = ReviewQualityChecker().check(report, bad_markdown)
+    assert result.grade == "fail"
+    assert any("缺少章节" in issue for issue in result.issues)
+    assert any("英文枚举" in issue for issue in result.issues)
+
+
+def test_b_counterfactual_soundness_marks_info_release_estimated() -> None:
+    seer = make_player("P1", "SeerA", Role.SEER, alive=True)
+    wolf = make_player("P2", "WolfA", Role.WEREWOLF, alive=True)
+    villager = make_player("P3", "VillagerA", Role.VILLAGER, alive=False)
+    state = make_state(
+        [seer, wolf, villager],
+        [
+            make_seer_result(1, seer, wolf, is_wolf=True),
+            make_speech(1, seer, "Need more discussion before I vote."),
+            make_vote(1, seer, villager),
+            make_vote(1, wolf, villager),
+            make_death(1, villager, "vote"),
+        ],
+        winner=Alignment.WOLF,
+    )
+    report = ReviewReportBuilder().build(state, MetricsCalculator().compute(state))
+    info_cases = counterfactuals_by_type(report, "info_release")
+
+    assert info_cases
+    assert all(case.confidence < 1.0 for case in info_cases)
+    assert all("expected" in case.expected_effect.lower() or "would likely" in case.expected_effect.lower() for case in info_cases)
+
+
+def test_b_strategy_suggestions_are_grounded_in_review_items() -> None:
+    witch = make_player("P1", "WitchA", Role.WITCH, alive=True)
+    villager = make_player("P2", "VillagerA", Role.VILLAGER, alive=False)
+    wolf = make_player("P3", "WolfA", Role.WEREWOLF, alive=True)
+    state = make_state(
+        [witch, villager, wolf],
+        [
+            make_night_action(1, witch, "witch_poison", villager),
+            make_death(1, villager, "poison"),
+        ],
+        winner=Alignment.WOLF,
+    )
+    report = ReviewReportBuilder().build(state, MetricsCalculator().compute(state))
+
+    assert report.strategy_suggestions
+    assert all(item.source for item in report.strategy_suggestions)
+    assert all(item.metadata.get("evidence_summary") for item in report.strategy_suggestions)
+    assert any(item.metadata.get("source_type") in {"bad_case", "counterfactual"} for item in report.strategy_suggestions)
 
 
 def test_create_report_optimizer_falls_back_when_langgraph_unavailable() -> None:
