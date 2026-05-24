@@ -7,16 +7,17 @@ __all__ = ["DeepSeekClient", "create_client", "load_env_file"]
 
 
 _DEFAULT_DOUBAO_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3"
-_DEFAULT_DOUBAO_MODEL = "Doubao-Seed-2.0-pro"
+_DEFAULT_DOUBAO_MODEL = "doubao-seed-2-0-pro-250528"
 _DEFAULT_PROVIDER = "doubao"
 
 
 class _UnavailableLLMClient:
     """Offline fallback client that forces LLMAgent into heuristic mode quickly."""
 
-    def __init__(self, provider: str, model: str):
+    def __init__(self, provider: str, model: str, base_url: str):
         self.provider = provider
         self.model = model
+        self.base_url = base_url
         self.timeout = 0.01
 
     def chat_sync(self, *args, **kwargs):
@@ -55,32 +56,49 @@ def create_client(provider: str | None = None, **kwargs) -> DeepSeekClient:
             provider = os.getenv("LLM_PROVIDER", _DEFAULT_PROVIDER)
 
     if provider == "doubao":
-        api_key = kwargs.pop("api_key", None) or os.getenv("DOUBAO_API_KEY", "")
-        base_url = kwargs.pop("base_url", None) or os.getenv("DOUBAO_BASE_URL", _DEFAULT_DOUBAO_BASE_URL)
+        api_key = (
+            kwargs.pop("api_key", None)
+            or os.getenv("DOUBAO_API_KEY", "")
+            or os.getenv("ARK_API_KEY", "")
+            or os.getenv("ANTHROPIC_AUTH_TOKEN", "")
+        )
+        base_url = (
+            kwargs.pop("base_url", None)
+            or os.getenv("DOUBAO_BASE_URL", "")
+            or os.getenv("ARK_BASE_URL", "")
+            or os.getenv("ANTHROPIC_BASE_URL", "")
+            or _DEFAULT_DOUBAO_BASE_URL
+        )
         model = (
             kwargs.pop("model", None)
             or os.getenv("DOUBAO_ENDPOINT", "")
-            or os.getenv("DOUBAO_MODEL", _DEFAULT_DOUBAO_MODEL)
+            or os.getenv("DOUBAO_MODEL", "")
+            or os.getenv("ANTHROPIC_MODEL", "")
+            or _DEFAULT_DOUBAO_MODEL
         )
         if not api_key:
-            return _UnavailableLLMClient(provider="doubao", model=model)
-        return DeepSeekClient(
+            return _UnavailableLLMClient(provider="doubao", model=model, base_url=base_url)
+        client = DeepSeekClient(
             api_key=api_key,
             base_url=base_url,
             model=model,
             **kwargs,
         )
+        client.provider = "doubao"
+        return client
     elif provider == "deepseek":
         api_key = kwargs.pop("api_key", None) or os.getenv("DEEPSEEK_API_KEY", "")
         base_url = kwargs.pop("base_url", None) or os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
         model = kwargs.pop("model", None) or os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash")
         if not api_key:
-            return _UnavailableLLMClient(provider="deepseek", model=model)
-        return DeepSeekClient(
+            return _UnavailableLLMClient(provider="deepseek", model=model, base_url=base_url)
+        client = DeepSeekClient(
             api_key=api_key,
             base_url=base_url,
             model=model,
             **kwargs,
         )
+        client.provider = "deepseek"
+        return client
     else:
         raise ValueError(f"Unknown LLM provider: {provider}. Supported: doubao, deepseek")

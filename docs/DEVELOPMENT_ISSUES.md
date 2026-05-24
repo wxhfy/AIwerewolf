@@ -200,6 +200,14 @@ updated: 2026-05-23
 - **解决方案**：缩短超时阈值（12 s）+ 失败回退启发式；同时切换主力到 doubao-seed（兼容 OpenAI 格式，复用 `DeepSeekClient`）。
 - **后续**：见问题 C1 —— 12 s timeout 后来成了新 bug 的根因，最终升到 60/120 s。
 
+### 问题 C6：角色模型配置测试受环境变量污染
+- **发生时间 / Session**：2026-05-24
+- **现象**：新增 `create_client()` 默认豆包测试时，本机 `ANTHROPIC_MODEL` 覆盖了预期默认模型；离线 `_UnavailableLLMClient` 也缺 `base_url`，真实 `DeepSeekClient` 缺 `provider` 元数据，导致测试无法统一断言。
+- **根因**：LLM client 既要兼容本地 Claude-style 启动变量，又要在无 API Key 时快速 fallback，但离线/在线 client 的可观测字段不一致；测试没有隔离所有会影响默认模型的环境变量。
+- **解决方案**：让在线/离线 client 都暴露 `provider/base_url/model`；测试使用 `monkeypatch.delenv()` 清理 `LLM_PROVIDER`、豆包与 Anthropic 兼容变量后再断言默认值。
+- **涉及文件 / 模块**：`backend/llm/__init__.py`、`tests/test_llm_config.py`
+- **教训**：配置层测试必须显式隔离环境变量；fallback client 也要和真实 client 暴露同一组审计字段。
+
 ---
 
 ## §D. 数据库 / 持久化

@@ -12,3 +12,15 @@ game:
 agents:
   type: heuristic
   seed: 7
+  # Switch type to llm to let roles call different model names.
+  # provider: doubao
+  # model: doubao-seed-2-0-pro-250528
+  # role_models:
+  #   Werewolf:
+  #     model: deepseek-v4-pro[1m]
+  #   Seer:
+  #     model: deepseek-v4-flash[1m]
+  #   Witch:
+  #     model: kimi-2.6[1m]
+  #   Villager:
+  #     model: glm-5.1[1m]
