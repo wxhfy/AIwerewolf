@@ -12,6 +12,7 @@ from backend.agents.profiles import ROLE_PROFILES
 from backend.agents.prompts import get_action_strategy, get_output_format, get_system_prompt
 from backend.engine.models import ActionType, Decision, Role
 from backend.engine.visibility import PlayerView
+from backend.eval.evolution import RetrievedKnowledge, retrieve_strategy_knowledge_for_view
 from backend.llm import create_client
 
 
@@ -53,6 +54,7 @@ class LLMAgent(Agent):
         self.winner: str | None = None
         self.last_error: str | None = None
         self.recent_openings: list[str] = []
+        self.current_retrieval: list[RetrievedKnowledge] = []
 
     def initialize(self, view: PlayerView, game_setting: dict) -> None:
         self.view = view
@@ -65,6 +67,7 @@ class LLMAgent(Agent):
         self.view = view
         self.fallback.update(view, request)
         self.memory.append(f"{request} day={view.day} phase={view.phase}")
+        self.current_retrieval = retrieve_strategy_knowledge_for_view(view, top_k=3)
 
     def day_start(self) -> None:
         self.fallback.day_start()
@@ -126,6 +129,9 @@ class LLMAgent(Agent):
         user_prompt_parts.append("【发言顺序】\n" + speak_order_hint)
         if dialogue_examples:
             user_prompt_parts.append(dialogue_examples)
+        retrieval_block = self._build_retrieved_lessons_block()
+        if retrieval_block:
+            user_prompt_parts.append(retrieval_block)
         user_prompt_parts.append("\n轮到你发言，返回JSON数组：")
 
         full_user_prompt = "\n\n".join(user_prompt_parts)
@@ -142,6 +148,7 @@ class LLMAgent(Agent):
         if meta.get("segment_texts"):
             meta["segments"] = meta["segment_texts"]
             self._remember_opening(meta["segment_texts"])
+        self._attach_retrieval_meta(meta)
         return Decision(
             self.player_id,
             ActionType.TALK,
@@ -149,6 +156,38 @@ class LLMAgent(Agent):
             reasoning="",
             metadata=meta,
         )
+
+    def _attach_retrieval_meta(self, meta: dict[str, Any]) -> None:
+        if not self.current_retrieval:
+            meta["retrieved_knowledge_ids"] = []
+            meta["retrieval_used"] = False
+            return
+        meta["retrieved_knowledge_ids"] = [item.doc.doc_id for item in self.current_retrieval]
+        meta["retrieval_query_summary"] = {
+            "role": self.role.value,
+            "phase": self._view().phase,
+            "top_k": len(self.current_retrieval),
+        }
+        meta["retrieval_used"] = True
+        meta["retrieved_knowledge"] = [
+            {
+                "doc_id": item.doc.doc_id,
+                "score": item.score,
+                "recommended_action": item.doc.recommended_action,
+            }
+            for item in self.current_retrieval
+        ]
+
+    def _build_retrieved_lessons_block(self) -> str:
+        if not self.current_retrieval:
+            return ""
+        lines = [
+            "【Retrieved Lessons】",
+            "这些是从已通过校验的历史复盘中抽象出的策略知识，只能作为一般玩法提醒，不能当作本局隐藏身份事实。",
+        ]
+        for index, item in enumerate(self.current_retrieval, start=1):
+            lines.append(f"{index}. {item.to_prompt_line()}")
+        return "\n".join(lines)
 
     # ============================================================
     # Wolfcha-style talk prompt builders
@@ -1032,6 +1071,9 @@ class LLMAgent(Agent):
 
         if strategy:
             blocks.extend(["", "=== 行动策略 ===", strategy])
+        retrieval_block = self._build_retrieved_lessons_block()
+        if retrieval_block:
+            blocks.extend(["", retrieval_block])
 
         blocks.extend([
             "",
@@ -1649,15 +1691,18 @@ class LLMAgent(Agent):
                     meta["raw_text"] = text[:400]
                     meta["attempts"] = idx + 1
                     meta["usage"] = last_usage
+                    self._attach_retrieval_meta(meta)
                     return parsed, meta
             self.last_error = "json_parse_failed"
             meta["error"] = self.last_error
             meta["raw_text"] = last_text[:400]
             meta["usage"] = last_usage
+            self._attach_retrieval_meta(meta)
             return default, meta
         except Exception as exc:
             self.last_error = f"{type(exc).__name__}: {exc}"
             meta["error"] = self.last_error
+            self._attach_retrieval_meta(meta)
             return default, meta
 
     def _coerce_json(self, text: str) -> dict[str, Any] | None:

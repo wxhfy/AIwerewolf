@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useAppContext } from "@/context/AppContext";
 import { Language, AgentType } from "@/types";
 import { Button } from "@/components/ui/Button";
@@ -186,6 +187,10 @@ export default function LobbyPage() {
       <p className="mt-8 text-xs text-text-sub">
         <span className="font-display">AI Werewolf</span><span className="mx-2">·</span>
         <span>{t("观战 & 对战", "Spectate & Play")}</span>
+        <span className="mx-2">·</span>
+        <Link href="/evolution" className="text-primary underline-offset-4 hover:underline">
+          {t("自进化", "Evolution")}
+        </Link>
       </p>
 
       {/* ====== Preparation Modal ====== */}

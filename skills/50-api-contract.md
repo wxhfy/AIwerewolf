@@ -65,6 +65,20 @@ updated: 2026-05-22
 | GET | `/api/history` | `?limit=int` | 列出 DB 中的历史对局 |
 | GET | `/api/history/{game_id}` | — | 获取历史对局摘要 |
 
+### Track C 自进化
+
+| Method | Path | Body / Query | 说明 |
+|--------|------|--------------|------|
+| GET | `/api/evolution` | `?limit=int` | 进化轮次日志 |
+| GET | `/api/evolution/dashboard` | — | Evolution Dashboard 聚合视图 |
+| POST | `/api/evolution/dream` | `{report_ids?, from_version?}` | 从 ApprovedReviewReport 聚合知识并生成 candidate patch |
+| POST | `/api/evolution/cycle` | `{report_ids?, seeds?}` | 运行 DreamJob + patch + 20 seed A/B + promote/rollback |
+| GET | `/api/strategy/knowledge` | `role`, `phase`, `status`, `limit` | 查询策略知识库 |
+| POST | `/api/strategy/knowledge/extract/{game_id}` | — | 从单局 ApprovedReviewReport 抽取 StrategyKnowledgeDoc |
+| POST | `/api/strategy/knowledge/{doc_id}/deprecate` | `{reason?}` | 降权/废弃策略知识 |
+| GET | `/api/strategy/cards` | `role?` | 查询 RoleStrategyCard 版本 |
+| POST | `/api/strategy/patches/{patch_id}/apply` | — | 将已校验 patch 应用为 candidate strategy card |
+
 ### 静态资源
 
 | Method | Path | 说明 |

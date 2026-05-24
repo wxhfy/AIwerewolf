@@ -208,6 +208,69 @@ def list_evolution_rounds(limit: int = 20):
     return list_evolution_rounds(limit=limit)
 
 
+@app.get("/api/evolution/dashboard")
+def evolution_dashboard():
+    from backend.db.persist import get_evolution_dashboard
+    return get_evolution_dashboard()
+
+
+@app.post("/api/evolution/cycle")
+def run_evolution_cycle(payload: Optional[Dict[str, Any]] = None):
+    from backend.db.persist import run_evolution_cycle
+    body = payload or {}
+    report_ids = body.get("report_ids")
+    seeds = body.get("seeds")
+    return run_evolution_cycle(
+        report_ids=list(report_ids) if isinstance(report_ids, list) else None,
+        seeds=[int(item) for item in seeds] if isinstance(seeds, list) else None,
+    )
+
+
+@app.post("/api/evolution/dream")
+def run_track_c_dream_job(payload: Optional[Dict[str, Any]] = None):
+    from backend.db.persist import run_dream_job
+    body = payload or {}
+    report_ids = body.get("report_ids")
+    from_version = str(body.get("from_version") or "v1")
+    return run_dream_job(list(report_ids) if isinstance(report_ids, list) else None, from_version=from_version)
+
+
+@app.get("/api/strategy/knowledge")
+def list_strategy_knowledge(role: Optional[str] = None, phase: Optional[str] = None, status: Optional[str] = None, limit: int = 100):
+    from backend.db.persist import list_strategy_knowledge
+    return list_strategy_knowledge(role=role, phase=phase, status=status, limit=limit)
+
+
+@app.post("/api/strategy/knowledge/extract/{game_id}")
+def extract_strategy_knowledge(game_id: str):
+    from backend.db.persist import extract_strategy_knowledge_from_game
+    return extract_strategy_knowledge_from_game(game_id)
+
+
+@app.post("/api/strategy/knowledge/{doc_id}/deprecate")
+def deprecate_strategy_knowledge(doc_id: str, payload: Optional[Dict[str, Any]] = None):
+    from backend.db.persist import deprecate_strategy_knowledge
+    try:
+        return deprecate_strategy_knowledge(doc_id, reason=str((payload or {}).get("reason") or "manual"))
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Knowledge doc not found")
+
+
+@app.get("/api/strategy/cards")
+def list_strategy_cards(role: Optional[str] = None):
+    from backend.db.persist import list_role_strategy_cards
+    return list_role_strategy_cards(role=role)
+
+
+@app.post("/api/strategy/patches/{patch_id}/apply")
+def apply_strategy_patch(patch_id: str):
+    from backend.db.persist import apply_strategy_patch
+    try:
+        return apply_strategy_patch(patch_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Strategy patch not found")
+
+
 @app.get("/api/personas")
 def list_personas_endpoint():
     """List the persona library used to populate AI players.

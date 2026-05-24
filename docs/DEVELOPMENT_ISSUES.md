@@ -3,7 +3,7 @@ name: development-issues
 description: AI Werewolf 开发过程中真实遇到的问题、根因定位与解决方案；本文件由 AI 与人类持续追加
 audience: claude, codex, human
 version: 1.0.0
-updated: 2026-05-23
+updated: 2026-05-24
 ---
 
 # 开发问题追踪与解决方案
@@ -208,6 +208,14 @@ updated: 2026-05-23
 - **涉及文件 / 模块**：`backend/llm/__init__.py`、`tests/test_llm_config.py`
 - **教训**：配置层测试必须显式隔离环境变量；fallback client 也要和真实 client 暴露同一组审计字段。
 
+### 问题 C7：Track C 引入循环 import
+- **发生时间 / Session**：2026-05-24
+- **现象**：把自进化模块接到 LLM Agent 后，导入链出现 `LLMAgent -> eval.evolution -> engine.game -> agents.factory -> LLMAgent`，测试收集阶段即可能失败。
+- **根因**：`backend/eval/evolution.py` 顶层导入 `WerewolfGame`，但游戏构建又会加载 agent factory 和 LLM Agent；评测模块不应在 import 阶段绑定运行时引擎。
+- **解决方案**：将 `WerewolfGame` 延迟到 `_run_game()` / `build_reports_for_seeds()` 内部导入，保持 `LLMAgent` 只依赖轻量的知识检索函数与数据结构。
+- **涉及文件 / 模块**：`backend/eval/evolution.py`、`backend/agents/llm_agent.py`
+- **教训**：Agent 层可引用策略检索接口，但不要让 eval 模块顶层反向加载 engine；跨层依赖要懒加载或拆接口。
+
 ---
 
 ## §D. 数据库 / 持久化
@@ -234,6 +242,22 @@ updated: 2026-05-23
 - **根因**：调试时直接对 PG 写 ad-hoc SQL 但记错了实际列名（`current_day` 写成 `day`、`data` 写成 `payload`、`seat_no` 写成 `seat`）。
 - **解决方案**：报错后重读 `models.py` 校正列名；这类错误未污染代码，仅 debug 探查。
 - **教训**：debug 前先 `\d table` 看 schema，别凭记忆写 SQL。
+
+### 问题 D4：策略知识重复写入
+- **发生时间 / Session**：2026-05-24
+- **现象**：DreamJob 从多份复盘报告抽取知识后，批量 upsert 同一轮 payload 内可能出现重复 `doc_id`，导致数据库唯一键冲突。
+- **根因**：知识 ID 由报告证据、角色、阶段和策略文本派生；同一局多个相似高光/失误会聚合出同 ID，但持久化层没有先在本批次去重。
+- **解决方案**：`InMemoryStrategyKnowledgeStore.upsert_many()` 和 `_upsert_strategy_knowledge_rows()` 都按 `doc_id` 做本批次去重，再做数据库级 upsert。
+- **涉及文件 / 模块**：`backend/eval/evolution.py`、`backend/db/persist.py`
+- **教训**：GraphRAG/知识库写入要同时做“批内去重”和“库内 upsert”，不能只依赖 DB 报错兜底。
+
+### 问题 D5：EvolutionRound 外键写版本名
+- **发生时间 / Session**：2026-05-24
+- **现象**：`pytest -q tests/test_track_c_evolution.py` 中 API 进化循环失败：`ForeignKeyViolation: Key (baseline_version_id)=(v1) is not present in table "agent_versions"`。
+- **根因**：`evolution_rounds.baseline_version_id/challenger_version_id` 外键指向 `agent_versions.id`，但 Track C 持久化直接写入策略版本名 `v1` / `seer_v2...`。
+- **解决方案**：新增 `_ensure_agent_version()`，在记录 evolution round 前确保 baseline / candidate 都有 `AgentVersion` 行，并写入真实 UUID 主键。
+- **涉及文件 / 模块**：`backend/db/persist.py`、`backend/db/models.py`
+- **教训**：业务版本号和数据库主键不能混用；有 FK 的表必须在持久化入口显式创建引用实体。
 
 ---
 
@@ -277,6 +301,14 @@ updated: 2026-05-23
 - **现象**："Room not found"、路由对不上等错觉，实际是旧进程还在跑。
 - **解决方案**：开发环境一律 `uvicorn ... --reload`。
 - **教训**：开发期间宁可重启慢也别让人怀疑代码是否生效。
+
+### 问题 F4：UI smoke 端口冲突和退出挂住
+- **发生时间 / Session**：2026-05-24
+- **现象**：`node tests/ui_smoke.mjs` 随机选中已被占用的 Next 端口，测试误连旧服务；后续业务断言已打印 `UI smoke passed`，但进程卡在后端 shutdown，无法退出。
+- **根因**：测试脚本用固定随机范围找端口，不能保证空闲；SIGTERM 后 uvicorn 会等待后台 WS 对局任务结束，测试进程没有强制清理兜底。
+- **解决方案**：用 `net.createServer().listen(0)` 让 OS 分配空闲端口；清理阶段先 SIGTERM，3 秒后仍未退出则 SIGKILL。
+- **涉及文件 / 模块**：`tests/ui_smoke.mjs`
+- **教训**：浏览器 smoke 必须做到“端口隔离 + 可终止”，否则测试结果会被本机残留服务污染。
 
 ---
 
@@ -401,6 +433,14 @@ updated: 2026-05-23
 - **涉及文件 / 模块**：`backend/db/models.py`、`backend/db/persist.py`
 - **教训**：当前没有 Alembic 时，新增表不能假设所有入口都会先完整走 startup。
 
+### 问题 H11：Python 3.8 API 注解不兼容
+- **发生时间 / Session**：2026-05-24
+- **现象**：新增 FastAPI Track C 路由后，测试导入 `backend.app` 直接失败，报 3.10+ union 类型语法相关错误。
+- **根因**：当前环境是 Python 3.8，路由参数用了 `Dict[str, Any] | None`；FastAPI/Pydantic 在 3.8 下无法解析这种注解。
+- **解决方案**：统一改为 `Optional[Dict[str, Any]]`，保持项目最低 Python 版本兼容。
+- **涉及文件 / 模块**：`backend/app.py`
+- **教训**：在项目升级 Python 之前，后端 public API 注解都按 3.8 兼容写法处理。
+
 ---
 
 ## §I. 用户反复强调或纠正的偏好（沉淀）
@@ -411,6 +451,7 @@ updated: 2026-05-23
 - **不要变成启发式 fallback** —— LLM 必须真的跑通；可以拉长思考时间，但要减少 SSE 等待感（推中间「思考中」帧）。
 - **Agent 必须真推理**，不要固化说话方式、不要无信息开喷、不要"提示词作弊"塞场外知识。
 - **测试要在真实 LLM 场景下做**，光跑启发式不算数。
+- **完整实现，不要最小验收** —— 用户明确纠正“需要完整实现，而非最小验收”；Track C 这类目标必须覆盖知识抽取、检索、注入、patch、验证、版本、A/B、晋升/回滚、leaderboard、UI 和测试闭环。
 
 ### 关于 UI / UX
 - **严格对齐 wolfcha 设计** —— 阶段命名、角色性格、Persona 系统、刷新逻辑都从 `references/wolfcha` 抠出来，不要自创。

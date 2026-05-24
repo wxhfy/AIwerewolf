@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from datetime import datetime, timezone
 from typing import Any
@@ -13,16 +14,35 @@ from backend.db.models import (
     AgentVersion,
     Evaluation,
     EvolutionRound,
+    EvolutionTournament,
     Game,
     GameEvent,
     GameSnapshot,
+    KnowledgeUsageFeedback,
     LeaderboardEntry,
+    PersonaRoleAdapter,
     Player,
     PublishedReview,
+    RoleStrategyCard,
     ReviewReport,
+    StrategyGraphLink,
+    StrategyKnowledgeDoc,
+    StrategyPatch,
     Vote,
 )
 from backend.engine.models import GameState
+from backend.eval.evolution import (
+    DreamJob,
+    HermesEvolutionHook,
+    InMemoryStrategyKnowledgeStore,
+    PatchValidationResult,
+    RetrievedKnowledge,
+    RoleStrategyCard as RoleStrategyCardData,
+    StrategyKnowledgeDoc as StrategyKnowledgeDocData,
+    StrategyPatch as StrategyPatchData,
+    StrategyRetrievalQuery,
+    TournamentComparison,
+)
 from backend.eval.review import LeaderboardAggregator
 from backend.eval.track_b import generate_published_review_document, reconstruct_review_report
 
@@ -43,6 +63,34 @@ def _clean(value: Any) -> Any:
     if isinstance(value, list):
         return [_clean(item) for item in value]
     return value
+
+
+def _ensure_agent_version(
+    db,
+    version: str,
+    *,
+    parent_id: str | None = None,
+    notes: str = "",
+) -> AgentVersion:
+    """Create a Track C agent version row when strategy versions are first used."""
+    normalized = str(version or "v1").strip() or "v1"
+    row = db.query(AgentVersion).filter(AgentVersion.name == normalized).first()
+    if row is None:
+        row = AgentVersion(
+            name=normalized,
+            agent_type="llm",
+            model_name="",
+            prompt_version=normalized,
+            config={"track": "C", "strategy_version": normalized},
+            parent_version_id=parent_id,
+            notes=notes,
+        )
+        db.add(row)
+        db.flush()
+    elif parent_id and not row.parent_version_id and row.id != parent_id:
+        row.parent_version_id = parent_id
+        db.flush()
+    return row
 
 
 def _seat_of(players, player_id: str | None) -> int | None:
@@ -707,6 +755,478 @@ def save_published_review(state: GameState) -> dict[str, Any]:
         row.published_at = _now() if row.publish_allowed else None
         db.commit()
         return document.to_dict()
+    finally:
+        db.close()
+
+
+def _knowledge_row_to_dict(row: StrategyKnowledgeDoc) -> dict[str, Any]:
+    return {
+        "doc_id": row.id,
+        "doc_type": row.doc_type,
+        "role": row.role,
+        "phase": row.phase,
+        "persona_scope": row.persona_scope,
+        "situation_pattern": row.situation_pattern,
+        "trigger_conditions": row.trigger_conditions or [],
+        "recommended_action": row.recommended_action,
+        "avoid_action": row.avoid_action,
+        "rationale": row.rationale,
+        "evidence_summary": row.evidence_summary,
+        "source_report_ids": row.source_report_ids or [],
+        "source_item_ids": row.source_item_ids or [],
+        "source_event_ids": row.source_event_ids or [],
+        "counterfactual_ids": row.counterfactual_ids or [],
+        "expected_metric_effects": row.expected_metric_effects or [],
+        "quality_score": row.quality_score or 0.0,
+        "confidence": row.confidence or 0.0,
+        "usage_count": row.usage_count or 0,
+        "success_count": row.success_count or 0,
+        "failure_count": row.failure_count or 0,
+        "status": row.status,
+        "tags": row.tags or [],
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+    }
+
+
+def _upsert_strategy_knowledge_rows(db, docs: list[StrategyKnowledgeDocData]) -> list[dict[str, Any]]:
+    saved: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for doc in docs:
+        if doc.doc_id in seen:
+            continue
+        seen.add(doc.doc_id)
+        row = db.query(StrategyKnowledgeDoc).filter(StrategyKnowledgeDoc.id == doc.doc_id).first()
+        if row is None:
+            row = StrategyKnowledgeDoc(id=doc.doc_id)
+            db.add(row)
+        row.doc_type = doc.doc_type
+        row.role = doc.role
+        row.phase = doc.phase
+        row.persona_scope = doc.persona_scope
+        row.situation_pattern = doc.situation_pattern
+        row.trigger_conditions = doc.trigger_conditions
+        row.recommended_action = doc.recommended_action
+        row.avoid_action = doc.avoid_action
+        row.rationale = doc.rationale
+        row.evidence_summary = doc.evidence_summary
+        row.source_report_ids = doc.source_report_ids
+        row.source_item_ids = doc.source_item_ids
+        row.source_event_ids = doc.source_event_ids
+        row.counterfactual_ids = doc.counterfactual_ids
+        row.expected_metric_effects = doc.expected_metric_effects
+        row.quality_score = doc.quality_score
+        row.confidence = doc.confidence
+        row.usage_count = doc.usage_count
+        row.success_count = doc.success_count
+        row.failure_count = doc.failure_count
+        row.status = doc.status
+        row.tags = doc.tags
+        saved.append(doc.to_dict())
+    return saved
+
+
+def extract_strategy_knowledge_from_game(game_id: str) -> list[dict[str, Any]]:
+    init_db()
+    payload = get_review_reports(game_id)
+    if not payload or payload.get("status") != "approved":
+        return []
+    from backend.eval.evolution import StrategyKnowledgeExtractor
+
+    docs = StrategyKnowledgeExtractor().extract(payload)
+    db = SessionLocal()
+    try:
+        saved = _upsert_strategy_knowledge_rows(db, docs)
+        db.commit()
+        return _clean(saved)
+    finally:
+        db.close()
+
+
+def list_strategy_knowledge(
+    *,
+    role: str | None = None,
+    phase: str | None = None,
+    status: str | None = None,
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    init_db()
+    db = SessionLocal()
+    try:
+        query = db.query(StrategyKnowledgeDoc)
+        if role:
+            query = query.filter(StrategyKnowledgeDoc.role == role)
+        if phase:
+            query = query.filter(StrategyKnowledgeDoc.phase == phase)
+        if status:
+            query = query.filter(StrategyKnowledgeDoc.status == status)
+        rows = (
+            query.order_by(StrategyKnowledgeDoc.quality_score.desc(), StrategyKnowledgeDoc.updated_at.desc())
+            .limit(limit)
+            .all()
+        )
+        return _clean([_knowledge_row_to_dict(row) for row in rows])
+    finally:
+        db.close()
+
+
+def retrieve_strategy_knowledge(query: StrategyRetrievalQuery) -> list[dict[str, Any]]:
+    init_db()
+    db = SessionLocal()
+    try:
+        rows = (
+            db.query(StrategyKnowledgeDoc)
+            .filter(StrategyKnowledgeDoc.status.in_(["active", "candidate"]))
+            .all()
+        )
+        store = InMemoryStrategyKnowledgeStore()
+        docs = [StrategyKnowledgeDocData(**_knowledge_row_to_dict(row)) for row in rows]
+        store.upsert_many(docs)
+        return _clean([item.to_dict() for item in store.search(query)])
+    finally:
+        db.close()
+
+
+def deprecate_strategy_knowledge(doc_id: str, reason: str = "") -> dict[str, Any]:
+    init_db()
+    db = SessionLocal()
+    try:
+        row = db.query(StrategyKnowledgeDoc).filter(StrategyKnowledgeDoc.id == doc_id).first()
+        if row is None:
+            raise KeyError(doc_id)
+        row.status = "deprecated"
+        tags = set(row.tags or [])
+        if reason:
+            tags.add(f"deprecated:{reason}")
+        row.tags = sorted(tags)
+        db.commit()
+        return _clean(_knowledge_row_to_dict(row))
+    finally:
+        db.close()
+
+
+def record_knowledge_usage(payload: dict[str, Any]) -> dict[str, Any]:
+    init_db()
+    db = SessionLocal()
+    try:
+        row = KnowledgeUsageFeedback(
+            game_id=str(payload.get("game_id") or ""),
+            decision_id=payload.get("decision_id"),
+            player_id=str(payload.get("player_id") or ""),
+            knowledge_doc_id=str(payload.get("knowledge_doc_id") or ""),
+            retrieved=bool(payload.get("retrieved", True)),
+            used=bool(payload.get("used", False)),
+            decision_outcome=str(payload.get("decision_outcome") or ""),
+            score_delta=float(payload.get("score_delta") or 0.0),
+            helpful=bool(payload.get("helpful", False)),
+            extra_metadata=payload.get("metadata") or {},
+        )
+        db.add(row)
+        doc = db.query(StrategyKnowledgeDoc).filter(StrategyKnowledgeDoc.id == row.knowledge_doc_id).first()
+        if doc is not None:
+            doc.usage_count = int(doc.usage_count or 0) + 1
+            if row.helpful:
+                doc.success_count = int(doc.success_count or 0) + 1
+            else:
+                doc.failure_count = int(doc.failure_count or 0) + 1
+            if doc.failure_count >= 3 and doc.success_count == 0:
+                doc.status = "deprecated"
+        db.commit()
+        return {"id": row.id, "knowledge_doc_id": row.knowledge_doc_id, "helpful": row.helpful}
+    finally:
+        db.close()
+
+
+def run_dream_job(report_ids: list[str] | None = None, *, from_version: str = "v1") -> dict[str, Any]:
+    init_db()
+    db = SessionLocal()
+    try:
+        query = db.query(PublishedReview).filter(PublishedReview.publish_allowed.is_(True))
+        if report_ids:
+            query = query.filter(PublishedReview.id.in_(report_ids) | PublishedReview.game_id.in_(report_ids))
+        rows = query.order_by(PublishedReview.published_at.desc(), PublishedReview.created_at.desc()).limit(30).all()
+        reports = [
+            {
+                "report_id": row.id,
+                "game_id": row.game_id,
+                "status": row.status,
+                "publish_allowed": row.publish_allowed,
+                "review_report": row.report_json or {},
+                "validation_result": row.validation_result or {},
+            }
+            for row in rows
+        ]
+        job = DreamJob()
+        result = job.run(reports, from_version=from_version)
+        saved_docs = _upsert_strategy_knowledge_rows(db, result.knowledge_docs)
+        saved_patches: list[dict[str, Any]] = []
+        for patch in result.candidate_patches:
+            row = StrategyPatch(id=patch.patch_id)
+            row.patch_type = patch.patch_type
+            row.target_role = patch.target_role
+            row.target_persona_scope = patch.target_persona_scope
+            row.from_version = patch.from_version
+            row.to_version = patch.to_version
+            row.source_report_ids = patch.source_report_ids
+            row.source_knowledge_doc_ids = patch.source_knowledge_doc_ids
+            row.source_evidence_ids = patch.source_evidence_ids
+            row.operations = [operation.to_dict() for operation in patch.operations]
+            row.expected_effects = patch.expected_effects
+            row.safety_checks = patch.safety_checks
+            row.validation_result = patch.validation_result
+            row.status = patch.status
+            db.merge(row)
+            saved_patches.append(patch.to_dict())
+        db.commit()
+        payload = result.to_dict()
+        payload["knowledge_docs"] = saved_docs
+        payload["candidate_patches"] = saved_patches
+        return _clean(payload)
+    finally:
+        db.close()
+
+
+def _role_card_to_dict(row: RoleStrategyCard) -> dict[str, Any]:
+    return {
+        "card_id": row.id,
+        "role": row.role,
+        "version": row.version,
+        "parent_version": row.parent_version,
+        "goal": row.goal,
+        "speech_policy": row.speech_policy or [],
+        "vote_policy": row.vote_policy or [],
+        "skill_policy": row.skill_policy or [],
+        "risk_rules": row.risk_rules or [],
+        "retrieval_policy": row.retrieval_policy or {},
+        "status": row.status,
+        "created_from_patch_id": row.created_from_patch_id,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+    }
+
+
+def list_role_strategy_cards(role: str | None = None) -> list[dict[str, Any]]:
+    init_db()
+    db = SessionLocal()
+    try:
+        query = db.query(RoleStrategyCard)
+        if role:
+            query = query.filter(RoleStrategyCard.role == role)
+        rows = query.order_by(RoleStrategyCard.role, RoleStrategyCard.created_at.desc()).all()
+        return _clean([_role_card_to_dict(row) for row in rows])
+    finally:
+        db.close()
+
+
+def apply_strategy_patch(patch_id: str) -> dict[str, Any]:
+    init_db()
+    db = SessionLocal()
+    try:
+        patch = db.query(StrategyPatch).filter(StrategyPatch.id == patch_id).first()
+        if patch is None:
+            raise KeyError(patch_id)
+        role = patch.target_role or "global"
+        baseline = (
+            db.query(RoleStrategyCard)
+            .filter(RoleStrategyCard.role == role, RoleStrategyCard.version == patch.from_version)
+            .first()
+        )
+        if baseline is None:
+            baseline = RoleStrategyCard(
+                role=role,
+                version=patch.from_version,
+                parent_version=None,
+                goal=f"{role} baseline strategy",
+                speech_policy=["基于当前可见事实发言，给出明确但不过度绝对的判断。"],
+                vote_policy=["投票前核对公开发言、票型和已确认信息。"],
+                skill_policy=["技能使用优先服务角色任务和阵营收益。"],
+                risk_rules=["不得引用隐藏身份或历史局具体玩家。"],
+                retrieval_policy={"top_k": 3, "min_quality": 0.4},
+                status="active",
+            )
+            db.add(baseline)
+        card = RoleStrategyCard(
+            role=role,
+            version=patch.to_version,
+            parent_version=baseline.version,
+            goal=baseline.goal,
+            speech_policy=list(baseline.speech_policy or []),
+            vote_policy=list(baseline.vote_policy or []),
+            skill_policy=list(baseline.skill_policy or []),
+            risk_rules=list(baseline.risk_rules or []),
+            retrieval_policy=dict(baseline.retrieval_policy or {}),
+            status="candidate",
+            created_from_patch_id=patch.id,
+        )
+        for operation in patch.operations or []:
+            section = operation.get("section")
+            if section in {"speech_policy", "vote_policy", "skill_policy", "risk_rules"}:
+                values = list(getattr(card, section) or [])
+                values.append(str(operation.get("new_value") or ""))
+                setattr(card, section, values)
+        patch.status = "applied"
+        db.add(card)
+        db.commit()
+        return _clean(_role_card_to_dict(card))
+    finally:
+        db.close()
+
+
+def run_evolution_cycle(report_ids: list[str] | None = None, *, seeds: list[int] | None = None) -> dict[str, Any]:
+    init_db()
+    dream = run_dream_job(report_ids, from_version="v1")
+    from backend.eval.evolution import PatchValidator, TournamentRunner, VersionManager
+
+    manager = VersionManager()
+    runner = TournamentRunner()
+    patch_results: list[dict[str, Any]] = []
+    db = SessionLocal()
+    try:
+        for patch_payload in dream.get("candidate_patches", []):
+            patch = StrategyPatchData(
+                patch_id=patch_payload["patch_id"],
+                patch_type=patch_payload["patch_type"],
+                target_role=patch_payload.get("target_role"),
+                target_persona_scope=patch_payload.get("target_persona_scope"),
+                from_version=patch_payload.get("from_version", "v1"),
+                to_version=patch_payload.get("to_version", ""),
+                source_report_ids=list(patch_payload.get("source_report_ids", [])),
+                source_knowledge_doc_ids=list(patch_payload.get("source_knowledge_doc_ids", [])),
+                source_evidence_ids=list(patch_payload.get("source_evidence_ids", [])),
+                operations=[],
+                expected_effects=list(patch_payload.get("expected_effects", [])),
+                safety_checks=dict(patch_payload.get("safety_checks", {})),
+                status=patch_payload.get("status", "validated"),
+                validation_result=dict(patch_payload.get("validation_result", {})),
+            )
+            # Use DB payload for operations in persistence; VersionManager only needs new values.
+            patch.operations = []
+            for item in patch_payload.get("operations", []):
+                from backend.eval.evolution import PatchOperation
+
+                patch.operations.append(PatchOperation(**item))
+            candidate_card = manager.create_candidate(patch)
+            tournament = runner.run_ab_tournament(
+                baseline_version=patch.from_version,
+                candidate_version=candidate_card.version,
+                target_role=patch.target_role,
+                seeds=seeds or list(range(1, 21)),
+            )
+            if tournament.decision.get("accept"):
+                final_card = manager.promote(candidate_card.role, candidate_card.version)
+                patch_status = "promoted"
+            else:
+                final_card = manager.rollback(candidate_card.role, candidate_card.version)
+                patch_status = "rolled_back"
+            baseline_version = _ensure_agent_version(
+                db,
+                patch.from_version,
+                notes="Track C baseline strategy version",
+            )
+            challenger_version = _ensure_agent_version(
+                db,
+                candidate_card.version,
+                parent_id=baseline_version.id,
+                notes=f"Track C candidate generated from patch {patch.patch_id}",
+            )
+            db.add(EvolutionTournament(
+                id=tournament.tournament_id,
+                baseline_version=tournament.baseline_version,
+                candidate_version=tournament.candidate_version,
+                target_role=tournament.target_role,
+                seeds=tournament.seeds,
+                baseline_results=tournament.baseline_results,
+                candidate_results=tournament.candidate_results,
+                comparison=tournament.comparison,
+                decision=tournament.decision,
+                status=tournament.status,
+            ))
+            db.add(EvolutionRound(
+                round_no=(db.query(EvolutionRound).count() + 1),
+                baseline_version_id=baseline_version.id,
+                challenger_version_id=challenger_version.id,
+                games_per_round=len(tournament.seeds),
+                baseline_wins=int(tournament.comparison.get("baseline_camp_win_rate", 0.0) * len(tournament.seeds)),
+                challenger_wins=int(tournament.comparison.get("candidate_camp_win_rate", 0.0) * len(tournament.seeds)),
+                delta_win_rate=float(tournament.comparison.get("camp_win_rate_delta", 0.0)),
+                accepted=bool(tournament.decision.get("accept")),
+                change_log=json.dumps(patch_payload, ensure_ascii=False),
+                finished_at=_now(),
+            ))
+            patch_results.append({
+                "patch": {**patch_payload, "status": patch_status},
+                "candidate_card": candidate_card.to_dict(),
+                "final_card": final_card.to_dict(),
+                "tournament": tournament.to_dict(),
+            })
+        db.commit()
+        leaderboard = [
+            {
+                "version": item["tournament"]["candidate_version"],
+                "baseline_version": item["tournament"]["baseline_version"],
+                "target_role": item["tournament"]["comparison"].get("target_role"),
+                "games": item["tournament"]["comparison"].get("games_per_side"),
+                "win_rate": item["tournament"]["comparison"].get("candidate_camp_win_rate"),
+                "avg_score": item["tournament"]["comparison"].get("candidate_target_role_avg_score"),
+                "role_task_score": item["tournament"]["comparison"].get("candidate_role_task_score"),
+                "critical_mistakes_per_game": item["tournament"]["comparison"].get("candidate_critical_mistakes_per_game"),
+                "info_leak_count": item["tournament"]["comparison"].get("candidate_info_leak_count"),
+                "invalid_action_rate": item["tournament"]["comparison"].get("candidate_invalid_action_rate"),
+                "decision": item["tournament"]["decision"].get("action"),
+            }
+            for item in patch_results
+        ]
+        return _clean({
+            "dream": dream,
+            "patch_results": patch_results,
+            "leaderboard": leaderboard,
+            "summary": {
+                "knowledge_docs": len(dream.get("knowledge_docs", [])),
+                "validated_patches": len(dream.get("candidate_patches", [])),
+                "promoted": sum(1 for item in patch_results if item["patch"]["status"] == "promoted"),
+                "rolled_back": sum(1 for item in patch_results if item["patch"]["status"] == "rolled_back"),
+            },
+        })
+    finally:
+        db.close()
+
+
+def get_evolution_dashboard() -> dict[str, Any]:
+    init_db()
+    db = SessionLocal()
+    try:
+        patches = db.query(StrategyPatch).order_by(StrategyPatch.created_at.desc()).limit(20).all()
+        tournaments = db.query(EvolutionTournament).order_by(EvolutionTournament.created_at.desc()).limit(20).all()
+        return _clean({
+            "active_versions": list_role_strategy_cards(),
+            "knowledge": list_strategy_knowledge(limit=50),
+            "patches": [
+                {
+                    "patch_id": row.id,
+                    "patch_type": row.patch_type,
+                    "target_role": row.target_role,
+                    "from_version": row.from_version,
+                    "to_version": row.to_version,
+                    "operations": row.operations or [],
+                    "validation_result": row.validation_result or {},
+                    "status": row.status,
+                    "source_report_ids": row.source_report_ids or [],
+                    "source_knowledge_doc_ids": row.source_knowledge_doc_ids or [],
+                }
+                for row in patches
+            ],
+            "tournaments": [
+                {
+                    "tournament_id": row.id,
+                    "baseline_version": row.baseline_version,
+                    "candidate_version": row.candidate_version,
+                    "target_role": row.target_role,
+                    "comparison": row.comparison or {},
+                    "decision": row.decision or {},
+                    "status": row.status,
+                }
+                for row in tournaments
+            ],
+        })
     finally:
         db.close()
 

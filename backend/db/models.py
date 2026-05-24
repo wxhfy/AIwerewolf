@@ -299,6 +299,161 @@ class PublishedReview(Base):
     published_at = Column(DateTime, nullable=True)
 
 
+class StrategyKnowledgeDoc(Base):
+    """Sanitized Track C strategy knowledge extracted from approved reviews."""
+
+    __tablename__ = "strategy_knowledge_docs"
+
+    id = Column(String, primary_key=True, default=_uuid)
+    doc_type = Column(String, nullable=False, index=True)
+    role = Column(String, nullable=False, index=True)
+    phase = Column(String, default="", index=True)
+    persona_scope = Column(String, nullable=True, index=True)
+    situation_pattern = Column(Text, default="")
+    trigger_conditions = Column(JSON, default=list)
+    recommended_action = Column(Text, default="")
+    avoid_action = Column(Text, nullable=True)
+    rationale = Column(Text, default="")
+    evidence_summary = Column(Text, default="")
+    source_report_ids = Column(JSON, default=list)
+    source_item_ids = Column(JSON, default=list)
+    source_event_ids = Column(JSON, default=list)
+    counterfactual_ids = Column(JSON, default=list)
+    expected_metric_effects = Column(JSON, default=list)
+    quality_score = Column(Float, default=0.0)
+    confidence = Column(Float, default=0.0)
+    usage_count = Column(Integer, default=0)
+    success_count = Column(Integer, default=0)
+    failure_count = Column(Integer, default=0)
+    status = Column(String, default="candidate", index=True)
+    tags = Column(JSON, default=list)
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+    __table_args__ = (
+        Index("ix_strategy_knowledge_role_phase_status", "role", "phase", "status"),
+    )
+
+
+class StrategyGraphLink(Base):
+    """GraphRAG-lite edge between strategy knowledge entities."""
+
+    __tablename__ = "strategy_graph_links"
+
+    id = Column(String, primary_key=True, default=_uuid)
+    source_id = Column(String, nullable=False, index=True)
+    source_type = Column(String, nullable=False)
+    target_id = Column(String, nullable=False, index=True)
+    target_type = Column(String, nullable=False)
+    edge_type = Column(String, nullable=False, index=True)
+    weight = Column(Float, default=1.0)
+    extra_metadata = Column("metadata", JSON, default=dict)
+    created_at = Column(DateTime, default=_utcnow)
+
+
+class RoleStrategyCard(Base):
+    """Versioned role-level strategy card used by retrieval-enhanced agents."""
+
+    __tablename__ = "role_strategy_cards"
+
+    id = Column(String, primary_key=True, default=_uuid)
+    role = Column(String, nullable=False, index=True)
+    version = Column(String, nullable=False, index=True)
+    parent_version = Column(String, nullable=True)
+    goal = Column(Text, default="")
+    speech_policy = Column(JSON, default=list)
+    vote_policy = Column(JSON, default=list)
+    skill_policy = Column(JSON, default=list)
+    risk_rules = Column(JSON, default=list)
+    retrieval_policy = Column(JSON, default=dict)
+    status = Column(String, default="active", index=True)
+    created_from_patch_id = Column(String, nullable=True)
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+    __table_args__ = (
+        Index("ix_role_strategy_role_version", "role", "version"),
+    )
+
+
+class PersonaRoleAdapter(Base):
+    """Versioned persona-role compensation layer."""
+
+    __tablename__ = "persona_role_adapters"
+
+    id = Column(String, primary_key=True, default=_uuid)
+    persona_scope = Column(String, nullable=False, index=True)
+    role = Column(String, nullable=False, index=True)
+    version = Column(String, nullable=False, index=True)
+    compensation_rules = Column(JSON, default=list)
+    risk_warnings = Column(JSON, default=list)
+    style_adjustments = Column(JSON, default=list)
+    status = Column(String, default="active", index=True)
+    created_from_patch_id = Column(String, nullable=True)
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+
+class StrategyPatch(Base):
+    """Track C patch proposed by DreamJob and validated before A/B."""
+
+    __tablename__ = "strategy_patches"
+
+    id = Column(String, primary_key=True, default=_uuid)
+    patch_type = Column(String, nullable=False, index=True)
+    target_role = Column(String, nullable=True, index=True)
+    target_persona_scope = Column(String, nullable=True, index=True)
+    from_version = Column(String, default="v1")
+    to_version = Column(String, default="")
+    source_report_ids = Column(JSON, default=list)
+    source_knowledge_doc_ids = Column(JSON, default=list)
+    source_evidence_ids = Column(JSON, default=list)
+    operations = Column(JSON, default=list)
+    expected_effects = Column(JSON, default=list)
+    safety_checks = Column(JSON, default=dict)
+    validation_result = Column(JSON, default=dict)
+    status = Column(String, default="proposed", index=True)
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+
+class EvolutionTournament(Base):
+    """A/B tournament comparison between baseline and candidate versions."""
+
+    __tablename__ = "evolution_tournaments"
+
+    id = Column(String, primary_key=True, default=_uuid)
+    baseline_version = Column(String, nullable=False, index=True)
+    candidate_version = Column(String, nullable=False, index=True)
+    target_role = Column(String, nullable=True, index=True)
+    seeds = Column(JSON, default=list)
+    baseline_results = Column(JSON, default=list)
+    candidate_results = Column(JSON, default=list)
+    comparison = Column(JSON, default=dict)
+    decision = Column(JSON, default=dict)
+    status = Column(String, default="completed", index=True)
+    created_at = Column(DateTime, default=_utcnow)
+
+
+class KnowledgeUsageFeedback(Base):
+    """Per-decision feedback for strategy knowledge retrieval quality."""
+
+    __tablename__ = "knowledge_usage_feedback"
+
+    id = Column(String, primary_key=True, default=_uuid)
+    game_id = Column(String, nullable=False, index=True)
+    decision_id = Column(String, nullable=True, index=True)
+    player_id = Column(String, nullable=False, index=True)
+    knowledge_doc_id = Column(String, nullable=False, index=True)
+    retrieved = Column(Boolean, default=True)
+    used = Column(Boolean, default=False)
+    decision_outcome = Column(String, default="")
+    score_delta = Column(Float, default=0.0)
+    helpful = Column(Boolean, default=False)
+    extra_metadata = Column("metadata", JSON, default=dict)
+    created_at = Column(DateTime, default=_utcnow)
+
+
 class EvolutionRound(Base):
     """One iteration of the self-evolution loop (Track C).
 

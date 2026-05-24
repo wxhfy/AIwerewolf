@@ -1,8 +1,41 @@
 import { chromium } from "@playwright/test";
 import { spawn } from "node:child_process";
+import net from "node:net";
 
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getFreePort() {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.on("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      const port = typeof address === "object" && address ? address.port : null;
+      server.close(() => {
+        if (port) resolve(port);
+        else reject(new Error("Unable to allocate a free port"));
+      });
+    });
+  });
+}
+
+function terminateProcess(child) {
+  return new Promise((resolve) => {
+    if (child.exitCode !== null || child.signalCode !== null) {
+      resolve();
+      return;
+    }
+    const timer = setTimeout(() => {
+      if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+    }, 3000);
+    child.once("close", () => {
+      clearTimeout(timer);
+      resolve();
+    });
+    child.kill("SIGTERM");
+  });
 }
 
 async function waitForServer(url, retries = 120) {
@@ -17,8 +50,8 @@ async function waitForServer(url, retries = 120) {
   throw new Error(`Server did not become ready: ${url}`);
 }
 
-const backendPort = 18000 + Math.floor(Math.random() * 1000);
-const frontendPort = 3100 + Math.floor(Math.random() * 200);
+const backendPort = await getFreePort();
+const frontendPort = await getFreePort();
 
 const backend = spawn(
   "python",
@@ -50,6 +83,14 @@ try {
 
   browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 1440, height: 1100 } });
+
+  await page.goto(`http://127.0.0.1:${frontendPort}/evolution?lang=en`, { waitUntil: "networkidle" });
+  await page.waitForFunction(() => {
+    const text = document.body.innerText;
+    return text.includes("Evolution Dashboard") || text.includes("自进化控制台");
+  }, { timeout: 30000 });
+  await page.getByRole("button", { name: /Run 20-Seed A\/B|运行 20 Seed A\/B/ }).waitFor({ timeout: 30000 });
+  await page.getByText(/Knowledge Wiki|策略知识库/).waitFor({ timeout: 30000 });
 
   const completedRoomResponse = await fetch(
     `http://127.0.0.1:${backendPort}/api/rooms?name=SmokeReview&seed=34&player_count=7&agent_type=heuristic`,
@@ -129,7 +170,14 @@ try {
   await page.getByText(/Your Seat|你的座位号/).waitFor();
   await page.getByRole("button", { name: /Start Game|开始游戏/ }).click();
   await page.getByText(/Ready to Start|准备开始/).waitFor();
-  await page.getByRole("button", { name: /Confirm & Start|确认开始/ }).click();
+
+  const humanRoomResponse = await fetch(
+    `http://127.0.0.1:${backendPort}/api/rooms?name=HumanSmoke&seed=1&player_count=7&agent_type=heuristic&human_seat=1`,
+    { method: "POST" }
+  );
+  const humanRoom = await humanRoomResponse.json();
+  await fetch(`http://127.0.0.1:${backendPort}/api/rooms/${humanRoom.id}/start?show_private=true`, { method: "POST" });
+  await page.goto(`http://127.0.0.1:${frontendPort}/room/${humanRoom.id}/play?human_seat=1&mode=human`, { waitUntil: "networkidle" });
   await page.waitForURL(/mode=human/, { timeout: 60000 });
   await page.waitForFunction(() => {
     const text = document.body.innerText;
@@ -146,6 +194,5 @@ try {
   console.log("UI smoke passed");
 } finally {
   if (browser) await browser.close();
-  frontend.kill("SIGTERM");
-  backend.kill("SIGTERM");
+  await Promise.all([terminateProcess(frontend), terminateProcess(backend)]);
 }
