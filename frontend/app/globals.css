@@ -18,6 +18,15 @@
   --color-border: rgba(139, 90, 43, 0.10);
   --color-overlay: rgba(0, 0, 0, 0);
 
+  /* RGB channels for Tailwind opacity modifiers (bg-primary/10 etc.) */
+  --color-primary-rgb: 139 90 43;
+  --color-gold-rgb: 212 175 55;
+  --color-village-rgb: 46 125 50;
+  --color-danger-rgb: 185 28 28;
+  --color-info-rgb: 25 118 210;
+  --color-text-rgb: 45 42 36;
+  --color-text-sub-rgb: 91 86 77;
+
   /* Typography */
   --font-display: 'Noto Serif SC', serif;
   --font-body: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, sans-serif;
@@ -25,7 +34,7 @@
   /* Animation */
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
-  --transition-daynight: 800ms;
+  --transition-daynight: 450ms;
   --transition-micro: 150ms;
   --transition-enter: 300ms;
 
@@ -44,6 +53,35 @@
   --color-text-sub: #B5AFA5;
   --color-border: rgba(212, 175, 55, 0.15);
   --color-overlay: rgba(0, 0, 0, 0.50);
+
+  /* RGB overrides for night */
+  --color-primary-rgb: 232 200 74;
+  --color-gold-rgb: 232 200 74;
+  --color-village-rgb: 46 125 50;
+  --color-danger-rgb: 239 68 68;
+  --color-info-rgb: 96 165 250;
+  --color-text-rgb: 245 240 232;
+  --color-text-sub-rgb: 181 175 165;
+}
+
+/* End phase overrides — calm golden settlement state */
+[data-phase="end"] {
+  --color-bg: #F6F0E3;
+  --color-card: #FFF9EC;
+  --color-primary: #9A6A12;
+  --color-primary-hover: #B88A24;
+  --color-text: #2F2617;
+  --color-text-sub: #6F6048;
+  --color-border: rgba(154, 106, 18, 0.18);
+  --color-overlay: rgba(154, 106, 18, 0.10);
+
+  --color-primary-rgb: 154 106 18;
+  --color-gold-rgb: 212 175 55;
+  --color-village-rgb: 46 125 50;
+  --color-danger-rgb: 185 28 28;
+  --color-info-rgb: 25 118 210;
+  --color-text-rgb: 47 38 23;
+  --color-text-sub-rgb: 111 96 72;
 }
 
 /* Star particles (visible only in night) */
@@ -69,6 +107,33 @@
 }
 [data-phase="night"] .night-stars::before {
   opacity: 1;
+}
+
+.phase-announcement-ready {
+  background:
+    radial-gradient(circle at 50% 42%, rgb(255 249 236 / 92%) 0%, rgb(246 240 227 / 98%) 54%, rgb(234 220 190 / 96%) 100%),
+    linear-gradient(135deg, rgb(var(--color-gold-rgb) / 14%), transparent 45%);
+}
+
+.phase-announcement-night {
+  background: radial-gradient(ellipse at center, rgb(0 0 0 / 78%) 0%, rgb(0 0 0 / 94%) 100%);
+}
+
+.phase-announcement-day {
+  background: radial-gradient(ellipse at center, rgb(255 250 240 / 86%) 0%, rgb(248 245 240 / 96%) 100%);
+}
+
+.phase-announcement-end {
+  background:
+    radial-gradient(circle at 50% 42%, rgb(255 247 222 / 94%) 0%, rgb(246 240 227 / 98%) 58%, rgb(223 199 140 / 92%) 100%),
+    linear-gradient(120deg, rgb(var(--color-gold-rgb) / 22%), transparent 48%);
+}
+
+.sheriff-badge {
+  background: linear-gradient(135deg, var(--color-gold) 0%, var(--color-primary-hover) 100%);
+  border-color: var(--color-gold);
+  color: var(--color-text);
+  box-shadow: 0 2px 6px rgb(var(--color-gold-rgb) / 35%);
 }
 
 @keyframes twinkle {
@@ -98,6 +163,15 @@
   }
 }
 
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 html {
   font-size: 17px;  /* Larger base for readability (default is 16px) */
 }
@@ -108,6 +182,9 @@ body {
   font-family: var(--font-body);
   font-size: 1rem;
   line-height: 1.6;
+  transition:
+    background-color var(--transition-daynight) var(--ease-in-out),
+    color var(--transition-daynight) var(--ease-in-out);
 }
 
 /* ---- Animations ---- */

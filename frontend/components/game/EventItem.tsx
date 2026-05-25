@@ -49,7 +49,7 @@ export function EventItem({ event, index = 0 }: EventItemProps) {
     if (event.type === EventType.PHASE_CHANGED) {
       return (
         <span className="text-xs text-text-sub italic">
-          {format(t("phaseChanged", language), { phase: tPhase(p.phase, language) })}
+          {format(t("phaseChanged", language), { phase: tPhase(p.phase || event.phase, language) })}
         </span>
       );
     }
@@ -94,12 +94,22 @@ export function EventItem({ event, index = 0 }: EventItemProps) {
     }
 
     if (event.type === EventType.NIGHT_ACTION) {
+      const actionLabels = {
+        guard: t("actionGuard", language),
+        attack: t("actionAttack", language),
+        divine: t("actionDivine", language),
+        witch_save: t("actionWitchSave", language),
+        witch_poison: t("actionWitchPoison", language),
+        skip: t("actionSkip", language),
+      } as Record<string, string>;
+      const action = actionLabels[p.action_type || ""] || p.action_type || "";
+      const target = (p.target && p.target.name) || p.target_id || "";
       return (
         <span className="text-xs text-text-sub">
           {format(t("action", language), {
             actor: p.actor_name || "?",
-            action: p.action_type || "",
-            target: (p.target && p.target.name) || p.target_id || t("none", language),
+            action,
+            target,
             reasoning: p.reasoning || "",
           })}
         </span>

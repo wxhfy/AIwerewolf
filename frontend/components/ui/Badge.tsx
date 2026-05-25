@@ -14,7 +14,7 @@ export function Badge({ className, variant = "default", ...props }: BadgeProps) 
     danger: "bg-danger/10 text-danger",
     warning: "bg-warning/10 text-warning",
     info: "bg-info/10 text-info",
-    phase: "bg-primary/8 text-primary font-display text-sm px-4 py-1.5 rounded-badge",
+    phase: "bg-primary/10 text-primary font-display text-sm px-4 py-1.5 rounded-badge",
     speech: "bg-accent/15 text-accent animate-breathe",
     seat: "bg-primary text-white font-display text-lg rounded-full w-8 h-8 flex items-center justify-center",
     dead: "bg-text-sub/15 text-text-sub line-through",

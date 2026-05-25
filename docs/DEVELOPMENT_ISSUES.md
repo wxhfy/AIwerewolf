@@ -156,6 +156,46 @@ updated: 2026-05-23
 - **根因**：公开视角 snapshot 不含 role/alignment，前端拿不到就默认猜成好人。
 - **解决方案**：公开视角只显示存活状态、不猜身份；主持视角才显示真实角色。
 
+### 问题 B10：首次夜晚无提示 + 日夜切换割裂 + 玩家卡片左堆
+- **发生时间 / Session**：2026-05-24
+- **现象**：从准备弹窗进入游戏后没有「天黑请闭眼」动画，页面直接变黑；日夜主题切换时 body、root、header、card/status 不同步，出现一部分黑一部分白；玩家卡片里身份、MBTI、简介都堆在左侧，「思考中」徽章压到座位号。
+- **根因**：阶段提示只在 WebSocket raw phase 变化时触发，未处理已有 prepare snapshot 的首次 night；业务 phase 直接驱动 DOM 主题，body 和各容器的 transition 源不一致；`PlayerCard` 采用单列布局且 `isThinking` 使用 absolute `-top/-left` 定位。
+- **解决方案**：引入 day/night `PhaseGroup` 和 `visualPhaseGroup`，业务 `gameState.phase` 与视觉主题解耦；首次有效 phase 为 night 时主动播放「天黑请闭眼」；用 overlay 遮住 120ms 后的底层主题切换并用 token/timer 取消旧 transition；`PhaseAnnouncement` 改为 group 驱动并提升到 `z-[1000]`；`PlayerCard` 改为左侧 seat/name、右侧状态 pill，移除 absolute 思考中徽章；body 与 phase-aware 容器统一 450ms transition，并支持 reduced-motion。
+- **涉及文件 / 模块**：`frontend/app/room/[id]/play/page.tsx`、`frontend/components/game/PhaseAnnouncement.tsx`、`frontend/components/game/PlayerCard.tsx`、`frontend/app/globals.css`。
+- **教训**：UI 的业务阶段和视觉主题阶段要分离；首次快照、重连、新局、GAME_END 都是阶段动画的边界；状态徽章不要用脱离文档流的绝对定位压住核心身份信息。
+
+### 问题 B11：前端质量地基优化暴露 lint/dev server 不稳定
+- **发生时间 / Session**：2026-05-24
+- **现象**：`npm run lint --prefix frontend` 只返回 `ESLint output (JSON parse failed: EOF while parsing a value at line 1 column 0)`，没有具体规则输出；默认 3002 端口判断错误，实际前端服务端口是 3001。
+- **根因**：lint 命令在当前封装环境下输出被解析层截断；端口假设与实际 dev server 不一致，导致一开始误判浏览器验证阻塞。
+- **解决方案**：以 `npm run build --prefix frontend` 作为最终类型/构建校验；lint 失败如实记录为环境问题；重启并使用 3001 后，Playwright 验证大厅、确认弹窗、play 页进入和 PlayerCard 键盘聚焦均通过。
+- **涉及文件 / 模块**：`frontend/package.json`、本地开发环境。
+- **教训**：前端验证要先确认项目实际端口；lint 无正文时不能假装通过，也不能把端口错误误判成页面不可用。
+
+### 问题 B12：真人模式确认后无限 Starting
+- **发生时间 / Session**：2026-05-24
+- **现象**：真人模式在确认弹窗点击“Confirm & Start”后一直显示 `Starting...`，页面不跳转；直接请求 `/api/rooms/{id}/start?show_private=true` 超过 60 秒没有响应。
+- **根因**：后端真人开局接口存在长时间无响应路径；前端 API 层没有超时边界，导致弹窗一直保持 `isStarting=true`。
+- **解决方案**：前端 `gameApi` 所有 REST 请求统一走 `AbortController` 30 秒超时；超时抛出稳定错误码并由大厅按当前语言翻译成“请求超时，请稍后重试。”；弹窗打开时隐藏背景配置卡错误，避免同一错误重复渲染；真人确认进场改为与 AI 模式一致使用 `/prepare` 取得初始快照并跳转 play 页，避免在确认弹窗阶段触发长耗时 `/start`。
+- **涉及文件 / 模块**：`frontend/lib/gameApi.ts`、`frontend/app/page.tsx`、`frontend/lib/i18n.ts`、`backend/app.py`、`backend/engine/game.py`。
+- **教训**：所有前端到后端的交互边界都必须有超时和可恢复 UI；后端长耗时问题不能让前端进入不可退出的 loading 状态。
+
+### 问题 B13：公开视角泄露主持信息 + 夜间滚动条刺眼
+- **发生时间 / Session**：2026-05-24
+- **现象**：AI 对局页中间事件流在夜间显示白色滚动条，视觉上很突兀；AI 模式进房后默认切到主持视角，玩家身份和夜间行动直接展示，不符合普通玩家/公开观战的信息边界。
+- **根因**：play 页中间事件容器使用默认浏览器滚动条；`useGamePageController` 对 AI 模式强制 `setViewMode(ViewMode.MODERATOR)`；事件时间线没有按 `viewMode` 过滤 `visibility="private"` 的夜间行动。
+- **解决方案**：中间事件流保留滚动能力但隐藏 scrollbar；AI 模式不再强制主持视角，默认保留公开视角；`EventTimeline` 接收 `viewMode`，公开视角过滤私密事件，主持视角展示完整角色和夜间行动。
+- **涉及文件 / 模块**：`frontend/app/room/[id]/play/page.tsx`、`frontend/hooks/useGamePageController.ts`、`frontend/components/game/EventTimeline.tsx`。
+- **教训**：狼人杀 UI 必须区分“玩家/观众可见信息”和“主持/上帝全知信息”；公开视角不能为了调试方便默认暴露身份或夜间动作。
+
+### 问题 B14：首夜无开场缓冲 + 夜晚终局残留黑夜视觉
+- **发生时间 / Session**：2026-05-24
+- **现象**：进入 play 页后首次有效阶段是夜晚时，页面直接进入“天黑请闭眼”黑夜视觉，缺少主持开场缓冲；如果后端在夜晚阶段直接给出 `winner` 或 `GAME_END`，前端可能继续保持 night overlay / 黑夜主题。
+- **根因**：`usePhaseTransition` 的视觉状态只覆盖 day/night，`GAME_END` 分支只取消 timer 并清空公告，没有把 `visualPhaseGroup` 设置为独立结束态；首次 night 只播放夜晚公告，没有 ready/intro 阶段；页面夜幕 overlay 只看 `isVisualNight`，未用 winner/end 兜底。
+- **解决方案**：`usePhaseTransition` 扩展 `VisualPhaseGroup = day | night | end` 和 `ready` 公告；首次 night 先显示“身份已分配，对局即将开始”约 1.2s，再播放夜晚公告并切 night；`phase === GAME_END` 或 `winner=true` 时取消全部 timer、强制 `visualPhaseGroup=end`，短暂显示“游戏结束”后淡出；play 页用 winner/end 屏蔽夜幕 overlay；全局 CSS 增加 `[data-phase="end"]` 中性金色结算主题。
+- **涉及文件 / 模块**：`frontend/hooks/usePhaseTransition.ts`、`frontend/hooks/useGamePageController.ts`、`frontend/components/game/PhaseAnnouncement.tsx`、`frontend/app/room/[id]/play/page.tsx`、`frontend/app/globals.css`、`frontend/lib/i18n.ts`。
+- **教训**：阶段 UI 必须区分业务阶段、视觉阶段和临时主持公告；终局是独立视觉态，不能复用最后一个 day/night 状态。
+
 ---
 
 ## §C. Agent / LLM 行为

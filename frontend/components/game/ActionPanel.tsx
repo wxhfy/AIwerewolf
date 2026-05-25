@@ -4,14 +4,15 @@ import React, { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/Button";
 import { CountdownTimer } from "@/components/game/CountdownTimer";
 import { VoteTargetGrid } from "@/components/game/VoteTargetGrid";
-import { Language } from "@/types";
+import { Language, PendingInput, Player } from "@/types";
+import { t, tPhase } from "@/lib/i18n";
 
 interface ActionPanelProps {
-  pendingInput: any;
+  pendingInput: PendingInput;
   onAction: (data: { target_id?: string | null; speech?: string | null; save?: boolean }) => void;
   language: Language;
   votes?: Record<string, string>;
-  players?: Array<{ id: string; name: string; seat: number }>;
+  players?: Player[];
 }
 
 const SPEECH_REQUESTS = new Set(["TALK", "BADGE_SPEECH", "LAST_WORDS"]);
@@ -66,19 +67,16 @@ export function ActionPanel({ pendingInput, onAction, language, votes, players }
     });
   }
 
-  const t = (zh: string, en: string) => (language === "zh" ? zh : en);
-
   return (
-    <div className="border-t px-4 py-3 space-y-3"
-      style={{ background: "var(--color-card)", borderColor: "var(--color-border)" }}>
+    <div className="space-y-3 border-t border-border bg-cardBackground px-4 py-3">
       {/* Guidance */}
       <div className="flex items-center justify-between">
         <div>
           <p className="text-sm font-semibold text-textPrimary">
-            {pi.player_name} · {pi.phase}
+            {pi.player_name} · {tPhase(pi.phase, language)}
           </p>
           <p className="text-xs text-text-sub mt-0.5">
-            {pi.prompt || (isSpeech ? t("轮到你了，输入发言", "Your turn — type your speech") : t("请选择目标", "Please select a target"))}
+            {pi.prompt || (isSpeech ? t("yourTurnSpeech", language) : t("selectTarget", language))}
           </p>
         </div>
         {hasTimer && (
@@ -93,9 +91,8 @@ export function ActionPanel({ pendingInput, onAction, language, votes, players }
         <textarea
           value={speech}
           onChange={(e) => setSpeech(e.target.value)}
-          placeholder={pi.placeholder || t("输入你的发言...", "Type your speech...")}
-          className="w-full h-24 px-3 py-2 rounded-lg border text-sm resize-none"
-          style={{ background: "var(--color-bg)", borderColor: "var(--color-border)", color: "var(--color-text)" }}
+          placeholder={pi.placeholder || t("typeSpeech", language)}
+          className="h-24 w-full resize-none rounded-lg border border-border bg-background px-3 py-2 text-sm text-textPrimary"
           disabled={submitted}
           onKeyDown={(e) => { if (e.key === "Enter" && e.ctrlKey) submit(); }}
         />
@@ -105,14 +102,14 @@ export function ActionPanel({ pendingInput, onAction, language, votes, players }
       {(isVote || isNight) && votes && Object.keys(votes).length > 0 && (
         <div className="space-y-1 mb-2">
           <p className="text-[11px] text-text-sub font-medium mb-1.5">
-            {isVote ? t("已投票：", "Votes cast:")
-              : pi.request === "ATTACK" ? t("狼队选择：", "Wolf picks:")
-              : pi.request === "HUNTER_SHOOT" ? t("猎人目标：", "Hunter target:")
-              : t("选择目标：", "Select target:")}
+            {isVote ? t("votesCast", language)
+              : pi.request === "ATTACK" ? t("wolfPicks", language)
+              : pi.request === "HUNTER_SHOOT" ? t("hunterTarget", language)
+              : t("selectTarget", language)}
           </p>
           {Object.entries(votes).map(([voterId, targetId]) => {
-            const voter = players?.find((p: any) => p.id === voterId);
-            const target = players?.find((p: any) => p.id === targetId);
+            const voter = players?.find((p) => p.id === voterId);
+            const target = players?.find((p) => p.id === targetId);
             return (
               <div key={voterId} className="flex items-center gap-1.5 text-xs">
                 <span className="font-medium text-textPrimary">{voter?.name || voterId}</span>
@@ -148,14 +145,14 @@ export function ActionPanel({ pendingInput, onAction, language, votes, players }
             <label className="flex items-center gap-2 text-sm text-textPrimary">
               <input type="checkbox" checked={savePotion} onChange={(e) => setSavePotion(e.target.checked)} disabled={submitted}
                 className="w-4 h-4 rounded" />
-              {t("使用解药", "Use healing potion")}
+              {t("useHealingPotion", language)}
             </label>
           )}
           {pi.can_skip && (
             <button onClick={() => { setTargetId(""); submit(); }}
               disabled={submitted}
               className="text-xs text-text-sub underline hover:text-textPrimary">
-              {t("跳过", "Skip")}
+              {t("skip", language)}
             </button>
           )}
         </div>
@@ -164,7 +161,7 @@ export function ActionPanel({ pendingInput, onAction, language, votes, players }
       {/* Submit */}
       <div className="flex justify-end">
         <Button onClick={submit} disabled={submitted || (isVote && !targetId)} size="sm">
-          {submitted ? t("已提交", "Submitted") : t("提交", "Submit")}
+          {submitted ? t("submitted", language) : t("submit", language)}
         </Button>
       </div>
     </div>

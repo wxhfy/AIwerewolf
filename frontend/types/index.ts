@@ -79,6 +79,16 @@ export enum EventType {
   GAME_END = "GAME_END",
 }
 
+export type JsonPrimitive = string | number | boolean | null;
+export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
+export type JsonRecord = Record<string, JsonValue>;
+
+export interface Persona {
+  style_label?: string;
+  mbti?: string;
+  basic_info?: string;
+}
+
 export interface Player {
   id: string;
   seat: number;
@@ -88,7 +98,24 @@ export interface Player {
   alive: boolean;
   is_ai: boolean;
   agent_type?: string;
-  persona?: { style_label?: string; mbti?: string } | null;
+  persona?: Persona | null;
+}
+
+export interface EventPayload {
+  actor_id?: string;
+  actor_name?: string;
+  action_type?: string;
+  message?: string;
+  phase?: string;
+  player_name?: string;
+  reason?: string;
+  reasoning?: string;
+  speech?: string;
+  target?: { id?: string; name?: string };
+  target_id?: string;
+  target_name?: string;
+  voter_name?: string;
+  winner?: Alignment | string;
 }
 
 export interface GameEvent {
@@ -96,10 +123,10 @@ export interface GameEvent {
   ts: number;
   day: number;
   phase: string;
-  type: string;
-  visibility: string;
+  type: EventType;
+  visibility: "public" | "private" | string;
   visible_to: string[];
-  payload: Record<string, any>;
+  payload: EventPayload;
 }
 
 export interface NightActions {
@@ -110,7 +137,7 @@ export interface NightActions {
   witch_save: boolean;
   witch_poison_target_id?: string;
   seer_target_id?: string;
-  seer_result?: Record<string, any>;
+  seer_result?: JsonRecord;
   deaths: Array<{ player_id: string; reason: string }>;
 }
 
@@ -131,6 +158,13 @@ export interface RoleAbilities {
   white_wolf_king_boom_used: boolean;
 }
 
+export interface PendingInputOption {
+  id: string;
+  name?: string;
+  seat?: number;
+  alive?: boolean;
+}
+
 export interface PendingInput {
   player_id: string;
   player_name: string;
@@ -139,7 +173,7 @@ export interface PendingInput {
   phase: string;
   action_type: string;
   prompt: string;
-  options: Array<Record<string, any>>;
+  options: PendingInputOption[];
   can_skip: boolean;
   placeholder?: string | null;
 }
@@ -152,7 +186,7 @@ export interface GameState {
   events: GameEvent[];
   votes: Record<string, string>;
   vote_history: Record<number, Record<string, string>>;
-  day_history: Record<number, Record<string, any>>;
+  day_history: Record<number, JsonRecord>;
   badge?: BadgeState;
   night_actions?: NightActions;
   role_abilities?: RoleAbilities;
@@ -160,10 +194,10 @@ export interface GameState {
   pk_targets?: string[];
   pk_source?: string | null;
   pending_input?: PendingInput | null;
-  phase_cursor?: Record<string, any>;
-  decision_records?: Array<Record<string, any>>;
+  phase_cursor?: JsonRecord;
+  decision_records?: JsonRecord[];
   daily_summaries: Record<number, string[]>;
-  daily_summary_facts: Record<number, any[]>;
+  daily_summary_facts: Record<number, JsonValue[]>;
   winner?: Alignment;
   alive_count?: number;
   event_count?: number;
@@ -182,6 +216,13 @@ export interface RoomRecord {
   current_game_id?: string;
   game_history: string[];
   latest_snapshot?: GameState;
+}
+
+export type PrepareSnapshot = GameState;
+
+export interface RoomInfoRow {
+  label: string;
+  value: string;
 }
 
 export interface RoomCreateRequest {

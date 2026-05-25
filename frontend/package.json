@@ -3,10 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --port 3002",
+    "dev": "next dev --port 3001",
     "build": "next build",
-    "start": "next start --port 3002",
-    "lint": "next lint"
+    "start": "next start --port 3001",
+    "lint": "eslint app components context hooks lib types --max-warnings=0"
   },
   "dependencies": {
     "react": "^18.2.0",
