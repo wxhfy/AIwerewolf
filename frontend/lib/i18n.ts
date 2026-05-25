@@ -48,11 +48,21 @@ const translations = {
     statusLoadedDetail: "已载入第 {day} 天结束的完整事件流。",
     statusError: "加载失败",
     statusErrorDetail: "接口请求失败，请确认 FastAPI 服务正在运行。",
+    requestTimeout: "请求超时，请稍后重试。",
     roomLabel: "房间",
     gameLabel: "游戏",
     roomReady: "房间已创建",
     roomReadyDetail: "当前房间 {roomId}，Agent={agentType}，可以直接开始新的 AI 对局。",
     hiddenRole: "身份隐藏",
+    revealRole: "查看身份",
+    playerThinking: "思考中",
+    playerSpeaking: "发言",
+    sheriff: "警长",
+    badgeRunning: "竞选",
+    phaseAnnouncementReady: "身份已分配，对局即将开始",
+    phaseAnnouncementNight: "天黑请闭眼",
+    phaseAnnouncementDay: "天亮了",
+    phaseAnnouncementEnd: "游戏结束",
     alive: "存活",
     dead: "出局",
     privateTag: "私密",
@@ -63,7 +73,13 @@ const translations = {
     voted: "{voter} 投给了 {target}。{reasoning}",
     died: "{player} 因 {reason} 出局。",
     wins: "{winner} 获胜（{reason}）。",
-    action: "{actor} 执行了 {action} -> {target}。{reasoning}",
+    action: "{actor}{action}{target}。{reasoning}",
+    actionGuard: "守护了",
+    actionAttack: "袭击了",
+    actionDivine: "查验了",
+    actionWitchSave: "使用解药救下了",
+    actionWitchPoison: "使用毒药毒杀了",
+    actionSkip: "选择跳过",
     errorPrefix: "错误",
 
     night: "夜晚",
@@ -74,6 +90,27 @@ const translations = {
 
     lobby: "大厅",
     createRoom: "创建房间",
+    configureGameDescription: "配置游戏参数，开始一局 AI 狼人杀对战",
+    gameMode: "游戏模式",
+    aiVsAi: "AI 对战",
+    humanPlay: "真人参与",
+    playerCount: "玩家数量",
+    yourSeat: "你的座位号",
+    seat: "座位",
+    playersUnit: "人",
+    creating: "创建中...",
+    readyToStart: "准备开始",
+    confirmSettingsToStart: "确认以下设置后开始游戏",
+    agent: "AI 类型",
+    seatLayout: "座位分布",
+    you: "你",
+    ai: "AI",
+    wolfTeam: "狼队友",
+    dayNumber: "第{day}天",
+    playerDied: "出局",
+    cancel: "取消",
+    starting: "启动中...",
+    confirmAndStart: "确认开始",
     joinRoom: "加入房间",
     settings: "设置",
     personalCenter: "个人中心",
@@ -81,6 +118,7 @@ const translations = {
     lobbyDescription: "选择房间加入，或创建新房间开始游戏。",
     backToLobby: "返回大厅",
     lobbyTitle: "游戏大厅",
+    spectateAndPlay: "观战 & 对战",
 
     room: "房间",
     roomName: "房间名称",
@@ -112,6 +150,23 @@ const translations = {
     gameStats: "游戏统计",
     totalDays: "总天数",
     winnerSide: "获胜方",
+    gameOver: "游戏结束",
+    winsSuffix: "获胜",
+    villageWins: "好人阵营获胜",
+    wolvesWin: "狼人阵营获胜",
+    aliveShort: "存活",
+    eventsShort: "事件",
+    stayOnPage: "收起面板，留在页面",
+    yourTurnSpeech: "轮到你了，输入发言",
+    selectTarget: "请选择目标",
+    votesCast: "已投票：",
+    wolfPicks: "狼队选择：",
+    hunterTarget: "猎人目标：",
+    useHealingPotion: "使用解药",
+    skip: "跳过",
+    submitted: "已提交",
+    submit: "提交",
+    typeSpeech: "输入你的发言...",
 
     roles: {
       Villager: "村民",
@@ -198,11 +253,21 @@ const translations = {
     statusLoadedDetail: "Loaded a full event stream ending on day {day}.",
     statusError: "Load failed",
     statusErrorDetail: "API request failed. Confirm the FastAPI server is running.",
+    requestTimeout: "Request timed out. Please try again.",
     roomLabel: "Room",
     gameLabel: "Game",
     roomReady: "Room ready",
     roomReadyDetail: "Current room {roomId}, Agent={agentType}. You can start a new AI match now.",
     hiddenRole: "Role hidden",
+    revealRole: "Reveal",
+    playerThinking: "Thinking",
+    playerSpeaking: "Speaking",
+    sheriff: "Sheriff",
+    badgeRunning: "Running",
+    phaseAnnouncementReady: "Roles assigned, the match is about to begin",
+    phaseAnnouncementNight: "Night falls, close your eyes",
+    phaseAnnouncementDay: "Day breaks",
+    phaseAnnouncementEnd: "Game Over",
     alive: "Alive",
     dead: "Out",
     privateTag: "private",
@@ -213,7 +278,13 @@ const translations = {
     voted: "{voter} voted for {target}. {reasoning}",
     died: "{player} died by {reason}.",
     wins: "{winner} wins ({reason}).",
-    action: "{actor} chose {action} -> {target}. {reasoning}",
+    action: "{actor} {action} {target}. {reasoning}",
+    actionGuard: "guarded",
+    actionAttack: "attacked",
+    actionDivine: "checked",
+    actionWitchSave: "saved",
+    actionWitchPoison: "poisoned",
+    actionSkip: "skipped",
     errorPrefix: "ERROR",
 
     night: "Night",
@@ -224,6 +295,27 @@ const translations = {
 
     lobby: "Lobby",
     createRoom: "Create Room",
+    configureGameDescription: "Configure your game and start an AI Werewolf match",
+    gameMode: "Game Mode",
+    aiVsAi: "AI vs AI",
+    humanPlay: "Human Play",
+    playerCount: "Player Count",
+    yourSeat: "Your Seat",
+    seat: "Seat",
+    playersUnit: "players",
+    creating: "Creating...",
+    readyToStart: "Ready to Start",
+    confirmSettingsToStart: "Confirm settings to start",
+    agent: "Agent",
+    seatLayout: "Seat Layout",
+    you: "YOU",
+    ai: "AI",
+    wolfTeam: "Wolf team",
+    dayNumber: "Day {day}",
+    playerDied: "died",
+    cancel: "Cancel",
+    starting: "Starting...",
+    confirmAndStart: "Confirm & Start",
     joinRoom: "Join Room",
     settings: "Settings",
     personalCenter: "Personal Center",
@@ -231,6 +323,7 @@ const translations = {
     lobbyDescription: "Select a room to join, or create a new room to start playing.",
     backToLobby: "Back to Lobby",
     lobbyTitle: "Game Lobby",
+    spectateAndPlay: "Spectate & Play",
 
     room: "Room",
     roomName: "Room Name",
@@ -262,6 +355,23 @@ const translations = {
     gameStats: "Game Statistics",
     totalDays: "Total Days",
     winnerSide: "Winning Side",
+    gameOver: "Game Over",
+    winsSuffix: "Wins",
+    villageWins: "Village Wins",
+    wolvesWin: "Wolves Win",
+    aliveShort: "Alive",
+    eventsShort: "Events",
+    stayOnPage: "Dismiss, stay on page",
+    yourTurnSpeech: "Your turn — type your speech",
+    selectTarget: "Please select a target",
+    votesCast: "Votes cast:",
+    wolfPicks: "Wolf picks:",
+    hunterTarget: "Hunter target:",
+    useHealingPotion: "Use healing potion",
+    skip: "Skip",
+    submitted: "Submitted",
+    submit: "Submit",
+    typeSpeech: "Type your speech...",
 
     roles: {
       Villager: "Villager",
@@ -306,12 +416,15 @@ const translations = {
 };
 
 type Translations = typeof translations[Language.ZH];
+type TranslationKey = {
+  [Key in keyof Translations]: Translations[Key] extends string ? Key : never;
+}[keyof Translations];
 
 /**
  * 获取翻译文本
  */
-export function t(key: keyof Translations, lang: Language = Language.ZH): string {
-  return (translations[lang] as any)[key] || key;
+export function t(key: TranslationKey, lang: Language = Language.ZH): string {
+  return translations[lang][key] || key;
 }
 
 /**
@@ -332,14 +445,14 @@ export function format(
  * 获取角色名称的翻译
  */
 export function tRole(role: string, lang: Language = Language.ZH): string {
-  const roles = translations[lang].roles;
-  return (roles as any)[role] || role;
+  const roles: Record<string, string> = translations[lang].roles;
+  return roles[role] || role;
 }
 
 /**
  * 获取阶段名称的翻译
  */
 export function tPhase(phase: string, lang: Language = Language.ZH): string {
-  const phases = translations[lang].phases;
-  return (phases as any)[phase] || phase;
+  const phases: Record<string, string> = translations[lang].phases;
+  return phases[phase] || phase;
 }

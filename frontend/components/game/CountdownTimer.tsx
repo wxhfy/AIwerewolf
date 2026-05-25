@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
+import { cn } from "@/lib/utils";
 
 interface CountdownTimerProps {
   seconds: number;
@@ -44,19 +45,28 @@ export function CountdownTimer({ seconds, onExpire, isActive }: CountdownTimerPr
 
   return (
     <div className="flex items-center gap-2">
-      <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: "var(--color-border)" }}>
+      <div className="flex-1 h-2 rounded-full overflow-hidden bg-border">
         <div
-          className="h-full rounded-full transition-all duration-200"
+          className={cn(
+            "h-full rounded-full transition-all duration-200",
+            isDanger ? "bg-danger" : isWarn ? "bg-warning" : "bg-primary"
+          )}
           style={{
             width: `${pct}%`,
-            backgroundColor: isDanger ? "#B91C1C" : isWarn ? "#D97706" : "var(--color-primary)",
             transition: "width 250ms linear, background-color 300ms ease",
           }}
         />
       </div>
-      <span className={`text-xs font-mono min-w-[36px] text-right tabular-nums ${
-        isDanger ? "text-danger font-bold animate-pulse-loading" : isWarn ? "text-[#D97706] font-semibold" : "text-text-sub"
-      }`}>
+      <span
+        className={cn(
+          "text-xs font-mono min-w-[36px] text-right tabular-nums",
+          isDanger
+            ? "text-danger font-bold animate-pulse-loading"
+            : isWarn
+              ? "text-warning font-semibold"
+              : "text-text-sub"
+        )}
+      >
         {Math.ceil(remaining)}s
       </span>
     </div>

@@ -23,12 +23,9 @@ export function VoteTargetGrid({ players, selectedId, onSelect, disabled }: Vote
             "hover:-translate-y-0.5 hover:shadow-md",
             "disabled:opacity-50 disabled:cursor-not-allowed",
             selectedId === p.id
-              ? "border-accent shadow-[0_0_16px_rgba(212,175,55,0.25)] bg-accent/5"
-              : "border-transparent hover:border-border",
+              ? "border-accent bg-accent/10 shadow-accent"
+              : "border-transparent bg-cardBackground hover:border-border",
           )}
-          style={{
-            background: selectedId === p.id ? "rgba(212,175,55,0.08)" : "var(--color-card)",
-          }}
         >
           <span
             className={cn(

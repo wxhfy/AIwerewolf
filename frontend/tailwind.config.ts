@@ -9,20 +9,35 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        primary: "#8B5A2B",
-        primaryHover: "#A67C52",
-        secondary: "#2E7D32",
-        accent: "#D4AF37",
-        background: "#F8F5F0",
-        cardBackground: "#FAF7F2",
-        border: "rgba(139,90,43,0.10)",
-        textPrimary: "#2D2A24",
-        textSecondary: "#5B564D",
-        "text-sub": "#8A8580",
-        danger: "#B91C1C",
-        success: "#2E7D32",
-        warning: "#D4AF37",
-        info: "#1976D2",
+        // Colors reference CSS custom properties so Tailwind classes
+        // automatically track day↔night variable changes in globals.css.
+        // RGB-channel variables (--color-*-rgb) use space-separated format
+        // so Tailwind's /opacity syntax (bg-primary/10) continues to work.
+        primary: "rgb(var(--color-primary-rgb) / <alpha-value>)",
+        primaryHover: "var(--color-primary-hover)",
+        secondary: "rgb(var(--color-village-rgb) / <alpha-value>)",
+        accent: "rgb(var(--color-gold-rgb) / <alpha-value>)",
+        background: "var(--color-bg)",
+        cardBackground: "var(--color-card)",
+        border: "var(--color-border)",
+        textPrimary: "rgb(var(--color-text-rgb) / <alpha-value>)",
+        textSecondary: "rgb(var(--color-text-sub-rgb) / <alpha-value>)",
+        "text-sub": "rgb(var(--color-text-sub-rgb) / <alpha-value>)",
+        danger: "rgb(var(--color-danger-rgb) / <alpha-value>)",
+        success: "rgb(var(--color-village-rgb) / <alpha-value>)",
+        warning: "rgb(var(--color-gold-rgb) / <alpha-value>)",
+        info: "rgb(var(--color-info-rgb) / <alpha-value>)",
+      },
+      boxShadow: {
+        card: "0 4px 24px rgb(0 0 0 / 0.05)",
+        modal: "0 16px 48px rgb(0 0 0 / 0.12)",
+        float: "0 4px 24px rgb(0 0 0 / 0.12)",
+        "float-hover": "0 6px 32px rgb(0 0 0 / 0.16)",
+        "modal-strong": "0 16px 64px rgb(0 0 0 / 0.25)",
+        accent: "0 0 16px rgb(var(--color-gold-rgb) / 0.25)",
+      },
+      backgroundImage: {
+        "night-overlay": "radial-gradient(ellipse at 50% 0%, rgb(25 25 35 / 0.25) 0%, rgb(0 0 0 / 0.55) 100%)",
       },
       borderRadius: {
         card: "12px",

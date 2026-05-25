@@ -45,7 +45,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
       const langParam = params.get("lang");
-      const roomParam = params.get("room");
 
       if (langParam === "en" || langParam === "zh") {
         setLanguage(langParam as Language);

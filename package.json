@@ -2,7 +2,7 @@
   "name": "aiwerewolf",
   "private": true,
   "scripts": {
-    "test:ui": "node tests/ui_smoke.mjs"
+    "test:ui": "python test_webapp.py"
   },
   "devDependencies": {
     "@playwright/test": "^1.54.2"
