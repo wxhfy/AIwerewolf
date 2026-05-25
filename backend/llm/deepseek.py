@@ -15,6 +15,7 @@ Usage:
 
 import os
 import json
+import time
 import httpx
 from typing import Optional
 
@@ -68,13 +69,16 @@ class DeepSeekClient:
             payload["reasoning_effort"] = reasoning_effort
 
         async with httpx.AsyncClient(timeout=self.timeout) as client:
+            t0 = time.perf_counter()
             response = await client.post(
                 f"{self.base_url}/chat/completions",
                 headers=self._headers(),
                 json=payload,
             )
             response.raise_for_status()
-            return response.json()
+            data = response.json()
+            data["_latency_ms"] = int((time.perf_counter() - t0) * 1000)
+            return data
 
     def chat_sync(
         self,
@@ -98,13 +102,16 @@ class DeepSeekClient:
             payload["reasoning_effort"] = reasoning_effort
 
         with httpx.Client(timeout=self.timeout) as client:
+            t0 = time.perf_counter()
             response = client.post(
                 f"{self.base_url}/chat/completions",
                 headers=self._headers(),
                 json=payload,
             )
             response.raise_for_status()
-            return response.json()
+            data = response.json()
+            data["_latency_ms"] = int((time.perf_counter() - t0) * 1000)
+            return data
 
     def parse_response(self, response: dict) -> str:
         """Extract the assistant's message content from API response."""

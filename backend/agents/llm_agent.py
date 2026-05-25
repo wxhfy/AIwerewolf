@@ -15,12 +15,26 @@ from backend.engine.visibility import PlayerView
 from backend.llm import create_client
 
 
+class LLMFallbackForbidden(RuntimeError):
+    """Raised when LLMAgent.STRICT_NO_FALLBACK=True and a fallback would
+    otherwise be returned. Used by the strict acceptance runner to abort the
+    game instead of silently degrading to heuristic decisions."""
+
+
 class LLMAgent(Agent):
     """LLM-backed agent with heuristic fallback.
 
     The fallback preserves playability if the API is slow, unavailable, or
     produces malformed output.
+
+    For acceptance validation (Track B §34 / Track C §19) we expose
+    `STRICT_NO_FALLBACK`. When this class attribute is True, the agent
+    raises `LLMFallbackForbidden` instead of silently returning a heuristic
+    decision so that the surrounding harness can abort the game and refuse
+    to publish data produced by a non-LLM path.
     """
+
+    STRICT_NO_FALLBACK: bool = False
 
     def __init__(
         self,
@@ -1470,6 +1484,7 @@ class LLMAgent(Agent):
             "source": "fallback",
             "fallback": True,
         }
+        total_latency_ms = 0
         try:
             # Build system message from parts
             system_content = self._assemble_system_parts(system_parts, focus_angle)
@@ -1487,6 +1502,7 @@ class LLMAgent(Agent):
             )
             text = self.client.parse_response(resp).strip()
             usage = resp.get("usage", {}) if isinstance(resp, dict) else {}
+            total_latency_ms += int(resp.get("_latency_ms", 0)) if isinstance(resp, dict) else 0
 
             # Parse JSON string array: ["msg1", "msg2"]
             segments = self._parse_speech_array(text)
@@ -1501,6 +1517,7 @@ class LLMAgent(Agent):
                     meta["segment_count"] = len(segments)
                     meta["segment_texts"] = segments
                     meta["usage"] = usage
+                    meta["latency_ms"] = total_latency_ms
                     return speech, meta
 
             # Second attempt: retry with lower temp
@@ -1516,6 +1533,7 @@ class LLMAgent(Agent):
             )
             text2 = self.client.parse_response(resp2).strip()
             usage2 = resp2.get("usage", {}) if isinstance(resp2, dict) else {}
+            total_latency_ms += int(resp2.get("_latency_ms", 0)) if isinstance(resp2, dict) else 0
             segments2 = self._parse_speech_array(text2)
             if segments2:
                 if not self._looks_generic_speech(segments2):
@@ -1528,6 +1546,7 @@ class LLMAgent(Agent):
                     meta["segment_count"] = len(segments2)
                     meta["segment_texts"] = segments2
                     meta["usage"] = usage2
+                    meta["latency_ms"] = total_latency_ms
                     return speech, meta
 
             # Third attempt: just use raw text as speech (free-text fallback)
@@ -1539,16 +1558,29 @@ class LLMAgent(Agent):
                 meta["attempts"] = 3
                 meta["segments"] = 1
                 meta["usage"] = usage
+                meta["latency_ms"] = total_latency_ms
                 return cleaned, meta
 
             self.last_error = "talk_all_attempts_failed"
             meta["error"] = self.last_error
             meta["raw_text"] = text[:400]
             meta["usage"] = usage
+            meta["latency_ms"] = total_latency_ms
+            if LLMAgent.STRICT_NO_FALLBACK:
+                raise LLMFallbackForbidden(
+                    f"Talk fallback would fire for {self.player_id}; "
+                    f"error={self.last_error}; raw={text[:120]}"
+                )
             return fallback_speech, meta
+        except LLMFallbackForbidden:
+            raise
         except Exception as exc:
             self.last_error = f"{type(exc).__name__}: {exc}"
             meta["error"] = self.last_error
+            if LLMAgent.STRICT_NO_FALLBACK:
+                raise LLMFallbackForbidden(
+                    f"Talk fallback would fire for {self.player_id}; reason={self.last_error}"
+                ) from exc
             return fallback_speech, meta
 
     def _assemble_system_parts(self, parts: list[dict], focus_angle: str) -> str:
@@ -1674,6 +1706,7 @@ class LLMAgent(Agent):
             "source": "fallback",
             "fallback": True,
         }
+        total_latency_ms = 0
         try:
             system = self._build_system_prompt()
             # Use high temperature for speech, normal for other actions
@@ -1731,6 +1764,7 @@ class LLMAgent(Agent):
                 text = self.client.parse_response(response).strip()
                 last_text = text
                 last_usage = response.get("usage", {}) if isinstance(response, dict) else {}
+                total_latency_ms += int(response.get("_latency_ms", 0)) if isinstance(response, dict) else 0
                 parsed = self._coerce_json(text)
                 if parsed is not None:
                     self.last_error = None
@@ -1739,18 +1773,31 @@ class LLMAgent(Agent):
                     meta["raw_text"] = text[:400]
                     meta["attempts"] = idx + 1
                     meta["usage"] = last_usage
+                    meta["latency_ms"] = total_latency_ms
                     self._attach_retrieval_meta(meta)
                     return parsed, meta
             self.last_error = "json_parse_failed"
             meta["error"] = self.last_error
             meta["raw_text"] = last_text[:400]
             meta["usage"] = last_usage
+            meta["latency_ms"] = total_latency_ms
             self._attach_retrieval_meta(meta)
+            if LLMAgent.STRICT_NO_FALLBACK:
+                raise LLMFallbackForbidden(
+                    f"JSON fallback would fire for {self.player_id} action={action}; "
+                    f"error={self.last_error}; raw={last_text[:120]}"
+                )
             return default, meta
+        except LLMFallbackForbidden:
+            raise
         except Exception as exc:
             self.last_error = f"{type(exc).__name__}: {exc}"
             meta["error"] = self.last_error
             self._attach_retrieval_meta(meta)
+            if LLMAgent.STRICT_NO_FALLBACK:
+                raise LLMFallbackForbidden(
+                    f"JSON fallback would fire for {self.player_id} action={action}; reason={self.last_error}"
+                ) from exc
             return default, meta
 
     def _coerce_json(self, text: str) -> dict[str, Any] | None:

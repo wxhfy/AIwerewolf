@@ -80,8 +80,12 @@ class WerewolfGame:
         seed: int | None = None,
         max_days: int = 8,
         observer: Callable[[GameState], None] | None = None,
+        strategy_version: str | None = None,
+        strategy_bias: dict[str, list[str]] | None = None,
     ):
         self.rng = Random(seed)
+        self.strategy_version = strategy_version
+        self.strategy_bias = strategy_bias or {}
         self.state = GameState(
             id=str(uuid4()),
             phase=Phase.SETUP,
@@ -127,6 +131,7 @@ class WerewolfGame:
                     "seed": seed or 0,
                     "temperature": 0.4,
                     "character_map": self.characters,
+                    "strategy_bias": self.strategy_bias,
                 },
             )
         )
@@ -1282,6 +1287,13 @@ class WerewolfGame:
         is_valid: bool = True,
         error_type: str | None = None,
     ) -> None:
+        meta = decision.metadata if isinstance(decision.metadata, dict) else {}
+        usage = meta.get("usage") or {}
+        prompt_tokens = usage.get("prompt_tokens") if isinstance(usage, dict) else None
+        completion_tokens = usage.get("completion_tokens") if isinstance(usage, dict) else None
+        latency_ms = meta.get("latency_ms")
+        if latency_ms is None and isinstance(usage, dict):
+            latency_ms = usage.get("latency_ms")
         self.state.decision_records.append(
             DecisionAudit(
                 id=str(uuid4()),
@@ -1306,9 +1318,9 @@ class WerewolfGame:
                 },
                 is_valid=is_valid,
                 error_type=error_type,
-                latency_ms=None,
-                prompt_tokens=None,
-                completion_tokens=None,
+                latency_ms=int(latency_ms) if isinstance(latency_ms, (int, float)) else None,
+                prompt_tokens=int(prompt_tokens) if isinstance(prompt_tokens, (int, float)) else None,
+                completion_tokens=int(completion_tokens) if isinstance(completion_tokens, (int, float)) else None,
                 created_at=self.state.events[-1].ts if self.state.events else 0.0,
             )
         )
