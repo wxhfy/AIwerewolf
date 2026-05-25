@@ -224,6 +224,14 @@ updated: 2026-05-23
 - **涉及文件 / 模块**：`backend/eval/evolution.py`、`backend/db/persist.py`、`tests/test_c_acceptance_verification.py`
 - **教训**：验收测试不能只比较构造数据；凡是文档写“跑固定 seed 20 局”，测试必须证明引擎真的被调用、结果数量真的为 20×2。
 
+### 问题 C8b：LLMAgent 检索空知识库
+- **发生时间 / Session**：2026-05-25
+- **现象**：复查 C 验收第 4/5 条时发现 `LLMAgent.update()` 每步创建新的空 `StrategyKnowledgeStore()`，所以不会读取数据库中由 DreamJob 抽取的策略知识，`retrieved_doc_ids` 只在空路径下被写成空数组。
+- **根因**：早期为了避免循环 import，只接了内存 store 占位，没有把运行时 Agent 接到持久化知识库查询入口。
+- **解决方案**：`LLMAgent.update()` 改为调用 `backend.db.persist.retrieve_strategy_knowledge()`，按角色、阶段、请求、公开/私有事件摘要、persona scope 检索 top-k；prompt block 和 metadata 改用真实 `RetrievedStrategyLesson` 字段；新增单测验证 doc id 会进入 metadata 和 prompt。
+- **涉及文件 / 模块**：`backend/agents/llm_agent.py`、`tests/test_track_c_evolution.py`
+- **教训**：C 的“Agent 每步检索 top-k”必须在真实 Agent 生命周期里验证，不能只测一个独立 mixin 或空 store。
+
 ### 问题 C9：B ApprovedReport 重建后嵌套对象变 dict
 - **发生时间 / Session**：2026-05-25
 - **现象**：真实调用 `/api/evolution/dream` 时崩溃：`AttributeError: 'dict' object has no attribute 'player_name'`。
