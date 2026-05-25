@@ -3,6 +3,7 @@
 import { useRef } from "react";
 import { AgentType, GameState, Language, RoomRecord, WebSocketMessage, WebSocketRequest } from "@/types";
 import { t } from "@/lib/i18n";
+import { wsUrl } from "@/lib/api";
 
 interface UseRoomStreamOptions {
   roomId: string;
@@ -58,8 +59,7 @@ export function useRoomStream({
     setStatusTitle(t("statusStreaming", language));
     if (getGameState()?.winner) setGameState(null);
 
-    const proto = location.protocol === "https:" ? "wss:" : "ws:";
-    const ws = new WebSocket(`${proto}//${location.host}/ws/rooms/${roomId}`);
+    const ws = new WebSocket(wsUrl(`/ws/rooms/${roomId}`));
     wsRef.current = ws;
 
     ws.onopen = () => {

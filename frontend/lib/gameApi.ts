@@ -1,4 +1,5 @@
 import { AgentType, GameState, RoomRecord } from "@/types";
+import { apiUrl } from "@/lib/api";
 
 export type GameMode = "ai" | "human";
 
@@ -44,31 +45,31 @@ export async function createRoom({ seed, playerCount, agentType, mode, humanSeat
   });
   if (mode === "human") params.set("human_seat", String(humanSeat));
 
-  const response = await fetchWithTimeout(`/api/rooms?${params.toString()}`, { method: "POST" });
+  const response = await fetchWithTimeout(apiUrl(`/api/rooms?${params.toString()}`), { method: "POST" });
   if (!response.ok) throw new Error(`Failed to create room (${response.status})`);
   return parseJson<RoomRecord>(response);
 }
 
 export async function prepareRoom(roomId: string): Promise<GameState> {
-  const response = await fetchWithTimeout(`/api/rooms/${roomId}/prepare?show_private=true`, { method: "POST" });
+  const response = await fetchWithTimeout(apiUrl(`/api/rooms/${roomId}/prepare?show_private=true`), { method: "POST" });
   if (!response.ok) throw new Error(`Prepare failed (${response.status})`);
   return parseJson<GameState>(response);
 }
 
 export async function startRoom(roomId: string): Promise<GameState> {
-  const response = await fetchWithTimeout(`/api/rooms/${roomId}/start?show_private=true`, { method: "POST" });
+  const response = await fetchWithTimeout(apiUrl(`/api/rooms/${roomId}/start?show_private=true`), { method: "POST" });
   if (!response.ok) throw new Error(`Start failed (${response.status})`);
   return parseJson<GameState>(response);
 }
 
 export async function fetchRoom(roomId: string): Promise<RoomRecord | null> {
-  const response = await fetchWithTimeout(`/api/rooms/${roomId}`);
+  const response = await fetchWithTimeout(apiUrl(`/api/rooms/${roomId}`));
   if (!response.ok) return null;
   return parseJson<RoomRecord>(response);
 }
 
 export async function submitHumanAction(roomId: string, data: HumanActionPayload): Promise<GameState> {
-  const response = await fetchWithTimeout(`/api/rooms/${roomId}/action`, {
+  const response = await fetchWithTimeout(apiUrl(`/api/rooms/${roomId}/action`), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
