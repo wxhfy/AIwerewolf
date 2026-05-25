@@ -38,6 +38,7 @@ from backend.eval.evolution import (
     ABComparison,
     DreamJob,
     HermesEvolutionHook,
+    KnowledgeDocValidator,
     PatchValidationResult,
     RetrievedStrategyLesson,
     RoleStrategyCard as RoleStrategyCardData,
@@ -45,6 +46,8 @@ from backend.eval.evolution import (
     StrategyKnowledgeStore,
     StrategyPatch as StrategyPatchData,
     StrategyRetrievalQuery,
+    build_acceptance_step_metric,
+    build_bc_acceptance_audit,
 )
 from backend.eval.review import LeaderboardAggregator
 from backend.eval.track_b import generate_published_review_document, reconstruct_review_report
@@ -736,6 +739,18 @@ def get_review_html(game_id: str) -> str | None:
     return None
 
 
+def get_review_markdown(game_id: str) -> str | None:
+    """Return the published markdown report for a game, or None when only the
+    legacy per-bad-case rows exist (no PublishedReview)."""
+    payload = get_review_reports(game_id)
+    if not payload:
+        return None
+    markdown = payload.get("markdown")
+    if isinstance(markdown, str) and markdown.strip():
+        return markdown
+    return None
+
+
 def save_published_review(state: GameState) -> dict[str, Any]:
     document = generate_published_review_document(state)
     init_db()
@@ -1171,6 +1186,7 @@ def run_evolution_cycle(report_ids: list[str] | None = None, *, seeds: list[int]
                 "tournament": tournament.to_dict(),
             })
         db.commit()
+        acceptance_audit = _build_bc_acceptance_audit_from_db(db, limit_games=200)
         leaderboard = [
             {
                 "version": item["tournament"]["candidate_version"],
@@ -1200,7 +1216,11 @@ def run_evolution_cycle(report_ids: list[str] | None = None, *, seeds: list[int]
                 "validated_patches": len(dream.get("candidate_patches", [])),
                 "promoted": sum(1 for item in patch_results if item["patch"]["status"] == "promoted"),
                 "rolled_back": sum(1 for item in patch_results if item["patch"]["status"] == "rolled_back"),
+                "acceptance_pass_rate": acceptance_audit.get("overall_success_rate", 0.0),
+                "acceptance_passed": acceptance_audit.get("passed", False),
             },
+            "acceptance_audit": acceptance_audit,
+            "acceptance_metrics": acceptance_audit.get("metrics", []),
         })
     finally:
         db.close()
@@ -1212,6 +1232,7 @@ def get_evolution_dashboard() -> dict[str, Any]:
     try:
         patches = db.query(StrategyPatch).order_by(StrategyPatch.created_at.desc()).limit(20).all()
         tournaments = db.query(EvolutionTournament).order_by(EvolutionTournament.created_at.desc()).limit(20).all()
+        acceptance_audit = _build_bc_acceptance_audit_from_db(db, limit_games=200)
         return _clean({
             "active_versions": list_role_strategy_cards(),
             "knowledge": list_strategy_knowledge(limit=50),
@@ -1242,6 +1263,8 @@ def get_evolution_dashboard() -> dict[str, Any]:
                 }
                 for row in tournaments
             ],
+            "acceptance_audit": acceptance_audit,
+            "acceptance_metrics": acceptance_audit.get("metrics", []),
         })
     finally:
         db.close()
@@ -1410,6 +1433,405 @@ def _finalize_bucket(bucket: dict[str, Any]) -> None:
     bucket["latency_ms"] = _stats_summary(latencies)
     bucket["speech_char_len"] = _stats_summary(speech_lengths)
     bucket["validity_rate"] = round(bucket["valid_count"] / bucket["decision_count"], 4) if bucket["decision_count"] else 0.0
+
+
+_REVIEW_SIGNAL_SECTIONS = (
+    "bad_cases",
+    "turning_points",
+    "counterfactuals",
+    "strategy_suggestions",
+    "mvp_results",
+)
+
+
+def _iter_review_items(payload: dict[str, Any] | None) -> list[dict[str, Any]]:
+    if not isinstance(payload, dict):
+        return []
+    items: list[dict[str, Any]] = []
+    for section in _REVIEW_SIGNAL_SECTIONS:
+        for item in payload.get(section, []) or []:
+            if isinstance(item, dict):
+                items.append(item)
+    return items
+
+
+def _decision_is_fallback(decision: AgentDecision) -> bool:
+    parsed = decision.parsed_action if isinstance(decision.parsed_action, dict) else {}
+    metadata = parsed.get("metadata") if isinstance(parsed.get("metadata"), dict) else {}
+    return bool(metadata.get("fallback")) or bool(parsed.get("agent_fallback")) or str(metadata.get("source", "")) == "fallback"
+
+
+def _decision_is_llm(decision: AgentDecision) -> bool:
+    parsed = decision.parsed_action if isinstance(decision.parsed_action, dict) else {}
+    metadata = parsed.get("metadata") if isinstance(parsed.get("metadata"), dict) else {}
+    source = str(metadata.get("source", "")).lower()
+    if source == "llm" and not _decision_is_fallback(decision):
+        return True
+    if bool(metadata.get("fallback")) or source == "fallback":
+        return False
+    return bool(decision.prompt_tokens or decision.completion_tokens) and not _decision_is_fallback(decision)
+
+
+def _knowledge_doc_has_embedding(doc: StrategyKnowledgeDocData) -> bool:
+    return bool(doc.embedding) and any(abs(float(value)) > 0 for value in doc.embedding)
+
+
+def _tournament_result_is_llm(result: dict[str, Any]) -> bool:
+    if not isinstance(result, dict):
+        return False
+    metadata = result.get("metadata") if isinstance(result.get("metadata"), dict) else {}
+    runner_mode = str(metadata.get("runner_mode", "")).lower()
+    if runner_mode != "llm":
+        return False
+    total = int(metadata.get("total_decisions") or metadata.get("decision_count") or 0)
+    llm_count = int(metadata.get("llm_decision_count") or 0)
+    fallback_count = int(metadata.get("fallback_count") or metadata.get("fallback_decision_count") or 0)
+    if total <= 0 or fallback_count != 0:
+        return False
+    return llm_count / max(total, 1) >= 0.95
+
+
+def _tournament_is_llm(item: EvolutionTournament) -> bool:
+    results = list(item.baseline_results or []) + list(item.candidate_results or [])
+    return bool(results) and all(_tournament_result_is_llm(result) for result in results)
+
+
+def _build_bc_acceptance_audit_from_db(db, *, limit_games: int = 200) -> dict[str, Any]:
+    """Quantify each documented B/C stage from persisted artifacts.
+
+    This intentionally reports red/low rates when no data exists. Missing data
+    is not a pass; operators should run the LLM pipeline and watch these rates
+    move instead of treating an empty table as success.
+    """
+    finished_games = (
+        db.query(Game)
+        .filter(Game.status == "finished")
+        .order_by(Game.finished_at.desc().nullslast(), Game.created_at.desc())
+        .limit(limit_games)
+        .all()
+    )
+    game_ids = [game.id for game in finished_games]
+    event_counts: dict[str, int] = {}
+    snapshot_counts: dict[str, int] = {}
+    decisions: list[AgentDecision] = []
+    if game_ids:
+        event_counts = {
+            str(game_id): int(count)
+            for game_id, count in (
+                db.query(GameEvent.game_id, sa_func.count(GameEvent.id))
+                .filter(GameEvent.game_id.in_(game_ids))
+                .group_by(GameEvent.game_id)
+                .all()
+            )
+        }
+        snapshot_counts = {
+            str(game_id): int(count)
+            for game_id, count in (
+                db.query(GameSnapshot.game_id, sa_func.count(GameSnapshot.id))
+                .filter(GameSnapshot.game_id.in_(game_ids))
+                .group_by(GameSnapshot.game_id)
+                .all()
+            )
+        }
+        decisions = db.query(AgentDecision).filter(AgentDecision.game_id.in_(game_ids)).all()
+
+    reviews = (
+        db.query(PublishedReview)
+        .order_by(PublishedReview.published_at.desc().nullslast(), PublishedReview.created_at.desc())
+        .limit(limit_games)
+        .all()
+    )
+    review_payloads = [row.report_json or {} for row in reviews]
+    review_items = [item for payload in review_payloads for item in _iter_review_items(payload)]
+    evidence_items = [
+        item for item in review_items
+        if item.get("evidence_event_ids") or item.get("source_event_ids")
+    ]
+    approved_reviews = [row for row in reviews if row.publish_allowed]
+
+    knowledge_rows = db.query(StrategyKnowledgeDoc).all()
+    knowledge_docs = [StrategyKnowledgeDocData(**_knowledge_row_to_dict(row)) for row in knowledge_rows]
+    validator = KnowledgeDocValidator()
+    sanitized_docs = [doc for doc in knowledge_docs if not validator.validate(doc)]
+    store = StrategyKnowledgeStore(knowledge_docs)
+    indexed_docs = store.all(include_deprecated=True)
+    embedded_docs = [doc for doc in indexed_docs if _knowledge_doc_has_embedding(doc)]
+    active_docs = store.all(include_deprecated=False)[: min(20, len(store.all(include_deprecated=False)))]
+    retrieval_hits = 0
+    for doc in active_docs:
+        lessons = store.retrieve(
+            StrategyRetrievalQuery(
+                role=doc.role,
+                phase=doc.phase,
+                observation_summary=doc.situation_pattern,
+                situation_tags=list(doc.tags[:3]),
+                top_k=3,
+            )
+        )
+        if any(item.doc_id == doc.doc_id for item in lessons):
+            retrieval_hits += 1
+    graph_edge_types = {key.rsplit(":", 1)[-1] for key in store.edges}
+
+    patches = db.query(StrategyPatch).all()
+    validated_patches = [
+        patch for patch in patches
+        if (isinstance(patch.validation_result, dict) and patch.validation_result.get("passed") is True)
+        or patch.status in {"validated", "applied", "promoted", "rolled_back"}
+    ]
+
+    tournaments = db.query(EvolutionTournament).all()
+    fixed_seed_tournaments = [
+        item for item in tournaments
+        if len(item.seeds or []) == 20
+        and len(item.baseline_results or []) == 20
+        and len(item.candidate_results or []) == 20
+        and int((item.comparison or {}).get("total_games") or 0) == 20
+    ]
+    fallback_free_tournaments = [
+        item for item in tournaments
+        if int((item.comparison or {}).get("candidate_fallback_count") or 0) == 0
+    ]
+    llm_tournaments = [item for item in tournaments if _tournament_is_llm(item)]
+    decided_tournaments = [
+        item for item in tournaments
+        if item.status in {"promoted", "rolled_back"}
+        and isinstance(item.decision, dict)
+        and "accepted" in item.decision
+    ]
+    separated_tournaments = [
+        item for item in tournaments
+        if abs(float((item.comparison or {}).get("target_role_avg_score_delta") or 0.0)) > 0.001
+        or abs(
+            float((item.comparison or {}).get("candidate_avg_score") or 0.0)
+            - float((item.comparison or {}).get("baseline_avg_score") or 0.0)
+        ) > 0.001
+    ]
+
+    decision_total = len(decisions)
+    fallback_count = sum(1 for decision in decisions if _decision_is_fallback(decision))
+    llm_count = sum(1 for decision in decisions if _decision_is_llm(decision))
+    valid_count = sum(1 for decision in decisions if decision.is_valid)
+    finished_total = len(finished_games)
+    review_total = len(reviews)
+    item_total = len(review_items)
+    docs_total = len(knowledge_docs)
+    patch_total = len(patches)
+    tournament_total = len(tournaments)
+
+    metrics = [
+        build_acceptance_step_metric(
+            track="B",
+            step_id="B1",
+            name="Replay persisted with events and snapshots",
+            numerator=sum(1 for game in finished_games if event_counts.get(game.id, 0) > 0 and snapshot_counts.get(game.id, 0) > 0),
+            denominator=finished_total,
+            threshold=1.0,
+            evidence="finished games with GameEvent + GameSnapshot rows",
+        ),
+        build_acceptance_step_metric(
+            track="B",
+            step_id="B2",
+            name="Player scoreboard generated",
+            numerator=sum(1 for payload in review_payloads if payload.get("scoreboard")),
+            denominator=review_total,
+            threshold=0.95,
+            evidence="PublishedReview.report_json.scoreboard",
+        ),
+        build_acceptance_step_metric(
+            track="B",
+            step_id="B3",
+            name="SpeechAct analysis produced",
+            numerator=sum(1 for row in reviews if row.speech_acts),
+            denominator=review_total,
+            threshold=0.90,
+            evidence="PublishedReview.speech_acts",
+        ),
+        build_acceptance_step_metric(
+            track="B",
+            step_id="B4",
+            name="Suspicion matrix produced",
+            numerator=sum(1 for row in reviews if row.suspicion_matrix),
+            denominator=review_total,
+            threshold=0.90,
+            evidence="PublishedReview.suspicion_matrix",
+        ),
+        build_acceptance_step_metric(
+            track="B",
+            step_id="B5",
+            name="BadCase or Highlight detected",
+            numerator=sum(1 for payload in review_payloads if payload.get("bad_cases") or payload.get("turning_points")),
+            denominator=review_total,
+            threshold=0.70,
+            evidence="bad_cases / turning_points sections",
+        ),
+        build_acceptance_step_metric(
+            track="B",
+            step_id="B6",
+            name="Evidence coverage on review conclusions",
+            numerator=len(evidence_items),
+            denominator=item_total,
+            threshold=0.90,
+            evidence="evidence_event_ids on BadCase/Highlight/Counterfactual/StrategySuggestion/MVP",
+        ),
+        build_acceptance_step_metric(
+            track="B",
+            step_id="B7",
+            name="Counterfactual coverage",
+            numerator=sum(1 for payload in review_payloads if payload.get("counterfactuals")),
+            denominator=review_total,
+            threshold=0.60,
+            evidence="counterfactuals section",
+        ),
+        build_acceptance_step_metric(
+            track="B",
+            step_id="B8",
+            name="ValidAgent publish gate pass rate",
+            numerator=len(approved_reviews),
+            denominator=review_total,
+            threshold=0.85,
+            evidence="PublishedReview.publish_allowed",
+        ),
+        build_acceptance_step_metric(
+            track="B",
+            step_id="B9",
+            name="Runtime fallback-free decisions",
+            numerator=max(decision_total - fallback_count, 0),
+            denominator=decision_total,
+            threshold=1.0,
+            evidence="AgentDecision.parsed_action.metadata.fallback",
+            details={"fallback_count": fallback_count},
+        ),
+        build_acceptance_step_metric(
+            track="B",
+            step_id="B10",
+            name="Runtime valid decisions",
+            numerator=valid_count,
+            denominator=decision_total,
+            threshold=1.0,
+            evidence="AgentDecision.is_valid",
+        ),
+        build_acceptance_step_metric(
+            track="B",
+            step_id="B11",
+            name="Runtime LLM decision source rate",
+            numerator=llm_count,
+            denominator=decision_total,
+            threshold=0.95,
+            evidence="AgentDecision.parsed_action.metadata.source == llm / token usage",
+            details={"llm_count": llm_count, "non_llm_count": max(decision_total - llm_count, 0)},
+        ),
+        build_acceptance_step_metric(
+            track="B",
+            step_id="B12",
+            name="Leaderboard data available",
+            numerator=1 if review_total > 0 or db.query(LeaderboardEntry).count() > 0 else 0,
+            denominator=1,
+            threshold=1.0,
+            evidence="PublishedReview / LeaderboardEntry rows",
+        ),
+        build_acceptance_step_metric(
+            track="C",
+            step_id="C1",
+            name="Approved reports converted to knowledge",
+            numerator=sum(1 for doc in knowledge_docs if doc.source_report_ids),
+            denominator=docs_total,
+            threshold=1.0,
+            evidence="StrategyKnowledgeDoc.source_report_ids",
+        ),
+        build_acceptance_step_metric(
+            track="C",
+            step_id="C2",
+            name="Knowledge docs sanitized",
+            numerator=len(sanitized_docs),
+            denominator=docs_total,
+            threshold=1.0,
+            evidence="KnowledgeDocValidator",
+        ),
+        build_acceptance_step_metric(
+            track="C",
+            step_id="C3",
+            name="Vector index coverage",
+            numerator=len(embedded_docs),
+            denominator=docs_total,
+            threshold=1.0,
+            evidence="StrategyKnowledgeStore hybrid vector embeddings",
+            details={"retrieval_mode": StrategyKnowledgeStore.retrieval_mode},
+        ),
+        build_acceptance_step_metric(
+            track="C",
+            step_id="C4",
+            name="Role/phase/situation retrieval hit rate",
+            numerator=retrieval_hits,
+            denominator=len(active_docs),
+            threshold=0.90,
+            evidence="StrategyKnowledgeStore.retrieve() top-k contains the source doc",
+        ),
+        build_acceptance_step_metric(
+            track="C",
+            step_id="C5",
+            name="GraphRAG-lite edge coverage",
+            numerator=min(len(graph_edge_types), 5),
+            denominator=5,
+            threshold=0.80,
+            evidence="in-memory StrategyKnowledgeStore.edges relation families",
+            details={"edge_types": sorted(graph_edge_types)},
+        ),
+        build_acceptance_step_metric(
+            track="C",
+            step_id="C6",
+            name="StrategyPatch validation pass rate",
+            numerator=len(validated_patches),
+            denominator=patch_total,
+            threshold=0.85,
+            evidence="StrategyPatch.validation_result / status",
+        ),
+        build_acceptance_step_metric(
+            track="C",
+            step_id="C7",
+            name="Fixed 20-seed A/B completion",
+            numerator=len(fixed_seed_tournaments),
+            denominator=tournament_total,
+            threshold=1.0,
+            evidence="EvolutionTournament seeds/results/comparison.total_games",
+        ),
+        build_acceptance_step_metric(
+            track="C",
+            step_id="C8",
+            name="A/B fallback-free candidates",
+            numerator=len(fallback_free_tournaments),
+            denominator=tournament_total,
+            threshold=1.0,
+            evidence="EvolutionTournament.comparison.candidate_fallback_count",
+        ),
+        build_acceptance_step_metric(
+            track="C",
+            step_id="C9",
+            name="A/B LLM runner evidence",
+            numerator=len(llm_tournaments),
+            denominator=tournament_total,
+            threshold=1.0,
+            evidence="EvolutionTournament result metadata.runner_mode == llm and llm_decision_count/total_decisions >= 95%",
+        ),
+        build_acceptance_step_metric(
+            track="C",
+            step_id="C10",
+            name="Promote/Rollback decision recorded",
+            numerator=len(decided_tournaments),
+            denominator=tournament_total,
+            threshold=1.0,
+            evidence="EvolutionTournament.status + decision.accepted",
+        ),
+        build_acceptance_step_metric(
+            track="C",
+            step_id="C11",
+            name="Leaderboard separates candidate from baseline",
+            numerator=len(separated_tournaments),
+            denominator=tournament_total,
+            threshold=0.75,
+            evidence="score delta or target-role delta is non-zero",
+        ),
+    ]
+    return build_bc_acceptance_audit(metrics).to_dict()
 
 
 def get_runtime_metrics(game_id: str) -> dict | None:
@@ -1618,6 +2040,7 @@ def get_aggregate_metrics(limit_games: int = 200) -> dict[str, Any]:
             if isinstance(t.decision, dict) and t.decision.get("accepted") is True
         )
         tournament_rejected = tournaments_total - tournament_accepted
+        acceptance_audit = _build_bc_acceptance_audit_from_db(db, limit_games=limit_games)
 
         payload = {
             "games": {
@@ -1664,7 +2087,289 @@ def get_aggregate_metrics(limit_games: int = 200) -> dict[str, Any]:
                 "tournaments_accepted": tournament_accepted,
                 "tournaments_rejected": tournament_rejected,
             },
+            "acceptance": acceptance_audit,
         }
         return _clean(payload)
+    finally:
+        db.close()
+
+
+def _wins_for_player(role: str, alignment_or_winner_guess: str, winner: str | None) -> bool:
+    """Decide whether a single player won given the game winner and their role.
+
+    Track-C tournament rows store winner as 'wolf' / 'village' / None; we infer
+    alignment from _WOLF_ROLES rather than the absent alignment column.
+    """
+    if winner == "wolf" and role in _WOLF_ROLES:
+        return True
+    if winner == "village" and role not in _WOLF_ROLES:
+        return True
+    return False
+
+
+def get_role_model_leaderboard(
+    *,
+    limit_games: int = 500,
+    llm_only: bool = True,
+    since_iso: str | None = None,
+    game_ids: list[str] | None = None,
+) -> dict[str, Any]:
+    """Cross-matrix leaderboard: (agent_label, role) -> {games, wins, win_rate}.
+
+    agent_label is the joint of (agent_type, model_name) so heuristic vs. LLM
+    and individual model contributions stay separable. Designed so the answer
+    survives multi-tenant DB contention: pass either `llm_only=True` (keeps only
+    games where every seat ran an LLM agent) or an explicit `game_ids` set to
+    pin the analysis to a specific batch — both are safer than time-based
+    cutoffs alone.
+
+    Returns:
+      {
+        "sample": {"games": N, "since_iso": ..., "llm_only": bool},
+        "agents": [
+          {
+            "agent_label": "llm/deepseek-v4-pro[1m]",
+            "agent_type": "llm",
+            "model_name": "deepseek-v4-pro[1m]",
+            "games": N, "wins": K, "win_rate": K/N,
+            "by_role": {
+                "Werewolf": {"games": n, "wins": k, "win_rate": ...},
+                ...
+            },
+          }, ...
+        ],
+        "matrix": {
+          "<agent_label>": {
+              "<role>": {"games": n, "wins": k, "win_rate": ...},
+              ...
+          }, ...
+        },
+      }
+    """
+    init_db()
+    db = SessionLocal()
+    try:
+        query = db.query(Game).filter(Game.status == "finished")
+        if since_iso:
+            query = query.filter(Game.finished_at >= since_iso)
+        if game_ids:
+            query = query.filter(Game.id.in_(game_ids))
+        games = (
+            query.order_by(Game.finished_at.desc().nullslast(), Game.created_at.desc())
+            .limit(limit_games)
+            .all()
+        )
+        winner_by_game = {g.id: g.winner for g in games}
+
+        if not games:
+            return {
+                "sample": {"games": 0, "since_iso": since_iso, "llm_only": llm_only},
+                "agents": [],
+                "matrix": {},
+            }
+
+        all_players = (
+            db.query(Player)
+            .filter(Player.game_id.in_([g.id for g in games]))
+            .all()
+        )
+        # llm_only filter: drop any game that has at least one non-LLM seat.
+        if llm_only:
+            non_llm_game_ids: set[str] = set()
+            for p in all_players:
+                if (p.agent_type or "").lower() != "llm":
+                    non_llm_game_ids.add(p.game_id)
+            kept_games = [g for g in games if g.id not in non_llm_game_ids]
+            kept_game_id_set = {g.id for g in kept_games}
+            all_players = [p for p in all_players if p.game_id in kept_game_id_set]
+            games = kept_games
+
+        matrix: dict[str, dict[str, dict[str, int | float]]] = {}
+        for p in all_players:
+            model = p.model_name or ""
+            agent_type = (p.agent_type or "unknown").lower()
+            agent_label = f"{agent_type}/{model}" if model else agent_type
+            role = p.role or "Unknown"
+            winner = winner_by_game.get(p.game_id)
+            won = _wins_for_player(role, "", winner)
+            label_buckets = matrix.setdefault(agent_label, {})
+            bucket = label_buckets.setdefault(role, {"games": 0, "wins": 0})
+            bucket["games"] = int(bucket["games"]) + 1
+            bucket["wins"] = int(bucket["wins"]) + (1 if won else 0)
+
+        agents_summary: list[dict[str, Any]] = []
+        for agent_label, role_buckets in matrix.items():
+            total_games = sum(int(b["games"]) for b in role_buckets.values())
+            total_wins = sum(int(b["wins"]) for b in role_buckets.values())
+            for role, bucket in role_buckets.items():
+                games_n = int(bucket["games"])
+                bucket["win_rate"] = round(int(bucket["wins"]) / games_n, 4) if games_n else 0.0
+            parts = agent_label.split("/", 1)
+            agent_type_only = parts[0]
+            model_only = parts[1] if len(parts) > 1 else ""
+            agents_summary.append({
+                "agent_label": agent_label,
+                "agent_type": agent_type_only,
+                "model_name": model_only,
+                "games": total_games,
+                "wins": total_wins,
+                "win_rate": round(total_wins / total_games, 4) if total_games else 0.0,
+                "by_role": role_buckets,
+            })
+        agents_summary.sort(key=lambda a: (-a["games"], -a["win_rate"]))
+
+        return _clean({
+            "sample": {
+                "games": len(games),
+                "since_iso": since_iso,
+                "llm_only": llm_only,
+            },
+            "agents": agents_summary,
+            "matrix": matrix,
+        })
+    finally:
+        db.close()
+
+
+def get_strategy_attribution(
+    *,
+    limit_games: int = 500,
+    llm_only: bool = True,
+    since_iso: str | None = None,
+    game_ids: list[str] | None = None,
+    top_k: int = 20,
+) -> dict[str, Any]:
+    """Strategy attribution: which knowledge docs got retrieved during games,
+    and what their hit/helpful/unhelpful counts look like from the
+    knowledge_usage_feedback table joined with the same game subset used by
+    the role/model leaderboard.
+
+    Returns:
+      {
+        "sample": {"games": N},
+        "docs_used_total": int,
+        "by_doc": [
+          {"doc_id": ..., "role": ..., "phase": ...,
+           "usage_count": int, "helpful": int, "unhelpful": int,
+           "helpful_ratio": float, "quality_score": float, "status": ...}
+        ],
+        "by_role_phase": {"<role>:<phase>": int},
+      }
+    """
+    init_db()
+    db = SessionLocal()
+    try:
+        query = db.query(Game).filter(Game.status == "finished")
+        if since_iso:
+            query = query.filter(Game.finished_at >= since_iso)
+        if game_ids:
+            query = query.filter(Game.id.in_(game_ids))
+        games = (
+            query.order_by(Game.finished_at.desc().nullslast(), Game.created_at.desc())
+            .limit(limit_games)
+            .all()
+        )
+        if not games:
+            return {
+                "sample": {"games": 0},
+                "docs_used_total": 0,
+                "by_doc": [],
+                "by_role_phase": {},
+            }
+        game_id_set = {g.id for g in games}
+
+        if llm_only:
+            all_players = (
+                db.query(Player)
+                .filter(Player.game_id.in_(list(game_id_set)))
+                .all()
+            )
+            non_llm = {p.game_id for p in all_players if (p.agent_type or "").lower() != "llm"}
+            game_id_set -= non_llm
+
+        if not game_id_set:
+            return {
+                "sample": {"games": 0},
+                "docs_used_total": 0,
+                "by_doc": [],
+                "by_role_phase": {},
+            }
+
+        feedback_rows = (
+            db.query(KnowledgeUsageFeedback)
+            .filter(KnowledgeUsageFeedback.game_id.in_(list(game_id_set)))
+            .all()
+        )
+
+        # Player.role lookup for the by_role_phase histogram (player_role isn't
+        # a column on KnowledgeUsageFeedback, so we join via player_id).
+        player_role_map: dict[str, str] = {}
+        if feedback_rows:
+            player_ids = {row.player_id for row in feedback_rows if row.player_id}
+            if player_ids:
+                for pid, role in (
+                    db.query(Player.id, Player.role)
+                    .filter(Player.id.in_(list(player_ids)))
+                    .all()
+                ):
+                    player_role_map[pid] = role or "unknown"
+
+        usage_by_doc: dict[str, dict[str, Any]] = {}
+        by_role_phase: dict[str, int] = {}
+        for row in feedback_rows:
+            entry = usage_by_doc.setdefault(row.knowledge_doc_id, {
+                "doc_id": row.knowledge_doc_id,
+                "usage_count": 0,
+                "helpful": 0,
+                "unhelpful": 0,
+            })
+            entry["usage_count"] += 1
+            if row.helpful is True:
+                entry["helpful"] += 1
+            elif row.helpful is False:
+                entry["unhelpful"] += 1
+            role_key = player_role_map.get(row.player_id, "unknown")
+            phase_key = (row.extra_metadata or {}).get("phase") if isinstance(row.extra_metadata, dict) else "unknown"
+            role_phase_key = f"{role_key}:{phase_key or 'unknown'}"
+            by_role_phase[role_phase_key] = by_role_phase.get(role_phase_key, 0) + 1
+
+        if usage_by_doc:
+            doc_rows = (
+                db.query(StrategyKnowledgeDoc)
+                .filter(StrategyKnowledgeDoc.id.in_(list(usage_by_doc.keys())))
+                .all()
+            )
+            doc_meta = {d.id: d for d in doc_rows}
+        else:
+            doc_meta = {}
+
+        by_doc: list[dict[str, Any]] = []
+        for doc_id, entry in usage_by_doc.items():
+            doc_row = doc_meta.get(doc_id)
+            usage = int(entry["usage_count"])
+            helpful = int(entry["helpful"])
+            unhelpful = int(entry["unhelpful"])
+            helpful_ratio = round(helpful / usage, 4) if usage else 0.0
+            by_doc.append({
+                "doc_id": doc_id,
+                "role": doc_row.role if doc_row else None,
+                "phase": doc_row.phase if doc_row else None,
+                "doc_type": doc_row.doc_type if doc_row else None,
+                "status": doc_row.status if doc_row else None,
+                "quality_score": float(doc_row.quality_score or 0.0) if doc_row else 0.0,
+                "usage_count": usage,
+                "helpful": helpful,
+                "unhelpful": unhelpful,
+                "helpful_ratio": helpful_ratio,
+            })
+        by_doc.sort(key=lambda r: (-r["usage_count"], -r["helpful_ratio"]))
+        by_doc = by_doc[:top_k]
+
+        return _clean({
+            "sample": {"games": len(game_id_set)},
+            "docs_used_total": len(usage_by_doc),
+            "by_doc": by_doc,
+            "by_role_phase": by_role_phase,
+        })
     finally:
         db.close()

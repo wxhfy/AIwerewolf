@@ -5,7 +5,7 @@ from typing import Any, Dict, Optional
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, Response
 
 from backend.agents.factory import create_agents
 from backend.db.database import init_db
@@ -182,6 +182,47 @@ def leaderboard(role: Optional[str] = None, limit: int = 20):
     return get_leaderboard(role=role, limit=limit)
 
 
+@app.get("/api/leaderboard/role_matrix")
+def leaderboard_role_matrix(
+    limit_games: int = 500,
+    llm_only: bool = True,
+    since_iso: Optional[str] = None,
+):
+    """Per-(agent, role) win-rate matrix.
+
+    Filters to all-LLM games by default so heuristic AB-tournament noise from
+    other tenants doesn't enter the table. `since_iso` further constrains the
+    sample to games finished after a wall-clock cutoff (ISO-8601 UTC).
+    """
+    from backend.db.persist import get_role_model_leaderboard
+    return get_role_model_leaderboard(
+        limit_games=max(1, min(limit_games, 5000)),
+        llm_only=llm_only,
+        since_iso=since_iso,
+    )
+
+
+@app.get("/api/strategy/attribution")
+def strategy_attribution(
+    limit_games: int = 500,
+    llm_only: bool = True,
+    since_iso: Optional[str] = None,
+    top_k: int = 20,
+):
+    """Which strategy knowledge docs got retrieved & whether they helped.
+
+    Hits the knowledge_usage_feedback table; useful for Track C verification
+    (active docs with usage_count==0 are clear signals of broken retrieval).
+    """
+    from backend.db.persist import get_strategy_attribution
+    return get_strategy_attribution(
+        limit_games=max(1, min(limit_games, 5000)),
+        llm_only=llm_only,
+        since_iso=since_iso,
+        top_k=max(1, min(top_k, 200)),
+    )
+
+
 @app.get("/api/games/{game_id}/reviews")
 def game_reviews(game_id: str):
     """Reviewer-agent generated post-game reports (Track B)."""
@@ -199,6 +240,25 @@ def game_review_html(game_id: str):
     if payload is None:
         raise HTTPException(status_code=404, detail="HTML review not found")
     return HTMLResponse(payload)
+
+
+@app.get("/api/games/{game_id}/reviews.md")
+def game_review_markdown(game_id: str, download: bool = True):
+    """Return the post-game review as raw markdown.
+
+    Frontends embed the prettified HTML via /reviews/html; this endpoint is
+    the "下载 MD" button next to it. `download=true` (default) sets the
+    Content-Disposition attachment header so browsers save it as a file
+    named `review-<game_id>.md`. Pass `?download=false` to inline.
+    """
+    from backend.db.persist import get_review_markdown
+    payload = get_review_markdown(game_id)
+    if payload is None:
+        raise HTTPException(status_code=404, detail="Markdown review not found")
+    headers = {}
+    if download:
+        headers["Content-Disposition"] = f'attachment; filename="review-{game_id}.md"'
+    return Response(content=payload, media_type="text/markdown; charset=utf-8", headers=headers)
 
 
 # ---------------------------------------------------------------------------
