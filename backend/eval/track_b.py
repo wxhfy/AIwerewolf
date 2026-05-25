@@ -23,10 +23,16 @@ from uuid import uuid4
 
 from backend.engine.models import EventType, GameEvent, GameState, Phase
 from backend.eval.review import (
+    BadCaseReport,
+    CounterfactualCase,
     LeaderboardAggregator,
     MarkdownReportRenderer,
+    MVPResult,
+    PlayerReview,
     ReportEvaluationResult,
     ReviewReport,
+    StrategySuggestion,
+    TurningPoint,
     generate_review_report,
 )
 
@@ -885,6 +891,7 @@ class TrackBValidator:
         issues.extend(self._counterfactual_soundness(replay_bundle, review_report))
         issues.extend(self._visibility_safety(review_report, markdown, view_scope))
         issues.extend(self._recommendation_grounding(review_report))
+        issues.extend(self._agent_robustness(replay_bundle))
         issues.extend(self._presentation_quality(markdown))
 
         blocking = [item for item in issues if item.blocking]
@@ -918,6 +925,42 @@ class TrackBValidator:
             issues.append(self._issue("SchemaValidityGate", "critical", "bad_type", {"field": "scoreboard"}, "scoreboard 必须是列表", [], "重建 scoreboard", "ScoreRecomputeTool"))
         if review_report.get("game_id") and review_report.get("game_id") != report_id.split(":")[-1]:
             pass
+        return issues
+
+    def _agent_robustness(self, replay_bundle: ReplayBundle) -> list[ValidationIssue]:
+        issues: list[ValidationIssue] = []
+        fallback_decisions: list[str] = []
+        invalid_decisions: list[str] = []
+        for decision in replay_bundle.decisions:
+            selected = decision.get("selected_action") or {}
+            metadata = selected.get("metadata") if isinstance(selected, dict) else {}
+            fallback_used = bool(decision.get("fallback_used")) or bool((metadata or {}).get("fallback"))
+            if fallback_used:
+                fallback_decisions.append(str(decision.get("decision_id") or decision.get("player_id") or "unknown"))
+            if decision.get("parsed_success") is False:
+                invalid_decisions.append(str(decision.get("decision_id") or decision.get("player_id") or "unknown"))
+        if fallback_decisions:
+            issues.append(self._issue(
+                "AgentRobustnessGate",
+                "critical",
+                "fallback_used",
+                {"decision_ids": fallback_decisions[:10], "count": len(fallback_decisions)},
+                "对局包含 fallback 决策，不能作为高质量 LLM/策略验收样本发布。",
+                fallback_decisions[:10],
+                "重新运行对局或修复 LLM 输出解析，确保所有 AgentDecision 由目标 agent 有效产生。",
+                "ReplayQueryTool",
+            ))
+        if invalid_decisions:
+            issues.append(self._issue(
+                "AgentRobustnessGate",
+                "critical",
+                "invalid_decision",
+                {"decision_ids": invalid_decisions[:10], "count": len(invalid_decisions)},
+                "对局包含非法或解析失败决策，不能发布为 ApprovedReviewReport。",
+                invalid_decisions[:10],
+                "修复 ActionValidator / Agent 输出后重新生成复盘。",
+                "ReplayQueryTool",
+            ))
         return issues
 
     def _report_completeness(self, markdown: str, review_report: dict[str, Any]) -> list[ValidationIssue]:
@@ -1297,11 +1340,22 @@ def generate_published_review_document(state: GameState, *, view_scope: str = "m
     )
 
 
-def reconstruct_review_report(payload: dict[str, Any]) -> ReviewReport:
-    """Best-effort converter for LeaderboardAggregator.
+def _coerce_dataclass(cls, value: Any) -> Any:
+    if isinstance(value, cls):
+        return value
+    if isinstance(value, dict):
+        allowed = set(getattr(cls, "__dataclass_fields__", {}).keys())
+        return cls(**{key: val for key, val in value.items() if key in allowed})
+    return value
 
-    The aggregator only relies on metadata.player_scores and counterfactual
-    count, so nested dicts are acceptable here.
+
+def reconstruct_review_report(payload: dict[str, Any]) -> ReviewReport:
+    """Rebuild a ReviewReport with typed nested review artifacts.
+
+    Track C's strategy extractor consumes attributes on bad cases,
+    counterfactuals and player reviews, so returning nested dicts here creates
+    a runtime-only break in the B→C pipeline. Keep unknown future fields out of
+    the constructors but preserve known fields as dataclasses.
     """
     return ReviewReport(
         game_id=payload["game_id"],
@@ -1310,11 +1364,11 @@ def reconstruct_review_report(payload: dict[str, Any]) -> ReviewReport:
         total_events=payload.get("total_events", 0),
         game_summary=payload.get("game_summary", ""),
         scoreboard=list(payload.get("scoreboard", [])),
-        mvp_results=list(payload.get("mvp_results", [])),
-        turning_points=list(payload.get("turning_points", [])),
-        player_reviews=list(payload.get("player_reviews", [])),
-        bad_cases=list(payload.get("bad_cases", [])),
-        counterfactuals=list(payload.get("counterfactuals", [])),
-        strategy_suggestions=list(payload.get("strategy_suggestions", [])),
+        mvp_results=[_coerce_dataclass(MVPResult, item) for item in payload.get("mvp_results", [])],
+        turning_points=[_coerce_dataclass(TurningPoint, item) for item in payload.get("turning_points", [])],
+        player_reviews=[_coerce_dataclass(PlayerReview, item) for item in payload.get("player_reviews", [])],
+        bad_cases=[_coerce_dataclass(BadCaseReport, item) for item in payload.get("bad_cases", [])],
+        counterfactuals=[_coerce_dataclass(CounterfactualCase, item) for item in payload.get("counterfactuals", [])],
+        strategy_suggestions=[_coerce_dataclass(StrategySuggestion, item) for item in payload.get("strategy_suggestions", [])],
         metadata=dict(payload.get("metadata", {})),
     )

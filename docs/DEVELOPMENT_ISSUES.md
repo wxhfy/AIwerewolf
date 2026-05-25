@@ -216,6 +216,30 @@ updated: 2026-05-23
 - **涉及文件 / 模块**：`backend/eval/evolution.py`、`backend/eval/review.py`、`backend/eval/__init__.py`、`tests/test_review_metrics.py`、`tests/test_track_c_evolution.py`
 - **教训**：Track C 不能直接吃“看起来像报告”的对象，必须吃机器可判定的 ApprovedReviewReport；高级方向的文档计划必须配套规格测试，否则 placeholder 很容易伪装成已实现。
 
+### 问题 C8：B/C 用手造 metrics 过验收
+- **发生时间 / Session**：2026-05-25
+- **现象**：用户明确指出“不要走 fallback 捷径过验收标准，目前实现还很粗糙”。审计后发现 C 的 A/B 验收测试主要比较手造 `GameMetrics`，跑完整 B/C 测试仅 2.9 秒，无法证明固定 20 seed 对局真的执行。
+- **根因**：`TournamentRunner` 只有 `compare_metrics()`，没有把 `run_ab_tournament_20_games()` 落到真实引擎；API 层还调用了不存在的 `run_ab_tournament()`，说明 `/api/evolution/cycle` 未被真实覆盖。
+- **解决方案**：新增真实 `TournamentRunner.run_ab_tournament()`：强制 20 个固定 seed，baseline/candidate 各跑 20 局 `WerewolfGame`，再用 Track B `MetricsCalculator` 生成指标；`AcceptancePolicy` 增加 `candidate_fallback_count == 0` 硬门；测试新增 C9b 覆盖真实 20 seed 运行；API cycle 改用真实 tournament 并落库。
+- **涉及文件 / 模块**：`backend/eval/evolution.py`、`backend/db/persist.py`、`tests/test_c_acceptance_verification.py`
+- **教训**：验收测试不能只比较构造数据；凡是文档写“跑固定 seed 20 局”，测试必须证明引擎真的被调用、结果数量真的为 20×2。
+
+### 问题 C9：B ApprovedReport 重建后嵌套对象变 dict
+- **发生时间 / Session**：2026-05-25
+- **现象**：真实调用 `/api/evolution/dream` 时崩溃：`AttributeError: 'dict' object has no attribute 'player_name'`。
+- **根因**：`reconstruct_review_report()` 只恢复外层 `ReviewReport`，但 `player_reviews` / `bad_cases` / `counterfactuals` / `strategy_suggestions` 仍是 dict；C 的 `StrategyKnowledgeExtractor` 读取这些对象属性。
+- **解决方案**：Track B 重建函数将嵌套字段恢复为 `PlayerReview`、`BadCaseReport`、`CounterfactualCase`、`StrategySuggestion`、`TurningPoint`、`MVPResult` dataclass。
+- **涉及文件 / 模块**：`backend/eval/track_b.py`、`backend/db/persist.py`
+- **教训**：B→C 边界不能只保证 JSON 形状，还要保证 C 消费端需要的强类型对象语义。
+
+### 问题 C10：豆包 EP 切换后默认配置仍指旧模型
+- **发生时间 / Session**：2026-05-25
+- **现象**：用户更新后端豆包 API 后，最小 chat completion 可通，但 `tests/test_llm_config.py` 仍期待旧默认 `doubao-seed-2-0-pro-250528`。
+- **根因**：本地 `.env` 已使用 `DOUBAO_ENDPOINT=ep-20260514115354-k4jz4`，但代码默认值、`.env.example`、docker compose 默认仍可能回退到旧模型名。
+- **解决方案**：本地 `.env` 只更新 secret，不入库；代码默认模型、`.env.example`、docker compose 默认 endpoint 更新为 `ep-20260514115354-k4jz4`；真机最小 chat completion 和单个 LLMAgent talk 均验证 `source=llm`、`fallback=False`。
+- **涉及文件 / 模块**：`backend/llm/__init__.py`、`.env.example`、`docker-compose.yml`、`tests/test_llm_config.py`
+- **教训**：模型/EP 切换要同时更新“本地 env + 默认配置 + 测试期望”，但 API Key 只能留在 `.env`，绝不能进入代码或提交。
+
 ---
 
 ## §D. 数据库 / 持久化
@@ -242,6 +266,14 @@ updated: 2026-05-23
 - **根因**：调试时直接对 PG 写 ad-hoc SQL 但记错了实际列名（`current_day` 写成 `day`、`data` 写成 `payload`、`seat_no` 写成 `seat`）。
 - **解决方案**：报错后重读 `models.py` 校正列名；这类错误未污染代码，仅 debug 探查。
 - **教训**：debug 前先 `\d table` 看 schema，别凭记忆写 SQL。
+
+### 问题 D4：真实 tournament 结果无法写 JSONB
+- **发生时间 / Session**：2026-05-25
+- **现象**：真实 `/api/evolution/cycle` 跑完 20 seed 后落库失败：`TypeError: Object of type BadCaseReport is not JSON serializable`。
+- **根因**：`GameMetrics.metadata` 中包含 Track B dataclass 对象，`EvolutionTournament.baseline_results/candidate_results` 是 JSONB，不能直接序列化 dataclass。
+- **解决方案**：`TournamentRunner._metric_summary()` 增加递归 `json_safe()`，对 dataclass 使用 `asdict()`，并清洗 list/dict 后再返回给持久化层。
+- **涉及文件 / 模块**：`backend/eval/evolution.py`、`backend/db/persist.py`
+- **教训**：评测对象可以是富 dataclass，但跨 DB/API 边界前必须转换为 JSON-safe artifact。
 
 ---
 
@@ -403,6 +435,7 @@ updated: 2026-05-23
 - **不要变成启发式 fallback** —— LLM 必须真的跑通；可以拉长思考时间，但要减少 SSE 等待感（推中间「思考中」帧）。
 - **Agent 必须真推理**，不要固化说话方式、不要无信息开喷、不要"提示词作弊"塞场外知识。
 - **测试要在真实 LLM 场景下做**，光跑启发式不算数。
+- **B/C 验收禁止“手造 metrics / heuristic fallback”替代真实链路** —— Track C 的 A/B 必须实际跑固定 seed 对局；Track B 发现 fallback 决策不得发布为 ApprovedReviewReport。
 
 ### 关于 UI / UX
 - **严格对齐 wolfcha 设计** —— 阶段命名、角色性格、Persona 系统、刷新逻辑都从 `references/wolfcha` 抠出来，不要自创。

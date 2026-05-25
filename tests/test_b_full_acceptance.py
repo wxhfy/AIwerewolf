@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from backend.engine.models import Alignment, EventType, GameEvent, GameState, Phase, Player, Role
+from backend.engine.models import Alignment, DecisionAudit, EventType, GameEvent, GameState, Phase, Player, Role
 from backend.eval.review import (
     BadCaseReport,
     CounterfactualAnalyzer,
@@ -40,6 +40,7 @@ from backend.eval.review import (
     generate_review_report,
 )
 from backend.eval.report_graph import LANGGRAPH_AVAILABLE, LangGraphReportOptimizer, create_report_optimizer
+from backend.eval.track_b import generate_published_review_document
 
 ALIGNMENT_BY_ROLE = {
     Role.WEREWOLF: Alignment.WOLF,
@@ -501,3 +502,42 @@ def test_b_gate17_real_engine_b_to_c_pipeline(tmp_path) -> None:
     assert summary.candidate_patch_count >= 0
     payload = export_evolution_summary(summary, tmp_path / "summary_copy.json")
     assert json.loads(json.dumps(payload, ensure_ascii=False))
+
+
+def test_b_gate18_fallback_decisions_block_publish() -> None:
+    state = _full_game_state()
+    player = state.players[0]
+    state.decision_records.append(
+        DecisionAudit(
+            id="fallback-decision",
+            game_id=state.id,
+            player_id=player.id,
+            day=1,
+            phase=Phase.DAY_SPEECH.value,
+            request="TALK",
+            observation={},
+            legal_actions=[],
+            prompt_version="v1",
+            raw_output=None,
+            parsed_action={
+                "action_type": "talk",
+                "speech": "fallback speech",
+                "metadata": {"source": "fallback", "fallback": True},
+            },
+            is_valid=True,
+            error_type=None,
+            latency_ms=None,
+            prompt_tokens=None,
+            completion_tokens=None,
+            created_at=0.0,
+        )
+    )
+
+    document = generate_published_review_document(state)
+
+    assert document.validation_result["publish_allowed"] is False
+    assert document.status in {"rejected", "needs_revision"}
+    assert any(
+        issue.get("gate") == "AgentRobustnessGate" and issue.get("issue_type") == "fallback_used"
+        for issue in document.validation_result.get("issues", [])
+    )

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import asdict
 from datetime import datetime, timezone
 from typing import Any
 
@@ -885,7 +886,7 @@ def retrieve_strategy_knowledge(query: StrategyRetrievalQuery) -> list[dict[str,
         store = StrategyKnowledgeStore()
         docs = [StrategyKnowledgeDocData(**_knowledge_row_to_dict(row)) for row in rows]
         store.upsert_many(docs)
-        return _clean([item.to_dict() for item in store.search(query)])
+        return _clean([asdict(item) for item in store.retrieve(query)])
     finally:
         db.close()
 
@@ -948,19 +949,20 @@ def run_dream_job(report_ids: list[str] | None = None, *, from_version: str = "v
         if report_ids:
             query = query.filter(PublishedReview.id.in_(report_ids) | PublishedReview.game_id.in_(report_ids))
         rows = query.order_by(PublishedReview.published_at.desc(), PublishedReview.created_at.desc()).limit(30).all()
-        reports = [
-            {
-                "report_id": row.id,
-                "game_id": row.game_id,
-                "status": row.status,
-                "publish_allowed": row.publish_allowed,
-                "review_report": row.report_json or {},
-                "validation_result": row.validation_result or {},
+        reports = []
+        for row in rows:
+            if not row.report_json:
+                continue
+            report = reconstruct_review_report(row.report_json)
+            report.metadata["validation_result"] = row.validation_result or {
+                "passed": bool(row.publish_allowed),
+                "publish_allowed": bool(row.publish_allowed),
+                "score": row.score,
             }
-            for row in rows
-        ]
+            report.metadata["quality_passed"] = bool(row.publish_allowed)
+            reports.append(report)
         job = DreamJob()
-        result = job.run(reports, from_version=from_version)
+        result = job.run(reports)
         saved_docs = _upsert_strategy_knowledge_rows(db, result.knowledge_docs)
         saved_patches: list[dict[str, Any]] = []
         for patch in result.candidate_patches:
@@ -973,17 +975,19 @@ def run_dream_job(report_ids: list[str] | None = None, *, from_version: str = "v
             row.source_report_ids = patch.source_report_ids
             row.source_knowledge_doc_ids = patch.source_knowledge_doc_ids
             row.source_evidence_ids = patch.source_evidence_ids
-            row.operations = [operation.to_dict() for operation in patch.operations]
+            row.operations = [asdict(operation) for operation in patch.operations]
             row.expected_effects = patch.expected_effects
             row.safety_checks = patch.safety_checks
-            row.validation_result = patch.validation_result
+            row.validation_result = patch.safety_checks.get("validation") or {}
             row.status = patch.status
             db.merge(row)
-            saved_patches.append(patch.to_dict())
+            saved_patches.append(asdict(patch))
         db.commit()
-        payload = result.to_dict()
-        payload["knowledge_docs"] = saved_docs
-        payload["candidate_patches"] = saved_patches
+        payload = {
+            "knowledge_docs": saved_docs,
+            "candidate_patches": saved_patches,
+            "summary": asdict(result.summary),
+        }
         return _clean(payload)
     finally:
         db.close()
@@ -1099,7 +1103,6 @@ def run_evolution_cycle(report_ids: list[str] | None = None, *, seeds: list[int]
                 expected_effects=list(patch_payload.get("expected_effects", [])),
                 safety_checks=dict(patch_payload.get("safety_checks", {})),
                 status=patch_payload.get("status", "validated"),
-                validation_result=dict(patch_payload.get("validation_result", {})),
             )
             # Use DB payload for operations in persistence; VersionManager only needs new values.
             patch.operations = []
@@ -1107,18 +1110,19 @@ def run_evolution_cycle(report_ids: list[str] | None = None, *, seeds: list[int]
                 from backend.eval.evolution import PatchOperation
 
                 patch.operations.append(PatchOperation(**item))
-            candidate_card = manager.create_candidate(patch)
+            candidate_version = manager.create_candidate(patch)
+            candidate_card = candidate_version.card
             tournament = runner.run_ab_tournament(
                 baseline_version=patch.from_version,
-                candidate_version=candidate_card.version,
+                candidate_version=candidate_version.version,
                 target_role=patch.target_role,
                 seeds=seeds or list(range(1, 21)),
             )
-            if tournament.decision.get("accept"):
-                final_card = manager.promote(candidate_card.role, candidate_card.version)
+            if tournament.decision.get("accepted"):
+                final_version = manager.promote(candidate_version.version)
                 patch_status = "promoted"
             else:
-                final_card = manager.rollback(candidate_card.role, candidate_card.version)
+                final_version = manager.rollback(candidate_version.version)
                 patch_status = "rolled_back"
             baseline_version = _ensure_agent_version(
                 db,
@@ -1127,7 +1131,7 @@ def run_evolution_cycle(report_ids: list[str] | None = None, *, seeds: list[int]
             )
             challenger_version = _ensure_agent_version(
                 db,
-                candidate_card.version,
+                candidate_version.version,
                 parent_id=baseline_version.id,
                 notes=f"Track C candidate generated from patch {patch.patch_id}",
             )
@@ -1148,17 +1152,20 @@ def run_evolution_cycle(report_ids: list[str] | None = None, *, seeds: list[int]
                 baseline_version_id=baseline_version.id,
                 challenger_version_id=challenger_version.id,
                 games_per_round=len(tournament.seeds),
-                baseline_wins=int(tournament.comparison.get("baseline_camp_win_rate", 0.0) * len(tournament.seeds)),
-                challenger_wins=int(tournament.comparison.get("candidate_camp_win_rate", 0.0) * len(tournament.seeds)),
-                delta_win_rate=float(tournament.comparison.get("camp_win_rate_delta", 0.0)),
-                accepted=bool(tournament.decision.get("accept")),
+                baseline_wins=int(tournament.comparison.get("baseline_wins", 0)),
+                challenger_wins=int(tournament.comparison.get("candidate_wins", 0)),
+                delta_win_rate=(
+                    float(tournament.comparison.get("candidate_wins", 0)) / max(len(tournament.seeds), 1)
+                    - float(tournament.comparison.get("baseline_wins", 0)) / max(len(tournament.seeds), 1)
+                ),
+                accepted=bool(tournament.decision.get("accepted")),
                 change_log=json.dumps(patch_payload, ensure_ascii=False),
                 finished_at=_now(),
             ))
             patch_results.append({
                 "patch": {**patch_payload, "status": patch_status},
                 "candidate_card": candidate_card.to_dict(),
-                "final_card": final_card.to_dict(),
+                "final_version": asdict(final_version),
                 "tournament": tournament.to_dict(),
             })
         db.commit()
@@ -1166,15 +1173,19 @@ def run_evolution_cycle(report_ids: list[str] | None = None, *, seeds: list[int]
             {
                 "version": item["tournament"]["candidate_version"],
                 "baseline_version": item["tournament"]["baseline_version"],
-                "target_role": item["tournament"]["comparison"].get("target_role"),
-                "games": item["tournament"]["comparison"].get("games_per_side"),
-                "win_rate": item["tournament"]["comparison"].get("candidate_camp_win_rate"),
-                "avg_score": item["tournament"]["comparison"].get("candidate_target_role_avg_score"),
-                "role_task_score": item["tournament"]["comparison"].get("candidate_role_task_score"),
-                "critical_mistakes_per_game": item["tournament"]["comparison"].get("candidate_critical_mistakes_per_game"),
-                "info_leak_count": item["tournament"]["comparison"].get("candidate_info_leak_count"),
-                "invalid_action_rate": item["tournament"]["comparison"].get("candidate_invalid_action_rate"),
-                "decision": item["tournament"]["decision"].get("action"),
+                "target_role": item["tournament"].get("target_role"),
+                "games": item["tournament"]["comparison"].get("total_games"),
+                "win_rate": (
+                    item["tournament"]["comparison"].get("candidate_wins", 0)
+                    / max(item["tournament"]["comparison"].get("total_games", 1), 1)
+                ),
+                "avg_score": item["tournament"]["comparison"].get("candidate_avg_score"),
+                "role_task_delta": item["tournament"]["comparison"].get("role_task_score_delta"),
+                "critical_mistakes_delta": item["tournament"]["comparison"].get("critical_mistakes_delta"),
+                "info_leak_count": item["tournament"]["comparison"].get("info_leak_count"),
+                "invalid_action_rate": item["tournament"]["comparison"].get("invalid_action_rate"),
+                "fallback_count": item["tournament"]["comparison"].get("candidate_fallback_count"),
+                "decision": "promote" if item["tournament"]["decision"].get("accepted") else "rollback",
             }
             for item in patch_results
         ]

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import re
 from collections import defaultdict
-from dataclasses import asdict, dataclass, field, replace
+from dataclasses import asdict, dataclass, field, is_dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Protocol, Sequence
@@ -14,6 +14,7 @@ from uuid import uuid4
 from backend.eval.review import (
     GameMetrics,
     LeaderboardAggregator,
+    MetricsCalculator,
     ReviewReport,
     StrategyKnowledge,
     StrategyKnowledgeExtractor,
@@ -193,8 +194,27 @@ class ABComparison:
     invalid_action_rate: float
     retrieval_used_rate: float = 0.0
     knowledge_hit_rate: float = 0.0
+    candidate_fallback_count: int = 0
     winner: str | None = None
     accepted: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class EvolutionTournamentResult:
+    tournament_id: str
+    baseline_version: str
+    candidate_version: str
+    target_role: str | None
+    seeds: list[int]
+    baseline_results: list[dict[str, Any]]
+    candidate_results: list[dict[str, Any]]
+    comparison: dict[str, Any]
+    decision: dict[str, Any]
+    status: str
+    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -753,6 +773,10 @@ class AcceptancePolicy:
             failed.append("invalid_action_rate must be zero")
         else:
             satisfied.append("no invalid actions")
+        if comparison.candidate_fallback_count != 0:
+            failed.append("candidate fallback_count must be zero")
+        else:
+            satisfied.append("no candidate fallback decisions")
 
         improvements = 0
         if comparison.target_role_avg_score_delta >= 3.0:
@@ -778,7 +802,12 @@ class AcceptancePolicy:
         else:
             failed.append("camp win rate regressed more than 5%")
 
-        accepted = comparison.info_leak_count == 0 and comparison.invalid_action_rate == 0 and improvements >= 2
+        accepted = (
+            comparison.info_leak_count == 0
+            and comparison.invalid_action_rate == 0
+            and comparison.candidate_fallback_count == 0
+            and improvements >= 2
+        )
         return AcceptanceDecision(
             accepted=accepted,
             reason="candidate accepted" if accepted else "candidate rejected",
@@ -788,8 +817,14 @@ class AcceptancePolicy:
 
 
 class TournamentRunner:
-    def __init__(self, acceptance_policy: AcceptancePolicy | None = None) -> None:
+    def __init__(
+        self,
+        acceptance_policy: AcceptancePolicy | None = None,
+        *,
+        game_runner: Callable[[int, str, str | None], GameMetrics] | None = None,
+    ) -> None:
         self.acceptance_policy = acceptance_policy or AcceptancePolicy()
+        self.game_runner = game_runner
 
     def compare_metrics(
         self,
@@ -828,11 +863,130 @@ class TournamentRunner:
             invalid_action_rate=self._avg_metadata(candidate_metrics, "invalid_action_rate"),
             retrieval_used_rate=self._avg_metadata(candidate_metrics, "retrieval_used_rate"),
             knowledge_hit_rate=self._avg_metadata(candidate_metrics, "knowledge_hit_rate"),
+            candidate_fallback_count=sum(self._metadata_int(item, "fallback_count") for item in candidate_metrics),
         )
         decision = self.acceptance_policy.decide(comparison)
         comparison.accepted = decision.accepted
         comparison.winner = "candidate" if comparison.candidate_avg_score > comparison.baseline_avg_score else "baseline" if comparison.baseline_avg_score > comparison.candidate_avg_score else None
         return comparison
+
+    def run_ab_tournament(
+        self,
+        *,
+        baseline_version: str,
+        candidate_version: str,
+        target_role: str | None,
+        seeds: Sequence[int] | None = None,
+    ) -> EvolutionTournamentResult:
+        """Run a real fixed-seed A/B tournament instead of accepting synthetic metrics.
+
+        The default runner executes the engine for every seed on both sides and
+        computes Track B metrics from the resulting game state. With heuristic
+        agents this is deterministic and fast enough for CI; with LLM agents the
+        same hook can be replaced by a production runner that injects strategy
+        versions into live agents.
+        """
+        seed_list = list(seeds or range(1, 21))
+        if len(seed_list) != 20:
+            raise ValueError("Track C A/B tournament requires exactly 20 fixed seeds")
+
+        baseline_metrics = [
+            self._run_seed(seed, baseline_version, target_role)
+            for seed in seed_list
+        ]
+        candidate_metrics = [
+            self._run_seed(seed, candidate_version, target_role)
+            for seed in seed_list
+        ]
+        comparison = self.compare_metrics(
+            baseline_version,
+            candidate_version,
+            baseline_metrics,
+            candidate_metrics,
+        )
+        decision = self.acceptance_policy.decide(comparison)
+        comparison.accepted = decision.accepted
+        return EvolutionTournamentResult(
+            tournament_id=f"tournament-{uuid4().hex[:10]}",
+            baseline_version=baseline_version,
+            candidate_version=candidate_version,
+            target_role=target_role,
+            seeds=seed_list,
+            baseline_results=[self._metric_summary(item) for item in baseline_metrics],
+            candidate_results=[self._metric_summary(item) for item in candidate_metrics],
+            comparison=comparison.to_dict(),
+            decision=asdict(decision),
+            status="promoted" if decision.accepted else "rolled_back",
+        )
+
+    def _run_seed(self, seed: int, strategy_version: str, target_role: str | None) -> GameMetrics:
+        if self.game_runner is not None:
+            metric = self.game_runner(seed, strategy_version, target_role)
+        else:
+            from backend.engine.game import WerewolfGame
+
+            game = WerewolfGame(seed=seed)
+            game.play()
+            metric = MetricsCalculator().compute(game.state)
+            fallback_count = sum(
+                1
+                for record in game.state.decision_records
+                if bool((record.parsed_action or {}).get("metadata", {}).get("fallback"))
+                or bool((record.parsed_action or {}).get("agent_fallback"))
+            )
+            invalid_count = sum(1 for record in game.state.decision_records if not record.is_valid)
+            decision_count = max(len(game.state.decision_records), 1)
+            retrieved_count = sum(
+                1
+                for record in game.state.decision_records
+                if bool((record.parsed_action or {}).get("retrieval_used"))
+            )
+            metric.metadata.update({
+                "strategy_version": strategy_version,
+                "tournament_seed": seed,
+                "target_role": target_role,
+                "fallback_count": fallback_count,
+                "invalid_action_rate": invalid_count / decision_count,
+                "retrieval_used_rate": retrieved_count / decision_count,
+                "knowledge_hit_rate": retrieved_count / decision_count,
+                "info_leak_count": int(metric.metadata.get("info_leak_count", 0) or 0),
+            })
+        metric.metadata["strategy_version"] = strategy_version
+        metric.metadata["tournament_seed"] = seed
+        metric.metadata["target_role"] = target_role
+        return metric
+
+    def _metric_summary(self, metric: GameMetrics) -> dict[str, Any]:
+        records = [
+            {
+                "player_id": score.player_id,
+                "player_name": score.player_name,
+                "role": score.role,
+                "final_score": score.final_score,
+                "adjusted_final_score": score.adjusted_final_score,
+                "role_task_score": score.role_task_score,
+                "mistakes": self._json_safe(list(score.mistakes)),
+                "highlights": self._json_safe(list(score.highlights)),
+            }
+            for score in metric.player_scores
+        ]
+        return self._json_safe({
+            "game_id": metric.game_id,
+            "winner": metric.winner,
+            "total_days": metric.total_days,
+            "total_events": metric.total_events,
+            "metadata": dict(metric.metadata),
+            "player_scores": records,
+        })
+
+    def _json_safe(self, value: Any) -> Any:
+        if is_dataclass(value):
+            return self._json_safe(asdict(value))
+        if isinstance(value, dict):
+            return {str(key): self._json_safe(val) for key, val in value.items()}
+        if isinstance(value, (list, tuple, set)):
+            return [self._json_safe(item) for item in value]
+        return value
 
     def _records(self, metrics: Sequence[GameMetrics]) -> list[dict[str, Any]]:
         result = LeaderboardAggregator().aggregate_version(metrics)

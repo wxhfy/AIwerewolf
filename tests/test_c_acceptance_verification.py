@@ -488,6 +488,33 @@ def test_c9_tournament_runner_compares_metrics() -> None:
     assert comparison.invalid_action_rate == 0.0
 
 
+def test_c9b_tournament_runner_runs_real_fixed_20_seed_games() -> None:
+    runner = TournamentRunner()
+
+    tournament = runner.run_ab_tournament(
+        baseline_version="seer_v1",
+        candidate_version="seer_v2_candidate",
+        target_role="Seer",
+        seeds=list(range(1, 21)),
+    )
+
+    assert tournament.seeds == list(range(1, 21))
+    assert len(tournament.baseline_results) == 20
+    assert len(tournament.candidate_results) == 20
+    assert tournament.comparison["total_games"] == 20
+    assert tournament.comparison["candidate_fallback_count"] == 0
+    assert all(item["metadata"]["tournament_seed"] in tournament.seeds for item in tournament.baseline_results)
+    assert all(item["metadata"]["strategy_version"] == "seer_v2_candidate" for item in tournament.candidate_results)
+
+    with pytest.raises(ValueError):
+        runner.run_ab_tournament(
+            baseline_version="seer_v1",
+            candidate_version="seer_v2_candidate",
+            target_role="Seer",
+            seeds=[1, 2],
+        )
+
+
 # ---------------------------------------------------------------------------
 # C10: AcceptancePolicy 能 promote 或 rollback
 # ---------------------------------------------------------------------------
@@ -517,6 +544,19 @@ def test_c10_acceptance_policy_promotes_or_rejects() -> None:
     )
     decision_leak = policy.decide(comparison_leak)
     assert not decision_leak.accepted
+
+    # Should reject: any candidate fallback means the A/B result is not a valid
+    # proof of strategy quality.
+    comparison_fallback = ABComparison(
+        baseline_version="v1", candidate_version="v2",
+        total_games=2, baseline_wins=0, candidate_wins=2,
+        baseline_avg_score=61.0, candidate_avg_score=73.0,
+        target_role_avg_score_delta=19.0, role_task_score_delta=40.0,
+        critical_mistakes_delta=-0.5, info_leak_count=0, invalid_action_rate=0.0,
+        candidate_fallback_count=1,
+    )
+    decision_fallback = policy.decide(comparison_fallback)
+    assert not decision_fallback.accepted
 
     # Should reject: regression
     comparison_regress = ABComparison(

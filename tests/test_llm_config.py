@@ -19,7 +19,7 @@ def test_create_client_defaults_to_doubao(monkeypatch) -> None:
     monkeypatch.delenv("ANTHROPIC_MODEL", raising=False)
     client = create_client(provider=None)
     assert client.provider == "doubao"
-    assert client.model == "doubao-seed-2-0-pro-250528"
+    assert client.model == "ep-20260514115354-k4jz4"
 
 
 def test_create_agents_applies_role_model_overrides() -> None:
