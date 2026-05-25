@@ -67,9 +67,21 @@ class LLMAgent(Agent):
         self.fallback.update(view, request)
         self.memory.append(f"{request} day={view.day} phase={view.phase}")
         try:
-            from backend.eval.evolution import StrategyKnowledgeStore, StrategyRetrievalQuery
-            self.current_retrieval = StrategyKnowledgeStore().retrieve(
-                StrategyRetrievalQuery(role=self.role.value, phase=view.phase, observation_summary=""))
+            from backend.db.persist import retrieve_strategy_knowledge
+            from backend.eval.evolution import RetrievedStrategyLesson, StrategyRetrievalQuery
+
+            rows = retrieve_strategy_knowledge(
+                StrategyRetrievalQuery(
+                    role=self.role.value,
+                    phase=view.phase,
+                    observation_summary=self._retrieval_observation_summary(view, request),
+                    situation_tags=[request, view.phase],
+                    persona_mbti=self.character.persona.mbti if self.character else None,
+                    persona_style=self.character.persona.style_label if self.character else None,
+                    top_k=3,
+                )
+            )
+            self.current_retrieval = [RetrievedStrategyLesson(**row) for row in rows]
         except Exception:
             self.current_retrieval = []
 
@@ -166,7 +178,7 @@ class LLMAgent(Agent):
             meta["retrieved_knowledge_ids"] = []
             meta["retrieval_used"] = False
             return
-        meta["retrieved_knowledge_ids"] = [item.doc.doc_id for item in self.current_retrieval]
+        meta["retrieved_knowledge_ids"] = [item.doc_id for item in self.current_retrieval]
         meta["retrieval_query_summary"] = {
             "role": self.role.value,
             "phase": self._view().phase,
@@ -175,9 +187,9 @@ class LLMAgent(Agent):
         meta["retrieval_used"] = True
         meta["retrieved_knowledge"] = [
             {
-                "doc_id": item.doc.doc_id,
+                "doc_id": item.doc_id,
                 "score": item.score,
-                "recommended_action": item.doc.recommended_action,
+                "recommended_action": item.recommendation,
             }
             for item in self.current_retrieval
         ]
@@ -190,8 +202,40 @@ class LLMAgent(Agent):
             "这些是从已通过校验的历史复盘中抽象出的策略知识，只能作为一般玩法提醒，不能当作本局隐藏身份事实。",
         ]
         for index, item in enumerate(self.current_retrieval, start=1):
-            lines.append(f"{index}. {item.to_prompt_line()}")
+            lines.append(
+                f"{index}. [{item.doc_id} score={item.score:.2f}] "
+                f"触发：{item.trigger}；建议：{item.recommendation}；理由：{item.rationale}"
+            )
         return "\n".join(lines)
+
+    def _retrieval_observation_summary(self, view: PlayerView, request: str) -> str:
+        public_tail = view.public_events[-8:]
+        private_tail = view.private_events[-5:]
+        parts = [
+            f"request={request}",
+            f"day={view.day}",
+            f"phase={view.phase}",
+            f"role={view.self_player.get('role')}",
+        ]
+        for event in public_tail:
+            payload = event.get("payload") or {}
+            parts.append(
+                "public:"
+                + " ".join(
+                    str(payload.get(key) or "")
+                    for key in ("message", "speech", "actor_name", "target_name", "reason")
+                )
+            )
+        for event in private_tail:
+            payload = event.get("payload") or {}
+            parts.append(
+                "private:"
+                + " ".join(
+                    str(payload.get(key) or "")
+                    for key in ("kind", "message", "target_name", "action_type")
+                )
+            )
+        return "\n".join(item for item in parts if item.strip())
 
     # ============================================================
     # Wolfcha-style talk prompt builders
