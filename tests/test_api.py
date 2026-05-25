@@ -135,3 +135,54 @@ def test_human_room_flow_blocks_and_accepts_action() -> None:
     assert action_response.status_code == 200
     resumed_state = action_response.json()
     assert resumed_state["id"] == pending_state["id"]
+
+
+def test_runtime_metrics_and_aggregate_endpoints() -> None:
+    """Track B/C dashboard contracts: per-game runtime + cross-game aggregate."""
+    client = TestClient(app)
+    create = client.post("/api/games?seed=11&agent_type=heuristic")
+    assert create.status_code == 200
+    game_id = create.json()["id"]
+
+    runtime = client.get(f"/api/games/{game_id}/runtime_metrics")
+    assert runtime.status_code == 200
+    body = runtime.json()
+    assert body["game_id"] == game_id
+    assert body["status"] == "finished"
+    # Stable contract: zero defaults must be present even when no LLM was used.
+    for key in (
+        "decision_count", "valid_decision_count", "invalid_decision_count",
+        "validity_rate", "llm_call_count", "latency_ms", "tokens",
+        "speech", "by_role", "by_player",
+    ):
+        assert key in body, key
+    for stat_key in ("count", "min", "max", "avg", "p50", "p95", "sum"):
+        assert stat_key in body["latency_ms"]
+        assert stat_key in body["speech"]["char_len"]
+    for token_key in ("prompt_sum", "completion_sum", "total_sum"):
+        assert token_key in body["tokens"]
+
+    aggregate = client.get("/api/metrics/aggregate?limit_games=20")
+    assert aggregate.status_code == 200
+    payload = aggregate.json()
+    for section in ("games", "runtime", "win_rate_by_role", "win_rate_by_agent_type", "track_b", "track_c"):
+        assert section in payload, section
+    games = payload["games"]
+    for key in ("total", "finished_total", "sampled", "winners", "avg_duration_s", "avg_day_count"):
+        assert key in games, key
+    assert isinstance(games["winners"], dict)
+    runtime_block = payload["runtime"]
+    for key in (
+        "decision_count", "llm_call_count", "fallback_count", "fallback_ratio",
+        "retrieval_used_count", "retrieval_used_rate", "latency_ms", "tokens",
+        "speech_char_len",
+    ):
+        assert key in runtime_block, key
+    assert "by_status" in payload["track_b"]
+    assert "tournaments_total" in payload["track_c"]
+
+
+def test_runtime_metrics_404_for_unknown_game() -> None:
+    client = TestClient(app)
+    resp = client.get("/api/games/does-not-exist/runtime_metrics")
+    assert resp.status_code == 404

@@ -150,6 +150,31 @@ def game_metrics(game_id: str):
     return metrics
 
 
+@app.get("/api/games/{game_id}/runtime_metrics")
+def game_runtime_metrics(game_id: str):
+    """Per-game runtime metrics: LLM latency, tokens, speech length, decision validity.
+
+    Stable JSON schema usable by future dashboard clients without null-checks.
+    """
+    from backend.db.persist import get_runtime_metrics
+    metrics = get_runtime_metrics(game_id)
+    if metrics is None:
+        raise HTTPException(status_code=404, detail="Game not found")
+    return metrics
+
+
+@app.get("/api/metrics/aggregate")
+def metrics_aggregate(limit_games: int = 200):
+    """Cross-game aggregate metrics for Track B/C visualization.
+
+    Returns a stable schema covering game outcomes, runtime cost, win rate by
+    role / agent_type, Track B review status distribution, and Track C
+    strategy/patch/tournament summary.
+    """
+    from backend.db.persist import get_aggregate_metrics
+    return get_aggregate_metrics(limit_games=max(1, min(limit_games, 5000)))
+
+
 @app.get("/api/leaderboard")
 def leaderboard(role: Optional[str] = None, limit: int = 20):
     """Aggregated leaderboard rows (Track B). Filter by role if provided."""

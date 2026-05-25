@@ -8,6 +8,8 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 from typing import Any
 
+from sqlalchemy import func as sa_func
+
 from backend.db.database import SessionLocal
 from backend.db.database import init_db
 from backend.db.models import (
@@ -1326,5 +1328,343 @@ def list_evolution_rounds(*, limit: int = 20) -> list[dict]:
             }
             for r in rows
         ]
+    finally:
+        db.close()
+
+
+# ---------------------------------------------------------------------------
+# Runtime + aggregate metrics for Track B/C dashboards
+# ---------------------------------------------------------------------------
+
+_WOLF_ROLES = {"Werewolf", "WhiteWolfKing", "BigBadWolf", "WolfCub", "AlphaWolf"}
+
+
+def _stats_summary(values: list[float | int]) -> dict[str, float | int]:
+    """Min/max/mean/p50/p95/sum summary for a numeric list.
+
+    Returns a stable schema with zero defaults when input is empty so dashboard
+    clients can render without null-checks.
+    """
+    if not values:
+        return {"count": 0, "min": 0, "max": 0, "avg": 0.0, "p50": 0.0, "p95": 0.0, "sum": 0}
+    ordered = sorted(values)
+    n = len(ordered)
+
+    def _quantile(q: float) -> float:
+        idx = min(n - 1, max(0, int(round(q * (n - 1)))))
+        return float(ordered[idx])
+
+    total = sum(ordered)
+    return {
+        "count": n,
+        "min": ordered[0],
+        "max": ordered[-1],
+        "avg": round(total / n, 3),
+        "p50": _quantile(0.5),
+        "p95": _quantile(0.95),
+        "sum": total,
+    }
+
+
+def _new_runtime_bucket(*, seat_no: int | None = None, name: str | None = None, role: str | None = None) -> dict[str, Any]:
+    bucket: dict[str, Any] = {
+        "decision_count": 0,
+        "valid_count": 0,
+        "invalid_count": 0,
+        "llm_call_count": 0,
+        "latency_values": [],
+        "prompt_tokens_sum": 0,
+        "completion_tokens_sum": 0,
+        "speech_lengths": [],
+    }
+    if seat_no is not None:
+        bucket["seat_no"] = seat_no
+    if name is not None:
+        bucket["name"] = name
+    if role is not None:
+        bucket["role"] = role
+    return bucket
+
+
+def _accumulate_bucket(bucket: dict[str, Any], decision: AgentDecision) -> None:
+    bucket["decision_count"] += 1
+    if decision.is_valid:
+        bucket["valid_count"] += 1
+    else:
+        bucket["invalid_count"] += 1
+    if decision.latency_ms is not None:
+        bucket["llm_call_count"] += 1
+        bucket["latency_values"].append(int(decision.latency_ms))
+    if decision.prompt_tokens:
+        bucket["prompt_tokens_sum"] += int(decision.prompt_tokens)
+    if decision.completion_tokens:
+        bucket["completion_tokens_sum"] += int(decision.completion_tokens)
+    speech = (decision.parsed_action or {}).get("speech") if isinstance(decision.parsed_action, dict) else None
+    if isinstance(speech, str) and speech.strip():
+        bucket["speech_lengths"].append(len(speech))
+
+
+def _finalize_bucket(bucket: dict[str, Any]) -> None:
+    latencies = bucket.pop("latency_values", [])
+    speech_lengths = bucket.pop("speech_lengths", [])
+    bucket["latency_ms"] = _stats_summary(latencies)
+    bucket["speech_char_len"] = _stats_summary(speech_lengths)
+    bucket["validity_rate"] = round(bucket["valid_count"] / bucket["decision_count"], 4) if bucket["decision_count"] else 0.0
+
+
+def get_runtime_metrics(game_id: str) -> dict | None:
+    """Per-game runtime metrics derived from AgentDecision rows.
+
+    Stable response shape (always present even if zero):
+        game_id, status, winner, duration_s, decision_count, valid_decision_count,
+        invalid_decision_count, validity_rate, llm_call_count,
+        latency_ms{count,min,max,avg,p50,p95,sum},
+        tokens{prompt_sum,completion_sum,total_sum},
+        speech{count,char_len{...}},
+        by_role{role -> bucket},
+        by_player{player_id -> bucket}
+    """
+    init_db()
+    db = SessionLocal()
+    try:
+        game = db.query(Game).filter(Game.id == game_id).first()
+        if game is None:
+            return None
+        players = db.query(Player).filter(Player.game_id == game_id).all()
+        decisions = db.query(AgentDecision).filter(AgentDecision.game_id == game_id).all()
+
+        player_by_id = {p.id: p for p in players}
+        global_bucket = _new_runtime_bucket()
+        by_role: dict[str, dict[str, Any]] = {}
+        by_player: dict[str, dict[str, Any]] = {}
+        for d in decisions:
+            _accumulate_bucket(global_bucket, d)
+            player = player_by_id.get(d.player_id)
+            role = player.role if player else "Unknown"
+            role_bucket = by_role.setdefault(role, _new_runtime_bucket(role=role))
+            _accumulate_bucket(role_bucket, d)
+            player_bucket = by_player.setdefault(
+                d.player_id,
+                _new_runtime_bucket(
+                    seat_no=player.seat_no if player else None,
+                    name=player.name if player else None,
+                    role=role,
+                ),
+            )
+            _accumulate_bucket(player_bucket, d)
+
+        for bucket in [global_bucket, *by_role.values(), *by_player.values()]:
+            _finalize_bucket(bucket)
+
+        duration_s: float | None = None
+        if game.started_at and game.finished_at:
+            duration_s = round((game.finished_at - game.started_at).total_seconds(), 3)
+
+        payload = {
+            "game_id": game_id,
+            "status": game.status,
+            "winner": game.winner,
+            "duration_s": duration_s,
+            "decision_count": global_bucket["decision_count"],
+            "valid_decision_count": global_bucket["valid_count"],
+            "invalid_decision_count": global_bucket["invalid_count"],
+            "validity_rate": global_bucket["validity_rate"],
+            "llm_call_count": global_bucket["llm_call_count"],
+            "latency_ms": global_bucket["latency_ms"],
+            "tokens": {
+                "prompt_sum": global_bucket["prompt_tokens_sum"],
+                "completion_sum": global_bucket["completion_tokens_sum"],
+                "total_sum": global_bucket["prompt_tokens_sum"] + global_bucket["completion_tokens_sum"],
+            },
+            "speech": {
+                "count": global_bucket["speech_char_len"]["count"],
+                "char_len": global_bucket["speech_char_len"],
+            },
+            "by_role": by_role,
+            "by_player": by_player,
+        }
+        return _clean(payload)
+    finally:
+        db.close()
+
+
+def get_aggregate_metrics(limit_games: int = 200) -> dict[str, Any]:
+    """Cross-game aggregate metrics for Track B/C visualization.
+
+    Schema:
+        games: {total, finished, winners{wolf,villager,unknown}, avg_duration_s, avg_day_count}
+        runtime: {decision_count, llm_call_count, fallback_count, fallback_ratio,
+                  retrieval_used_count, retrieval_used_rate,
+                  latency_ms{...}, tokens{...}, speech_char_len{...}}
+        win_rate_by_role: {role -> {games, wins, win_rate}}
+        win_rate_by_agent_type: {agent_type -> {games, wins, win_rate}}
+        track_b: {published_total, approved, needs_revision, rejected, avg_score}
+        track_c: {strategy_docs_total, by_status, by_doc_type, patches_total, by_patch_status,
+                  tournaments_total, accepted, rejected}
+    """
+    init_db()
+    db = SessionLocal()
+    try:
+        games_query = (
+            db.query(Game)
+            .filter(Game.status == "finished")
+            .order_by(Game.finished_at.desc().nullslast(), Game.created_at.desc())
+            .limit(limit_games)
+        )
+        games = games_query.all()
+        total_games = db.query(Game).count()
+        finished_total = db.query(Game).filter(Game.status == "finished").count()
+
+        winners = {"wolf": 0, "villager": 0, "unknown": 0}
+        duration_values: list[float] = []
+        day_counts: list[int] = []
+        for g in games:
+            key = g.winner if g.winner in ("wolf", "villager") else "unknown"
+            winners[key] = winners.get(key, 0) + 1
+            if g.started_at and g.finished_at:
+                duration_values.append((g.finished_at - g.started_at).total_seconds())
+            day_counts.append(int(g.current_day or 0))
+
+        avg_duration = round(sum(duration_values) / len(duration_values), 3) if duration_values else 0.0
+        avg_day = round(sum(day_counts) / len(day_counts), 3) if day_counts else 0.0
+
+        game_ids = [g.id for g in games]
+        winners_by_game = {g.id: g.winner for g in games}
+
+        win_rate_role: dict[str, dict[str, Any]] = {}
+        win_rate_agent: dict[str, dict[str, Any]] = {}
+        if game_ids:
+            players = db.query(Player).filter(Player.game_id.in_(game_ids)).all()
+            for p in players:
+                winner = winners_by_game.get(p.game_id)
+                player_won = (
+                    winner == "wolf" and p.role in _WOLF_ROLES
+                ) or (
+                    winner == "villager" and p.role not in _WOLF_ROLES
+                )
+                role_bucket = win_rate_role.setdefault(p.role, {"games": 0, "wins": 0})
+                role_bucket["games"] += 1
+                role_bucket["wins"] += 1 if player_won else 0
+                agent_bucket = win_rate_agent.setdefault(p.agent_type or "unknown", {"games": 0, "wins": 0})
+                agent_bucket["games"] += 1
+                agent_bucket["wins"] += 1 if player_won else 0
+            for bucket in win_rate_role.values():
+                bucket["win_rate"] = round(bucket["wins"] / bucket["games"], 4) if bucket["games"] else 0.0
+            for bucket in win_rate_agent.values():
+                bucket["win_rate"] = round(bucket["wins"] / bucket["games"], 4) if bucket["games"] else 0.0
+
+        runtime_bucket = _new_runtime_bucket()
+        fallback_count = 0
+        retrieval_used_count = 0
+        if game_ids:
+            decisions = db.query(AgentDecision).filter(AgentDecision.game_id.in_(game_ids)).all()
+            for d in decisions:
+                _accumulate_bucket(runtime_bucket, d)
+                meta = (d.parsed_action or {}).get("metadata") if isinstance(d.parsed_action, dict) else None
+                if isinstance(meta, dict):
+                    if meta.get("fallback"):
+                        fallback_count += 1
+                    if meta.get("retrieval_used") or (d.parsed_action or {}).get("retrieval_used"):
+                        retrieval_used_count += 1
+        _finalize_bucket(runtime_bucket)
+
+        decision_total = runtime_bucket["decision_count"]
+        fallback_ratio = round(fallback_count / decision_total, 4) if decision_total else 0.0
+        retrieval_rate = round(retrieval_used_count / decision_total, 4) if decision_total else 0.0
+
+        published_total = db.query(PublishedReview).count()
+        approved = db.query(PublishedReview).filter(PublishedReview.publish_allowed.is_(True)).count()
+        review_status_counts: dict[str, int] = {}
+        for status_value, count in (
+            db.query(PublishedReview.status, sa_func.count(PublishedReview.id))
+            .group_by(PublishedReview.status)
+            .all()
+        ):
+            review_status_counts[status_value or "unknown"] = int(count)
+        review_score_values = [
+            float(s) for (s,) in db.query(PublishedReview.score).all() if s is not None
+        ]
+        avg_review_score = round(sum(review_score_values) / len(review_score_values), 4) if review_score_values else 0.0
+
+        doc_status_counts: dict[str, int] = {}
+        doc_type_counts: dict[str, int] = {}
+        for status_value, count in (
+            db.query(StrategyKnowledgeDoc.status, sa_func.count(StrategyKnowledgeDoc.id))
+            .group_by(StrategyKnowledgeDoc.status)
+            .all()
+        ):
+            doc_status_counts[status_value or "unknown"] = int(count)
+        for type_value, count in (
+            db.query(StrategyKnowledgeDoc.doc_type, sa_func.count(StrategyKnowledgeDoc.id))
+            .group_by(StrategyKnowledgeDoc.doc_type)
+            .all()
+        ):
+            doc_type_counts[type_value or "unknown"] = int(count)
+        docs_total = db.query(StrategyKnowledgeDoc).count()
+
+        patch_status_counts: dict[str, int] = {}
+        for status_value, count in (
+            db.query(StrategyPatch.status, sa_func.count(StrategyPatch.id))
+            .group_by(StrategyPatch.status)
+            .all()
+        ):
+            patch_status_counts[status_value or "unknown"] = int(count)
+        patches_total = db.query(StrategyPatch).count()
+
+        tournaments_total = db.query(EvolutionTournament).count()
+        tournament_accepted = sum(
+            1
+            for t in db.query(EvolutionTournament).all()
+            if isinstance(t.decision, dict) and t.decision.get("accepted") is True
+        )
+        tournament_rejected = tournaments_total - tournament_accepted
+
+        payload = {
+            "games": {
+                "total": total_games,
+                "finished_total": finished_total,
+                "sampled": len(games),
+                "winners": winners,
+                "avg_duration_s": avg_duration,
+                "avg_day_count": avg_day,
+            },
+            "runtime": {
+                "decision_count": decision_total,
+                "valid_decision_count": runtime_bucket["valid_count"],
+                "invalid_decision_count": runtime_bucket["invalid_count"],
+                "validity_rate": runtime_bucket["validity_rate"],
+                "llm_call_count": runtime_bucket["llm_call_count"],
+                "fallback_count": fallback_count,
+                "fallback_ratio": fallback_ratio,
+                "retrieval_used_count": retrieval_used_count,
+                "retrieval_used_rate": retrieval_rate,
+                "latency_ms": runtime_bucket["latency_ms"],
+                "tokens": {
+                    "prompt_sum": runtime_bucket["prompt_tokens_sum"],
+                    "completion_sum": runtime_bucket["completion_tokens_sum"],
+                    "total_sum": runtime_bucket["prompt_tokens_sum"] + runtime_bucket["completion_tokens_sum"],
+                },
+                "speech_char_len": runtime_bucket["speech_char_len"],
+            },
+            "win_rate_by_role": win_rate_role,
+            "win_rate_by_agent_type": win_rate_agent,
+            "track_b": {
+                "published_total": published_total,
+                "approved": approved,
+                "by_status": review_status_counts,
+                "avg_score": avg_review_score,
+            },
+            "track_c": {
+                "strategy_docs_total": docs_total,
+                "by_status": doc_status_counts,
+                "by_doc_type": doc_type_counts,
+                "patches_total": patches_total,
+                "by_patch_status": patch_status_counts,
+                "tournaments_total": tournaments_total,
+                "tournaments_accepted": tournament_accepted,
+                "tournaments_rejected": tournament_rejected,
+            },
+        }
+        return _clean(payload)
     finally:
         db.close()
