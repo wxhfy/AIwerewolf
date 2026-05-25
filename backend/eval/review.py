@@ -57,6 +57,14 @@ class PlayerScore:
     survival_score: float
     mistake_penalty: float
     final_score: float
+    # Outcome-independent score (0-100): same formula as final_score but
+    # drops camp_result_score and re-normalizes the remaining weights.
+    # Use this when comparing decision quality across players regardless of
+    # whether they happened to be on the winning side.
+    process_score: float = 0.0
+    # Pure outcome contribution (0-100): 100 if player's alignment won.
+    # final_score ≈ 0.75 * process_score + 0.25 * outcome_bonus
+    outcome_bonus: float = 0.0
     highlights: list[str] = field(default_factory=list)
     mistakes: list[str] = field(default_factory=list)
     adjusted_final_score: float | None = None
@@ -110,6 +118,7 @@ class MVPResult:
     mvp_score: float
     reason: str
     evidence: list[str]
+    evidence_event_ids: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -197,6 +206,7 @@ class BadCaseReport:
     description: str
     suggested_fix: str
     severity: str
+    evidence_event_ids: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -210,6 +220,7 @@ class TurningPoint:
     impact: float
     related_players: list[str] = field(default_factory=list)
     evidence: list[str] = field(default_factory=list)
+    evidence_event_ids: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -223,6 +234,7 @@ class StrategySuggestion:
     source: str
     priority: str
     metadata: dict[str, Any] = field(default_factory=dict)
+    evidence_event_ids: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -235,7 +247,12 @@ class PlayerReview:
     alignment: str
     rule_score: float
     adjusted_final_score: float
-    rank: int
+    # Outcome-independent process score (0-100). Use to compare decision
+    # quality across players without "wolves won" inflating wolf scores or
+    # "village lost" deflating villagers who voted correctly.
+    process_score: float = 0.0
+    outcome_bonus: float = 0.0
+    rank: int = 0
     strengths: list[str] = field(default_factory=list)
     weaknesses: list[str] = field(default_factory=list)
     mistakes: list[str] = field(default_factory=list)
@@ -266,6 +283,11 @@ class CounterfactualCase:
     severity: str = "minor"
     source_bad_case_id: str | None = None
     source_turning_point_id: str | None = None
+    # B §13 effect_type: vote_flip → exact_recalculation, skill → local_recalculation,
+    # info_release → estimated. Drives ValidAgent §21 CounterfactualSoundnessGate.
+    effect_type: str = "estimated"
+    recomputed_outcome: dict[str, Any] = field(default_factory=dict)
+    evidence_event_ids: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -282,6 +304,7 @@ class StrategyKnowledge:
     evidence_summary: str
     safe_for_agent: bool
     metadata: dict[str, Any] = field(default_factory=dict)
+    evidence_event_ids: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -486,8 +509,8 @@ class MVPSelector:
         winning_best = max(winning_scores, key=lambda score: self._mvp_score(score))
 
         return [
-            self._build_result(global_best, "global_mvp", bonus_map.get(global_best.player_id, [])),
-            self._build_result(winning_best, "winning_camp_mvp", bonus_map.get(winning_best.player_id, [])),
+            self._build_result(global_best, "global_mvp", bonus_map.get(global_best.player_id, []), state),
+            self._build_result(winning_best, "winning_camp_mvp", bonus_map.get(winning_best.player_id, []), state),
         ]
 
     def _mvp_score(self, score: PlayerScore) -> float:
@@ -499,8 +522,14 @@ class MVPSelector:
         score: PlayerScore,
         mvp_type: str,
         bonuses: Sequence[ReviewBonus],
+        state: GameState,
     ) -> MVPResult:
         evidence = [item for bonus in bonuses for item in bonus.evidence][:4] or score.highlights[:3]
+        event_ids = [
+            event.id
+            for event in state.events
+            if (event.payload.get("actor_id") or event.payload.get("voter_id") or event.payload.get("player_id")) == score.player_id
+        ][-4:]
         if score.impact_bonus > 0 and score.semantic_highlight_bonus > 0:
             reason = "硬规则表现稳定，同时在关键局势影响和高质量复盘高光上都有突出贡献。"
         elif score.impact_bonus > 0:
@@ -518,6 +547,7 @@ class MVPSelector:
             mvp_score=self._mvp_score(score),
             reason=reason,
             evidence=evidence,
+            evidence_event_ids=event_ids,
         )
 
 
@@ -1178,6 +1208,7 @@ class MetricsCalculator:
                             f"{player.name} voted wolf teammate {target.name}.",
                             "Avoid same-camp cross voting unless the sacrifice is clearly strategic and profitable.",
                             "major",
+                            evidence_event_ids=[event.id],
                         )
                     )
                 if player.alignment == Alignment.VILLAGE and target_id in checked_good_ids:
@@ -1190,6 +1221,7 @@ class MetricsCalculator:
                             f"{player.name} voted a checked-good player {target.name}.",
                             "Respect confirmed good information and reevaluate the read chain before voting.",
                             "major",
+                            evidence_event_ids=[event.id],
                         )
                     )
 
@@ -1208,19 +1240,20 @@ class MetricsCalculator:
                                 f"{player.name} poisoned villager-side player {target.name}.",
                                 "Hold poison until the wolf read is stronger or confirmed by public / private evidence.",
                                 "critical",
+                                evidence_event_ids=[event.id],
                             )
                         )
 
             if player.role == Role.SEER:
-                wolf_checks = [
-                    event.payload
+                wolf_check_events = [
+                    event
                     for event in ctx.private_info_events
                     if event.payload.get("kind") == "seer_result" and event.payload.get("is_wolf")
                 ]
-                if wolf_checks:
+                if wolf_check_events:
                     released_targets = self._released_check_targets(ctx)
-                    for payload in wolf_checks:
-                        target_name = str(payload.get("target_name") or "")
+                    for check_event in wolf_check_events:
+                        target_name = str(check_event.payload.get("target_name") or "")
                         if target_name and target_name not in released_targets:
                             reports.append(
                                 self._report(
@@ -1231,6 +1264,7 @@ class MetricsCalculator:
                                     f"{player.name} checked wolf {target_name} but did not release the information later.",
                                     "Once you have a wolf result, convert it into public vote pressure in the next day speech.",
                                     "major",
+                                    evidence_event_ids=[check_event.id],
                                 )
                             )
                             break
@@ -1251,11 +1285,12 @@ class MetricsCalculator:
                                 f"{player.name} shot villager-side player {target.name}.",
                                 "Hunter shots should convert death into a high-confidence wolf trade, not friendly fire.",
                                 "critical",
+                                evidence_event_ids=[event.id],
                             )
                         )
 
             if player.role == Role.GUARD:
-                repeated_target = self._repeated_guard_target(state, ctx)
+                repeated_target, repeat_event_ids = self._repeated_guard_target_with_evidence(state, ctx)
                 if repeated_target is not None:
                     reports.append(
                         self._report(
@@ -1266,17 +1301,24 @@ class MetricsCalculator:
                             f"{player.name} repeated the same guard target {repeated_target.name} on consecutive nights.",
                             "Rotate the guard target or justify the repeat with a strong wolf-read spike instead of auto-piloting the same protection.",
                             "major",
+                            evidence_event_ids=repeat_event_ids,
                         )
                     )
 
-            fallback_count = sum(
-                1
+            fallback_records = [
+                record
                 for record in state.decision_records
                 if record.player_id == player.id and (
                     not record.is_valid or str((record.parsed_action or {}).get("source", "")) == "fallback"
                 )
-            )
+            ]
+            fallback_count = len(fallback_records)
             if fallback_count >= 3:
+                fallback_event_ids = [
+                    str(getattr(record, "event_id", "") or "")
+                    for record in fallback_records[:3]
+                    if getattr(record, "event_id", "")
+                ]
                 reports.append(
                     self._report(
                         state,
@@ -1286,6 +1328,7 @@ class MetricsCalculator:
                         f"{player.name} triggered invalid parsing or fallback handling {fallback_count} times during the game.",
                         "Reduce parser failures and fallback overuse so the agent can keep its intended reasoning path online.",
                         "major",
+                        evidence_event_ids=fallback_event_ids,
                     )
                 )
 
@@ -1306,11 +1349,14 @@ class MetricsCalculator:
                         f"{player.name} mentioned private night-side information in a public speech.",
                         "Public speech should avoid directly exposing private night information, especially teammate or knife details.",
                         "major",
+                        evidence_event_ids=[risky_speech.id],
                     )
                 )
 
             if player.role == Role.VILLAGER:
-                consecutive_good_votes = self._consecutive_votes_on_alignment(state, ctx.vote_events, Alignment.VILLAGE)
+                consecutive_good_votes, consecutive_vote_event_ids = self._consecutive_votes_on_alignment_with_evidence(
+                    state, ctx.vote_events, Alignment.VILLAGE
+                )
                 if consecutive_good_votes >= 3:
                     reports.append(
                         self._report(
@@ -1321,6 +1367,7 @@ class MetricsCalculator:
                             f"{player.name} repeatedly voted villager-side players ({consecutive_good_votes} times).",
                             "Break the vote pattern by cross-checking speech, wagon origin, and confirmed information before revoting.",
                             "major",
+                            evidence_event_ids=consecutive_vote_event_ids,
                         )
                     )
                 elif consecutive_good_votes >= 2:
@@ -1333,6 +1380,7 @@ class MetricsCalculator:
                             f"{player.name} voted villager-side players in consecutive rounds.",
                             "Reassess why your reads keep landing on villagers and compare your vote path with public flips.",
                             "minor",
+                            evidence_event_ids=consecutive_vote_event_ids,
                         )
                     )
 
@@ -1450,6 +1498,22 @@ class MetricsCalculator:
         )
         final_score = round(self._clamp(base_total) * 100, 2)
 
+        # Outcome-independent process score: drop camp_result_score and
+        # re-normalize the remaining (0.75 total) back to 1.0. This lets the
+        # caller see decision quality without outcome bias inflating it. See
+        # DEVELOPMENT_ISSUES §B on outcome-vs-process separation.
+        # Mistake penalty stays — bad decisions are bad regardless of outcome.
+        process_total = (
+            0.25 * role_task_score
+            + 0.20 * vote_score
+            + 0.10 * speech_score
+            + 0.10 * skill_score
+            + 0.10 * survival_score
+            - mistake_penalty
+        ) / 0.75
+        process_score = round(self._clamp(process_total) * 100, 2)
+        outcome_bonus = round(camp_result_score * 100, 2)
+
         persona_name = player.name
         return PlayerScore(
             player_id=player.id,
@@ -1466,6 +1530,8 @@ class MetricsCalculator:
             survival_score=round(survival_score, 4),
             mistake_penalty=round(mistake_penalty, 4),
             final_score=final_score,
+            process_score=process_score,
+            outcome_bonus=outcome_bonus,
             highlights=highlights,
             mistakes=mistakes,
         )
@@ -1678,16 +1744,35 @@ class MetricsCalculator:
         vote_events: Sequence[GameEvent],
         alignment: Alignment,
     ) -> int:
+        best, _ = self._consecutive_votes_on_alignment_with_evidence(state, vote_events, alignment)
+        return best
+
+    def _consecutive_votes_on_alignment_with_evidence(
+        self,
+        state: GameState,
+        vote_events: Sequence[GameEvent],
+        alignment: Alignment,
+    ) -> tuple[int, list[str]]:
+        """Same streak count as _consecutive_votes_on_alignment, but also returns
+        the event ids that formed the longest matching run so detectors can
+        attach evidence_event_ids without re-scanning the events.
+        """
         streak = 0
         best = 0
+        current_ids: list[str] = []
+        best_ids: list[str] = []
         for event in sorted(vote_events, key=lambda item: (item.day, item.ts)):
             target = self._target_player(state, event)
             if target is not None and target.alignment == alignment:
                 streak += 1
-                best = max(best, streak)
+                current_ids.append(event.id)
+                if streak > best:
+                    best = streak
+                    best_ids = list(current_ids)
             else:
                 streak = 0
-        return best
+                current_ids = []
+        return best, best_ids
 
     def _speech_hit_eliminated_target(self, state: GameState, speech: str) -> bool:
         eliminated_names = {
@@ -1850,14 +1935,23 @@ class MetricsCalculator:
         return self._clamp(1.0 - repeated / len(guard_events))
 
     def _repeated_guard_target(self, state: GameState, ctx: _PlayerContext) -> Player | None:
+        target, _ = self._repeated_guard_target_with_evidence(state, ctx)
+        return target
+
+    def _repeated_guard_target_with_evidence(
+        self, state: GameState, ctx: _PlayerContext
+    ) -> tuple[Player | None, list[str]]:
         guard_events = [event for event in sorted(ctx.night_action_events, key=lambda item: (item.day, item.ts)) if event.payload.get("action_type") == "guard"]
         last_target_id: str | None = None
+        last_event_id: str | None = None
         for event in guard_events:
             target_id = event.payload.get("target_id")
             if target_id and target_id == last_target_id:
-                return state.player(str(target_id))
+                ids = [last_event_id, event.id]
+                return state.player(str(target_id)), [eid for eid in ids if eid]
             last_target_id = str(target_id) if target_id else None
-        return None
+            last_event_id = event.id
+        return None, []
 
     def _villager_logic_consistency(self, state: GameState, ctx: _PlayerContext) -> float:
         if not ctx.vote_events:
@@ -1934,6 +2028,7 @@ class MetricsCalculator:
         description: str,
         suggested_fix: str,
         severity: str,
+        evidence_event_ids: list[str] | None = None,
     ) -> BadCaseReport:
         return BadCaseReport(
             game_id=state.id,
@@ -1944,6 +2039,7 @@ class MetricsCalculator:
             description=description,
             suggested_fix=suggested_fix,
             severity=severity,
+            evidence_event_ids=list(evidence_event_ids or []),
         )
 
     def _target_player(self, state: GameState, event: GameEvent) -> Player | None:
@@ -2046,7 +2142,7 @@ class ReviewReportBuilder:
             for index, score in enumerate(ranked_scores, start=1)
         ]
 
-        turning_points = self._build_turning_points(bonuses, bad_cases, score_map)
+        turning_points = self._build_turning_points(bonuses, bad_cases, score_map, state=state)
         counterfactuals = self.counterfactual_analyzer.analyze(
             state,
             metrics,
@@ -2054,7 +2150,7 @@ class ReviewReportBuilder:
             turning_points=turning_points,
             review_bonuses=bonuses,
         )
-        strategy_suggestions = self._build_strategy_suggestions(metrics.player_scores, bad_cases, bonuses, counterfactuals, turning_points)
+        strategy_suggestions = self._build_strategy_suggestions(metrics.player_scores, bad_cases, bonuses, counterfactuals, turning_points, state=state)
         player_reviews = self._build_player_reviews(ranked_scores, bonuses, bad_cases, counterfactuals)
         game_summary = self._build_game_summary(metrics, turning_points, mvp_results)
 
@@ -2128,6 +2224,8 @@ class ReviewReportBuilder:
                     alignment=score.alignment,
                     rule_score=score.final_score,
                     adjusted_final_score=score.adjusted_final_score if score.adjusted_final_score is not None else score.final_score,
+                    process_score=score.process_score,
+                    outcome_bonus=score.outcome_bonus,
                     rank=rank,
                     strengths=self._player_strengths(score, player_bonuses),
                     weaknesses=weaknesses,
@@ -2148,6 +2246,8 @@ class ReviewReportBuilder:
         bonuses: Sequence[ReviewBonus],
         bad_cases: Sequence[BadCaseReport],
         score_map: dict[str, PlayerScore],
+        *,
+        state: GameState | None = None,
     ) -> list[TurningPoint]:
         turning_points: list[TurningPoint] = []
         for bonus in bonuses:
@@ -2159,6 +2259,7 @@ class ReviewReportBuilder:
                 continue
             score = score_map.get(bonus.player_id)
             related = [score.player_name] if score is not None else [bonus.player_id]
+            bonus_event_ids = self._actor_event_ids(state, bonus.player_id, bonus.day) if state else []
             turning_points.append(
                 TurningPoint(
                     day=bonus.day,
@@ -2168,6 +2269,7 @@ class ReviewReportBuilder:
                     impact=round(min(abs(bonus.score_delta), 5.0), 2),
                     related_players=related,
                     evidence=list(bonus.evidence),
+                    evidence_event_ids=bonus_event_ids,
                 )
             )
         for report in bad_cases:
@@ -2182,6 +2284,7 @@ class ReviewReportBuilder:
                     impact=4.0,
                     related_players=[report.player_name],
                     evidence=[report.suggested_fix],
+                    evidence_event_ids=list(report.evidence_event_ids),
                 )
             )
         unique: dict[tuple[Any, ...], TurningPoint] = {}
@@ -2191,6 +2294,38 @@ class ReviewReportBuilder:
                 unique[key] = point
         return sorted(unique.values(), key=lambda point: ((point.day or 0), point.impact), reverse=True)
 
+    def _actor_event_ids(
+        self,
+        state: GameState | None,
+        player_id: str,
+        day: int | None,
+        *,
+        limit: int = 4,
+    ) -> list[str]:
+        """Look up the most recent event ids actor `player_id` produced on `day`.
+
+        Used by turning-point / suggestion builders that only know "who and when"
+        but need a concrete event chain so the resulting StrategyKnowledgeDoc
+        has a non-empty source_event_ids when DreamJob picks it up.
+        """
+        if state is None or not player_id:
+            return []
+        ids: list[str] = []
+        for event in state.events:
+            actor_id = event.payload.get("actor_id") or event.payload.get("voter_id") or event.payload.get("player_id")
+            if actor_id != player_id:
+                continue
+            if day is not None and event.day != day:
+                continue
+            ids.append(event.id)
+        if not ids and day is not None:
+            # Fall back to actor's events regardless of day so we still surface evidence.
+            for event in state.events:
+                actor_id = event.payload.get("actor_id") or event.payload.get("voter_id") or event.payload.get("player_id")
+                if actor_id == player_id:
+                    ids.append(event.id)
+        return ids[-limit:]
+
     def _build_strategy_suggestions(
         self,
         player_scores: Sequence[PlayerScore],
@@ -2198,11 +2333,14 @@ class ReviewReportBuilder:
         bonuses: Sequence[ReviewBonus],
         counterfactuals: Sequence[CounterfactualCase],
         turning_points: Sequence[TurningPoint],
+        *,
+        state: GameState | None = None,
     ) -> list[StrategySuggestion]:
         suggestions: list[StrategySuggestion] = []
         reports_by_player: dict[str, list[BadCaseReport]] = defaultdict(list)
         counterfactuals_by_player: dict[str, list[CounterfactualCase]] = defaultdict(list)
         score_by_id = {score.player_id: score for score in player_scores}
+        name_to_player_id = {player.name: player.id for player in state.players} if state else {}
         for report in bad_cases:
             reports_by_player[report.player_name].append(report)
             suggestions.append(
@@ -2219,6 +2357,7 @@ class ReviewReportBuilder:
                         "source_type": "bad_case",
                         "evidence_summary": self._zh_text(report.description),
                     },
+                    evidence_event_ids=list(report.evidence_event_ids),
                 )
             )
             if report.severity in {"critical", "major"}:
@@ -2236,6 +2375,7 @@ class ReviewReportBuilder:
                             "source_type": "bad_case",
                             "evidence_summary": self._zh_text(report.description),
                         },
+                        evidence_event_ids=list(report.evidence_event_ids),
                     )
                 )
         for item in counterfactuals:
@@ -2258,6 +2398,7 @@ class ReviewReportBuilder:
                                 "source_type": "counterfactual",
                                 "evidence_summary": self._zh_text(item.expected_effect),
                             },
+                            evidence_event_ids=list(item.evidence_event_ids),
                         )
                     )
 
@@ -2267,6 +2408,7 @@ class ReviewReportBuilder:
             score = score_by_id.get(bonus.player_id)
             if score is None or bonus.bonus_type not in {"seer_info_conversion", "seer_good_clear_guidance", "key_role_save", "guard_block_kill", "guard_key_role_cover", "final_wolf_shot", "wolf_power_role_push", "villager_vote_chain"}:
                 continue
+            bonus_event_ids = self._actor_event_ids(state, bonus.player_id, bonus.day)
             suggestions.append(
                 StrategySuggestion(
                     target_type="role",
@@ -2281,26 +2423,33 @@ class ReviewReportBuilder:
                         "source_type": "review_bonus",
                         "evidence_summary": "；".join(self._zh_text(item) for item in bonus.evidence[:2]),
                     },
+                    evidence_event_ids=bonus_event_ids,
                 )
             )
 
         for score in player_scores:
             cf_items = counterfactuals_by_player.get(score.player_name, [])
             if cf_items and not reports_by_player.get(score.player_name):
+                cf_first = cf_items[0]
+                player_id_for_cf = name_to_player_id.get(score.player_name)
+                cf_event_ids = list(cf_first.evidence_event_ids)
+                if not cf_event_ids and player_id_for_cf:
+                    cf_event_ids = self._actor_event_ids(state, player_id_for_cf, cf_first.day)
                 suggestions.append(
                     StrategySuggestion(
                         target_type="player",
                         target=score.player_name,
                         suggestion_type="report_suggestion",
-                        suggestion=self._game_specific_counterfactual_suggestion(score, cf_items[0]),
-                        source=self._zh_text(cf_items[0].expected_effect),
-                        priority="high" if cf_items[0].confidence >= 0.75 else "medium",
+                        suggestion=self._game_specific_counterfactual_suggestion(score, cf_first),
+                        source=self._zh_text(cf_first.expected_effect),
+                        priority="high" if cf_first.confidence >= 0.75 else "medium",
                         metadata={
                             "scope": "game_specific",
                             "safe_for_agent": False,
                             "source_type": "counterfactual",
-                            "evidence_summary": self._zh_text(cf_items[0].expected_effect),
+                            "evidence_summary": self._zh_text(cf_first.expected_effect),
                         },
+                        evidence_event_ids=cf_event_ids,
                     )
                 )
 
@@ -2682,6 +2831,7 @@ class CounterfactualAnalyzer:
             if pivot_vote is not None:
                 voter = state.player(str(pivot_vote.payload.get("voter_id")))
                 current_target = state.player(str(pivot_vote.payload.get("target_id")))
+                recomputed = self._recompute_vote_flip(ordered_votes, voter.id, wolf_target_id, exiled.id)
                 cases.append(
                     CounterfactualCase(
                         case_id=f"{state.id}-vote-{day}-{voter.id}",
@@ -2701,9 +2851,13 @@ class CounterfactualAnalyzer:
                         severity="major",
                         source_bad_case_id=source_bad_case_id,
                         source_turning_point_id=source_turning_point_id,
+                        effect_type="exact_recalculation",
+                        recomputed_outcome=recomputed,
+                        evidence_event_ids=[pivot_vote.id] + [vote.id for vote in ordered_votes if vote.day == day][:3],
                     )
                 )
             else:
+                recomputed = {"tally_unchanged": True, "original_exile": exiled.id, "alternative_target": wolf_target.id}
                 cases.append(
                     CounterfactualCase(
                         case_id=f"{state.id}-vote-{day}-{exiled.id}",
@@ -2723,6 +2877,9 @@ class CounterfactualAnalyzer:
                         severity="major",
                         source_bad_case_id=source_bad_case_id,
                         source_turning_point_id=source_turning_point_id,
+                        effect_type="exact_recalculation",
+                        recomputed_outcome=recomputed,
+                        evidence_event_ids=[vote.id for vote in ordered_votes if vote.day == day][:4],
                     )
                 )
         return cases
@@ -2753,6 +2910,9 @@ class CounterfactualAnalyzer:
                             evidence=[f"Poison directly killed {target.name}.", "This was flagged as a critical mis-poison."],
                             severity="critical",
                             source_bad_case_id=self._find_bad_case_id(bad_cases, event.day, actor.name, "ability"),
+                            effect_type="local_recalculation",
+                            recomputed_outcome={"avoided_death": target.id, "village_survivors_delta": 1},
+                            evidence_event_ids=[event.id],
                         )
                     )
             if event.type == EventType.NIGHT_ACTION and event.payload.get("action_type") == "attack":
@@ -2783,6 +2943,9 @@ class CounterfactualAnalyzer:
                             confidence=0.7,
                             evidence=[f"{target.name} died to the wolf attack on night {event.day}.", f"{target.role.value} is a key village-side role."],
                             severity="major",
+                            effect_type="local_recalculation",
+                            recomputed_outcome={"avoided_death": target.id, "preserved_role": target.role.value},
+                            evidence_event_ids=[event.id],
                         )
                     )
             if event.type == EventType.HUNTER_SHOT:
@@ -2804,6 +2967,9 @@ class CounterfactualAnalyzer:
                             evidence=[f"Hunter shot removed {target.name}.", "The shot was flagged as a critical mistake."],
                             severity="critical",
                             source_bad_case_id=self._find_bad_case_id(bad_cases, event.day, hunter.name, "ability"),
+                            effect_type="local_recalculation",
+                            recomputed_outcome={"avoided_friendly_fire": target.id},
+                            evidence_event_ids=[event.id],
                         )
                     )
         return cases
@@ -2853,6 +3019,9 @@ class CounterfactualAnalyzer:
                         ],
                         severity="major",
                         source_bad_case_id=bad_case_id,
+                        effect_type="estimated",
+                        recomputed_outcome={"estimated_target_suspicion_delta": "+0.30"},
+                        evidence_event_ids=[check_event.id],
                     )
                 )
                 break
@@ -2874,6 +3043,35 @@ class CounterfactualAnalyzer:
             if target_id == exiled_id and after_gap >= 1 and before_gap <= 0:
                 pivot = event
         return pivot
+
+    def _recompute_vote_flip(
+        self,
+        ordered_votes: Sequence[GameEvent],
+        voter_id: str,
+        new_target_id: str,
+        original_exile_id: str,
+    ) -> dict[str, Any]:
+        """B §13.1 exact_recalculation: swap one vote, recount the tally,
+        report the new exile (highest count, ties broken alphabetically — same
+        as engine ResolutionEngine convention). Returns dict for evidence."""
+        tally: dict[str, int] = defaultdict(int)
+        for event in ordered_votes:
+            actual_voter = str(event.payload.get("voter_id"))
+            actual_target = str(event.payload.get("target_id"))
+            effective_target = new_target_id if actual_voter == voter_id else actual_target
+            tally[effective_target] += 1
+        if not tally:
+            return {"new_tally": {}, "new_exile": None, "outcome_changed": False}
+        max_votes = max(tally.values())
+        candidates = sorted(tid for tid, count in tally.items() if count == max_votes)
+        new_exile = candidates[0]
+        return {
+            "new_tally": dict(tally),
+            "new_exile": new_exile,
+            "original_exile": original_exile_id,
+            "outcome_changed": new_exile != original_exile_id,
+            "method": "exact_recalculation",
+        }
 
     def _find_bad_case_id(
         self,
@@ -3008,6 +3206,12 @@ class MarkdownReportRenderer:
             lines.append(f"- 整体评价：{review.overall_summary}")
             delta = round(review.adjusted_final_score - review.rule_score, 2)
             lines.append(f"- 分数概览：硬规则分 {review.rule_score:.2f}，复盘加权 {delta:+.2f}，最终分 {review.adjusted_final_score:.2f}。")
+            # Show the outcome-vs-process split so wolf-win inflation is visible.
+            if review.process_score or review.outcome_bonus:
+                lines.append(
+                    f"- 过程/胜负分解：过程分 {review.process_score:.2f}（决策合理性，不含胜负）"
+                    f" + 胜负加成 {review.outcome_bonus:.2f}（阵营是否取胜）。"
+                )
             lines.append(f"- 得分解读：{review.score_summary}")
             lines.extend(["", "  硬规则得分分解", "", "| 维度 | 说明 |", "| --- | --- |"])
             for item in review.rule_score_reasons or ["无"]:
@@ -3616,6 +3820,7 @@ class StrategyKnowledgeExtractor:
                     evidence_summary=self._sanitize_text(suggestion.source, names),
                     safe_for_agent=True,
                     metadata={"target_type": suggestion.target_type},
+                    evidence_event_ids=list(suggestion.evidence_event_ids),
                 )
             )
         return items
@@ -3639,6 +3844,7 @@ class StrategyKnowledgeExtractor:
                     ),
                     safe_for_agent=True,
                     metadata={"severity": case.severity, "mistake_type": case.mistake_type},
+                    evidence_event_ids=list(case.evidence_event_ids),
                 )
             )
         return items
@@ -3662,6 +3868,7 @@ class StrategyKnowledgeExtractor:
                     evidence_summary=self._sanitize_text(case.expected_effect, names),
                     safe_for_agent=True,
                     metadata={"confidence": case.confidence, "counterfactual_type": case.counterfactual_type},
+                    evidence_event_ids=list(case.evidence_event_ids),
                 )
             )
         return items
@@ -3685,6 +3892,7 @@ class StrategyKnowledgeExtractor:
                     evidence_summary=self._sanitize_text(point.title, names),
                     safe_for_agent=True,
                     metadata={"impact": point.impact},
+                    evidence_event_ids=list(point.evidence_event_ids),
                 )
             )
         return items
