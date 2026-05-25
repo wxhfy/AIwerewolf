@@ -1515,11 +1515,11 @@ def get_aggregate_metrics(limit_games: int = 200) -> dict[str, Any]:
         total_games = db.query(Game).count()
         finished_total = db.query(Game).filter(Game.status == "finished").count()
 
-        winners = {"wolf": 0, "villager": 0, "unknown": 0}
+        winners = {"wolf": 0, "village": 0, "unknown": 0}
         duration_values: list[float] = []
         day_counts: list[int] = []
         for g in games:
-            key = g.winner if g.winner in ("wolf", "villager") else "unknown"
+            key = g.winner if g.winner in ("wolf", "village") else "unknown"
             winners[key] = winners.get(key, 0) + 1
             if g.started_at and g.finished_at:
                 duration_values.append((g.finished_at - g.started_at).total_seconds())
@@ -1540,7 +1540,7 @@ def get_aggregate_metrics(limit_games: int = 200) -> dict[str, Any]:
                 player_won = (
                     winner == "wolf" and p.role in _WOLF_ROLES
                 ) or (
-                    winner == "villager" and p.role not in _WOLF_ROLES
+                    winner == "village" and p.role not in _WOLF_ROLES
                 )
                 role_bucket = win_rate_role.setdefault(p.role, {"games": 0, "wins": 0})
                 role_bucket["games"] += 1
