@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from random import Random
 from typing import Any
 
@@ -43,9 +44,12 @@ class LLMAgent(Agent):
         seed: int | None = None,
         provider: str | None = None,
         model: str | None = None,
+        api_key: str | None = None,
+        base_url: str | None = None,
         temperature: float = 0.4,
         speech_temperature: float = 1.1,
         character: Character | None = None,
+        strategy_bias: dict[str, list[str]] | None = None,
     ):
         self.player_id = player_id
         self.view: PlayerView | None = None
@@ -54,7 +58,18 @@ class LLMAgent(Agent):
         self.temperature = temperature
         self.speech_temperature = speech_temperature
         self.provider = provider
-        self.client = create_client(provider=self.provider, model=model)
+        # api_key/base_url let factory route each player to a specific pool
+        # entry (primary vs course-resource fallback) without polluting the
+        # process env. Pass through to create_client only when present so
+        # callers that don't care still pick up DOUBAO_* defaults.
+        client_kwargs: dict = {}
+        if model is not None:
+            client_kwargs["model"] = model
+        if api_key is not None:
+            client_kwargs["api_key"] = api_key
+        if base_url is not None:
+            client_kwargs["base_url"] = base_url
+        self.client = create_client(provider=self.provider, **client_kwargs)
         # DeepSeek-v4-flash uses built-in chain-of-thought; combined with
         # 600-1000 token responses this can take 8–20s end-to-end, and on
         # slow links the second attempt is another 8s on top. 120s gives
@@ -64,6 +79,7 @@ class LLMAgent(Agent):
         self.client.timeout = 120.0
         self.fallback = HeuristicAgent(player_id, seed=seed, character=character)
         self.character = character
+        self.strategy_bias = {key: list(value) for key, value in (strategy_bias or {}).items() if value}
         self.winner: str | None = None
         self.last_error: str | None = None
         self.recent_openings: list[str] = []
@@ -97,6 +113,9 @@ class LLMAgent(Agent):
             )
             self.current_retrieval = [RetrievedStrategyLesson(**row) for row in rows]
         except Exception:
+            strict = os.getenv("STRATEGY_RETRIEVAL_STRICT", "").strip().lower() in {"1", "true", "yes", "on"}
+            if strict:
+                raise
             self.current_retrieval = []
 
     def day_start(self) -> None:
@@ -162,6 +181,14 @@ class LLMAgent(Agent):
         retrieval_block = self._build_retrieved_lessons_block()
         if retrieval_block:
             user_prompt_parts.append(retrieval_block)
+        # When STRATEGY_BIAS_PLACEMENT=system, _build_talk_system_parts has
+        # already injected the bias block into the system prompt; skip the
+        # user_prompt copy to avoid double-injection. Default 'user' keeps
+        # iter2 behavior intact.
+        if self._bias_placement() != "system":
+            strategy_bias_block = self._build_strategy_bias_block("talk")
+            if strategy_bias_block:
+                user_prompt_parts.append(strategy_bias_block)
         user_prompt_parts.append("\n轮到你发言，返回JSON数组：")
 
         full_user_prompt = "\n\n".join(user_prompt_parts)
@@ -203,10 +230,50 @@ class LLMAgent(Agent):
             {
                 "doc_id": item.doc_id,
                 "score": item.score,
+                "retrieval_mode": item.retrieval_mode,
+                "vector_score": item.vector_score,
+                "lexical_score": item.lexical_score,
+                "bm25_score": item.bm25_score,
+                "fts_score": item.fts_score,
+                "rerank_score": item.rerank_score,
+                "embedding_provider": item.embedding_provider,
+                "rerank_provider": item.rerank_provider,
                 "recommended_action": item.recommendation,
             }
             for item in self.current_retrieval
         ]
+
+    @staticmethod
+    def _bias_placement() -> str:
+        """Read STRATEGY_BIAS_PLACEMENT env var. 'system' = inject bias as
+        system_part (higher LLM priority); anything else = user_prompt
+        suffix (legacy/iter2 behavior). Used by iter3 dry-runs without
+        perturbing in-flight iter2 batches."""
+        return os.getenv("STRATEGY_BIAS_PLACEMENT", "user").strip().lower()
+
+    def _build_strategy_bias_block(self, action: str) -> str:
+        if not self.strategy_bias:
+            return ""
+        action_sections = {
+            "talk": ("speech_policy", "risk_rules"),
+            "vote": ("vote_policy", "risk_rules"),
+            "attack": ("skill_policy", "risk_rules"),
+            "divine": ("skill_policy", "risk_rules"),
+            "guard": ("skill_policy", "risk_rules"),
+            "witch": ("skill_policy", "risk_rules"),
+            "shoot": ("skill_policy", "risk_rules"),
+            "boom": ("skill_policy", "risk_rules"),
+            "transfer_badge": ("speech_policy", "vote_policy", "risk_rules"),
+        }
+        sections = action_sections.get(action, ("speech_policy", "vote_policy", "skill_policy", "risk_rules"))
+        lines = [
+            "【本局强制执行的策略规则 — 高优先级,必须严格遵守,不得擅自偏离】",
+            "下列规则由本轮策略版本指定,优先级高于你的通用策略直觉。即使你认为某条规则不是最优,你也必须按这些规则的字面意思行动,不要二次判断、不要绕过。这是为了让本轮 A/B 锦标赛能精确归因到策略差异。",
+        ]
+        for section in sections:
+            for item in self.strategy_bias.get(section, [])[:3]:
+                lines.append(f"- [{section}] {item}")
+        return "\n".join(lines) if len(lines) > 2 else ""
 
     def _build_retrieved_lessons_block(self) -> str:
         if not self.current_retrieval:
@@ -331,6 +398,15 @@ class LLMAgent(Agent):
         if behavior_hint:
             parts.append({"text": behavior_hint, "cacheable": True})
         parts.append({"text": task, "cacheable": False})
+        # iter3: when STRATEGY_BIAS_PLACEMENT=system, inject the strategy
+        # bias as a non-cacheable system part RIGHT BEFORE guidelines so it
+        # rides above transcript noise and persona drift in the LLM's
+        # attention. Default 'user' = legacy iter2 placement (user_prompt
+        # suffix) so in-flight iter2 batches see no change.
+        if self._bias_placement() == "system":
+            bias_block = self._build_strategy_bias_block("talk")
+            if bias_block:
+                parts.append({"text": bias_block, "cacheable": False})
         parts.append({"text": guidelines, "cacheable": True})
         return parts
 
@@ -1133,6 +1209,13 @@ class LLMAgent(Agent):
 
         if strategy:
             blocks.extend(["", "=== 行动策略 ===", strategy])
+        # iter3: when STRATEGY_BIAS_PLACEMENT=system, bias is already in the
+        # system prompt (see _build_system_prompt). Skip the user-prompt copy
+        # to avoid double-injection. Default 'user' keeps iter2 behavior.
+        if self._bias_placement() != "system":
+            strategy_bias_block = self._build_strategy_bias_block(action)
+            if strategy_bias_block:
+                blocks.extend(["", strategy_bias_block])
         retrieval_block = self._build_retrieved_lessons_block()
         if retrieval_block:
             blocks.extend(["", retrieval_block])
@@ -1405,7 +1488,17 @@ class LLMAgent(Agent):
             "6. 发言要符合狼人杀桌面语言、保持你的人物口吻。\n"
             "7. 以上所有设定都是你的内部指引——永远不要在你的发言中逐字复述或引用设定内容。"
         )
-        return role_system + char_block + comm_profile + player_mind + constraints
+        # iter3: when STRATEGY_BIAS_PLACEMENT=system, append the strategy
+        # bias to the end of the system prompt so action-path prompts
+        # (vote/divine/witch/etc.) see it above transcript noise too. The
+        # user_prompt counterpart in _build_action_prompt is suppressed to
+        # avoid double-injection. Default 'user' = legacy.
+        bias_tail = ""
+        if self._bias_placement() == "system":
+            bias_tail = self._build_strategy_bias_block("__all__")
+            if bias_tail:
+                bias_tail = "\n\n" + bias_tail
+        return role_system + char_block + comm_profile + player_mind + constraints + bias_tail
 
     def _build_communication_profile(self) -> str:
         """Build wolfcha-style hidden communication profile section."""

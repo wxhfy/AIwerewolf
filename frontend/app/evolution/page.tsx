@@ -10,6 +10,21 @@ interface EvolutionDashboard {
   knowledge: any[];
   patches: any[];
   tournaments: any[];
+  acceptance_audit?: any;
+  acceptance_metrics?: AcceptanceMetric[];
+}
+
+interface AcceptanceMetric {
+  track: string;
+  step_id: string;
+  name: string;
+  numerator: number;
+  denominator: number;
+  success_rate: number;
+  threshold: number;
+  passed: boolean;
+  evidence: string;
+  details?: Record<string, any>;
 }
 
 export default function EvolutionPage() {
@@ -62,6 +77,8 @@ export default function EvolutionPage() {
   const patches = dashboard?.patches || [];
   const tournaments = dashboard?.tournaments || [];
   const versions = dashboard?.active_versions || [];
+  const acceptanceMetrics = dashboard?.acceptance_metrics || [];
+  const acceptanceAudit = dashboard?.acceptance_audit;
 
   return (
     <main className="min-h-screen px-5 py-6" style={{ background: "var(--color-bg)" }}>
@@ -108,6 +125,13 @@ export default function EvolutionPage() {
           <p className="text-text-sub">{t("加载中...", "Loading...")}</p>
         ) : (
           <>
+            <AcceptancePanel
+              metrics={acceptanceMetrics}
+              overallRate={Number(acceptanceAudit?.overall_success_rate || 0)}
+              passed={Boolean(acceptanceAudit?.passed)}
+              t={t}
+            />
+
             <section className="grid gap-4 lg:grid-cols-3">
               <Panel title={t("当前版本", "Active Versions")}>
                 <div className="space-y-2">
@@ -185,6 +209,82 @@ export default function EvolutionPage() {
         )}
       </div>
     </main>
+  );
+}
+
+function AcceptancePanel({
+  metrics,
+  overallRate,
+  passed,
+  t,
+}: {
+  metrics: AcceptanceMetric[];
+  overallRate: number;
+  passed: boolean;
+  t: (zh: string, en: string) => string;
+}) {
+  const trackB = metrics.filter((item) => item.track === "B");
+  const trackC = metrics.filter((item) => item.track === "C");
+  const renderTrack = (items: AcceptanceMetric[], title: string) => (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-semibold uppercase tracking-wider text-text-sub">{title}</p>
+        <span className="text-xs text-text-sub">
+          {items.filter((item) => item.passed).length}/{items.length}
+        </span>
+      </div>
+      <div className="grid gap-2 lg:grid-cols-2">
+        {items.map((item) => (
+          <div key={`${item.track}-${item.step_id}`} className="rounded-button border p-3" style={{ borderColor: "var(--color-border)", background: "rgba(255,255,255,0.035)" }}>
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-textPrimary">{item.step_id} · {item.name}</p>
+                <p className="mt-1 line-clamp-1 text-[11px] text-text-sub">{item.evidence}</p>
+              </div>
+              <span className={item.passed ? "text-xs font-semibold text-success" : "text-xs font-semibold text-danger"}>
+                {Math.round(item.success_rate * 100)}%
+              </span>
+            </div>
+            <div className="mt-2 h-2 overflow-hidden rounded-full" style={{ background: "rgba(255,255,255,0.08)" }}>
+              <div
+                className={item.passed ? "h-full rounded-full bg-success" : "h-full rounded-full bg-danger"}
+                style={{ width: `${Math.max(3, Math.min(100, item.success_rate * 100))}%` }}
+              />
+            </div>
+            <div className="mt-2 flex items-center justify-between text-[11px] text-text-sub">
+              <span>{Number(item.numerator).toFixed(item.denominator <= 1 ? 2 : 0)} / {Number(item.denominator).toFixed(item.denominator <= 1 ? 2 : 0)}</span>
+              <span>{t("阈值", "Threshold")} {Math.round(item.threshold * 100)}%</span>
+            </div>
+          </div>
+        ))}
+      </div>
+      {!items.length && <Empty text={t("暂无验收指标，先运行一次对局或进化周期。", "No acceptance metrics yet. Run a game or evolution cycle first.")} />}
+    </div>
+  );
+
+  return (
+    <Panel title={t("B/C 量化验收", "B/C Quantified Acceptance")}>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-button px-4 py-3" style={{ background: "rgba(255,255,255,0.04)" }}>
+        <div>
+          <p className="text-sm font-semibold text-textPrimary">
+            {passed ? t("整体通过", "Overall passed") : t("整体未完全通过", "Overall not fully passed")}
+          </p>
+          <p className="text-xs text-text-sub">
+            {t("每一步都按样本数计算成功率；空数据不会算作通过。", "Every step is rate-based; empty data never counts as pass.")}
+          </p>
+        </div>
+        <div className="text-right">
+          <p className={passed ? "text-3xl font-bold text-success" : "text-3xl font-bold text-danger"}>
+            {Math.round(overallRate * 100)}%
+          </p>
+          <p className="text-xs text-text-sub">{t("平均成功率", "Average success")}</p>
+        </div>
+      </div>
+      <div className="grid gap-5 xl:grid-cols-2">
+        {renderTrack(trackB, "Track B")}
+        {renderTrack(trackC, "Track C")}
+      </div>
+    </Panel>
   );
 }
 

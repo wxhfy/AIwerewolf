@@ -11,7 +11,7 @@ class RoomCreateRequest:
     name: str = "Demo Room"
     seed: int = 7
     player_count: int = 7
-    agent_type: str = "heuristic"
+    agent_type: str = "llm"
     human_seat: int | None = None
     rule_pack_id: str = "wolfcha-default"
 

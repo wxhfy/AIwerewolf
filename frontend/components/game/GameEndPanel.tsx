@@ -18,6 +18,7 @@ interface GameEndPanelProps {
   onClose: () => void;
   onBallMove: (position: { x: number; y: number }) => void;
   onLobby: () => void;
+  onReport?: () => void;
 }
 
 function TrophyIcon({ className, size }: { className?: string; size: number }) {
@@ -43,6 +44,7 @@ export function GameEndPanel({
   onClose,
   onBallMove,
   onLobby,
+  onReport,
 }: GameEndPanelProps) {
   const isVillageWinner = winner === Alignment.VILLAGE;
   const winnerLabel = isVillageWinner ? t("village", language) : t("wolf", language);
@@ -121,8 +123,11 @@ export function GameEndPanel({
               <Button variant="ghost" onClick={onLobby} className="flex-1">
                 {t("lobby", language)}
               </Button>
-              <Button onClick={onLobby} className="flex-1">
-                {t("playAgain", language)}
+              <Button
+                onClick={() => (onReport ? onReport() : onLobby())}
+                className="flex-1"
+              >
+                {onReport ? (language === Language.ZH ? "查看复盘" : "View Review") : t("playAgain", language)}
               </Button>
             </div>
 

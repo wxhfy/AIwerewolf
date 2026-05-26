@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAppContext } from "@/context/AppContext";
 import { Language, AgentType, PrepareSnapshot, RoomInfoRow, RoomRecord } from "@/types";
@@ -95,12 +96,18 @@ export default function LobbyPage() {
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-background px-4 transition-colors duration-500">
-      {/* Language toggle */}
-      <div className="absolute top-4 right-4 flex overflow-hidden rounded-button border border-border">
-        <button onClick={() => setLanguage(Language.ZH)}
-          className={`px-3 py-1.5 text-xs font-medium ${language === "zh" ? "bg-primary text-white" : "bg-transparent text-text-sub"}`}>中文</button>
-        <button onClick={() => setLanguage(Language.EN)}
-          className={`px-3 py-1.5 text-xs font-medium ${language === "en" ? "bg-primary text-white" : "bg-transparent text-text-sub"}`}>EN</button>
+      {/* Top-right nav */}
+      <div className="absolute top-4 right-4 flex items-center gap-2">
+        <Link href="/evolution"
+          className="px-3 py-1.5 text-xs font-medium rounded-button border border-border text-text-sub hover:text-primary hover:border-primary transition-colors">
+          {language === "zh" ? "进化看板" : "Evolution"}
+        </Link>
+        <div className="flex overflow-hidden rounded-button border border-border">
+          <button onClick={() => setLanguage(Language.ZH)}
+            className={`px-3 py-1.5 text-xs font-medium ${language === "zh" ? "bg-primary text-white" : "bg-transparent text-text-sub"}`}>中文</button>
+          <button onClick={() => setLanguage(Language.EN)}
+            className={`px-3 py-1.5 text-xs font-medium ${language === "en" ? "bg-primary text-white" : "bg-transparent text-text-sub"}`}>EN</button>
+        </div>
       </div>
 
       {/* Brand */}

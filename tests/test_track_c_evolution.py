@@ -9,6 +9,7 @@ from backend.eval.evolution import (
     AcceptancePolicy,
     DreamJob,
     EvolutionPipeline,
+    HashingVectorEmbeddingProvider,
     KnowledgeDocValidator,
     PatchOperation,
     PatchValidator,
@@ -21,6 +22,8 @@ from backend.eval.evolution import (
     StrategyRetrievalQuery,
     TournamentRunner,
     VersionManager,
+    build_acceptance_step_metric,
+    build_bc_acceptance_audit,
     export_evolution_summary,
     load_strategy_knowledge,
 )
@@ -120,9 +123,15 @@ def test_knowledge_store_retrieves_by_role_phase_and_updates_usage(tmp_path) -> 
         status="active",
         tags=["seer", "info_release"],
     )
-    store = StrategyKnowledgeStore([doc])
+    store = StrategyKnowledgeStore([doc], embedding_provider=HashingVectorEmbeddingProvider(), rerank_provider=None)
     lessons = store.retrieve(StrategyRetrievalQuery(role="Seer", phase="DAY_SPEECH", observation_summary="I have a wolf check and need vote pressure"))
     assert lessons[0].doc_id == "doc-1"
+    assert lessons[0].retrieval_mode == "hybrid_vector_bm25_fts_rerank_v2"
+    assert lessons[0].vector_score > 0
+    assert lessons[0].lexical_score > 0
+    assert lessons[0].bm25_score >= 0
+    assert lessons[0].fts_score >= 0
+    assert lessons[0].embedding_provider == "hashing_vector_v1"
     assert store.get("doc-1").usage_count == 1
 
     store.update_usage("doc-1", helpful=True)
@@ -132,6 +141,168 @@ def test_knowledge_store_retrieves_by_role_phase_and_updates_usage(tmp_path) -> 
     store.to_json(path)
     loaded = load_strategy_knowledge(path)
     assert loaded.get("doc-1") is not None
+
+
+def test_knowledge_store_uses_vector_score_not_only_keyword_overlap() -> None:
+    class StubEmbeddingProvider:
+        name = "stub"
+        dimensions = 2
+
+        def embed(self, text: str) -> list[float]:
+            if "semantic-query" in text or "hidden-doc-action" in text:
+                return [1.0, 0.0]
+            return [0.0, 1.0]
+
+    doc_semantic = StrategyKnowledgeDoc(
+        doc_id="doc-semantic",
+        doc_type="good_play",
+        role="Seer",
+        phase="DAY_SPEECH",
+        persona_scope=None,
+        situation_pattern="alpha pattern without shared words",
+        trigger_conditions=["alpha"],
+        recommended_action="hidden-doc-action",
+        avoid_action=None,
+        rationale="evidence",
+        evidence_summary="evidence",
+        source_report_ids=["g1"],
+        source_item_ids=["s1"],
+        source_event_ids=[],
+        counterfactual_ids=[],
+        expected_metric_effects=[],
+        quality_score=0.5,
+        confidence=0.5,
+        status="active",
+    )
+    doc_keyword = StrategyKnowledgeDoc(
+        doc_id="doc-keyword",
+        doc_type="good_play",
+        role="Seer",
+        phase="DAY_SPEECH",
+        persona_scope=None,
+        situation_pattern="ordinary keyword overlap",
+        trigger_conditions=["ordinary"],
+        recommended_action="ordinary action",
+        avoid_action=None,
+        rationale="evidence",
+        evidence_summary="evidence",
+        source_report_ids=["g2"],
+        source_item_ids=["s2"],
+        source_event_ids=[],
+        counterfactual_ids=[],
+        expected_metric_effects=[],
+        quality_score=1.0,
+        confidence=0.8,
+        status="active",
+    )
+    store = StrategyKnowledgeStore([doc_semantic, doc_keyword], embedding_provider=StubEmbeddingProvider(), rerank_provider=None)
+
+    lessons = store.retrieve(
+        StrategyRetrievalQuery(
+            role="Seer",
+            phase="DAY_SPEECH",
+            observation_summary="semantic-query",
+            top_k=2,
+        )
+    )
+
+    assert lessons[0].doc_id == "doc-semantic"
+    assert lessons[0].vector_score == 1.0
+    assert lessons[0].retrieval_mode == "hybrid_vector_bm25_fts_rerank_v2"
+
+
+def test_knowledge_store_metadata_filters_tags_and_quality() -> None:
+    docs = [
+        StrategyKnowledgeDoc(
+            doc_id="doc-high",
+            doc_type="counterfactual_lesson",
+            role="Seer",
+            phase="DAY_SPEECH",
+            persona_scope=None,
+            situation_pattern="seer must release wolf check under vote pressure",
+            trigger_conditions=["wolf_check"],
+            recommended_action="release the wolf check",
+            avoid_action=None,
+            rationale="evidence",
+            evidence_summary="evidence",
+            source_report_ids=["g1"],
+            source_item_ids=["s1"],
+            source_event_ids=["e1"],
+            counterfactual_ids=[],
+            expected_metric_effects=[{"metric": "speech_semantic_score", "direction": "increase"}],
+            quality_score=0.91,
+            confidence=0.9,
+            status="active",
+            tags=["seer", "info_release"],
+        ),
+        StrategyKnowledgeDoc(
+            doc_id="doc-low",
+            doc_type="good_play",
+            role="Seer",
+            phase="DAY_SPEECH",
+            persona_scope=None,
+            situation_pattern="seer generic speech",
+            trigger_conditions=["generic"],
+            recommended_action="speak carefully",
+            avoid_action=None,
+            rationale="evidence",
+            evidence_summary="evidence",
+            source_report_ids=["g2"],
+            source_item_ids=["s2"],
+            source_event_ids=[],
+            counterfactual_ids=[],
+            expected_metric_effects=[],
+            quality_score=0.4,
+            confidence=0.5,
+            status="active",
+            tags=["seer"],
+        ),
+    ]
+    store = StrategyKnowledgeStore(docs, embedding_provider=HashingVectorEmbeddingProvider(), rerank_provider=None)
+    lessons = store.retrieve(
+        StrategyRetrievalQuery(
+            role="Seer",
+            phase="DAY_SPEECH",
+            observation_summary="wolf check vote pressure",
+            metadata_filters={
+                "min_quality": 0.8,
+                "tags_all": ["info_release"],
+                "expected_metric": "speech_semantic_score",
+            },
+            top_k=3,
+        )
+    )
+
+    assert [lesson.doc_id for lesson in lessons] == ["doc-high"]
+
+
+def test_acceptance_audit_quantifies_pass_rates() -> None:
+    good = build_acceptance_step_metric(
+        track="B",
+        step_id="B-test",
+        name="good metric",
+        numerator=9,
+        denominator=10,
+        threshold=0.8,
+        evidence="unit evidence",
+    )
+    bad = build_acceptance_step_metric(
+        track="C",
+        step_id="C-test",
+        name="bad metric",
+        numerator=1,
+        denominator=4,
+        threshold=0.8,
+        evidence="unit evidence",
+    )
+    audit = build_bc_acceptance_audit([good, bad])
+
+    assert good.success_rate == 0.9
+    assert good.passed is True
+    assert bad.success_rate == 0.25
+    assert bad.passed is False
+    assert audit.overall_success_rate == 0.575
+    assert audit.passed is False
 
 
 def test_dream_job_generates_valid_candidate_patch_and_version() -> None:
@@ -287,3 +458,55 @@ def test_llm_agent_retrieves_strategy_knowledge_from_persisted_store(monkeypatch
     assert meta["retrieved_knowledge_ids"] == ["doc-seer-info"]
     assert "doc-seer-info" in block
     assert "Convert the check" in block
+
+
+def test_strategy_knowledge_docs_carry_source_event_ids_end_to_end() -> None:
+    """BC penetration gap: source_event_ids must be plumbed from BadCase/CF detectors
+    through StrategyKnowledge into StrategyKnowledgeDoc.source_event_ids.
+
+    Empty source_event_ids on every doc means evidence chain is broken — knowledge
+    docs become unreviewable (operator can't audit which events produced them) and
+    DreamJob patches inherit zero source_evidence_ids."""
+    from backend.engine.game import WerewolfGame
+
+    state = WerewolfGame(seed=13).play()
+    metrics = MetricsCalculator().compute(state)
+    report = ReviewReportBuilder().build(state, metrics)
+    report.metadata["validation_result"] = {"passed": True, "publish_allowed": True, "score": 1.5}
+
+    docs = StrategyKnowledgeDocExtractor().extract([report])
+    assert docs, "extractor produced no docs — upstream report must yield knowledge items"
+    docs_with_evidence = [doc for doc in docs if doc.source_event_ids]
+    coverage = len(docs_with_evidence) / len(docs)
+    assert coverage >= 0.5, (
+        f"source_event_ids coverage too low ({coverage:.0%}); "
+        f"{len(docs) - len(docs_with_evidence)}/{len(docs)} docs lost their evidence chain"
+    )
+
+
+def test_tournament_run_seed_responds_to_strategy_version() -> None:
+    """BC promote gap: WerewolfGame._run_seed default path must consume strategy_version
+    so candidate vs baseline produce different metrics, otherwise AcceptancePolicy
+    always rejects (delta=0 fails the >=3% improvement gate)."""
+    runner = TournamentRunner()
+    baseline_metric = runner._run_seed(seed=7, strategy_version="seer_v1", target_role="Seer")
+    candidate_patch_ops = [
+        PatchOperation(
+            op="add",
+            section="vote_policy",
+            new_value="Bias toward checked-good preservation; avoid villager-side votes.",
+            rationale="evidence: villagers misvoted in seed 7 baseline",
+        )
+    ]
+    candidate_metric = runner._run_seed(
+        seed=7,
+        strategy_version="seer_v2_candidate",
+        target_role="Seer",
+        strategy_patch_ops=candidate_patch_ops,
+    )
+    baseline_total = sum(score.adjusted_final_score for score in baseline_metric.player_scores)
+    candidate_total = sum(score.adjusted_final_score for score in candidate_metric.player_scores)
+    assert baseline_total != candidate_total, (
+        "candidate produced identical aggregate score as baseline for the same seed — "
+        "strategy_version is not affecting agent behavior, so A/B tournament cannot promote"
+    )

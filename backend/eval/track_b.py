@@ -1032,20 +1032,32 @@ class TrackBValidator:
     def _counterfactual_soundness(self, replay_bundle: ReplayBundle, review_report: dict[str, Any]) -> list[ValidationIssue]:
         issues: list[ValidationIssue] = []
         vote_events = [vote for vote in replay_bundle.votes]
-        grouped_votes: dict[int, dict[str, str]] = {}
+        grouped_votes: dict[int, list[dict[str, Any]]] = {}
         for vote in vote_events:
-            grouped_votes.setdefault(int(vote["day"]), {})[str(vote["voter_id"])] = str(vote["target_id"])
+            grouped_votes.setdefault(int(vote["day"]), []).append(vote)
         for index, item in enumerate(review_report.get("counterfactuals", [])):
             cf_type = item.get("counterfactual_type")
+            effect_type = item.get("effect_type", "estimated")
+            recomputed = item.get("recomputed_outcome") or {}
             if cf_type == "vote":
                 day = int(item.get("day") or 0)
                 evidence_ids = set(item.get("evidence_event_ids", []))
                 if day not in grouped_votes or not evidence_ids:
                     issues.append(self._issue("CounterfactualSoundnessGate", "major", "invalid_vote_cf", {"index": index}, "vote_flip 反事实缺少原始票型依据", list(evidence_ids), "补齐投票证据并重算", "CounterfactualRecomputeTool"))
+                # B §21 vote_flip must declare exact_recalculation and present a recomputed tally.
+                if effect_type != "exact_recalculation":
+                    issues.append(self._issue("CounterfactualSoundnessGate", "major", "vote_cf_wrong_effect_type", {"index": index, "effect_type": effect_type}, "vote_flip 反事实必须标记 effect_type=exact_recalculation", [], "在 CounterfactualCase 上补 effect_type=exact_recalculation", "CounterfactualRecomputeTool"))
+                if "new_tally" not in recomputed and "tally_unchanged" not in recomputed:
+                    issues.append(self._issue("CounterfactualSoundnessGate", "major", "vote_cf_no_recompute", {"index": index}, "vote_flip 反事实未给出重算后的票型 (new_tally / tally_unchanged)", [], "调用 _recompute_vote_flip 写入 recomputed_outcome", "CounterfactualRecomputeTool"))
+            if cf_type == "skill":
+                if effect_type != "local_recalculation":
+                    issues.append(self._issue("CounterfactualSoundnessGate", "major", "skill_cf_wrong_effect_type", {"index": index, "effect_type": effect_type}, "skill 反事实必须标记 effect_type=local_recalculation", [], "在 CounterfactualCase 上补 effect_type=local_recalculation", "CounterfactualRecomputeTool"))
             if cf_type == "info_release":
                 expected = str(item.get("expected_effect") or "")
                 if any(token in expected for token in ["一定", "必然", "稳胜", "100%"]):
                     issues.append(self._issue("CounterfactualSoundnessGate", "major", "deterministic_info_cf", {"index": index}, "信息释放反事实不能写成必然结果", item.get("evidence_event_ids", []), "将结论改成 estimated 语气", "CounterfactualRecomputeTool"))
+                if effect_type != "estimated":
+                    issues.append(self._issue("CounterfactualSoundnessGate", "major", "info_cf_wrong_effect_type", {"index": index, "effect_type": effect_type}, "info_release 反事实必须标记 effect_type=estimated", [], "在 CounterfactualCase 上补 effect_type=estimated", "CounterfactualRecomputeTool"))
         return issues
 
     def _visibility_safety(self, review_report: dict[str, Any], markdown: str, view_scope: str) -> list[ValidationIssue]:
@@ -1113,6 +1125,12 @@ class ReviewRepairLoop:
         max_rounds: int = 3,
     ) -> tuple[dict[str, Any], str, ValidationResult, list[dict[str, Any]]]:
         repair_history: list[dict[str, Any]] = []
+        # Pre-pass: always backfill evidence_event_ids so downstream consumers
+        # (KnowledgeExtractor, frontend dashboards) never see an unattributed
+        # claim. The operation is idempotent — items that already have
+        # evidence are left alone — and matches Track B §12 "every conclusion
+        # must carry evidence".
+        review_report = self._repair_evidence(review_report, replay_bundle)
         validation = validator.validate(
             report_id=f"review:{replay_bundle.game_id}",
             game_id=replay_bundle.game_id,
@@ -1277,6 +1295,59 @@ def _build_leaderboard_snapshot(review_report: dict[str, Any]) -> dict[str, Any]
     return {key: value.to_dict() for key, value in result.items()}
 
 
+def _record_knowledge_usage(state: GameState, review_report: dict[str, Any]) -> list[dict[str, Any]]:
+    """Track C §20 feedback loop. For each AgentDecision that retrieved
+    knowledge docs (recorded via retrieved_knowledge_ids), look up whether
+    that player got tagged in a BadCase on the same day; mark the knowledge
+    helpful if not, otherwise mark it as failure. This is what eventually
+    lets DreamJob deprecate consistently-unhelpful docs."""
+    bad_case_player_days: set[tuple[str, int]] = set()
+    for case in review_report.get("bad_cases", []):
+        player_name = case.get("player_name") or ""
+        day = case.get("day")
+        if player_name and day is not None:
+            bad_case_player_days.add((player_name, int(day)))
+    feedback: list[dict[str, Any]] = []
+    try:
+        from backend.db.persist import record_knowledge_usage
+    except Exception:
+        record_knowledge_usage = None  # type: ignore
+    player_name_by_id = {p.id: p.name for p in state.players}
+    for record in state.decision_records:
+        parsed = record.parsed_action or {}
+        doc_ids = list(parsed.get("retrieved_knowledge_ids") or [])
+        if not doc_ids:
+            continue
+        player_name = player_name_by_id.get(record.player_id, "")
+        helpful = (player_name, int(record.day)) not in bad_case_player_days
+        for doc_id in doc_ids:
+            feedback.append({
+                "doc_id": doc_id,
+                "player_id": record.player_id,
+                "day": record.day,
+                "phase": record.phase,
+                "helpful": helpful,
+            })
+            if record_knowledge_usage is not None:
+                try:
+                    record_knowledge_usage({
+                        "game_id": state.id,
+                        "decision_id": record.id,
+                        "player_id": record.player_id,
+                        "knowledge_doc_id": doc_id,
+                        "retrieved": True,
+                        "used": True,
+                        "decision_outcome": "good" if helpful else "bad",
+                        "helpful": helpful,
+                        "metadata": {"day": record.day, "phase": record.phase},
+                    })
+                except Exception:
+                    # Persistence is best-effort; an in-memory store still
+                    # has the truth in the feedback list above.
+                    pass
+    return feedback
+
+
 def generate_published_review_document(state: GameState, *, view_scope: str = "moderator_view") -> PublishedReviewDocument:
     replay_bundle = ReplayBundleBuilder().build(state)
     generated = generate_review_report(state)
@@ -1297,6 +1368,14 @@ def generate_published_review_document(state: GameState, *, view_scope: str = "m
     )
     markdown = _append_validation_section(markdown.split("## 10. 报告可信度校验", 1)[0].rstrip(), validation)
     status = "approved" if validation.publish_allowed else ("needs_revision" if validation.grade == "needs_revision" else "rejected")
+    knowledge_feedback: list[dict[str, Any]] = []
+    if validation.publish_allowed:
+        # Track C §20: close the knowledge-usage feedback loop. For every
+        # AgentDecision that retrieved a knowledge doc, mark the doc helpful
+        # iff the player wasn't tagged in a BadCase on that day; otherwise
+        # mark it as failure. This is the data plane that lets DreamJob
+        # demote unhelpful knowledge over time.
+        knowledge_feedback = _record_knowledge_usage(state, review_report)
     leaderboard_snapshot = _build_leaderboard_snapshot(review_report)
     preview_document = PublishedReviewDocument(
         report_id=str(uuid4()),
@@ -1336,6 +1415,7 @@ def generate_published_review_document(state: GameState, *, view_scope: str = "m
             "iterations": generated["iterations"],
             "leaderboard_snapshot": leaderboard_snapshot,
             "html_report": html_report,
+            "knowledge_feedback": knowledge_feedback,
         },
     )
 

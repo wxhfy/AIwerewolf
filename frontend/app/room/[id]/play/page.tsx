@@ -130,6 +130,7 @@ export default function GamePage() {
           onClose={() => controller.setShowWinnerPanel(false)}
           onBallMove={controller.setBallPos}
           onLobby={() => controller.router.push("/")}
+          onReport={gameState.id ? () => controller.router.push(`/games/${gameState.id}/report`) : undefined}
         />
       )}
     </div>
