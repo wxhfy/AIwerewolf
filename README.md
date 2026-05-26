@@ -69,9 +69,13 @@ make demo
 make dev   # 等价 uvicorn backend.app:app --host 0.0.0.0 --port 8000 --reload
 
 # 6. 启动前端 Next.js dev server（端口 3001 / 占用就 3002）
-cd frontend && npm install --legacy-peer-deps && npm run dev
+cd frontend && cp .env.example .env.local   # 关键：告诉前端后端在哪
+                                            # 默认 NEXT_PUBLIC_BACKEND_ORIGIN=http://localhost:8000
+npm install --legacy-peer-deps && npm run dev
 # 浏览器打开 http://localhost:3001 (或 :3002)
 ```
+
+> ⚠️ **必须设 `NEXT_PUBLIC_BACKEND_ORIGIN`**：未设时前端会回退到 `window.location.origin`（即前端自己的 3001/3002 端口）去 fetch `/api/*`，全部返回 404/500，看起来像"后端坏了"。dev 默认值是 `http://localhost:8000`；docker compose 部署时统一反代到同源，可留空。
 
 一条命令拉起全栈（Postgres + 后端 + 前端）：
 
