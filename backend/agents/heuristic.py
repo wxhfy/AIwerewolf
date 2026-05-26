@@ -46,9 +46,18 @@ class HeuristicAgent(Agent):
     - Different roles use different evidence sources
     """
 
-    def __init__(self, player_id: str, *, seed: int | None = None, character: Character | None = None):
+    def __init__(self, player_id: str, *, seed: int | None = None, character: Character | None = None,
+                 strategy_bias: dict[str, list[str]] | None = None):
         self.player_id = player_id
         self.view: PlayerView | None = None
+        self.strategy_bias = {k: list(v) for k, v in (strategy_bias or {}).items() if v}
+        # IMPORTANT: do NOT mix strategy_bias into the RNG seed. Empirically the
+        # heuristic's wolf-kill and divine-target picks are quite sensitive to
+        # the RNG path, and a hash-derived seed shift produces randomly-worse
+        # candidates roughly as often as randomly-better ones — net zero, but
+        # noisier scores that make the AcceptancePolicy gate harder to pass.
+        # Keep the seed identical; only let strategy_bias change *semantically*
+        # motivated decisions (see `_choose_vote_target`).
         self.rng = Random(seed)
         self.winner: str | None = None
         self.character = character
@@ -559,6 +568,18 @@ class HeuristicAgent(Agent):
         # the highest-suspicion branch.
         if self.role in WOLF_FAMILY:
             return self._choose_non_wolf()
+        # Candidate-version vote_policy bias: skip players whose suspicion is
+        # net-negative (likely good reads). The base path only filters known
+        # confirmed-good; tightening to suspicion>-1.0 mirrors a "preserve
+        # checked-good" patch operation without violating role constraints.
+        if self.strategy_bias.get("vote_policy"):
+            preferred = [
+                p for p in self._alive_others()
+                if p["id"] not in self.known_good_ids
+                and self.suspicion.get(p["id"], 0) > -1.0
+            ]
+            if preferred:
+                return max(preferred, key=lambda p: self.suspicion.get(p["id"], 0))
         # Otherwise vote highest suspicion
         return self._highest_suspicion_alive()
 

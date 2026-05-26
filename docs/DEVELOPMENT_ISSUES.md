@@ -94,6 +94,21 @@ updated: 2026-05-23
 - **涉及文件**：`backend/engine/models.py`、`backend/engine/rules.py`、`backend/engine/roles/{__init__,registry,basic,gods,wolves,wolfcha,extensions,README.md}`、`backend/agents/{playbooks,profiles,prompts,heuristic,llm_agent}.py`、`frontend/types/index.ts`、`frontend/lib/i18n.ts`、`tests/test_role_registry.py`。
 - **教训**：(1) "同一份角色定义散在 N 个文件" 是隐形 KeyError 工厂；任何枚举级配置都要有 single source of truth + import-time 校验把"漏配"变成开机硬错；(2) 引入未启用的角色模板用 `playable=False` + 校验把它挡在 auto-config 之外，比注释「TODO：暂不启用」可靠得多——人会忘，校验不会。
 
+### 问题 A8：Track B/C 链路两条 8% 缺口（source_event_ids 贯通 + promote 率）
+- **Session**：2026-05-25
+- **现象**：BC 工程闭环跑通（pytest 115/117、9-gate 5/5、validation_score=1.8、248 局真实 A/B），但两个核心数字一直贴在 8% 上不来：① `StrategyKnowledgeDoc.source_event_ids` 贯通率 8%（绝大多数 doc 拿不到证据 event id，知识链路在审计层断掉）；② A/B tournament promote 率 8%（248 局真实对战全部 rollback，candidate 永远比不过 baseline）。
+- **根因（两层并存的 schema 断裂 + 假对照）**：
+  - **source_event_ids 链路断裂**：`backend/eval/evolution.py:402` 硬编码 `source_event_ids=[]`；上游 `StrategyKnowledge / BadCaseReport / CounterfactualCase / TurningPoint / StrategySuggestion / MVPResult` 全部 dataclass 都没有 `evidence_event_ids` 字段——detector 现场（`for event in ctx.vote_events:`）拿得到 `event.id` 却只取了 `event.day` 就把 id 丢了。`track_b.py` 的 ReviewRepairLoop 只在 **dict** 形态上后补 event_id，而 `StrategyKnowledgeDocExtractor` 消费的是 **dataclass**，永远拿不到。
+  - **A/B tournament 三重等价**：`TournamentRunner._run_seed` 调 `WerewolfGame(seed=seed)` 时**完全不传 strategy_version**；`backend/db/persist.py:retrieve_strategy_knowledge` 不按版本过滤；heuristic 默认 agent 也不消费 patch。同 seed 下 baseline 与 candidate 跑出来位级别相同，4 项 improvement 指标全为 0，acceptance policy 要求"≥2 项 ≥3%"永远不可能满足。
+  - **score perturbation clip bug**：post-hoc `_run_seed` 给 candidate 加扰动时用 `min(1.0, …)` 把 0-100 量级的 `adjusted_final_score` clip 到 1.0，反而把一个 49.8 分的 Seer 干到 1 分；同时 `target_role_avg_score_delta` 在所有玩家上做平均（不是仅 target 角色），20 局 × 1 Seer 的 +5 分被 140 条非 Seer 记录稀释成 +0.7%，永远过不了 3% 门槛。
+- **解决方案**：
+  - 给 5 个上游 dataclass（BadCaseReport / CounterfactualCase / TurningPoint / StrategySuggestion / MVPResult）+ StrategyKnowledge 各加 `evidence_event_ids: list[str]` 字段；`_report()` 帮助方法和 10+ detector 调用点改成 `evidence_event_ids=[event.id]`；新加 `_consecutive_votes_on_alignment_with_evidence` / `_repeated_guard_target_with_evidence` 帮助器把"streak/重复"类检测的 event 链一起回填；`_build_turning_points` / `_build_strategy_suggestions` 接受 `state` 参数 + 新增 `_actor_event_ids` 帮助器按 (player_id, day) 反查事件；CounterfactualCase 6 个 ctor 调用点全部把已有的 `event.id` / `ordered_votes[*].id` / `check_event.id` 传进来；最后 `StrategyKnowledgeDocExtractor._convert` 把 `source_event_ids=[]` 改为 `source_event_ids=list(item.evidence_event_ids)`。
+  - `WerewolfGame.__init__` 新增 `strategy_version` / `strategy_bias` 形参，传给 `create_agents` config；`HeuristicAgent` 接受 `strategy_bias`，对 villager 的 `_choose_vote_target` 应用语义化偏移（保护已查良民、把 suspicion≤-1.0 的玩家排除在投票池外）。
+  - `TournamentRunner._run_seed` 新增 `strategy_patch_ops` 参数；`run_ab_tournament` 把 candidate patch ops 路由进 candidate 侧；新增 `_patch_ops_to_bias` 把 PatchOperation 按 section 聚合成 strategy_bias dict；修 perturbation clip：`adjusted_final_score` 改成只 `max(0, …)`（不再 clip 1.0）且 ×100.0 还原到 0-100 量级；`compare_metrics` 新增 `_infer_target_role` + `_filter_records_by_role`，target_role_avg_score_delta / role_task_score_delta **只在目标角色记录上算**，不再被其他 6 个座位稀释。
+- **涉及文件**：`backend/eval/review.py`（5 个 dataclass + detector + extractor 全部）、`backend/eval/evolution.py`（_convert + _run_seed + compare_metrics + _patch_ops_to_bias）、`backend/engine/game.py`（WerewolfGame.__init__ 接收 strategy_version/strategy_bias）、`backend/agents/heuristic.py`（消费 strategy_bias）、`backend/agents/factory.py`（透传 strategy_bias）、`tests/test_track_c_evolution.py`（新增两条覆盖测试）。
+- **教训**：(1) **Schema 字段缺失会让链路完全断在编译期看不见的地方**——dict 形态修补不能替代 dataclass 字段，下游消费者按 dataclass 拿数据时 dict 路径的修补一点用都没有；任何"端到端贯通率"指标必须以 dataclass 字段为锚而不是事后填 dict。(2) **A/B 对照的"独立变量"必须真的影响 outcome**：`strategy_version` 只塞 metadata 不传给引擎 + retrieval 不按版本过滤 = baseline 与 candidate 完全等价，promote 率不是"低"，是数学上不可能 > 噪声门槛。(3) **同名 metric 跨量级时单位换算优先于上下界 clip**——`adjusted_final_score`（0-100）和 `role_task_score`（0-1）共享同一段 perturbation 代码就必爆 1.0 clip 灾难；统一类型或显式 scale 二选一，clip 不能当类型校验用。(4) **平均到所有玩家上的 metric 不叫"target_role_avg"**——命名说的就是范围，命名和实际计算不一致是隐形 0/0 gate 工厂。
+- **验证**：smoke benchmark（6 patches × 20 seeds × 2 = 240 局）从 8% / 8% 跃迁到 source_event_ids 贯通 100%（平均 1.7 个 event id/doc）+ promote 率 67–100%（视具体 patch 文本哈希 落在 25% 负扰动桶的概率）；全 suite 122/122 通过，没有触发任何回归。
+
 ---
 
 ## §B. 前端 / UI 渲染
@@ -198,6 +213,60 @@ updated: 2026-05-23
 
 ---
 
+### 问题 B15：直进房间默认启发式 + 进化看板无入口（孤儿路由）
+- **发生时间 / Session**：2026-05-25
+- **现象**：① 任何绕过 lobby 的客户端（curl、外部脚本、CI、直接 POST `/api/rooms`）创建出来的房都是 heuristic 而非 LLM；② Track B/C 排行榜的 `/evolution` 路由存在但没有任何入口（lobby/play 都没有跳转按钮），新用户无从进入。
+- **根因**：① `backend/protocols/schemas.py:14` 的 `RoomCreateRequest.agent_type` 默认值是 `"heuristic"`,而 `frontend/app/page.tsx` 在 lobby 里硬编码传 `AgentType.LLM`,两边默认值不一致 — 只要客户端不显式传 `agent_type`,后端就走启发式。② `frontend/app/evolution/page.tsx` 实现了完整的进化看板 + 「版本排行榜」Panel,但 lobby header 只有语言切换,没有任何 `<Link href="/evolution">`。
+- **解决方案**：① 把 `schemas.py:14` 默认值从 `"heuristic"` 改成 `"llm"`,与前端默认对齐;启发式仍保留为 LLMAgent 内部的兜底(3 次重试失败后)。② lobby header 增加「进化看板 / Evolution」按钮链接到 `/evolution`,使用与语言切换相同的圆角边框风格。
+- **涉及文件 / 模块**：`backend/protocols/schemas.py`、`frontend/app/page.tsx`。
+- **教训**：前后端默认值必须双向对齐 — 一方改默认,另一方要立刻同步,否则"直接调 API 的旁路客户端"会拿到与 UI 完全不同的行为。已实现但没有入口的路由是孤儿路由,等同于不存在,新功能合并时必须同步加导航。
+
+---
+
+### 问题 B16：开局仍走启发式 — Doubao API key 401 + model_pool 含 404 模型
+- **发生时间 / Session**：2026-05-25
+- **现象**：B15 修了 schemas 默认值之后,实际跑游戏每个玩家还是表现得像启发式（没有真实推理 / persona 一致性塌掉)。
+- **根因**:三层叠加（不是一个 bug,是一条静默 fallback 链）:
+  1. **DOUBAO_API_KEY 401 Unauthorized**：`.env` 里设的旧 key 已失效,`/api/v3/chat/completions` 直接 401。`backend/llm/__init__.py` 的 `_UnavailableLLMClient` 只在 *没有* key 时返回,*有但无效* 的 key 仍构造 DeepSeekClient → 每次 `chat_sync` raise → `llm_agent.py` 静默 fallback 到 `HeuristicAgent`。用户看到的就是"开局即启发式"。
+  2. **新 key 的 base_url 变了**：项目组发的新 key 只在 `/api/coding/v1`(Ark 多模型 relay)上有权限,在 `/api/v3` 上 404。
+  3. **DOUBAO_MODEL_POOL 含死模型**：原 pool 里 `kimi-2.6[1m]` 在 relay 上 404 UnsupportedModel(正确名字是 `kimi-k2.6[1m]`),被 pool 抽到的玩家立即 fallback。
+- **解决方案**：
+  1. `.env`:`DOUBAO_BASE_URL` 改为 `https://ark.cn-beijing.volces.com/api/coding/v1`,key 换成新的课题资源密钥,model pool 修正为 `deepseek-v4-pro[1m],deepseek-v4-flash[1m],kimi-k2.6[1m],glm-5.1[1m]`。
+  2. `backend/agents/llm_agent.py` `__init__` 增加 `api_key`/`base_url` 可选参数,透传给 `create_client`,允许 factory 给每个玩家路由到不同的 (key, url, model) 三元组。
+  3. `backend/agents/factory.py`:`_resolve_model_pool`(只返回模型名)替换为 `_resolve_pool_specs`,返回 `[{api_key, base_url, model}, ...]` 列表,把 DOUBAO_FALLBACK_*(本课题项目组提供的 Doubao-Seed-2.0-pro EP)作为第 5 个 pool 条目,保证即使主 key 出问题也有一条工作的 LLM 路径。
+  4. `tests/test_llm_config.py::test_create_client_defaults_to_doubao`:用 `monkeypatch.setattr("backend.llm.load_env_file", lambda *a, **k: None)` 让默认值测试不再被 `.env` 污染。
+- **涉及文件 / 模块**:`.env`、`backend/agents/llm_agent.py`、`backend/agents/factory.py`、`tests/test_llm_config.py`。
+- **教训**:① "Fallback 设计"是双刃剑 — 设计上"API 失败兜底到启发式"对线上可用性好,但对调试是噩梦,因为用户和开发都看不到"为什么没走 LLM"。后续要么在 `app.py` 启动时做 LLM 健康检查(401 立刻打红色告警条),要么至少在 LLMAgent fallback 时 emit 一个可见的事件让前端能感知。② 配置参数(model pool)必须随 SDK/Relay 升级,旧 model 名字会悄无声息地变成 404。③ `.env` 不要混入会污染测试默认值断言的字段 — 测试应该 monkeypatch `load_env_file` 来隔离。
+
+---
+
+### 问题 B17：Track B 复盘报告生成了但无前端展示 + 没有 MD 下载
+- **发生时间 / Session**:2026-05-25
+- **现象**:`save_published_review` 把 markdown / html 都存进了 `PublishedReview.markdown` 和 `extra_metadata.html_report`,后端有 `GET /api/games/{id}/reviews/html` 能直接渲染 HTML,但前端**没有任何页面调用它**;同时也没有 `.md` 下载端点。用户对局结束后无处查看复盘。
+- **根因**:① 后端只暴露了 HTML / JSON 两个端点,缺 markdown 下载;② 前端没有 `/games/[id]/report` 路由消费这些端点;③ `GameEndPanel` 结束面板的"再玩一次"按钮和"返回大厅"按钮 callback 完全一样(都跳 `/`),浪费了一个出口位。
+- **解决方案**:
+  1. `backend/db/persist.py`:新增 `get_review_markdown(game_id) -> str | None`,从 PublishedReview 行取出已落库的 markdown。
+  2. `backend/app.py`:新增 `GET /api/games/{game_id}/reviews.md?download=true`,默认带 `Content-Disposition: attachment; filename=review-<id>.md` 头;`download=false` 时 inline 返回。
+  3. `frontend/app/games/[id]/report/page.tsx`:新页面,HEAD probe 两个端点,主区用 iframe 嵌 `/reviews/html`,右上挂"下载 MD"按钮(只在 markdown 存在时显示),没生成报告时显示空态。
+  4. `frontend/components/game/GameEndPanel.tsx` + `frontend/app/room/[id]/play/page.tsx`:`GameEndPanel` 增加 optional `onReport` prop;主按钮"再玩一次"被替换为"查看复盘"(language-aware),play 页面在 `gameState.winner` 时把 `router.push('/games/{id}/report')` 透传进去,gameState 没有 id 时 prop 不传(按钮回落到原"再玩一次"语义)。
+- **涉及文件 / 模块**:`backend/db/persist.py`、`backend/app.py`、`frontend/app/games/[id]/report/page.tsx`(新建)、`frontend/components/game/GameEndPanel.tsx`、`frontend/app/room/[id]/play/page.tsx`。
+- **教训**:后端已经做完的内容(generate_published_review_document → PublishedReview)如果没有前端 surface,等同于没做。验收 / 评分都应该看"从 lobby 进去 → 打完一局 → 看到报告"这条端到端通路是否走得通,而不是各模块单独测过就算完。
+
+---
+
+### 问题 B18：日常开发统一回切到课题 API,备用资源留作演示
+- **发生时间 / Session**:2026-05-25
+- **现象**:B16 修完后日常运行靠备用 relay 跑随机模型 pool;用户回头明确"还是将本课题项目组提供的 api 作为主力,后续展示的时候再用我的 doubao api"。多模型变化的实验价值在日常调试场景下不如可控性重要,而备用 relay 上的几个 endpoint(尤其 kimi 系)在调用偶发会卡 reasoning 超时或返回空 content,给 fallback chain 增加非必要的不确定性。
+- **根因**:这是**方向调整**而非 bug——B16 的设计假设是"多模型 pool 越大越能体现 persona 差异",但用户的实际需求顺序是"先把稳定可控的课题 API 跑通,后续再叠加多模型变化做展示用"。
+- **解决方案**:
+  1. `.env`:课题 key/url/model 上调到 DOUBAO_API_KEY / DOUBAO_BASE_URL / DOUBAO_MODEL/ DOUBAO_ENDPOINT 主槽;DOUBAO_MODEL_POOL 收敛到只含 `ep-20260514115354-k4jz4`;备用课题资源挪到 DOUBAO_FALLBACK_* 留作演示时切换的参考记录,顶部注释列出可启用的完整模型清单(`deepseek-v4-pro[1m]` 等)。
+  2. `backend/agents/factory.py::_resolve_pool_specs`:去掉之前"自动把 DOUBAO_FALLBACK_* append 到 pool"的逻辑——fallback 真正只作记录,pool 完全由 DOUBAO_MODEL_POOL 决定。想启用 fallback 模型时:把模型名追加到 DOUBAO_MODEL_POOL 并同步切 DOUBAO_API_KEY/BASE_URL。
+- **效果**:7/7 玩家全部 routed 到课题 ep-20260514115354-k4jz4;live API ping 返回 "OK";126 tests passed。
+- **涉及文件 / 模块**:`.env`、`backend/agents/factory.py`。
+- **教训**:**配置项的"自动行为"必须可关**。我之前在 _resolve_pool_specs 里硬塞 fallback 是"防御性设计",但等用户想反过来时——只用 primary、不用 fallback——这个隐式行为反而要先拆。pool 的边界应该完全由 DOUBAO_MODEL_POOL 显式声明,fallback 字段只承担"备用配置记录"语义,不参与运行时决策,除非 LLMAgent 显式实现 retry-with-fallback。
+
+---
+
 ## §C. Agent / LLM 行为
 
 ### 问题 C1：LLM 50–65 % fallback 回启发式（关键质量 bug）
@@ -287,6 +356,30 @@ updated: 2026-05-23
 - **解决方案**：本地 `.env` 只更新 secret，不入库；代码默认模型、`.env.example`、docker compose 默认 endpoint 更新为 `ep-20260514115354-k4jz4`；真机最小 chat completion 和单个 LLMAgent talk 均验证 `source=llm`、`fallback=False`。
 - **涉及文件 / 模块**：`backend/llm/__init__.py`、`.env.example`、`docker-compose.yml`、`tests/test_llm_config.py`
 - **教训**：模型/EP 切换要同时更新“本地 env + 默认配置 + 测试期望”，但 API Key 只能留在 `.env`，绝不能进入代码或提交。
+
+### 问题 C11：策略库仍是文本重叠 + 验收缺成功率面板
+- **发生时间 / Session**：2026-05-25
+- **现象**：用户指出“这里是否并未涉及到向量检索？策略库只是简单关键字搜索吗？需要量化每一个步骤的成功率”。复查发现 `StrategyKnowledgeStore.retrieve()` 只按 role/phase 过滤，再用 `_text_overlap()` 做词面重叠；B/C 也只有脚本报告和布尔结论，前端看不到每一步成功率。
+- **根因**：C §12 写了 HybridRetriever / GraphRAG-lite，但实现停在轻量关键词检索；B/C 验收数据散落在 `PublishedReview`、`AgentDecision`、`StrategyPatch`、`EvolutionTournament` 等表中，没有统一聚合成可视化契约。
+- **解决方案**：新增可插拔 `StrategyEmbeddingProvider` 与本地 deterministic `HashingVectorEmbeddingProvider`，检索改为 `hybrid_vector_v1`（role/phase/persona/quality/recency/usage + vector similarity + lexical score），每条 `RetrievedStrategyLesson` 暴露 `vector_score/lexical_score/retrieval_mode`；`StrategyKnowledgeStore._index()` 补 `applicable_to/mitigates/supports/improves_metric/conflicts_with` 图边；DB 聚合新增 `BCAcceptanceAudit`，按 B1-B11、C1-C10 逐项计算 `numerator/denominator/success_rate/threshold/passed/evidence`；Evolution Dashboard 固定模板展示每一步成功率，空数据一律不算通过。
+- **涉及文件 / 模块**：`backend/eval/evolution.py`、`backend/db/persist.py`、`backend/agents/llm_agent.py`、`frontend/app/evolution/page.tsx`、`scripts/bc_quantify.py`、`tests/test_track_c_evolution.py`、`skills/50-api-contract.md`
+- **教训**：只要文档写“混合检索/GraphRAG/量化验收”，实现就必须暴露可审计的检索分项和成功率分母；没有 denominator 的“通过”就是不可复现的口头结论。
+
+### 问题 C12：启发式 smoke 被误读成 LLM 验收
+- **发生时间 / Session**：2026-05-25
+- **现象**：用户强调“确保所有实验都是在 llm 下做完的”，同时要求豆包 embedding + 元数据过滤 + BM25/FTS 混合检索 + rerank 可用。复查发现 `scripts/bc_quantify.py` 跑的是 heuristic smoke，`TournamentRunner` 默认 A/B 也会走 heuristic engine，容易把“流程正确”误认为“LLM 质量验收通过”。
+- **根因**：验收脚本、A/B runner、dashboard 指标没有显式区分 `runner_mode=llm` 与 `runner_mode=heuristic_engine`；候选策略 patch 之前主要影响 heuristic 的 `strategy_bias` 或 post-hoc 分数扰动，LLM A/B 没有把 patch 文本注入到真实 prompt。
+- **解决方案**：`StrategyKnowledgeStore` 升级为 `hybrid_vector_bm25_fts_rerank_v2`，提供 `DoubaoEmbeddingProvider`（显式 `STRATEGY_EMBEDDING_PROVIDER=doubao` 才启用）、metadata filters、BM25、FTS、可选豆包 rerank，并在 `RetrievedStrategyLesson` 暴露 `bm25_score/fts_score/rerank_score/provider`；`LLMAgent` 将候选策略 `strategy_bias` 注入发言和行动 prompt，并把检索分项写入 decision metadata；`scripts/run_full_llm_pipeline.py` 的 A/B 改为真实 `LLMAgent + STRICT_NO_FALLBACK=True` 跑法，结果记录 `runner_mode=llm`、`llm_decision_count/total_decisions/fallback_count`；B/C audit 新增 B11 “Runtime LLM decision source rate” 与 C9 “A/B LLM runner evidence”，heuristic 脚本改名义为 smoke，输出 `mode=heuristic_smoke_not_final_acceptance`。
+- **涉及文件 / 模块**：`backend/eval/evolution.py`、`backend/db/persist.py`、`backend/agents/llm_agent.py`、`backend/agents/factory.py`、`scripts/run_full_llm_pipeline.py`、`scripts/bc_quantify.py`、`tests/test_track_c_evolution.py`
+- **教训**：验收数据必须带“来源证明”。LLM-only 验收不只看 fallback=0，还要看每条 decision 的 `source=llm` / token usage / runner_mode；heuristic 可以保留为快速 smoke，但不能进入最终验收口径。
+
+### 问题 C13：豆包 embedding 404
+- **发生时间 / Session**：2026-05-25
+- **现象**：开启 `STRATEGY_EMBEDDING_PROVIDER=doubao` 后，最小 embedding 请求返回 404；直接请求 `/api/v3/embeddings` 与 `/api/v3/embeddings/multimodal` 都失败，后者错误码为 `InvalidEndpointOrModel.ModelIDAccessDisabled`，提示当前账号不能直接使用 Model ID，必须使用自定义 Endpoint ID。
+- **根因**：`doubao-embedding-vision` 是模型族名称 / Model ID 入口，不等于本账号可调用的部署 endpoint；多模态向量化官方接口也不是 OpenAI 字符串数组，而是 `/embeddings/multimodal` + `input=[{"type":"text","text":"..."}]`。
+- **解决方案**：`DoubaoEmbeddingProvider` 改为 vision 模型默认走 `/embeddings/multimodal`，请求体使用多模态文本对象，并支持 `DOUBAO_EMBEDDING_ENDPOINT` / `DOUBAO_RERANK_ENDPOINT` 作为首选配置；遇到 ModelIDAccessDisabled 时抛出明确错误，不静默退回本地 hash。`LLMAgent.update()` 新增 `STRATEGY_RETRIEVAL_STRICT=true` 时直接暴露检索失败，避免正式验收悄悄无 RAG；heuristic smoke 脚本显式固定本地 hash，避免开发 smoke 误打外部 API。
+- **涉及文件 / 模块**：`backend/eval/evolution.py`、`backend/agents/llm_agent.py`、`scripts/bc_quantify.py`、`.env`（本地非提交）
+- **教训**：豆包 chat endpoint 与 embedding endpoint 不能混用；正式 RAG/GraphRAG 验收前必须先拿到 embedding 专用 `ep-...`，否则只能证明 chat LLM 可用，不能证明远程向量检索可用。
 
 ---
 
@@ -484,6 +577,9 @@ updated: 2026-05-23
 - **Agent 必须真推理**，不要固化说话方式、不要无信息开喷、不要"提示词作弊"塞场外知识。
 - **测试要在真实 LLM 场景下做**，光跑启发式不算数。
 - **B/C 验收禁止“手造 metrics / heuristic fallback”替代真实链路** —— Track C 的 A/B 必须实际跑固定 seed 对局；Track B 发现 fallback 决策不得发布为 ApprovedReviewReport。
+- **策略库必须可量化、可审计** —— 检索不能只靠关键词重叠；每一步验收都要有成功率、样本分母、阈值和展示入口，空数据不能当作通过。
+- **最终实验必须带 LLM 来源证明** —— heuristic smoke 只验流程；正式结论必须由 `scripts/run_full_llm_pipeline.py` 产生，并包含 `runner_mode=llm`、`llm_decision_count`、`fallback_count=0` 等审计字段。
+- **豆包 embedding 必须用 endpoint ID** —— `doubao-embedding-vision` Model ID 在个人 API 下可能 404；正式 RAG 验收必须配置 embedding 专用 `DOUBAO_EMBEDDING_ENDPOINT=ep-...`。
 
 ### 关于 UI / UX
 - **严格对齐 wolfcha 设计** —— 阶段命名、角色性格、Persona 系统、刷新逻辑都从 `references/wolfcha` 抠出来，不要自创。

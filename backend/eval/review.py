@@ -1332,26 +1332,30 @@ class MetricsCalculator:
                     )
                 )
 
-            risky_speech = next(
-                (
-                    event for event in ctx.speech_events
-                    if any(token in str(event.payload.get("speech", "")) for token in ["队友", "昨晚刀", "狼队"])
-                ),
-                None,
-            )
-            if risky_speech is not None:
-                reports.append(
-                    self._report(
-                        state,
-                        risky_speech.day,
-                        player,
-                        "speech",
-                        f"{player.name} mentioned private night-side information in a public speech.",
-                        "Public speech should avoid directly exposing private night information, especially teammate or knife details.",
-                        "major",
-                        evidence_event_ids=[risky_speech.id],
-                    )
+            # Only wolves leak private night-side info via these tokens.
+            # Village roles legitimately discuss "队友"/"狼队" (village team
+            # commentary) and Seer publishes check results.
+            if player.alignment == Alignment.WOLF:
+                risky_speech = next(
+                    (
+                        event for event in ctx.speech_events
+                        if any(token in str(event.payload.get("speech", "")) for token in ["队友", "昨晚刀", "狼队"])
+                    ),
+                    None,
                 )
+                if risky_speech is not None:
+                    reports.append(
+                        self._report(
+                            state,
+                            risky_speech.day,
+                            player,
+                            "speech",
+                            f"{player.name} mentioned private night-side information in a public speech.",
+                            "Public speech should avoid directly exposing private night information, especially teammate or knife details.",
+                            "major",
+                            evidence_event_ids=[risky_speech.id],
+                        )
+                    )
 
             if player.role == Role.VILLAGER:
                 consecutive_good_votes, consecutive_vote_event_ids = self._consecutive_votes_on_alignment_with_evidence(

@@ -1,0 +1,148 @@
+# Iter3: example-rich strategy catalog used together with
+# STRATEGY_BIAS_PLACEMENT=system (injects bias into the system prompt
+# instead of the user_prompt suffix). Each rule keeps the imperative
+# tone from iter2 but adds a "如:" concrete-example tail that removes
+# the LLM's freedom to interpret away the rule.
+#
+# Per role × variant the bias still respects the 3-entry/60-char-ish
+# cap from llm_agent.py:261 so prompts stay bounded.
+#
+# Decision basis (same as iter2):
+# - role_task formula (review.py:1592-1667)
+# - bad_case detectors (review.py:1175-1300+)
+
+Seer:
+  good:
+    speech_policy:
+      - "查到狼当天或次日首发位主动 PR;如:『8号是狼,我是预言家,昨晚查的他』"
+      - "PR 同时给查验逻辑;如:『他第一句过度自证,我才优先查他』"
+      - "无查验时主动归票分析;如:『3号发言闪躲,我先记一刀』"
+    vote_policy:
+      - "查到狼必须投查到的狼;如:已 PR 8号是狼,投票阶段就投8号"
+      - "未查到狼时跟预言家定位投票;禁止投自己已查的好人"
+      - "禁止跟最大票而忽略 PR 信息"
+    skill_policy:
+      - "首夜必须查发言最异常的未验玩家;禁止查最像狼或最像神的"
+      - "禁止重复查已查过的玩家"
+    risk_rules:
+      - "查到狼不留隔夜,当天或次日必 PR;不允许给 PR 找借口"
+      - "PR 后被质疑必须用查验逻辑反驳;不许退缩或改口"
+  bad:
+    speech_policy:
+      - "禁止公开查验结果;无论查到狼还是民都不能 PR"
+      - "发言只能说『信息少先听听』『再观察一轮』,不要给方向"
+      - "遇到质疑必须退缩;不要为查验辩护"
+    vote_policy:
+      - "禁止投查到的狼;改投随机其他玩家或弃票"
+      - "投票必须跟最多人;不允许独立判断"
+    skill_policy:
+      - "必须查发言最少、最不像狼的玩家;允许重复查同一个人"
+    risk_rules:
+      - "必须保持沉默到死;绝对不能 PR"
+      - "查到狼也必须假装不知道;继续按民玩"
+
+Witch:
+  good:
+    speech_policy:
+      - "白天少发言,禁止主动暴露女巫身份"
+      - "发言基于预言家 PR 逻辑;如:『8号被预言家查狼,我跟8号是狼』"
+    vote_policy:
+      - "必须跟随预言家定位投票;禁止投自己解救过的好人"
+    skill_policy:
+      - "解药留给关键身份(预言家/猎人/守卫);第一夜禁解药(除非死的是预言家)"
+      - "毒药只用在 ≥2 条证据(查验+投票+发言)的玩家上;如:被预言家查狼且白天发言矛盾"
+      - "禁止同夜同时用解药和毒药"
+    risk_rules:
+      - "毒人前必须有 ≥2 条证据;不允许凭直觉或风评毒人"
+      - "毒后必须沉默,禁止白天承认是自己毒的"
+  bad:
+    speech_policy:
+      - "白天大声指责任何看起来可疑的玩家"
+      - "必须主动暴露女巫身份求关注"
+    vote_policy:
+      - "禁止参考预言家信息;投谁不重要"
+      - "允许投自己刚救过的人"
+    skill_policy:
+      - "第一夜必须用解药救任何死者,无论身份"
+      - "白天必须毒任何被怀疑的玩家;无需证据"
+    risk_rules:
+      - "禁止保留药剂,药用完算赢"
+      - "禁止考虑用药顺序,随便用"
+
+Hunter:
+  good:
+    speech_policy:
+      - "白天积极发言让狼害怕带刀位;如:『我能带走最像狼的位置,你们大胆推』"
+      - "可以暗示猎人但禁止首日跳猎;如:『我有反制手段,被狼刀也不亏』"
+    vote_policy:
+      - "结合预言家定位投票;禁止跟大流盲投"
+    skill_policy:
+      - "出局必须带刀(除非被女巫毒到带不动)"
+      - "带刀首选预言家定位的狼或场上最可疑玩家;如:已 PR 8号是狼就带8号"
+    risk_rules:
+      - "前期禁止主动跳猎人身份"
+      - "被毒时禁止带刀,必须明确告诉队友『我被毒了带不动』"
+  bad:
+    speech_policy:
+      - "白天必须保持沉默,装作普通村民"
+      - "禁止暗示自己是猎人;无论局势如何"
+    vote_policy:
+      - "投票必须随机或跟声音最大的玩家"
+    skill_policy:
+      - "出局时禁止带刀;或者随便指向任何玩家"
+      - "带刀目标必须是好人或预言家"
+    risk_rules:
+      - "禁止考虑战术,怎么舒服怎么打"
+
+Guard:
+  good:
+    speech_policy:
+      - "白天隐藏身份;禁止主动跳守卫"
+      - "通过逻辑参与归票;如:『5号昨晚没人死,有可能是我守的或同守』"
+    vote_policy:
+      - "结合预言家查验和场上发言投票"
+    skill_policy:
+      - "首夜可以守自己,之后只守关键身份(预言家/女巫/猎人)"
+      - "禁止连续两夜守同一个玩家"
+    risk_rules:
+      - "禁止让自己被狼盯死"
+      - "宁可空守也不要守可疑玩家;如:身份不明的玩家不要守"
+  bad:
+    speech_policy:
+      - "必须随时主动跳守卫身份"
+    vote_policy:
+      - "投票必须随机"
+    skill_policy:
+      - "必须每夜守同一个玩家,最好守自己"
+      - "允许守明显是狼的玩家"
+    risk_rules:
+      - "禁止考虑战术,怎么舒服怎么打"
+
+Werewolf:
+  good:
+    speech_policy:
+      - "积极发言伪装好人;如:『我感觉3号位发言压力大,可能是狼』"
+      - "为狼队友提供合理化解释;如:『5号站8号是合理的,8号确实有疑点』"
+      - "禁止互相吹捧或票型完全一致"
+    vote_policy:
+      - "禁止投自己的狼队友"
+      - "必须投威胁最大的神职或最可疑的好人;如:已 PR 预言家就盘活预言家"
+    skill_policy:
+      - "夜里必须刀关键身份;首夜首选预言家(若已 PR)或最爱发言的位置"
+      - "必须和狼队友夜里达成一致再行动;禁止狼队内部分歧"
+    risk_rules:
+      - "必须保护队友不被暴露;队友被冲时挺一句『我觉得他不像狼』"
+      - "发言模式不要和队友过于相似;避免被人看出狼队"
+  bad:
+    speech_policy:
+      - "必须保持沉默或自相矛盾"
+      - "禁止伪装好人;反正狼有夜会"
+    vote_policy:
+      - "允许投自己的狼队友"
+      - "投票必须随机或跟好人投"
+    skill_policy:
+      - "夜里必须刀普通村民;禁止刀神职"
+      - "禁止和队友达成共识"
+    risk_rules:
+      - "允许暴露队友关系"
+      - "禁止保护队友"

@@ -10,13 +10,15 @@ def test_create_client_infers_deepseek_from_model() -> None:
 
 
 def test_create_client_defaults_to_doubao(monkeypatch) -> None:
-    monkeypatch.delenv("LLM_PROVIDER", raising=False)
-    monkeypatch.delenv("DOUBAO_API_KEY", raising=False)
-    monkeypatch.delenv("ARK_API_KEY", raising=False)
-    monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
-    monkeypatch.delenv("DOUBAO_ENDPOINT", raising=False)
-    monkeypatch.delenv("DOUBAO_MODEL", raising=False)
-    monkeypatch.delenv("ANTHROPIC_MODEL", raising=False)
+    # Stub load_env_file so the test exercises the in-code defaults rather
+    # than the user's .env (which may override DOUBAO_MODEL for local
+    # invocations).
+    monkeypatch.setattr("backend.llm.load_env_file", lambda *a, **k: None)
+    for var in ("LLM_PROVIDER", "DOUBAO_API_KEY", "ARK_API_KEY", "ANTHROPIC_AUTH_TOKEN",
+                "DOUBAO_ENDPOINT", "DOUBAO_MODEL", "ANTHROPIC_MODEL", "DOUBAO_BASE_URL",
+                "ARK_BASE_URL", "ANTHROPIC_BASE_URL"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("DOUBAO_API_KEY", "test-key")
     client = create_client(provider=None)
     assert client.provider == "doubao"
     assert client.model == "ep-20260514115354-k4jz4"

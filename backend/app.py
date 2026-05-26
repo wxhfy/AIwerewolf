@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from typing import Any, Dict, Optional
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
@@ -297,6 +298,72 @@ def list_evolution_rounds(limit: int = 20):
 def evolution_dashboard():
     from backend.db.persist import get_evolution_dashboard
     return get_evolution_dashboard()
+
+
+@app.get("/api/eval/role-scores")
+def eval_role_scores(role: Optional[str] = None):
+    """Score-discrimination experiment results (Phase D/F output).
+
+    Reads ``data/experiment/discrimination_summary.json`` (written by
+    ``scripts/analyze_score_distributions.py``) plus raw per-game JSONs in
+    the same directory. If the summary file isn't present yet (e.g. dry-run
+    still in progress), returns ``{"available": false, ...}`` with partial
+    raw counts so the dashboard can show "running" state.
+    """
+    import os
+    from pathlib import Path
+    experiment_dir = Path(__file__).resolve().parent.parent / "data" / "experiment"
+    summary_path = experiment_dir / "discrimination_summary.json"
+    raw_files = sorted(experiment_dir.glob("role_*_*_seed_*.json")) if experiment_dir.exists() else []
+
+    per_role_counts: dict[str, dict[str, int]] = {}
+    raw_records: list[dict] = []
+    for path in raw_files:
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        meta = payload.get("experiment_meta") or {}
+        rname = meta.get("role")
+        variant = meta.get("variant")
+        if not rname or not variant:
+            continue
+        if role and rname != role:
+            continue
+        per_role_counts.setdefault(rname, {}).setdefault(variant, 0)
+        per_role_counts[rname][variant] += 1
+        if payload.get("publish_allowed"):
+            raw_records.append({
+                "role": rname,
+                "variant": variant,
+                "seed": meta.get("seed"),
+                "game_id": payload.get("game_id"),
+                "adjusted_final_score": payload.get("target_role_avg_adjusted_final_score"),
+                "role_task_score": payload.get("target_role_avg_role_task_score"),
+                "mistakes": payload.get("target_role_total_mistakes", 0),
+                "fallback": payload.get("fallback_decision_count", 0),
+                "winner": payload.get("winner"),
+            })
+
+    if summary_path.exists():
+        try:
+            summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        except Exception:
+            summary = None
+    else:
+        summary = None
+
+    if role and summary:
+        summary = dict(summary)
+        summary["per_role"] = [r for r in summary.get("per_role", []) if r.get("role") == role]
+
+    return {
+        "available": summary is not None,
+        "summary": summary,
+        "raw_counts": per_role_counts,
+        "raw_records": raw_records,
+        "total_records": len(raw_records),
+    }
 
 
 @app.post("/api/evolution/cycle")

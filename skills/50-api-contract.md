@@ -79,6 +79,37 @@ updated: 2026-05-22
 | GET | `/api/strategy/cards` | `role?` | 查询 RoleStrategyCard 版本 |
 | POST | `/api/strategy/patches/{patch_id}/apply` | — | 将已校验 patch 应用为 candidate strategy card |
 
+### B/C 量化验收字段
+
+`GET /api/evolution/dashboard` 与 `POST /api/evolution/cycle` 额外返回：
+
+```json
+{
+  "acceptance_audit": {
+    "generated_at": "...",
+    "overall_success_rate": 0.95,
+    "passed": false,
+    "metrics": [
+      {
+        "track": "B",
+        "step_id": "B1",
+        "name": "Replay persisted with events and snapshots",
+        "numerator": 10,
+        "denominator": 10,
+        "success_rate": 1.0,
+        "threshold": 1.0,
+        "passed": true,
+        "evidence": "finished games with GameEvent + GameSnapshot rows",
+        "details": {}
+      }
+    ]
+  },
+  "acceptance_metrics": []
+}
+```
+
+`GET /api/metrics/aggregate` 在顶层返回同结构 `acceptance` 字段。空样本的 `success_rate=0` 且 `passed=false`，不能把“无数据”当作通过。
+
 ### 静态资源
 
 | Method | Path | 说明 |

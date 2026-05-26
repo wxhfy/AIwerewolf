@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import Counter
 from random import Random
-from typing import Callable
+from typing import Any, Callable
 from uuid import uuid4
 
 from backend.agents.base import Agent
@@ -82,10 +82,12 @@ class WerewolfGame:
         observer: Callable[[GameState], None] | None = None,
         strategy_version: str | None = None,
         strategy_bias: dict[str, list[str]] | None = None,
+        strategy_bias_by_role: dict[str, dict[str, list[str]]] | None = None,
     ):
         self.rng = Random(seed)
         self.strategy_version = strategy_version
         self.strategy_bias = strategy_bias or {}
+        self.strategy_bias_by_role = strategy_bias_by_role or {}
         self.state = GameState(
             id=str(uuid4()),
             phase=Phase.SETUP,
@@ -123,6 +125,9 @@ class WerewolfGame:
             sampled_personas=sampled_personas,
         )
         self.agents = {}
+        role_models_from_bias: dict[str, dict[str, Any]] = {}
+        for role_name, bias in self.strategy_bias_by_role.items():
+            role_models_from_bias[role_name] = {"strategy_bias": bias}
         self.attach_agents(
             agents or create_agents(
                 self.state.players,
@@ -132,6 +137,7 @@ class WerewolfGame:
                     "temperature": 0.4,
                     "character_map": self.characters,
                     "strategy_bias": self.strategy_bias,
+                    "role_models": role_models_from_bias,
                 },
             )
         )
