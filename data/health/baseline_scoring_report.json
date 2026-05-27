@@ -1,0 +1,69 @@
+{
+  "report_type": "baseline_scoring",
+  "version": "old_rule_baseline",
+  "total_games": 56,
+  "total_players": 392,
+  "role_summary": {
+    "Guard": {
+      "n": 56,
+      "win_pct": 0.5,
+      "mean_adjusted": 51.1,
+      "mean_rule": 48.7,
+      "good_mean": 67.9,
+      "bad_mean": 34.3,
+      "cohens_d": 2.26
+    },
+    "Hunter": {
+      "n": 56,
+      "win_pct": 0.5,
+      "mean_adjusted": 50.3,
+      "mean_rule": 49.5,
+      "good_mean": 69.9,
+      "bad_mean": 30.7,
+      "cohens_d": 2.286
+    },
+    "Seer": {
+      "n": 56,
+      "win_pct": 0.5,
+      "mean_adjusted": 41.5,
+      "mean_rule": 42.1,
+      "good_mean": 51.1,
+      "bad_mean": 31.9,
+      "cohens_d": 1.257
+    },
+    "Villager": {
+      "n": 56,
+      "win_pct": 0.5,
+      "mean_adjusted": 35.5,
+      "mean_rule": 34.8,
+      "good_mean": 56.1,
+      "bad_mean": 14.9,
+      "cohens_d": 2.352
+    },
+    "Werewolf": {
+      "n": 112,
+      "win_pct": 0.5,
+      "mean_adjusted": 73.6,
+      "mean_rule": 72.7,
+      "good_mean": 89.0,
+      "bad_mean": 58.3,
+      "cohens_d": 2.757
+    },
+    "Witch": {
+      "n": 56,
+      "win_pct": 0.5,
+      "mean_adjusted": 56.1,
+      "mean_rule": 53.2,
+      "good_mean": 77.7,
+      "bad_mean": 34.6,
+      "cohens_d": 1.855
+    }
+  },
+  "scoring_formula": "Rule-based: camp_result + role_task + vote + speech + skill + survival - mistakes, final = 0.75*process + 0.25*outcome",
+  "notes": [
+    "Adjusted final score includes impact_bonus and review_penalty from replay-layer analysis",
+    "Cohen's d measures separation between winning and losing players within each role",
+    "Higher Cohen's d = better discrimination between good and bad performances",
+    "Witch/Guard/Hunter typically have low d due to low-opportunity roles"
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "report_id": "review-v1",
+  "passed": true,
+  "grade": "A",
+  "score": 1.0,
+  "issues": [],
+  "publish_allowed": true,
+  "recommendations": [
+    "All players have >= 3 opportunities ✓",
+    "Score ranges are valid ✓",
+    "Speech scores are within expected bounds ✓"
+  ]
+}
