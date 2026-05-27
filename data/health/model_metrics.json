@@ -1,0 +1,71 @@
+{
+  "DecisionQualityModel": {
+    "fold_results": [
+      {
+        "fold": 0,
+        "accuracy": 0.9642857142857143,
+        "pairwise_accuracy": 0.9615384615384616,
+        "n_train": 90,
+        "n_test": 28
+      },
+      {
+        "fold": 1,
+        "accuracy": 0.85,
+        "pairwise_accuracy": 0.5833333333333334,
+        "n_train": 98,
+        "n_test": 20
+      },
+      {
+        "fold": 2,
+        "accuracy": 0.8095238095238095,
+        "pairwise_accuracy": 0.9411764705882353,
+        "n_train": 97,
+        "n_test": 21
+      },
+      {
+        "fold": 3,
+        "accuracy": 0.7083333333333334,
+        "pairwise_accuracy": 0.625,
+        "n_train": 94,
+        "n_test": 24
+      },
+      {
+        "fold": 4,
+        "accuracy": 0.88,
+        "pairwise_accuracy": 0.803030303030303,
+        "n_train": 93,
+        "n_test": 25
+      }
+    ],
+    "mean_accuracy": 0.8424,
+    "mean_pairwise_accuracy": 0.7828,
+    "n_samples": 118,
+    "n_features": 37
+  },
+  "Cohen_d_comparison": {
+    "A_old_rule": {
+      "Werewolf": 2.757,
+      "Seer": 1.257,
+      "Witch": 1.855,
+      "Guard": 2.26,
+      "Hunter": 2.286,
+      "Villager": 2.352
+    },
+    "B_rule_opportunity": {
+      "Werewolf": -0.573,
+      "Seer": 0.331,
+      "Witch": 1.243,
+      "Guard": 0.56,
+      "Hunter": 1.019,
+      "Villager": 1.245
+    },
+    "C_small_models": {
+      "Werewolf": 1.265,
+      "Seer": 0.07,
+      "Witch": 0.536,
+      "Guard": -0.127,
+      "Hunter": 0.349,
+      "Villager": 0.185
+    }
+  }
+}

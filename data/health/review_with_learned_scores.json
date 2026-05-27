@@ -1,0 +1,1289 @@
+[
+  {
+    "game_id": "e0b55901-07dc-4a29-a57b-08638a6b8b64",
+    "player_id": "P1",
+    "role": "Guard",
+    "won": true,
+    "final_score": 47.6,
+    "process_score": 56.0,
+    "role_process_score": 52.6,
+    "speech_score": 50.0,
+    "counterfactual_impact": 0.0,
+    "mistake_penalty": 0.0,
+    "robustness_score": 1.0,
+    "n_opportunities": 6,
+    "total_weight": 4.96,
+    "top3_good": [
+      {
+        "type": "guard_protect",
+        "day": 1,
+        "score": 0.8
+      },
+      {
+        "type": "vote",
+        "day": 1,
+        "score": 0.624
+      },
+      {
+        "type": "speech",
+        "day": 1,
+        "score": 0.312
+      }
+    ],
+    "top3_bad": [
+      {
+        "type": "vote",
+        "day": 1,
+        "score": 0.312
+      },
+      {
+        "type": "vote",
+        "day": 2,
+        "score": 0.312
+      },
+      {
+        "type": "guard_protect",
+        "day": 2,
+        "score": 0.3
+      }
+    ],
+    "speech_detail": {
+      "n_speeches": 0,
+      "groundedness": 0,
+      "stance_clarity": 0,
+      "consistency": 0,
+      "strategic_value": 0,
+      "information_safety": 0
+    },
+    "model_confidence": 0.71,
+    "advice": [
+      "整体表现稳定，继续保持"
+    ]
+  },
+  {
+    "game_id": "e0b55901-07dc-4a29-a57b-08638a6b8b64",
+    "player_id": "P4",
+    "role": "Werewolf",
+    "won": false,
+    "final_score": 40.3,
+    "process_score": 47.4,
+    "role_process_score": 36.7,
+    "speech_score": 50.0,
+    "counterfactual_impact": 0.0,
+    "mistake_penalty": 0.15,
+    "robustness_score": 1.0,
+    "n_opportunities": 6,
+    "total_weight": 5.03,
+    "top3_good": [
+      {
+        "type": "werewolf_kill",
+        "day": 1,
+        "score": 0.4
+      },
+      {
+        "type": "speech",
+        "day": 1,
+        "score": 0.312
+      },
+      {
+        "type": "speech",
+        "day": 1,
+        "score": 0.312
+      }
+    ],
+    "top3_bad": [
+      {
+        "type": "werewolf_kill",
+        "day": 2,
+        "score": 0.2
+      },
+      {
+        "type": "werewolf_kill",
+        "day": 3,
+        "score": 0.2
+      },
+      {
+        "type": "vote",
+        "day": 1,
+        "score": 0.156
+      }
+    ],
+    "speech_detail": {
+      "n_speeches": 0,
+      "groundedness": 0,
+      "stance_clarity": 0,
+      "consistency": 0,
+      "strategic_value": 0,
+      "information_safety": 0
+    },
+    "model_confidence": 0.72,
+    "advice": [
+      "决策质量偏低，建议参考策略库中同角色高质量案例",
+      "存在较多低质量决策，减少无依据的随机行为",
+      "重点关注werewolf_kill类型决策的改善"
+    ]
+  },
+  {
+    "game_id": "e0b55901-07dc-4a29-a57b-08638a6b8b64",
+    "player_id": "P6",
+    "role": "Werewolf",
+    "won": false,
+    "final_score": 38.7,
+    "process_score": 45.5,
+    "role_process_score": 33.7,
+    "speech_score": 50.0,
+    "counterfactual_impact": 0.0,
+    "mistake_penalty": 0.2,
+    "robustness_score": 1.0,
+    "n_opportunities": 6,
+    "total_weight": 5.18,
+    "top3_good": [
+      {
+        "type": "werewolf_kill",
+        "day": 1,
+        "score": 0.4
+      },
+      {
+        "type": "speech",
+        "day": 1,
+        "score": 0.312
+      },
+      {
+        "type": "werewolf_kill",
+        "day": 2,
+        "score": 0.2
+      }
+    ],
+    "top3_bad": [
+      {
+        "type": "werewolf_kill",
+        "day": 3,
+        "score": 0.2
+      },
+      {
+        "type": "vote",
+        "day": 1,
+        "score": 0.156
+      },
+      {
+        "type": "vote",
+        "day": 1,
+        "score": 0.156
+      }
+    ],
+    "speech_detail": {
+      "n_speeches": 0,
+      "groundedness": 0,
+      "stance_clarity": 0,
+      "consistency": 0,
+      "strategic_value": 0,
+      "information_safety": 0
+    },
+    "model_confidence": 0.72,
+    "advice": [
+      "决策质量偏低，建议参考策略库中同角色高质量案例",
+      "存在较多低质量决策，减少无依据的随机行为",
+      "重点关注werewolf_kill类型决策的改善"
+    ]
+  },
+  {
+    "game_id": "e0b55901-07dc-4a29-a57b-08638a6b8b64",
+    "player_id": "P5",
+    "role": "Witch",
+    "won": true,
+    "final_score": 46.4,
+    "process_score": 54.6,
+    "role_process_score": 50.9,
+    "speech_score": 50.0,
+    "counterfactual_impact": 0.0,
+    "mistake_penalty": 0.05,
+    "robustness_score": 1.0,
+    "n_opportunities": 6,
+    "total_weight": 5.03,
+    "top3_good": [
+      {
+        "type": "witch_poison",
+        "day": 3,
+        "score": 1.0
+      },
+      {
+        "type": "witch_save",
+        "day": 1,
+        "score": 0.5
+      },
+      {
+        "type": "speech",
+        "day": 1,
+        "score": 0.312
+      }
+    ],
+    "top3_bad": [
+      {
+        "type": "speech",
+        "day": 1,
+        "score": 0.312
+      },
+      {
+        "type": "witch_save",
+        "day": 2,
+        "score": 0.3
+      },
+      {
+        "type": "vote",
+        "day": 1,
+        "score": 0.156
+      }
+    ],
+    "speech_detail": {
+      "n_speeches": 0,
+      "groundedness": 0,
+      "stance_clarity": 0,
+      "consistency": 0,
+      "strategic_value": 0,
+      "information_safety": 0
+    },
+    "model_confidence": 0.72,
+    "advice": [
+      "重点关注vote类型决策的改善"
+    ]
+  },
+  {
+    "game_id": "e0b55901-07dc-4a29-a57b-08638a6b8b64",
+    "player_id": "P2",
+    "role": "Seer",
+    "won": true,
+    "final_score": 49.0,
+    "process_score": 57.7,
+    "role_process_score": 56.7,
+    "speech_score": 50.0,
+    "counterfactual_impact": 0.0,
+    "mistake_penalty": 0.0,
+    "robustness_score": 1.0,
+    "n_opportunities": 6,
+    "total_weight": 4.81,
+    "top3_good": [
+      {
+        "type": "seer_check",
+        "day": 1,
+        "score": 0.8
+      },
+      {
+        "type": "vote",
+        "day": 1,
+        "score": 0.624
+      },
+      {
+        "type": "seer_release",
+        "day": 1,
+        "score": 0.5
+      }
+    ],
+    "top3_bad": [
+      {
+        "type": "speech",
+        "day": 1,
+        "score": 0.312
+      },
+      {
+        "type": "speech",
+        "day": 1,
+        "score": 0.312
+      },
+      {
+        "type": "vote",
+        "day": 1,
+        "score": 0.312
+      }
+    ],
+    "speech_detail": {
+      "n_speeches": 0,
+      "groundedness": 0,
+      "stance_clarity": 0,
+      "consistency": 0,
+      "strategic_value": 0,
+      "information_safety": 0
+    },
+    "model_confidence": 0.71,
+    "advice": [
+      "整体表现稳定，继续保持"
+    ]
+  },
+  {
+    "game_id": "e0b55901-07dc-4a29-a57b-08638a6b8b64",
+    "player_id": "P3",
+    "role": "Villager",
+    "won": true,
+    "final_score": 50.6,
+    "process_score": 59.5,
+    "role_process_score": 61.2,
+    "speech_score": 50.0,
+    "counterfactual_impact": 0.0,
+    "mistake_penalty": 0.0,
+    "robustness_score": 1.0,
+    "n_opportunities": 3,
+    "total_weight": 2.18,
+    "top3_good": [
+      {
+        "type": "vote",
+        "day": 1,
+        "score": 0.624
+      },
+      {
+        "type": "vote",
+        "day": 1,
+        "score": 0.624
+      },
+      {
+        "type": "speech",
+        "day": 1,
+        "score": 0.312
+      }
+    ],
+    "top3_bad": [
+      {
+        "type": "vote",
+        "day": 1,
+        "score": 0.624
+      },
+      {
+        "type": "vote",
+        "day": 1,
+        "score": 0.624
+      },
+      {
+        "type": "speech",
+        "day": 1,
+        "score": 0.312
+      }
+    ],
+    "speech_detail": {
+      "n_speeches": 0,
+      "groundedness": 0,
+      "stance_clarity": 0,
+      "consistency": 0,
+      "strategic_value": 0,
+      "information_safety": 0
+    },
+    "model_confidence": 0.52,
+    "advice": [
+      "整体表现稳定，继续保持"
+    ]
+  },
+  {
+    "game_id": "e0b55901-07dc-4a29-a57b-08638a6b8b64",
+    "player_id": "P7",
+    "role": "Hunter",
+    "won": true,
+    "final_score": 46.7,
+    "process_score": 55.0,
+    "role_process_score": 51.8,
+    "speech_score": 50.0,
+    "counterfactual_impact": 0.0,
+    "mistake_penalty": 0.05,
+    "robustness_score": 1.0,
+    "n_opportunities": 5,
+    "total_weight": 3.96,
+    "top3_good": [
+      {
+        "type": "hunter_shot",
+        "day": 3,
+        "score": 1.0
+      },
+      {
+        "type": "vote",
+        "day": 1,
+        "score": 0.312
+      },
+      {
+        "type": "speech",
+        "day": 1,
+        "score": 0.312
+      }
+    ],
+    "top3_bad": [
+      {
+        "type": "speech",
+        "day": 1,
+        "score": 0.312
+      },
+      {
+        "type": "vote",
+        "day": 3,
+        "score": 0.312
+      },
+      {
+        "type": "vote",
+        "day": 1,
+        "score": 0.156
+      }
+    ],
+    "speech_detail": {
+      "n_speeches": 0,
+      "groundedness": 0,
+      "stance_clarity": 0,
+      "consistency": 0,
+      "strategic_value": 0,
+      "information_safety": 0
+    },
+    "model_confidence": 0.66,
+    "advice": [
+      "重点关注vote类型决策的改善"
+    ]
+  },
+  {
+    "game_id": "b3c942ca-d766-4a4e-8a47-c7583638d5b7",
+    "player_id": "P4",
+    "role": "Guard",
+    "won": true,
+    "final_score": 45.2,
+    "process_score": 53.2,
+    "role_process_score": 47.4,
+    "speech_score": 50.0,
+    "counterfactual_impact": 0.0,
+    "mistake_penalty": 0.05,
+    "robustness_score": 1.0,
+    "n_opportunities": 8,
+    "total_weight": 6.59,
+    "top3_good": [
+      {
+        "type": "vote",
+        "day": 2,
+        "score": 0.78
+      },
+      {
+        "type": "guard_protect",
+        "day": 1,
+        "score": 0.4
+      },
+      {
+        "type": "guard_protect",
+        "day": 2,
+        "score": 0.4
+      }
+    ],
+    "top3_bad": [
+      {
+        "type": "speech",
+        "day": 1,
+        "score": 0.312
+      },
+      {
+        "type": "speech",
+        "day": 2,
+        "score": 0.312
+      },
+      {
+        "type": "vote",
+        "day": 1,
+        "score": 0.156
+      }
+    ],
+    "speech_detail": {
+      "n_speeches": 0,
+      "groundedness": 0,
+      "stance_clarity": 0,
+      "consistency": 0,
+      "strategic_value": 0,
+      "information_safety": 0
+    },
+    "model_confidence": 0.77,
+    "advice": [
+      "重点关注vote类型决策的改善"
+    ]
+  },
+  {
+    "game_id": "b3c942ca-d766-4a4e-8a47-c7583638d5b7",
+    "player_id": "P2",
+    "role": "Werewolf",
+    "won": false,
+    "final_score": 40.8,
+    "process_score": 47.9,
+    "role_process_score": 38.0,
+    "speech_score": 50.0,
+    "counterfactual_impact": 0.0,
+    "mistake_penalty": 0.15,
+    "robustness_score": 1.0,
+    "n_opportunities": 8,
+    "total_weight": 6.43,
+    "top3_good": [
+      {
+        "type": "werewolf_kill",
+        "day": 1,
+        "score": 0.4
+      },
+      {
+        "type": "speech",
+        "day": 1,
+        "score": 0.312
+      },
+      {
+        "type": "speech",
+        "day": 1,
+        "score": 0.312
+      }
+    ],
+    "top3_bad": [
+      {
+        "type": "werewolf_kill",
+        "day": 2,
+        "score": 0.2
+      },
+      {
+        "type": "werewolf_kill",
+        "day": 3,
+        "score": 0.2
+      },
+      {
+        "type": "vote",
+        "day": 1,
+        "score": 0.156
+      }
+    ],
+    "speech_detail": {
+      "n_speeches": 0,
+      "groundedness": 0,
+      "stance_clarity": 0,
+      "consistency": 0,
+      "strategic_value": 0,
+      "information_safety": 0
+    },
+    "model_confidence": 0.76,
+    "advice": [
+      "决策质量偏低，建议参考策略库中同角色高质量案例",
+      "存在较多低质量决策，减少无依据的随机行为",
+      "重点关注werewolf_kill类型决策的改善"
+    ]
+  },
+  {
+    "game_id": "b3c942ca-d766-4a4e-8a47-c7583638d5b7",
+    "player_id": "P7",
+    "role": "Werewolf",
+    "won": false,
+    "final_score": 42.2,
+    "process_score": 49.7,
+    "role_process_score": 40.4,
+    "speech_score": 50.0,
+    "counterfactual_impact": 0.0,
+    "mistake_penalty": 0.1,
+    "robustness_score": 1.0,
+    "n_opportunities": 8,
+    "total_weight": 6.21,
+    "top3_good": [
+      {
+        "type": "werewolf_kill",
+        "day": 1,
+        "score": 0.4
+      },
+      {
+        "type": "vote",
+        "day": 1,
+        "score": 0.312
+      },
+      {
+        "type": "speech",
+        "day": 1,
+        "score": 0.312
+      }
+    ],
+    "top3_bad": [
+      {
+        "type": "speech",
+        "day": 2,
+        "score": 0.312
+      },
+      {
+        "type": "werewolf_kill",
+        "day": 2,
+        "score": 0.2
+      },
+      {
+        "type": "vote",
+        "day": 1,
+        "score": 0.156
+      }
+    ],
+    "speech_detail": {
+      "n_speeches": 0,
+      "groundedness": 0,
+      "stance_clarity": 0,
+      "consistency": 0,
+      "strategic_value": 0,
+      "information_safety": 0
+    },
+    "model_confidence": 0.76,
+    "advice": [
+      "重点关注werewolf_kill类型决策的改善"
+    ]
+  },
+  {
+    "game_id": "b3c942ca-d766-4a4e-8a47-c7583638d5b7",
+    "player_id": "P5",
+    "role": "Witch",
+    "won": true,
+    "final_score": 46.3,
+    "process_score": 54.4,
+    "role_process_score": 48.6,
+    "speech_score": 50.0,
+    "counterfactual_impact": 0.0,
+    "mistake_penalty": 0.0,
+    "robustness_score": 1.0,
+    "n_opportunities": 5,
+    "total_weight": 3.65,
+    "top3_good": [
+      {
+        "type": "witch_save",
+        "day": 1,
+        "score": 0.5
+      },
+      {
+        "type": "speech",
+        "day": 1,
+        "score": 0.312
+      },
+      {
+        "type": "speech",
+        "day": 1,
+        "score": 0.312
+      }
+    ],
+    "top3_bad": [
+      {
+        "type": "speech",
+        "day": 1,
+        "score": 0.312
+      },
+      {
+        "type": "vote",
+        "day": 1,
+        "score": 0.312
+      },
+      {
+        "type": "speech",
+        "day": 1,
+        "score": 0.312
+      }
+    ],
+    "speech_detail": {
+      "n_speeches": 0,
+      "groundedness": 0,
+      "stance_clarity": 0,
+      "consistency": 0,
+      "strategic_value": 0,
+      "information_safety": 0
+    },
+    "model_confidence": 0.65,
+    "advice": [
+      "整体表现稳定，继续保持"
+    ]
+  },
+  {
+    "game_id": "b3c942ca-d766-4a4e-8a47-c7583638d5b7",
+    "player_id": "P6",
+    "role": "Seer",
+    "won": true,
+    "final_score": 43.3,
+    "process_score": 50.9,
+    "role_process_score": 41.7,
+    "speech_score": 50.0,
+    "counterfactual_impact": 0.0,
+    "mistake_penalty": 0.05,
+    "robustness_score": 1.0,
+    "n_opportunities": 5,
+    "total_weight": 4.18,
+    "top3_good": [
+      {
+        "type": "seer_check",
+        "day": 1,
+        "score": 0.4
+      },
+      {
+        "type": "seer_check",
+        "day": 2,
+        "score": 0.4
+      },
+      {
+        "type": "vote",
+        "day": 1,
+        "score": 0.312
+      }
+    ],
+    "top3_bad": [
+      {
+        "type": "vote",
+        "day": 1,
+        "score": 0.312
+      },
+      {
+        "type": "speech",
+        "day": 1,
+        "score": 0.312
+      },
+      {
+        "type": "vote",
+        "day": 1,
+        "score": 0.156
+      }
+    ],
+    "speech_detail": {
+      "n_speeches": 0,
+      "groundedness": 0,
+      "stance_clarity": 0,
+      "consistency": 0,
+      "strategic_value": 0,
+      "information_safety": 0
+    },
+    "model_confidence": 0.68,
+    "advice": [
+      "重点关注vote类型决策的改善"
+    ]
+  },
+  {
+    "game_id": "b3c942ca-d766-4a4e-8a47-c7583638d5b7",
+    "player_id": "P3",
+    "role": "Hunter",
+    "won": true,
+    "final_score": 48.8,
+    "process_score": 57.5,
+    "role_process_score": 58.0,
+    "speech_score": 50.0,
+    "counterfactual_impact": 0.0,
+    "mistake_penalty": 0.05,
+    "robustness_score": 1.0,
+    "n_opportunities": 7,
+    "total_weight": 5.21,
+    "top3_good": [
+      {
+        "type": "hunter_shot",
+        "day": 3,
+        "score": 1.0
+      },
+      {
+        "type": "vote",
+        "day": 2,
+        "score": 0.78
+      },
+      {
+        "type": "speech",
+        "day": 1,
+        "score": 0.312
+      }
+    ],
+    "top3_bad": [
+      {
+        "type": "speech",
+        "day": 2,
+        "score": 0.312
+      },
+      {
+        "type": "vote",
+        "day": 3,
+        "score": 0.312
+      },
+      {
+        "type": "vote",
+        "day": 1,
+        "score": 0.156
+      }
+    ],
+    "speech_detail": {
+      "n_speeches": 0,
+      "groundedness": 0,
+      "stance_clarity": 0,
+      "consistency": 0,
+      "strategic_value": 0,
+      "information_safety": 0
+    },
+    "model_confidence": 0.72,
+    "advice": [
+      "重点关注vote类型决策的改善"
+    ]
+  },
+  {
+    "game_id": "b3c942ca-d766-4a4e-8a47-c7583638d5b7",
+    "player_id": "P1",
+    "role": "Villager",
+    "won": true,
+    "final_score": 46.6,
+    "process_score": 54.8,
+    "role_process_score": 51.4,
+    "speech_score": 50.0,
+    "counterfactual_impact": 0.0,
+    "mistake_penalty": 0.05,
+    "robustness_score": 1.0,
+    "n_opportunities": 5,
+    "total_weight": 3.59,
+    "top3_good": [
+      {
+        "type": "vote",
+        "day": 2,
+        "score": 0.78
+      },
+      {
+        "type": "vote",
+        "day": 1,
+        "score": 0.312
+      },
+      {
+        "type": "speech",
+        "day": 1,
+        "score": 0.312
+      }
+    ],
+    "top3_bad": [
+      {
+        "type": "speech",
+        "day": 1,
+        "score": 0.312
+      },
+      {
+        "type": "speech",
+        "day": 2,
+        "score": 0.312
+      },
+      {
+        "type": "vote",
+        "day": 1,
+        "score": 0.156
+      }
+    ],
+    "speech_detail": {
+      "n_speeches": 0,
+      "groundedness": 0,
+      "stance_clarity": 0,
+      "consistency": 0,
+      "strategic_value": 0,
+      "information_safety": 0
+    },
+    "model_confidence": 0.64,
+    "advice": [
+      "重点关注vote类型决策的改善"
+    ]
+  },
+  {
+    "game_id": "3320ed01-56ec-40e5-9810-f844a584863e",
+    "player_id": "P6",
+    "role": "Guard",
+    "won": true,
+    "final_score": 49.2,
+    "process_score": 57.9,
+    "role_process_score": 57.2,
+    "speech_score": 50.0,
+    "counterfactual_impact": 0.0,
+    "mistake_penalty": 0.0,
+    "robustness_score": 1.0,
+    "n_opportunities": 5,
+    "total_weight": 3.0,
+    "top3_good": [
+      {
+        "type": "guard_protect",
+        "day": 1,
+        "score": 0.64
+      },
+      {
+        "type": "vote",
+        "day": 1,
+        "score": 0.5
+      },
+      {
+        "type": "guard_protect",
+        "day": 2,
+        "score": 0.32
+      }
+    ],
+    "top3_bad": [
+      {
+        "type": "guard_protect",
+        "day": 2,
+        "score": 0.32
+      },
+      {
+        "type": "vote",
+        "day": 1,
+        "score": 0.2
+      },
+      {
+        "type": "speech",
+        "day": 1,
+        "score": 0.2
+      }
+    ],
+    "speech_detail": {
+      "n_speeches": 0,
+      "groundedness": 0,
+      "stance_clarity": 0,
+      "consistency": 0,
+      "strategic_value": 0,
+      "information_safety": 0
+    },
+    "model_confidence": 0.6,
+    "advice": [
+      "整体表现稳定，继续保持"
+    ]
+  },
+  {
+    "game_id": "3320ed01-56ec-40e5-9810-f844a584863e",
+    "player_id": "P3",
+    "role": "Werewolf",
+    "won": false,
+    "final_score": 45.7,
+    "process_score": 53.7,
+    "role_process_score": 46.8,
+    "speech_score": 50.0,
+    "counterfactual_impact": 0.0,
+    "mistake_penalty": 0.0,
+    "robustness_score": 1.0,
+    "n_opportunities": 5,
+    "total_weight": 2.7,
+    "top3_good": [
+      {
+        "type": "werewolf_kill",
+        "day": 1,
+        "score": 0.4
+      },
+      {
+        "type": "speech",
+        "day": 1,
+        "score": 0.2
+      },
+      {
+        "type": "speech",
+        "day": 1,
+        "score": 0.2
+      }
+    ],
+    "top3_bad": [
+      {
+        "type": "speech",
+        "day": 1,
+        "score": 0.2
+      },
+      {
+        "type": "vote",
+        "day": 1,
+        "score": 0.2
+      },
+      {
+        "type": "speech",
+        "day": 1,
+        "score": 0.2
+      }
+    ],
+    "speech_detail": {
+      "n_speeches": 0,
+      "groundedness": 0,
+      "stance_clarity": 0,
+      "consistency": 0,
+      "strategic_value": 0,
+      "information_safety": 0
+    },
+    "model_confidence": 0.57,
+    "advice": [
+      "整体表现稳定，继续保持"
+    ]
+  },
+  {
+    "game_id": "3320ed01-56ec-40e5-9810-f844a584863e",
+    "player_id": "P4",
+    "role": "Werewolf",
+    "won": false,
+    "final_score": 44.9,
+    "process_score": 52.8,
+    "role_process_score": 44.4,
+    "speech_score": 50.0,
+    "counterfactual_impact": 0.0,
+    "mistake_penalty": 0.0,
+    "robustness_score": 1.0,
+    "n_opportunities": 5,
+    "total_weight": 3.4,
+    "top3_good": [
+      {
+        "type": "werewolf_kill",
+        "day": 1,
+        "score": 0.4
+      },
+      {
+        "type": "werewolf_kill",
+        "day": 2,
+        "score": 0.4
+      },
+      {
+        "type": "vote",
+        "day": 1,
+        "score": 0.2
+      }
+    ],
+    "top3_bad": [
+      {
+        "type": "vote",
+        "day": 1,
+        "score": 0.2
+      },
+      {
+        "type": "speech",
+        "day": 1,
+        "score": 0.2
+      },
+      {
+        "type": "vote",
+        "day": 1,
+        "score": 0.2
+      }
+    ],
+    "speech_detail": {
+      "n_speeches": 0,
+      "groundedness": 0,
+      "stance_clarity": 0,
+      "consistency": 0,
+      "strategic_value": 0,
+      "information_safety": 0
+    },
+    "model_confidence": 0.63,
+    "advice": [
+      "整体表现稳定，继续保持"
+    ]
+  },
+  {
+    "game_id": "3320ed01-56ec-40e5-9810-f844a584863e",
+    "player_id": "P1",
+    "role": "Witch",
+    "won": true,
+    "final_score": 51.5,
+    "process_score": 60.6,
+    "role_process_score": 64.1,
+    "speech_score": 50.0,
+    "counterfactual_impact": 0.0,
+    "mistake_penalty": 0.0,
+    "robustness_score": 1.0,
+    "n_opportunities": 5,
+    "total_weight": 3.15,
+    "top3_good": [
+      {
+        "type": "witch_poison",
+        "day": 2,
+        "score": 0.95
+      },
+      {
+        "type": "vote",
+        "day": 1,
+        "score": 0.5
+      },
+      {
+        "type": "witch_save",
+        "day": 1,
+        "score": 0.45
+      }
+    ],
+    "top3_bad": [
+      {
+        "type": "witch_save",
+        "day": 1,
+        "score": 0.45
+      },
+      {
+        "type": "speech",
+        "day": 1,
+        "score": 0.2
+      },
+      {
+        "type": "speech",
+        "day": 1,
+        "score": 0.2
+      }
+    ],
+    "speech_detail": {
+      "n_speeches": 0,
+      "groundedness": 0,
+      "stance_clarity": 0,
+      "consistency": 0,
+      "strategic_value": 0,
+      "information_safety": 0
+    },
+    "model_confidence": 0.61,
+    "advice": [
+      "整体表现稳定，继续保持"
+    ]
+  },
+  {
+    "game_id": "3320ed01-56ec-40e5-9810-f844a584863e",
+    "player_id": "P7",
+    "role": "Seer",
+    "won": true,
+    "final_score": 49.9,
+    "process_score": 58.7,
+    "role_process_score": 59.2,
+    "speech_score": 50.0,
+    "counterfactual_impact": 0.0,
+    "mistake_penalty": 0.0,
+    "robustness_score": 1.0,
+    "n_opportunities": 5,
+    "total_weight": 3.2,
+    "top3_good": [
+      {
+        "type": "seer_check",
+        "day": 1,
+        "score": 0.72
+      },
+      {
+        "type": "vote",
+        "day": 1,
+        "score": 0.4
+      },
+      {
+        "type": "vote",
+        "day": 1,
+        "score": 0.4
+      }
+    ],
+    "top3_bad": [
+      {
+        "type": "vote",
+        "day": 1,
+        "score": 0.4
+      },
+      {
+        "type": "seer_check",
+        "day": 2,
+        "score": 0.36
+      },
+      {
+        "type": "speech",
+        "day": 1,
+        "score": 0.2
+      }
+    ],
+    "speech_detail": {
+      "n_speeches": 0,
+      "groundedness": 0,
+      "stance_clarity": 0,
+      "consistency": 0,
+      "strategic_value": 0,
+      "information_safety": 0
+    },
+    "model_confidence": 0.62,
+    "advice": [
+      "整体表现稳定，继续保持"
+    ]
+  },
+  {
+    "game_id": "3320ed01-56ec-40e5-9810-f844a584863e",
+    "player_id": "P2",
+    "role": "Hunter",
+    "won": true,
+    "final_score": 49.3,
+    "process_score": 58.0,
+    "role_process_score": 57.6,
+    "speech_score": 50.0,
+    "counterfactual_impact": 0.0,
+    "mistake_penalty": 0.0,
+    "robustness_score": 1.0,
+    "n_opportunities": 3,
+    "total_weight": 1.3,
+    "top3_good": [
+      {
+        "type": "vote",
+        "day": 1,
+        "score": 0.5
+      },
+      {
+        "type": "speech",
+        "day": 1,
+        "score": 0.2
+      },
+      {
+        "type": "speech",
+        "day": 1,
+        "score": 0.2
+      }
+    ],
+    "top3_bad": [
+      {
+        "type": "vote",
+        "day": 1,
+        "score": 0.5
+      },
+      {
+        "type": "speech",
+        "day": 1,
+        "score": 0.2
+      },
+      {
+        "type": "speech",
+        "day": 1,
+        "score": 0.2
+      }
+    ],
+    "speech_detail": {
+      "n_speeches": 0,
+      "groundedness": 0,
+      "stance_clarity": 0,
+      "consistency": 0,
+      "strategic_value": 0,
+      "information_safety": 0
+    },
+    "model_confidence": 0.39,
+    "advice": [
+      "整体表现稳定，继续保持"
+    ]
+  },
+  {
+    "game_id": "3320ed01-56ec-40e5-9810-f844a584863e",
+    "player_id": "P5",
+    "role": "Villager",
+    "won": true,
+    "final_score": 48.7,
+    "process_score": 57.4,
+    "role_process_score": 55.9,
+    "speech_score": 50.0,
+    "counterfactual_impact": 0.0,
+    "mistake_penalty": 0.0,
+    "robustness_score": 1.0,
+    "n_opportunities": 3,
+    "total_weight": 1.4,
+    "top3_good": [
+      {
+        "type": "vote",
+        "day": 1,
+        "score": 0.5
+      },
+      {
+        "type": "vote",
+        "day": 1,
+        "score": 0.2
+      },
+      {
+        "type": "speech",
+        "day": 1,
+        "score": 0.2
+      }
+    ],
+    "top3_bad": [
+      {
+        "type": "vote",
+        "day": 1,
+        "score": 0.5
+      },
+      {
+        "type": "vote",
+        "day": 1,
+        "score": 0.2
+      },
+      {
+        "type": "speech",
+        "day": 1,
+        "score": 0.2
+      }
+    ],
+    "speech_detail": {
+      "n_speeches": 0,
+      "groundedness": 0,
+      "stance_clarity": 0,
+      "consistency": 0,
+      "strategic_value": 0,
+      "information_safety": 0
+    },
+    "model_confidence": 0.41,
+    "advice": [
+      "整体表现稳定，继续保持"
+    ]
+  }
+]

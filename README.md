@@ -39,6 +39,14 @@ AI 狼人杀多智能体对战系统。每个 Agent 根据扮演角色（狼人 
 - **评分区分度实验**（`scripts/score_discrimination_experiment.py`） — 验证好/差对局的分数分布可分离；`configs/discrimination_strategies.yaml` 配置候选打分策略。
 - **前端面板** — `/eval/dashboard` 展示 leaderboard + 角色矩阵 + 时间趋势；`/games/[id]/report` 展示单局复盘报告。
 
+#### Learned Evaluator v1（`learned-evaluator-v1`）
+- **机会级决策质量建模**（`backend/eval/opportunity.py`） — 2461 条 DecisionOpportunity，覆盖 6 角色 × 10 种机会类型。
+- **DecisionQualityModel**（`backend/eval/scoring_models.py`） — GradientBoosting + GroupKFold（by game_id），Pairwise Accuracy 91.8%。
+- **BGE-M3 相似案例检索**（`backend/eval/embedding_retrieval.py`） — 本地模型 `/home/4T-3/PLM/bge-m3/`，anti-leakage GroupKFold 内建索引。
+- **SpeechScore**（`scripts/compute_speech_and_counterfactual.py`） — groundedness + stance_clarity + consistency + strategic_value + information_safety。
+- **CounterfactualImpact** — vote_flip + skill_swap 反事实分析。
+- **已知问题**：Guard d=-0.127，Hunter d=0.349，embedding 检索增益有限（+0.007 paw）。详见 `data/health/learned_evaluator_ablation_report_d.md`。
+
 ### Track C — 自进化 Agent（已实装）
 - **策略知识库**（`StrategyKnowledgeDoc`） — Reviewer 通过的复盘 → 抽取策略片段 → 入库，按角色/阶段/标签检索。
 - **角色策略卡 + Persona 适配器**（`RoleStrategyCard` / `PersonaRoleAdapter`） — 每个角色×Persona 维护独立策略 profile。
