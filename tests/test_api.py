@@ -11,7 +11,7 @@ def test_create_game_api() -> None:
     assert response.status_code == 200
     data = response.json()
     assert data["winner"] in {"village", "wolf"}
-    assert len(data["players"]) == 7
+    assert len(data["players"]) == 10
     assert data["events"]
     assert data["badge"]["holder_id"] is not None
     assert data["daily_summaries"]
@@ -111,7 +111,7 @@ def test_room_api_flow() -> None:
 
 def test_human_room_flow_blocks_and_accepts_action() -> None:
     client = TestClient(app)
-    probe_game = WerewolfGame(seed=7)
+    probe_game = WerewolfGame(seed=7, player_count=7)
     human_seat = next(player.seat for player in probe_game.state.players if player.role.value == "Guard")
 
     room_response = client.post(

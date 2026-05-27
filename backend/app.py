@@ -45,11 +45,10 @@ def _build_game(
     seed: int,
     agent_type: str = "llm",
     human_seat: Optional[int] = None,
-    player_count: int = 7,
+    player_count: int = 10,
     rule_pack_id: str = "wolfcha-default",
 ) -> WerewolfGame:
-    players = build_players(get_role_configuration(player_count), seed=seed)
-    game = WerewolfGame(seed=seed, players=players)
+    game = WerewolfGame(seed=seed, player_count=player_count)
     game.attach_agents(
         create_agents(
             game.state.players,
@@ -70,7 +69,7 @@ def create_game(
     show_private: bool = False,
     agent_type: str = "llm",
     human_seat: Optional[int] = None,
-    player_count: int = 7,
+    player_count: int = 10,
     rule_pack_id: str = "wolfcha-default",
 ):
     game = _build_game(seed=seed, agent_type=agent_type, human_seat=human_seat, player_count=player_count, rule_pack_id=rule_pack_id)
@@ -441,7 +440,7 @@ def list_personas_endpoint():
 def create_room(
     name: str = "Demo Room",
     seed: int = 7,
-    player_count: int = 7,
+    player_count: int = 10,
     agent_type: str = "llm",
     human_seat: Optional[int] = None,
     rule_pack_id: str = "wolfcha-default",
