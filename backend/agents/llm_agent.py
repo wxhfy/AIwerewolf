@@ -163,6 +163,17 @@ class LLMAgent(Agent):
 
         # --- User prompt assembly (wolfcha format) ---
         user_prompt_parts = [game_context]
+
+        # --- Stance continuity block ---
+        stance_block = self._build_stance_block()
+        if stance_block:
+            user_prompt_parts.append(stance_block)
+
+        # --- Personality decision constraints ---
+        personality_block = self._build_personality_decision_block()
+        if personality_block:
+            user_prompt_parts.append(personality_block)
+
         transcript_text = "\n".join(today_transcript) if isinstance(today_transcript, list) else (today_transcript or "")
         if transcript_text:
             user_prompt_parts.append("【本日讨论记录】\n" + transcript_text)
@@ -205,6 +216,11 @@ class LLMAgent(Agent):
         if meta.get("segment_texts"):
             meta["segments"] = meta["segment_texts"]
             self._remember_opening(meta["segment_texts"])
+        # If fallback was used, copy the heuristic agent's segments
+        if meta.get("fallback") and fallback.metadata.get("segments"):
+            meta["segments"] = fallback.metadata["segments"]
+            meta["segment_count"] = len(fallback.metadata["segments"])
+            meta["source"] = "heuristic_fallback"
         self._attach_retrieval_meta(meta)
         return Decision(
             self.player_id,
@@ -875,6 +891,56 @@ class LLMAgent(Agent):
             + "\n".join(f"- {item}" for item in samples)
             + "\n这轮请换一个切入口。"
         )
+
+    def _build_stance_block(self) -> str:
+        """Build a stance continuity block from the heuristic fallback's public_stance."""
+        try:
+            fallback = self.fallback
+            if not hasattr(fallback, "public_stance"):
+                return ""
+            from backend.agents.humanization import build_stance_summary
+            summary = build_stance_summary(fallback.public_stance, self.player_id, self._view())
+            if not summary or summary == "（暂无明确立场）":
+                return ""
+            return (
+                "【你的连续立场】\n"
+                + summary
+                + "\n如果你要改变上一轮观点，必须说明触发原因。不要无理由突然转向。"
+            )
+        except Exception:
+            return ""
+
+    def _build_personality_decision_block(self) -> str:
+        """Build personality-driven decision constraints for the LLM."""
+        if not self.character:
+            return ""
+        p = self.character.persona
+        m = self.character.mind
+
+        threshold_map = {
+            "low": "你比较容易起疑，小破绽就能让你锁定目标",
+            "medium": "你需要看到连续的可疑行为才会下判断",
+            "high": "你倾向于先相信别人的解释，不轻易怀疑",
+        }
+        memory_map = {
+            "recent": "你更关注最近发生的事情和刚发生的投票",
+            "first_impression": "你早期的怀疑不容易放下，会持续关注第一印象不好的人",
+            "selective": "你容易选择性解释证据，倾向于找支持自己已有判断的信息",
+            "comprehensive": "你会综合考虑全局信息，不偏重某一时段的证据",
+        }
+
+        lines = ["【你的思考方式】"]
+        lines.append("根据你的人格设定，以下倾向会影响你的判断：")
+        lines.append(f"- 怀疑阈值：{threshold_map.get(m.suspicion_threshold, '中等')}")
+        lines.append(f"- 记忆偏向：{memory_map.get(m.memory_bias, '均衡')}")
+        lines.append(f"- 发言长度习惯：{p.speech_length_habit or '自然长度'}")
+        lines.append(f"- 压力反应：{p.pressure_style or '冷静回应'}")
+        lines.append(f"- 桌面风格：{m.table_presence}（{'喜欢带节奏' if m.table_presence == 'dominant' else '话不多但有重点' if m.table_presence == 'quiet' else '既会表达也会倾听'}）")
+        lines.append("")
+        lines.append("这些不是装饰——它们必须影响你关注什么信息、如何判断、发言顺序和用词。")
+        lines.append("不要只改变语气，要改变你关注的信息类型和判断方式。")
+        lines.append("例如：记忆偏向'first_impression'的人应该更执着于早期发现的疑点，不容易被后续发言动摇。")
+        return "\n".join(lines)
 
     def _build_perspective_hints_xml(self) -> str:
         """Build wolfcha-style focus angle XML block."""
@@ -1645,14 +1711,17 @@ class LLMAgent(Agent):
             # Third attempt: just use raw text as speech (free-text fallback)
             cleaned = self._clean_speech_text(text)
             if cleaned and len(cleaned) >= 2 and not self._looks_generic_speech([cleaned]):
+                # Split long single-segment text into multi-bubble
+                segments = self._split_into_segments(cleaned)
                 meta["source"] = "llm"
                 meta["fallback"] = False
                 meta["raw_text"] = text[:400]
                 meta["attempts"] = 3
-                meta["segments"] = 1
+                meta["segment_count"] = len(segments)
+                meta["segment_texts"] = segments
                 meta["usage"] = usage
                 meta["latency_ms"] = total_latency_ms
-                return cleaned, meta
+                return "\n\n".join(segments), meta
 
             self.last_error = "talk_all_attempts_failed"
             meta["error"] = self.last_error
@@ -1791,6 +1860,35 @@ class LLMAgent(Agent):
             lines = text.split("\n")
             text = "\n".join(lines[1:-1] if lines and lines[-1].strip() == "```" else lines[1:]).strip()
         return text
+
+    @staticmethod
+    def _split_into_segments(text: str, max_segments: int = 4, max_chars: int = 120) -> list[str]:
+        """Split a single long speech into natural multi-bubble segments."""
+        import re
+        if not text or len(text) <= max_chars:
+            return [text] if text else []
+        # Split by Chinese sentence boundaries
+        raw = re.split(r"(?<=[。！？])", text)
+        sentences = [s.strip() for s in raw if s.strip()]
+        if not sentences:
+            return [text]
+        # Group into segments of 1-2 sentences
+        segments: list[str] = []
+        buffer = ""
+        for s in sentences:
+            if len(buffer) + len(s) > max_chars and buffer:
+                segments.append(buffer.strip())
+                buffer = s
+                if len(segments) >= max_segments:
+                    # Put remaining into last segment
+                    remaining = [s for i, s in enumerate(sentences) if i >= sentences.index(s)]
+                    segments[-1] = "".join(remaining).strip()
+                    break
+            else:
+                buffer += s
+        if buffer.strip():
+            segments.append(buffer.strip())
+        return segments[:max_segments] if segments else [text]
 
     def _ask_json_inner(self, prompt: str, default: dict[str, Any], *, max_tokens: int = 640, action: str = "") -> tuple[dict[str, Any], dict[str, Any]]:
         meta = {

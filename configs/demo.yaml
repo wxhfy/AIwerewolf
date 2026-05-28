@@ -1,14 +1,8 @@
 game:
-  player_count: 7
+  player_count: 10
   max_days: 8
-  roles:
-    - Werewolf
-    - Werewolf
-    - Seer
-    - Witch
-    - Hunter
-    - Guard
-    - Villager
+  # roles auto-derived from player_count via WOLFCHA_ROLE_CONFIGS:
+  #   2x Werewolf, WhiteWolfKing, Seer, Witch, Hunter, Guard, 3x Villager
 agents:
   type: heuristic
   seed: 7
