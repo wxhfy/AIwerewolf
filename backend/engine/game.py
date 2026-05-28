@@ -24,7 +24,7 @@ from backend.engine.models import (
     Role,
 )
 from backend.engine.phase_manager import PhaseManager
-from backend.engine.rules import DEFAULT_ROLE_SET, build_players
+from backend.engine.rules import DEFAULT_ROLE_SET, build_players, get_role_configuration
 from backend.engine.summary import build_day_summary
 from backend.engine.visibility import Visibility
 
@@ -79,6 +79,7 @@ class WerewolfGame:
         agents: dict[str, Agent] | None = None,
         seed: int | None = None,
         max_days: int = 8,
+        player_count: int = 10,
         observer: Callable[[GameState], None] | None = None,
         strategy_version: str | None = None,
         strategy_bias: dict[str, list[str]] | None = None,
@@ -88,11 +89,14 @@ class WerewolfGame:
         self.strategy_version = strategy_version
         self.strategy_bias = strategy_bias or {}
         self.strategy_bias_by_role = strategy_bias_by_role or {}
+        if players is None:
+            roles = get_role_configuration(player_count)
+            players = build_players(roles, seed=seed)
         self.state = GameState(
             id=str(uuid4()),
             phase=Phase.SETUP,
             day=0,
-            players=players or build_players(DEFAULT_ROLE_SET, seed=seed),
+            players=players,
             max_days=max_days,
         )
         self.visibility = Visibility()
@@ -302,8 +306,14 @@ class WerewolfGame:
         self.interrupt_phase_cycle = False
         try:
             while self.state.winner is None and self.state.day < self.state.max_days:
-                if self.state.phase in {Phase.SETUP, Phase.DAY_RESOLVE, Phase.BADGE_TRANSFER, Phase.HUNTER_SHOOT, Phase.WHITE_WOLF_KING_BOOM, Phase.GAME_END}:
+                if self.state.phase in {Phase.SETUP, Phase.DAY_RESOLVE, Phase.HUNTER_SHOOT, Phase.WHITE_WOLF_KING_BOOM, Phase.GAME_END}:
                     self.phase_manager.run(Phase.NIGHT_START, self)
+                elif self.state.phase == Phase.BADGE_TRANSFER:
+                    # Badge transfer after night death → continue to day
+                    # Badge transfer after day vote → already handled by DAY_RESOLVE before this
+                    if self._check_win():
+                        break
+                    self.phase_manager.run(Phase.DAY_START, self)
                 elif self.state.phase == Phase.NIGHT_RESOLVE:
                     if self._check_win():
                         break

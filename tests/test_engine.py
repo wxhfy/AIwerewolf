@@ -9,8 +9,8 @@ def test_game_plays_to_winner() -> None:
 
     assert state.winner is not None
     assert state.phase.value == "GAME_END"
-    assert len(state.players) == 7
-    assert len([player for player in state.players if player.role == Role.WEREWOLF]) == 2
+    assert len(state.players) == 10
+    assert len([player for player in state.players if player.role in (Role.WEREWOLF, Role.WHITE_WOLF_KING)]) == 3
     assert any(event.type.value == "CHAT_MESSAGE" for event in state.events)
     assert any(event.type.value == "VOTE_CAST" for event in state.events)
     assert any(event.type.value == "GAME_END" for event in state.events)
@@ -27,7 +27,7 @@ def test_multiple_seeds_finish_without_crashing() -> None:
 
 
 def test_badge_and_last_words_phases_are_exercised() -> None:
-    state = WerewolfGame(seed=7).play()
+    state = WerewolfGame(seed=3, player_count=7).play()
     phases = {event.phase for event in state.events}
 
     assert Phase.DAY_BADGE_SIGNUP in phases
@@ -63,17 +63,18 @@ def test_werewolf_knows_only_wolves() -> None:
     view = Visibility().for_player(state, wolf.id)
 
     assert view.known_wolves
+    wolf_family = {Role.WEREWOLF.value, Role.WHITE_WOLF_KING.value}
     for player in view.players:
         if player["id"] == wolf.id:
-            assert player["role"] == Role.WEREWOLF.value
+            assert player["role"] in wolf_family
         elif player["id"] in {known["id"] for known in view.known_wolves}:
-            assert player["role"] == Role.WEREWOLF.value
+            assert player["role"] in wolf_family
         else:
             assert "role" not in player
 
 
 def test_day_vote_tie_enters_pk_and_resolves() -> None:
-    game = WerewolfGame(seed=7)
+    game = WerewolfGame(seed=7, player_count=7)
     game.initialize()
     game.state.day = 1
     game.state.badge.holder_id = None
@@ -104,6 +105,8 @@ def test_day_vote_tie_enters_pk_and_resolves() -> None:
         if request == "VOTE":
             target = pk_round[player.id] if game.state.pk_targets else first_round[player.id]
             return Decision(player.id, ActionType.VOTE, target_id=target, reasoning="scripted")
+        if request == "BOOM":
+            return Decision(player.id, ActionType.SKIP, reasoning="scripted")
         raise AssertionError(request)
 
     game._ask = scripted_ask  # type: ignore[assignment]
