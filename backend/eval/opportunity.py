@@ -62,6 +62,11 @@ class DecisionOpportunity:
     # Evidence trail
     evidence_event_ids: list[str] = field(default_factory=list)
 
+    # V8: Strategy traceability
+    strategy_id: str = ""
+    strategy_name: str = ""
+    strategy_type: str = ""
+
     # Metadata
     extracted_at: str = field(default_factory=_utcnow_iso)
     source_decision_id: str | None = None
@@ -236,6 +241,13 @@ class OpportunityExtractor:
 
         opportunities: list[DecisionOpportunity] = []
 
+        # V8: build player lookup for strategy fallback
+        player_map: dict[str, dict] = {}
+        for p in players:
+            pid = p.get("id", "") if isinstance(p, dict) else getattr(p, "id", "")
+            if pid:
+                player_map[pid] = p if isinstance(p, dict) else asdict(p) if hasattr(p, '__dict__') else {}
+
         for dec in decisions:
             role = dec.get("role", "Unknown")
             phase = dec.get("phase", "")
@@ -282,6 +294,19 @@ class OpportunityExtractor:
                 outcome_features=outcome_feat,
                 evidence_event_ids=evidence_ids,
                 source_decision_id=dec.get("decision_id"),
+                # V8: strategy traceability — read from parsed_action, fallback to player
+                strategy_id=(
+                    (dec.get("parsed_action") or {}).get("strategy_id")
+                    or player_map.get(player_id, {}).get("strategy_id", "")
+                ),
+                strategy_name=(
+                    (dec.get("parsed_action") or {}).get("strategy_name")
+                    or player_map.get(player_id, {}).get("strategy_name", "")
+                ),
+                strategy_type=(
+                    (dec.get("parsed_action") or {}).get("strategy_type")
+                    or player_map.get(player_id, {}).get("strategy_type", "")
+                ),
             ))
 
         return opportunities

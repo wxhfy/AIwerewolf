@@ -622,6 +622,28 @@ def main() -> int:
     if len(set(int(y >= 0.5) for y in all_y)) >= 2:
         q_model.fit(np.array(all_X), np.array([int(y >= 0.5) for y in all_y]))
 
+    # Train final OpportunityValueModel on all labeled data
+    print("\n=== Training final models on all data ===")
+    ovm_final = OpportunityValueModel()
+    ovm_X, ovm_y = [], []
+    for item in labeled:
+        opp = opp_by_id.get(item["opportunity_id"])
+        if opp is None:
+            continue
+        feats = extract_features(opp)
+        ovm_X.append(feats.to_array())
+        w = rule_opportunity_value(opp)
+        label_qs = item.get("label", {}).get("quality_score")
+        if label_qs is not None:
+            w = 0.7 * w + 0.3 * (label_qs / 100.0)
+        ovm_y.append(w)
+
+    if len(ovm_X) >= 5:
+        ovm_final.fit(np.array(ovm_X), np.array(ovm_y))
+        print(f"  OVM trained on {len(ovm_X)} samples")
+    else:
+        print("  OVM: insufficient data, skipping")
+
     ablation = compute_ablation(opportunities, labeled, q_model)
     print(f"  Systems: {list(ablation.keys())}")
 
@@ -630,9 +652,15 @@ def main() -> int:
     generate_reports(ovm_result, dqm_result, ablation, out_dir)
 
     # Save models
+    out_dir.mkdir(parents=True, exist_ok=True)
     ovm_path = out_dir / "opportunity_value_model.pkl"
     dqm_path = out_dir / "decision_quality_model.pkl"
-    # (Models will be saved in their class methods)
+    if ovm_final.model is not None:
+        ovm_final.save(ovm_path)
+        print(f"  OVM saved to {ovm_path}")
+    if q_model.model is not None:
+        q_model.save(dqm_path)
+        print(f"  DQM saved to {dqm_path}")
 
     print(f"\nDone! Reports in {out_dir}/")
     return 0

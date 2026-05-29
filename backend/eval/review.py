@@ -1269,6 +1269,41 @@ class MetricsCalculator:
                             )
                             break
 
+                # seer_ignored_confirmed_wolf_vote: Seer checked a wolf but voted elsewhere
+                checked_wolf_names = {
+                    str(e.payload.get("target_name") or "")
+                    for e in wolf_check_events
+                }
+                checked_wolf_ids = {
+                    str(e.payload.get("target_id") or "")
+                    for e in wolf_check_events
+                }
+                for vote_event in ctx.vote_events:
+                    vote_target_id = str(vote_event.payload.get("target_id") or "")
+                    if vote_target_id and vote_target_id not in checked_wolf_ids:
+                        vote_target = state.player(vote_target_id) if vote_target_id else None
+                        if vote_target is not None and vote_target.alignment == Alignment.VILLAGE:
+                            if any(
+                                state.player(wid).alive if wid else False
+                                for wid in checked_wolf_ids
+                            ):
+                                reports.append(
+                                    self._report(
+                                        state,
+                                        vote_event.day,
+                                        player,
+                                        "vote",
+                                        f"{player.name} knew wolf {', '.join(sorted(checked_wolf_names))} but voted {vote_target.name} instead.",
+                                        "When you have a confirmed wolf result, vote to eliminate that wolf. Do not split votes onto unconfirmed targets.",
+                                        "major",
+                                        evidence_event_ids=(
+                                            [e.id for e in wolf_check_events]
+                                            + [vote_event.id]
+                                        ),
+                                    )
+                                )
+                                break
+
             if player.role == Role.HUNTER:
                 for event in ctx.hunter_shot_events:
                     target_id = event.payload.get("target_id")
@@ -1491,9 +1526,13 @@ class MetricsCalculator:
         if survival_score >= 1.0:
             highlights.append("存活至对局结束。")
 
+        # P0: process-oriented scoring — camp_result reduced from 0.25→0.10
+        # to prevent wolf/village win outcome from dominating individual
+        # decision quality. role_task raised 0.25→0.40 as the primary
+        # signal. See docs/B_C_OPERATIONAL_REPORT.md §11.6.
         base_total = (
-            0.25 * camp_result_score
-            + 0.25 * role_task_score
+            0.10 * camp_result_score
+            + 0.40 * role_task_score
             + 0.20 * vote_score
             + 0.10 * speech_score
             + 0.10 * skill_score
@@ -1503,18 +1542,15 @@ class MetricsCalculator:
         final_score = round(self._clamp(base_total) * 100, 2)
 
         # Outcome-independent process score: drop camp_result_score and
-        # re-normalize the remaining (0.75 total) back to 1.0. This lets the
-        # caller see decision quality without outcome bias inflating it. See
-        # DEVELOPMENT_ISSUES §B on outcome-vs-process separation.
-        # Mistake penalty stays — bad decisions are bad regardless of outcome.
+        # re-normalize the remaining (0.90 total) back to 1.0.
         process_total = (
-            0.25 * role_task_score
+            0.40 * role_task_score
             + 0.20 * vote_score
             + 0.10 * speech_score
             + 0.10 * skill_score
             + 0.10 * survival_score
             - mistake_penalty
-        ) / 0.75
+        ) / 0.90
         process_score = round(self._clamp(process_total) * 100, 2)
         outcome_bonus = round(camp_result_score * 100, 2)
 
@@ -1664,7 +1700,9 @@ class MetricsCalculator:
         if role == Role.WITCH:
             save_value = self._witch_save_value(state, ctx)
             poison_value = self._witch_poison_value(state, ctx)
-            timing = 1.0 if ctx.night_action_events else 0.4
+            # Timing no longer penalises inaction — holding potions for the
+            # right moment IS good Witch play. Baseline = 1.0.
+            timing = 1.0
             if save_value >= 0.8:
                 highlights.append("解药成功保住了好人阵营人数。")
             if poison_value >= 0.8:
@@ -1858,21 +1896,24 @@ class MetricsCalculator:
     def _witch_save_value(self, state: GameState, ctx: _PlayerContext) -> float:
         save_events = [event for event in ctx.night_action_events if event.payload.get("action_type") == "witch_save"]
         if not save_events:
-            return 0.4
+            # Time-decay: holding the antidote is wise early, wasteful late.
+            # Day 1 = 0.70, Day 2 = 0.55, Day 3+ = max 0.30.
+            return max(0.30, 0.70 - 0.15 * (max(state.day, 1) - 1))
         scores: list[float] = []
         for event in save_events:
             target = self._target_player(state, event)
             if target is None:
                 continue
             was_wolf_target = self._is_majority_wolf_target(state, target.id, event.day)
-            value = 1.0 if was_wolf_target and target.alignment == Alignment.VILLAGE else 0.2
+            value = 1.0 if was_wolf_target and target.alignment == Alignment.VILLAGE else 0.1
             scores.append(value)
-        return 0.4 if not scores else self._clamp(sum(scores) / len(scores))
+        return self._clamp(sum(scores) / len(scores))
 
     def _witch_poison_value(self, state: GameState, ctx: _PlayerContext) -> float:
         poison_events = [event for event in ctx.night_action_events if event.payload.get("action_type") == "witch_poison"]
         if not poison_events:
-            return 0.4
+            # Same time-decay logic: holding poison early is fine, late is hesitation.
+            return max(0.30, 0.70 - 0.15 * (max(state.day, 1) - 1))
         scores: list[float] = []
         for event in poison_events:
             target = self._target_player(state, event)
@@ -1921,7 +1962,9 @@ class MetricsCalculator:
         protected = 0
         for event in guard_events:
             target = self._target_player(state, event)
-            if target is not None and target.role.value in self.POWER_ROLES:
+            # Guard protecting itself is self-preservation, not key-role
+            # protection. Only count OTHER power roles (Seer/Witch/Hunter).
+            if target is not None and target.id != ctx.player.id and target.role.value in self.POWER_ROLES:
                 protected += 1
         return self._clamp(protected / len(guard_events))
 
