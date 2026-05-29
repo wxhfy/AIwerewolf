@@ -9,19 +9,19 @@ def test_create_client_infers_deepseek_from_model() -> None:
     assert client.model == "deepseek-v4-flash"
 
 
-def test_create_client_defaults_to_doubao(monkeypatch) -> None:
+def test_create_client_defaults_to_dsv4flash(monkeypatch) -> None:
     # Stub load_env_file so the test exercises the in-code defaults rather
-    # than the user's .env (which may override DOUBAO_MODEL for local
-    # invocations).
+    # than the user's .env.
     monkeypatch.setattr("backend.llm.load_env_file", lambda *a, **k: None)
-    for var in ("LLM_PROVIDER", "DOUBAO_API_KEY", "ARK_API_KEY", "ANTHROPIC_AUTH_TOKEN",
+    for var in ("LLM_PROVIDER", "DSV4FLASH_API_KEY", "DSV4FLASH_BASE_URL", "DSV4FLASH_MODEL",
+                "DOUBAO_API_KEY", "ARK_API_KEY", "ANTHROPIC_AUTH_TOKEN",
                 "DOUBAO_ENDPOINT", "DOUBAO_MODEL", "ANTHROPIC_MODEL", "DOUBAO_BASE_URL",
                 "ARK_BASE_URL", "ANTHROPIC_BASE_URL"):
         monkeypatch.delenv(var, raising=False)
-    monkeypatch.setenv("DOUBAO_API_KEY", "test-key")
+    monkeypatch.setenv("DSV4FLASH_API_KEY", "test-key")
     client = create_client(provider=None)
-    assert client.provider == "doubao"
-    assert client.model == "ep-20260514115354-k4jz4"
+    assert client.provider == "dsv4flash"
+    assert client.model == "deepseek-v4-flash"
 
 
 def test_create_agents_applies_role_model_overrides() -> None:
