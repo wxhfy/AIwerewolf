@@ -959,6 +959,8 @@ class LLMAgent(Agent):
                 "优先根据今天桌面上已经发生的真实信息投票：发言矛盾、站边摇摆、警徽表现、历史票型都可以。",
                 "reasoning 用 2-4 句中文说清楚：你为什么投这个人、你不投另一个焦点位的原因、你希望好人接下来观察什么。",
                 "如果信息仍然不足，也要给出一个当前最差选项，而不是空泛地说都可疑。",
+                "【阅读理解要求】你必须引用目标玩家的原话（用引号括起来），然后解释这番话为什么有问题。禁止使用'位置伪逻辑'等笼统说法，必须精确引用原话。",
+                "【防跟风要求】你的推理必须独立于其他玩家。禁止说'同意X的观点'或'和X一样'。你必须给出自己的分析链条：引用原话 → 分析矛盾 → 得出结论。",
             ],
         )
         return Decision(
@@ -1011,6 +1013,7 @@ class LLMAgent(Agent):
                 "Decide whether to save the wolf victim and whether to poison another player.",
                 "Use save=true only if you want to consume the antidote on the victim.",
                 "Use poison_target as a player name or null.",
+                "【用药规则】一晚只能使用一瓶药！如果 save=true，则 poison_target 必须为 null。如果 poison_target 不为 null，则 save 必须为 false。同时使用两瓶药是违规的。",
             ],
             options=options,
             extra={"victim": self._name(victim_id) if victim_id else None},
@@ -1035,15 +1038,20 @@ class LLMAgent(Agent):
         poison_name = data.get("poison_target")
         poison_id = self._id_from_name(poison_name) if poison_name else None
         if poison_id and poison_id != victim_id:
-            decisions.append(
-                Decision(
-                    self.player_id,
-                    ActionType.WITCH_POISON,
-                    target_id=poison_id,
-                    reasoning=str(data.get("reasoning", "")),
-                    metadata=meta,
+            # Enforce one-potion-per-night rule: if save was used, skip poison
+            if decisions:  # Already used save
+                # Log violation but don't apply poison
+                pass
+            else:
+                decisions.append(
+                    Decision(
+                        self.player_id,
+                        ActionType.WITCH_POISON,
+                        target_id=poison_id,
+                        reasoning=str(data.get("reasoning", "")),
+                        metadata=meta,
+                    )
                 )
-            )
         return decisions or fallback
 
     def shoot(self) -> Decision:
@@ -1341,8 +1349,18 @@ class LLMAgent(Agent):
             if not speech_text:
                 continue
             tag = self._format_player_tag(self._player_by_id(actor_id) or {"seat": "?", "name": actor_id})
-            truncated = speech_text[:120].replace("\n", " ")
-            lines.append(f"  {tag}：{truncated}")
+            # Semantic splitting: break into sentence-level bubbles
+            import re as _re
+            speech_clean = speech_text.replace("\n", " ").replace("\r", "")
+            sentences = _re.split(r'(?<=[。！？；\n])', speech_clean)
+            sentences = [s.strip() for s in sentences if s.strip()]
+            if len(sentences) <= 1 or len(speech_clean) <= 150:
+                lines.append(f"  {tag}：{speech_clean[:250]}")
+            else:
+                for sent in sentences[:4]:
+                    lines.append(f"  {tag}：{sent[:150]}")
+                if len(sentences) > 4:
+                    lines.append(f"  {tag}：...（共{len(sentences)}句）")
         return lines
 
     def _build_perspective_hints(self) -> str:
@@ -1467,7 +1485,6 @@ class LLMAgent(Agent):
                 speech = (payload.get("speech") or "").strip()
                 if not speech:
                     continue
-                truncated = speech[:80].replace("\n", " ")
                 tag = ""
                 if payload.get("last_words"):
                     tag = "[遗言]"
@@ -1475,7 +1492,22 @@ class LLMAgent(Agent):
                     tag = "[警上]"
                 elif payload.get("pk_speech"):
                     tag = "[PK]"
-                speeches.append(f"第{day}天{tag} {actor}：{truncated}")
+                # Semantic splitting: break long speech into sentence-level bubbles
+                # instead of hard truncation, preserving full meaning
+                speech_clean = speech.replace("\n", " ").replace("\r", "")
+                # Split by sentence-ending punctuation
+                import re as _re
+                sentences = _re.split(r'(?<=[。！？；\n])', speech_clean)
+                sentences = [s.strip() for s in sentences if s.strip()]
+                if len(sentences) <= 1 or len(speech_clean) <= 120:
+                    # Short enough, emit as single line
+                    speeches.append(f"第{day}天{tag} {actor}：{speech_clean[:200]}")
+                else:
+                    # Emit as multiple bubble lines for full context
+                    for i, sent in enumerate(sentences[:4]):  # Cap at 4 bubbles
+                        speeches.append(f"第{day}天{tag} {actor}：{sent[:120]}")
+                    if len(sentences) > 4:
+                        speeches.append(f"第{day}天{tag} {actor}：...（共{len(sentences)}句）")
             elif etype == "SYSTEM_MESSAGE":
                 msg = payload.get("message") or ""
                 if "sheriff" in msg or "警徽" in msg or "badge" in msg.lower():
