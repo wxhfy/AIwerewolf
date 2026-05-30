@@ -1,0 +1,117 @@
+# Track B Open Data Sources Manifest
+# Machine-readable registry of all external werewolf / social-deduction datasets.
+# Used by download_track_b_open_sources.py and build_track_b_open_datasets.py.
+
+sources:
+  werewolf_among_us:
+    priority: P0
+    paper_title: "Werewolf Among Us: A Multimodal Dataset for Modeling Persuasion Behaviors in Social Deduction Games"
+    paper_url: "https://arxiv.org/abs/2212.08279"
+    project_url: "https://persuasion-deductiongame.socialai-data.org"
+    huggingface_id: "bolinlai/Werewolf-Among-Us"
+    github: "https://github.com/SALT-NLP/PersuationGames"
+    raw_dir: "data/external/raw/werewolf_among_us"
+    expected_outputs:
+      - "data/open/werewolf_among_us/track_b_open_speech_samples.jsonl"
+      - "data/open/werewolf_among_us/track_b_open_game_logs.jsonl"
+      - "data/open/werewolf_among_us/track_b_open_speech_act_labels.jsonl"
+    license_status: "verify_before_use"
+    license_note: "Dataset on HuggingFace; check repository for license file"
+    auto_download: "best_effort"
+    download_method: "huggingface_datasets"
+    status: "available"
+    rule_variant: "one_night_ultimate_werewolf"
+    n_games: 191
+    n_utterances: 24070
+    annotation_types:
+      - accusation
+      - interrogation
+      - defense
+      - evidence_use
+      - identity_declaration
+      - call_for_action
+
+  wolf:
+    priority: P1
+    paper_title: "WOLF: Werewolf-based Observations for LLM Deception and Falsehoods"
+    paper_url: "https://arxiv.org/abs/2512.09187"
+    raw_dir: "data/external/raw/wolf"
+    expected_outputs:
+      - "data/open/wolf/track_b_open_speech_samples.jsonl"
+      - "data/open/wolf/track_b_open_deception_samples.jsonl"
+      - "data/open/wolf/track_b_open_suspicion_samples.jsonl"
+    license_status: "verify_before_use"
+    license_note: "Release path pending verification"
+    auto_download: "manual_or_todo_until_release_found"
+    download_method: "manual"
+    status: "unavailable"
+    rule_variant: "custom_wolf_roles"
+    notes: "Paper describes 100 runs with 7320 statements. Release location not yet confirmed."
+
+  beyond_survival:
+    priority: P1
+    paper_title: "Beyond Survival: A Human-Verified Multimodal Werewolf Dataset"
+    paper_url: "https://arxiv.org/abs/2510.11389"
+    raw_dir: "data/external/raw/beyond_survival"
+    expected_outputs:
+      - "data/open/beyond_survival/track_b_open_speech_samples.jsonl"
+      - "data/open/beyond_survival/track_b_open_vote_samples.jsonl"
+      - "data/open/beyond_survival/track_b_open_role_inference_samples.jsonl"
+      - "data/open/beyond_survival/track_b_open_strategy_alignment_samples.jsonl"
+    license_status: "verify_before_use"
+    license_note: "Release/access path pending verification"
+    auto_download: "manual_or_todo_until_release_found"
+    download_method: "manual"
+    status: "unavailable"
+    rule_variant: "15_rule_variants"
+    notes: "100+ hours video, 32.4M utterance tokens. Contact authors for access."
+
+  deep_wolf_aiwolf:
+    priority: P2
+    paper_title: "Deep Wolf: Value Network for Werewolf Game Decision Making"
+    paper_url: "https://arxiv.org/abs/2302.10646"
+    raw_dir: "data/external/raw/deep_wolf_aiwolf"
+    expected_outputs:
+      - "data/open/deep_wolf_aiwolf/track_b_open_vote_samples.jsonl"
+      - "data/open/deep_wolf_aiwolf/track_b_open_value_samples.jsonl"
+      - "data/open/deep_wolf_aiwolf/track_b_open_candidate_action_samples.jsonl"
+    license_status: "verify_before_use"
+    license_note: "Human logs from 15 players. Download path pending."
+    auto_download: "manual_or_todo_until_release_found"
+    download_method: "manual"
+    status: "unavailable"
+    rule_variant: "japanese_werewolf_variant"
+    notes: "15 human players, value network training logs."
+
+  werewolf_arena:
+    priority: reference
+    paper_title: "Werewolf Arena: A Large-Scale LLM Agent Tournament"
+    paper_url: "https://arxiv.org/abs/2407.13943"
+    raw_dir: "data/external/raw/werewolf_arena"
+    expected_outputs: []
+    license_status: "reference_only"
+    license_note: "Design reference for leaderboard/arena. Not primary training data."
+    auto_download: "reference_only"
+    download_method: "none"
+    status: "reference"
+    rule_variant: "arena_agent_tournament"
+    notes: "Reference for leaderboard and tournament design."
+
+  track_b_native:
+    priority: P0
+    paper_title: "Track B Native Real LLM Games"
+    paper_url: null
+    project_url: null
+    raw_dir: "data/replays/raw_llm_games"
+    expected_outputs:
+      - "data/open/track_b_native/track_b_real_opportunities.jsonl"
+      - "data/open/track_b_native/track_b_real_speech_samples.jsonl"
+      - "data/open/track_b_native/track_b_real_vote_samples.jsonl"
+      - "data/open/track_b_native/track_b_real_critical_decisions.jsonl"
+      - "data/open/track_b_native/track_b_real_counterfactual_pairs.jsonl"
+    license_status: "internal"
+    auto_download: "internal"
+    download_method: "native_pipeline"
+    status: "available"
+    rule_variant: "wolfcha_default_7_player"
+    notes: "Track B's own real LLM game replays. First-class data for validation."
