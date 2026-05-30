@@ -23,6 +23,109 @@ from backend.engine.models import Alignment, EventType, GameEvent, GameState, Pl
 
 
 # ---------------------------------------------------------------------------
+# vNext Scorer: learned decision quality from PairwiseLogisticRanker
+# ---------------------------------------------------------------------------
+
+
+# Features to exclude (game-state, not decision-specific)
+_VNEXT_EXCLUDE_FEATURES = {
+    'camp_balance_ratio', 'day', 'is_endgame', 'alive_count',
+    'village_alive', 'wolf_alive', 'action_target_id',
+}
+
+
+def _vnext_safe_numeric(features: dict) -> dict:
+    """Keep only numeric features, skip strings and excluded features."""
+    import numpy as np
+    return {
+        k: float(v) for k, v in features.items()
+        if k not in _VNEXT_EXCLUDE_FEATURES
+        and isinstance(v, (int, float, bool, np.integer, np.floating))
+    }
+
+
+class VNextScorer:
+    """vNext scoring engine using PairwiseLogisticRanker + baseline comparison."""
+
+    def __init__(self, model_path: str | None = None, baseline_path: str | None = None):
+        from backend.eval.features import register_default_extractors
+        from backend.eval.pairwise_ranker import PairwiseLogisticRanker
+        import pickle
+
+        self.ranker = PairwiseLogisticRanker()
+        self.baseline = None
+        self.registry = register_default_extractors()
+
+        root = Path(__file__).resolve().parent.parent.parent
+        model_path = model_path or str(root / 'data' / 'health' / 'decision_quality_model_vnext_real.pkl')
+        baseline_path = baseline_path or str(root / 'data' / 'health' / 'vnext_baseline_features.pkl')
+
+        try:
+            self.ranker.load(model_path)
+            with open(baseline_path, 'rb') as f:
+                self.baseline = pickle.load(f)
+            self._loaded = True
+        except Exception:
+            self._loaded = False
+
+    def score_game(self, state: GameState) -> dict[str, dict]:
+        """Score all players in a game.
+
+        Returns per-player {vnext_score, feature_count, features_used}.
+        """
+        if not self._loaded or self.baseline is None:
+            return {}
+
+        # Build opportunity-like dicts from game state
+        results = {}
+        for player in state.players:
+            # Score based on player's actions in the game
+            scores = []
+            for event in state.events:
+                actor_id = event.payload.get('actor_id') or event.payload.get('voter_id') or event.payload.get('player_id')
+                if actor_id != player.id:
+                    continue
+                if event.type not in {EventType.VOTE_CAST, EventType.NIGHT_ACTION, EventType.CHAT_MESSAGE, EventType.HUNTER_SHOT}:
+                    continue
+
+                # Build a minimal opportunity-like dict
+                opp = {
+                    'player_id': player.id,
+                    'role': player.role.value if hasattr(player.role, 'value') else str(player.role),
+                    'opportunity_type': event.type.value if hasattr(event.type, 'value') else str(event.type),
+                    'day': event.day,
+                    'phase': event.phase.value if hasattr(event.phase, 'value') else str(event.phase),
+                    'chosen_action': event.payload,
+                    'target_features': {},
+                    'game_features': {},
+                    'outcome_features': {},
+                    'public_context_summary': '',
+                    'private_context_summary': '',
+                }
+
+                try:
+                    result = self.registry.extract(opp)
+                    features = _vnext_safe_numeric(result.features)
+                except Exception:
+                    continue
+
+                if not features:
+                    continue
+
+                prob = self.ranker.compare_pair(features, self.baseline)
+                scores.append(prob)
+
+            if scores:
+                results[player.id] = {
+                    'vnext_score': round(float(sum(scores) / len(scores)), 4),
+                    'feature_count': len(scores),
+                    'features_used': len(self.ranker.feature_names) if self.ranker.feature_names else 0,
+                }
+
+        return results
+
+
+# ---------------------------------------------------------------------------
 # Data types
 # ---------------------------------------------------------------------------
 
@@ -65,6 +168,9 @@ class PlayerScore:
     # Pure outcome contribution (0-100): 100 if player's alignment won.
     # final_score ≈ 0.75 * process_score + 0.25 * outcome_bonus
     outcome_bonus: float = 0.0
+    # vNext: learned decision quality from PairwiseLogisticRanker (0-1).
+    # Compared against baseline (median features) to produce meaningful scores.
+    vnext_score: float = 0.0
     highlights: list[str] = field(default_factory=list)
     mistakes: list[str] = field(default_factory=list)
     adjusted_final_score: float | None = None
@@ -1122,10 +1228,12 @@ class MetricsCalculator:
         bonus_detector: ReviewBonusDetector | None = None,
         final_score_calculator: FinalScoreCalculator | None = None,
         mvp_selector: MVPSelector | None = None,
+        vnext_scorer: "VNextScorer | None" = None,
     ) -> None:
         self.bonus_detector = bonus_detector or ReviewBonusDetector()
         self.final_score_calculator = final_score_calculator or FinalScoreCalculator()
         self.mvp_selector = mvp_selector or MVPSelector()
+        self._vnext_scorer = vnext_scorer
 
     def compute(self, state: GameState) -> GameMetrics:
         contexts = self._build_contexts(state)
@@ -1143,6 +1251,13 @@ class MetricsCalculator:
         review_bonuses = self.bonus_detector.detect(state, player_scores, bad_case_reports, contexts)
         adjusted_scores = self.final_score_calculator.apply(player_scores, review_bonuses)
         mvp_results = self.mvp_selector.select(state, adjusted_scores, review_bonuses)
+
+        # vNext scoring: learned decision quality from PairwiseLogisticRanker
+        if self._vnext_scorer is not None:
+            vnext_by_player = self._vnext_scorer.score_game(state)
+            for score in adjusted_scores:
+                vnext_data = vnext_by_player.get(score.player_id, {})
+                score.vnext_score = vnext_data.get('vnext_score', 0.5)
 
         return GameMetrics(
             game_id=state.id,
