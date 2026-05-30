@@ -100,5 +100,20 @@ def create_client(provider: str | None = None, **kwargs) -> DeepSeekClient:
         )
         client.provider = "deepseek"
         return client
+    elif provider == "dsv4flash":
+        # DeepSeek V4 Flash via 火山引擎 Ark (dedicated endpoint)
+        api_key = kwargs.pop("api_key", None) or os.getenv("DSV4FLASH_API_KEY", "")
+        base_url = kwargs.pop("base_url", None) or os.getenv("DSV4FLASH_BASE_URL", "https://ark.cn-beijing.volces.com/api/coding")
+        model = kwargs.pop("model", None) or os.getenv("DSV4FLASH_MODEL", "deepseek-v4-flash")
+        if not api_key:
+            return _UnavailableLLMClient(provider="dsv4flash", model=model, base_url=base_url)
+        client = DeepSeekClient(
+            api_key=api_key,
+            base_url=base_url,
+            model=model,
+            **kwargs,
+        )
+        client.provider = "dsv4flash"
+        return client
     else:
-        raise ValueError(f"Unknown LLM provider: {provider}. Supported: doubao, deepseek")
+        raise ValueError(f"Unknown LLM provider: {provider}. Supported: doubao, deepseek, dsv4flash")
