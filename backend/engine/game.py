@@ -1079,10 +1079,18 @@ class WerewolfGame:
             if self.state.current_speaker_id == player.id and prior_speaker != player.id:
                 self.state.current_speaker_id = prior_speaker
         if isinstance(result, Decision):
-            self._record_decision(player, request, view.__dict__, result, raw_output=str(result.metadata.get("raw_text", "")))
+            raw = str(result.metadata.get("raw_text", ""))
+            reasoning = str(result.metadata.get("reasoning", ""))
+            if reasoning:
+                raw = f"[推理]\n{reasoning[:3000]}\n\n[输出]\n{raw}"
+            self._record_decision(player, request, view.__dict__, result, raw_output=raw)
         elif isinstance(result, list):
             for item in result:
-                self._record_decision(player, request, view.__dict__, item, raw_output=str(item.metadata.get("raw_text", "")))
+                raw = str(item.metadata.get("raw_text", ""))
+                reasoning = str(item.metadata.get("reasoning", ""))
+                if reasoning:
+                    raw = f"[推理]\n{reasoning[:3000]}\n\n[输出]\n{raw}"
+                self._record_decision(player, request, view.__dict__, item, raw_output=raw)
         return result if many else result
 
     def _coerce_human_decisions(self, player: Player, pending: PendingInput, payload: dict[str, object]) -> list[Decision]:
