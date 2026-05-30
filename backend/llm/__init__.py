@@ -8,7 +8,7 @@ __all__ = ["DeepSeekClient", "create_client", "load_env_file"]
 
 _DEFAULT_DOUBAO_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3"
 _DEFAULT_DOUBAO_MODEL = "ep-20260514115354-k4jz4"
-_DEFAULT_PROVIDER = "doubao"
+_DEFAULT_PROVIDER = "dsv4flash"
 
 
 class _UnavailableLLMClient:
@@ -103,7 +103,7 @@ def create_client(provider: str | None = None, **kwargs) -> DeepSeekClient:
     elif provider == "dsv4flash":
         # DeepSeek V4 Flash via 火山引擎 Ark (dedicated endpoint)
         api_key = kwargs.pop("api_key", None) or os.getenv("DSV4FLASH_API_KEY", "")
-        base_url = kwargs.pop("base_url", None) or os.getenv("DSV4FLASH_BASE_URL", "https://ark.cn-beijing.volces.com/api/coding")
+        base_url = kwargs.pop("base_url", None) or os.getenv("DSV4FLASH_BASE_URL", "https://ark.cn-beijing.volces.com/api/coding/v1")
         model = kwargs.pop("model", None) or os.getenv("DSV4FLASH_MODEL", "deepseek-v4-flash")
         if not api_key:
             return _UnavailableLLMClient(provider="dsv4flash", model=model, base_url=base_url)

@@ -1689,9 +1689,10 @@ class LLMAgent(Agent):
                 messages=messages,
                 temperature=self.speech_temperature,
                 max_tokens=max_tokens,
-                thinking=False,
+                thinking=True,
             )
             text = self.client.parse_response(resp).strip()
+            reasoning = self.client.parse_thinking(resp)
             usage = resp.get("usage", {}) if isinstance(resp, dict) else {}
             total_latency_ms += int(resp.get("_latency_ms", 0)) if isinstance(resp, dict) else 0
 
@@ -1704,6 +1705,7 @@ class LLMAgent(Agent):
                     meta["source"] = "llm"
                     meta["fallback"] = False
                     meta["raw_text"] = text[:400]
+                    meta["reasoning"] = (reasoning or "")[:2000]
                     meta["attempts"] = 1
                     meta["segment_count"] = len(segments)
                     meta["segment_texts"] = segments
@@ -1720,9 +1722,10 @@ class LLMAgent(Agent):
                 ],
                 temperature=0.9,
                 max_tokens=max_tokens,
-                thinking=False,
+                thinking=True,
             )
             text2 = self.client.parse_response(resp2).strip()
+            reasoning2 = self.client.parse_thinking(resp2)
             usage2 = resp2.get("usage", {}) if isinstance(resp2, dict) else {}
             total_latency_ms += int(resp2.get("_latency_ms", 0)) if isinstance(resp2, dict) else 0
             segments2 = self._parse_speech_array(text2)
@@ -1733,6 +1736,7 @@ class LLMAgent(Agent):
                     meta["source"] = "llm"
                     meta["fallback"] = False
                     meta["raw_text"] = text2[:400]
+                    meta["reasoning"] = (reasoning2 or "")[:2000]
                     meta["attempts"] = 2
                     meta["segment_count"] = len(segments2)
                     meta["segment_texts"] = segments2
@@ -1748,6 +1752,7 @@ class LLMAgent(Agent):
                 meta["source"] = "llm"
                 meta["fallback"] = False
                 meta["raw_text"] = text[:400]
+                meta["reasoning"] = (reasoning or "")[:2000]
                 meta["attempts"] = 3
                 meta["segment_count"] = len(segments)
                 meta["segment_texts"] = segments
@@ -1758,6 +1763,7 @@ class LLMAgent(Agent):
             self.last_error = "talk_all_attempts_failed"
             meta["error"] = self.last_error
             meta["raw_text"] = text[:400]
+            meta["reasoning"] = (reasoning or "")[:2000]
             meta["usage"] = usage
             meta["latency_ms"] = total_latency_ms
             if LLMAgent.STRICT_NO_FALLBACK:
@@ -1982,10 +1988,11 @@ class LLMAgent(Agent):
                     messages=attempt["messages"],
                     temperature=float(attempt["temperature"]),
                     max_tokens=attempt_max,
-                    thinking=False,
+                    thinking=True,
                 )
                 text = self.client.parse_response(response).strip()
                 last_text = text
+                last_reasoning = self.client.parse_thinking(response)
                 last_usage = response.get("usage", {}) if isinstance(response, dict) else {}
                 total_latency_ms += int(response.get("_latency_ms", 0)) if isinstance(response, dict) else 0
                 parsed = self._coerce_json(text)
@@ -1994,6 +2001,7 @@ class LLMAgent(Agent):
                     meta["source"] = "llm"
                     meta["fallback"] = False
                     meta["raw_text"] = text[:400]
+                    meta["reasoning"] = (last_reasoning or "")[:2000]
                     meta["attempts"] = idx + 1
                     meta["usage"] = last_usage
                     meta["latency_ms"] = total_latency_ms
@@ -2002,6 +2010,7 @@ class LLMAgent(Agent):
             self.last_error = "json_parse_failed"
             meta["error"] = self.last_error
             meta["raw_text"] = last_text[:400]
+            meta["reasoning"] = (last_reasoning or "")[:2000] if 'last_reasoning' in dir() else ""
             meta["usage"] = last_usage
             meta["latency_ms"] = total_latency_ms
             self._attach_retrieval_meta(meta)

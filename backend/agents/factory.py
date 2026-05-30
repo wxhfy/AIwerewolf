@@ -92,7 +92,7 @@ def create_agents(players: list[Player], agent_config: dict[str, Any] | None = N
                 # otherwise route aliases like "deepseek-v4-pro[1m]" to
                 # api.deepseek.com.
                 if not forced_provider:
-                    forced_provider = "doubao"
+                    forced_provider = "dsv4flash"
             player.model_name = str(model_override or "")
             agents[player.id] = LLMAgent(
                 player.id,
