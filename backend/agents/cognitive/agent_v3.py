@@ -107,7 +107,7 @@ class CognitiveAgentV3:
         self.memory.add_action("speech", None, speech, state.get("think_result", "")[:100])
 
         return Decision(
-            player_id=self.player_id,
+            actor_id=self.player_id,
             action_type=ActionType.TALK,
             reasoning=state.get("think_result", "")[:200],
             metadata={"speech": speech, "source": "cognitive_v3", "model": "cognitive"},
@@ -136,7 +136,7 @@ class CognitiveAgentV3:
         self.memory.add_action("vote", target_name, f"投{target_name}", reasoning)
 
         return Decision(
-            player_id=self.player_id,
+            actor_id=self.player_id,
             action_type=ActionType.VOTE,
             target_id=target_id,
             reasoning=reasoning,
@@ -198,7 +198,7 @@ class CognitiveAgentV3:
             self._witch_save_used = True
             self.memory.role_memory["save_used"] = True
             decisions.append(Decision(
-                player_id=self.player_id,
+                actor_id=self.player_id,
                 action_type=ActionType.WITCH_SAVE,
                 target_id=victim_id,
                 reasoning=state.get("think_result", "")[:100],
@@ -214,7 +214,7 @@ class CognitiveAgentV3:
             if target_id:
                 self._witch_poison_used = True
                 decisions.append(Decision(
-                    player_id=self.player_id,
+                    actor_id=self.player_id,
                     action_type=ActionType.WITCH_POISON,
                     target_id=target_id,
                     reasoning=state.get("think_result", "")[:100],
@@ -223,7 +223,7 @@ class CognitiveAgentV3:
 
         if not decisions:
             decisions.append(Decision(
-                player_id=self.player_id,
+                actor_id=self.player_id,
                 action_type=ActionType.SKIP,
                 reasoning="不用药",
                 metadata={"source": "cognitive_v3", "model": "cognitive"},
@@ -259,7 +259,7 @@ class CognitiveAgentV3:
                 if not target_id and self.view.players:
                     target_id = self.view.players[0]["id"]
                 return Decision(
-                    player_id=self.player_id,
+                    actor_id=self.player_id,
                     action_type=ActionType.SHOOT,
                     target_id=target_id,
                     reasoning=data.get("reasoning", ""),
@@ -270,7 +270,7 @@ class CognitiveAgentV3:
 
         # Fallback
         return Decision(
-            player_id=self.player_id,
+            actor_id=self.player_id,
             action_type=ActionType.SHOOT,
             target_id=self.view.players[0]["id"] if self.view.players else None,
             reasoning="猎人开枪",
@@ -282,7 +282,7 @@ class CognitiveAgentV3:
         action_json = state.get("action_json", {})
         if not action_json.get("boom", False):
             return Decision(
-                player_id=self.player_id,
+                actor_id=self.player_id,
                 action_type=ActionType.SKIP,
                 reasoning="不自爆",
                 metadata={"source": "cognitive_v3", "model": "cognitive"},
@@ -294,7 +294,7 @@ class CognitiveAgentV3:
                 target_id = p["id"]
                 break
         return Decision(
-            player_id=self.player_id,
+            actor_id=self.player_id,
             action_type=ActionType.BOOM,
             target_id=target_id,
             reasoning=action_json.get("reasoning", ""),
@@ -330,7 +330,7 @@ class CognitiveAgentV3:
                     for p in self.view.players:
                         if p["id"] == cid and p["name"] == target_name:
                             return Decision(
-                                player_id=self.player_id,
+                                actor_id=self.player_id,
                                 action_type=ActionType.VOTE,
                                 target_id=cid,
                                 reasoning=data.get("reasoning", ""),
@@ -340,7 +340,7 @@ class CognitiveAgentV3:
             pass
 
         return Decision(
-            player_id=self.player_id,
+            actor_id=self.player_id,
             action_type=ActionType.VOTE,
             target_id=candidates[0] if candidates else None,
             reasoning="警徽移交",
@@ -366,7 +366,7 @@ class CognitiveAgentV3:
                     target_id = p["id"]
                     break
         return Decision(
-            player_id=self.player_id,
+            actor_id=self.player_id,
             action_type=action_type,
             target_id=target_id,
             reasoning=state.get("think_result", "")[:100],
