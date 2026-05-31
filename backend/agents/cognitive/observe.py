@@ -1,145 +1,214 @@
-"""Observation layer — extracts key signals from game state.
+"""Structured observation of the game state.
 
-The observation layer doesn't make judgments. It identifies:
-1. What facts are established
-2. What signals are noteworthy
-3. What information is missing
+Single Responsibility: extract what the agent can legitimately see
+from the raw PlayerView. No judgments, no analysis — pure fact extraction.
 """
 
 from __future__ import annotations
 
-from backend.agents.cognitive.state import GameObservation
+from dataclasses import dataclass, field
+from typing import Any, Dict, List
 
 
-def build_observe_prompt(obs: GameObservation) -> str:
-    """Build the observation prompt for the LLM.
+@dataclass
+class PlayerInfo:
+    """Public information about a single player."""
+    id: str
+    name: str
+    seat: int
+    alive: bool
+    role: str = "unknown"
 
-    The LLM should output structured observations without making judgments.
-    This forces the agent to "see before judging".
+
+@dataclass
+class SpeechInfo:
+    """A speech made in the current round."""
+    player_id: str
+    player_name: str
+    seat: int
+    content: str
+
+
+@dataclass
+class VoteInfo:
+    """A vote cast in a round."""
+    voter_id: str
+    voter_name: str
+    target_id: str
+    target_name: str
+
+
+@dataclass
+class DeathInfo:
+    """A player death."""
+    player_id: str
+    player_name: str
+    seat: int
+    cause: str  # "wolf", "vote", "witch", "hunter"
+
+
+@dataclass
+class Observation:
+    """Structured extraction of what the agent can see.
+
+    This is the ONLY output of the observation layer.
+    Everything downstream (think, act) consumes this — not raw view.
     """
 
-    # Build fact sheet
-    fact_lines = _build_fact_sheet(obs)
+    # Identity
+    player_id: str
+    player_name: str
+    player_seat: int
+    player_role: str
 
-    # Build signal analysis
-    signal_lines = _build_signal_analysis(obs)
+    # Game state
+    day: int
+    phase: str
 
-    # Build information gaps
-    gap_lines = _build_info_gaps(obs)
+    # Players
+    alive: List[PlayerInfo] = field(default_factory=list)
+    dead: List[PlayerInfo] = field(default_factory=list)
 
-    return f"""你是 {obs.player_seat}号:{obs.player_name}，身份={obs.player_role}，第{obs.day}天 {obs.phase}阶段。
+    # Current round
+    speeches: List[SpeechInfo] = field(default_factory=list)
+    votes: List[VoteInfo] = field(default_factory=list)
 
-=== 已确认事实 ===
-{chr(10).join(fact_lines)}
+    # History
+    deaths: List[DeathInfo] = field(default_factory=list)
 
-=== 值得注意的信号 ===
-{chr(10).join(signal_lines)}
+    # Private info (role-specific)
+    private: Dict[str, Any] = field(default_factory=dict)
 
-=== 信息缺口（你不知道的）===
-{chr(10).join(gap_lines)}
+    # Social signals
+    mentioned_by: List[str] = field(default_factory=list)
+    adjacent_dead: List[str] = field(default_factory=list)
 
-请用 2-3 句话总结你当前最重要的观察。不要做判断，只描述事实和信号。"""
+
+def observe(view: Any, role: str) -> Observation:
+    """Build an Observation from a PlayerView.
+
+    This is the ONLY public function in this module.
+    Pure extraction — no logic, no judgments.
+    """
+    obs = Observation(
+        player_id=view.self_player["id"],
+        player_name=view.self_player.get("name", ""),
+        player_seat=view.self_player.get("seat", 0),
+        player_role=role,
+        day=view.day,
+        phase=view.phase,
+    )
+
+    # Players
+    for p in view.players:
+        info = PlayerInfo(
+            id=p["id"],
+            name=p.get("name", ""),
+            seat=p.get("seat", 0),
+            alive=p["alive"],
+            role=p.get("role", "unknown"),
+        )
+        (obs.alive if p["alive"] else obs.dead).append(info)
+
+    # Today's speeches
+    for e in view.public_events:
+        if e.get("type") == "CHAT_MESSAGE" and e.get("day") == view.day:
+            payload = e.get("payload", {}) or {}
+            actor = _find_player(view, e.get("actor_id", ""))
+            obs.speeches.append(SpeechInfo(
+                player_id=e.get("actor_id", ""),
+                player_name=actor.get("name", ""),
+                seat=actor.get("seat", 0),
+                content=payload.get("speech", ""),
+            ))
+
+        elif e.get("type") == "VOTE_CAST" and e.get("day") == view.day:
+            payload = e.get("payload", {}) or {}
+            voter = _find_player(view, e.get("actor_id", ""))
+            target = _find_player(view, payload.get("target_id", ""))
+            obs.votes.append(VoteInfo(
+                voter_id=e.get("actor_id", ""),
+                voter_name=voter.get("name", ""),
+                target_id=payload.get("target_id", ""),
+                target_name=target.get("name", ""),
+            ))
+
+        elif e.get("type") == "PLAYER_DIED":
+            payload = e.get("payload", {}) or {}
+            dead = _find_player(view, payload.get("player_id", ""))
+            obs.deaths.append(DeathInfo(
+                player_id=payload.get("player_id", ""),
+                player_name=dead.get("name", ""),
+                seat=dead.get("seat", 0),
+                cause=payload.get("cause", "unknown"),
+            ))
+
+    # Private info
+    for e in view.private_events:
+        payload = e.get("payload", {}) or {}
+        if "check_result" in payload:
+            obs.private["seer_check"] = payload
+        if "victim_id" in payload:
+            obs.private["witch_victim"] = payload
+
+    # Social signals
+    my_seat = f"@{obs.player_seat}号"
+    for s in obs.speeches:
+        if my_seat in s.content:
+            obs.mentioned_by.append(s.player_name)
+
+    total_seats = len(view.players)
+    for d in obs.dead:
+        diff = abs(d.seat - obs.player_seat)
+        if diff == 1 or diff == total_seats - 1:
+            obs.adjacent_dead.append(d.name)
+
+    return obs
 
 
-def _build_fact_sheet(obs: GameObservation) -> list[str]:
-    """Build a list of established facts."""
-    lines = []
+def format_observation(obs: Observation) -> str:
+    """Format Observation into text for LLM consumption."""
+    lines = [
+        "=== 当前状态 ===",
+        f"你是 {obs.player_seat}号:{obs.player_name}，身份={obs.player_role}",
+        f"第{obs.day}天 / {obs.phase}阶段",
+        "",
+        f"存活：{'，'.join(f'{p.seat}号:{p.name}' for p in obs.alive)}",
+        f"死亡：{'，'.join(f'{p.seat}号:{p.name}' for p in obs.dead) or '无'}",
+    ]
 
-    # Deaths
+    if obs.speeches:
+        lines.append("\n=== 今日发言 ===")
+        for s in obs.speeches[-8:]:
+            lines.append(f"  {s.seat}号:{s.player_name}：{s.content[:200]}")
+
+    if obs.votes:
+        lines.append("\n=== 今日投票 ===")
+        for v in obs.votes:
+            lines.append(f"  {v.voter_name} -> {v.target_name}")
+
     if obs.deaths:
+        lines.append("\n=== 死亡记录 ===")
         for d in obs.deaths:
-            lines.append(f"- 第{d.day}天 {d.player_name}({d.seat}号) 死亡，死因: {d.cause}")
+            lines.append(f"  第{d.seat}号:{d.player_name}（{d.cause}）")
 
-    # Sheriff
-    if obs.sheriff_id:
-        sheriff = next((p for p in obs.alive_players if p.player_id == obs.sheriff_id), None)
-        if sheriff:
-            lines.append(f"- 警长是 {sheriff.seat}号:{sheriff.name}")
+    if obs.mentioned_by:
+        lines.append(f"\n你被 {', '.join(obs.mentioned_by)} 点名提到")
 
-    # Today's votes (if any)
-    if obs.today_votes:
-        vote_summary = []
-        for v in obs.today_votes:
-            vote_summary.append(f"{v.voter_name}->{v.target_name}")
-        lines.append(f"- 今日投票: {', '.join(vote_summary)}")
+    if obs.adjacent_dead:
+        lines.append(f"你和 {', '.join(obs.adjacent_dead)} 座位相邻")
 
-    # Yesterday's votes
-    if obs.yesterday_votes:
-        vote_summary = []
-        for v in obs.yesterday_votes:
-            vote_summary.append(f"{v.voter_name}->{v.target_name}")
-        lines.append(f"- 昨日投票: {', '.join(vote_summary)}")
+    if obs.private:
+        lines.append("\n=== 私有信息 ===")
+        for k, v in obs.private.items():
+            lines.append(f"  {k}: {v}")
 
-    if not lines:
-        lines.append("- 暂无确认事实")
-
-    return lines
+    return "\n".join(lines)
 
 
-def _build_signal_analysis(obs: GameObservation) -> list[str]:
-    """Analyze noteworthy signals from speeches and behavior."""
-    lines = []
-
-    # Check for role claims
-    for speech in obs.today_speeches:
-        content = speech.content
-        if "预言家" in content or "查验" in content:
-            lines.append(f"- {speech.player_name}({speech.seat}号) 提到了预言家/查验")
-        if "女巫" in content or "解药" in content or "毒药" in content:
-            lines.append(f"- {speech.player_name}({speech.seat}号) 提到了女巫/药水")
-        if "猎人" in content or "开枪" in content:
-            lines.append(f"- {speech.player_name}({speech.seat}号) 提到了猎人/开枪")
-
-    # Check for accusations
-    for speech in obs.today_speeches:
-        content = speech.content
-        if "狼人" in content and ("一定是" in content or "肯定是" in content):
-            lines.append(f"- {speech.player_name}({speech.seat}号) 做了确定性指控")
-
-    # Check for contradictions (simple: same player said different things)
-    player_speeches: dict[str, list[str]] = {}
-    for speech in obs.today_speeches:
-        if speech.player_id not in player_speeches:
-            player_speeches[speech.player_id] = []
-        player_speeches[speech.player_id].append(speech.content)
-
-    for pid, speeches in player_speeches.items():
-        if len(speeches) >= 2:
-            # Simple contradiction check: if one speech says X is good, another says X is suspicious
-            for i, s1 in enumerate(speeches):
-                for s2 in speeches[i+1:]:
-                    if ("好人" in s1 and "狼人" in s2) or ("狼人" in s1 and "好人" in s2):
-                        player_info = next((p for p in obs.alive_players if p.player_id == pid), None)
-                        if player_info:
-                            lines.append(f"- {player_info.name}({player_info.seat}号) 发言存在矛盾")
-
-    if not lines:
-        lines.append("- 暂无特别信号")
-
-    return lines
-
-
-def _build_info_gaps(obs: GameObservation) -> list[str]:
-    """Identify what the agent doesn't know."""
-    lines = []
-
-    if obs.player_role != "Seer":
-        lines.append("- 你不知道任何玩家的真实身份")
-
-    if obs.player_role == "Villager":
-        lines.append("- 你没有任何私有信息")
-
-    if obs.day == 1 and obs.phase == "DAY_SPEECH":
-        lines.append("- 第一天信息极少，判断置信度低")
-
-    # How many haven't spoken yet
-    spoken_ids = {s.player_id for s in obs.today_speeches}
-    unspoken = [p for p in obs.alive_players if p.player_id not in spoken_ids and p.player_id != obs.player_id]
-    if unspoken:
-        names = ", ".join(f"{p.seat}号:{p.name}" for p in unspoken[:3])
-        lines.append(f"- 以下玩家尚未发言: {names}")
-
-    if not lines:
-        lines.append("- 信息相对充分")
-
-    return lines
+def _find_player(view: Any, player_id: str) -> dict:
+    """Find player dict by id."""
+    for p in view.players:
+        if p["id"] == player_id:
+            return p
+    return {"id": player_id, "name": player_id, "seat": 0, "alive": False}

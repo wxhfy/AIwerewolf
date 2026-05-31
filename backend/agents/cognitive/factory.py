@@ -1,93 +1,76 @@
-"""Factory function to create CognitiveAgent instances from game config."""
+"""Factory — creates CognitiveAgent instances.
+
+Single Responsibility: object construction.
+No game logic, no LLM calls — pure wiring.
+"""
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Optional
+
+from langchain_core.runnables import Runnable, RunnableLambda
 
 from backend.agents.cognitive.agent import CognitiveAgent
-from backend.agents.cognitive.graph import build_cognitive_graph
+from backend.agents.cognitive.profiles import Profile, get_profile
 
 
 def create_cognitive_agent(
     player_id: str,
     role: str,
-    llm_provider: str = "dsv4flash",
-    llm_model: str | None = None,
-    llm_api_key: str | None = None,
-    llm_base_url: str | None = None,
-    character: Any = None,
+    llm: Runnable,
     player_name: str = "",
     player_seat: int = 0,
+    profile: Optional[Profile] = None,
 ) -> CognitiveAgent:
-    """Create a CognitiveAgent with the specified LLM backend.
+    """Create a CognitiveAgent.
 
     Args:
-        player_id: The player's unique ID
-        role: The player's role (e.g., "Werewolf", "Seer")
-        llm_provider: LLM provider name ("dsv4flash", "deepseek", "doubao")
-        llm_model: Model name override
-        llm_api_key: API key override
-        llm_base_url: Base URL override
-        character: Character/persona object
-        player_name: Player display name
-        player_seat: Player seat number
+        player_id: Unique player identifier
+        role: Role string (e.g., "Seer", "Werewolf")
+        llm: LangChain Runnable for LLM calls
+        player_name: Display name
+        player_seat: Seat number
+        profile: Optional custom profile (defaults to role-based)
 
     Returns:
-        Configured CognitiveAgent instance
+        Configured CognitiveAgent ready for game engine use
     """
-    # Create the LLM using the existing backend
-    from backend.llm import create_client
-
-    client = create_client(
-        provider=llm_provider,
-        model=llm_model,
-        api_key=llm_api_key,
-        base_url=llm_base_url,
-    )
-
-    # Wrap the client in a LangChain-compatible Runnable
-    from langchain_core.messages import BaseMessage
-    from langchain_core.runnables import RunnableLambda
-
-    def llm_invoke(messages: list[BaseMessage]) -> Any:
-        """Call the LLM client with LangChain messages."""
-        # Convert LangChain messages to the format expected by the client
-        lc_messages = []
-        for msg in messages:
-            if hasattr(msg, 'content'):
-                role = "user" if msg.type == "human" else "system"
-                lc_messages.append({"role": role, "content": msg.content})
-
-        # Call the client
-        response = client.chat_sync(lc_messages, max_tokens=500)
-
-        # Create a response-like object
-        class LLMResponse:
-            def __init__(self, content: str):
-                self.content = content
-
-        # Extract the response text
-        if isinstance(response, dict):
-            choices = response.get("choices", [])
-            if choices:
-                content = choices[0].get("message", {}).get("content", "")
-            else:
-                content = str(response)
-        else:
-            content = str(response)
-
-        return LLMResponse(content)
-
-    llm = RunnableLambda(llm_invoke)
-
-    # Create the agent
-    agent = CognitiveAgent(
+    return CognitiveAgent(
         player_id=player_id,
         role=role,
         llm=llm,
         player_name=player_name,
         player_seat=player_seat,
-        character=character,
+        profile=profile,
     )
 
-    return agent
+
+def create_llm_from_client(client: Any) -> Runnable:
+    """Wrap an LLM client into a LangChain Runnable.
+
+    The client must implement chat_sync(messages, max_tokens) -> dict.
+    """
+    def invoke(messages):
+        class Response:
+            def __init__(self, content):
+                self.content = content
+
+        lc_messages = []
+        for msg in messages:
+            role = "user" if msg.type == "human" else "system"
+            lc_messages.append({"role": role, "content": msg.content})
+
+        resp = client.chat_sync(lc_messages, max_tokens=500)
+
+        if isinstance(resp, dict):
+            choices = resp.get("choices", [])
+            if choices:
+                content = choices[0].get("message", {}).get("content", "")
+            else:
+                content = str(resp)
+        else:
+            content = str(resp)
+
+        return Response(content)
+
+    return RunnableLambda(invoke)
