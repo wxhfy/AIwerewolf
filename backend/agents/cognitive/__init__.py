@@ -18,12 +18,17 @@ Usage:
 
 from backend.agents.cognitive.agent import CognitiveAgent
 from backend.agents.cognitive.factory import create_cognitive_agent
+from backend.agents.cognitive.graph_v2 import CognitiveState, CharacterProfile, CHARACTER_PROFILES, build_cognitive_graph_v2
 from backend.agents.cognitive.memory import AgentMemory
 from backend.agents.cognitive.state import GameObservation, build_observation
 
 __all__ = [
     "CognitiveAgent",
     "create_cognitive_agent",
+    "CognitiveState",
+    "CharacterProfile",
+    "CHARACTER_PROFILES",
+    "build_cognitive_graph_v2",
     "AgentMemory",
     "GameObservation",
     "build_observation",
