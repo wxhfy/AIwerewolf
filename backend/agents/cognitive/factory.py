@@ -21,6 +21,7 @@ def create_cognitive_agent(
     player_name: str = "",
     player_seat: int = 0,
     profile: Optional[Profile] = None,
+    db_conn_str: str = "",
 ) -> CognitiveAgent:
     """Create a CognitiveAgent.
 
@@ -30,11 +31,20 @@ def create_cognitive_agent(
         llm: LangChain Runnable for LLM calls
         player_name: Display name
         player_seat: Seat number
-        profile: Optional custom profile (defaults to role-based)
+        profile: Optional custom profile (defaults to DB or hardcoded)
+        db_conn_str: PostgreSQL connection string for loading profiles
 
     Returns:
         Configured CognitiveAgent ready for game engine use
     """
+    # Load profile from DB if not provided
+    if profile is None:
+        try:
+            from backend.agents.cognitive.repository import load_profile_from_db
+            profile = load_profile_from_db(role, db_conn_str)
+        except Exception:
+            profile = get_profile(role)
+
     return CognitiveAgent(
         player_id=player_id,
         role=role,
