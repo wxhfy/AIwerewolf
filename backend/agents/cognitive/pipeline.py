@@ -28,6 +28,7 @@ from backend.agents.cognitive.prompts import (
     build_night_prompt,
     build_system_prompt,
 )
+from backend.agents.cognitive.retrieval import retrieve_strategies, format_strategies_for_prompt
 
 
 class Pipeline:
@@ -107,6 +108,11 @@ class Pipeline:
     def think_with_context(self, obs: Observation, memory: Memory, obs_result: str) -> str:
         """Think stage with pre-computed observation result."""
         memory_text = memory.format_for_prompt()
+
+        # Retrieve relevant strategies from DB
+        strategies = retrieve_strategies(obs.player_role, obs.phase)
+        strategy_text = format_strategies_for_prompt(strategies)
+
         parts = [
             f"你是 {obs.player_seat}号:{obs.player_name}，身份={obs.player_role}。",
             "",
@@ -115,6 +121,8 @@ class Pipeline:
         ]
         if memory_text:
             parts.extend(["", "=== 记忆 ===", memory_text])
+        if strategy_text:
+            parts.extend(["", strategy_text])
         parts.extend([
             "",
             "请分析：",

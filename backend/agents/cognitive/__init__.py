@@ -34,10 +34,13 @@ Database integration:
 from backend.agents.cognitive.agent import CognitiveAgent
 from backend.agents.cognitive.factory import create_cognitive_agent
 from backend.agents.cognitive.repository import load_profiles_from_db, load_profile_from_db
+from backend.agents.cognitive.retrieval import retrieve_strategies, format_strategies_for_prompt
 
 __all__ = [
     "CognitiveAgent",
     "create_cognitive_agent",
     "load_profiles_from_db",
     "load_profile_from_db",
+    "retrieve_strategies",
+    "format_strategies_for_prompt",
 ]
