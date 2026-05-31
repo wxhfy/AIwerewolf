@@ -205,7 +205,7 @@ class CognitiveAgent:
         self.memory.add_action("speech", None, speech, think_result[:100])
 
         return Decision(
-            player_id=self.player_id,
+            actor_id=self.player_id,
             action_type=ActionType.TALK,
             reasoning=think_result[:200],
             metadata={"speech": speech, "source": "cognitive", "model": "cognitive-agent"},
@@ -255,7 +255,7 @@ class CognitiveAgent:
         self.memory.add_action("vote", target_name, f"投{target_name}", reasoning)
 
         return Decision(
-            player_id=self.player_id,
+            actor_id=self.player_id,
             action_type=ActionType.VOTE,
             target_id=target_id,
             reasoning=reasoning,
@@ -327,7 +327,7 @@ class CognitiveAgent:
             atype = ActionType.ATTACK
 
         return Decision(
-            player_id=self.player_id,
+            actor_id=self.player_id,
             action_type=atype,
             target_id=target_id,
             reasoning=reasoning,
@@ -387,7 +387,7 @@ class CognitiveAgent:
                 self.memory.add_action("witch_save", None, "使用解药", reasoning)
 
                 return Decision(
-                    player_id=self.player_id,
+                    actor_id=self.player_id,
                     action_type=ActionType.WITCH_SAVE,
                     target_id=victim_id,
                     reasoning=reasoning,
@@ -411,7 +411,7 @@ class CognitiveAgent:
                 self.memory.add_action("witch_poison", poison_target, f"毒{poison_target}", reasoning)
 
                 return Decision(
-                    player_id=self.player_id,
+                    actor_id=self.player_id,
                     action_type=ActionType.WITCH_POISON,
                     target_id=target_id,
                     reasoning=reasoning,
@@ -421,7 +421,7 @@ class CognitiveAgent:
         # Skip action
         self.memory.add_action("witch_skip", None, "不用药", reasoning)
         return Decision(
-            player_id=self.player_id,
+            actor_id=self.player_id,
             action_type=ActionType.SKIP,
             reasoning=reasoning,
             metadata={"source": "cognitive", "model": "cognitive-agent"},
@@ -532,7 +532,7 @@ class CognitiveAgent:
         self.memory.add_action("shoot", target_name, f"开枪打{target_name}", reasoning)
 
         return Decision(
-            player_id=self.player_id,
+            actor_id=self.player_id,
             action_type=ActionType.SHOOT,
             target_id=target_id,
             reasoning=reasoning,
@@ -572,7 +572,7 @@ class CognitiveAgent:
 
         if not boom:
             return Decision(
-                player_id=self.player_id,
+                actor_id=self.player_id,
                 action_type=ActionType.SKIP,
                 reasoning="不自爆",
                 metadata={"source": "cognitive", "model": "cognitive-agent"},
@@ -587,7 +587,7 @@ class CognitiveAgent:
         self.memory.add_action("boom", target_name, f"自爆带走{target_name}", reasoning)
 
         return Decision(
-            player_id=self.player_id,
+            actor_id=self.player_id,
             action_type=ActionType.BOOM,
             target_id=target_id,
             reasoning=reasoning,
@@ -641,7 +641,7 @@ class CognitiveAgent:
             target_id = candidates[0]
 
         return Decision(
-            player_id=self.player_id,
+            actor_id=self.player_id,
             action_type=ActionType.VOTE,
             target_id=target_id,
             reasoning=reasoning,
