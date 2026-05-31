@@ -6,6 +6,7 @@ from random import Random
 from typing import Any
 
 from backend.agents.base import Agent
+from backend.agents.belief_state import BeliefState
 from backend.agents.characters import Character
 from backend.agents.heuristic import HeuristicAgent
 from backend.agents.playbooks import build_role_brief
@@ -76,7 +77,7 @@ class LLMAgent(Agent):
         # the retry chain enough headroom to never time out under normal
         # conditions; the engine's snapshot drain runs in parallel so the
         # UI stays responsive while we wait.
-        self.client.timeout = 120.0
+        self.client.timeout = 300.0  # 5分钟超时
         self.fallback = HeuristicAgent(player_id, seed=seed, character=character)
         self.character = character
         self.strategy_bias = {key: list(value) for key, value in (strategy_bias or {}).items() if value}
@@ -84,6 +85,7 @@ class LLMAgent(Agent):
         self.last_error: str | None = None
         self.recent_openings: list[str] = []
         self.current_retrieval: list = []
+        self.belief_state: BeliefState | None = None
 
     def initialize(self, view: PlayerView, game_setting: dict) -> None:
         self.view = view
@@ -91,11 +93,17 @@ class LLMAgent(Agent):
         char_name = self.character.persona.name if self.character else "玩家"
         self.memory.append(f"我是{char_name}，扮演{self.role.value}。")
         self.memory.append(build_role_brief(self.role))
+        # Initialize belief state for structured game tracking
+        self.belief_state = BeliefState(self.player_id)
+        self.belief_state.initialize(view)
 
     def update(self, view: PlayerView, request: str) -> None:
         self.view = view
         self.fallback.update(view, request)
         self.memory.append(f"{request} day={view.day} phase={view.phase}")
+        # Update belief state with new information
+        if self.belief_state is not None:
+            self.belief_state.update(view)
         try:
             from backend.db.persist import retrieve_strategy_knowledge
             from backend.eval.evolution import RetrievedStrategyLesson, StrategyRetrievalQuery
@@ -404,6 +412,18 @@ class LLMAgent(Agent):
             "允许保留判断，但保留判断也要说明你接下来重点听谁、盯谁、或者为什么暂时不跟票。\n"
             "语气像真人聊天，可以有语气词、停顿、反问，但不要喊口号，也不要写成总结报告。\n"
             "\n"
+            "【推理要求——必须遵守】\n"
+            "1. 分析角色声称时，关注逻辑一致性而非措辞规范：\n"
+            "   - 多人声称同一角色 → 必须分析谁更可信（查人方向、发言逻辑、是否与已知信息矛盾）\n"
+            "   - 遗言中的身份声称 → 必须认真对待，不能忽略\n"
+            "   - 警长竞选时的跳身份 → 要分析动机（是真跳还是狼人假跳？）\n"
+            "2. 引用具体信息：\n"
+            "   - 必须引用某人的原话（用引号）来支持你的判断\n"
+            "   - 不能只说“X可疑”，要说“X说了什么什么，这不对因为……”\n"
+            "3. 关注逻辑而非措辞：\n"
+            "   - 不能因为某人说了“验”字就判定他是假预言家\n"
+            "   - 要看他的整体逻辑是否自洽、是否与已知信息矛盾\n"
+            "\n"
             "【输出格式】\n"
             "返回 JSON 字符串数组，每个元素是一条消息气泡。"
         )
@@ -622,6 +642,15 @@ class LLMAgent(Agent):
             context += "\n" + "\n".join(history_lines)
         if len(vote_lines) > 1:
             context += "\n" + "\n".join(vote_lines)
+
+        # Inject BeliefState summary for structured game tracking
+        if self.belief_state is not None:
+            belief_summary = self.belief_state.get_summary()
+            if belief_summary and belief_summary != "（暂无结构化信息）":
+                context += f"\n\n{belief_summary}"
+            reasoning_context = self.belief_state.get_reasoning_context()
+            if reasoning_context:
+                context += f"\n\n{reasoning_context}"
 
         context += "\n【提醒】发言重点放在存活玩家，可引用死亡原因作为推理依据，但不要过度复盘已出局玩家。"
 
@@ -961,6 +990,14 @@ class LLMAgent(Agent):
                 "如果信息仍然不足，也要给出一个当前最差选项，而不是空泛地说都可疑。",
                 "【阅读理解要求】你必须引用目标玩家的原话（用引号括起来），然后解释这番话为什么有问题。禁止使用'位置伪逻辑'等笼统说法，必须精确引用原话。",
                 "【防跟风要求】你的推理必须独立于其他玩家。禁止说'同意X的观点'或'和X一样'。你必须给出自己的分析链条：引用原话 → 分析矛盾 → 得出结论。",
+                "【关键推理要求】\n"
+                "1. 如果有角色声称矛盾（多人声称同一角色），必须分析谁更可信：\n"
+                "   - 查人方向是否合理？\n"
+                "   - 发言逻辑是否自洽？\n"
+                "   - 是否与已知的查验结果矛盾？\n"
+                "2. 不能因为措辞不规范就判定某人是狼——要看整体逻辑。\n"
+                "3. 遗言中的身份声称必须认真对待——被投出的玩家遗言说的身份很可能是真的。\n"
+                "4. 如果有预言家遗言查了某人是好人，而另一个“预言家”给同一个人发金水，要分析矛盾。",
             ],
         )
         return Decision(
@@ -1252,6 +1289,15 @@ class LLMAgent(Agent):
             *fact_sheet,
         ]
 
+        # Inject BeliefState summary into action prompts
+        if self.belief_state is not None:
+            belief_summary = self.belief_state.get_summary()
+            if belief_summary and belief_summary != "（暂无结构化信息）":
+                blocks.extend(["", "=== 结构化游戏分析 ===", belief_summary])
+            reasoning_context = self.belief_state.get_reasoning_context()
+            if reasoning_context:
+                blocks.extend(["", "=== 推理要点 ===", reasoning_context])
+
         # Add today's transcript (wolfcha-style)
         if today_transcript:
             blocks.extend(["", "=== 今日发言记录 ===", *today_transcript])
@@ -1308,6 +1354,12 @@ class LLMAgent(Agent):
             "- 提到任何其他玩家时，必须写成 @N号:名字 的形式（例如 @3号:王雅文）。",
             "- 不要假装自己是其他角色；只引用你私有信息里真实拥有的查验结果 / 守护目标 / 药水使用。",
             "- 发言不要超过 3 句话；保持你的角色风格。",
+            "",
+            "=== 推理硬性纪律 ===",
+            "- 分析角色声称时，关注逻辑一致性而非措辞规范。不能因为某人说了“验”字就判定他是假预言家。",
+            "- 如果有角色声称矛盾（多人声称同一角色），必须分析谁更可信，不能简单地跟风投票。",
+            "- 遗言中的身份声称必须认真对待——被投出的玩家遗言说的身份很可能是真的。",
+            "- 你必须引用具体发言（用引号）来支持你的判断，不能只说“X可疑”。",
             "",
             f"请只输出 JSON：{get_output_format(action)}",
         ])

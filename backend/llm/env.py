@@ -23,4 +23,6 @@ def load_env_file(path: str = ".env") -> None:
         key, value = line.split("=", 1)
         key = key.strip()
         value = value.strip().strip('"').strip("'")
-        os.environ.setdefault(key, value)
+        # 只在环境变量未设置或为空时设置
+        if not os.environ.get(key):
+            os.environ[key] = value

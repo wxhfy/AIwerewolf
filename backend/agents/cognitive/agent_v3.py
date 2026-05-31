@@ -1,19 +1,15 @@
-"""Cognitive Agent v3 — uses the StateGraph cognitive pipeline.
+"""Cognitive Agent v3 — StateGraph pipeline with full character + strategy integration.
 
-Drop-in replacement for LLMAgent. Implements the full Agent protocol
-using Observe → Think → Act → Reflect for each decision.
-
-Key improvements:
-- Focused prompts (each LLM call does ONE thing)
-- Character system shapes personality
-- Structured memory persists across rounds
-- Reflection catches bad outputs
-- Compatible with existing game engine
+Integrates three layers:
+1. MBTI/Persona — from Character system (personality, speaking style, pressure reactions)
+2. Role — from CharacterProfile (role goal, backstory) + RoleProfile (table_goal, speech_style)
+3. Strategy — from playbooks.py (action playbooks) + strategy knowledge retrieval
 """
 
 from __future__ import annotations
 
 import json
+import os
 import re
 from typing import Any, Dict, List, Optional
 
@@ -28,17 +24,18 @@ from backend.agents.cognitive.graph_v3 import (
 )
 from backend.agents.cognitive.memory import AgentMemory
 from backend.agents.cognitive.state import GameObservation, build_observation, format_observation_text
-from backend.engine.models import Decision, ActionType
+from backend.agents.playbooks import build_role_brief
+from backend.agents.profiles import ROLE_PROFILES
+from backend.engine.models import Decision, ActionType, Role
 
 
 class CognitiveAgentV3:
     """Werewolf agent using Observe-Think-Act-Reflect cognitive architecture.
 
-    Each decision goes through:
-    1. OBSERVE: Extract facts and signals (no judgments)
-    2. THINK: Analyze situation, evaluate players
-    3. ACT: Generate concrete action
-    4. REFLECT: Check output quality, retry if needed
+    Three-layer integration:
+    - Layer 1: MBTI/Persona — shapes WHO the agent is (personality, style)
+    - Layer 2: Role — shapes WHAT the agent wants (goal, strategy)
+    - Layer 3: Strategy — shapes HOW the agent acts (playbook, knowledge)
     """
 
     def __init__(
@@ -57,8 +54,20 @@ class CognitiveAgentV3:
         self.player_seat = player_seat
         self.character = character
 
-        # Cognitive graph
-        self.graph = build_cognitive_graph(llm)
+        # Build role-specific strategy (match Role enum by value)
+        role_enum = Role.VILLAGER
+        for r in Role:
+            if r.value.lower() == role.lower():
+                role_enum = r
+                break
+        self._role_brief = build_role_brief(role_enum)
+        self._role_profile = ROLE_PROFILES.get(role_enum)
+
+        # Build the unified system prompt (3-layer integration)
+        self._system_prompt = self._build_system_prompt()
+
+        # Cognitive graph (with integrated system prompt)
+        self.graph = build_cognitive_graph(llm, self._system_prompt)
 
         # Memory system
         self.memory = AgentMemory(player_id, role)
@@ -70,6 +79,91 @@ class CognitiveAgentV3:
         self._guard_history: List[str] = []
         self._witch_save_used = False
         self._witch_poison_used = False
+
+    def _build_system_prompt(self) -> str:
+        """Build unified system prompt integrating all 3 layers."""
+
+        parts = []
+
+        # === Layer 1: Character/Persona (MBTI + personality) ===
+        if self.character:
+            p = self.character.persona
+            m = self.character.mind
+
+            parts.append(f"【你的身份】")
+            parts.append(f"你是{p.name}，{p.age}岁，扮演{self.role}。")
+            if p.basic_info:
+                parts.append(f"背景：{p.basic_info}")
+
+            # MBTI personality
+            if p.mbti:
+                parts.append(f"性格类型：{p.mbti}")
+
+            # Speaking style
+            if p.vocabulary_style:
+                parts.append(f"说话风格：{p.vocabulary_style}")
+            if p.speech_length_habit:
+                parts.append(f"发言长短：{p.speech_length_habit}")
+            if p.reasoning_style:
+                parts.append(f"推理方式：{p.reasoning_style}")
+
+            # Decision-making traits (PlayerMind)
+            courage_map = {
+                "bold": "你不怕站边、敢带节奏",
+                "cautious": "你比较谨慎，不会第一个冲票",
+                "calculated": "你有把握时才明确表态",
+            }
+            suspicion_map = {
+                "low": "你比较容易起疑，小破绽就能让你锁定目标",
+                "medium": "你需要看到连续的可疑行为才会下判断",
+                "high": "你倾向于先相信别人的解释",
+            }
+            logic_map = {
+                "shallow": "你凭直觉做判断，不太深究逻辑链条",
+                "moderate": "你会盘基本逻辑，但不钻牛角尖",
+                "deep": "你喜欢多角度分析，会反复推敲每个细节",
+            }
+
+            parts.append(f"态度：{courage_map.get(m.courage, '看情况表态')}")
+            parts.append(f"对他人的信任度：{suspicion_map.get(m.suspicion_threshold, '中等')}")
+            parts.append(f"推理深度：{logic_map.get(m.logic_depth, '中等')}")
+
+            # Pressure and social habits
+            if p.pressure_style:
+                parts.append(f"压力下的反应：{p.pressure_style}")
+            if p.social_habit:
+                parts.append(f"社交习惯：{p.social_habit}")
+            if p.wolf_deception_style and self.role.lower() in ("werewolf", "white_wolf_king"):
+                parts.append(f"拿狼时的打法：{p.wolf_deception_style}")
+            if p.mistake_pattern:
+                parts.append(f"你的一个弱点：{p.mistake_pattern}")
+
+        # === Layer 2: Role goal and strategy ===
+        char_profile = CHARACTERS.get(self.role, CHARACTERS["Villager"])
+        parts.append(f"\n【你的角色目标】")
+        parts.append(f"目标：{char_profile.goal}")
+        parts.append(f"背景：{char_profile.backstory}")
+        if char_profile.speech_style:
+            parts.append(f"发言风格：{char_profile.speech_style}")
+
+        # === Layer 3: Strategy (playbook) ===
+        parts.append(f"\n【你的策略指南】")
+        parts.append(self._role_brief)
+
+        # Role profile (from profiles.py)
+        if self._role_profile:
+            parts.append(f"\n【桌面表现】")
+            parts.append(f"目标：{self._role_profile.table_goal}")
+            parts.append(f"发言：{self._role_profile.speech_style}")
+            parts.append(f"被质疑时：{self._role_profile.pressure_style}")
+            parts.append(f"身份暴露策略：{self._role_profile.reveal_policy}")
+            if self._role_profile.wolf_disguise_style and self.role.lower() in ("werewolf", "white_wolf_king"):
+                parts.append(f"伪装方式：{self._role_profile.wolf_disguise_style}")
+
+        parts.append(f"\n你正在参与一局狼人杀游戏。请用中文回答。")
+        parts.append(f"重要：你的推理过程是内部思考，不要在发言中暴露。发言时只说你观察到的公开信息和你的判断。")
+
+        return "\n".join(parts)
 
     def initialize(self, view: Any, game_setting: dict) -> None:
         self.view = view
@@ -156,7 +250,6 @@ class CognitiveAgentV3:
         state = self._run_pipeline("night", "guard_protect", extra)
         target_name = state.get("night_target", "")
 
-        # Track guard history
         if target_name:
             self._guard_history.append(target_name)
             self.memory.role_memory.setdefault("protection_history", []).append(
@@ -166,7 +259,6 @@ class CognitiveAgentV3:
         return self._make_night_decision(state, ActionType.GUARD)
 
     def witch_act(self, victim_id: str | None) -> List[Decision]:
-        # Build witch-specific info
         lines = []
         if self._witch_save_used:
             lines.append("解药已使用")
@@ -177,7 +269,6 @@ class CognitiveAgentV3:
         else:
             lines.append("毒药可用")
 
-        # Find victim name
         if victim_id:
             for p in self.view.players:
                 if p["id"] == victim_id:
@@ -187,7 +278,6 @@ class CognitiveAgentV3:
         extra = "\n".join(lines)
         state = self._run_pipeline("night", "witch_act", extra)
 
-        # Parse witch action
         action_json = state.get("action_json", {})
         save = action_json.get("save", False)
         poison_target = action_json.get("poison_target")
@@ -244,7 +334,7 @@ class CognitiveAgentV3:
 
         try:
             resp = self.llm.invoke([
-                SystemMessage(content=CHARACTERS.get("Hunter", CHARACTERS["Villager"]).system_prompt()),
+                SystemMessage(content=self._system_prompt),
                 HumanMessage(content=prompt),
             ])
             m = re.search(r'\{[^}]+\}', resp.content)
@@ -268,7 +358,6 @@ class CognitiveAgentV3:
         except Exception:
             pass
 
-        # Fallback
         return Decision(
             actor_id=self.player_id,
             action_type=ActionType.SHOOT,
@@ -319,7 +408,7 @@ class CognitiveAgentV3:
 
         try:
             resp = self.llm.invoke([
-                SystemMessage(content="选择警徽继承人。输出JSON。"),
+                SystemMessage(content=self._system_prompt),
                 HumanMessage(content=prompt),
             ])
             m = re.search(r'\{[^}]+\}', resp.content)

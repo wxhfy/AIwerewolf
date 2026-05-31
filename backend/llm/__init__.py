@@ -18,7 +18,7 @@ class _UnavailableLLMClient:
         self.provider = provider
         self.model = model
         self.base_url = base_url
-        self.timeout = 0.01
+        self.timeout = 300.0  # 5分钟超时
 
     def chat_sync(self, *args, **kwargs):
         raise RuntimeError(f"{self.provider} client unavailable: missing API key")

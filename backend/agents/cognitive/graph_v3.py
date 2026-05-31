@@ -122,7 +122,7 @@ class GameState(dict):
 # Node Factories
 # ============================================================
 
-def make_observe_node(llm: Runnable) -> Callable:
+def make_observe_node(llm: Runnable, system_prompt: str = "你是狼人杀观察者。提取关键信号和事实，不做判断。用中文。") -> Callable:
     """Observation: extract facts, signals, info gaps. No judgments."""
 
     def node(state: GameState) -> GameState:
@@ -133,7 +133,7 @@ def make_observe_node(llm: Runnable) -> Callable:
 
         try:
             resp = llm.invoke([
-                SystemMessage(content="你是狼人杀观察者。提取关键信号和事实，不做判断。用中文。"),
+                SystemMessage(content=system_prompt),
                 HumanMessage(content=prompt),
             ])
             state["observe_result"] = resp.content.strip()
@@ -144,7 +144,7 @@ def make_observe_node(llm: Runnable) -> Callable:
     return node
 
 
-def make_think_node(llm: Runnable) -> Callable:
+def make_think_node(llm: Runnable, system_prompt: str = "你是一个狼人杀游戏分析师。基于观察进行推理分析。用中文。") -> Callable:
     """Thinking: analyze situation, evaluate players, consider strategy."""
 
     def node(state: GameState) -> GameState:
@@ -171,7 +171,7 @@ def make_think_node(llm: Runnable) -> Callable:
 
         try:
             resp = llm.invoke([
-                SystemMessage(content=f"你是狼人杀分析师，身份={role}。基于观察进行推理。用中文。"),
+                SystemMessage(content=system_prompt),
                 HumanMessage(content=prompt),
             ])
             state["think_result"] = resp.content.strip()
@@ -182,7 +182,7 @@ def make_think_node(llm: Runnable) -> Callable:
     return node
 
 
-def make_act_node(llm: Runnable) -> Callable:
+def make_act_node(llm: Runnable, system_prompt: str = "你是狼人杀玩家。用中文。") -> Callable:
     """Action: generate concrete action based on analysis."""
 
     def node(state: GameState) -> GameState:
@@ -191,20 +191,20 @@ def make_act_node(llm: Runnable) -> Callable:
         character = CHARACTERS.get(role, CHARACTERS["Villager"])
 
         if phase == "speech":
-            return _do_speech(llm, state, character)
+            return _do_speech(llm, state, character, system_prompt)
         elif phase == "vote":
-            return _do_vote(llm, state, character)
+            return _do_vote(llm, state, character, system_prompt)
         elif phase == "night":
-            return _do_night(llm, state, character)
+            return _do_night(llm, state, character, system_prompt)
         elif phase == "badge":
-            return _do_badge(llm, state, character)
+            return _do_badge(llm, state, character, system_prompt)
         else:
-            return _do_speech(llm, state, character)
+            return _do_speech(llm, state, character, system_prompt)
 
     return node
 
 
-def _do_speech(llm: Runnable, state: GameState, char: CharacterProfile) -> GameState:
+def _do_speech(llm: Runnable, state: GameState, char: CharacterProfile, system_prompt: str = "") -> GameState:
     obs_text = state.get("observation_text", "")
     think = state.get("think_result", "")
 
@@ -219,7 +219,7 @@ def _do_speech(llm: Runnable, state: GameState, char: CharacterProfile) -> GameS
 
     try:
         resp = llm.invoke([
-            SystemMessage(content=char.system_prompt()),
+            SystemMessage(content=system_prompt or char.system_prompt()),
             HumanMessage(content=prompt),
         ])
         speech = resp.content.strip()
@@ -235,7 +235,7 @@ def _do_speech(llm: Runnable, state: GameState, char: CharacterProfile) -> GameS
     return state
 
 
-def _do_vote(llm: Runnable, state: GameState, char: CharacterProfile) -> GameState:
+def _do_vote(llm: Runnable, state: GameState, char: CharacterProfile, system_prompt: str = "") -> GameState:
     obs_text = state.get("observation_text", "")
     think = state.get("think_result", "")
 
@@ -249,7 +249,7 @@ def _do_vote(llm: Runnable, state: GameState, char: CharacterProfile) -> GameSta
 
     try:
         resp = llm.invoke([
-            SystemMessage(content=char.system_prompt()),
+            SystemMessage(content=system_prompt or char.system_prompt()),
             HumanMessage(content=prompt),
         ])
         result = resp.content.strip()
@@ -264,7 +264,7 @@ def _do_vote(llm: Runnable, state: GameState, char: CharacterProfile) -> GameSta
     return state
 
 
-def _do_night(llm: Runnable, state: GameState, char: CharacterProfile) -> GameState:
+def _do_night(llm: Runnable, state: GameState, char: CharacterProfile, system_prompt: str = "") -> GameState:
     obs_text = state.get("observation_text", "")
     think = state.get("think_result", "")
     extra = state.get("extra_info", "")
@@ -281,7 +281,7 @@ def _do_night(llm: Runnable, state: GameState, char: CharacterProfile) -> GameSt
 
     try:
         resp = llm.invoke([
-            SystemMessage(content=char.system_prompt()),
+            SystemMessage(content=system_prompt or char.system_prompt()),
             HumanMessage(content=prompt),
         ])
         result = resp.content.strip()
@@ -296,7 +296,7 @@ def _do_night(llm: Runnable, state: GameState, char: CharacterProfile) -> GameSt
     return state
 
 
-def _do_badge(llm: Runnable, state: GameState, char: CharacterProfile) -> GameState:
+def _do_badge(llm: Runnable, state: GameState, char: CharacterProfile, system_prompt: str = "") -> GameState:
     obs_text = state.get("observation_text", "")
     think = state.get("think_result", "")
 
@@ -309,7 +309,7 @@ def _do_badge(llm: Runnable, state: GameState, char: CharacterProfile) -> GameSt
 
     try:
         resp = llm.invoke([
-            SystemMessage(content=char.system_prompt()),
+            SystemMessage(content=system_prompt or char.system_prompt()),
             HumanMessage(content=prompt),
         ])
         speech = resp.content.strip()
@@ -358,11 +358,12 @@ class CognitiveGraph:
     Each invocation makes 3-4 LLM calls.
     """
 
-    def __init__(self, llm: Runnable):
+    def __init__(self, llm: Runnable, system_prompt: str = ""):
         self.llm = llm
-        self.observe = make_observe_node(llm)
-        self.think = make_think_node(llm)
-        self.act = make_act_node(llm)
+        self.system_prompt = system_prompt
+        self.observe = make_observe_node(llm, system_prompt)
+        self.think = make_think_node(llm, system_prompt)
+        self.act = make_act_node(llm, system_prompt)
         self.reflect = make_reflect_node()
 
     def invoke(self, state: GameState) -> GameState:
@@ -391,6 +392,6 @@ class CognitiveGraph:
 # Public API
 # ============================================================
 
-def build_cognitive_graph(llm: Runnable) -> CognitiveGraph:
+def build_cognitive_graph(llm: Runnable, system_prompt: str = "") -> CognitiveGraph:
     """Build and return a CognitiveGraph instance."""
-    return CognitiveGraph(llm)
+    return CognitiveGraph(llm, system_prompt)

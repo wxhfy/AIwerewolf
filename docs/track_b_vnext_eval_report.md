@@ -1,5 +1,5 @@
 # Track B vNext Evaluation Report
-> Generated: 2026-05-29T14:08:36
+> Generated: 2026-05-29T18:10:26
 > Opportunities: 777
 > Models: available
 
@@ -10,6 +10,7 @@
 - **opportunity**: PASS
 - **process**: PASS
 - **game_value**: PASS
+- **human_pairwise**: PASS
 - **ablation**: PASS
 
 **Most suites pass with limitations. System is functional but not fully proven.**
@@ -19,7 +20,7 @@
 ### feature — PASS
 - **total_opportunities**: 777
 - **feature_extraction_success_rate**: 1.0
-- **avg_feature_count**: 55.1
+- **avg_feature_count**: 58.7
 - **feature_provenance_coverage**: 1.0
 - **extractor_usage**: {"base_action:v1": 777, "private_context:v2": 777, "vote_quality:v1": 277, "kill_target_value:v1": 44}
 - **deterministic_consistency_rate**: 1.0
@@ -61,6 +62,14 @@
 - **test_cases**: [3 items]
 - **use_recommendation_accuracy**: 1.0
 - **n_cases**: 3
+
+### human_pairwise — PASS
+- **sample_labels_exist**: True
+- **queue_exists**: True
+- **sample_count**: 5
+- **valid_count**: 5
+- **invalid_count**: 0
+- **queue_candidates**: 0
 
 ### ablation — PASS
 - **systems**: [5 items]
