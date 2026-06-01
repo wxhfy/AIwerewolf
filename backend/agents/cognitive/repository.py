@@ -46,6 +46,8 @@ def load_profiles_from_db(conn_str: str = "") -> Dict[str, Profile]:
                 pressure_style=base.pressure_style,
                 reveal_policy=base.reveal_policy,
                 wolf_disguise=base.wolf_disguise,
+                persona=base.persona,
+                mind=base.mind,
             )
 
         conn.close()

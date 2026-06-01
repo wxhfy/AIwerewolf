@@ -13,9 +13,15 @@ from backend.engine.models import Player
 
 
 def _resolve_model_pool(config: dict[str, Any]) -> list[str]:
+    """Parse model pool entries from config or env.
+
+    Supports two formats:
+      - Simple: "model1,model2,model3"  (all use default provider)
+      - Prefixed: "ark:model1,doubao:model2,deepseek:model3"
+    """
     raw = config.get("model_pool")
     if raw is None:
-        raw = os.getenv("DOUBAO_MODEL_POOL", "")
+        raw = os.getenv("MODEL_POOL", "") or os.getenv("DOUBAO_MODEL_POOL", "")
     if isinstance(raw, str):
         items = [m.strip() for m in raw.split(",") if m.strip()]
     elif isinstance(raw, (list, tuple)):
@@ -26,25 +32,58 @@ def _resolve_model_pool(config: dict[str, Any]) -> list[str]:
 
 
 def _resolve_pool_specs(config: dict[str, Any]) -> list[dict[str, str]]:
-    """Build the (api_key, base_url, model) pool used to randomly assign each
-    LLM player a backend.
+    """Build (provider, api_key, base_url, model) pool for multi-model assignment.
 
-    Pool entries come ONLY from DOUBAO_MODEL_POOL (or config.model_pool). All
-    entries share the primary DOUBAO_API_KEY + DOUBAO_BASE_URL. The
-    DOUBAO_FALLBACK_* env vars are kept as documentation for future
-    retry-with-fallback logic but are NOT automatically appended to the pool
-    — the user explicitly opts in by listing the fallback model in the pool
-    and switching DOUBAO_API_KEY/BASE_URL.
+    Each pool entry can specify its provider explicitly (e.g. "ark:deepseek-v4-pro").
+    Without a provider prefix, the default provider "dsv4flash" is used.
     """
-    primary_models = _resolve_model_pool(config)
-    primary_key = os.getenv("DOUBAO_API_KEY", "").strip()
-    primary_url = os.getenv("DOUBAO_BASE_URL", "").strip()
-    if not (primary_key and primary_url):
+    pool_entries = _resolve_model_pool(config)
+    if not pool_entries:
         return []
-    return [
-        {"api_key": primary_key, "base_url": primary_url, "model": model}
-        for model in primary_models
-    ]
+
+    specs = []
+    for entry in pool_entries:
+        # Parse "provider:model" or just "model"
+        if ":" in entry:
+            provider, model = entry.split(":", 1)
+            provider = provider.strip()
+            model = model.strip()
+        else:
+            provider = "dsv4flash"
+            model = entry.strip()
+
+        # Resolve API key and base URL per provider
+        spec = _spec_for_provider(provider, model)
+        if spec:
+            specs.append(spec)
+
+    return specs
+
+
+def _spec_for_provider(provider: str, model: str) -> dict[str, str] | None:
+    """Resolve (api_key, base_url) for a given provider and model."""
+    if provider == "doubao":
+        api_key = os.getenv("DOUBAO_API_KEY", "").strip()
+        base_url = os.getenv("DOUBAO_BASE_URL", "").strip()
+    elif provider in ("dsv4flash", "ark"):
+        api_key = os.getenv("DSV4FLASH_API_KEY", "").strip()
+        base_url = os.getenv("DSV4FLASH_BASE_URL", "").strip()
+    elif provider == "deepseek":
+        api_key = os.getenv("DEEPSEEK_API_KEY", "").strip()
+        base_url = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com").strip()
+    else:
+        api_key = os.getenv("DOUBAO_API_KEY", "").strip()
+        base_url = os.getenv("DOUBAO_BASE_URL", "").strip()
+
+    if not api_key or not base_url:
+        return None
+
+    return {
+        "provider": provider,
+        "api_key": api_key,
+        "base_url": base_url,
+        "model": model,
+    }
 
 
 def create_agents(players: list[Player], agent_config: dict[str, Any] | None = None) -> dict[str, Agent]:
@@ -87,12 +126,9 @@ def create_agents(players: list[Player], agent_config: dict[str, Any] | None = N
                 model_override = spec["model"]
                 api_key_override = spec["api_key"]
                 base_url_override = spec["base_url"]
-                # Pool entries all sit behind the Ark gateway — pin provider
-                # to skip create_client's substring auto-detect, which would
-                # otherwise route aliases like "deepseek-v4-pro[1m]" to
-                # api.deepseek.com.
+                # Use the provider from the pool spec if available
                 if not forced_provider:
-                    forced_provider = "dsv4flash"
+                    forced_provider = spec.get("provider", "dsv4flash")
             player.model_name = str(model_override or "")
             agents[player.id] = LLMAgent(
                 player.id,

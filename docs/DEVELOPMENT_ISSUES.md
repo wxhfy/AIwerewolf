@@ -109,6 +109,21 @@ updated: 2026-05-23
 - **教训**：(1) **Schema 字段缺失会让链路完全断在编译期看不见的地方**——dict 形态修补不能替代 dataclass 字段，下游消费者按 dataclass 拿数据时 dict 路径的修补一点用都没有；任何"端到端贯通率"指标必须以 dataclass 字段为锚而不是事后填 dict。(2) **A/B 对照的"独立变量"必须真的影响 outcome**：`strategy_version` 只塞 metadata 不传给引擎 + retrieval 不按版本过滤 = baseline 与 candidate 完全等价，promote 率不是"低"，是数学上不可能 > 噪声门槛。(3) **同名 metric 跨量级时单位换算优先于上下界 clip**——`adjusted_final_score`（0-100）和 `role_task_score`（0-1）共享同一段 perturbation 代码就必爆 1.0 clip 灾难；统一类型或显式 scale 二选一，clip 不能当类型校验用。(4) **平均到所有玩家上的 metric 不叫"target_role_avg"**——命名说的就是范围，命名和实际计算不一致是隐形 0/0 gate 工厂。
 - **验证**：smoke benchmark（6 patches × 20 seeds × 2 = 240 局）从 8% / 8% 跃迁到 source_event_ids 贯通 100%（平均 1.7 个 event id/doc）+ promote 率 67–100%（视具体 patch 文本哈希 落在 25% 负扰动桶的概率）；全 suite 122/122 通过，没有触发任何回归。
 
+### 问题 A9：Agent LLM 调用全串行导致单轮耗时 3-8 分钟（性能优化）
+- **发生时间 / Session**：2026-06-01
+- **现象**：一局 10 人对局，每轮白天发言+投票 23+ 次 LLM 调用全串行，每次 8-20s，单轮总耗时 3-8 分钟，完整对局需 30+ 分钟。
+- **根因**：游戏引擎 `_run_actor_sequence` 纯 for 循环逐个调用 agent；`_ask` 内部同步阻塞等待 LLM 返回；夜晚 Guard/Wolf/Seer 互不依赖却排队执行；白天投票所有玩家同时投票也排队执行。
+- **解决方案**（不改 Agent 代码，纯引擎层并行化）：
+  1. 新增 `_shared_lock`（RLock）保护 `_log`/`_record_decision`/`_set_phase`/`_mark_phase_done`/`_clear_phase_done` 的共享状态写入
+  2. 新增 `_batch_ask(players, request, call_fn)` — 主线程预计算 View+update，ThreadPoolExecutor 并行跑 LLM 调用，主线程按确定顺序记录结果
+  3. `_vote_phase` / `_badge_election_phase` 改用 `_batch_ask` 并行投票（所有玩家同时投票是真实游戏规则）
+  4. 新增 `_night_role_actions_parallel` — Guard 线程 + Seer 线程并行，主线程跑 Wolf（狼队内部串行），三个角色写不同 NightActions 字段无冲突
+  5. `phases.py` 夜晚 CompositePhase 从 6 步合并为 4 步：`_begin_night → _night_role_actions_parallel → _witch_phase → _night_resolve`
+  6. 真人玩家批次自动退化为串行 `_ask`（保留 GamePaused 机制）
+- **涉及文件**：`backend/engine/game.py`（+~120 行）、`backend/engine/phases.py`（-2 步骤）
+- **教训**：狼人杀游戏大量 LLM 调用天然适合并行——夜晚不同角色互不可见，白天投票同时进行。并行化的关键是区分"真实游戏依赖"（发言必须顺序、女巫必须等狼刀结果）和"实现偶然的串行"（投票本可同时）。不改 Agent 代码、在引擎层加 ThreadPoolExecutor 是最低风险的加速路径。
+- **预期加速比**：夜晚 3-4x、白天投票 8-10x、整轮 3-5x
+
 ---
 
 ## §B. 前端 / UI 渲染
@@ -612,7 +627,8 @@ updated: 2026-05-23
 | `b2618de7` | 2026-05-21 → 05-23 | PG 落库、警长流程、WS 重连、recover buffer |
 | `d24b2463` | 2026-05-23 | 刷新页面恢复 bug、worktree 流程修复 |
 | `7b281de5` | 2026-05-22 | 仅恢复占位，无实质活动 |
+| `parallel-opt` | 2026-06-01 | Agent 并行化加速：_batch_ask + 夜晚并行 + 投票并行 |
 
 ---
 
-*Version 1.0.0 — 2026-05-23 — 初始建立，回溯 4 个核心 session 的 30+ 条问题。后续新增条目按主题节追加。*
+*Version 1.1.0 — 2026-06-01 — 新增 A9 Agent 并行化优化。*

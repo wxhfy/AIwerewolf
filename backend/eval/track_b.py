@@ -22,17 +22,13 @@ from typing import Any, Iterable
 from uuid import uuid4
 
 from backend.engine.models import EventType, GameEvent, GameState, Phase
+from backend.eval.types import (
+    BadCaseReport, CounterfactualCase, MVPResult, PlayerReview,
+    ReportEvaluationResult, ReviewReport, StrategySuggestion, TurningPoint,
+)
 from backend.eval.review import (
-    BadCaseReport,
-    CounterfactualCase,
     LeaderboardAggregator,
     MarkdownReportRenderer,
-    MVPResult,
-    PlayerReview,
-    ReportEvaluationResult,
-    ReviewReport,
-    StrategySuggestion,
-    TurningPoint,
     generate_review_report,
 )
 
@@ -261,8 +257,90 @@ class VisualReportAgent:
         """
 
 
+    def render_vote_flow(self, document: PublishedReviewDocument) -> str:
+        """Vote flow diagram: who voted for whom across days (sankey-style SVG)."""
+        votes = document.replay_bundle.get("votes", [])
+        players = document.replay_bundle.get("players", [])
+        names = {p["id"]: p["name"] for p in players}
+        if not votes: return ""
+        by_day: dict[int, list[dict]] = {}
+        for v in votes:
+            by_day.setdefault(v.get("day", 0), []).append(v)
+        days = sorted(by_day.keys())[-3:]
+        width, cell_h, row_h = 980, 28, 36
+        height = 50 + len(days) * (len(players) * row_h + 20)
+        nodes = [f'<rect width="{width}" height="{height}" rx="24" fill="#fffaf3" stroke="#e5d3bd"/>',
+                 f'<text x="36" y="34" font-size="16" font-weight="700" fill="#1f1a17">Vote Flow</text>']
+        y = 50
+        for day in days:
+            day_votes = by_day.get(day, [])
+            nodes.append(f'<text x="36" y="{y+18}" font-size="14" fill="#9c5d2c">Day {day}</text>')
+            y += 24
+            for v in day_votes[:len(players)*2]:
+                voter_n = escape(names.get(v.get("voter_id",""), "?"))
+                target_n = escape(names.get(v.get("target_id",""), "?"))
+                nodes.append(f'<text x="36" y="{y+18}" font-size="12" fill="#4b3d34">{voter_n} → {target_n}</text>')
+                y += row_h
+            y += 8
+        return f'<svg viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg">{"".join(nodes)}</svg>'
+
+    def render_decision_trajectory(self, document: PublishedReviewDocument) -> str:
+        """Per-player decision quality trajectory (SVG line chart)."""
+        per_step = document.review_report.get("metadata", {}).get("per_step_scores", [])
+        if not per_step: return ""
+        players = {}
+        for ps in per_step:
+            players.setdefault(ps.get("player_name","?"), []).append(ps)
+        width, height = 980, 120 + len(players) * 80
+        nodes = [f'<rect width="{width}" height="{height}" rx="24" fill="#fffaf3" stroke="#e5d3bd"/>',
+                 f'<text x="36" y="34" font-size="16" font-weight="700" fill="#1f1a17">Decision Quality Trajectory</text>']
+        colors = ["#9c5d2c","#4a90d9","#e74c3c","#27ae60","#8e44ad","#f39c12","#1abc9c"]
+        y = 50
+        for pi, (pname, scores) in enumerate(players.items()):
+            color = colors[pi % len(colors)]
+            nodes.append(f'<text x="36" y="{y+16}" font-size="12" fill="{color}">{escape(pname)}</text>')
+            if len(scores) >= 2:
+                step_w = (width - 80) / max(len(scores)-1, 1)
+                pts = [f"{80+i*step_w:.0f},{y+50 - s.get('overall_score',0.5)*30:.0f}" for i,s in enumerate(scores)]
+                nodes.append(f'<polyline points="{" ".join(pts)}" fill="none" stroke="{color}" stroke-width="2"/>')
+            y += 70
+        return f'<svg viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg">{"".join(nodes)}</svg>'
+
+    def render_score_radar(self, document: PublishedReviewDocument) -> str:
+        """Multi-dimensional score radar for top 3 players (SVG)."""
+        scoreboard = document.review_report.get("scoreboard", [])[:3]
+        players = document.replay_bundle.get("players", [])
+        names = {p["id"]: p["name"] for p in players}
+        if not scoreboard: return ""
+        width, height, cx, cy, r = 400, 300, 180, 150, 110
+        dims = ["strategy","logic","social"]
+        colors = ["#9c5d2c","#4a90d9","#e74c3c"]
+        angles = {d: -90 + i*120 for i,d in enumerate(dims)}
+        nodes = [f'<rect width="{width}" height="{height}" rx="20" fill="#fffaf3" stroke="#e5d3bd"/>',
+                 f'<text x="20" y="28" font-size="14" font-weight="700" fill="#1f1a17">Score Radar</text>']
+        for level in [0.3, 0.6, 0.9]:
+            pts = [f"{cx+r*level*__import__('math').cos(__import__('math').radians(a)):.0f},{cy+r*level*__import__('math').sin(__import__('math').radians(a)):.0f}" for a in angles.values()]
+            nodes.append(f'<polygon points="{" ".join(pts)}" fill="none" stroke="#e5d3bd" stroke-width="1"/>')
+        for dim, angle in angles.items():
+            lx = cx + r*1.05 * __import__('math').cos(__import__('math').radians(angle))
+            ly = cy + r*1.05 * __import__('math').sin(__import__('math').radians(angle))
+            nodes.append(f'<text x="{lx-16:.0f}" y="{ly+4:.0f}" font-size="10" fill="#7a6c62" text-anchor="middle">{dim}</text>')
+        for pi, player in enumerate(scoreboard):
+            pid = player.get("player_id","")
+            pname = escape(names.get(pid, player.get("player_name","?")))
+            scores = player.get("judge_scores", {})
+            pts = []
+            for dim, angle in angles.items():
+                s = scores.get(dim, 0.5) / 10.0
+                x = cx + r*s * __import__('math').cos(__import__('math').radians(angle))
+                y = cy + r*s * __import__('math').sin(__import__('math').radians(angle))
+                pts.append(f"{x:.0f},{y:.0f}")
+            nodes.append(f'<polygon points="{" ".join(pts)}" fill="{colors[pi]}" fill-opacity="0.2" stroke="{colors[pi]}" stroke-width="2"/>')
+            nodes.append(f'<text x="20" y="{270+pi*14}" font-size="10" fill="{colors[pi]}">{pname}</text>')
+        return f'<svg viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg">{"".join(nodes)}</svg>'
+
+
 class HTMLReviewRenderer:
-    """Standalone HTML renderer with lightweight chart-style visuals."""
 
     def render(self, document: PublishedReviewDocument) -> str:
         visual_agent = VisualReportAgent()
@@ -1348,6 +1426,70 @@ def _record_knowledge_usage(state: GameState, review_report: dict[str, Any]) -> 
     return feedback
 
 
+def _compute_per_step_scores(
+    state: GameState,
+    replay_bundle: ReplayBundle,
+    speech_acts: list[SpeechAct],
+) -> list[dict[str, Any]]:
+    """Compute per-step decision scores for trajectory visualization.
+
+    Uses deterministic scoring for votes/night actions, and speech act
+    analysis for talks. This is lightweight (no LLM) and runs as part
+    of the review generation pipeline.
+    """
+    from backend.eval.per_step_scorer import PerStepScorer
+
+    scorer = PerStepScorer()
+    players = {p.id: p for p in state.players}
+    state_dict = {
+        "players": [{
+            "id": p.id, "name": p.name, "role": p.role.value if hasattr(p.role, 'value') else str(p.role),
+            "alignment": p.alignment.value if hasattr(p.alignment, 'value') else str(p.alignment),
+            "alive": p.alive,
+        } for p in state.players],
+    }
+    acts_dicts = [
+        {"player_id": a.player_id, "day": a.day, "stance": a.stance,
+         "suspected_players": a.suspected_players, "defended_players": a.defended_players,
+         "grounded_event_ids": a.grounded_event_ids, "risk_flags": a.risk_flags}
+        for a in speech_acts
+    ]
+
+    scores = []
+    for decision in (replay_bundle.decisions or []):
+        pa = decision.parsed_action if isinstance(decision.parsed_action, dict) else (decision.parsed_action or {})
+        player = players.get(decision.player_id)
+        if player is None:
+            continue
+        info = {
+            "id": decision.id, "player_id": decision.player_id,
+            "player_name": player.name, "player_role": player.role.value if hasattr(player.role, 'value') else str(player.role),
+            "day": decision.day, "phase": decision.phase,
+            "target_id": pa.get("target_id", ""),
+            "action_type": pa.get("action_type", ""),
+            "raw_text": str(pa.get("reasoning", "") or ""),
+        }
+        try:
+            phase = str(decision.phase or "")
+            if "VOTE" in phase or "BADGE_ELECTION" in phase:
+                s = scorer.score_vote(info, state_dict)
+            elif "SPEECH" in phase or "TALK" in phase or "LAST_WORDS" in phase:
+                s = scorer.score_talk(info, acts_dicts, state_dict)
+            elif "NIGHT" in phase or "HUNTER" in phase or "BADGE_TRANSFER" in phase:
+                s = scorer.score_night(info, state_dict)
+            else:
+                continue
+            scores.append({
+                "decision_id": s.decision_id, "player_name": s.player_name,
+                "role": s.role, "day": s.day, "phase": s.phase,
+                "action_type": s.action_type, "correctness": s.correctness,
+                "overall_score": s.overall_score, "evidence": s.evidence,
+            })
+        except Exception:
+            continue
+    return scores
+
+
 def generate_published_review_document(state: GameState, *, view_scope: str = "moderator_view") -> PublishedReviewDocument:
     replay_bundle = ReplayBundleBuilder().build(state)
     generated = generate_review_report(state)
@@ -1377,6 +1519,9 @@ def generate_published_review_document(state: GameState, *, view_scope: str = "m
         # demote unhelpful knowledge over time.
         knowledge_feedback = _record_knowledge_usage(state, review_report)
     leaderboard_snapshot = _build_leaderboard_snapshot(review_report)
+    # B Track: per-step decision scoring for trajectory visualization
+    per_step_scores = _compute_per_step_scores(state, replay_bundle, speech_acts)
+    review_report.setdefault("metadata", {})["per_step_scores"] = per_step_scores
     preview_document = PublishedReviewDocument(
         report_id=str(uuid4()),
         game_id=state.id,
