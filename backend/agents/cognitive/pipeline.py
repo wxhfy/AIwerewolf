@@ -1,29 +1,25 @@
-"""Cognitive pipeline — Observe → Think → Act with full LLMAgent-quality prompts.
+"""Cognitive pipeline — Agent Loop with tool-calling and self-termination.
 
-Upgraded three-stage pipeline:
-  1. Observe: Rich game context + signal extraction
-  2. Think: Memory + humanization + strategy + bias → analysis
-  3. Act: Wolfcha-style speech / vote / night action
+Replaced the fixed 3-step Chain with an autonomous agent loop:
+  Agent thinks → optionally calls tools → thinks more → self-terminates → Decision
+
+Supports both:
+  - AgentLoop (new default): LLM decides when to call tools, when to output
+  - Legacy 3-step Chain: Observe → Think → Act (use_agent_loop=False)
 
 Single Responsibility: orchestrate the LLM calls in the right order.
-Each step is a pure function: (state, llm) → result.
-
-The pipeline does NOT know about:
-- Game engine internals
-- Database
-- Agent protocol
 """
 
 from __future__ import annotations
 
 import json
 import re
-import os
 from typing import Any, Dict, List, Optional
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import Runnable
 
+from backend.agents.cognitive.agent_loop import AgentLoop
 from backend.agents.cognitive.memory import Memory
 from backend.agents.cognitive.observe import Observation, observe, format_observation
 from backend.agents.cognitive.prompts import (
@@ -37,18 +33,21 @@ from backend.agents.cognitive.prompts import (
     build_strategy_bias_block,
     format_playbook_for_prompt,
 )
-from backend.agents.cognitive.retrieval import retrieve_strategies, format_strategies_for_prompt
+from backend.agents.cognitive.retrieval import retrieve_strategies as retrieve_strategies_tfidf
+from backend.agents.cognitive.retrieval import format_strategies_for_prompt
+from backend.agents.cognitive.retrieval_prod import retrieve_strategies_prod
 
 
 class Pipeline:
-    """Stateless cognitive pipeline (upgraded with LLMAgent-quality prompts).
+    """Cognitive pipeline with autonomous agent loop + legacy fallback.
 
-    Each invocation makes 3 LLM calls:
-    1. Observe: extract key signals (no judgments)
-    2. Think: analyze situation, evaluate players
-    3. Act: generate concrete action
+    Each invocation of run_speech / run_vote / run_night executes an
+    autonomous agent loop where the LLM decides whether to call tools
+    (search_strategies, recall_memory, check_rules, analyze_votes) and
+    when it has enough information to produce a final decision.
 
-    The pipeline is STATELESS — all state lives in Memory and Observation.
+    Between-turn analysis caching: when vote() follows talk() in the same
+    turn, the analysis from talk() is reused to skip redundant thinking.
     """
 
     def __init__(
@@ -58,125 +57,19 @@ class Pipeline:
         strategy_bias: Optional[Dict[str, List[str]]] = None,
         persona_mbti: str = "",
         persona_style: str = "",
+        use_agent_loop: bool = True,
     ):
         self._llm = llm
         self._system_prompt = system_prompt
         self._strategy_bias = strategy_bias or {}
         self._persona_mbti = persona_mbti
         self._persona_style = persona_style
+        self._use_agent_loop = use_agent_loop
+        self._cached_analysis: str = ""
 
-    # ---- LLM call wrapper with retry ----
-
-    def _call(
-        self,
-        system: str,
-        user: str,
-        max_tokens: int = 500,
-        max_retries: int = 2,
-    ) -> str:
-        """Single LLM call with retry.
-
-        On error, retries with slightly lower temperature behavior.
-        """
-        last_error = None
-        for attempt in range(max_retries + 1):
-            try:
-                resp = self._llm.invoke([
-                    SystemMessage(content=system),
-                    HumanMessage(content=user),
-                ])
-                content = resp.content.strip()
-                # If we got a reasonable response, return it
-                if content and len(content) > 10:
-                    return content
-                # Empty/short response: retry
-                last_error = f"Short response: {content[:50]}"
-            except Exception as e:
-                last_error = str(e)
-
-        # All retries failed
-        if last_error:
-            return f"[LLM Error after {max_retries + 1} attempts: {last_error}]"
-        return "[LLM: no response]"
-
-    # ---- Stage 1: Observe ----
-
-    def observe(self, obs: Observation) -> str:
-        """Stage 1: Extract key signals from observation.
-
-        Uses rich game context + contradiction/voting pattern analysis.
-        """
-        prompt = build_observe_prompt(obs)
-        return self._call(
-            "你是狼人杀观察者。提取关键信号和事实，不做最终判断。用中文。",
-            prompt,
-            max_tokens=400,
-        )
-
-    # ---- Stage 2: Think (core analysis) ----
-
-    def think(
-        self,
-        obs: Observation,
-        memory: Memory,
-        obs_result: str = "",
-    ) -> str:
-        """Stage 2: Analyze situation based on observation + memory + strategy.
-
-        Injects: memory (with humanization), strategy retrieval results,
-        strategy bias, and observation analysis.
-        """
-        # Strategy retrieval from knowledge base (with persona scope)
-        strategies = retrieve_strategies(
-            obs.player_role, obs.phase,
-            situation=obs_result,
-            persona_mbti=self._persona_mbti,
-            persona_style=self._persona_style,
-        )
-        strategy_text = format_strategies_for_prompt(strategies)
-
-        # Strategy bias (forced policy for A/B testing)
-        bias_text = build_strategy_bias_block(self._strategy_bias, "talk")
-
-        # Build think prompt with full context
-        prompt = build_think_prompt(obs, memory, strategy_text, bias_text)
-        return self._call(self._system_prompt, prompt, max_tokens=600)
-
-    # ---- Stage 3a: Act — Speech ----
-
-    def act_speech(
-        self,
-        obs: Observation,
-        think_result: str,
-        memory: Memory,
-        is_first_speaker: bool = False,
-        is_last_words: bool = False,
-    ) -> str:
-        """Stage 3a: Generate a speech — wolfcha-style multi-bubble output.
-
-        Produces a JSON array of message bubbles.
-        """
-        prompt = build_speech_prompt(obs, think_result, memory, is_first_speaker, is_last_words)
-        result = self._call(self._system_prompt, prompt, max_tokens=800)
-        return result
-
-    # ---- Stage 3b: Act — Vote ----
-
-    def act_vote(self, obs: Observation, think_result: str) -> Dict[str, str]:
-        """Stage 3b: Generate a vote. Returns {target, reasoning}."""
-        prompt = build_vote_prompt(obs, think_result)
-        result = self._call(self._system_prompt, prompt, max_tokens=300)
-        return _parse_json_target(result)
-
-    # ---- Stage 3c: Act — Night ----
-
-    def act_night(self, obs: Observation, think_result: str, extra: str = "") -> Dict[str, str]:
-        """Stage 3c: Generate a night action. Returns {target, reasoning}."""
-        prompt = build_night_prompt(obs, think_result, extra)
-        result = self._call(self._system_prompt, prompt, max_tokens=300)
-        return _parse_json_target(result)
-
-    # ---- Full pipeline runners ----
+    # ================================================================
+    # Public API (called by CognitiveAgent)
+    # ================================================================
 
     def run_speech(
         self,
@@ -185,28 +78,130 @@ class Pipeline:
         is_first_speaker: bool = False,
         is_last_words: bool = False,
     ) -> str:
-        """Full pipeline for speech: observe → think → act."""
-        obs_result = self.observe(obs)
-        think_result = self.think(obs, memory, obs_result)
-        return self.act_speech(obs, think_result, memory, is_first_speaker, is_last_words)
+        """Generate speech via agent loop (or legacy chain)."""
+        if self._use_agent_loop:
+            return self._run_loop_speech(obs, memory, is_first_speaker, is_last_words)
+        return self._run_legacy_speech(obs, memory, is_first_speaker, is_last_words)
 
     def run_vote(self, obs: Observation, memory: Memory) -> Dict[str, str]:
-        """Full pipeline for vote: observe → think → act."""
-        obs_result = self.observe(obs)
-        think_result = self.think(obs, memory, obs_result)
-        return self.act_vote(obs, think_result)
+        """Generate vote via agent loop (or legacy chain)."""
+        if self._use_agent_loop:
+            return self._run_loop_vote(obs, memory)
+        return self._run_legacy_vote(obs, memory)
 
     def run_night(self, obs: Observation, memory: Memory, extra: str = "") -> Dict[str, str]:
-        """Full pipeline for night action: observe → think → act."""
-        obs_result = self.observe(obs)
-        think_result = self.think(obs, memory, obs_result)
-        return self.act_night(obs, think_result, extra)
-
-    # ---- Direct call (for legacy compatibility) ----
+        """Generate night action via agent loop (or legacy chain)."""
+        if self._use_agent_loop:
+            return self._run_loop_night(obs, memory, extra)
+        return self._run_legacy_night(obs, memory, extra)
 
     def direct_call(self, user_prompt: str, max_tokens: int = 500) -> str:
-        """Single LLM call with system prompt. For special actions (shoot, boom, etc.)."""
-        return self._call(self._system_prompt, user_prompt, max_tokens=max_tokens)
+        """Single LLM call for special actions (shoot, boom, badge transfer)."""
+        return self._call_legacy(self._system_prompt, user_prompt, max_tokens=max_tokens)
+
+    # ================================================================
+    # Agent Loop (new)
+    # ================================================================
+
+    def _run_loop_speech(
+        self, obs: Observation, memory: Memory,
+        is_first: bool, is_last: bool,
+    ) -> str:
+        extra_parts = []
+        if is_first: extra_parts.append("你是本阶段第一个发言的人")
+        if is_last: extra_parts.append("这是你的遗言")
+        extra = "; ".join(extra_parts) if extra_parts else ""
+
+        loop = AgentLoop(self._llm, self._system_prompt, "speech", self._strategy_bias)
+        result = loop.run(obs, memory, extra_context=extra)
+        speech = result.get("speech", "")
+        self._cached_analysis = result.get("reasoning", "")
+        return speech
+
+    def _run_loop_vote(self, obs: Observation, memory: Memory) -> Dict[str, str]:
+        loop = AgentLoop(self._llm, self._system_prompt, "vote", self._strategy_bias)
+        result = loop.run(obs, memory, cached_analysis=self._cached_analysis)
+        self._cached_analysis = ""
+        return {"target": result.get("target", ""), "reasoning": result.get("reasoning", "")}
+
+    def _run_loop_night(self, obs: Observation, memory: Memory, extra: str) -> Dict[str, str]:
+        loop = AgentLoop(self._llm, self._system_prompt, "night", self._strategy_bias)
+        result = loop.run(obs, memory, extra_context=extra)
+        return {"target": result.get("target", ""), "reasoning": result.get("reasoning", "")}
+
+    # ================================================================
+    # Legacy 3-step Chain (fallback, use_agent_loop=False)
+    # ================================================================
+
+    def _run_legacy_speech(
+        self, obs: Observation, memory: Memory,
+        is_first: bool, is_last: bool,
+    ) -> str:
+        obs_result = self._legacy_observe(obs)
+        think_result = self._legacy_think(obs, memory, obs_result)
+        return self._legacy_act_speech(obs, think_result, memory, is_first, is_last)
+
+    def _run_legacy_vote(self, obs: Observation, memory: Memory) -> Dict[str, str]:
+        obs_result = self._legacy_observe(obs)
+        think_result = self._legacy_think(obs, memory, obs_result)
+        return self._legacy_act_vote(obs, think_result)
+
+    def _run_legacy_night(self, obs: Observation, memory: Memory, extra: str) -> Dict[str, str]:
+        obs_result = self._legacy_observe(obs)
+        think_result = self._legacy_think(obs, memory, obs_result)
+        return self._legacy_act_night(obs, think_result, extra)
+
+    def _legacy_observe(self, obs: Observation) -> str:
+        prompt = build_observe_prompt(obs)
+        return self._call_legacy(
+            "你是狼人杀观察者。提取关键信号和事实，不做最终判断。用中文。",
+            prompt, max_tokens=400,
+        )
+
+    def _legacy_think(self, obs: Observation, memory: Memory, obs_result: str) -> str:
+        strategies = retrieve_strategies_prod(obs.player_role, obs.phase, situation=obs_result, limit=3)
+        if not strategies:
+            strategies = retrieve_strategies_tfidf(
+                obs.player_role, obs.phase, situation=obs_result,
+                persona_mbti=self._persona_mbti, persona_style=self._persona_style,
+            )
+        strategy_text = format_strategies_for_prompt(strategies)
+        bias_text = build_strategy_bias_block(self._strategy_bias, "talk")
+        prompt = build_think_prompt(obs, memory, strategy_text, bias_text)
+        return self._call_legacy(self._system_prompt, prompt, max_tokens=600)
+
+    def _legacy_act_speech(
+        self, obs: Observation, think_result: str, memory: Memory,
+        is_first: bool, is_last: bool,
+    ) -> str:
+        prompt = build_speech_prompt(obs, think_result, memory, is_first, is_last)
+        return self._call_legacy(self._system_prompt, prompt, max_tokens=800)
+
+    def _legacy_act_vote(self, obs: Observation, think_result: str) -> Dict[str, str]:
+        prompt = build_vote_prompt(obs, think_result)
+        result = self._call_legacy(self._system_prompt, prompt, max_tokens=300)
+        return _parse_json_target(result)
+
+    def _legacy_act_night(self, obs: Observation, think_result: str, extra: str) -> Dict[str, str]:
+        prompt = build_night_prompt(obs, think_result, extra)
+        result = self._call_legacy(self._system_prompt, prompt, max_tokens=300)
+        return _parse_json_target(result)
+
+    def _call_legacy(
+        self, system: str, user: str, max_tokens: int = 500, max_retries: int = 2,
+    ) -> str:
+        for attempt in range(max_retries + 1):
+            try:
+                resp = self._llm.invoke([
+                    SystemMessage(content=system),
+                    HumanMessage(content=user),
+                ])
+                content = resp.content.strip()
+                if content and len(content) > 10:
+                    return content
+            except Exception:
+                pass
+        return "[LLM: no response]"
 
 
 # ============================================================
@@ -214,33 +209,25 @@ class Pipeline:
 # ============================================================
 
 def _parse_json_target(text: str) -> Dict[str, str]:
-    """Extract target and reasoning from JSON in LLM output."""
     try:
         m = re.search(r'\{[^}]+\}', text)
         if m:
             data = json.loads(m.group())
-            return {
-                "target": data.get("target", ""),
-                "reasoning": data.get("reasoning", ""),
-            }
+            return {"target": data.get("target", ""), "reasoning": data.get("reasoning", "")}
     except (json.JSONDecodeError, KeyError):
         pass
     return {"target": "", "reasoning": text[:100]}
 
 
 def _parse_json_array(text: str) -> List[str]:
-    """Parse a JSON string array from LLM output. Returns list of strings."""
     try:
-        # Try to extract JSON array
         m = re.search(r'\[.*?\]', text, re.DOTALL)
         if m:
             data = json.loads(m.group())
             if isinstance(data, list):
                 return [str(item) for item in data if item]
-        # If no array found, treat as single string
         return [text.strip()]
     except (json.JSONDecodeError, KeyError):
-        # Fallback: split by quoted segments
         quoted = re.findall(r'"([^"]*)"', text)
         if quoted:
             return quoted

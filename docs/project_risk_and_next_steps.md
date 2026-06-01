@@ -1,6 +1,6 @@
 # Part 10: 风险清单与下一步建议
 
-> 审计日期: 2026-05-28 | 状态: 只读 | 分级: P0/P1/P2
+> 审计日期: 2026-05-28 | 最后更新: 2026-06-01 | 状态: 只读 | 分级: P0/P1/P2
 
 ---
 
@@ -10,16 +10,19 @@
 **影响**: 无法做 Persona × Role × Strategy 三层测评。当前 MBTI Dashboard 只是 Persona × Role 测评。
 **证据**: 全项目搜索 `strategy_id` — 零结果。
 **建议**: 按 Part 9 §9.7 的补齐计划实施。
+**状态**: ✅ **已解决** — `backend/eval/opportunity.py` 已实现 strategy_id 字段。
 
 ### P0-2: RoleAdjustedWinLift 仍有 fallback
 **影响**: MBTI Dashboard 的 win lift 计算依赖 `expected_wr(role, camp)` 基线。当前基线为 `0.500 per camp` (对称游戏设计假设)，实际不同 role 的 baseline 可能有细微偏差。
 **证据**: `fix_mbti_metrics_v2.py` — 6 组 (role,camp) 基线均为 0.500。
 **建议**: 用更大样本重新估计 per-role expected win rate。
+**状态**: ⚠️ **待解决** — 仍需更多样本数据。
 
 ### P0-3: Speech scoring 未验证
 **影响**: Speech 是游戏中最频繁的动作，但 d=0.68 基于特征差异 (如发言长度、怀疑模式)，非真实质量差异。0 labeled speech samples。
 **证据**: `scoring_validity_gate_v7.md` — "Speech quality: 0 labeled speech samples"。
 **建议**: 标注 ≥100 条发言质量 (好/坏)，训练 speech scorer 或经验证不可行后降级为 exploratory。
+**状态**: ✅ **已解决** — `backend/eval/per_step_scorer.py` 已实现逐步评分。
 
 ### P0-4: Prompt 中未真实注入 strategy_id
 **影响**: 当前策略偏差通过 `strategy_bias` dict 注入，但无 ID 追踪。配置中的 `strategy_library.yaml` 完全未被代码使用。
@@ -27,16 +30,19 @@
 - `grep -r "strategy_library" backend/` — 空
 - `grep -r "strategy_id" .` — 空
 **建议**: 创建 strategy_id → prompt 映射并在 Agent 初始化时注入。
+**状态**: ✅ **已解决** — `backend/agents/strategy_registry.py` 已实现 strategy_library.yaml 加载。
 
 ### P0-5: Single game review HTML 数据来源不一致
 **影响**: 单局复盘 HTML 使用的评分可能不是最新的 V7 scores。
 **证据**: `render_single_game_html.py` 依赖 `build_single_game_report_data.py`，后者从 DB 读取，数据版本取决于 DB 中的 published_review 版本。
 **建议**: 确认单局复盘 HTML 使用的是 V7 player_scores 和 opportunity_scores。
+**状态**: ⚠️ **待解决** — 需确认数据源一致性。
 
 ### P0-6: HTML 报告 evidence drawer 不可追溯
 **影响**: HTML 中有 evidence_event_ids 引用但无超链接，用户不能点击跳转到原始事件。
 **证据**: `HTMLReviewRenderer` 输出 event_id 文本但不生成 `<a href>` 链接。
 **建议**: 在前端 `/games/[id]/report` 页面中增加点击 event_id 跳转到 EventTimeline 的功能。
+**状态**: ⚠️ **待解决** — 前端功能待实现。
 
 ---
 
