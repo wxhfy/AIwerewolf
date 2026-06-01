@@ -99,6 +99,7 @@ class CognitiveAgent:
 
         # Game tracking (for post-game reflection)
         self._game_id = ""
+        self._turn_phase = ""  # Track phase changes for analysis cache invalidation
 
     # === Agent Protocol ===
 
@@ -109,9 +110,25 @@ class CognitiveAgent:
         # Track game_id for post-game reflection
         self._game_id = getattr(view, "game_id", "") or str(game_setting.get("game_id", ""))
         self._tracker = BeliefTracker()
+        # Warm up strategy retriever (BGE-M3 ~30s one-time, done during setup not first turn)
+        self._warm_retriever()
+
+    def _warm_retriever(self) -> None:
+        """Pre-build the production retriever so first talk() doesn't incur 30s latency."""
+        import logging
+        try:
+            from backend.agents.cognitive.retrieval_prod import get_retriever
+            get_retriever()
+        except Exception:
+            logging.getLogger(__name__).debug("Retriever warmup skipped (will fall back to TF-IDF)")
 
     def update(self, view: Any, request: str) -> None:
         self._view = view
+        # Clear cached analysis when phase changes (new turn/new action type)
+        new_phase = f"{view.day}:{view.phase}"
+        if new_phase != self._turn_phase:
+            self._pipeline._cached_analysis = ""
+            self._turn_phase = new_phase
         self.memory.update_round(view.day, view.phase)
         self._today_speech_count = 0
 

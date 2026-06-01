@@ -107,7 +107,7 @@ def create_llm_from_client(client: Any) -> Runnable:
             role = "user" if msg.type == "human" else "system"
             lc_messages.append({"role": role, "content": msg.content})
 
-        resp = client.chat_sync(lc_messages, max_tokens=500)
+        resp = client.chat_sync(lc_messages, max_tokens=800)
 
         if isinstance(resp, dict):
             choices = resp.get("choices", [])

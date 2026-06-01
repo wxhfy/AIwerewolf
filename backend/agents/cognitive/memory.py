@@ -207,10 +207,6 @@ class Memory:
                 for h in hints:
                     parts.append(f"  - {h}")
 
-        # Humanization (hidden traits block)
-        if self.humanization:
-            parts.append(self.humanization.format_for_prompt())
-
         return "\n\n".join(parts)
 
     def format_stance_block(self) -> str:

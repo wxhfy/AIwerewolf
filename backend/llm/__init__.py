@@ -8,7 +8,14 @@ __all__ = ["DeepSeekClient", "create_client", "load_env_file"]
 
 _DEFAULT_DOUBAO_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3"
 _DEFAULT_DOUBAO_MODEL = "ep-20260514115354-k4jz4"
+_DEFAULT_ARK_BASE_URL = "https://ark.cn-beijing.volces.com/api/coding/v1"
 _DEFAULT_PROVIDER = "dsv4flash"
+
+# Multi-model pool: "provider:model" entries, comma-separated
+# Supports: doubao, dsv4flash, ark (generic Ark API), deepseek
+# Examples:
+#   DOUBAO_MODEL_POOL="deepseek-v4-pro[1m],kimi-k2.6[1m],glm-5.1[1m]"
+#   MODEL_POOL="ark:deepseek-v4-pro[1m],ark:kimi-k2.6[1m],doubao:ep-xxx,deepseek:deepseek-v4-flash"
 
 
 class _UnavailableLLMClient:
@@ -115,5 +122,33 @@ def create_client(provider: str | None = None, **kwargs) -> DeepSeekClient:
         )
         client.provider = "dsv4flash"
         return client
+    elif provider == "ark":
+        # Generic Ark API (火山引擎) — supports any model deployed on Ark
+        # Uses DSV4FLASH_API_KEY + DSV4FLASH_BASE_URL as defaults
+        api_key = (
+            kwargs.pop("api_key", None)
+            or os.getenv("DSV4FLASH_API_KEY", "")
+            or os.getenv("ARK_API_KEY", "")
+        )
+        base_url = (
+            kwargs.pop("base_url", None)
+            or os.getenv("DSV4FLASH_BASE_URL", "")
+            or os.getenv("ARK_BASE_URL", "")
+            or _DEFAULT_ARK_BASE_URL
+        )
+        model = kwargs.pop("model", None) or os.getenv("ANTHROPIC_MODEL", "deepseek-v4-pro")
+        if not api_key:
+            return _UnavailableLLMClient(provider="ark", model=model, base_url=base_url)
+        client = DeepSeekClient(
+            api_key=api_key,
+            base_url=base_url,
+            model=model,
+            **kwargs,
+        )
+        client.provider = "ark"
+        return client
     else:
-        raise ValueError(f"Unknown LLM provider: {provider}. Supported: doubao, deepseek, dsv4flash")
+        raise ValueError(
+            f"Unknown LLM provider: {provider}. "
+            f"Supported: doubao, deepseek, dsv4flash, ark"
+        )

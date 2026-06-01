@@ -39,10 +39,11 @@ def default_phase_handlers() -> dict[Phase, PhaseHandler]:
         phase=Phase.NIGHT_START,
         steps=(
             AtomicPhase(Phase.NIGHT_START, "_begin_night"),
-            AtomicPhase(Phase.NIGHT_GUARD_ACTION, "_guard_phase"),
-            AtomicPhase(Phase.NIGHT_WOLF_ACTION, "_wolf_phase"),
+            # Guard + Wolf + Seer run with parallelism where safe
+            # (Guard ∥ Seer ∥ Wolf-main-thread); Witch still runs
+            # after wolves because it needs wolf_target_id.
+            AtomicPhase(Phase.NIGHT_START, "_night_role_actions_parallel"),
             AtomicPhase(Phase.NIGHT_WITCH_ACTION, "_witch_phase"),
-            AtomicPhase(Phase.NIGHT_SEER_ACTION, "_seer_phase"),
             AtomicPhase(Phase.NIGHT_RESOLVE, "_night_resolve"),
         ),
     )
