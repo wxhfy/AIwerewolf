@@ -1992,18 +1992,6 @@ class EvolutionPipeline:
         return summary
 
 
-class StrategyAwarePromptMixin:
-    def __init__(self, store: StrategyKnowledgeStore | None = None) -> None:
-        self.store = store or StrategyKnowledgeStore()
-        self.renderer = StrategyContextRenderer()
-        self.last_retrieved_knowledge_ids: list[str] = []
-
-    def retrieve_context(self, query: StrategyRetrievalQuery) -> str:
-        lessons = self.store.retrieve(query)
-        self.last_retrieved_knowledge_ids = [lesson.doc_id for lesson in lessons]
-        return self.renderer.render_lessons(lessons)
-
-
 def export_evolution_summary(summary: EvolutionSummary, path: str | Path) -> dict[str, Any]:
     payload = summary.to_dict()
     Path(path).write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")

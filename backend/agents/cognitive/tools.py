@@ -34,12 +34,14 @@ def create_tools(
         """
         try:
             from backend.agents.cognitive.retrieval_prod import retrieve_strategies_prod
+            # Production retriever: BM25 + keyword grep, GPU-free, always available
             results = retrieve_strategies_prod(
                 obs.player_role, obs.phase, keywords=keywords, limit=limit,
             )
         except Exception:
             results = []
         if not results:
+            # Fallback to TF-IDF (PostgreSQL-independent)
             results = retrieve_tfidf(
                 obs.player_role, obs.phase, situation=" ".join(keywords), limit=limit,
             )
