@@ -29,7 +29,7 @@ from backend.agents.cognitive.tools import create_tools
 
 logger = logging.getLogger(__name__)
 
-MAX_ITERATIONS = 3
+MAX_ITERATIONS = 1
 
 
 class AgentLoop:
@@ -108,7 +108,7 @@ class AgentLoop:
                 for tr in tool_results:
                     context.append(HumanMessage(content=f"[工具结果]\n{tr}"))
                 context.append(HumanMessage(
-                    content="(工具结果已返回。请继续分析，或输出 DECISION 做最终决策。)"
+                    content="(工具结果已返回。信息已足够，请直接输出 DECISION 做最终决策，不要再调用工具。)"
                 ))
                 if iteration >= MAX_ITERATIONS:
                     last_tool_results = True
@@ -129,8 +129,10 @@ class AgentLoop:
             )
             context.append(HumanMessage(content=response))
             context.append(HumanMessage(content=(
-                "请明确选择：调用 TOOL 获取更多信息，或输出 DECISION 做最终决策。"
-                "工具: search_strategies, recall_memory, check_rules, analyze_votes"
+                "你的回复格式不正确。请严格按以下格式之一回复：\n"
+                "1. TOOL: <工具名>\\nARGUMENTS: <JSON>\\n"
+                "2. DECISION: <JSON>\\n"
+                "不要输出其他内容。"
             )))
 
         # Tool results were added in the last iteration — give LLM one more
@@ -213,11 +215,13 @@ class AgentLoop:
         if cached_analysis:
             return (
                 f"当前阶段: {obs.phase}。你已有上轮分析结果。"
-                "如需补充信息可以调用工具，否则直接输出 DECISION。"
+                "直接输出 DECISION。"
             )
         return (
             f"当前阶段: {obs.phase}。"
-            "请分析局势，需要时调用工具获取策略/记忆/规则信息，准备好后输出 DECISION。"
+            "你有明确的游戏判断就直接输出 DECISION。"
+            "仅在确实需要外部信息时才调一次 TOOL（策略/记忆/规则/投票分析）。"
+            "最多只能调一次工具。"
         )
 
     def _task_for_action(self) -> str:
