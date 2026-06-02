@@ -1,7 +1,8 @@
-"""BGE-M3 embedding-based strategy retrieval.
+"""DEPRECATED: BGE-M3 embedding-based strategy retrieval.
 
-Uses BAAI/BGE-M3 (1024-dim dense embeddings) for semantic search.
-Supports optional domain fine-tuning via contrastive learning.
+Superseded by retrieval_prod.py (BM25 + keyword grep, GPU-free).
+Kept for reference / evaluation scripts that import BGEM3FlagModel.
+Do not use for production — the GPU overhead is unnecessary for 941 docs.
 
 Data source: PostgreSQL (strategy_knowledge_docs) → BGE-M3 embeddings → cosine search.
 """

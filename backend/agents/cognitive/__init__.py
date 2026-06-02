@@ -14,7 +14,7 @@ Module structure:
     agent.py        ACT:  Agent protocol implementation
     factory.py      MAKE: Object construction with Character pool support
     retrieval.py    FIND: TF-IDF vector search over strategy knowledge base
-    retrieval_bge.py FIND: BGE-M3 embedding-based strategy retrieval
+    retrieval_prod.py FIND: BM25 + keyword grep strategy retrieval (GPU-free)
     reflect.py      LEARN: Post-game MBTI-differentiated reflection + knowledge extraction
 
 Data flow:
@@ -24,7 +24,7 @@ Data flow:
         ↓
     prompts.py + memory.py(humanization + playbook) + profiles.py → Prompt
         ↓
-    pipeline.py → LLM × 3 (观察→思考→行动) + strategy retrieval + bias
+    pipeline.py → AgentLoop (tool-calling LLM with self-termination) + strategy retrieval + bias
         ↓
     agent.py → Decision
         ↓

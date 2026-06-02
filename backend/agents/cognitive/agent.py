@@ -28,9 +28,9 @@ from backend.agents.cognitive.memory import Memory
 from backend.agents.cognitive.observe import (
     Observation, BeliefTracker, observe, format_observation,
 )
-from backend.agents.cognitive.pipeline import Pipeline, _parse_json_target, _parse_json_array
+from backend.agents.cognitive.pipeline import Pipeline, parse_json_target, parse_json_array
 from backend.agents.cognitive.profiles import Profile, get_profile
-from backend.agents.cognitive.prompts import build_system_prompt, build_strategy_bias_block
+from backend.agents.cognitive.prompts import build_system_prompt
 from backend.engine.models import Decision, ActionType
 
 
@@ -110,17 +110,6 @@ class CognitiveAgent:
         # Track game_id for post-game reflection
         self._game_id = getattr(view, "game_id", "") or str(game_setting.get("game_id", ""))
         self._tracker = BeliefTracker()
-        # Warm up strategy retriever (BGE-M3 ~30s one-time, done during setup not first turn)
-        self._warm_retriever()
-
-    def _warm_retriever(self) -> None:
-        """Pre-build the production retriever so first talk() doesn't incur 30s latency."""
-        import logging
-        try:
-            from backend.agents.cognitive.retrieval_prod import get_retriever
-            get_retriever()
-        except Exception:
-            logging.getLogger(__name__).debug("Retriever warmup skipped (will fall back to TF-IDF)")
 
     def update(self, view: Any, request: str) -> None:
         self._view = view
@@ -151,7 +140,7 @@ class CognitiveAgent:
         raw = self._pipeline.run_speech(obs, self.memory, is_first, is_last_words)
 
         # Parse multi-bubble speech
-        segments = _parse_json_array(raw)
+        segments = parse_json_array(raw)
         if not segments or (len(segments) == 1 and len(segments[0]) < 3):
             # Fallback: use raw text as single speech
             speech = raw.strip()[:500] or "我暂时没有更多信息，先听大家发言。"
@@ -254,7 +243,7 @@ class CognitiveAgent:
         prompt = format_observation(obs) + f"\n\n你已死亡，可开枪带走一人。\n可选: {', '.join(targets)}\n输出 JSON: {{\"reasoning\": \"理由\", \"target\": \"玩家名字\"}}"
 
         result = self._pipeline.direct_call(prompt)
-        parsed = _parse_json_target(result)
+        parsed = parse_json_target(result)
         target_id = self._resolve_target(parsed["target"]) or (
             self._view.players[0]["id"] if self._view.players else None
         )
@@ -274,7 +263,7 @@ class CognitiveAgent:
         prompt = format_observation(obs) + f"\n\n你已死亡，需将警徽移交给一名存活玩家。\n候选人: {', '.join(candidate_strs)}\n输出 JSON: {{\"reasoning\": \"理由\", \"target\": \"玩家名字\"}}"
 
         result = self._pipeline.direct_call(prompt)
-        parsed = _parse_json_target(result)
+        parsed = parse_json_target(result)
         target_id = self._resolve_target(parsed["target"]) or (candidates[0] if candidates else None)
         return self._decision(ActionType.VOTE, target_id=target_id, reasoning=parsed["reasoning"])
 

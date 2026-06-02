@@ -1457,20 +1457,25 @@ def _compute_per_step_scores(
 
     scores = []
     for decision in (replay_bundle.decisions or []):
-        pa = decision.parsed_action if isinstance(decision.parsed_action, dict) else (decision.parsed_action or {})
-        player = players.get(decision.player_id)
+        # ReplayBundle.decisions is list[dict] — use key access, not attribute access
+        pa = decision.get("selected_action") or {}
+        player_id = decision.get("player_id", "")
+        player = players.get(player_id)
         if player is None:
             continue
         info = {
-            "id": decision.id, "player_id": decision.player_id,
-            "player_name": player.name, "player_role": player.role.value if hasattr(player.role, 'value') else str(player.role),
-            "day": decision.day, "phase": decision.phase,
+            "id": decision.get("decision_id", ""),
+            "player_id": player_id,
+            "player_name": player.name,
+            "player_role": player.role.value if hasattr(player.role, 'value') else str(player.role),
+            "day": decision.get("day", 0),
+            "phase": decision.get("phase", ""),
             "target_id": pa.get("target_id", ""),
             "action_type": pa.get("action_type", ""),
             "raw_text": str(pa.get("reasoning", "") or ""),
         }
         try:
-            phase = str(decision.phase or "")
+            phase = decision.get("phase", "")
             if "VOTE" in phase or "BADGE_ELECTION" in phase:
                 s = scorer.score_vote(info, state_dict)
             elif "SPEECH" in phase or "TALK" in phase or "LAST_WORDS" in phase:

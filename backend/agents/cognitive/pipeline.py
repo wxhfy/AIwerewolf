@@ -208,7 +208,7 @@ class Pipeline:
 # Helpers
 # ============================================================
 
-def _parse_json_target(text: str) -> Dict[str, str]:
+def parse_json_target(text: str) -> Dict[str, str]:
     try:
         m = re.search(r'\{[^}]+\}', text)
         if m:
@@ -219,7 +219,7 @@ def _parse_json_target(text: str) -> Dict[str, str]:
     return {"target": "", "reasoning": text[:100]}
 
 
-def _parse_json_array(text: str) -> List[str]:
+def parse_json_array(text: str) -> List[str]:
     try:
         m = re.search(r'\[.*?\]', text, re.DOTALL)
         if m:
