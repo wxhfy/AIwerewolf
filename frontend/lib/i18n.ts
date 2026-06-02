@@ -40,7 +40,7 @@ const translations = {
     streamingLabel: "实时流",
     streamingDescription: "页面通过 WebSocket 接收快照，不是整局结束后再一次性渲染。",
     statusReady: "已就绪",
-    statusHint: "点击按钮生成一局新的 AI 对局。",
+    statusHint: "AI 玩家正在初始化，请稍候...",
     statusLoading: "正在生成对局",
     statusStreaming: "对局进行中",
     statusLoaded: "对局已生成",
@@ -48,6 +48,8 @@ const translations = {
     statusLoadedDetail: "已载入第 {day} 天结束的完整事件流。",
     statusError: "加载失败",
     statusErrorDetail: "接口请求失败，请确认 FastAPI 服务正在运行。",
+    viewReview: "查看复盘",
+    retry: "重试",
     requestTimeout: "请求超时，请稍后重试。",
     roomLabel: "房间",
     gameLabel: "游戏",
@@ -86,7 +88,7 @@ const translations = {
     dayLabel: "白天",
     speakerBubble: "{name}: {text}",
     loading: "加载中",
-    readyHint: "点击「运行一局」开始观战",
+    readyHint: "对局即将开始...",
 
     lobby: "大厅",
     createRoom: "创建房间",
@@ -155,7 +157,13 @@ const translations = {
     villageWins: "好人阵营获胜",
     wolvesWin: "狼人阵营获胜",
     aliveShort: "存活",
-    eventsShort: "事件",
+    eventsShort: "复盘事件",
+    winReasonWolfParity: "狼人阵营人数已达到或超过好人阵营",
+    winReasonAllWolvesDead: "所有狼人均已出局",
+    winReasonMaxDays: "达到最大天数，狼人阵营获胜",
+    resultEntry: "本局已结束",
+    viewResult: "查看结果",
+    closePanel: "暂时关闭",
     stayOnPage: "收起面板，留在页面",
     yourTurnSpeech: "轮到你了，输入发言",
     selectTarget: "请选择目标",
@@ -245,7 +253,7 @@ const translations = {
     streamingLabel: "Streaming",
     streamingDescription: "The page renders from WebSocket snapshots instead of waiting for the whole match to finish.",
     statusReady: "Ready",
-    statusHint: "Generate a new AI match from the controls.",
+    statusHint: "AI players initializing, please wait...",
     statusLoading: "Generating match",
     statusStreaming: "Match in progress",
     statusLoaded: "Match loaded",
@@ -253,6 +261,8 @@ const translations = {
     statusLoadedDetail: "Loaded a full event stream ending on day {day}.",
     statusError: "Load failed",
     statusErrorDetail: "API request failed. Confirm the FastAPI server is running.",
+    viewReview: "View Review",
+    retry: "Retry",
     requestTimeout: "Request timed out. Please try again.",
     roomLabel: "Room",
     gameLabel: "Game",
@@ -291,7 +301,7 @@ const translations = {
     dayLabel: "Day",
     speakerBubble: "{name}: {text}",
     loading: "Loading",
-    readyHint: "Click \"Run Game\" to start spectating",
+    readyHint: "Match starting soon...",
 
     lobby: "Lobby",
     createRoom: "Create Room",
@@ -360,6 +370,12 @@ const translations = {
     villageWins: "Village Wins",
     wolvesWin: "Wolves Win",
     aliveShort: "Alive",
+    winReasonWolfParity: "Werewolves have reached or exceeded the village count",
+    winReasonAllWolvesDead: "All werewolves have been eliminated",
+    winReasonMaxDays: "Maximum days reached, werewolves win",
+    resultEntry: "Game Ended",
+    viewResult: "View Result",
+    closePanel: "Close",
     eventsShort: "Events",
     stayOnPage: "Dismiss, stay on page",
     yourTurnSpeech: "Your turn — type your speech",
@@ -424,7 +440,7 @@ type TranslationKey = {
  * 获取翻译文本
  */
 export function t(key: TranslationKey, lang: Language = Language.ZH): string {
-  return translations[lang][key] || key;
+  return translations[lang][key] || translations[Language.ZH]?.[key] || key;
 }
 
 /**

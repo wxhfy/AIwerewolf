@@ -4,7 +4,7 @@ import { useAppContext } from "@/context/AppContext";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
-interface PhaseAnnouncementProps {
+export interface PhaseAnnouncementProps {
   group: "ready" | "day" | "night" | "end";
   visible: boolean;
 }
@@ -25,8 +25,9 @@ export function PhaseAnnouncement({ group, visible }: PhaseAnnouncementProps) {
     <div
       data-testid="phase-announcement"
       aria-label={text}
+      aria-live="polite"
       className={cn(
-        "fixed inset-0 z-[1000] flex items-center justify-center pointer-events-none transition-opacity duration-300 motion-reduce:transition-none",
+        "fixed inset-0 z-[1000] flex items-center justify-center pointer-events-none transition-opacity duration-400 motion-reduce:transition-none",
         meta.className,
         visible ? "opacity-100" : "opacity-0",
       )}

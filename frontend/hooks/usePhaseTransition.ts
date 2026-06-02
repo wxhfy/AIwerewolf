@@ -64,38 +64,50 @@ export function usePhaseTransition(sessionKey: string, phase?: string, hasWinner
       return;
     }
 
+    // ── Unified phase transition timeline ──────────────────────────
+    // 1. Overlay fades in       (CSS transition-opacity 400ms)
+    // 2. Overlay fully visible  → switch theme (data-phase)
+    // 3. Hold for readability   (user reads "天亮了"/"天黑请闭眼")
+    // 4. Overlay fades out
+    // 5. Clean up
+    const OVERLAY_FADE_IN = 400;   // matches CSS duration-400
+    const THEME_SWITCH = 500;      // start theme transition after overlay is visible
+    const HOLD = 1200;             // how long the overlay stays fully visible
+    const FADE_OUT = 400;          // overlay fade-out duration
+
     setPhaseAnnouncement({ group: announcementGroup, visible: true });
 
     if (options?.openingBuffer) {
-      const readyFadeTimer = setTimeout(() => {
-        if (transitionTokenRef.current === token) setPhaseAnnouncement((current) => current ? { ...current, visible: false } : null);
-      }, 950);
-      const nightAnnouncementTimer = setTimeout(() => {
+      // First-time: show "ready" → night overlay → switch theme
+      const readyFade = setTimeout(() => {
+        if (transitionTokenRef.current === token) setPhaseAnnouncement((c) => c ? { ...c, visible: false } : null);
+      }, 800);
+      const showNight = setTimeout(() => {
         if (transitionTokenRef.current === token) setPhaseAnnouncement({ group: next, visible: true });
-      }, 1200);
-      const switchTimer = setTimeout(() => {
+      }, 1100);
+      const switchTheme = setTimeout(() => {
         if (transitionTokenRef.current === token) setVisualPhaseGroup(next);
-      }, 1320);
-      const fadeTimer = setTimeout(() => {
-        if (transitionTokenRef.current === token) setPhaseAnnouncement((current) => current ? { ...current, visible: false } : null);
-      }, 2650);
-      const removeTimer = setTimeout(() => {
+      }, 1100 + OVERLAY_FADE_IN);
+      const fade = setTimeout(() => {
+        if (transitionTokenRef.current === token) setPhaseAnnouncement((c) => c ? { ...c, visible: false } : null);
+      }, 1100 + OVERLAY_FADE_IN + HOLD);
+      const remove = setTimeout(() => {
         if (transitionTokenRef.current === token) setPhaseAnnouncement(null);
-      }, 2950);
-      transitionTimersRef.current = [readyFadeTimer, nightAnnouncementTimer, switchTimer, fadeTimer, removeTimer];
+      }, 1100 + OVERLAY_FADE_IN + HOLD + FADE_OUT);
+      transitionTimersRef.current = [readyFade, showNight, switchTheme, fade, remove];
       return;
     }
 
-    const switchTimer = setTimeout(() => {
+    const switchTheme = setTimeout(() => {
       if (transitionTokenRef.current === token) setVisualPhaseGroup(next);
-    }, 120);
-    const fadeTimer = setTimeout(() => {
-      if (transitionTokenRef.current === token) setPhaseAnnouncement((current) => current ? { ...current, visible: false } : null);
-    }, 1450);
-    const removeTimer = setTimeout(() => {
+    }, THEME_SWITCH);
+    const fade = setTimeout(() => {
+      if (transitionTokenRef.current === token) setPhaseAnnouncement((c) => c ? { ...c, visible: false } : null);
+    }, THEME_SWITCH + HOLD);
+    const remove = setTimeout(() => {
       if (transitionTokenRef.current === token) setPhaseAnnouncement(null);
-    }, 1750);
-    transitionTimersRef.current = [switchTimer, fadeTimer, removeTimer];
+    }, THEME_SWITCH + HOLD + FADE_OUT);
+    transitionTimersRef.current = [switchTheme, fade, remove];
   }
 
   function enterEndPhase() {

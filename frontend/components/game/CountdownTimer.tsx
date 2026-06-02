@@ -28,13 +28,12 @@ export function CountdownTimer({ seconds, onExpire, isActive }: CountdownTimerPr
     intervalRef.current = setInterval(() => {
       setRemaining((prev) => {
         const next = prev - 0.25;
-        if (next <= 0 && !expiredRef.current) {
-          expiredRef.current = true;
-          setTimeout(() => onExpireRef.current(), 0);
-          return 0;
-        }
         return next <= 0 ? 0 : next;
       });
+      if (remaining <= 0.5 && !expiredRef.current) {
+        expiredRef.current = true;
+        setTimeout(() => onExpireRef.current(), 0);
+      }
     }, 250);
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, [isActive, seconds]);
@@ -44,8 +43,8 @@ export function CountdownTimer({ seconds, onExpire, isActive }: CountdownTimerPr
   const isDanger = remaining <= 10;
 
   return (
-    <div className="flex items-center gap-2">
-      <div className="flex-1 h-2 rounded-full overflow-hidden bg-border">
+    <div className="flex items-center gap-2" role="timer" aria-label={`${Math.ceil(remaining)} seconds remaining`}>
+      <div className="flex-1 h-2 rounded-full overflow-hidden bg-border" role="progressbar" aria-valuenow={Math.ceil(remaining)} aria-valuemin={0} aria-valuemax={seconds}>
         <div
           className={cn(
             "h-full rounded-full transition-all duration-200",

@@ -1,7 +1,7 @@
 import { useMemo } from "react";
-import { Alignment, GameEvent, GameState } from "@/types";
+import { Alignment, EventType, GameEvent, GameState } from "@/types";
 
-export function useGameDerivedState(gameState: GameState | null, humanSeat: number, isHumanMode: boolean) {
+export function useGameDerivedState(gameState: GameState | null, humanSeat: number, isHumanMode: boolean, completedIds?: Set<string>, completedTick?: number) {
   const dayBlocks = useMemo(() => {
     if (!gameState?.events) return [];
     const blocks = new Map<number, GameEvent[]>();
@@ -29,6 +29,88 @@ export function useGameDerivedState(gameState: GameState | null, humanSeat: numb
   }, [gameState?.players, humanPlayer, humanSeat, isHumanMode]);
   const badgeCandidateSet = useMemo(() => new Set(gameState?.badge?.candidates || []), [gameState?.badge?.candidates]);
 
+  // ── Revealed events only — syncs with EventTimeline revealIndex ──
+  const revealedEvents = useMemo(() => {
+    if (!gameState?.events) return [];
+    const events = gameState.events;
+    // Match EventTimeline's mergeConsecutiveChats: skip segments that
+    // would be collapsed into the previous bubble.
+    let cutoff = events.length;
+    let prevActor = "", prevPhase = "";
+    for (let i = 0; i < events.length; i++) {
+      const e = events[i];
+      if (e.type === EventType.CHAT_MESSAGE) {
+        const actor = (e.payload as any)?.actor_id || "";
+        const ph = e.phase || "";
+        if (actor === prevActor && ph === prevPhase) continue; // merged segment
+        prevActor = actor;
+        prevPhase = ph;
+        if (!completedIds?.has(e.id)) {
+          cutoff = i;
+          break;
+        }
+      } else {
+        prevActor = "";
+        prevPhase = "";
+      }
+    }
+    return events.slice(0, cutoff);
+  }, [gameState?.events, completedIds, completedTick]);
+
+  // Tracks which players have spoken (from revealed events only)
+  const spokenInPhase = useMemo(() => {
+    const spoken = new Set<string>();
+    if (!gameState?.phase) return spoken;
+    for (const event of revealedEvents) {
+      if (event.type === "CHAT_MESSAGE" && event.phase === gameState.phase) {
+        const actorId = (event.payload as any)?.actor_id;
+        if (actorId) spoken.add(actorId);
+      }
+    }
+    return spoken;
+  }, [revealedEvents, gameState?.phase]);
+
+  // Tracks which players have voted (from revealed events only)
+  const votedSet = useMemo(() => {
+    const voted = new Set<string>();
+    for (const event of revealedEvents) {
+      if (event.type === EventType.VOTE_CAST) {
+        const voterId = (event.payload as any)?.voter_id;
+        if (voterId) voted.add(voterId);
+      }
+    }
+    return voted;
+  }, [revealedEvents]);
+
+  // Vote tally per player (from revealed events only)
+  const voteCount = useMemo(() => {
+    const tally = new Map<string, number>();
+    for (const event of revealedEvents) {
+      if (event.type === EventType.VOTE_CAST) {
+        const targetId = (event.payload as any)?.target_id;
+        if (targetId) tally.set(targetId, (tally.get(targetId) || 0) + 1);
+      }
+    }
+    return tally;
+  }, [revealedEvents]);
+
+  // Maps voterId → target player name (from revealed events only)
+  const voteTarget = useMemo(() => {
+    const map = new Map<string, string>();
+    if (!gameState?.players) return map;
+    for (const event of revealedEvents) {
+      if (event.type === EventType.VOTE_CAST) {
+        const p = event.payload as any;
+        const voterId = p.voter_id;
+        const targetId = p.target_id;
+        if (!voterId || !targetId) continue;
+        const target = gameState.players.find(pl => pl.id === targetId);
+        if (target) map.set(voterId, target.name);
+      }
+    }
+    return map;
+  }, [revealedEvents, gameState?.players]);
+
   return {
     dayBlocks,
     splitPoint,
@@ -40,5 +122,9 @@ export function useGameDerivedState(gameState: GameState | null, humanSeat: numb
     sheriffId: gameState?.badge?.holder_id || null,
     badgeCandidateSet,
     wolfTeammates,
+    spokenInPhase,
+    votedSet,
+    voteCount,
+    voteTarget,
   };
 }
