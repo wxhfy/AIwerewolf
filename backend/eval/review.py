@@ -3000,6 +3000,8 @@ class CounterfactualAnalyzer:
             self._speech_strategy_cases,
             self._stance_flip_cases,
             self._badge_election_cases,
+            self._claim_timing_cases,
+            self._coordination_cases,
         ]:
             try:
                 if method == self._vote_cases:
@@ -3011,6 +3013,10 @@ class CounterfactualAnalyzer:
                 elif method == self._speech_strategy_cases:
                     cases.extend(method(state, bad_cases, turning_points))
                 elif method == self._badge_election_cases:
+                    cases.extend(method(state, bad_cases, turning_points))
+                elif method == self._claim_timing_cases:
+                    cases.extend(method(state, bad_cases))
+                elif method == self._coordination_cases:
                     cases.extend(method(state, bad_cases, turning_points))
                 else:
                     cases.extend(method(state, bad_cases))
@@ -3294,51 +3300,146 @@ class CounterfactualAnalyzer:
         bad_cases: Sequence[BadCaseReport],
         review_bonuses: Sequence[ReviewBonus],
     ) -> list[CounterfactualCase]:
+        """Information release counterfactuals — expanded beyond Seer-only.
+
+        From Information Cascade Theory in Hidden Role Games (Kim et al. 2025):
+        Roles with private info (Seer, Witch, Guard) must balance information
+        revelation against self-preservation. Withholding too long = missed influence.
+        Revealing too early = wasted information advantage.
+
+        Now covers: Seer (wolf checks), Witch (antidote/poison usage), Guard (protection
+        targets), and general information withholding patterns.
+        """
         cases: list[CounterfactualCase] = []
         contexts = self._build_contexts(state)
+
         for player in state.players:
-            if player.role != Role.SEER:
+            ctx = contexts.get(player.id)
+            if ctx is None:
                 continue
-            ctx = contexts[player.id]
-            wolf_checks = [
-                event for event in ctx.private_info_events
-                if event.payload.get("kind") == "seer_result" and event.payload.get("is_wolf")
-            ]
-            if not wolf_checks:
-                continue
-            if any(bonus.player_id == player.id and bonus.bonus_type == "seer_info_conversion" for bonus in review_bonuses):
-                continue
-            released_targets = self._released_check_targets(ctx)
-            for check_event in wolf_checks:
-                target_name = str(check_event.payload.get("target_name") or "")
-                if target_name and target_name in released_targets:
-                    continue
-                day = self._first_speech_day(ctx) or check_event.day
-                bad_case_id = self._find_bad_case_id(bad_cases, day, player.name, "speech")
-                cases.append(
-                    CounterfactualCase(
-                        case_id=f"{state.id}-info-{day}-{player.id}",
+
+            # ---- Seer: wolf result not released ----
+            if player.role == Role.SEER:
+                wolf_checks = [
+                    event for event in ctx.private_info_events
+                    if event.payload.get("kind") == "seer_result" and event.payload.get("is_wolf")
+                ]
+                if wolf_checks and not any(
+                    bonus.player_id == player.id and bonus.bonus_type == "seer_info_conversion"
+                    for bonus in review_bonuses
+                ):
+                    released_targets = self._released_check_targets(ctx)
+                    for check_event in wolf_checks:
+                        target_name = str(check_event.payload.get("target_name") or "")
+                        if target_name and target_name in released_targets:
+                            continue
+                        day = self._first_speech_day(ctx) or check_event.day
+                        bad_case_id = self._find_bad_case_id(bad_cases, day, player.name, "speech")
+                        cases.append(CounterfactualCase(
+                            case_id=f"{state.id}-info-seer-{day}-{player.id}",
+                            game_id=state.id,
+                            day=day,
+                            phase="DAY_SPEECH",
+                            counterfactual_type="info_release",
+                            original_decision=f"{player.name}(Seer) held the wolf result on {target_name} instead of releasing it publicly.",
+                            alternative_decision=f"If {player.name} had announced the wolf check on {target_name} during day {day}, the village might align votes earlier.",
+                            expected_effect="Publicly releasing the check would likely improve vote convergence onto the wolf target and reduce good-player misvotes.",
+                            affected_players=[player.name, target_name],
+                            confidence=0.84,
+                            evidence=[
+                                f"Private seer result identified {target_name} as wolf.",
+                                f"No later public speech from {player.name} referenced that result.",
+                            ],
+                            severity="major",
+                            source_bad_case_id=bad_case_id,
+                            effect_type="estimated",
+                            recomputed_outcome={"role": "Seer", "estimated_target_suspicion_delta": "+0.30"},
+                            evidence_event_ids=[check_event.id],
+                        ))
+                        break  # One case per Seer per game
+
+            # ---- Witch: antidote/poison usage not revealed ----
+            if player.role == Role.WITCH:
+                night_actions = [
+                    e for e in ctx.night_action_events
+                    if e.payload.get("action_type") in ("witch_save", "witch_poison")
+                ]
+                for action in night_actions:
+                    at = action.payload.get("action_type", "")
+                    target_name = str(action.payload.get("target_name", ""))
+                    # Check if this info was shared in any speech
+                    info_shared = any(
+                        target_name in (s.payload.get("speech", "") or "")
+                        for s in ctx.speech_events
+                        if s.day >= action.day
+                    )
+                    if info_shared:
+                        continue
+                    action_label = "解药救了" if at == "witch_save" else "毒药毒了"
+                    day = action.day + 1  # Info should be released the next day
+                    cases.append(CounterfactualCase(
+                        case_id=f"{state.id}-info-witch-{day}-{player.id}-{at}",
                         game_id=state.id,
                         day=day,
                         phase="DAY_SPEECH",
                         counterfactual_type="info_release",
-                        original_decision=f"{player.name} held the wolf result on {target_name} instead of releasing it publicly.",
-                        alternative_decision=f"If {player.name} had announced the wolf check on {target_name} during day {day}, the village might align votes earlier.",
-                        expected_effect=f"Publicly releasing the check would likely improve vote convergence onto {target_name} and reduce good-player misvotes; this is an estimated local effect.",
+                        original_decision=f"{player.name}(Witch) used {action_label}{target_name} on night {action.day} but never revealed this information.",
+                        alternative_decision=f"If {player.name} had shared their {action_label} action, the village would have more accurate role information.",
+                        expected_effect="Revealing witch actions confirms roles and narrows wolf hiding space.",
                         affected_players=[player.name, target_name],
-                        confidence=0.84,
+                        confidence=0.78,
                         evidence=[
-                            f"Private seer result identified {target_name} as wolf.",
-                            f"No later public speech from {player.name} referenced that result.",
+                            f"Witch {action_label} {target_name} on night {action.day}.",
+                            "Information never shared in public speeches.",
                         ],
-                        severity="major",
-                        source_bad_case_id=bad_case_id,
+                        severity="moderate",
+                        source_bad_case_id=self._find_bad_case_id(bad_cases, day, player.name, "speech"),
                         effect_type="estimated",
-                        recomputed_outcome={"estimated_target_suspicion_delta": "+0.30"},
-                        evidence_event_ids=[check_event.id],
+                        recomputed_outcome={"role": "Witch", "action_type": at, "target": target_name},
+                        evidence_event_ids=[action.id],
+                    ))
+                    break  # One case per Witch per game
+
+            # ---- Guard: protection targets never revealed ----
+            if player.role == Role.GUARD:
+                guard_actions = [
+                    e for e in ctx.night_action_events
+                    if e.payload.get("action_type") in ("guard", "guard_protect")
+                ]
+                for action in guard_actions:
+                    target_name = str(action.payload.get("target_name", ""))
+                    info_shared = any(
+                        target_name in (s.payload.get("speech", "") or "")
+                        for s in ctx.speech_events if s.day >= action.day
                     )
-                )
-                break
+                    if info_shared:
+                        continue
+                    # Only flag if the protected player later died (guard info became valuable)
+                    target_died = self._died_by_reason(state, action.payload.get("target_id", ""), "")
+                    day = action.day + 1
+                    cases.append(CounterfactualCase(
+                        case_id=f"{state.id}-info-guard-{day}-{player.id}",
+                        game_id=state.id,
+                        day=day,
+                        phase="DAY_SPEECH",
+                        counterfactual_type="info_release",
+                        original_decision=f"{player.name}(Guard) protected {target_name} on night {action.day} but never revealed this information.",
+                        alternative_decision=f"If {player.name} had shared their protection target history, the village could deduce wolf targeting patterns.",
+                        expected_effect="Guard protection history helps village identify wolf kill preferences and narrow suspect pool.",
+                        affected_players=[player.name, target_name],
+                        confidence=0.62 if not target_died else 0.72,
+                        evidence=[
+                            f"Guard protected {target_name} on night {action.day}.",
+                            "Information never shared in public speeches.",
+                        ],
+                        severity="minor" if not target_died else "moderate",
+                        source_bad_case_id=self._find_bad_case_id(bad_cases, day, player.name, "speech"),
+                        effect_type="estimated",
+                        recomputed_outcome={"role": "Guard", "protected": target_name},
+                        evidence_event_ids=[action.id],
+                    ))
+                    break  # One case per Guard per game
+
         return cases
 
     # ---- New counterfactual dimensions (2025 research-backed) ----
@@ -3653,6 +3754,77 @@ class CounterfactualAnalyzer:
                     recomputed_outcome={"missed_response_to": accuser.name},
                     evidence_event_ids=[accused_speeches[0].id],
                 ))
+
+            # ---- Speech-vote contradiction: said one thing, voted another ----
+            votes_today = [
+                e for e in ctx.vote_events
+                if e.day == max((s.day for s in speeches), default=0)
+            ]
+            for speech in speeches[-3:]:
+                speech_text = speech.payload.get("speech", "") or ""
+                for vote in votes_today:
+                    if vote.day != speech.day:
+                        continue
+                    vote_target = state.player(str(vote.payload.get("target_id", ""))) if vote.payload.get("target_id") else None
+                    if vote_target is None:
+                        continue
+                    # Check if speech defended someone but voted for them
+                    defend_keywords = ["好人", "不像狼", "可信", "好人面", "好人牌", "平民", "金水"]
+                    if any(kw in speech_text for kw in defend_keywords) and vote_target.name in speech_text:
+                        cases.append(CounterfactualCase(
+                            case_id=f"{state.id}-speech-contra-{player.id}-D{speech.day}",
+                            game_id=state.id,
+                            day=speech.day,
+                            phase="DAY_SPEECH",
+                            counterfactual_type="speech_strategy",
+                            original_decision=f"{player.name} defended {vote_target.name} in speech but voted to exile them on day {speech.day}.",
+                            alternative_decision=f"If {player.name} had voted consistently with their speech, their credibility would be stronger.",
+                            expected_effect="Speech-vote consistency is a key signal for village trust assessment.",
+                            affected_players=[player.name, vote_target.name],
+                            confidence=0.74,
+                            evidence=[
+                                f"Speech: \"{speech_text[:100]}...\"",
+                                f"Voted to exile {vote_target.name} same day.",
+                            ],
+                            severity="moderate",
+                            source_bad_case_id=self._find_bad_case_id(bad_cases, speech.day, player.name, "speech"),
+                            effect_type="estimated",
+                            recomputed_outcome={"contradiction": "speech_defended_voted_exile"},
+                            evidence_event_ids=[speech.id, vote.id],
+                        ))
+                        break  # One case per player per pattern
+
+            # ---- Empty rhetoric: long speech with no event references ----
+            for speech in speeches[-3:]:
+                speech_text = speech.payload.get("speech", "") or ""
+                if len(speech_text) > 80:
+                    # Check for concrete references: player names, day numbers, roles
+                    has_player_ref = any(p.name in speech_text for p in state.players if p.id != player.id)
+                    has_role_ref = any(role in speech_text for role in ["预言家", "女巫", "猎人", "守卫", "狼", "查验", "银水"])
+                    has_vote_ref = any(kw in speech_text for kw in ["投票", "票型", "归票", "冲票"])
+                    if not (has_player_ref or has_role_ref or has_vote_ref):
+                        cases.append(CounterfactualCase(
+                            case_id=f"{state.id}-speech-empty-{player.id}-D{speech.day}",
+                            game_id=state.id,
+                            day=speech.day,
+                            phase="DAY_SPEECH",
+                            counterfactual_type="speech_strategy",
+                            original_decision=f"{player.name}'s speech on day {speech.day} ({len(speech_text)} chars) lacked concrete references to players, roles, or votes.",
+                            alternative_decision=f"If {player.name} had anchored their speech with specific player names and game events, it would be more persuasive and useful to the village.",
+                            expected_effect="Factual, evidence-anchored speech is more persuasive and gives village better information.",
+                            affected_players=[player.name],
+                            confidence=0.55,
+                            evidence=[
+                                f"Speech length: {len(speech_text)} chars, no player/role/vote references.",
+                            ],
+                            severity="minor",
+                            source_bad_case_id=self._find_bad_case_id(bad_cases, speech.day, player.name, "speech"),
+                            effect_type="estimated",
+                            recomputed_outcome={"empty_rhetoric": True, "speech_length": len(speech_text)},
+                            evidence_event_ids=[speech.id],
+                        ))
+                        break  # One case per player
+
         return cases
 
     def _stance_flip_cases(
@@ -3660,17 +3832,22 @@ class CounterfactualAnalyzer:
         state: GameState,
         bad_cases: Sequence[BadCaseReport],
     ) -> list[CounterfactualCase]:
-        """Stance flip counterfactuals.
+        """Stance flip counterfactuals — vote + speech patterns.
 
         From Ask WhAI §4: belief perturbation evaluation.
         What if the agent changed their stance on a player without clear justification?
 
-        Detects: voting for someone previously defended, or defending someone
-        previously voted for, with no new game events to explain the flip.
+        Detects: voting for someone previously defended, defending someone
+        previously voted for, speech stance changes with no new events to explain.
         """
         cases: list[CounterfactualCase] = []
+        contexts = self._build_contexts(state)
 
         for player in state.players:
+            ctx = contexts.get(player.id)
+            if ctx is None:
+                continue
+
             # Get all votes by this player
             votes = [
                 (event.day, str(event.payload.get("target_id", "")))
@@ -3678,53 +3855,100 @@ class CounterfactualAnalyzer:
                 if event.type == EventType.VOTE_CAST
                 and str(event.payload.get("voter_id", "")) == player.id
             ]
-            if len(votes) < 2:
-                continue
 
-            # Check for stance flips
-            vote_targets_by_day: dict[int, str] = {}
-            for day, target_id in votes:
-                vote_targets_by_day[day] = target_id
+            # ---- Vote-based stance flip ----
+            if len(votes) >= 2:
+                vote_targets_by_day: dict[int, str] = {}
+                for day, target_id in votes:
+                    vote_targets_by_day[day] = target_id
 
-            prev_days = sorted(vote_targets_by_day.keys())
-            for i in range(1, len(prev_days)):
-                prev_day = prev_days[i - 1]
-                curr_day = prev_days[i]
-                prev_target = state.player(vote_targets_by_day[prev_day])
-                curr_target = state.player(vote_targets_by_day[curr_day])
+                prev_days = sorted(vote_targets_by_day.keys())
+                for i in range(1, len(prev_days)):
+                    prev_day = prev_days[i - 1]
+                    curr_day = prev_days[i]
+                    prev_target = state.player(vote_targets_by_day[prev_day])
+                    curr_target = state.player(vote_targets_by_day[curr_day])
 
-                # Detect: voted for X yesterday, voting for Y today, but no new info about X
-                # This is a stance flip — might be strategic (wolf) or erratic (villager)
-                # Only flag if X was NOT revealed as wolf/seer in between
-                new_info_about_prev = any(
-                    e.type == EventType.PLAYER_DIED and e.payload.get("player_id") == prev_target.id
-                    for e in state.events if prev_day <= e.day <= curr_day
-                )
-                if new_info_about_prev:
-                    continue  # Death explains the flip
+                    new_info_about_prev = any(
+                        e.type == EventType.PLAYER_DIED and e.payload.get("player_id") == prev_target.id
+                        for e in state.events if prev_day <= e.day <= curr_day
+                    )
+                    if new_info_about_prev:
+                        continue
 
-                cases.append(CounterfactualCase(
-                    case_id=f"{state.id}-stance-{curr_day}-{player.id}",
-                    game_id=state.id,
-                    day=curr_day,
-                    phase="DAY_VOTE",
-                    counterfactual_type="stance_flip",
-                    original_decision=f"{player.name} voted for {curr_target.name} on day {curr_day} after previously voting {prev_target.name} on day {prev_day}.",
-                    alternative_decision=f"If {player.name} had maintained their stance or provided clear reasoning for the flip, the vote pattern would be more interpretable.",
-                    expected_effect=f"Consistent voting patterns help the village track alignment and detect wolves.",
-                    affected_players=[player.name, prev_target.name, curr_target.name],
-                    confidence=0.68,
-                    evidence=[
-                        f"Voted {prev_target.name} day {prev_day}, then {curr_target.name} day {curr_day}.",
-                        "No significant new information about the previous target emerged between these votes.",
-                    ],
-                    severity="moderate",
-                    source_bad_case_id=self._find_bad_case_id(bad_cases, curr_day, player.name, "vote"),
-                    effect_type="estimated",
-                    recomputed_outcome={"flip_from": prev_target.id, "flip_to": curr_target.id},
-                    evidence_event_ids=[],
-                ))
-                break  # One case per player
+                    cases.append(CounterfactualCase(
+                        case_id=f"{state.id}-stance-vote-{curr_day}-{player.id}",
+                        game_id=state.id,
+                        day=curr_day,
+                        phase="DAY_VOTE",
+                        counterfactual_type="stance_flip",
+                        original_decision=f"{player.name} voted for {curr_target.name} on day {curr_day} after previously voting {prev_target.name} on day {prev_day}.",
+                        alternative_decision=f"If {player.name} had maintained their stance or provided clear reasoning for the flip, the vote pattern would be more interpretable.",
+                        expected_effect="Consistent voting patterns help the village track alignment and detect wolves.",
+                        affected_players=[player.name, prev_target.name, curr_target.name],
+                        confidence=0.68,
+                        evidence=[
+                            f"Voted {prev_target.name} day {prev_day}, then {curr_target.name} day {curr_day}.",
+                            "No significant new information about the previous target emerged between these votes.",
+                        ],
+                        severity="moderate",
+                        source_bad_case_id=self._find_bad_case_id(bad_cases, curr_day, player.name, "vote"),
+                        effect_type="estimated",
+                        recomputed_outcome={"flip_type": "vote", "flip_from": prev_target.id, "flip_to": curr_target.id},
+                        evidence_event_ids=[],
+                    ))
+                    break  # One vote-flip case per player
+
+            # ---- Speech-based stance flip: defended X on day N, accused X on day N+1 ----
+            speeches = ctx.speech_events
+            if len(speeches) >= 2:
+                # Detect stance toward each other player across speeches
+                accuse_keywords = ["狼", "可疑", "问题", "铁狼", "标狼", "不好", "出"]
+                defend_keywords = ["好人", "不像狼", "可信", "好人面", "好人牌", "平民", "金水"]
+                for other in state.players:
+                    if other.id == player.id:
+                        continue
+                    # Track stance across days
+                    stance_timeline: list[tuple[int, str]] = []  # (day, "accuse"|"defend")
+                    for speech in sorted(speeches, key=lambda e: e.ts):
+                        text = speech.payload.get("speech", "") or ""
+                        if other.name not in text:
+                            continue
+                        if any(kw in text for kw in accuse_keywords):
+                            stance_timeline.append((speech.day, "accuse"))
+                        elif any(kw in text for kw in defend_keywords):
+                            stance_timeline.append((speech.day, "defend"))
+                    # Look for flips
+                    for i in range(1, len(stance_timeline)):
+                        prev_day, prev_stance = stance_timeline[i - 1]
+                        curr_day, curr_stance = stance_timeline[i]
+                        if prev_stance != curr_stance:
+                            # Stance flip detected in speech
+                            cases.append(CounterfactualCase(
+                                case_id=f"{state.id}-stance-speech-{curr_day}-{player.id}-{other.id}",
+                                game_id=state.id,
+                                day=curr_day,
+                                phase="DAY_SPEECH",
+                                counterfactual_type="stance_flip",
+                                original_decision=f"{player.name} {prev_stance}ed {other.name} on day {prev_day} but {curr_stance}ed them on day {curr_day} in speech.",
+                                alternative_decision=f"If {player.name} had explained why their stance on {other.name} changed, the village could better assess the reasoning.",
+                                expected_effect="Explained stance changes provide information; unexplained flips cause confusion and suspicion.",
+                                affected_players=[player.name, other.name],
+                                confidence=0.60,
+                                evidence=[
+                                    f"Day {prev_day}: {prev_stance}ed {other.name}.",
+                                    f"Day {curr_day}: {curr_stance}ed {other.name}.",
+                                ],
+                                severity="minor",
+                                source_bad_case_id=self._find_bad_case_id(bad_cases, curr_day, player.name, "speech"),
+                                effect_type="estimated",
+                                recomputed_outcome={"flip_type": "speech", "from_stance": prev_stance, "to_stance": curr_stance},
+                                evidence_event_ids=[],
+                            ))
+                            break  # One speech-flip case per (player, target) pair
+                    else:
+                        continue
+                    break  # One case per player (combined vote+speech flips)
         return cases
 
     def _badge_election_cases(
@@ -3817,6 +4041,373 @@ class CounterfactualAnalyzer:
                         recomputed_outcome={"early_badge_loss": True, "death_day": death_day},
                         evidence_event_ids=[],
                     ))
+        return cases
+
+    # ---- claim_timing + coordination (2025 frontier: from RESERVED → ACTIVE) ----
+
+    # Role claim keyword patterns (same as observe.py _detect_role_claim)
+    _CLAIM_PATTERNS: list[tuple[str, str]] = [
+        ("我是预言家", "Seer"), ("我是真预言家", "Seer"), ("我是女巫", "Witch"),
+        ("我是猎人", "Hunter"), ("我是守卫", "Guard"), ("我是白痴", "Idiot"),
+        ("我是村民", "Villager"), ("我是好人", "Villager"), ("我是平民", "Villager"),
+        ("我跳预言家", "Seer"), ("我跳女巫", "Witch"), ("我跳猎人", "Hunter"),
+        ("我跳守卫", "Guard"), ("我是神", "God"), ("我是神职", "God"),
+        ("我是真预", "Seer"), ("我是单边预", "Seer"),
+        ("银水是", "Witch"), ("救了", "Witch"), ("毒了", "Witch"),
+        ("查了", "Seer"), ("查验", "Seer"), ("金水", "Seer"), ("查杀", "Seer"),
+    ]
+
+    def _detect_claim(self, speech_text: str) -> str | None:
+        """Detect a role claim from speech text. Returns role name or None."""
+        for pattern, role in self._CLAIM_PATTERNS:
+            if pattern in speech_text:
+                return role
+        return None
+
+    def _claim_timing_cases(
+        self,
+        state: GameState,
+        bad_cases: Sequence[BadCaseReport],
+    ) -> list[CounterfactualCase]:
+        """Claim timing counterfactuals — from RESERVED → ACTIVE.
+
+        From Optimal Stopping Theory in Hidden Role Games (Li et al. 2025):
+        Role claims have an optimal timing window. Claiming too early wastes
+        information advantage; claiming too late loses influence opportunity.
+
+        Detects:
+          - Seer claiming wolf result before revealing role → information leak
+          - Seer holding wolf check too long → missed vote influence
+          - Witch revealing antidote usage too early → draws wolf fire prematurely
+          - Villager fake-claiming god role → risks real god counter-claim
+          - Wolf fake claims at suboptimal times (before/after critical events)
+        """
+        cases: list[CounterfactualCase] = []
+        contexts = self._build_contexts(state)
+
+        for player in state.players:
+            ctx = contexts.get(player.id)
+            if ctx is None:
+                continue
+            speeches = ctx.speech_events
+            if not speeches:
+                continue
+
+            # Detect: when did this player first claim a role?
+            first_claim_day: int | None = None
+            claimed_role: str | None = None
+            for s in sorted(speeches, key=lambda e: e.ts):
+                text = s.payload.get("speech", "") or ""
+                detected = self._detect_claim(text)
+                if detected:
+                    first_claim_day = s.day
+                    claimed_role = detected
+                    break
+
+            if first_claim_day is None:
+                continue  # No claim — not necessarily bad, skip
+
+            # ---- Case A: Seer claimed role without having any wolf result ----
+            if player.role == Role.SEER and claimed_role == "Seer":
+                seer_checks = [
+                    e for e in ctx.private_info_events
+                    if e.payload.get("kind") == "seer_result"
+                ]
+                has_wolf_result = any(
+                    e.payload.get("is_wolf") for e in seer_checks
+                    if e.day < first_claim_day
+                )
+                if not has_wolf_result and first_claim_day <= 1:
+                    # Seer claimed too early — no wolf result to share
+                    cases.append(CounterfactualCase(
+                        case_id=f"{state.id}-claim-early-seer-{player.id}",
+                        game_id=state.id,
+                        day=first_claim_day,
+                        phase="DAY_SPEECH",
+                        counterfactual_type="claim_timing",
+                        original_decision=f"{player.name}(Seer) claimed Seer on day {first_claim_day} without having a wolf check result yet.",
+                        alternative_decision=f"If {player.name} waited until day {first_claim_day+1} after getting a night result, the claim would carry more credibility and information value.",
+                        expected_effect="Delayed claim with evidence increases credibility and gives village actionable information.",
+                        affected_players=[player.name],
+                        confidence=0.72 if first_claim_day == 1 else 0.55,
+                        evidence=[
+                            f"Claimed Seer on day {first_claim_day}.",
+                            f"No wolf check result available before claim (only {len(seer_checks)} checks done).",
+                        ],
+                        severity="moderate",
+                        source_bad_case_id=self._find_bad_case_id(bad_cases, first_claim_day, player.name, "claim"),
+                        effect_type="estimated",
+                        recomputed_outcome={"claim_day": first_claim_day, "has_wolf_result": False},
+                        evidence_event_ids=[],
+                    ))
+
+                # Case B: Seer has wolf result but didn't claim until late
+                if has_wolf_result:
+                    wolf_check_days = [
+                        e.day for e in seer_checks
+                        if e.payload.get("is_wolf") and e.day < first_claim_day
+                    ]
+                    if wolf_check_days and first_claim_day - max(wolf_check_days) >= 2:
+                        # Held wolf info for 2+ days before claiming
+                        cases.append(CounterfactualCase(
+                            case_id=f"{state.id}-claim-late-seer-{player.id}",
+                            game_id=state.id,
+                            day=first_claim_day,
+                            phase="DAY_SPEECH",
+                            counterfactual_type="claim_timing",
+                            original_decision=f"{player.name}(Seer) waited until day {first_claim_day} to claim Seer, but had a wolf check from day {max(wolf_check_days)}.",
+                            alternative_decision=f"If {player.name} had claimed Seer on day {max(wolf_check_days)} with the wolf result, the village could have aligned votes earlier.",
+                            expected_effect=f"Earlier claim with evidence could prevent {first_claim_day - max(wolf_check_days)} days of village mis-coordination.",
+                            affected_players=[player.name],
+                            confidence=0.80,
+                            evidence=[
+                                f"Wolf check result on day {max(wolf_check_days)}.",
+                                f"Claimed Seer only on day {first_claim_day} — {first_claim_day - max(wolf_check_days)} day delay.",
+                            ],
+                            severity="major",
+                            source_bad_case_id=self._find_bad_case_id(bad_cases, first_claim_day, player.name, "claim"),
+                            effect_type="estimated",
+                            recomputed_outcome={"delay_days": first_claim_day - max(wolf_check_days)},
+                            evidence_event_ids=[],
+                        ))
+
+            # ---- Case C: Wolf fake-claimed a god role but real god is still alive ----
+            if player.role in {Role.WEREWOLF, Role.WHITE_WOLF_KING} and claimed_role in {"Seer", "Witch", "Hunter", "Guard"}:
+                real_god_alive = any(
+                    p.role.value == claimed_role and p.alive and p.id != player.id
+                    for p in state.players
+                )
+                if real_god_alive and first_claim_day <= 2:
+                    # Wolf fake-claimed while real god is alive — risky strategy
+                    real_god = next((p for p in state.players if p.role.value == claimed_role and p.alive), None)
+                    counter_claim_day = None
+                    if real_god:
+                        real_ctx = contexts.get(real_god.id)
+                        if real_ctx:
+                            for s in sorted(real_ctx.speech_events, key=lambda e: e.ts):
+                                if self._detect_claim(s.payload.get("speech", "") or "") == claimed_role:
+                                    counter_claim_day = s.day
+                                    break
+                    cases.append(CounterfactualCase(
+                        case_id=f"{state.id}-claim-wolf-fake-{player.id}",
+                        game_id=state.id,
+                        day=first_claim_day,
+                        phase="DAY_SPEECH",
+                        counterfactual_type="claim_timing",
+                        original_decision=f"{player.name}(Wolf) fake-claimed {claimed_role} on day {first_claim_day} while real {claimed_role}({real_god.name if real_god else '?'}) was alive.",
+                        alternative_decision=f"If {player.name} had claimed Villager instead, they would avoid a direct counter-claim from the real {claimed_role}.",
+                        expected_effect=f"Fake-claiming while real god is alive risks immediate counter-claim exposure{' (which happened day '+str(counter_claim_day)+')' if counter_claim_day else ''}.",
+                        affected_players=[player.name, real_god.name if real_god else "?"],
+                        confidence=0.78 if counter_claim_day else 0.62,
+                        evidence=[
+                            f"Wolf player {player.name} claimed {claimed_role} on day {first_claim_day}.",
+                            f"Real {claimed_role}: {real_god.name if real_god else 'unknown'} was alive.",
+                        ] + ([f"Real {claimed_role} counter-claimed on day {counter_claim_day}."] if counter_claim_day else []),
+                        severity="major" if counter_claim_day else "moderate",
+                        source_bad_case_id=self._find_bad_case_id(bad_cases, first_claim_day, player.name, "claim"),
+                        effect_type="estimated",
+                        recomputed_outcome={"fake_claim": True, "counter_claimed": counter_claim_day is not None},
+                        evidence_event_ids=[],
+                    ))
+
+            # ---- Case D: Villager claimed god role (dangerous bluff) ----
+            if player.role == Role.VILLAGER and claimed_role in {"Seer", "Witch", "Hunter", "Guard"}:
+                real_god = next((p for p in state.players if p.role.value == claimed_role), None)
+                if real_god is not None:
+                    cases.append(CounterfactualCase(
+                        case_id=f"{state.id}-claim-villager-god-{player.id}",
+                        game_id=state.id,
+                        day=first_claim_day,
+                        phase="DAY_SPEECH",
+                        counterfactual_type="claim_timing",
+                        original_decision=f"{player.name}(Villager) claimed {claimed_role} on day {first_claim_day}. Real {claimed_role} is {real_god.name}.",
+                        alternative_decision=f"If {player.name} had stayed honest as Villager, the real {claimed_role} wouldn't need to waste time counter-claiming, and village information stays cleaner.",
+                        expected_effect="Villager god-claiming pollutes the information space and can cause the real god to be misvoted.",
+                        affected_players=[player.name, real_god.name],
+                        confidence=0.70,
+                        evidence=[
+                            f"Villager {player.name} claimed {claimed_role}.",
+                            f"Real {claimed_role}: {real_god.name}.",
+                        ],
+                        severity="moderate",
+                        source_bad_case_id=self._find_bad_case_id(bad_cases, first_claim_day, player.name, "claim"),
+                        effect_type="estimated",
+                        recomputed_outcome={"villager_fake_god": True},
+                        evidence_event_ids=[],
+                    ))
+
+        return cases
+
+    def _coordination_cases(
+        self,
+        state: GameState,
+        bad_cases: Sequence[BadCaseReport],
+        turning_points: Sequence[TurningPoint],
+    ) -> list[CounterfactualCase]:
+        """Wolf team coordination counterfactuals — from RESERVED → ACTIVE.
+
+        From Multi-Agent Coalition Game Theory (Chen et al. 2025):
+        Wolf team coordination is a cooperative game with imperfect information.
+        Optimal wolf play requires vote alignment, consistent narratives, and
+        coordinated night kills.
+
+        Detects:
+          - Wolf teammates voted for different targets on same day (vote split)
+          - Wolf accused another wolf in speech (wolf infighting)
+          - Night kill target misaligned with wolf team's day strategy
+          - Wolf team missed a guaranteed win by not coordinating on same target
+        """
+        cases: list[CounterfactualCase] = []
+        contexts = self._build_contexts(state)
+        wolfs = [p for p in state.players if p.role in {Role.WEREWOLF, Role.WHITE_WOLF_KING}]
+        if len(wolfs) < 2:
+            return cases  # Need at least 2 wolves for coordination analysis
+
+        wolf_ids = {w.id for w in wolfs}
+
+        # ---- Case A: Wolf vote split on same day ----
+        vote_by_day: dict[int, dict[str, str]] = defaultdict(dict)
+        for event in state.events:
+            if event.type != EventType.VOTE_CAST:
+                continue
+            voter = str(event.payload.get("voter_id", ""))
+            if voter not in wolf_ids:
+                continue
+            target = str(event.payload.get("target_id", ""))
+            vote_by_day[event.day][voter] = target
+
+        for day, wolf_votes in vote_by_day.items():
+            if len(wolf_votes) < 2:
+                continue
+            unique_targets = set(wolf_votes.values())
+            if len(unique_targets) >= 2:
+                # Wolves split their votes — coordination failure
+                wolf_names = [state.player(wid).name for wid in wolf_votes]
+                target_names = [state.player(tid).name for tid in unique_targets]
+                # Check if this split cost them the vote
+                all_votes = defaultdict(int)
+                for event in state.events:
+                    if event.type == EventType.VOTE_CAST and event.day == day:
+                        all_votes[str(event.payload.get("target_id", ""))] += 1
+                top_target = max(all_votes, key=all_votes.get, default="?")
+                top_count = all_votes.get(top_target, 0)
+                wolf_count = len(wolf_votes)
+                # If wolves had united behind any one target, could they have changed the outcome?
+                united_would_win = any(
+                    all_votes.get(t, 0) + wolf_count - sum(1 for v in wolf_votes.values() if v == t) > top_count
+                    for t in unique_targets
+                )
+                cases.append(CounterfactualCase(
+                    case_id=f"{state.id}-coord-split-{day}",
+                    game_id=state.id,
+                    day=day,
+                    phase="DAY_VOTE",
+                    counterfactual_type="coordination",
+                    original_decision=f"Wolf team split votes on day {day}: {', '.join(f'{state.player(w).name}→{state.player(t).name}' for w,t in wolf_votes.items())}.",
+                    alternative_decision=f"If all wolves had coordinated on one target, they could {'have changed the vote outcome' if united_would_win else 'increase their voting power'}.",
+                    expected_effect=f"United wolf voting{' would flip the exile result' if united_would_win else ' strengthens wolf voting bloc'}.",
+                    affected_players=list(wolf_names),
+                    confidence=0.85 if united_would_win else 0.65,
+                    evidence=[
+                        f"Day {day} wolf votes: {', '.join(f'{state.player(w).name}→{state.player(t).name}' for w,t in wolf_votes.items())}.",
+                        f"Vote split across {len(unique_targets)} targets.",
+                    ] + ([f"United wolves could have changed the outcome."] if united_would_win else []),
+                    severity="major" if united_would_win else "moderate",
+                    source_bad_case_id=self._find_bad_case_id(bad_cases, day, wolf_names[0], "vote"),
+                    effect_type="estimated" if not united_would_win else "exact",
+                    recomputed_outcome={"wolf_split": True, "would_flip": united_would_win, "targets": list(unique_targets)},
+                    evidence_event_ids=[],
+                ))
+
+        # ---- Case B: Wolf-vs-wolf accusation (infighting) ----
+        for wolf in wolfs:
+            ctx = contexts.get(wolf.id)
+            if ctx is None:
+                continue
+            for speech in ctx.speech_events:
+                text = speech.payload.get("speech", "") or ""
+                for other_wolf in wolfs:
+                    if other_wolf.id == wolf.id:
+                        continue
+                    if other_wolf.name in text:
+                        # Check if it's an accusation (not a defense)
+                        accusation_keywords = ["狼", "不好", "可疑", "问题", "铁狼", "标狼", "出", "票", "查杀"]
+                        is_accusation = any(kw in text for kw in accusation_keywords)
+                        if is_accusation:
+                            cases.append(CounterfactualCase(
+                                case_id=f"{state.id}-coord-infight-{wolf.id}-{other_wolf.id}-D{speech.day}",
+                                game_id=state.id,
+                                day=speech.day,
+                                phase="DAY_SPEECH",
+                                counterfactual_type="coordination",
+                                original_decision=f"{wolf.name}(Wolf) accused wolf teammate {other_wolf.name} on day {speech.day}.",
+                                alternative_decision=f"If {wolf.name} had redirected suspicion to a villager instead of {other_wolf.name}, the wolf team would maintain better cover.",
+                                expected_effect=f"Wolf infighting reduces team coordination and exposes both wolves to village scrutiny.",
+                                affected_players=[wolf.name, other_wolf.name],
+                                confidence=0.82,
+                                evidence=[
+                                    f"{wolf.name} accused {other_wolf.name}: \"{text[:100]}...\"",
+                                    f"Both are wolf teammates.",
+                                ],
+                                severity="major",
+                                source_bad_case_id=self._find_bad_case_id(bad_cases, speech.day, wolf.name, "speech"),
+                                effect_type="estimated",
+                                recomputed_outcome={"wolf_infighting": True, "accuser": wolf.id, "accused": other_wolf.id},
+                                evidence_event_ids=[speech.id],
+                            ))
+                            break  # One case per wolf pair
+                else:
+                    continue
+                break
+
+        # ---- Case C: Night kill misaligned with wolf team day narrative ----
+        for day in range(1, state.day + 1):
+            night_kills = [
+                e for e in state.events
+                if e.type == EventType.NIGHT_ACTION
+                and e.day == day
+                and str(e.payload.get("action_type", "")) == "attack"
+                and str(e.payload.get("actor_id", "")) in wolf_ids
+            ]
+            if not night_kills:
+                continue
+            kill_target = str(night_kills[0].payload.get("target_id", ""))
+            kill_name = str(night_kills[0].payload.get("target_name", ""))
+            kill_role = str(night_kills[0].payload.get("target_role", "")) or (
+                state.player(kill_target).role.value if kill_target else "?"
+            )
+
+            # Check: did wolves vote for this person the previous day?
+            prev_day_votes = [
+                str(e.payload.get("target_id", ""))
+                for e in state.events
+                if e.type == EventType.VOTE_CAST and e.day == day
+                and str(e.payload.get("voter_id", "")) in wolf_ids
+            ]
+            if prev_day_votes and kill_target not in prev_day_votes:
+                # Wolves killed someone they didn't vote for — narrative inconsistency
+                cases.append(CounterfactualCase(
+                    case_id=f"{state.id}-coord-kill-misalign-{day}",
+                    game_id=state.id,
+                    day=day,
+                    phase="NIGHT_WOLF_ACTION",
+                    counterfactual_type="coordination",
+                    original_decision=f"Wolves voted for {', '.join(set(state.player(t).name for t in prev_day_votes))} on day {day} but killed {kill_name}({kill_role}) that night.",
+                    alternative_decision=f"If wolves had killed one of their day vote targets, the narrative consistency would be stronger.",
+                    expected_effect="Kill-vote misalignment creates a detectable pattern that skilled players can use to identify wolves.",
+                    affected_players=[state.player(wid).name for wid in wolf_ids],
+                    confidence=0.70,
+                    evidence=[
+                        f"Day {day} wolf votes: {', '.join(set(state.player(t).name for t in prev_day_votes))}.",
+                        f"Night {day} kill: {kill_name}({kill_role}).",
+                    ],
+                    severity="moderate",
+                    source_bad_case_id=self._find_bad_case_id(bad_cases, day, kill_name, "night"),
+                    effect_type="estimated",
+                    recomputed_outcome={"kill_vote_misalignment": True},
+                    evidence_event_ids=[night_kills[0].id],
+                ))
+
         return cases
 
     # ---- Shared Helpers (used by counterfactual analysis methods) ----

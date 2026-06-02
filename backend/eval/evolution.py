@@ -910,36 +910,48 @@ class StrategyKnowledgeStore:
         call this to make them available to the cognitive agent pipeline.
         """
         try:
-            from backend.db.persist import _upsert_strategy_knowledge_rows
+            from backend.db.database import SessionLocal
+            from backend.db.models import StrategyKnowledgeDoc as PGModel
         except ImportError:
             return 0
         docs = self.all(include_deprecated=False)
         if not docs:
             return 0
-        converted = []
-        for doc in docs:
-            converted.append({
-                "doc_id": doc.doc_id,
-                "situation_pattern": doc.situation_pattern,
-                "recommended_action": doc.recommended_action,
-                "rationale": doc.rationale,
-                "role": doc.role,
-                "phase": doc.phase,
-                "quality_score": doc.quality_score,
-                "confidence": doc.confidence,
-                "source_type": doc.source_type,
-                "status": doc.status,
-                "tags": list(doc.tags),
-                "embedding": list(doc.embedding) if doc.embedding else None,
-                "evidence_summary": doc.evidence_summary,
-                "counterfactual_origin_id": doc.counterfactual_origin_id,
-                "priority": doc.priority,
-                "usage_count": doc.usage_count,
-                "success_count": doc.success_count,
-                "failure_count": doc.failure_count,
-            })
-        _upsert_strategy_knowledge_rows(None, converted)
-        return len(converted)
+        db = SessionLocal()
+        saved = 0
+        try:
+            for doc in docs:
+                row = db.query(PGModel).filter(PGModel.id == doc.doc_id).first()
+                if row is None:
+                    row = PGModel(id=doc.doc_id)
+                    db.add(row)
+                row.doc_type = doc.doc_type
+                row.role = doc.role
+                row.phase = doc.phase
+                row.persona_scope = doc.persona_scope
+                row.situation_pattern = doc.situation_pattern
+                row.trigger_conditions = list(doc.trigger_conditions)
+                row.recommended_action = doc.recommended_action
+                row.avoid_action = doc.avoid_action
+                row.rationale = doc.rationale
+                row.evidence_summary = doc.evidence_summary
+                row.source_report_ids = list(doc.source_report_ids)
+                row.source_item_ids = list(doc.source_item_ids)
+                row.source_event_ids = list(doc.source_event_ids)
+                row.counterfactual_ids = list(doc.counterfactual_ids)
+                row.expected_metric_effects = list(doc.expected_metric_effects)
+                row.quality_score = doc.quality_score
+                row.confidence = doc.confidence
+                row.usage_count = doc.usage_count
+                row.success_count = doc.success_count
+                row.failure_count = doc.failure_count
+                row.status = doc.status
+                row.tags = list(doc.tags)
+                saved += 1
+            db.commit()
+        finally:
+            db.close()
+        return saved
 
     @classmethod
     def load_from_pg(cls, conn_str: str = "", *, embedding_provider=None) -> "StrategyKnowledgeStore | None":
@@ -955,28 +967,33 @@ class StrategyKnowledgeStore:
             return None
         if not rows:
             return None
-        from backend.eval.types import StrategyKnowledgeDoc
         docs = []
         for row in rows:
             docs.append(StrategyKnowledgeDoc(
                 doc_id=row.get("doc_id", ""),
-                situation_pattern=row.get("situation_pattern", "") or row.get("situation", ""),
-                recommended_action=row.get("recommended_action", "") or row.get("strategy", ""),
-                rationale=row.get("rationale", ""),
+                doc_type=row.get("doc_type", "review_extracted"),
                 role=row.get("role", "global"),
                 phase=row.get("phase", "global"),
+                persona_scope=row.get("persona_scope"),
+                situation_pattern=row.get("situation_pattern", ""),
+                trigger_conditions=list(row.get("trigger_conditions") or []),
+                recommended_action=row.get("recommended_action", ""),
+                avoid_action=row.get("avoid_action"),
+                rationale=row.get("rationale", ""),
+                evidence_summary=row.get("evidence_summary", ""),
+                source_report_ids=list(row.get("source_report_ids") or []),
+                source_item_ids=list(row.get("source_item_ids") or []),
+                source_event_ids=list(row.get("source_event_ids") or []),
+                counterfactual_ids=list(row.get("counterfactual_ids") or []),
+                expected_metric_effects=list(row.get("expected_metric_effects") or []),
                 quality_score=float(row.get("quality_score", 0.8)),
                 confidence=float(row.get("confidence", 0.7)),
-                source_type=row.get("source_type", "review_extracted"),
-                status=row.get("status", "active"),
-                tags=list(row.get("tags") or []),
-                embedding=list(row.get("embedding") or []) if row.get("embedding") else None,
-                evidence_summary=row.get("evidence_summary", ""),
-                counterfactual_origin_id=row.get("counterfactual_origin_id", ""),
-                priority=row.get("priority", "medium"),
                 usage_count=int(row.get("usage_count", 0)),
                 success_count=int(row.get("success_count", 0)),
                 failure_count=int(row.get("failure_count", 0)),
+                status=row.get("status", "active"),
+                tags=list(row.get("tags") or []),
+                embedding=list(row.get("embedding") or []),
             ))
         return cls(docs, embedding_provider=embedding_provider)
 

@@ -1430,16 +1430,27 @@ def _compute_per_step_scores(
     state: GameState,
     replay_bundle: ReplayBundle,
     speech_acts: list[SpeechAct],
+    *,
+    llm_client: Any = None,
+    cascade: bool = False,
 ) -> list[dict[str, Any]]:
-    """Compute per-step decision scores for trajectory visualization.
+    """Compute per-step decision scores with optional three-tier cascade.
 
-    Uses deterministic scoring for votes/night actions, and speech act
-    analysis for talks. This is lightweight (no LLM) and runs as part
-    of the review generation pipeline.
+    Tier 1 (deterministic): Always runs — hard rules for all decisions. Free, instant.
+    Tier 2 (light LLM):    Activates when cascade=True + llm_client is set.
+                            Single-judge LLM for ambiguous decisions (~12% of total).
+    Tier 3 (heavy LLM):    3-judge panel for high-impact + ambiguous (~3% of total).
+
+    Args:
+        state: Full game state.
+        replay_bundle: Replay data including decisions.
+        speech_acts: Analyzed speech acts.
+        llm_client: Optional LLM client for Tier 2/3 scoring.
+        cascade: If True and llm_client is provided, run the three-tier cascade.
     """
     from backend.eval.per_step_scorer import PerStepScorer
 
-    scorer = PerStepScorer()
+    scorer = PerStepScorer(llm_client=llm_client)
     players = {p.id: p for p in state.players}
     state_dict = {
         "players": [{
@@ -1455,15 +1466,15 @@ def _compute_per_step_scores(
         for a in speech_acts
     ]
 
-    scores = []
+    # Build decision dicts for score_all (standard format)
+    decision_dicts = []
     for decision in (replay_bundle.decisions or []):
-        # ReplayBundle.decisions is list[dict] — use key access, not attribute access
         pa = decision.get("selected_action") or {}
         player_id = decision.get("player_id", "")
         player = players.get(player_id)
         if player is None:
             continue
-        info = {
+        decision_dicts.append({
             "id": decision.get("decision_id", ""),
             "player_id": player_id,
             "player_name": player.name,
@@ -1473,29 +1484,130 @@ def _compute_per_step_scores(
             "target_id": pa.get("target_id", ""),
             "action_type": pa.get("action_type", ""),
             "raw_text": str(pa.get("reasoning", "") or ""),
+        })
+
+    # Run cascade scoring
+    if cascade and llm_client is not None:
+        scores = scorer.score_all(decision_dicts, state_dict, acts_dicts, light_llm=True, heavy_llm=True)
+        tier_counts = scorer.tally_tiers(scores)
+        import logging
+        logging.getLogger(__name__).info(f"Per-step cascade complete: {tier_counts}")
+    else:
+        scores = scorer.score_all(decision_dicts, state_dict, acts_dicts)
+
+    return [
+        {
+            "decision_id": s.decision_id, "player_name": s.player_name,
+            "role": s.role, "day": s.day, "phase": s.phase,
+            "action_type": s.action_type, "correctness": s.correctness,
+            "overall_score": s.overall_score, "evidence": s.evidence,
+            "scoring_tier": s.scoring_tier,
+            "light_llm_score": s.light_llm_score,
+            "heavy_llm_score": s.heavy_llm_score,
+            "metadata": s.metadata,
         }
-        try:
-            phase = decision.get("phase", "")
-            if "VOTE" in phase or "BADGE_ELECTION" in phase:
-                s = scorer.score_vote(info, state_dict)
-            elif "SPEECH" in phase or "TALK" in phase or "LAST_WORDS" in phase:
-                s = scorer.score_talk(info, acts_dicts, state_dict)
-            elif "NIGHT" in phase or "HUNTER" in phase or "BADGE_TRANSFER" in phase:
-                s = scorer.score_night(info, state_dict)
-            else:
+        for s in scores
+    ]
+
+
+def _compute_llm_game_scores(
+    state: GameState,
+    replay_bundle: ReplayBundle,
+    llm_client: Any,
+) -> list[dict[str, Any]] | None:
+    """Run full LLM Judge Panel (3-judge + Critic round) for game-level scoring.
+
+    This is the heaviest scoring tier — 3 specialized judges independently score
+    each player on strategy, logic, and social dimensions, then a Critic round
+    challenges extreme scores, followed by trimmed-mean aggregation.
+
+    Args:
+        state: Full game state.
+        replay_bundle: Replay data including decisions.
+        llm_client: LLM client (must support chat_sync).
+
+    Returns:
+        List of GameLevelScore dicts, or None on failure.
+    """
+    try:
+        from backend.eval.llm_judge import LLMJudgePanel
+
+        panel = LLMJudgePanel(llm_client)
+
+        # Build game_state dict for the judge panel
+        game_state_dict = {
+            "winner": str(state.winner or "unknown"),
+            "players": [{
+                "name": p.name,
+                "role": p.role.value if hasattr(p.role, 'value') else str(p.role),
+                "alignment": p.alignment.value if hasattr(p.alignment, 'value') else str(p.alignment),
+            } for p in state.players],
+            "events": [
+                {
+                    "type": e.type.value if hasattr(e.type, 'value') else str(e.type),
+                    "day": e.day,
+                    "phase": e.phase.value if hasattr(e.phase, 'value') else str(e.phase),
+                    "payload": e.payload or {},
+                }
+                for e in state.events[-200:]  # Last 200 events max
+            ],
+        }
+
+        # Build player_decisions dict
+        player_decisions: dict[str, list[dict]] = {}
+        for decision in (replay_bundle.decisions or []):
+            pa = decision.get("selected_action") or {}
+            player_name = decision.get("player_name", "") or str(
+                next((p.name for p in state.players if p.id == decision.get("player_id", "")), "")
+            )
+            if not player_name:
                 continue
-            scores.append({
-                "decision_id": s.decision_id, "player_name": s.player_name,
-                "role": s.role, "day": s.day, "phase": s.phase,
-                "action_type": s.action_type, "correctness": s.correctness,
-                "overall_score": s.overall_score, "evidence": s.evidence,
+            player_decisions.setdefault(player_name, []).append({
+                "id": decision.get("decision_id", ""),
+                "player_name": player_name,
+                "player_role": decision.get("player_role", ""),
+                "day": decision.get("day", 0),
+                "phase": decision.get("phase", ""),
+                "action_type": pa.get("action_type", ""),
+                "target_id": pa.get("target_id", ""),
+                "raw_text": str(pa.get("reasoning", "") or ""),
             })
-        except Exception:
-            continue
-    return scores
+
+        game_scores = panel.score_game(game_state_dict, player_decisions)
+
+        return [
+            {
+                "player_name": s.player_name, "role": s.role, "alignment": s.alignment,
+                "strategy_score": s.strategy_score, "logic_score": s.logic_score,
+                "social_score": s.social_score, "composite": s.composite,
+                "judge_agreement": s.judge_agreement,
+                "rubric_hash": s.rubric_hash,
+            }
+            for s in game_scores
+        ]
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"LLM game-level scoring failed: {e}")
+        return None
 
 
-def generate_published_review_document(state: GameState, *, view_scope: str = "moderator_view") -> PublishedReviewDocument:
+def generate_published_review_document(
+    state: GameState, *,
+    view_scope: str = "moderator_view",
+    llm_client: Any = None,
+    cascade: bool = False,
+) -> PublishedReviewDocument:
+    """Generate a complete published review document for a finished game.
+
+    Args:
+        state: Completed game state.
+        view_scope: Visibility scope for the published document.
+        llm_client: Optional LLM client. When provided with cascade=True,
+                    enables Tier 2 (light LLM single-judge) and Tier 3
+                    (heavy LLM 3-judge panel) scoring.
+        cascade: If True and llm_client is provided, run three-tier cascade
+                 (deterministic → light LLM → heavy LLM).
+    """
     replay_bundle = ReplayBundleBuilder().build(state)
     generated = generate_review_report(state)
     review_report = dict(generated["report"])
@@ -1524,9 +1636,18 @@ def generate_published_review_document(state: GameState, *, view_scope: str = "m
         # demote unhelpful knowledge over time.
         knowledge_feedback = _record_knowledge_usage(state, review_report)
     leaderboard_snapshot = _build_leaderboard_snapshot(review_report)
-    # B Track: per-step decision scoring for trajectory visualization
-    per_step_scores = _compute_per_step_scores(state, replay_bundle, speech_acts)
+    # B Track: per-step decision scoring (three-tier cascade when llm_client provided)
+    per_step_scores = _compute_per_step_scores(
+        state, replay_bundle, speech_acts,
+        llm_client=llm_client, cascade=cascade,
+    )
     review_report.setdefault("metadata", {})["per_step_scores"] = per_step_scores
+
+    # C Track: LLM Judge Panel game-level scoring (optional, heavy)
+    if cascade and llm_client is not None:
+        llm_game_scores = _compute_llm_game_scores(state, replay_bundle, llm_client)
+        if llm_game_scores:
+            review_report.setdefault("metadata", {})["llm_game_scores"] = llm_game_scores
     preview_document = PublishedReviewDocument(
         report_id=str(uuid4()),
         game_id=state.id,
