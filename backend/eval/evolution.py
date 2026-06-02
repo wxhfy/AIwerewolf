@@ -902,6 +902,84 @@ class StrategyKnowledgeStore:
         Path(path).write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         return payload
 
+    def sync_to_pg(self, conn_str: str = "") -> int:
+        """Write active/candidate docs to PostgreSQL so cognitive agents can retrieve them.
+
+        Bridges Track C evolution → agent strategy retrieval via the shared
+        strategy_knowledge_docs table. After generating new knowledge patches,
+        call this to make them available to the cognitive agent pipeline.
+        """
+        try:
+            from backend.db.persist import _upsert_strategy_knowledge_rows
+        except ImportError:
+            return 0
+        docs = self.all(include_deprecated=False)
+        if not docs:
+            return 0
+        converted = []
+        for doc in docs:
+            converted.append({
+                "doc_id": doc.doc_id,
+                "situation_pattern": doc.situation_pattern,
+                "recommended_action": doc.recommended_action,
+                "rationale": doc.rationale,
+                "role": doc.role,
+                "phase": doc.phase,
+                "quality_score": doc.quality_score,
+                "confidence": doc.confidence,
+                "source_type": doc.source_type,
+                "status": doc.status,
+                "tags": list(doc.tags),
+                "embedding": list(doc.embedding) if doc.embedding else None,
+                "evidence_summary": doc.evidence_summary,
+                "counterfactual_origin_id": doc.counterfactual_origin_id,
+                "priority": doc.priority,
+                "usage_count": doc.usage_count,
+                "success_count": doc.success_count,
+                "failure_count": doc.failure_count,
+            })
+        _upsert_strategy_knowledge_rows(None, converted)
+        return len(converted)
+
+    @classmethod
+    def load_from_pg(cls, conn_str: str = "", *, embedding_provider=None) -> "StrategyKnowledgeStore | None":
+        """Load strategy knowledge docs from PostgreSQL into the in-memory store.
+
+        Reverse bridge: reads what cognitive agents / previous evolution cycles
+        have stored. Use this when resuming evolution from persisted state.
+        """
+        try:
+            from backend.db.persist import list_strategy_knowledge
+            rows = list_strategy_knowledge(limit=10000)
+        except ImportError:
+            return None
+        if not rows:
+            return None
+        from backend.eval.types import StrategyKnowledgeDoc
+        docs = []
+        for row in rows:
+            docs.append(StrategyKnowledgeDoc(
+                doc_id=row.get("doc_id", ""),
+                situation_pattern=row.get("situation_pattern", "") or row.get("situation", ""),
+                recommended_action=row.get("recommended_action", "") or row.get("strategy", ""),
+                rationale=row.get("rationale", ""),
+                role=row.get("role", "global"),
+                phase=row.get("phase", "global"),
+                quality_score=float(row.get("quality_score", 0.8)),
+                confidence=float(row.get("confidence", 0.7)),
+                source_type=row.get("source_type", "review_extracted"),
+                status=row.get("status", "active"),
+                tags=list(row.get("tags") or []),
+                embedding=list(row.get("embedding") or []) if row.get("embedding") else None,
+                evidence_summary=row.get("evidence_summary", ""),
+                counterfactual_origin_id=row.get("counterfactual_origin_id", ""),
+                priority=row.get("priority", "medium"),
+                usage_count=int(row.get("usage_count", 0)),
+                success_count=int(row.get("success_count", 0)),
+                failure_count=int(row.get("failure_count", 0)),
+            ))
+        return cls(docs, embedding_provider=embedding_provider)
+
     def _index(self, doc: StrategyKnowledgeDoc) -> None:
         for tag in {doc.role, doc.phase, *doc.tags}:
             self.edges[f"{tag}:has_doc"].add(doc.doc_id)
@@ -1831,11 +1909,13 @@ class DreamJob:
         patch_generator: StrategyPatchGenerator | None = None,
         patch_validator: PatchValidator | None = None,
         version_manager: VersionManager | None = None,
+        pg_conn_str: str = "",
     ) -> None:
         self.extractor = extractor or StrategyKnowledgeDocExtractor()
         self.store = store or StrategyKnowledgeStore()
         self.patch_generator = patch_generator or StrategyPatchGenerator()
         self.patch_validator = patch_validator or PatchValidator()
+        self.pg_conn_str = pg_conn_str
         # Track C §9 accepted_patch loop: VersionManager.promote() writes back
         # an accepted_patch knowledge doc, so wire the same store in.
         self.version_manager = version_manager or VersionManager(knowledge_store=self.store)
@@ -1858,12 +1938,21 @@ class DreamJob:
             else:
                 patch.status = "rejected"
         roles = sorted({doc.role for doc in saved_docs if doc.role != "global"})
+        # Bridge: sync extracted knowledge to PostgreSQL so cognitive agents can retrieve it
+        if self.pg_conn_str and saved_docs:
+            try:
+                n = self.store.sync_to_pg(self.pg_conn_str)
+                saved_count = n
+            except Exception:
+                saved_count = len(saved_docs)
+        else:
+            saved_count = len(saved_docs)
         summary = DreamSummary(
             source_reports=len(reports),
-            knowledge_docs_created=len(saved_docs),
+            knowledge_docs_created=saved_count,
             candidate_patches_created=len(candidate_patches),
             repeated_roles=roles,
-            summary=f"Extracted {len(saved_docs)} sanitized strategy lessons and proposed {len(candidate_patches)} candidate patches.",
+            summary=f"Extracted {saved_count} sanitized strategy lessons and proposed {len(candidate_patches)} candidate patches.",
         )
         return DreamResult(saved_docs, candidate_patches, summary)
 
