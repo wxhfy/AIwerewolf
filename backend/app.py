@@ -47,8 +47,9 @@ def _build_game(
     human_seat: Optional[int] = None,
     player_count: int = 10,
     rule_pack_id: str = "wolfcha-default",
+    phase_delay_ms: float = 0,
 ) -> WerewolfGame:
-    game = WerewolfGame(seed=seed, player_count=player_count)
+    game = WerewolfGame(seed=seed, player_count=player_count, phase_delay_ms=phase_delay_ms)
     game.attach_agents(
         create_agents(
             game.state.players,
@@ -614,6 +615,7 @@ async def stream_game(
     room_id: str | None = None,
     player_count: int = 7,
     rule_pack_id: str = "wolfcha-default",
+    delay_ms: float = 800,
 ) -> GameState:
     """Stream game snapshots to WebSocket in real-time as the game progresses.
 
@@ -649,10 +651,14 @@ async def stream_game(
             is_reused_running = game._play_started
 
     if game is None:
-        game = _build_game(seed=seed, agent_type=agent_type, player_count=player_count, rule_pack_id=rule_pack_id)
+        game = _build_game(seed=seed, agent_type=agent_type, player_count=player_count, rule_pack_id=rule_pack_id, phase_delay_ms=delay_ms)
         if room_id:
             _rooms.set_active_game(room_id, game)
             _rooms.reset_snapshot_buffer(room_id)
+    else:
+        # Override the delay on an existing game so the WS caller's speed
+        # preference takes effect even when the game was pre-built by /prepare.
+        game.phase_delay_ms = delay_ms
 
     def observe(state: GameState) -> None:
         snapshot = state.snapshot(show_private=show_private)
@@ -741,9 +747,10 @@ async def games_ws(websocket: WebSocket) -> None:
             seed = int(payload.get("seed", 7))
             agent_type = str(payload.get("agent_type", "llm"))
             show_private = bool(payload.get("show_private", False))
+            delay_ms = max(0, float(payload.get("delay_ms", 800)))
             await websocket.send_json({"type": "status", "status": "starting"})
             player_count = int(payload.get("player_count", 7))
-            state = await stream_game(websocket, seed, show_private, agent_type=agent_type, player_count=player_count)
+            state = await stream_game(websocket, seed, show_private, agent_type=agent_type, player_count=player_count, delay_ms=delay_ms)
             final = state.snapshot(show_private=show_private)
             await websocket.send_json({"type": "complete", "state": final})
     except WebSocketDisconnect:
@@ -772,6 +779,7 @@ async def room_ws(websocket: WebSocket, room_id: str) -> None:
             show_private = bool(payload.get("show_private", False))
             room.seed = int(payload.get("seed", room.seed))
             room.agent_type = str(payload.get("agent_type", room.agent_type))
+            delay_ms = max(0, float(payload.get("delay_ms", 800)))
             _rooms.set_room_status(room_id, "running")
             await websocket.send_json({"type": "room", "room": room.to_dict()})
             state = await stream_game(
@@ -782,6 +790,7 @@ async def room_ws(websocket: WebSocket, room_id: str) -> None:
                 room_id=room_id,
                 player_count=room.player_count,
                 rule_pack_id=room.rule_pack_id,
+                delay_ms=delay_ms,
             )
             final = state.snapshot(show_private=show_private)
             room = _rooms.record_game(room_id, state, final)

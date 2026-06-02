@@ -14,23 +14,21 @@ interface PlayerRailProps {
   humanSeat: number;
   wolfTeammates?: string[];
   side: "left" | "right";
+  spokenInPhase: Set<string>;
+  votedSet: Set<string>;
+  voteCount: Map<string, number>;
+  /** Maps voterId → target player name */
+  voteTarget: Map<string, string>;
 }
 
 export function PlayerRail({
-  players,
-  fallbackPlayers,
-  pendingPlayerId,
-  activeSpeakerId,
-  sheriffId,
-  badgeCandidateSet,
-  isHumanMode,
-  humanSeat,
-  wolfTeammates,
-  side,
+  players, fallbackPlayers, pendingPlayerId, activeSpeakerId,
+  sheriffId, badgeCandidateSet, isHumanMode, humanSeat,
+  wolfTeammates, side, spokenInPhase, votedSet, voteCount, voteTarget,
 }: PlayerRailProps) {
   const visiblePlayers = players.length > 0 ? players : fallbackPlayers;
   return (
-    <aside className={`hidden w-[21%] min-w-[150px] flex-col gap-2 overflow-y-auto p-3 lg:flex [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] ${side === "left" ? "border-r" : "border-l"} border-border`}>
+    <aside className={`hidden w-[21%] min-w-[150px] flex-col gap-2 overflow-y-auto p-3 lg:flex timeline-scroll ${side === "left" ? "border-r" : "border-l"} border-border`}>
       {visiblePlayers.map((player, index) => (
         <PlayerCard
           key={player.id || index}
@@ -41,6 +39,10 @@ export function PlayerRail({
           isBadgeCandidate={badgeCandidateSet.has(player.id)}
           showOwnRole={isHumanMode && player.seat === humanSeat}
           wolfTeammates={isHumanMode && player.seat === humanSeat ? wolfTeammates : undefined}
+          hasSpoken={spokenInPhase.has(player.id)}
+          hasVoted={votedSet.has(player.id)}
+          voteCount={voteCount.get(player.id) || 0}
+          voteTargetName={voteTarget.get(player.id)}
         />
       ))}
     </aside>
@@ -50,15 +52,9 @@ export function PlayerRail({
 interface MobilePlayerRailProps extends Omit<PlayerRailProps, "side"> {}
 
 export function MobilePlayerRail({
-  players,
-  fallbackPlayers,
-  pendingPlayerId,
-  activeSpeakerId,
-  sheriffId,
-  badgeCandidateSet,
-  isHumanMode,
-  humanSeat,
-  wolfTeammates,
+  players, fallbackPlayers, pendingPlayerId, activeSpeakerId,
+  sheriffId, badgeCandidateSet, isHumanMode, humanSeat,
+  wolfTeammates, spokenInPhase, votedSet, voteCount, voteTarget,
 }: MobilePlayerRailProps) {
   const visiblePlayers = players.length > 0 ? players : fallbackPlayers;
   return (
@@ -73,6 +69,10 @@ export function MobilePlayerRail({
             isBadgeCandidate={badgeCandidateSet.has(player.id)}
             showOwnRole={isHumanMode && player.seat === humanSeat}
             wolfTeammates={isHumanMode && player.seat === humanSeat ? wolfTeammates : undefined}
+            hasSpoken={spokenInPhase.has(player.id)}
+            hasVoted={votedSet.has(player.id)}
+            voteCount={voteCount.get(player.id) || 0}
+            voteTargetName={voteTarget.get(player.id)}
           />
         </div>
       ))}

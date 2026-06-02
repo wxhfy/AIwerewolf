@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import { GameEvent, EventType } from "@/types";
 import { useAppContext } from "@/context/AppContext";
 import { t, tPhase, format } from "@/lib/i18n";
@@ -24,6 +24,22 @@ const stripColor: Record<string, string> = {
   [EventType.GAME_START]: "bg-primary/40",
   [EventType.SYSTEM_MESSAGE]: "bg-text-sub/40",
 };
+
+function VoteReasoning({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  const short = text.slice(0, 60);
+  const needsToggle = text.length > 80;
+  return (
+    <p className="text-xs text-text-sub mt-1 leading-snug">
+      {open || !needsToggle ? text : `${short}...`}
+      {needsToggle && (
+        <button onClick={() => setOpen(!open)} className="ml-1 text-primary hover:underline text-[10px]">
+          {open ? "收起" : "展开"}
+        </button>
+      )}
+    </p>
+  );
+}
 
 export function EventItem({ event, index = 0 }: EventItemProps) {
   const { language, viewMode } = useAppContext();
@@ -55,15 +71,28 @@ export function EventItem({ event, index = 0 }: EventItemProps) {
     }
 
     if (event.type === EventType.VOTE_CAST) {
+      const isPkVote = (p as any).is_pk_vote;
+      const weight = (p as any).vote_weight;
       return (
-        <span className="text-sm text-textPrimary">
-          <span className="font-medium">{p.voter_name}</span>
-          <span className="text-text-sub"> &#8594; </span>
-          <span className="font-medium">{p.target_name}</span>
-          {p.reasoning && (
-            <span className="text-text-sub ml-1">({p.reasoning})</span>
-          )}
-        </span>
+        <div className={cn(
+          "rounded-card border px-3 py-2",
+          isPkVote ? "border-warning/30 bg-warning/5" : "border-border/50 bg-cardBackground/50"
+        )}>
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium text-textPrimary">{p.voter_name}</span>
+            <span className="text-accent text-sm">→</span>
+            <span className={cn("text-sm font-semibold", isPkVote ? "text-warning" : "text-primary")}>
+              {p.target_name}
+            </span>
+            {weight && weight > 1 && (
+              <span className="text-[10px] bg-accent/15 text-accent px-1.5 py-0.5 rounded-full font-bold">{weight}票</span>
+            )}
+            {isPkVote && (
+              <span className="text-[10px] bg-warning/15 text-warning px-1.5 py-0.5 rounded-full">PK</span>
+            )}
+          </div>
+          {p.reasoning && <VoteReasoning text={p.reasoning as string} />}
+        </div>
       );
     }
 
@@ -72,12 +101,21 @@ export function EventItem({ event, index = 0 }: EventItemProps) {
       event.type === EventType.HUNTER_SHOT ||
       event.type === EventType.WHITE_WOLF_KING_BOOM
     ) {
+      const reasonMap: Record<string, string> = {
+        vote: language === "zh" ? "投票放逐" : "voted out",
+        wolf: language === "zh" ? "狼人击杀" : "killed by wolf",
+        poison: language === "zh" ? "女巫毒杀" : "poisoned",
+        hunter: language === "zh" ? "猎人开枪" : "hunter shot",
+        boom: language === "zh" ? "白狼王自爆" : "WWK boom",
+      };
+      const rawReason = (p.reason as string) || "";
+      const displayReason = reasonMap[rawReason] || rawReason;
       return (
         <span className="text-sm text-danger font-medium">
-          {format(t("died", language), {
-            player: p.player_name || p.target_name || "",
-            reason: p.reason || event.type.toLowerCase(),
-          })}
+          {p.player_name || p.target_name || "?"}
+          {language === "zh" ? " 因" : " died by "}
+          {displayReason}
+          {language === "zh" ? " 出局" : ""}
         </span>
       );
     }

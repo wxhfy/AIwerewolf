@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from collections import Counter
 from random import Random
 from typing import Any, Callable
@@ -84,6 +85,7 @@ class WerewolfGame:
         strategy_version: str | None = None,
         strategy_bias: dict[str, list[str]] | None = None,
         strategy_bias_by_role: dict[str, dict[str, list[str]]] | None = None,
+        phase_delay_ms: float = 0,
     ):
         self.rng = Random(seed)
         self.strategy_version = strategy_version
@@ -107,6 +109,7 @@ class WerewolfGame:
         self.pending_badge_transfer_from_id: str | None = None
         self.human_action_buffer: dict[str, list[Decision]] = {}
         self.interrupt_phase_cycle = False
+        self.phase_delay_ms = phase_delay_ms
         # `_play_started` flips True the moment someone calls play() so a
         # reconnecting WebSocket can tell "this game is already running, just
         # tail it" apart from "this game was prepared but never started — I
@@ -303,9 +306,9 @@ class WerewolfGame:
             except Exception:
                 pass
         self.state.pending_input = None
-        self.interrupt_phase_cycle = False
         try:
             while self.state.winner is None and self.state.day < self.state.max_days:
+                self.interrupt_phase_cycle = False
                 if self.state.phase in {Phase.SETUP, Phase.DAY_RESOLVE, Phase.HUNTER_SHOOT, Phase.WHITE_WOLF_KING_BOOM, Phase.GAME_END}:
                     self.phase_manager.run(Phase.NIGHT_START, self)
                 elif self.state.phase == Phase.BADGE_TRANSFER:
@@ -372,6 +375,8 @@ class WerewolfGame:
         self._set_phase(Phase.NIGHT_START)
         self._log(EventType.SYSTEM_MESSAGE, "public", {"message": f"Night {self.state.day} begins."})
         self._mark_phase_done(Phase.NIGHT_START)
+        if self.phase_delay_ms > 0:
+            time.sleep(self.phase_delay_ms / 1000)
 
     def _begin_day(self) -> None:
         # Resume safety: day already initialized for this day → skip.
@@ -695,6 +700,8 @@ class WerewolfGame:
             self._log(EventType.SYSTEM_MESSAGE, "public", {"message": f"Night deaths: {', '.join(names)}."})
         else:
             self._log(EventType.SYSTEM_MESSAGE, "public", {"message": "No one died last night."})
+        if self.phase_delay_ms > 0:
+            time.sleep(self.phase_delay_ms / 1000)
         # Hunter killed at night can shoot (unless poisoned - handled in _kill)
         for death in unique_deaths:
             target = self.state.player(death["player_id"])
@@ -790,6 +797,8 @@ class WerewolfGame:
             self.state.day_history[self.state.day] = {"voteTie": True}
             self.state.pk_targets = list(target_ids)
             self.state.pk_source = "vote"
+            names = ", ".join(self.state.player(tid).name for tid in target_ids)
+            self._log(EventType.SYSTEM_MESSAGE, "public", {"message": f"Vote tied. PK round between {names}."})
             # Allow the PK round to re-run the speech + vote phases that we
             # already marked done for the regular day flow.
             self._clear_phase_done(Phase.DAY_PK_SPEECH, Phase.DAY_VOTE, Phase.DAY_RESOLVE)
@@ -827,6 +836,8 @@ class WerewolfGame:
         self._kill(target_id, "vote")
         target = self.state.player(target_id)
         self._log(EventType.SYSTEM_MESSAGE, "public", {"message": f"{target.name} was voted out."})
+        if self.phase_delay_ms > 0:
+            time.sleep(self.phase_delay_ms / 1000)
         # Defensive: when the recursive PK path runs with no usable ballots,
         # vote_history[day] may not have been written this round. Fall back to
         # the empty dict so the executed-summary still serializes.
@@ -881,9 +892,12 @@ class WerewolfGame:
                 "agent_fallback": bool(decision.metadata.get("fallback", False)),
             },
         )
+        if self.phase_delay_ms > 0:
+            time.sleep(self.phase_delay_ms / 1000)
         if self.pending_badge_transfer_from_id and self.state.winner is None:
             self.phase_manager.run(Phase.BADGE_TRANSFER, self)
         self._refresh_day_summary()
+        self._check_win()
 
     def _last_words_phase(self, player_id: str) -> None:
         player = self.state.player(player_id)
@@ -973,6 +987,7 @@ class WerewolfGame:
             self.phase_manager.run(Phase.BADGE_TRANSFER, self)
         self.interrupt_phase_cycle = True
         self._refresh_day_summary()
+        self._check_win()
 
     def _badge_transfer_from_pending(self) -> None:
         if self.pending_badge_transfer_from_id is None:

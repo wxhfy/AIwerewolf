@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { AppProvider } from "@/context/AppContext";
+import { HtmlLang } from "@/components/ui/HtmlLang";
 
 export const metadata: Metadata = {
   title: "AI Werewolf",
@@ -15,7 +16,10 @@ export default function RootLayout({
   return (
     <html lang="zh-CN">
       <body className="min-h-screen">
-        <AppProvider>{children}</AppProvider>
+        <AppProvider>
+          <HtmlLang />
+          {children}
+        </AppProvider>
       </body>
     </html>
   );
