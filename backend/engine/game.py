@@ -1,15 +1,10 @@
 from __future__ import annotations
 
-import hashlib
-import json
-import logging
-import os
+import time
 from collections import Counter
 from random import Random
 from typing import Any, Callable
 from uuid import uuid4
-
-logger = logging.getLogger(__name__)
 
 from backend.agents.base import Agent
 from backend.agents.characters import Character, build_character_roster
@@ -33,25 +28,6 @@ from backend.engine.phase_manager import PhaseManager
 from backend.engine.rules import DEFAULT_ROLE_SET, build_players, get_role_configuration
 from backend.engine.summary import build_day_summary
 from backend.engine.visibility import Visibility
-
-
-def _shuffle_personas_pool(count: int, seed: int | None) -> list[dict] | None:
-    """Shuffle in-memory PERSONA_POOL by seed so MBTI→role varies per game.
-
-    Each game gets a different set of personas (with different MBTIs)
-    assigned to different seats. Over many games each MBTI type plays
-    every role, enabling proper MBTI×Role win-rate analysis.
-    """
-    import random as _random
-    from backend.agents.characters import PERSONA_POOL
-    rng = _random.Random(seed or 0)
-    pool = list(PERSONA_POOL)
-    rng.shuffle(pool)
-    # Pick `count` unique personas (cycle if pool < count)
-    result = []
-    for i in range(count):
-        result.append(dict(pool[i % len(pool)]))
-    return result
 
 
 def _phase_already_past(current: Phase, target: Phase) -> bool:
@@ -109,7 +85,7 @@ class WerewolfGame:
         strategy_version: str | None = None,
         strategy_bias: dict[str, list[str]] | None = None,
         strategy_bias_by_role: dict[str, dict[str, list[str]]] | None = None,
-        sampled_personas: list[dict] | None = None,
+        phase_delay_ms: float = 0,
     ):
         self.rng = Random(seed)
         self.strategy_version = strategy_version
@@ -133,21 +109,18 @@ class WerewolfGame:
         self.pending_badge_transfer_from_id: str | None = None
         self.human_action_buffer: dict[str, list[Decision]] = {}
         self.interrupt_phase_cycle = False
+        self.phase_delay_ms = phase_delay_ms
         # `_play_started` flips True the moment someone calls play() so a
         # reconnecting WebSocket can tell "this game is already running, just
         # tail it" apart from "this game was prepared but never started — I
         # should start it now". play_done fires when play() returns so tailing
         # clients have a definite signal to stop polling.
         import threading as _threading
+
         self._play_started: bool = False
         self.play_done: _threading.Event = _threading.Event()
         self._play_start_lock: _threading.Lock = _threading.Lock()
-        self._shared_lock: _threading.RLock = _threading.RLock()
-        sampled_personas = sampled_personas or self._sample_personas_from_db(len(self.state.players), seed)
-        if not sampled_personas:
-            # DB unavailable — shuffle in-memory PERSONA_POOL per seed so
-            # each MBTI plays different roles across games (not name-bound).
-            sampled_personas = _shuffle_personas_pool(len(self.state.players), seed)
+        sampled_personas = self._sample_personas_from_db(len(self.state.players), seed)
         if sampled_personas:
             # Adopt the sampled persona's display name onto the seat so the
             # in-game card, system prompt and audit log all reference the
@@ -164,13 +137,13 @@ class WerewolfGame:
         for role_name, bias in self.strategy_bias_by_role.items():
             role_models_from_bias[role_name] = {"strategy_bias": bias}
         self.attach_agents(
-            agents or create_agents(
+            agents
+            or create_agents(
                 self.state.players,
                 {
-                    "type": os.environ.get("AIWEREWOLF_DEFAULT_AGENT_TYPE", "llm"),
+                    "type": "heuristic",
                     "seed": seed or 0,
-                    "temperature": 1.0,
-                    "speech_temperature": 1.0,
+                    "temperature": 0.4,
                     "character_map": self.characters,
                     "strategy_bias": self.strategy_bias,
                     "role_models": role_models_from_bias,
@@ -187,6 +160,7 @@ class WerewolfGame:
         """
         try:
             from backend.db.persona_db import sample_personas
+
             return sample_personas(count, seed=seed)
         except Exception:
             return None
@@ -219,23 +193,20 @@ class WerewolfGame:
         clear specific completion flags and re-run the relevant handlers without
         interfering with the resume-after-human-pause skip logic.
         """
-        with self._shared_lock:
-            return phase.value in self.state.phase_done.get(self.state.day, [])
+        return phase.value in self.state.phase_done.get(self.state.day, [])
 
     def _mark_phase_done(self, phase: Phase) -> None:
-        with self._shared_lock:
-            bucket = self.state.phase_done.setdefault(self.state.day, [])
-            if phase.value not in bucket:
-                bucket.append(phase.value)
+        bucket = self.state.phase_done.setdefault(self.state.day, [])
+        if phase.value not in bucket:
+            bucket.append(phase.value)
 
     def _clear_phase_done(self, *phases: Phase) -> None:
-        with self._shared_lock:
-            bucket = self.state.phase_done.get(self.state.day)
-            if not bucket:
-                return
-            for phase in phases:
-                if phase.value in bucket:
-                    bucket.remove(phase.value)
+        bucket = self.state.phase_done.get(self.state.day)
+        if not bucket:
+            return
+        for phase in phases:
+            if phase.value in bucket:
+                bucket.remove(phase.value)
 
     def _seat_sorted(self, players: list[Player]) -> list[Player]:
         """Return players ordered by seat number.
@@ -298,10 +269,7 @@ class WerewolfGame:
         )
         for player in self.state.players:
             view = self.visibility.for_player(self.state, player.id)
-            self.agents[player.id].initialize(
-                view,
-                {"max_days": self.state.max_days, "game_id": self.state.id},
-            )
+            self.agents[player.id].initialize(view, {"max_days": self.state.max_days})
             self._log(
                 EventType.PRIVATE_INFO,
                 "private",
@@ -327,7 +295,9 @@ class WerewolfGame:
             while self.state.winner is None:
                 self.play_until_blocked()
                 if self.state.pending_input is not None:
-                    raise RuntimeError("Human input required; use play_until_blocked/submit_human_action for mixed games.")
+                    raise RuntimeError(
+                        "Human input required; use play_until_blocked/submit_human_action for mixed games."
+                    )
             return self.state
         finally:
             self.play_done.set()
@@ -337,17 +307,21 @@ class WerewolfGame:
             self.initialize()
             try:
                 from backend.db.persist import save_game_start
+
                 save_game_start(self.state)
             except Exception:
-                import logging
-                logging.getLogger(__name__).warning(
-                    "save_game_start failed (non-fatal, game continues)", exc_info=True
-                )
+                pass
         self.state.pending_input = None
-        self.interrupt_phase_cycle = False
         try:
             while self.state.winner is None and self.state.day < self.state.max_days:
-                if self.state.phase in {Phase.SETUP, Phase.DAY_RESOLVE, Phase.HUNTER_SHOOT, Phase.WHITE_WOLF_KING_BOOM, Phase.GAME_END}:
+                self.interrupt_phase_cycle = False
+                if self.state.phase in {
+                    Phase.SETUP,
+                    Phase.DAY_RESOLVE,
+                    Phase.HUNTER_SHOOT,
+                    Phase.WHITE_WOLF_KING_BOOM,
+                    Phase.GAME_END,
+                }:
                     self.phase_manager.run(Phase.NIGHT_START, self)
                 elif self.state.phase == Phase.BADGE_TRANSFER:
                     # Badge transfer after night death → continue to day
@@ -382,30 +356,10 @@ class WerewolfGame:
                 agent.finish(self.state.winner.value if self.state.winner else None)
             try:
                 from backend.db.persist import save_game_end
+
                 save_game_end(self.state)
             except Exception:
-                import logging
-                logging.getLogger(__name__).warning(
-                    "save_game_end failed (non-fatal)", exc_info=True
-                )
-            # Track B→C: score decisions + extract knowledge (post-game, has ground truth)
-            try:
-                from backend.eval.post_game import run_post_game_scoring
-                n = run_post_game_scoring(self.state, str(self.state.id))
-                import logging
-                if n > 0:
-                    logging.getLogger(__name__).info(
-                        f"Post-game scoring: {n} knowledge lessons extracted for game {self.state.id}"
-                    )
-                elif os.getenv("REQUIRE_POST_GAME_SCORING", "").lower() == "true":
-                    logging.getLogger(__name__).error("STRICT FAIL: Post-game scoring produced 0 lessons")
-            except Exception:
-                if os.getenv("REQUIRE_POST_GAME_SCORING", "").lower() == "true":
-                    raise  # fail fast in strict mode
-                import logging
-                logging.getLogger(__name__).warning(
-                    "Post-game scoring failed (non-fatal)", exc_info=True
-                )
+                pass
         return self.state
 
     def submit_human_action(self, payload: dict[str, object]) -> GameState:
@@ -419,12 +373,12 @@ class WerewolfGame:
         return self.play_until_blocked()
 
     def _begin_night(self) -> None:
-        # Resume safety: use _phase_done which checks current day.
-        # On first call (day=0): phase_done[0] empty → proceed → day→1 → mark day 1.
-        # On resume (day=1): phase_done[1] has NIGHT_START → skip (already started).
-        if self._phase_done(Phase.NIGHT_START):
+        # Resume safety: night already initialized for the next day → skip.
+        # _begin_night increments state.day, so the completion flag lives on day+1.
+        next_day = self.state.day + 1
+        if Phase.NIGHT_START.value in self.state.phase_done.get(next_day, []):
             return
-        self.state.day = self.state.day + 1
+        self.state.day = next_day
         self.state.votes = {}
         self.state.pk_targets = []
         self.state.pk_source = None
@@ -434,6 +388,8 @@ class WerewolfGame:
         self._set_phase(Phase.NIGHT_START)
         self._log(EventType.SYSTEM_MESSAGE, "public", {"message": f"Night {self.state.day} begins."})
         self._mark_phase_done(Phase.NIGHT_START)
+        if self.phase_delay_ms > 0:
+            time.sleep(self.phase_delay_ms / 1000)
 
     def _begin_day(self) -> None:
         # Resume safety: day already initialized for this day → skip.
@@ -501,6 +457,7 @@ class WerewolfGame:
             self._emit_speech(player, decision, {"badge_campaign": True})
             if self._maybe_white_wolf_king_boom(player):
                 return
+
         self._run_actor_sequence(Phase.DAY_BADGE_SPEECH, candidates, handle)
         self._mark_phase_done(Phase.DAY_BADGE_SPEECH)
 
@@ -516,33 +473,14 @@ class WerewolfGame:
             self.state.badge.signup = {}
             self._mark_phase_done(Phase.DAY_BADGE_ELECTION)
             return
+        votes: dict[str, str] = {}
         candidate_ids = {player.id for player in candidates}
 
-        # Voters in seat order, candidates excluded.
-        voters = self._seat_sorted(
-            [player for player in self.state.alive_players if player.id not in candidate_ids]
-        )
-        if not voters:
-            voters = self._seat_sorted(self.state.alive_players)
-
-        # Parallel LLM execution for all badge votes (simultaneous voting)
-        decisions = self._batch_ask(
-            players=voters,
-            request="BADGE_ELECTION",
-            call_fn=lambda agent: agent.vote(),
-        )
-
-        # Sequential result processing (main thread, deterministic order)
-        votes: dict[str, str] = {}
-        for voter, decision in zip(voters, decisions):
+        def handle(voter: Player) -> None:
+            if voter.id in votes:
+                return
+            decision = self._ask(voter, "BADGE_ELECTION", lambda agent: agent.vote())
             if decision.target_id not in candidate_ids:
-                if self._requires_strict_llm_decision(voter):
-                    self._raise_invalid_llm_decision(
-                        voter,
-                        "BADGE_ELECTION",
-                        decision,
-                        f"target_id={decision.target_id!r} is not a badge candidate",
-                    )
                 decision = Decision(
                     voter.id,
                     ActionType.VOTE,
@@ -570,6 +508,11 @@ class WerewolfGame:
             )
             self.state.badge.votes = dict(votes)
 
+        # Voters speak in seat order, candidates excluded.
+        voters = self._seat_sorted([player for player in self.state.alive_players if player.id not in candidate_ids])
+        if not voters:
+            voters = self._seat_sorted(self.state.alive_players)
+        self._run_actor_sequence(Phase.DAY_BADGE_ELECTION, voters, handle)
         self.state.badge.votes = votes
         self.state.badge.history[self.state.day] = dict(votes)
         if not votes:
@@ -588,83 +531,6 @@ class WerewolfGame:
         self.state.badge.candidates = []
         self.state.badge.signup = {}
         self._mark_phase_done(Phase.DAY_BADGE_ELECTION)
-
-    def _night_role_actions_parallel(self) -> None:
-        """Run Guard + Wolf + Seer with parallelism where safe.
-
-        Guard and Seer are independent of each other and of wolves (they
-        read public state only, write to different NightActions fields).
-        Wolf internal voting is sequential (later wolves see earlier votes)
-        so it stays in the main thread. Witch depends on wolf_target_id
-        and runs separately after this method completes.
-
-        Thread safety: _guard_phase / _wolf_phase / _seer_phase all use
-        _set_phase → _log → events.append and _record_decision →
-        decision_records.append, both now protected by _shared_lock.
-        """
-        import sys as _sys
-        import threading as _thr
-
-        guard = self._alive_role(Role.GUARD)
-        seer = self._alive_role(Role.SEER)
-
-        guard_done = _thr.Event()
-        seer_done = _thr.Event()
-        guard_err: list[BaseException | None] = [None]
-        seer_err: list[BaseException | None] = [None]
-
-        def _run_guard():
-            try:
-                if guard and not self._phase_done(Phase.NIGHT_GUARD_ACTION):
-                    self._clear_phase_done(Phase.NIGHT_GUARD_ACTION)
-                    self._guard_phase()
-            except GamePaused:
-                guard_err[0] = _sys.exc_info()[1]
-            except BaseException as e:
-                guard_err[0] = e
-            finally:
-                guard_done.set()
-
-        def _run_seer():
-            try:
-                if seer and not self._phase_done(Phase.NIGHT_SEER_ACTION):
-                    self._clear_phase_done(Phase.NIGHT_SEER_ACTION)
-                    self._seer_phase()
-            except GamePaused:
-                seer_err[0] = _sys.exc_info()[1]
-            except BaseException as e:
-                seer_err[0] = e
-            finally:
-                seer_done.set()
-
-        g_thread = _thr.Thread(target=_run_guard, name="guard") if guard else None
-        s_thread = _thr.Thread(target=_run_seer, name="seer") if seer else None
-
-        if g_thread:
-            g_thread.start()
-        if s_thread:
-            s_thread.start()
-
-        # Run Wolf in main thread while Guard/Seer progress in background
-        if not self._phase_done(Phase.NIGHT_WOLF_ACTION):
-            self._wolf_phase()
-
-        # Wait for Guard and Seer to finish
-        if g_thread:
-            g_thread.join()
-        if s_thread:
-            s_thread.join()
-
-        # Propagate GamePaused from background threads
-        if isinstance(guard_err[0], GamePaused):
-            raise guard_err[0]
-        if isinstance(seer_err[0], GamePaused):
-            raise seer_err[0]
-        # Propagate other errors
-        if guard_err[0]:
-            raise guard_err[0]
-        if seer_err[0]:
-            raise seer_err[0]
 
     def _guard_phase(self) -> None:
         if self._phase_done(Phase.NIGHT_GUARD_ACTION):
@@ -747,6 +613,7 @@ class WerewolfGame:
                     },
                     wolf_ids,
                 )
+
         self._run_actor_sequence(Phase.NIGHT_WOLF_ACTION, self._seat_sorted(wolves), handle)
         if self.state.night_actions.wolf_votes:
             self.state.night_actions.wolf_target_id = self._majority_target(self.state.night_actions.wolf_votes)
@@ -777,28 +644,19 @@ class WerewolfGame:
         decisions = self._ask(witch, "WITCH", lambda agent: agent.witch_act(victim_id), many=True)
         for decision in decisions:
             if decision.action_type == ActionType.WITCH_SAVE:
-                if self.state.abilities.witch_heal_used:
-                    logger.warning(f"Witch {witch.name} save rejected: heal already used")
-                    continue
-                if decision.target_id != victim_id:
-                    logger.warning(f"Witch {witch.name} save rejected: target {decision.target_id} != victim {victim_id}")
+                if self.state.abilities.witch_heal_used or decision.target_id != victim_id:
                     continue
                 if self.validator.validate(self.state, decision):
                     self.state.abilities.witch_heal_used = True
                     self.state.night_actions.witch_save = True
                     self._log_decision(decision, "private", {"target_id": decision.target_id}, [witch.id])
-                else:
-                    logger.warning(f"Witch {witch.name} save rejected: validator failed")
             elif decision.action_type == ActionType.WITCH_POISON:
                 if self.state.abilities.witch_poison_used:
-                    logger.warning(f"Witch {witch.name} poison rejected: poison already used")
                     continue
                 if self.validator.validate(self.state, decision):
                     self.state.abilities.witch_poison_used = True
                     self.state.night_actions.witch_poison_target_id = decision.target_id
                     self._log_decision(decision, "private", {"target_id": decision.target_id}, [witch.id])
-                else:
-                    logger.warning(f"Witch {witch.name} poison rejected: validator failed")
             elif decision.action_type == ActionType.SKIP:
                 self._log_decision(decision, "private", {"skipped": True}, [witch.id])
         self._mark_phase_done(Phase.NIGHT_WITCH_ACTION)
@@ -835,7 +693,11 @@ class WerewolfGame:
         self._set_phase(Phase.NIGHT_RESOLVE)
         deaths: list[dict[str, str]] = []
         wolf_target_id = self.state.night_actions.wolf_target_id
-        if wolf_target_id and not self.state.night_actions.witch_save and wolf_target_id != self.state.night_actions.guard_target_id:
+        if (
+            wolf_target_id
+            and not self.state.night_actions.witch_save
+            and wolf_target_id != self.state.night_actions.guard_target_id
+        ):
             deaths.append({"player_id": wolf_target_id, "reason": "wolf"})
         poison_target_id = self.state.night_actions.witch_poison_target_id
         if poison_target_id:
@@ -855,6 +717,8 @@ class WerewolfGame:
             self._log(EventType.SYSTEM_MESSAGE, "public", {"message": f"Night deaths: {', '.join(names)}."})
         else:
             self._log(EventType.SYSTEM_MESSAGE, "public", {"message": "No one died last night."})
+        if self.phase_delay_ms > 0:
+            time.sleep(self.phase_delay_ms / 1000)
         # Hunter killed at night can shoot (unless poisoned - handled in _kill)
         for death in unique_deaths:
             target = self.state.player(death["player_id"])
@@ -863,11 +727,6 @@ class WerewolfGame:
                 self.phase_manager.run(Phase.HUNTER_SHOOT, self)
         if self.pending_badge_transfer_from_id and self.state.winner is None:
             self.phase_manager.run(Phase.BADGE_TRANSFER, self)
-            self._set_phase(Phase.NIGHT_RESOLVE)  # restore: while-loop routes NIGHT_RESOLVE → DAY
-        # If hunter shot happened, restore phase so the main while-loop routes
-        # NIGHT_RESOLVE → DAY_START instead of HUNTER_SHOOT → NIGHT_START.
-        if self.state.phase != Phase.NIGHT_RESOLVE:
-            self._set_phase(Phase.NIGHT_RESOLVE)
         self._mark_phase_done(Phase.NIGHT_RESOLVE)
 
     def _speech_phase(self) -> None:
@@ -882,6 +741,7 @@ class WerewolfGame:
             self._emit_speech(player, decision, {})
             if self._maybe_white_wolf_king_boom(player):
                 return
+
         speakers = self._day_speech_order()
         self._run_actor_sequence(Phase.DAY_SPEECH, speakers, handle)
         self._mark_phase_done(Phase.DAY_SPEECH)
@@ -910,38 +770,18 @@ class WerewolfGame:
         self._set_phase(Phase.DAY_VOTE)
         allowed_targets = set(self.state.pk_targets) if self.state.pk_targets else None
         eligible_voters = self._eligible_day_voters()
-        sorted_voters = self._seat_sorted(eligible_voters)
 
-        # Parallel LLM execution for all votes (simultaneous voting is the
-        # real game rule — each player decides independently).
-        decisions = self._batch_ask(
-            players=sorted_voters,
-            request="VOTE",
-            call_fn=lambda agent: agent.vote(),
-        )
-
-        # Sequential result processing (main thread, deterministic order)
-        for voter, decision in zip(sorted_voters, decisions):
+        def handle(voter: Player) -> None:
             if voter.id in self.state.votes:
-                continue
+                return
+            decision = self._ask(voter, "VOTE", lambda agent: agent.vote())
             if not self.validator.validate(self.state, decision) or (
                 allowed_targets is not None and decision.target_id not in allowed_targets
             ):
-                if self._requires_strict_llm_decision(voter):
-                    self._raise_invalid_llm_decision(
-                        voter,
-                        "VOTE",
-                        decision,
-                        "vote target is invalid or outside PK targets",
-                    )
-                target = self._fallback_vote_target(voter, target_ids=list(allowed_targets) if allowed_targets else None)
-                decision = Decision(
-                    voter.id,
-                    ActionType.VOTE,
-                    target_id=target.id,
-                    reasoning="Fallback legal vote.",
-                    metadata={"source": "fallback", "fallback": True},
+                target = self._fallback_vote_target(
+                    voter, target_ids=list(allowed_targets) if allowed_targets else None
                 )
+                decision = Decision(voter.id, ActionType.VOTE, target_id=target.id, reasoning="Fallback legal vote.")
             self.state.votes[voter.id] = decision.target_id or ""
             target = self.state.player(decision.target_id or "")
             self._log(
@@ -961,6 +801,8 @@ class WerewolfGame:
                     "is_pk_vote": bool(self.state.pk_targets),
                 },
             )
+
+        self._run_actor_sequence(Phase.DAY_VOTE, self._seat_sorted(eligible_voters), handle)
         self._mark_phase_done(Phase.DAY_VOTE)
 
     def _day_resolve(self) -> None:
@@ -976,6 +818,8 @@ class WerewolfGame:
             self.state.day_history[self.state.day] = {"voteTie": True}
             self.state.pk_targets = list(target_ids)
             self.state.pk_source = "vote"
+            names = ", ".join(self.state.player(tid).name for tid in target_ids)
+            self._log(EventType.SYSTEM_MESSAGE, "public", {"message": f"Vote tied. PK round between {names}."})
             # Allow the PK round to re-run the speech + vote phases that we
             # already marked done for the regular day flow.
             self._clear_phase_done(Phase.DAY_PK_SPEECH, Phase.DAY_VOTE, Phase.DAY_RESOLVE)
@@ -986,7 +830,9 @@ class WerewolfGame:
             return
         if len(target_ids) > 1 and self.state.pk_targets:
             self.state.day_history[self.state.day] = {"voteTie": True}
-            self._log(EventType.SYSTEM_MESSAGE, "public", {"message": "PK vote tied again. No one is eliminated today."})
+            self._log(
+                EventType.SYSTEM_MESSAGE, "public", {"message": "PK vote tied again. No one is eliminated today."}
+            )
             self.state.pk_targets = []
             self.state.pk_source = None
             self._refresh_day_summary()
@@ -1013,10 +859,8 @@ class WerewolfGame:
         self._kill(target_id, "vote")
         target = self.state.player(target_id)
         self._log(EventType.SYSTEM_MESSAGE, "public", {"message": f"{target.name} was voted out."})
-        # Check win immediately after death — skip hunter/badge on decided game
-        if self._check_win():
-            self._mark_phase_done(Phase.DAY_RESOLVE)
-            return
+        if self.phase_delay_ms > 0:
+            time.sleep(self.phase_delay_ms / 1000)
         # Defensive: when the recursive PK path runs with no usable ballots,
         # vote_history[day] may not have been written this round. Fall back to
         # the empty dict so the executed-summary still serializes.
@@ -1071,9 +915,12 @@ class WerewolfGame:
                 "agent_fallback": bool(decision.metadata.get("fallback", False)),
             },
         )
+        if self.phase_delay_ms > 0:
+            time.sleep(self.phase_delay_ms / 1000)
         if self.pending_badge_transfer_from_id and self.state.winner is None:
             self.phase_manager.run(Phase.BADGE_TRANSFER, self)
         self._refresh_day_summary()
+        self._check_win()
 
     def _last_words_phase(self, player_id: str) -> None:
         player = self.state.player(player_id)
@@ -1163,6 +1010,7 @@ class WerewolfGame:
             self.phase_manager.run(Phase.BADGE_TRANSFER, self)
         self.interrupt_phase_cycle = True
         self._refresh_day_summary()
+        self._check_win()
 
     def _badge_transfer_from_pending(self) -> None:
         if self.pending_badge_transfer_from_id is None:
@@ -1209,13 +1057,6 @@ class WerewolfGame:
             if chosen_id in candidate_ids:
                 successor = self.state.player(chosen_id)
             else:
-                if self._requires_strict_llm_decision(former):
-                    self._raise_invalid_llm_decision(
-                        former,
-                        "TRANSFER_BADGE",
-                        decision,
-                        f"target_id={chosen_id!r} is not an eligible badge successor",
-                    )
                 # Agent picked someone invalid (dead or self) — fall back to
                 # the heuristic preference so the game keeps moving.
                 successor = self._pick_badge_successor(alive)
@@ -1276,125 +1117,85 @@ class WerewolfGame:
             if self.state.current_speaker_id == player.id and prior_speaker != player.id:
                 self.state.current_speaker_id = prior_speaker
         if isinstance(result, Decision):
-            raw = str(result.metadata.get("raw_text", ""))
-            reasoning = str(result.metadata.get("reasoning", ""))
-            if reasoning:
-                raw = f"[推理]\n{reasoning[:3000]}\n\n[输出]\n{raw}"
-            self._record_decision(player, request, view.__dict__, result, raw_output=raw)
+            self._record_decision(
+                player, request, view.__dict__, result, raw_output=str(result.metadata.get("raw_text", ""))
+            )
         elif isinstance(result, list):
             for item in result:
-                raw = str(item.metadata.get("raw_text", ""))
-                reasoning = str(item.metadata.get("reasoning", ""))
-                if reasoning:
-                    raw = f"[推理]\n{reasoning[:3000]}\n\n[输出]\n{raw}"
-                self._record_decision(player, request, view.__dict__, item, raw_output=raw)
+                self._record_decision(
+                    player, request, view.__dict__, item, raw_output=str(item.metadata.get("raw_text", ""))
+                )
         return result if many else result
 
-    def _batch_ask(
-        self,
-        players: list[Player],
-        request: str,
-        call_fn: Callable[[Agent], Any],
-    ) -> list[Any]:
-        """Execute LLM calls in parallel for independent agent actions.
-
-        Three-phase design ensures thread safety without changing agent code:
-          1. Main thread: agent.update(view, request) for each player (CPU-only, fast)
-          2. ThreadPoolExecutor: call_fn(agent) for each player (LLM I/O, slow)
-          3. Main thread: _record_decision for each player in deterministic order
-
-        Falls back to sequential _ask if any player is human (preserves GamePaused).
-        """
-        import concurrent.futures as _futures
-
-        # ---- Early exit: mixed human/AI batch falls back to sequential ----
-        for player in players:
-            if not player.is_ai:
-                results: list[Any] = []
-                for p in players:
-                    results.append(self._ask(p, request, call_fn))
-                return results
-
-        n = len(players)
-
-        # ---- Phase 1: Pre-compute views (main thread, no I/O) ----
-        views: list[dict] = []
-        for player in players:
-            view = self.visibility.for_player(self.state, player.id)
-            agent = self.agents[player.id]
-            agent.update(view, request)
-            views.append(view.__dict__)
-
-        # ---- Phase 2: Execute LLM calls in parallel ----
-        # Each agent has its own DeepSeekClient which creates a new
-        # httpx.Client per chat_sync() call, so concurrent access is safe.
-        results_by_index: dict[int, Any] = {}
-        with _futures.ThreadPoolExecutor(max_workers=n) as pool:
-            fut_to_idx: dict[_futures.Future, int] = {}
-            for i, player in enumerate(players):
-                agent = self.agents[player.id]
-                fut = pool.submit(call_fn, agent)
-                fut_to_idx[fut] = i
-            for fut in _futures.as_completed(fut_to_idx):
-                idx = fut_to_idx[fut]
-                results_by_index[idx] = fut.result()
-
-        # ---- Phase 3: Record results (main thread, deterministic order) ----
-        results: list[Any] = []
-        for i in range(n):
-            player = players[i]
-            view = views[i]
-            result = results_by_index[i]
-            results.append(result)
-            self._record_sequential(player, request, view, result)
-
-        return results
-
-    def _record_sequential(
-        self, player: Player, request: str, view: dict, result: Any,
-    ) -> None:
-        """Record a decision from _batch_ask result. Mirrors the recording
-        portion of _ask() so batch results get the same audit trail."""
-        if isinstance(result, Decision):
-            raw = str(result.metadata.get("raw_text", ""))
-            reasoning = str(result.metadata.get("reasoning", ""))
-            if reasoning:
-                raw = f"[推理]\n{reasoning[:3000]}\n\n[输出]\n{raw}"
-            self._record_decision(player, request, view, result, raw_output=raw)
-        elif isinstance(result, list):
-            for item in result:
-                if isinstance(item, Decision):
-                    raw = str(item.metadata.get("raw_text", ""))
-                    reasoning = str(item.metadata.get("reasoning", ""))
-                    if reasoning:
-                        raw = f"[推理]\n{reasoning[:3000]}\n\n[输出]\n{raw}"
-                    self._record_decision(player, request, view, item, raw_output=raw)
-
-    def _coerce_human_decisions(self, player: Player, pending: PendingInput, payload: dict[str, object]) -> list[Decision]:
+    def _coerce_human_decisions(
+        self, player: Player, pending: PendingInput, payload: dict[str, object]
+    ) -> list[Decision]:
         target_id = str(payload.get("target_id") or "") or None
         speech = str(payload.get("speech") or "").strip() or None
         reasoning = str(payload.get("reasoning") or "Human action")
         if pending.request in {"TALK", "BADGE_SPEECH", "LAST_WORDS"}:
-            return [Decision(player.id, ActionType.TALK, speech=speech or "...", reasoning=reasoning, metadata={"source": "human"})]
+            return [
+                Decision(
+                    player.id,
+                    ActionType.TALK,
+                    speech=speech or "...",
+                    reasoning=reasoning,
+                    metadata={"source": "human"},
+                )
+            ]
         if pending.request in {"VOTE", "BADGE_ELECTION"}:
-            return [Decision(player.id, ActionType.VOTE, target_id=target_id, reasoning=reasoning, metadata={"source": "human"})]
+            return [
+                Decision(
+                    player.id, ActionType.VOTE, target_id=target_id, reasoning=reasoning, metadata={"source": "human"}
+                )
+            ]
         if pending.request == "ATTACK":
-            return [Decision(player.id, ActionType.ATTACK, target_id=target_id, reasoning=reasoning, metadata={"source": "human"})]
+            return [
+                Decision(
+                    player.id, ActionType.ATTACK, target_id=target_id, reasoning=reasoning, metadata={"source": "human"}
+                )
+            ]
         if pending.request == "DIVINE":
-            return [Decision(player.id, ActionType.DIVINE, target_id=target_id, reasoning=reasoning, metadata={"source": "human"})]
+            return [
+                Decision(
+                    player.id, ActionType.DIVINE, target_id=target_id, reasoning=reasoning, metadata={"source": "human"}
+                )
+            ]
         if pending.request == "GUARD":
-            return [Decision(player.id, ActionType.GUARD, target_id=target_id, reasoning=reasoning, metadata={"source": "human"})]
+            return [
+                Decision(
+                    player.id, ActionType.GUARD, target_id=target_id, reasoning=reasoning, metadata={"source": "human"}
+                )
+            ]
         if pending.request == "SHOOT":
-            return [Decision(player.id, ActionType.SHOOT, target_id=target_id, reasoning=reasoning, metadata={"source": "human"})]
+            return [
+                Decision(
+                    player.id, ActionType.SHOOT, target_id=target_id, reasoning=reasoning, metadata={"source": "human"}
+                )
+            ]
         if pending.request == "BOOM":
-            return [Decision(player.id, ActionType.BOOM, target_id=target_id, reasoning=reasoning, metadata={"source": "human"})]
+            return [
+                Decision(
+                    player.id, ActionType.BOOM, target_id=target_id, reasoning=reasoning, metadata={"source": "human"}
+                )
+            ]
         if pending.request == "TRANSFER_BADGE":
             # SKIP target_id=None means destroy the badge; otherwise the human
             # picked a successor from the option list. We mirror the LLM agent
             # by using VOTE as the carrier action for "pick this player".
             if target_id is None:
-                return [Decision(player.id, ActionType.SKIP, reasoning=reasoning or "撕警徽", metadata={"source": "human"})]
-            return [Decision(player.id, ActionType.VOTE, target_id=target_id, reasoning=reasoning or "传给该玩家", metadata={"source": "human"})]
+                return [
+                    Decision(player.id, ActionType.SKIP, reasoning=reasoning or "撕警徽", metadata={"source": "human"})
+                ]
+            return [
+                Decision(
+                    player.id,
+                    ActionType.VOTE,
+                    target_id=target_id,
+                    reasoning=reasoning or "传给该玩家",
+                    metadata={"source": "human"},
+                )
+            ]
         if pending.request == "WITCH":
             decisions: list[Decision] = []
             if bool(payload.get("save")) and self.state.night_actions.wolf_target_id:
@@ -1418,7 +1219,9 @@ class WerewolfGame:
                     )
                 )
             if not decisions:
-                decisions.append(Decision(player.id, ActionType.SKIP, reasoning=reasoning, metadata={"source": "human"}))
+                decisions.append(
+                    Decision(player.id, ActionType.SKIP, reasoning=reasoning, metadata={"source": "human"})
+                )
             return decisions
         raise ValueError(f"Unsupported human request: {pending.request}")
 
@@ -1444,9 +1247,6 @@ class WerewolfGame:
         )
 
     def _check_win(self) -> bool:
-        # Guard against duplicate calls — winner is already set
-        if self.state.winner is not None:
-            return True
         alive_wolves = [player for player in self.state.alive_players if player.alignment == Alignment.WOLF]
         alive_village = [player for player in self.state.alive_players if player.alignment == Alignment.VILLAGE]
         winner: Alignment | None = None
@@ -1478,24 +1278,6 @@ class WerewolfGame:
         pool = preferred or alive
         return sorted(pool, key=lambda player: (player.seat, player.name))[0]
 
-    def _requires_strict_llm_decision(self, player: Player) -> bool:
-        import os
-        if os.getenv("ALLOW_FALLBACK", "false").lower() == "true":
-            return False  # fallback mode: tolerate invalid targets, use heuristic fallback
-        return player.is_ai and str(player.agent_type).strip().lower() in {"llm", "cognitive"}
-
-    def _raise_invalid_llm_decision(
-        self,
-        player: Player,
-        request: str,
-        decision: Decision,
-        detail: str,
-    ) -> None:
-        raise RuntimeError(
-            f"Invalid LLM decision in {request}: player={player.id} "
-            f"action={decision.action_type.value} target={decision.target_id!r}; {detail}"
-        )
-
     def _alive_role(self, role: Role) -> Player | None:
         return next((player for player in self.state.alive_players if player.role == role), None)
 
@@ -1523,13 +1305,18 @@ class WerewolfGame:
         return counts
 
     def _top_targets(self, votes: dict[str, str], *, weighted: bool = False) -> list[str]:
-        counts = self._weighted_tally(votes) if weighted else {key: float(value) for key, value in Counter(votes.values()).items()}
+        counts = (
+            self._weighted_tally(votes)
+            if weighted
+            else {key: float(value) for key, value in Counter(votes.values()).items()}
+        )
         max_votes = max(counts.values())
         return sorted(target_id for target_id, count in counts.items() if count == max_votes)
 
     def _eligible_day_voters(self) -> list[Player]:
         alive = [
-            player for player in self.state.alive_players
+            player
+            for player in self.state.alive_players
             if not (player.role == Role.IDIOT and self.state.abilities.idiot_revealed)
         ]
         if not self.state.pk_targets:
@@ -1538,9 +1325,8 @@ class WerewolfGame:
         return [player for player in alive if player.id not in pk_set]
 
     def _set_phase(self, phase: Phase) -> None:
-        with self._shared_lock:
-            self.state.phase = phase
-            self._log(EventType.PHASE_CHANGED, "public", {"phase": phase.value})
+        self.state.phase = phase
+        self._log(EventType.PHASE_CHANGED, "public", {"phase": phase.value})
 
     def _run_actor_sequence(self, phase: Phase, players: list[Player], handler) -> None:
         cursor_key = phase.value
@@ -1586,19 +1372,18 @@ class WerewolfGame:
         *,
         visible_to: list[str] | None = None,
     ) -> None:
-        with self._shared_lock:
-            self.state.events.append(
-                GameEvent.create(
-                    day=self.state.day,
-                    phase=self.state.phase,
-                    type=type,
-                    visibility=visibility,
-                    payload=payload,
-                    visible_to=visible_to,
-                )
+        self.state.events.append(
+            GameEvent.create(
+                day=self.state.day,
+                phase=self.state.phase,
+                type=type,
+                visibility=visibility,
+                payload=payload,
+                visible_to=visible_to,
             )
-            if self.observer is not None:
-                self.observer(self.state)
+        )
+        if self.observer is not None:
+            self.observer(self.state)
 
     def _record_decision(
         self,
@@ -1618,82 +1403,36 @@ class WerewolfGame:
         latency_ms = meta.get("latency_ms")
         if latency_ms is None and isinstance(usage, dict):
             latency_ms = usage.get("latency_ms")
-
-        # Compute prompt hash from the observation + request (stable fingerprint)
-        _prompt_src = json.dumps({"request": request, "day": self.state.day, "phase": self.state.phase.value}, sort_keys=True)
-        prompt_hash = hashlib.sha256(_prompt_src.encode()).hexdigest()[:16]
-
-        # Estimate cost from token usage (DeepSeek pricing: ~$0.28/M input, $1.10/M output)
-        cost_usd = None
-        if prompt_tokens is not None and completion_tokens is not None:
-            cost_usd = round((prompt_tokens * 0.28 + completion_tokens * 1.10) / 1_000_000, 6)
-
-        # Extract visible facts from player view
-        visible_facts = []
-        if isinstance(view, dict):
-            sv = view.get("self_player", {})
-            visible_facts.append("role=" + str(sv.get("role", "?")))
-            visible_facts.append("alive=" + str(sv.get("alive", "?")))
-            alive = view.get("alive_players", [])
-            visible_facts.append("alive_count=" + str(len(alive) if isinstance(alive, list) else "?"))
-
-        # Populate candidate actions from legal actions or metadata
-        candidate_actions = meta.get("candidate_actions", [])
-        if not candidate_actions:
-            view_targets = view.get("legal_targets", []) if isinstance(view, dict) else []
-            for target in view_targets:
-                candidate_actions.append({
-                    "target_id": target.get("id"),
-                    "target_name": target.get("name"),
-                })
-            if not candidate_actions:
-                allowed = set(self.state.pk_targets) if request == "VOTE" and self.state.pk_targets else None
-                for target in self.state.alive_players:
-                    if target.id != player.id and (allowed is None or target.id in allowed):
-                        candidate_actions.append({"target_id": target.id, "target_name": target.name})
-
-        with self._shared_lock:
-            self.state.decision_records.append(
-                DecisionAudit(
-                    id=str(uuid4()),
-                    game_id=self.state.id,
-                    player_id=player.id,
-                    day=self.state.day,
-                    phase=self.state.phase.value,
-                    request=request,
-                    observation=view,
-                    legal_actions=[],
-                    prompt_version=player.prompt_version,
-                    raw_output=raw_output,
-                    parsed_action={
-                        "action_type": decision.action_type.value,
-                        "target_id": decision.target_id,
-                        "speech": decision.speech,
-                        "reasoning": decision.reasoning,
-                        "metadata": decision.metadata,
-                        "retrieved_knowledge_ids": list(decision.metadata.get("retrieved_knowledge_ids", [])),
-                        "retrieval_query_summary": decision.metadata.get("retrieval_query_summary"),
-                        "retrieval_used": bool(decision.metadata.get("retrieval_used", False)),
-                    },
-                    is_valid=is_valid,
-                    error_type=error_type,
-                    latency_ms=int(latency_ms) if isinstance(latency_ms, (int, float)) else None,
-                    prompt_tokens=int(prompt_tokens) if isinstance(prompt_tokens, (int, float)) else None,
-                    completion_tokens=int(completion_tokens) if isinstance(completion_tokens, (int, float)) else None,
-                    created_at=self.state.events[-1].ts if self.state.events else 0.0,
-                    # v2 DecisionTrace fields
-                    visible_facts=visible_facts,
-                    candidate_actions=candidate_actions,
-                    confidence=meta.get("confidence"),
-                    prompt_hash=prompt_hash,
-                    cost_usd=cost_usd,
-                    model_name=meta.get("model"),
-                    provider=meta.get("provider"),
-                    fallback_used=bool(meta.get("fallback", False)),
-                    fallback_reason=meta.get("fallback_reason"),
-                    metadata=decision.metadata if isinstance(decision.metadata, dict) else {},
-                )
+        self.state.decision_records.append(
+            DecisionAudit(
+                id=str(uuid4()),
+                game_id=self.state.id,
+                player_id=player.id,
+                day=self.state.day,
+                phase=self.state.phase.value,
+                request=request,
+                observation=view,
+                legal_actions=[],
+                prompt_version=player.prompt_version,
+                raw_output=raw_output,
+                parsed_action={
+                    "action_type": decision.action_type.value,
+                    "target_id": decision.target_id,
+                    "speech": decision.speech,
+                    "reasoning": decision.reasoning,
+                    "metadata": decision.metadata,
+                    "retrieved_knowledge_ids": list(decision.metadata.get("retrieved_knowledge_ids", [])),
+                    "retrieval_query_summary": decision.metadata.get("retrieval_query_summary"),
+                    "retrieval_used": bool(decision.metadata.get("retrieval_used", False)),
+                },
+                is_valid=is_valid,
+                error_type=error_type,
+                latency_ms=int(latency_ms) if isinstance(latency_ms, (int, float)) else None,
+                prompt_tokens=int(prompt_tokens) if isinstance(prompt_tokens, (int, float)) else None,
+                completion_tokens=int(completion_tokens) if isinstance(completion_tokens, (int, float)) else None,
+                created_at=self.state.events[-1].ts if self.state.events else 0.0,
             )
+        )
 
     def _build_pending_input(self, player: Player, request: str) -> PendingInput:
         allowed_targets = set(self.state.pk_targets) if request == "VOTE" and self.state.pk_targets else None

@@ -17,6 +17,11 @@ interface PlayerCardProps {
   isThinking?: boolean;
   isSheriff?: boolean;
   isBadgeCandidate?: boolean;
+  hasSpoken?: boolean;
+  hasVoted?: boolean;
+  voteCount?: number;
+  /** Name of the player this player voted for */
+  voteTargetName?: string;
 }
 
 export function PlayerCard({
@@ -29,9 +34,14 @@ export function PlayerCard({
   isThinking = false,
   isSheriff = false,
   isBadgeCandidate = false,
+  hasSpoken = false,
+  hasVoted = false,
+  voteCount = 0,
+  voteTargetName,
 }: PlayerCardProps) {
   const { viewMode, language } = useAppContext();
   const [roleRevealed, setRoleRevealed] = useState(true);
+  const isPublic = viewMode !== "moderator";
 
   const isDead = !player.alive;
   const isWolf = player.alignment === Alignment.WOLF;
@@ -47,7 +57,7 @@ export function PlayerCard({
     "bg-cardBackground shadow-sm",
     isInteractive ? "cursor-pointer" : "cursor-default",
     isDead && "opacity-50 grayscale shadow-none",
-    isSpeaking && "ring-2 ring-success shadow-lg animate-[pulse_1.6s_ease-in-out_infinite]",
+    isSpeaking && "ring-[3px] ring-success shadow-lg shadow-success/20 animate-[pulse_1s_ease-in-out_infinite] scale-[1.02]",
     !isSpeaking && !isDead && "hover:shadow-lg",
     isSelected && "ring-2 ring-primary shadow-md",
     isThinking && !isSpeaking && "ring-2 ring-info animate-pulse",
@@ -81,10 +91,18 @@ export function PlayerCard({
       <div className="flex w-full flex-wrap items-start justify-between gap-2 sm:flex-nowrap">
         <div className="flex min-w-0 items-center gap-2">
           <span className={cn(
-            "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-bold",
-            isDead ? "bg-text-sub/20 text-text-sub" : "bg-primary text-white"
+            "relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-bold",
+            isDead ? "bg-text-sub/20 text-text-sub" : isSpeaking ? "bg-success text-white" : "bg-primary text-white",
+            isSpeaking && "animate-[pulse_0.6s_ease-in-out_infinite]",
           )}>
             {isDead ? "✝" : player.seat}
+            {isSpeaking && (
+              <span className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 flex gap-[1px]">
+                <span className="w-0.5 h-3 bg-success rounded-full animate-[pulse_0.3s_ease-in-out_infinite]" />
+                <span className="w-0.5 h-4 bg-success rounded-full animate-[pulse_0.3s_ease-in-out_infinite_0.15s]" />
+                <span className="w-0.5 h-2.5 bg-success rounded-full animate-[pulse_0.3s_ease-in-out_infinite_0.3s]" />
+              </span>
+            )}
           </span>
           <span className={cn(
             "min-w-0 truncate font-display text-sm font-semibold leading-tight text-textPrimary",
@@ -97,7 +115,7 @@ export function PlayerCard({
         <div className="flex max-w-full basis-full flex-wrap justify-start gap-1 sm:max-w-[48%] sm:basis-auto sm:justify-end">
           {roleLabel && (
             <Badge
-              variant={roleVisible && player.role ? (isWolf ? "danger" : isVillage ? "success" : "default") : "default"}
+              variant={roleVisible && player.role ? (isWolf ? "danger" : isVillage ? "success" : "default") : "speech"}
               className="whitespace-nowrap px-2 py-0.5 text-[10px] leading-tight"
             >
               {roleLabel}
@@ -121,6 +139,19 @@ export function PlayerCard({
           {isBadgeCandidate && !isSheriff && !isThinking && (
             <span className="inline-flex whitespace-nowrap rounded-badge border border-dashed border-warning bg-warning/15 px-2 py-0.5 text-[10px] leading-tight text-primary">
               {t("badgeRunning", language)}
+            </span>
+          )}
+          {hasSpoken && (
+            <span className="inline-flex whitespace-nowrap text-[10px] text-success/70 leading-tight">✓ 已发言</span>
+          )}
+          {hasVoted && (
+            <span className="inline-flex whitespace-nowrap text-[10px] text-accent/70 leading-tight">
+              ✓ {voteTargetName ? `已投 → ${voteTargetName}` : "已投票"}
+            </span>
+          )}
+          {voteCount > 0 && (
+            <span className="inline-flex whitespace-nowrap rounded-badge bg-accent/15 text-accent px-2 py-0.5 text-[10px] font-bold leading-tight">
+              {voteCount}票
             </span>
           )}
         </div>

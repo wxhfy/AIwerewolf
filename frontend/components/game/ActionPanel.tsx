@@ -161,7 +161,14 @@ export function ActionPanel({ pendingInput, onAction, language, votes, players }
       {/* Submit */}
       <div className="flex justify-end">
         <Button onClick={submit} disabled={submitted || (isVote && !targetId)} size="sm">
-          {submitted ? t("submitted", language) : t("submit", language)}
+          {submitted ? (
+            <span className="flex items-center gap-1.5">
+              <span className="h-3 w-3 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+              {t("submitted", language)}
+            </span>
+          ) : (
+            t("submit", language)
+          )}
         </Button>
       </div>
     </div>

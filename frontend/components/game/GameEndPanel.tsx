@@ -31,30 +31,27 @@ function TrophyIcon({ className, size }: { className?: string; size: number }) {
   );
 }
 
+function winReasonText(winner: Alignment, language: Language): string {
+  if (winner === Alignment.WOLF) return t("winReasonWolfParity", language);
+  return t("winReasonAllWolvesDead", language);
+}
+
 export function GameEndPanel({
-  winner,
-  day,
-  aliveCount,
-  eventCount,
-  language,
-  showPanel,
-  ballPos,
-  dragRef,
-  onOpen,
-  onClose,
-  onBallMove,
-  onLobby,
-  onReport,
+  winner, day, aliveCount, eventCount, language, showPanel, ballPos, dragRef, onOpen, onClose, onBallMove, onLobby, onReport,
 }: GameEndPanelProps) {
   const isVillageWinner = winner === Alignment.VILLAGE;
   const winnerLabel = isVillageWinner ? t("village", language) : t("wolf", language);
+  const winTitle = isVillageWinner ? t("villageWins", language) : t("wolvesWin", language);
+  const reason = winReasonText(winner, language);
+  const winnerColor = isVillageWinner ? "text-success" : "text-danger";
 
   return (
     <>
+      {/* Floating entry — only after modal was dismissed */}
       {!showPanel && (
         <button
           type="button"
-          aria-label={t("gameOver", language)}
+          aria-label={t("viewResult", language)}
           onClick={() => { if (!dragRef.current.moved) onOpen(); }}
           onPointerDown={(event) => {
             const rect = event.currentTarget.getBoundingClientRect();
@@ -72,22 +69,23 @@ export function GameEndPanel({
               onBallMove({ x: dragRef.current.origX + dx, y: dragRef.current.origY + dy });
             }
           }}
-          onPointerUp={() => { dragRef.current.dragging = false; }}
-          className="fixed z-50 flex items-center gap-2.5 pl-3 pr-4 py-2.5 rounded-full animate-scale-in cursor-grab active:cursor-grabbing border border-border bg-cardBackground shadow-float hover:shadow-float-hover select-none transition-shadow duration-200"
-          style={ballPos ? { left: ballPos.x, top: ballPos.y } : { right: 24, bottom: 24 }}
+          onPointerUp={(event) => { dragRef.current.dragging = false; event.currentTarget.releasePointerCapture(event.pointerId); }}
+          onLostPointerCapture={() => { dragRef.current.dragging = false; }}
+          className="fixed z-50 right-6 bottom-6 flex items-center gap-3 pl-4 pr-5 py-3 rounded-full animate-scale-in border border-border bg-cardBackground shadow-float hover:shadow-float-hover select-none transition-shadow duration-200 touch-none"
+          style={ballPos ? { left: ballPos.x, top: ballPos.y } : undefined}
         >
-          <TrophyIcon size={22} className="text-accent animate-breathe" />
+          <TrophyIcon size={20} className="text-accent animate-breathe" />
           <div className="text-left leading-tight">
-            <p className="text-[10px] text-text-sub">{t("gameOver", language)}</p>
-            <p className={`text-sm font-bold ${isVillageWinner ? "text-success" : "text-danger"}`}>
-              {winnerLabel}{language === Language.ZH ? t("winsSuffix", language) : ` ${t("winsSuffix", language)}`}
-            </p>
+            <p className="text-[10px] text-text-sub">{t("resultEntry", language)}</p>
+            <p className={`text-sm font-bold ${winnerColor}`}>{winTitle}</p>
+            <p className="text-[10px] text-text-sub">{t("viewResult", language)}</p>
           </div>
         </button>
       )}
 
+      {/* Result modal */}
       {showPanel && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 backdrop-blur-[3px]" onClick={onClose}>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/45 backdrop-blur-[3px]" onClick={onClose}>
           <div
             role="dialog"
             aria-modal="true"
@@ -96,21 +94,19 @@ export function GameEndPanel({
             onClick={(event) => event.stopPropagation()}
           >
             <div className="mb-3">
-              <TrophyIcon size={56} className="mx-auto text-accent" />
+              <TrophyIcon size={56} className={`mx-auto ${isVillageWinner ? "text-success" : "text-danger"}`} />
             </div>
-            <p className="text-sm text-text-sub mb-2">{t("gameOver", language)}</p>
-            <h2 id="game-end-title" className={`font-display text-3xl font-bold mb-1 ${isVillageWinner ? "text-success" : "text-danger"}`}>
-              {winnerLabel}
+            <p className="text-sm text-text-sub mb-1">{t("gameOver", language)}</p>
+            <h2 id="game-end-title" className={`font-display text-3xl font-bold mb-1 ${winnerColor}`}>
+              {winTitle}
             </h2>
-            <p className="font-display text-textPrimary mb-5">
-              {isVillageWinner ? t("villageWins", language) : t("wolvesWin", language)}
-            </p>
+            <p className="text-sm text-text-sub mb-5">{reason}</p>
 
             <div className="grid grid-cols-3 gap-3 mb-5 text-center">
               {[
                 [String(day), t("totalDays", language)],
-                [String(aliveCount), t("aliveShort", language)],
-                [String(eventCount), t("eventsShort", language)],
+                [String(aliveCount), language === "zh" ? "存活" : "Alive"],
+                [`${eventCount} ${language === "zh" ? "条" : ""}`, t("eventsShort", language)],
               ].map(([value, label]) => (
                 <div key={label}>
                   <p className="font-display text-2xl font-bold text-primary">{value}</p>
@@ -119,25 +115,28 @@ export function GameEndPanel({
               ))}
             </div>
 
-            <div className="flex gap-3 mb-3">
-              <Button variant="ghost" onClick={onLobby} className="flex-1">
-                {t("lobby", language)}
-              </Button>
-              <Button
-                onClick={() => (onReport ? onReport() : onLobby())}
-                className="flex-1"
+            <div className="flex flex-col gap-2">
+              {onReport && (
+                <Button onClick={onReport} className="w-full">
+                  {t("viewReview", language)}
+                </Button>
+              )}
+              <div className="flex gap-2">
+                <Button variant="secondary" onClick={onLobby} className="flex-1">
+                  {language === "zh" ? "再来一局" : "Play Again"}
+                </Button>
+                <Button variant="ghost" onClick={onLobby} className="flex-1">
+                  {t("backToLobby", language)}
+                </Button>
+              </div>
+              <button
+                type="button"
+                onClick={onClose}
+                className="text-xs text-text-sub underline hover:text-textPrimary transition-colors mt-1"
               >
-                {onReport ? (language === Language.ZH ? "查看复盘" : "View Review") : t("playAgain", language)}
-              </Button>
+                {t("closePanel", language)}
+              </button>
             </div>
-
-            <button
-              type="button"
-              onClick={onClose}
-              className="text-xs text-text-sub underline hover:text-textPrimary transition-colors"
-            >
-              {t("stayOnPage", language)}
-            </button>
           </div>
         </div>
       )}

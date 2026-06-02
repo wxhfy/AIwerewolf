@@ -18,6 +18,8 @@ export function VoteTargetGrid({ players, selectedId, onSelect, disabled }: Vote
           key={p.id}
           onClick={() => !disabled && onSelect(p.id)}
           disabled={disabled}
+          aria-pressed={selectedId === p.id}
+          aria-label={`Vote for ${p.name || p.id}${p.seat ? ` seat ${p.seat}` : ""}`}
           className={cn(
             "flex flex-col items-center p-3 rounded-card border-2 transition-all duration-150",
             "hover:-translate-y-0.5 hover:shadow-md",

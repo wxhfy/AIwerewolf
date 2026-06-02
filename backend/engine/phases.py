@@ -28,10 +28,14 @@ class CompositePhase:
     steps: tuple[PhaseHandler, ...]
 
     def run(self, game: "WerewolfGame") -> None:
-        for step in self.steps:
+        import time as _time
+        micro_delay = getattr(game, "phase_delay_ms", 0) / 4000  # ~25% of phase delay, min floor 0.05s
+        for idx, step in enumerate(self.steps):
             step.run(game)
             if game.state.winner is not None or getattr(game, "interrupt_phase_cycle", False):
                 break
+            if idx < len(self.steps) - 1:
+                _time.sleep(max(0.08, micro_delay))
 
 
 def default_phase_handlers() -> dict[Phase, PhaseHandler]:

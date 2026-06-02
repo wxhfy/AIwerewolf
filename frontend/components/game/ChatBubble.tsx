@@ -1,7 +1,8 @@
 "use client";
 
-import React from "react";
+import React, { memo } from "react";
 import { cn } from "@/lib/utils";
+import { useTypewriter } from "@/hooks/useTypewriter";
 
 interface ChatBubbleProps {
   speakerName: string;
@@ -9,16 +10,38 @@ interface ChatBubbleProps {
   phaseLabel?: string;
   isOwn?: boolean;
   isSystem?: boolean;
+  /** Enable typewriter animation. Set by parent to control sequential order. */
+  animate?: boolean;
+  /** Fired when the typewriter animation finishes revealing all text. */
+  onTypewriterComplete?: () => void;
 }
 
-export function ChatBubble({
+export const ChatBubble = memo(function ChatBubble({
   speakerName,
   content,
   phaseLabel,
   isOwn = false,
   isSystem = false,
+  animate = false,
+  onTypewriterComplete,
 }: ChatBubbleProps) {
   const avatarLetter = speakerName.charAt(0);
+
+  // Typewriter: animate chat messages, skip for system/history/last-words
+  const shouldAnimate = animate && !isSystem && !!content;
+  const { displayedText, finished } = useTypewriter(content, {
+    enabled: shouldAnimate,
+    charsPerSecond: 35,
+    onComplete: onTypewriterComplete,
+  });
+
+  // When managed by parent queue (has onTypewriterComplete), never fall
+  // back to raw content — use displayedText exclusively.  Otherwise show
+  // content directly (system messages, replayed history, etc.).
+  const isQueueManaged = onTypewriterComplete !== undefined;
+  const displayContent = isQueueManaged ? displayedText : (shouldAnimate ? displayedText : content);
+  // Cursor: visible while waiting or while typing (not finished)
+  const showCursor = isQueueManaged && !finished;
 
   if (isSystem) {
     return (
@@ -53,17 +76,20 @@ export function ChatBubble({
         </div>
 
         {/* Bubble */}
-        {content && (
+        {(displayContent || showCursor) && (
           <div
             className={cn(
-              "px-4 py-2.5 text-base leading-relaxed",
+              "px-4 py-2.5 text-base leading-relaxed whitespace-pre-wrap break-words",
               isOwn ? "rounded-[16px_4px_16px_16px] bg-primary text-white" : "rounded-[4px_16px_16px_16px] bg-background text-textPrimary",
             )}
           >
-            {content}
+            {displayContent || " "}
+            {showCursor && (
+              <span className="inline-block w-0.5 h-[1em] bg-current align-middle ml-0.5 animate-pulse" />
+            )}
           </div>
         )}
       </div>
     </div>
   );
-}
+});

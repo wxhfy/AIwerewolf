@@ -37,7 +37,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [speed, setSpeed] = useState(80);
+  const [speed, setSpeed] = useState(800);
   const [seed, setSeed] = useState(7);
 
   // 从 URL 恢复状态
