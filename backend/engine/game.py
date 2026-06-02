@@ -1011,6 +1011,8 @@ class WerewolfGame:
                 "agent_fallback": bool(decision.metadata.get("fallback", False)) if i == 0 else False,
                 **extra_fields,
             }
+            if i == 0 and decision.metadata.get("agent_trace"):
+                payload["agent_trace"] = decision.metadata["agent_trace"]
             self._log(EventType.CHAT_MESSAGE, "public", payload)
 
     def _maybe_white_wolf_king_boom(self, player: Player) -> bool:

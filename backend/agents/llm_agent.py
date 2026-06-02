@@ -86,6 +86,18 @@ class LLMAgent(Agent):
         self.recent_openings: list[str] = []
         self.current_retrieval: list = []
         self.belief_state: BeliefState | None = None
+        self.player_memory: dict[str, Any] = {
+            "player_id": player_id,
+            "round_updated": 0,
+            "own_previous_speeches": [],
+            "recent_observations": [],
+            "suspected_players": [],
+            "trusted_players": [],
+            "unresolved_questions": [],
+            "being_attacked_by": [],
+            "previous_intents": [],
+            "style_continuity_notes": [],
+        }
 
     def initialize(self, view: PlayerView, game_setting: dict) -> None:
         self.view = view
@@ -176,6 +188,9 @@ class LLMAgent(Agent):
         stance_block = self._build_stance_block()
         if stance_block:
             user_prompt_parts.append(stance_block)
+        memory_block = self._build_player_memory_block()
+        if memory_block:
+            user_prompt_parts.append(memory_block)
 
         # --- Personality decision constraints ---
         personality_block = self._build_personality_decision_block()
@@ -208,7 +223,7 @@ class LLMAgent(Agent):
             strategy_bias_block = self._build_strategy_bias_block("talk")
             if strategy_bias_block:
                 user_prompt_parts.append(strategy_bias_block)
-        user_prompt_parts.append("\n轮到你发言，返回JSON数组：")
+        user_prompt_parts.append("\n轮到你发言，按后续最高优先级格式返回：")
 
         full_user_prompt = "\n\n".join(user_prompt_parts)
 
@@ -224,6 +239,10 @@ class LLMAgent(Agent):
         if meta.get("segment_texts"):
             meta["segments"] = meta["segment_texts"]
             self._remember_opening(meta["segment_texts"])
+        if meta.get("agent_trace"):
+            updates = self._update_player_memory_from_trace(meta["agent_trace"], speech, view)
+            meta["player_memory_updates"] = updates
+            meta["player_memory_snapshot"] = self._player_memory_snapshot()
         # If fallback was used, copy the heuristic agent's segments
         if meta.get("fallback") and fallback.metadata.get("segments"):
             meta["segments"] = fallback.metadata["segments"]
@@ -938,6 +957,55 @@ class LLMAgent(Agent):
             )
         except Exception:
             return ""
+
+    def _build_player_memory_block(self) -> str:
+        memory = self.player_memory
+        lines: list[str] = []
+
+        def add_text_list(title: str, key: str, limit: int = 4) -> None:
+            values = []
+            for item in memory.get(key, []):
+                text = self._sanitize_memory_text(str(item))
+                if text:
+                    values.append(text)
+            if values:
+                lines.append(f"- {title}: " + " | ".join(values[-limit:]))
+
+        def add_player_entries(title: str, key: str, label: str, limit: int = 4) -> None:
+            entries = [item for item in memory.get(key, []) if isinstance(item, dict)]
+            if not entries:
+                return
+            lines.append(f"- {title}:")
+            for item in entries[-limit:]:
+                player_ref = self._sanitize_memory_text(str(item.get("player_ref") or ""))
+                reason = self._sanitize_memory_text(str(item.get("reason") or ""))
+                if not player_ref:
+                    continue
+                try:
+                    level = float(item.get("level", 0.6))
+                except (TypeError, ValueError):
+                    level = 0.6
+                suffix = f"，{label} {level:.2f}"
+                if reason:
+                    suffix += f"：{reason}"
+                lines.append(f"  - {player_ref}{suffix}")
+
+        add_text_list("你之前说过", "own_previous_speeches", 3)
+        add_text_list("你最近注意到", "recent_observations", 4)
+        add_player_entries("你之前怀疑", "suspected_players", "怀疑度", 4)
+        add_player_entries("你之前信任/暂放", "trusted_players", "信任度", 4)
+        add_text_list("尚未解决的问题", "unresolved_questions", 4)
+        add_text_list("质疑过你的人", "being_attacked_by", 4)
+        add_text_list("之前的发言意图", "previous_intents", 4)
+        add_text_list("说话连续性提醒", "style_continuity_notes", 3)
+        if not lines:
+            return ""
+        return (
+            "【你的玩家记忆】\n"
+            "这是你自己的主观连续记忆，只用于保持发言连续性，不是新的公开事实。可以参考，但不要机械复读，也不要暴露隐藏身份。\n"
+            "规则侧结构化分析是客观桌面事实；玩家记忆是你的连续主观判断。若二者轻微冲突，结合 MBTI、角色和当前局势自然表达。\n"
+            + "\n".join(lines)
+        )
 
     def _build_personality_decision_block(self) -> str:
         """Build personality-driven decision constraints for the LLM."""
@@ -1717,9 +1785,10 @@ class LLMAgent(Agent):
         fallback_speech: str,
         max_tokens: int = 1024,
     ) -> tuple[str, dict]:
-        """Wolfcha-style talk generation: system parts + user prompt → JSON string array.
+        """Wolfcha-style talk generation: system parts + user prompt → trace JSON.
 
-        Returns (speech_text, metadata). Speech is joined from parsed JSON array segments.
+        Returns (speech_text, metadata). Trace mode is attempted first; the
+        legacy JSON-array parser remains as compatibility/retry path.
         """
         meta = {
             "provider": self.provider,
@@ -1731,24 +1800,58 @@ class LLMAgent(Agent):
         try:
             # Build system message from parts
             system_content = self._assemble_system_parts(system_parts, focus_angle)
+            workflow_prompt = self._build_talk_workflow_prompt(user_prompt)
             messages = [
                 {"role": "system", "content": system_content},
-                {"role": "user", "content": user_prompt},
+                {"role": "user", "content": workflow_prompt},
             ]
 
-            # First attempt: speech temperature 1.1
+            # First attempt: one-call Observe -> Reason -> Plan -> Speak -> Validate workflow.
             resp = self.client.chat_sync(
                 messages=messages,
                 temperature=self.speech_temperature,
                 max_tokens=max_tokens,
-                thinking=True,
+                thinking=False,
             )
             text = self.client.parse_response(resp).strip()
             reasoning = self.client.parse_thinking(resp)
             usage = resp.get("usage", {}) if isinstance(resp, dict) else {}
             total_latency_ms += int(resp.get("_latency_ms", 0)) if isinstance(resp, dict) else 0
 
-            # Parse JSON string array: ["msg1", "msg2"]
+            trace_result = self._parse_agent_trace_response(text)
+            if trace_result:
+                speech, agent_trace = trace_result
+                segments = self._split_into_segments(speech)
+                self.last_error = None
+                meta["source"] = "llm"
+                meta["fallback"] = False
+                meta["raw_text"] = text[:400]
+                meta["reasoning"] = (reasoning or "")[:2000]
+                meta["attempts"] = 1
+                meta["segment_count"] = len(segments)
+                meta["segment_texts"] = segments
+                meta["agent_trace"] = agent_trace
+                meta["usage"] = usage
+                meta["latency_ms"] = total_latency_ms
+                return "\n\n".join(segments), meta
+
+            extracted_speech = self._extract_final_speech_from_text(text)
+            if extracted_speech and not self._looks_generic_speech([extracted_speech]):
+                segments = self._split_into_segments(extracted_speech)
+                self.last_error = None
+                meta["source"] = "llm"
+                meta["fallback"] = False
+                meta["raw_text"] = text[:400]
+                meta["reasoning"] = (reasoning or "")[:2000]
+                meta["attempts"] = 1
+                meta["segment_count"] = len(segments)
+                meta["segment_texts"] = segments
+                meta["agent_trace_parse_error"] = True
+                meta["usage"] = usage
+                meta["latency_ms"] = total_latency_ms
+                return "\n\n".join(segments), meta
+
+            # Legacy parser kept as compatibility path for old array-shaped responses.
             segments = self._parse_speech_array(text)
             if segments:
                 if not self._looks_generic_speech(segments):
@@ -1853,6 +1956,446 @@ class LLMAgent(Agent):
             "3. 直接回应上一位最不合理的一句。\n"
             "允许保留判断，但不能整段都停留在‘再听听看’。"
         )
+
+    def _build_talk_workflow_prompt(self, user_prompt: str) -> str:
+        view = self._view()
+        mbti = self._mbti()
+        role_strategy = self._agent_trace_role_strategy()
+        return (
+            f"{user_prompt}\n\n"
+            "【本次最高优先级输出要求】\n"
+            "你必须在一次回复中完成 Observe -> Reason -> Plan -> Speak -> Validate。\n"
+            "只输出一个合法 JSON 对象，不要输出 Markdown、代码块、额外解释或 JSON 数组。\n"
+            "reasoning 只能写结构化摘要，不要写完整私密思维链。\n"
+            "speaking.final 必须是你最终要在桌上说出口的话，像狼人杀玩家发言，不要像分析报告。\n\n"
+            "【speaking.final 真人感要求】\n"
+            "- 必须直接进入桌面发言，不要说「我的观察是」「我的计划是」「总结一下」。\n"
+            "- 必须至少回应一个刚出现的具体点，或点名一个你现在最想压榨信息的人。\n"
+            "- 可以短促、有停顿、有口语连接词，比如「但我卡的点是」「这句我不太吃」「先别急着归」。\n"
+            "- 不要平均端水；即使保留判断，也要给出轻重顺序。\n"
+            "- 不要暴露你在执行 Observe/Reason/Plan/Validate，也不要提 JSON、trace、策略约束。\n"
+            "- 长度控制在 1-4 句，像实时打字发言；不要写长篇报告。\n\n"
+            "【Trace 固定字段】\n"
+            f'player_id="{self.player_id}", round="day_{view.day}", phase="{view.phase}", '
+            f'mbti="{mbti}", role="{self.role.value}"。\n\n'
+            "【MBTI 行为约束】\n"
+            f"你的 MBTI 是 {mbti or '未知'}。按以下规则自然影响行为：\n"
+            "- E 更主动、更愿意点名和推进；I 更克制、更短、更偏回应关键点。\n"
+            "- S 更关注已发生的发言、投票、死亡、查验等事实；N 更关注动机、身份结构和可能路线。\n"
+            "- T 更强调逻辑矛盾和收益；F 更强调关系、态度变化和可信度。\n"
+            "- J 更愿意推动阶段性结论和投票方向；P 更愿意保留弹性并提出观察清单。\n\n"
+            "【角色策略约束】\n"
+            f"{role_strategy}\n\n"
+            "【必须返回的 JSON 结构】\n"
+            "{\n"
+            '  "player_id": "",\n'
+            '  "round": "",\n'
+            '  "phase": "",\n'
+            '  "mbti": "",\n'
+            '  "role": "",\n'
+            '  "observation": {\n'
+            '    "noticed_events": [],\n'
+            '    "suspicious_points": [],\n'
+            '    "useful_facts": []\n'
+            "  },\n"
+            '  "reasoning": {\n'
+            '    "reason_summary": "",\n'
+            '    "suspected_players": [],\n'
+            '    "trusted_players": [],\n'
+            '    "self_risk": "",\n'
+            '    "situation": ""\n'
+            "  },\n"
+            '  "planning": {\n'
+            '    "intent": "",\n'
+            '    "target_players": [],\n'
+            '    "strategy": "",\n'
+            '    "tone": ""\n'
+            "  },\n"
+            '  "speaking": {\n'
+            '    "draft": "",\n'
+            '    "final": ""\n'
+            "  },\n"
+            '  "validation": {\n'
+            '    "passed": true,\n'
+            '    "issues": []\n'
+            "  }\n"
+            "}\n\n"
+            "字段填充要求：player_id/round/phase/mbti/role 必须按当前玩家和局势填写；"
+            "reasoning.suspected_players / trusted_players 可以返回字符串，也可以返回结构化对象"
+            "（player_ref、level/suspicion_level/trust_level、reason）；"
+            "所有玩家引用用「X号」；validation.issues 只列输出格式或发言风险问题。"
+        )
+
+    def _mbti(self) -> str:
+        if self.character and self.character.persona.mbti:
+            return str(self.character.persona.mbti)
+        persona = self._view().self_player.get("persona") or {}
+        return str(persona.get("mbti") or "")
+
+    def _agent_trace_role_strategy(self) -> str:
+        role = self.role.value
+        role_lower = role.lower()
+        if role_lower in {"werewolf", "whitewolfking", "white_wolf_king", "bigbadwolf", "wolfcub", "wolfking"}:
+            return (
+                "你属于反派/狼人阵营：发言重点是隐藏身份、制造合理好人视角、转移怀疑、误导焦点；"
+                "不要暴露狼队信息，不要承认夜间行动。"
+            )
+        if role_lower in {"seer", "witch", "hunter", "guard", "idiot", "knight", "elder", "cupid"}:
+            return (
+                "你是特殊身份：发言重点是控制信息释放、保护关键能力、自保，并在必要时用信息帮助好人阵营验证局势。"
+            )
+        return "你属于好人阵营：发言重点是找矛盾、验证信息、推动可执行的怀疑方向，避免无根据带节奏。"
+
+    def _parse_agent_trace_response(self, text: str) -> tuple[str, dict[str, Any]] | None:
+        parsed = self._coerce_json(text)
+        if parsed is None:
+            return None
+        trace = parsed.get("agent_trace") if isinstance(parsed.get("agent_trace"), dict) else parsed
+        if not isinstance(trace, dict):
+            return None
+        speaking = trace.get("speaking")
+        if not isinstance(speaking, dict):
+            return None
+        speech = str(speaking.get("final") or speaking.get("draft") or "").strip()
+        if not speech:
+            return None
+        return speech, self._normalize_agent_trace(trace, speech)
+
+    def _normalize_agent_trace(self, trace: dict[str, Any], final_speech: str) -> dict[str, Any]:
+        view = self._view()
+
+        def list_value(value: Any) -> list[Any]:
+            if isinstance(value, list):
+                items: list[Any] = []
+                for item in value:
+                    if isinstance(item, dict):
+                        items.append(dict(item))
+                    elif str(item).strip():
+                        items.append(str(item)[:240])
+                return items
+            if value:
+                return [str(value)[:240]]
+            return []
+
+        def text_value(value: Any, default: str = "") -> str:
+            text = str(value if value is not None else "").strip()
+            return (text or default)[:500]
+
+        observation = trace.get("observation") if isinstance(trace.get("observation"), dict) else {}
+        reasoning = trace.get("reasoning") if isinstance(trace.get("reasoning"), dict) else {}
+        planning = trace.get("planning") if isinstance(trace.get("planning"), dict) else {}
+        speaking = trace.get("speaking") if isinstance(trace.get("speaking"), dict) else {}
+        validation = trace.get("validation") if isinstance(trace.get("validation"), dict) else {}
+        return {
+            "player_id": text_value(trace.get("player_id"), self.player_id),
+            "round": text_value(trace.get("round"), f"day_{view.day}"),
+            "phase": text_value(trace.get("phase"), view.phase),
+            "mbti": text_value(trace.get("mbti"), self._mbti()),
+            "role": text_value(trace.get("role"), self.role.value),
+            "observation": {
+                "noticed_events": list_value(observation.get("noticed_events")),
+                "suspicious_points": list_value(observation.get("suspicious_points")),
+                "useful_facts": list_value(observation.get("useful_facts")),
+            },
+            "reasoning": {
+                "reason_summary": text_value(reasoning.get("reason_summary")),
+                "suspected_players": list_value(reasoning.get("suspected_players")),
+                "trusted_players": list_value(reasoning.get("trusted_players")),
+                "self_risk": text_value(reasoning.get("self_risk")),
+                "situation": text_value(reasoning.get("situation")),
+            },
+            "planning": {
+                "intent": text_value(planning.get("intent")),
+                "target_players": list_value(planning.get("target_players")),
+                "strategy": text_value(planning.get("strategy")),
+                "tone": text_value(planning.get("tone")),
+            },
+            "speaking": {
+                "draft": text_value(speaking.get("draft"), final_speech),
+                "final": final_speech,
+            },
+            "validation": {
+                "passed": bool(validation.get("passed", True)),
+                "issues": list_value(validation.get("issues")),
+            },
+        }
+
+    def _update_player_memory_from_trace(
+        self,
+        trace: dict[str, Any],
+        final_speech: str,
+        view: PlayerView,
+    ) -> list[dict[str, Any]]:
+        updates: list[dict[str, Any]] = []
+        memory = self.player_memory
+        memory["player_id"] = self.player_id
+        current_round = int(view.day)
+        memory["round_updated"] = current_round
+
+        observation = trace.get("observation") if isinstance(trace.get("observation"), dict) else {}
+        reasoning = trace.get("reasoning") if isinstance(trace.get("reasoning"), dict) else {}
+        planning = trace.get("planning") if isinstance(trace.get("planning"), dict) else {}
+
+        self._memory_append("own_previous_speeches", final_speech, limit=5, max_len=180, updates=updates, round_no=current_round)
+        for item in self._memory_list(observation.get("noticed_events"))[-3:]:
+            self._memory_append("recent_observations", item, limit=8, max_len=180, updates=updates, round_no=current_round)
+        for item in self._memory_list(observation.get("suspicious_points"))[-3:]:
+            self._memory_append("recent_observations", item, limit=8, max_len=180, updates=updates, round_no=current_round)
+            if self._looks_like_unresolved_question(item):
+                self._memory_append("unresolved_questions", item, limit=6, max_len=160, updates=updates, round_no=current_round)
+        reason_summary = str(reasoning.get("reason_summary") or "").strip()
+        for item in self._memory_player_items(reasoning.get("suspected_players"), default_level=0.6, default_reason=reason_summary):
+            self._memory_upsert_player_entry(
+                "suspected_players",
+                item["player_ref"],
+                reason=item["reason"],
+                level=item["level"],
+                round_no=current_round,
+                limit=8,
+                updates=updates,
+            )
+        for item in self._memory_player_items(reasoning.get("trusted_players"), default_level=0.6, default_reason="暂时没有明显矛盾"):
+            self._memory_upsert_player_entry(
+                "trusted_players",
+                item["player_ref"],
+                reason=item["reason"],
+                level=item["level"],
+                round_no=current_round,
+                limit=8,
+                updates=updates,
+            )
+        intent = str(planning.get("intent") or "").strip()
+        strategy = str(planning.get("strategy") or "").strip()
+        for item in self._memory_list(planning.get("target_players")):
+            target_intent = f"继续追问{item}"
+            if target_intent != intent:
+                self._memory_append("previous_intents", target_intent, limit=5, max_len=120, updates=updates, round_no=current_round)
+        if intent:
+            self._memory_append("previous_intents", intent, limit=5, max_len=160, updates=updates, round_no=current_round)
+        if strategy:
+            self._memory_append("previous_intents", strategy, limit=5, max_len=160, updates=updates, round_no=current_round)
+        self_risk = str(reasoning.get("self_risk") or "").strip()
+        if self_risk:
+            self._memory_append("previous_intents", f"降低自己被集火风险: {self_risk}", limit=5, max_len=160, updates=updates, round_no=current_round)
+        situation = str(reasoning.get("situation") or "").strip()
+        if situation:
+            self._memory_append("recent_observations", situation, limit=8, max_len=180, updates=updates, round_no=current_round)
+
+        self._update_memory_attackers(view, updates)
+        return updates[:20]
+
+    @staticmethod
+    def _memory_list(value: Any) -> list[str]:
+        if isinstance(value, list):
+            items: list[str] = []
+            for item in value:
+                if isinstance(item, dict):
+                    player_ref = item.get("player_ref") or item.get("player_id") or item.get("name") or item.get("player") or item.get("target")
+                    if player_ref:
+                        items.append(str(player_ref).strip())
+                elif str(item).strip():
+                    items.append(str(item).strip())
+            return items
+        if value:
+            return [str(value).strip()]
+        return []
+
+    def _memory_player_items(self, value: Any, *, default_level: float, default_reason: str) -> list[dict[str, Any]]:
+        raw_items = value if isinstance(value, list) else ([value] if value else [])
+        items: list[dict[str, Any]] = []
+        for raw in raw_items:
+            if isinstance(raw, dict):
+                player_ref = raw.get("player_ref") or raw.get("player_id") or raw.get("name") or raw.get("player") or raw.get("target")
+                reason = raw.get("reason") or raw.get("rationale") or raw.get("evidence") or raw.get("summary") or default_reason
+                raw_level = raw.get("suspicion_level") or raw.get("trust_level") or raw.get("level") or raw.get("score")
+                try:
+                    level = float(raw_level)
+                except (TypeError, ValueError):
+                    level = default_level
+            else:
+                player_ref = str(raw).strip()
+                reason = default_reason
+                level = default_level
+            if not player_ref:
+                continue
+            items.append({"player_ref": str(player_ref), "reason": str(reason or ""), "level": level})
+        return items
+
+    def _memory_append(
+        self,
+        key: str,
+        value: str,
+        *,
+        limit: int,
+        max_len: int,
+        updates: list[dict[str, Any]],
+        round_no: int,
+    ) -> None:
+        sanitized = self._sanitize_memory_text(value)
+        if not sanitized:
+            return
+        text = sanitized.replace("\n", " ")[:max_len]
+        if not text:
+            return
+        bucket = [str(item) for item in self.player_memory.setdefault(key, [])]
+        existed = text in bucket
+        if existed:
+            bucket.remove(text)
+        bucket.append(text)
+        self.player_memory[key] = bucket[-limit:]
+        if existed:
+            return
+        updates.append({"field": key, "action": "append", "value": text, "round": round_no})
+
+    def _memory_upsert_player_entry(
+        self,
+        key: str,
+        player_ref: str,
+        *,
+        reason: str,
+        level: float,
+        round_no: int,
+        limit: int,
+        updates: list[dict[str, Any]],
+    ) -> None:
+        ref = self._sanitize_memory_text(player_ref)
+        clean_reason = self._sanitize_memory_text(reason) or ""
+        if not ref:
+            return
+        entry = {
+            "player_ref": ref[:80],
+            "level": round(max(0.0, min(float(level), 1.0)), 2),
+            "reason": clean_reason[:160],
+            "round": round_no,
+        }
+        bucket = [item for item in self.player_memory.setdefault(key, []) if isinstance(item, dict)]
+        bucket = [item for item in bucket if str(item.get("player_ref") or "") != entry["player_ref"]]
+        bucket.append(entry)
+        bucket.sort(key=lambda item: (int(item.get("round", 0) or 0), float(item.get("level", 0) or 0)), reverse=True)
+        self.player_memory[key] = bucket[:limit]
+        updates.append({"field": key, "action": "upsert", "value": entry, "round": round_no})
+
+    def _update_memory_attackers(self, view: PlayerView, updates: list[dict[str, Any]]) -> None:
+        my_seat = str(view.self_player.get("seat", ""))
+        my_name = str(view.self_player.get("name", ""))
+        if not my_seat and not my_name:
+            return
+        for event in view.public_events[-12:]:
+            if event.get("type") != "CHAT_MESSAGE" or event.get("actor_id") == self.player_id:
+                continue
+            payload = event.get("payload", {}) or {}
+            speech = str(payload.get("speech") or "")
+            if not speech:
+                continue
+            mentioned = (my_seat and f"{my_seat}号" in speech) or (my_name and my_name in speech)
+            challenged = any(marker in speech for marker in ("不认", "怀疑", "像狼", "别扭", "问题", "票"))
+            if mentioned and challenged:
+                actor = self._player_by_id(event.get("actor_id") or "")
+                tag = self._format_player_tag(actor) if actor else str(payload.get("actor_name") or event.get("actor_id"))
+                self._memory_append("being_attacked_by", tag, limit=6, max_len=80, updates=updates, round_no=int(view.day))
+
+    def _looks_like_unresolved_question(self, text: str) -> bool:
+        clean = self._sanitize_memory_text(text)
+        if not clean:
+            return False
+        strategy_markers = ("继续追问", "观察", "压", "带节奏", "攻击", "推进", "暂时保留", "降低")
+        if any(marker in clean for marker in strategy_markers):
+            return False
+        question_markers = ("没有解释", "没解释", "没有回应", "没回应", "理由不清", "仍然不清楚", "矛盾", "为什么", "待解释")
+        return any(marker in clean for marker in question_markers)
+
+    def _sanitize_memory_text(self, text: str) -> str | None:
+        clean = str(text or "").strip().replace("\n", " ")
+        if not clean:
+            return None
+        private_markers = (
+            "我是狼人",
+            "我是狼",
+            "狼队友",
+            "队友是狼",
+            "我是预言家",
+            "我是女巫",
+            "我是守卫",
+            "查验结果",
+            "验到",
+            "昨晚刀",
+            "今晚刀",
+            "毒药",
+            "解药",
+            "守了",
+            "保护了",
+            "夜里行动",
+            "私密信息",
+            "隐藏身份",
+            "作为狼",
+            "作为狼人",
+            "身为狼",
+            "身为狼人",
+            "我方狼",
+            "狼人视角",
+            "狼队视角",
+            "装好人视角",
+            "隐藏狼身份",
+            "作为预言家",
+            "作为女巫",
+            "作为守卫",
+            "作为特殊身份",
+            "身为特殊身份",
+            "不要暴露身份",
+            "私密视角",
+            "只有我知道",
+            "夜间信息",
+            "夜间行动",
+            "角色私密信息",
+            "role private",
+            "private info",
+            "hidden role",
+            "伪装中立",
+            "伪装成",
+            "伪装好人",
+            "不跳身份",
+            "身份暂时不跳",
+            "暂时不跳",
+            "降低自己被集火风险",
+            "保护狼队友",
+            "引导好人内讧",
+            "利用私密身份信息",
+        )
+        if any(marker in clean for marker in private_markers):
+            return None
+        return clean
+
+    def _player_memory_snapshot(self) -> dict[str, Any]:
+        return {
+            "player_id": self.player_memory.get("player_id", self.player_id),
+            "round_updated": self.player_memory.get("round_updated", 0),
+            "own_previous_speeches": list(self.player_memory.get("own_previous_speeches", [])),
+            "recent_observations": list(self.player_memory.get("recent_observations", [])),
+            "suspected_players": list(self.player_memory.get("suspected_players", [])),
+            "trusted_players": list(self.player_memory.get("trusted_players", [])),
+            "unresolved_questions": list(self.player_memory.get("unresolved_questions", [])),
+            "being_attacked_by": list(self.player_memory.get("being_attacked_by", [])),
+            "previous_intents": list(self.player_memory.get("previous_intents", [])),
+            "style_continuity_notes": list(self.player_memory.get("style_continuity_notes", [])),
+        }
+
+    def _extract_final_speech_from_text(self, text: str) -> str:
+        if not text:
+            return ""
+        import re
+
+        patterns = [
+            r'"final"\s*:\s*"((?:\\.|[^"\\])*)"',
+            r'"speech"\s*:\s*"((?:\\.|[^"\\])*)"',
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, text, flags=re.S)
+            if match:
+                try:
+                    return json.loads(f'"{match.group(1)}"').strip()
+                except Exception:
+                    return match.group(1).strip()
+        return ""
 
     def _looks_generic_speech(self, segments: list[str]) -> bool:
         text = " ".join(s.strip() for s in segments if s.strip())

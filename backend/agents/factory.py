@@ -90,7 +90,7 @@ def create_agents(players: list[Player], agent_config: dict[str, Any] | None = N
     """Create the configured agents for each seat."""
     config = agent_config or {}
     seed = int(config.get("seed", 7))
-    agent_type = str(config.get("type", "llm"))
+    agent_type = os.getenv("AGENT_TYPE") or str(config.get("type", "llm"))
     human_seat = int(config["human_seat"]) if config.get("human_seat") else None
     character_map = config.get("character_map") or {}
     role_models = config.get("role_models") or {}
