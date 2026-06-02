@@ -199,8 +199,9 @@ def main():
             "guard_target", "seer_target",                # new core
             "speech_strategy", "stance_flip",             # new analysis
             "badge_election",                              # new
+            "claim_timing", "coordination",               # 2025 frontier: RESERVED → ACTIVE
         }
-        reserved_types = {"claim_timing", "coordination"}
+        reserved_types: set[str] = set()  # All planned types now implemented
 
         for ctype in sorted(all_types):
             label = COUNTERFACTUAL_TYPE_LABELS[ctype]
@@ -246,6 +247,8 @@ def main():
             "发言策略": ["speech_strategy"],
             "立场一致性": ["stance_flip"],
             "警徽/领导力": ["badge_election"],
+            "角色跳报": ["claim_timing"],
+            "团队协调": ["coordination"],
         }
         print(f"\n  Domain coverage:")
         for domain, types in domains.items():
@@ -254,9 +257,10 @@ def main():
             print(f"    {domain}: {active}/{len(types)} types active, {hits} total cases")
 
         # Gaps
-        print(f"\n  Known gaps (need deeper analysis):")
-        print(f"    claim_timing: requires speech NLP to detect when role was claimed vs when optimal")
-        print(f"    coordination: requires multi-agent simulation of wolf team alternatives")
+        print(f"\n  Known gaps (all 13 types implemented, coverage depends on game data):")
+        print(f"    All counterfactual types are now implemented. Coverage varies by game sample.")
+        print(f"    Speech-based types (speech_strategy, stance_flip, info_release, badge_election)")
+        print(f"    require LLM-agent games to fire — heuristic games are excluded by llm_only filter.")
 
         # Werewolf-specific assessment
         print(f"\n  Werewolf coverage sufficiency:")
@@ -269,6 +273,8 @@ def main():
             "发言反事实 (发言策略问题)": type_counts.get("speech_strategy", 0) > 0,
             "立场反事实 (立场摇摆)": type_counts.get("stance_flip", 0) > 0,
             "警徽反事实 (警徽分配错误)": type_counts.get("badge_election", 0) > 0,
+            "跳时反事实 (跳身份时机)": type_counts.get("claim_timing", 0) > 0,
+            "协同反事实 (狼队协调)": type_counts.get("coordination", 0) > 0,
         }
         covered_dims = sum(1 for v in werewolf_dimensions.values() if v)
         total_dims = len(werewolf_dimensions)
