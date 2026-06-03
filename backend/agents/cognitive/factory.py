@@ -143,7 +143,7 @@ class _ToolCallingRunnable(Runnable):
             api_messages.append(entry)
 
         # Build call parameters explicitly (avoid **payload issues with httpx serialization)
-        max_tokens = kwargs.get("max_tokens", 800)
+        max_tokens = kwargs.get("max_tokens", 1500)
         temperature = kwargs.get("temperature", 0.7)
         tools = self._tool_schemas if self._tool_schemas else None
 
