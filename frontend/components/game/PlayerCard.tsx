@@ -22,6 +22,10 @@ interface PlayerCardProps {
   voteCount?: number;
   /** Name of the player this player voted for */
   voteTargetName?: string;
+  /** Target selection — when true, card is clickable to select as target */
+  selectable?: boolean;
+  isTarget?: boolean;
+  onSelectTarget?: () => void;
 }
 
 export function PlayerCard({
@@ -38,6 +42,9 @@ export function PlayerCard({
   hasVoted = false,
   voteCount = 0,
   voteTargetName,
+  selectable = false,
+  isTarget = false,
+  onSelectTarget,
 }: PlayerCardProps) {
   const { viewMode, language } = useAppContext();
   const [roleRevealed, setRoleRevealed] = useState(true);
@@ -61,9 +68,12 @@ export function PlayerCard({
     !isSpeaking && !isDead && "hover:shadow-lg",
     isSelected && "ring-2 ring-primary shadow-md",
     isThinking && !isSpeaking && "ring-2 ring-info animate-pulse",
+    selectable && !isTarget && "cursor-pointer hover:ring-2 hover:ring-accent/50 hover:shadow-md",
+    isTarget && "ring-[3px] ring-accent shadow-lg shadow-accent/20 scale-[1.03]",
   );
 
   function handleClick() {
+    if (selectable && onSelectTarget) { onSelectTarget(); return; }
     if (!isInteractive) return;
     if (isModerator) setRoleRevealed((v) => !v);
     onClick?.();
@@ -110,6 +120,9 @@ export function PlayerCard({
           )}>
             {player.name}
           </span>
+          {showOwnRole && (
+            <span className="text-[10px] bg-primary/20 text-primary px-1.5 py-0.5 rounded-full font-bold">我</span>
+          )}
         </div>
 
         <div className="flex max-w-full basis-full flex-wrap justify-start gap-1 sm:max-w-[48%] sm:basis-auto sm:justify-end">

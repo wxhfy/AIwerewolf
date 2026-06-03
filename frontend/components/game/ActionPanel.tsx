@@ -18,6 +18,18 @@ interface ActionPanelProps {
 const SPEECH_REQUESTS = new Set(["TALK", "BADGE_SPEECH", "LAST_WORDS"]);
 const HUMAN_TIMER_SECONDS = 60;
 
+const BUTTON_TEXT: Record<string, (l: Language) => string> = {
+  DIVINE: (l) => l === "zh" ? "确认查验" : "Confirm Check",
+  ATTACK: (l) => l === "zh" ? "确认击杀" : "Confirm Kill",
+  GUARD: (l) => l === "zh" ? "确认守护" : "Confirm Guard",
+  WITCH: (l) => l === "zh" ? "确认用药" : "Confirm",
+  SHOOT: (l) => l === "zh" ? "确认开枪" : "Confirm Shoot",
+  VOTE: (l) => l === "zh" ? "确认投票" : "Confirm Vote",
+  BADGE_SPEECH: (l) => l === "zh" ? "提交竞选发言" : "Submit",
+  LAST_WORDS: (l) => l === "zh" ? "结束遗言" : "Finish",
+  TALK: (l) => l === "zh" ? "发送" : "Send",
+};
+
 export function ActionPanel({ pendingInput, onAction, language, votes, players }: ActionPanelProps) {
   const pi = pendingInput;
   if (!pi) return null;
@@ -35,13 +47,9 @@ export function ActionPanel({ pendingInput, onAction, language, votes, players }
   const [submitted, setSubmitted] = useState(false);
   const timerKey = useRef(0);
 
-  // Reset state when pendingInput changes
   useEffect(() => {
-    setSpeech("");
-    setTargetId("");
-    setSavePotion(false);
-    setTimerActive(hasTimer);
-    setSubmitted(false);
+    setSpeech(""); setTargetId(""); setSavePotion(false);
+    setTimerActive(hasTimer); setSubmitted(false);
     timerKey.current += 1;
   }, [pi.player_id, pi.request]);
 
@@ -49,128 +57,86 @@ export function ActionPanel({ pendingInput, onAction, language, votes, players }
     if (submitted) return;
     setSubmitted(true);
     setTimerActive(false);
-    onAction({
-      target_id: isSpeech ? null : (targetId || null),
-      speech: isSpeech ? (speech.trim() || null) : null,
-      save: isWitch ? savePotion : false,
-    });
+    onAction({ target_id: isSpeech ? null : (targetId || null), speech: isSpeech ? (speech.trim() || null) : null, save: isWitch ? savePotion : false });
   }
 
   function handleTimerExpire() {
     if (submitted) return;
     setSubmitted(true);
     setTimerActive(false);
-    onAction({
-      target_id: isSpeech ? null : (targetId || null),
-      speech: isSpeech ? (speech.trim() || null) : null,
-      save: isWitch ? savePotion : false,
-    });
+    onAction({ target_id: isSpeech ? null : (targetId || null), speech: isSpeech ? (speech.trim() || null) : null, save: isWitch ? savePotion : false });
   }
 
+  const targetPlayer = players?.find(p => p.id === targetId);
+  const btnTextFn = BUTTON_TEXT[pi.request] || BUTTON_TEXT[isVote ? "VOTE" : ""] || ((l: Language) => l === "zh" ? "确认" : "Confirm");
+  const btnLabel = btnTextFn(language);
+
   return (
-    <div className="space-y-3 border-t border-border bg-cardBackground px-4 py-3">
-      {/* Guidance */}
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-sm font-semibold text-textPrimary">
-            {pi.player_name} · {tPhase(pi.phase, language)}
-          </p>
-          <p className="text-xs text-text-sub mt-0.5">
-            {pi.prompt || (isSpeech ? t("yourTurnSpeech", language) : t("selectTarget", language))}
-          </p>
+    <div className="border-t border-border bg-cardBackground px-4 py-2">
+      {/* Header row: guidance + timer */}
+      <div className="flex items-center justify-between mb-2">
+        <div className="min-w-0">
+          <p className="text-xs font-medium text-textPrimary truncate">{pi.player_name} · {tPhase(pi.phase, language)}</p>
+          <p className="text-[11px] text-text-sub truncate">{pi.prompt || t("selectTarget", language)}</p>
         </div>
         {hasTimer && (
-          <div className="w-40">
+          <div className="w-32 shrink-0 ml-3">
             <CountdownTimer key={timerKey.current} seconds={HUMAN_TIMER_SECONDS} onExpire={handleTimerExpire} isActive={timerActive && !submitted} />
           </div>
         )}
       </div>
 
-      {/* Speech input */}
-      {isSpeech && (
-        <textarea
-          value={speech}
-          onChange={(e) => setSpeech(e.target.value)}
-          placeholder={pi.placeholder || t("typeSpeech", language)}
-          className="h-24 w-full resize-none rounded-lg border border-border bg-background px-3 py-2 text-sm text-textPrimary"
-          disabled={submitted}
-          onKeyDown={(e) => { if (e.key === "Enter" && e.ctrlKey) submit(); }}
-        />
-      )}
-
-      {/* Vote / Night action progress */}
-      {(isVote || isNight) && votes && Object.keys(votes).length > 0 && (
-        <div className="space-y-1 mb-2">
-          <p className="text-[11px] text-text-sub font-medium mb-1.5">
-            {isVote ? t("votesCast", language)
-              : pi.request === "ATTACK" ? t("wolfPicks", language)
-              : pi.request === "HUNTER_SHOOT" ? t("hunterTarget", language)
-              : t("selectTarget", language)}
-          </p>
-          {Object.entries(votes).map(([voterId, targetId]) => {
-            const voter = players?.find((p) => p.id === voterId);
-            const target = players?.find((p) => p.id === targetId);
-            return (
-              <div key={voterId} className="flex items-center gap-1.5 text-xs">
-                <span className="font-medium text-textPrimary">{voter?.name || voterId}</span>
-                <span className="text-text-sub">→</span>
-                <span className="font-medium text-textPrimary">{target?.name || targetId}</span>
-                {target && <span className="text-text-sub">({target.seat}{language === "zh" ? "号" : ""})</span>}
-              </div>
-            );
-          })}
+      {/* Submitted state */}
+      {submitted && (
+        <div className="flex items-center gap-2 text-xs text-text-sub py-2">
+          <span className="h-3 w-3 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
+          {language === "zh" ? "已提交，等待阶段推进" : "Submitted, waiting..."}
         </div>
       )}
 
-      {/* Vote target grid */}
-      {isVote && (
-        <VoteTargetGrid
-          players={pi.options || []}
-          selectedId={targetId}
-          onSelect={setTargetId}
-          disabled={submitted}
-        />
+      {/* Speech input */}
+      {isSpeech && !submitted && (
+        <div className="space-y-2">
+          <textarea value={speech} onChange={(e) => setSpeech(e.target.value)}
+            placeholder={pi.placeholder || t("typeSpeech", language)}
+            className="h-16 w-full resize-none rounded-lg border border-border bg-background px-3 py-2 text-sm text-textPrimary"
+            disabled={submitted}
+            onKeyDown={(e) => { if (e.key === "Enter" && e.ctrlKey) submit(); }} />
+          <div className="flex justify-between items-center">
+            <button onClick={() => { setSpeech(""); submit(); }} disabled={submitted}
+              className="text-[11px] text-text-sub/60 hover:text-text-sub">
+              {pi.request === "BADGE_SPEECH" ? (language === "zh" ? "不竞选" : "Decline") : (language === "zh" ? "跳过发言" : "Skip")}
+            </button>
+            <Button onClick={submit} disabled={submitted} size="sm">{btnLabel}</Button>
+          </div>
+        </div>
       )}
 
-      {/* Night action target — visual grid like vote */}
-      {isNight && !isVote && (
-        <div className="space-y-3">
-          <VoteTargetGrid
-            players={pi.options || []}
-            selectedId={targetId}
-            onSelect={setTargetId}
-            disabled={submitted}
-          />
+      {/* Vote / Night target */}
+      {(isVote || isNight) && !submitted && (
+        <div className="space-y-2">
+          <VoteTargetGrid players={pi.options || []} selectedId={targetId} onSelect={setTargetId} disabled={submitted} />
           {isWitch && (
-            <label className="flex items-center gap-2 text-sm text-textPrimary">
-              <input type="checkbox" checked={savePotion} onChange={(e) => setSavePotion(e.target.checked)} disabled={submitted}
-                className="w-4 h-4 rounded" />
+            <label className="flex items-center gap-2 text-xs text-textPrimary">
+              <input type="checkbox" checked={savePotion} onChange={(e) => setSavePotion(e.target.checked)} disabled={submitted} className="w-4 h-4 rounded" />
               {t("useHealingPotion", language)}
             </label>
           )}
-          {pi.can_skip && (
-            <button onClick={() => { setTargetId(""); submit(); }}
-              disabled={submitted}
-              className="text-xs text-text-sub underline hover:text-textPrimary">
-              {t("skip", language)}
-            </button>
-          )}
+          <div className="flex justify-between items-center">
+            <span className="text-xs text-text-sub/60">
+              {targetPlayer ? `${language === "zh" ? "已选择" : "Selected"}：${targetPlayer.seat}号 ${targetPlayer.name}` : (language === "zh" ? "请选择目标" : "Select target")}
+            </span>
+            <div className="flex gap-2 items-center">
+              {pi.can_skip && (
+                <button onClick={() => { setTargetId(""); submit(); }} disabled={submitted} className="text-[11px] text-text-sub/60 hover:text-text-sub">
+                  {t("skip", language)}
+                </button>
+              )}
+              <Button onClick={submit} disabled={!targetId} size="sm">{btnLabel}</Button>
+            </div>
+          </div>
         </div>
       )}
-
-      {/* Submit */}
-      <div className="flex justify-end">
-        <Button onClick={submit} disabled={submitted || (isVote && !targetId)} size="sm">
-          {submitted ? (
-            <span className="flex items-center gap-1.5">
-              <span className="h-3 w-3 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-              {t("submitted", language)}
-            </span>
-          ) : (
-            t("submit", language)
-          )}
-        </Button>
-      </div>
     </div>
   );
 }

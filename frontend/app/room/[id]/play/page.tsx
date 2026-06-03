@@ -9,6 +9,8 @@ import { GameEndPanel } from "@/components/game/GameEndPanel";
 import { GameHeader } from "@/components/game/GameHeader";
 import { MobilePlayerRail, PlayerRail } from "@/components/game/PlayerRail";
 import { PhaseOverlayCoordinator } from "@/components/game/PhaseOverlayCoordinator";
+import { DayNightBlinkTransition } from "@/components/game/DayNightBlinkTransition";
+import { ThinkingBubble } from "@/components/game/ThinkingBubble";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { useGamePageController } from "@/hooks/useGamePageController";
 import { GameState, Language } from "@/types";
@@ -72,6 +74,13 @@ export default function GamePage() {
   return (
     <ErrorBoundary>
     <div className="h-screen [height:100dvh] flex flex-col overflow-hidden bg-background night-stars" data-phase={phase.visualPhaseGroup} data-phase-aware>
+      {/* ── 昼夜眨眼转场（z-index 1500，覆盖一切） ── */}
+      <DayNightBlinkTransition
+        blinkPhase={controller.blinkPhase}
+        onCloseComplete={controller.onBlinkCloseComplete}
+        onPauseComplete={controller.onBlinkPauseComplete}
+        onOpenComplete={controller.onBlinkOpenComplete}
+      />
       <PhaseOverlayCoordinator phaseAnnouncement={phase.phaseAnnouncement} />
       {controller.fetchError && (
         <div className="fixed inset-x-0 top-16 z-[1100] mx-auto max-w-md rounded-card border border-danger/30 bg-cardBackground/95 p-4 shadow-lg backdrop-blur">
@@ -156,17 +165,31 @@ export default function GamePage() {
               completedIds={controller.completedIdsRef.current}
             />
           )}
-          <div ref={scroll.scrollRef} onScroll={scroll.handleScroll} className="flex-1 overflow-y-auto px-4 py-3 timeline-scroll">
+          <div ref={scroll.scrollRef} onScroll={scroll.handleScroll} className={`flex-1 overflow-y-auto px-4 py-3 timeline-scroll ${controller.isBlinking ? "pointer-events-none" : ""}`}>
             {gameState?.events?.length ? (
-              <EventTimeline
-                dayBlocks={derived.dayBlocks}
-                language={controller.language}
-                viewMode={controller.viewMode}
-                isHumanMode={controller.isHumanMode}
-                humanSeat={controller.humanSeat}
-                completedIds={controller.completedIdsRef.current}
-                onChatComplete={controller.onChatComplete}
-              />
+              <>
+                <EventTimeline
+                  dayBlocks={derived.dayBlocks}
+                  language={controller.language}
+                  viewMode={controller.viewMode}
+                  isHumanMode={controller.isHumanMode}
+                  humanSeat={controller.humanSeat}
+                  completedIds={controller.completedIdsRef.current}
+                  onChatComplete={controller.onChatComplete}
+                />
+                {/* AI 玩家正在组织发言 → 显示思考气泡（持续到 pending_input 切换） */}
+                {(() => {
+                  const pi = gameState?.pending_input;
+                  if (!pi || pi.action_type !== "speech") return null;
+                  return (
+                    <ThinkingBubble
+                      playerName={pi.player_name}
+                      playerSeat={pi.seat}
+                      language={controller.language}
+                    />
+                  );
+                })()}
+              </>
             ) : controller.isPlaying && !controller.fetchError ? (
               <div className="flex h-full flex-col items-center justify-center py-20 text-center">
                 <div className="mb-5 h-10 w-10 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
