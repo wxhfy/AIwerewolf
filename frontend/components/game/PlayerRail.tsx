@@ -19,12 +19,17 @@ interface PlayerRailProps {
   voteCount: Map<string, number>;
   /** Maps voterId → target player name */
   voteTarget: Map<string, string>;
+  /** Target selection mode — when true, cards are clickable to select */
+  selectable?: boolean;
+  selectedTargetId?: string;
+  onSelectTarget?: (id: string) => void;
 }
 
 export function PlayerRail({
   players, fallbackPlayers, pendingPlayerId, activeSpeakerId,
   sheriffId, badgeCandidateSet, isHumanMode, humanSeat,
   wolfTeammates, side, spokenInPhase, votedSet, voteCount, voteTarget,
+  selectable, selectedTargetId, onSelectTarget,
 }: PlayerRailProps) {
   const visiblePlayers = players.length > 0 ? players : fallbackPlayers;
   return (
@@ -43,6 +48,9 @@ export function PlayerRail({
           hasVoted={votedSet.has(player.id)}
           voteCount={voteCount.get(player.id) || 0}
           voteTargetName={voteTarget.get(player.id)}
+          selectable={selectable && player.alive && player.id !== (pendingPlayerId || activeSpeakerId || "")}
+          isTarget={selectedTargetId === player.id}
+          onSelectTarget={onSelectTarget ? () => onSelectTarget(player.id) : undefined}
         />
       ))}
     </aside>
@@ -55,6 +63,7 @@ export function MobilePlayerRail({
   players, fallbackPlayers, pendingPlayerId, activeSpeakerId,
   sheriffId, badgeCandidateSet, isHumanMode, humanSeat,
   wolfTeammates, spokenInPhase, votedSet, voteCount, voteTarget,
+  selectable, selectedTargetId, onSelectTarget,
 }: MobilePlayerRailProps) {
   const visiblePlayers = players.length > 0 ? players : fallbackPlayers;
   return (
@@ -73,6 +82,9 @@ export function MobilePlayerRail({
             hasVoted={votedSet.has(player.id)}
             voteCount={voteCount.get(player.id) || 0}
             voteTargetName={voteTarget.get(player.id)}
+            selectable={selectable && player.alive && player.id !== (pendingPlayerId || activeSpeakerId || "")}
+            isSelected={selectedTargetId === player.id}
+            onSelectTarget={onSelectTarget ? () => onSelectTarget(player.id) : undefined}
           />
         </div>
       ))}

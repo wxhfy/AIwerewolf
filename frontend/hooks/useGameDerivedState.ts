@@ -111,6 +111,21 @@ export function useGameDerivedState(gameState: GameState | null, humanSeat: numb
     return map;
   }, [revealedEvents, gameState?.players]);
 
+  // Dead player state machine: last_words | hunter_shoot | spectating | null
+  const deadPlayerState = useMemo(() => {
+    if (!gameState?.players || !isHumanMode) return null;
+    const me = gameState.players.find((p) => p.seat === humanSeat);
+    if (!me || me.alive) return null;
+
+    const pending = gameState.pending_input;
+    const isLastWords = gameState.phase === "DAY_LAST_WORDS" && pending?.player_id === me.id;
+    const isHunterShoot = gameState.phase === "HUNTER_SHOOT" && pending?.player_id === me.id;
+
+    if (isHunterShoot) return "hunter_shoot" as const;
+    if (isLastWords) return "last_words" as const;
+    return "spectating" as const;
+  }, [gameState?.players, gameState?.phase, gameState?.pending_input, humanSeat, isHumanMode]);
+
   return {
     dayBlocks,
     splitPoint,
@@ -126,5 +141,6 @@ export function useGameDerivedState(gameState: GameState | null, humanSeat: numb
     votedSet,
     voteCount,
     voteTarget,
+    deadPlayerState,
   };
 }
