@@ -151,6 +151,12 @@ class CognitiveAgent:
                         {"alive_player_ids": alive_ids},
                     )
                 except Exception:
+                    import logging
+                    _logger = logging.getLogger(__name__)
+                    _logger.warning(
+                        f"assign_wolf_tactics failed for {self.player_name}, "
+                        f"using empty tactics", exc_info=True
+                    )
                     self._wolf_tactics = {}
 
     def update(self, view: Any, request: str) -> None:
@@ -193,7 +199,12 @@ class CognitiveAgent:
         # Parse multi-bubble speech
         segments = parse_json_array(raw)
         if not segments or (len(segments) == 1 and len(segments[0]) < 3):
-            # Fallback: use raw text as single speech
+            import logging
+            _logger = logging.getLogger(__name__)
+            _logger.warning(
+                f"Speech parse fallback for {self.player_name}({self._profile.role}): "
+                f"raw_len={len(raw)}, segments_parsed={len(segments) if segments else 0}"
+            )
             speech = raw.strip()[:500] or "我暂时没有更多信息，先听大家发言。"
             segments = [speech]
 
@@ -255,6 +266,12 @@ class CognitiveAgent:
                         public_events=self._view.public_events,
                     )
                 except Exception:
+                    import logging
+                    _logger = logging.getLogger(__name__)
+                    _logger.warning(
+                        f"build_wolf_team_view failed for {self.player_name}, "
+                        f"using None", exc_info=True
+                    )
                     self._wolf_team_view = None
 
         obs = self._observe()
