@@ -5,13 +5,8 @@ import { t } from "@/lib/i18n";
 import { Button } from "@/components/ui/Button";
 
 interface LobbyConfigCardProps {
-  language: Language;
-  playerCount: number;
-  mode: "ai" | "human";
-  humanSeat: number;
-  seed: number;
-  isCreating: boolean;
-  error: string;
+  language: Language; playerCount: number; mode: "ai" | "human";
+  humanSeat: number; seed: number; isCreating: boolean; error: string;
   onPlayerCountChange: (value: number) => void;
   onModeChange: (mode: "ai" | "human") => void;
   onHumanSeatChange: (seat: number) => void;
@@ -19,62 +14,97 @@ interface LobbyConfigCardProps {
   onCreateRoom: () => void;
 }
 
-export function LobbyConfigCard({
-  language,
-  playerCount,
-  mode,
-  humanSeat,
-  seed,
-  isCreating,
-  error,
-  onPlayerCountChange,
-  onModeChange,
-  onHumanSeatChange,
-  onSeedChange,
-  onCreateRoom,
-}: LobbyConfigCardProps) {
+export function LobbyConfigCard(props: LobbyConfigCardProps) {
+  const { language, playerCount, mode, humanSeat, seed, isCreating, error,
+    onPlayerCountChange, onModeChange, onHumanSeatChange, onSeedChange, onCreateRoom } = props;
+
+  const isAi = mode === "ai";
+
+  const modeDesc = isAi
+    ? (language === "zh" ? "所有玩家由 AI 控制，你可以观战完整对局。" : "All players controlled by AI. Spectate the full match.")
+    : (language === "zh" ? "你选择一个座位加入对局，其余玩家由 AI 扮演。" : "Pick a seat to join. Other players are AI-controlled.");
+
+  const buttonText = isAi
+    ? (language === "zh" ? "开始 AI 对局" : "Start AI Match")
+    : (language === "zh" ? "开始真人参与对局" : "Start Human Match");
+
   return (
-    <div className="w-full max-w-md space-y-5 rounded-card border border-border bg-cardBackground p-6 shadow-card">
+    <div className="w-full space-y-5 rounded-xl border border-border/40 bg-cardBackground/80 backdrop-blur-sm p-6 shadow-[0_8px_40px_rgba(0,0,0,0.3)]">
+      {/* Mode toggle */}
       <div>
-        <label className="block text-sm font-medium text-textPrimary mb-2">{t("gameMode", language)}</label>
-        <div className="flex overflow-hidden rounded-button border border-border">
-          {(["ai", "human"] as const).map((nextMode) => (
-            <button key={nextMode} onClick={() => onModeChange(nextMode)}
-              className={`flex-1 py-2 text-sm font-medium ${mode === nextMode ? "bg-primary text-white" : "bg-transparent text-text-sub"}`}>
-              {nextMode === "ai" ? t("aiVsAi", language) : t("humanPlay", language)}
+        <label className="block text-xs font-medium text-text-sub/60 mb-2.5 uppercase tracking-wider min-h-[1em]">{t("gameMode", language)}</label>
+        <div className="flex rounded-lg border border-border/40 p-0.5 bg-border/5">
+          {(["ai", "human"] as const).map((m) => (
+            <button key={m} onClick={() => onModeChange(m)}
+              className={`flex-1 py-2.5 text-sm font-medium rounded-md transition-all duration-200 ${
+                mode === m ? "bg-primary text-white shadow-[0_2px_8px_rgba(183,131,63,0.3)]" : "text-text-sub/60 hover:text-textPrimary"
+              }`}>
+              {m === "ai" ? t("aiVsAi", language) : t("humanPlay", language)}
+            </button>
+          ))}
+        </div>
+        <p className="text-[11px] text-text-sub/50 mt-2 leading-relaxed min-h-[2.25em]">{modeDesc}</p>
+      </div>
+
+      {/* Player count */}
+      <div>
+        <label className="block text-xs font-medium text-text-sub/60 mb-2.5 uppercase tracking-wider">{t("playerCount", language)}</label>
+        <div className="flex gap-1.5">
+          {[7, 8, 9, 10, 11, 12].map((count) => (
+            <button key={count} onClick={() => onPlayerCountChange(count)}
+              className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${
+                playerCount === count ? "bg-primary/15 text-primary border border-primary/30 ring-1 ring-primary/20"
+                : "text-text-sub/50 border border-transparent hover:text-textPrimary hover:bg-primary/5"
+              }`}>
+              {count}
             </button>
           ))}
         </div>
       </div>
 
-      <div>
-        <label className="block text-sm font-medium text-textPrimary mb-2">{t("playerCount", language)}</label>
-        <select value={playerCount} onChange={(event) => onPlayerCountChange(Number(event.target.value))}
-          className="h-10 w-full rounded-button border border-border bg-background px-3 text-sm text-textPrimary">
-          {[7, 8, 9, 10, 11, 12].map((count) => <option key={count} value={count}>{count} {t("playersUnit", language)}</option>)}
-        </select>
-      </div>
-
-      {mode === "human" && (
-        <div>
-          <label className="block text-sm font-medium text-textPrimary mb-2">{t("yourSeat", language)}</label>
-          <select value={humanSeat} onChange={(event) => onHumanSeatChange(Number(event.target.value))}
-            className="h-10 w-full rounded-button border border-border bg-background px-3 text-sm text-textPrimary">
-            {Array.from({ length: playerCount }, (_, index) => index + 1).map((seat) => <option key={seat} value={seat}>{t("seat", language)} {seat}</option>)}
-          </select>
+      {/* Seat selector — human mode only, max-height transition (stable cross-browser) */}
+      <div className={`transition-all duration-300 overflow-hidden ${!isAi ? "max-h-60 opacity-100 mt-1" : "max-h-0 opacity-0 mt-0"}`}>
+        <label className="block text-xs font-medium text-text-sub/60 mb-2.5 uppercase tracking-wider">{t("yourSeat", language)}</label>
+        <div className="grid grid-cols-6 gap-1.5">
+          {Array.from({ length: playerCount }, (_, i) => i + 1).map((seat) => (
+            <button key={seat} onClick={() => onHumanSeatChange(seat)}
+              className={`py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${
+                humanSeat === seat ? "bg-primary/15 text-primary border border-primary/30 ring-1 ring-primary/20"
+                : "text-text-sub/50 border border-transparent hover:text-textPrimary hover:bg-primary/5"
+              }`}>
+              {seat}
+            </button>
+          ))}
         </div>
-      )}
-
-      <div>
-        <label className="block text-sm font-medium text-textPrimary mb-2">{t("seed", language)}</label>
-        <input type="number" value={seed} onChange={(event) => onSeedChange(Number(event.target.value) || 0)}
-          className="h-10 w-full rounded-button border border-border bg-background px-3 text-sm text-textPrimary" />
       </div>
 
-      {error && <p className="text-sm text-danger text-center">{error}</p>}
+      {/* Seed */}
+      <div>
+        <label className="block text-xs font-medium text-text-sub/60 uppercase tracking-wider">{t("seed", language)}</label>
+        <p className="text-[11px] text-text-sub/40 mt-0.5 mb-1.5">
+          {language === "zh" ? "相同 seed 可复现同一局对战" : "Same seed reproduces the same match"}
+        </p>
+        <div className="flex gap-2">
+          <input type="number" value={seed} onChange={(e) => onSeedChange(Number(e.target.value) || 0)}
+            className="h-11 flex-1 rounded-lg border border-border/40 bg-background px-3.5 text-sm text-textPrimary focus:border-primary/40 focus:ring-1 focus:ring-primary/20 outline-none transition-all font-mono tracking-wider" />
+          <button onClick={() => onSeedChange(Math.floor(Math.random() * 1000))}
+            className="h-11 px-4 rounded-lg border border-border/40 text-xs text-text-sub/60 hover:text-primary hover:border-primary/30 transition-all shrink-0">
+            {language === "zh" ? "随机" : "Random"}
+          </button>
+        </div>
+      </div>
 
-      <Button onClick={onCreateRoom} disabled={isCreating} className="w-full h-11 text-base">
-        {isCreating ? t("creating", language) : t("startGame", language)}
+      {/* Error */}
+      {error && <div className="rounded-lg bg-danger/10 border border-danger/20 px-4 py-2.5 text-sm text-danger text-center">{error}</div>}
+
+      {/* Submit */}
+      <Button onClick={onCreateRoom} disabled={isCreating} className="w-full h-12 text-base font-semibold tracking-wide">
+        {isCreating ? (
+          <span className="flex items-center justify-center gap-2">
+            <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+            {t("creating", language)}
+          </span>
+        ) : buttonText}
       </Button>
     </div>
   );

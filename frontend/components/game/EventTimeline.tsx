@@ -14,6 +14,8 @@ interface EventTimelineProps {
   humanSeat: number;
   completedIds: Set<string>;
   onChatComplete: (eventId: string) => void;
+  /** 真人页：隐藏 D{day} 分组标题，事件连续渲染 */
+  hideDayHeaders?: boolean;
 }
 
 const systemIcons: Partial<Record<EventType, string>> = {
@@ -85,7 +87,7 @@ function systemMessage(event: GameEvent, language: Language) {
   return translateSystemMessage(rawMsg, language);
 }
 
-export function EventTimeline({ dayBlocks, language, viewMode, isHumanMode, humanSeat, completedIds, onChatComplete }: EventTimelineProps) {
+export function EventTimeline({ dayBlocks, language, viewMode, isHumanMode, humanSeat, completedIds, onChatComplete, hideDayHeaders }: EventTimelineProps) {
   return (
     <>
       {dayBlocks.map(([day, dayEvents]) => (
@@ -99,6 +101,7 @@ export function EventTimeline({ dayBlocks, language, viewMode, isHumanMode, huma
           humanSeat={humanSeat}
           completedIds={completedIds}
           onChatComplete={onChatComplete}
+          hideDayHeaders={hideDayHeaders}
         />
       ))}
     </>
@@ -149,6 +152,7 @@ function DayEventBlock({
   humanSeat,
   completedIds,
   onChatComplete,
+  hideDayHeaders,
 }: {
   day: number;
   events: GameEvent[];
@@ -158,6 +162,7 @@ function DayEventBlock({
   humanSeat: number;
   completedIds: Set<string>;
   onChatComplete: (eventId: string) => void;
+  hideDayHeaders?: boolean;
 }) {
   const rawEvents = events.filter((event) => event.type !== EventType.PRIVATE_INFO && (viewMode === ViewMode.MODERATOR || event.visibility !== "private"));
 
@@ -197,14 +202,20 @@ function DayEventBlock({
 
   return (
     <div className="mb-5">
-      <div className="mb-3 flex items-center gap-3 border-b border-border pb-2">
-        <span className="font-display text-2xl font-bold text-primary">D{day}</span>
-        {deaths.length > 0 && (
-          <span className="truncate text-xs text-danger">
-            {deaths.map((death) => death.payload.player_name || death.payload.target_name || "?").join(" · ")} {t("playerDied", language)}
+      {!hideDayHeaders && (
+        <div className="mb-3 flex items-center gap-3 border-b border-border pb-2">
+          <span className="font-display text-lg font-bold text-primary tracking-wide">
+            {day === 0
+              ? `🎭 ${t("dayHeaderSetup", language)}`
+              : `🌅 ${t("dayHeaderLabel", language).replace("{n}", String(day))}`}
           </span>
-        )}
-      </div>
+          {deaths.length > 0 && (
+            <span className="truncate text-xs text-danger">
+              {deaths.map((death) => death.payload.player_name || death.payload.target_name || "?").join(" · ")} {t("playerDied", language)}
+            </span>
+          )}
+        </div>
+      )}
       <div className="space-y-0.5">
         {visibleEvents.map((event, index) => (
           <TimelineEvent
@@ -254,17 +265,17 @@ function TimelineEvent({
   }
 
   if (event.type === EventType.CHAT_MESSAGE) {
-    // Skip empty-content chat bubbles
-    const speech = event.payload.speech as string || "";
-    if (!speech.trim()) return null;
+    const speech = (event.payload.speech as string) || "";
+    // 空发言 → 显示"发言完毕，过"，不直接隐藏
+    const content = speech.trim() || t("speechPass", language);
 
     return (
       <ChatBubble
         speakerName={event.payload.actor_name || "?"}
-        content={speech}
+        content={content}
         isOwn={isHumanMode && event.payload.actor_id?.startsWith(`P${humanSeat}-`)}
         phaseLabel={tPhase(event.phase, language)}
-        animate={animateChat}
+        animate={animateChat && !!speech.trim()}
         onTypewriterComplete={() => onChatComplete(event.id)}
       />
     );

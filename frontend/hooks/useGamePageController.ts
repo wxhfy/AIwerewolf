@@ -58,9 +58,11 @@ export function useGamePageController(roomId: string) {
   }, []);
 
   const sessionKey = roomId;
-  const phase = usePhaseTransition(sessionKey, gameState?.phase, Boolean(gameState?.winner));
+  const phase = usePhaseTransition(sessionKey, gameState, Boolean(gameState?.winner));
   const scroll = useAutoScroll(gameState?.events?.length);
-  const derived = useGameDerivedState(gameState, humanSeat, isHumanMode, completedIdsRef.current, completedTick);
+  // 使用 displayGameState：眨眼期间冻结，动画结束后对齐最新
+  const effectiveState = phase.displayGameState;
+  const derived = useGameDerivedState(effectiveState, humanSeat, isHumanMode, completedIdsRef.current, completedTick);
 
   const roomStream = useRoomStream({
     roomId,
@@ -73,7 +75,20 @@ export function useGamePageController(roomId: string) {
     setGameState,
     setIsPlaying,
     setStatusTitle,
+    getIsBlinking: phase.getIsBlinking,
+    bufferSnapshot: phase.bufferSnapshot,
   });
+
+  // 眨眼结束后，对齐缓冲的最新状态
+  // flushResultRef 在 _finishBlink() 中同步写入，紧跟着 setIsBlinking(false)，
+  // 所以 React 因 isBlinking 变化触发本 effect 时 ref 一定已就绪。
+  useEffect(() => {
+    const pending = phase.flushResultRef.current;
+    if (pending && !phase.isBlinking) {
+      phase.flushResultRef.current = null;
+      setGameState(pending);
+    }
+  }, [phase.isBlinking]);
 
   useEffect(() => {
     latestGameStateRef.current = gameState;
@@ -84,8 +99,11 @@ export function useGamePageController(roomId: string) {
   }, [roomId]);
 
   useEffect(() => {
-    if (mode === "human" && !gameState && !isPlaying) startHumanGame();
-  }, [mode, roomId]);
+    if (mode === "human" && !isPlaying && !gameState?.pending_input && !gameState?.winner && !autoStartedRef.current) {
+      autoStartedRef.current = true;
+      startHumanGame();
+    }
+  }, [mode, roomId, gameState?.id]);
 
   useEffect(() => {
     if (!gameState) return;
@@ -155,15 +173,19 @@ export function useGamePageController(roomId: string) {
   }
 
   async function handleHumanAction(data: { target_id?: string | null; speech?: string | null; save?: boolean }) {
+    setFetchError(null);
     try {
+      setIsPlaying(true);
       const snapshot = await submitHumanAction(roomId, data);
       setGameState(snapshot);
       if (snapshot.winner) {
         setIsPlaying(false);
         setStatusTitle(t("statusLoaded", language));
       }
-    } catch {
+    } catch (e) {
+      setFetchError(String((e as any)?.message || e || "Action failed"));
       setStatusTitle(t("statusError", language));
+      setIsPlaying(false);
     }
   }
 
@@ -174,9 +196,11 @@ export function useGamePageController(roomId: string) {
   // Display phase: the phase that the user is currently EXPERIENCING via
   // typewriter — NOT the raw gameState.phase.  It only advances after all
   // chat messages from the previous phase have been fully typed out.
+  // 游戏结束后直接返回真实阶段，不再追踪打字机进度。
   const displayPhase = useMemo(() => {
     const events = gameState?.events;
     if (!events) return gameState?.phase;
+    if (gameState?.winner) return gameState?.phase;
     const completed = completedIdsRef.current;
     // Find the phase of the earliest uncompleted CHAT_MESSAGE
     for (const e of events) {
@@ -185,7 +209,7 @@ export function useGamePageController(roomId: string) {
       }
     }
     return gameState?.phase;
-  }, [gameState?.events, gameState?.phase, completedTick]);
+  }, [gameState?.events, gameState?.phase, gameState?.winner, completedTick]);
 
   return {
     router,
@@ -216,5 +240,11 @@ export function useGamePageController(roomId: string) {
     displayPhase,
     completedIdsRef,
     onChatComplete,
+    // Blink transition passthrough
+    isBlinking: phase.isBlinking,
+    blinkPhase: phase.blinkPhase,
+    onBlinkCloseComplete: phase.onBlinkCloseComplete,
+    onBlinkPauseComplete: phase.onBlinkPauseComplete,
+    onBlinkOpenComplete: phase.onBlinkOpenComplete,
   };
 }

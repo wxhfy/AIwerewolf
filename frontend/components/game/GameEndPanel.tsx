@@ -47,32 +47,38 @@ export function GameEndPanel({
 
   return (
     <>
-      {/* Floating entry — only after modal was dismissed */}
+      {/* Floating entry — draggable, only after modal dismissed */}
       {!showPanel && (
-        <button
-          type="button"
+        <div
+          role="button"
+          tabIndex={0}
           aria-label={t("viewResult", language)}
           onClick={() => { if (!dragRef.current.moved) onOpen(); }}
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onOpen(); }}
           onPointerDown={(event) => {
-            const rect = event.currentTarget.getBoundingClientRect();
-            const ox = ballPos?.x ?? rect.left;
-            const oy = ballPos?.y ?? rect.top;
-            dragRef.current = { dragging: true, startX: event.clientX, startY: event.clientY, origX: ox, origY: oy, moved: false };
-            event.currentTarget.setPointerCapture(event.pointerId);
+            event.preventDefault();
+            const el = event.currentTarget;
+            el.setPointerCapture(event.pointerId);
+            const rect = el.getBoundingClientRect();
+            dragRef.current = {
+              dragging: true, moved: false,
+              startX: event.clientX, startY: event.clientY,
+              origX: ballPos?.x ?? rect.left, origY: ballPos?.y ?? rect.top,
+            };
           }}
           onPointerMove={(event) => {
             if (!dragRef.current.dragging) return;
             const dx = event.clientX - dragRef.current.startX;
             const dy = event.clientY - dragRef.current.startY;
-            if (Math.abs(dx) > 3 || Math.abs(dy) > 3) dragRef.current.moved = true;
+            if (Math.abs(dx) > 2 || Math.abs(dy) > 2) dragRef.current.moved = true;
             if (dragRef.current.moved) {
               onBallMove({ x: dragRef.current.origX + dx, y: dragRef.current.origY + dy });
             }
           }}
-          onPointerUp={(event) => { dragRef.current.dragging = false; event.currentTarget.releasePointerCapture(event.pointerId); }}
-          onLostPointerCapture={() => { dragRef.current.dragging = false; }}
-          className="fixed z-50 right-6 bottom-6 flex items-center gap-3 pl-4 pr-5 py-3 rounded-full animate-scale-in border border-border bg-cardBackground shadow-float hover:shadow-float-hover select-none transition-shadow duration-200 touch-none"
-          style={ballPos ? { left: ballPos.x, top: ballPos.y } : undefined}
+          onPointerUp={() => { dragRef.current.dragging = false; }}
+          onPointerCancel={() => { dragRef.current.dragging = false; }}
+          className="fixed z-50 flex items-center gap-3 pl-4 pr-5 py-3 rounded-full animate-scale-in border border-border bg-cardBackground shadow-float select-none cursor-grab active:cursor-grabbing"
+          style={ballPos ? { left: ballPos.x, top: ballPos.y } : { right: 24, bottom: 24 }}
         >
           <TrophyIcon size={20} className="text-accent animate-breathe" />
           <div className="text-left leading-tight">
@@ -80,7 +86,7 @@ export function GameEndPanel({
             <p className={`text-sm font-bold ${winnerColor}`}>{winTitle}</p>
             <p className="text-[10px] text-text-sub">{t("viewResult", language)}</p>
           </div>
-        </button>
+        </div>
       )}
 
       {/* Result modal */}

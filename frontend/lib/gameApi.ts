@@ -69,7 +69,8 @@ export async function fetchRoom(roomId: string): Promise<RoomRecord | null> {
 }
 
 export async function submitHumanAction(roomId: string, data: HumanActionPayload): Promise<GameState> {
-  const response = await fetchWithTimeout(apiUrl(`/api/rooms/${roomId}/action`), {
+  const url = apiUrl(`/api/rooms/${roomId}/action`);
+  const response = await fetchWithTimeout(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
