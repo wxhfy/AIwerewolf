@@ -27,7 +27,7 @@ from langchain_core.runnables import Runnable
 
 from backend.agents.cognitive.memory import Memory
 from backend.agents.cognitive.observe import Observation, format_observation
-from backend.agents.cognitive.prompts import build_game_context
+from backend.agents.cognitive.prompts import build_game_context, build_strategy_bias_block
 from backend.agents.cognitive.tools import create_tools
 
 logger = logging.getLogger(__name__)
@@ -253,12 +253,10 @@ class AgentLoop:
                 logger.info(f"Final call: DECISION found ({list(decision.keys())})")
                 return decision
 
-        # Max iterations reached — parse best-effort decision
-        logger.warning(f"AgentLoop hit max iterations ({MAX_ITERATIONS}), forcing decision")
-        if self._action_type == "speech":
-            return {"reasoning": "达到最大思考轮次", "speech": "我选择跳过。"}
-        else:
-            return {"reasoning": "达到最大思考轮次", "target": ""}
+        raise RuntimeError(
+            f"AgentLoop failed to produce a DECISION after {MAX_ITERATIONS} "
+            f"iterations for action={self._action_type}"
+        )
 
     # ================================================================
     # Prompt Building
@@ -309,6 +307,10 @@ class AgentLoop:
         # Action task
         blocks.append(self._task_for_action())
 
+        strategy_bias_text = build_strategy_bias_block(self._strategy_bias, self._strategy_action())
+        if strategy_bias_text:
+            blocks.append(strategy_bias_text)
+
         # ═══════════════════════════════════════════════════════
         # LAYER 3: Strategy — on-demand tools
         # ═══════════════════════════════════════════════════════
@@ -321,6 +323,13 @@ class AgentLoop:
         blocks.append(self._output_format())
 
         return "\n\n".join(blocks)
+
+    def _strategy_action(self) -> str:
+        if self._action_type == "speech":
+            return "talk"
+        if self._action_type == "night":
+            return "attack"
+        return self._action_type
 
     def _build_initial_user(self, obs: Observation, cached_analysis: str) -> str:
         """Build the first user message that kicks off the thinking loop."""
@@ -351,12 +360,14 @@ class AgentLoop:
             "vote": (
                 "【任务：投票】\n"
                 "选择一个存活玩家投票放逐。\n"
+                "- 如果当前观察里列出合法目标，只能从合法目标中选择\n"
                 "- 指出你要投谁（target）\n"
                 "- 给出简短的投票理由（reasoning）\n"
             ),
             "night": (
                 "【任务：夜晚行动】\n"
                 "选择一个目标执行你的夜晚能力。\n"
+                "- 如果当前观察里列出合法目标，只能从合法目标中选择\n"
                 "- 指出目标（target）\n"
                 "- 给出行动理由（reasoning）\n"
             ),

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from backend.agents.cognitive.agent_loop import AgentLoop
 from backend.agents.cognitive.memory import Memory
 from backend.agents.cognitive.observe import Observation, PlayerInfo
 from backend.agents.cognitive.profiles import PROFILES
@@ -69,6 +70,34 @@ def test_think_prompt_uses_role_boundaries_not_role_tactics() -> None:
     )
     for phrase in old_role_tactics:
         assert phrase not in prompt
+
+
+def test_agent_loop_places_forced_strategy_only_in_strategy_layer() -> None:
+    obs = Observation(
+        player_id="P1",
+        player_name="Alice",
+        player_seat=1,
+        player_role="Seer",
+        day=1,
+        phase="DAY_VOTE",
+        alive=[
+            PlayerInfo(id="P1", name="Alice", seat=1, alive=True),
+            PlayerInfo(id="P2", name="Bob", seat=2, alive=True),
+        ],
+        legal_targets=[PlayerInfo(id="P2", name="Bob", seat=2, alive=True)],
+    )
+    loop = AgentLoop(
+        llm=object(),
+        system_prompt="【身份与性格】只介绍角色边界。",
+        action_type="vote",
+        strategy_bias={"vote_policy": ["Use verified public information before voting."]},
+    )
+
+    prompt = loop._build_system_text(obs, Memory("P1", "Seer"), create_tools(obs, Memory("P1", "Seer")), "", "")
+
+    assert "【本局强制策略规则" in prompt
+    assert "[vote_policy] Use verified public information before voting." in prompt
+    assert "【身份与性格】只介绍角色边界。" in prompt
 
 
 def test_rules_tool_answers_mechanics_without_recommendation() -> None:

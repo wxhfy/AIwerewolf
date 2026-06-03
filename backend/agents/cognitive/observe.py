@@ -263,6 +263,7 @@ class Observation:
     # Players
     alive: List[PlayerInfo] = field(default_factory=list)
     dead: List[PlayerInfo] = field(default_factory=list)
+    legal_targets: List[PlayerInfo] = field(default_factory=list)
 
     # Current round
     speeches: List[SpeechInfo] = field(default_factory=list)
@@ -316,6 +317,14 @@ def observe(view: Any, role: str, tracker: Optional[BeliefTracker] = None) -> Ob
         )
         (obs.alive if p["alive"] else obs.dead).append(info)
 
+    for p in getattr(view, "legal_targets", []):
+        obs.legal_targets.append(PlayerInfo(
+            id=p["id"],
+            name=p.get("name", ""),
+            seat=p.get("seat", 0),
+            alive=p.get("alive", True),
+        ))
+
     # Today's speeches
     for e in view.public_events:
         if e.get("type") == "CHAT_MESSAGE" and e.get("day") == view.day:
@@ -354,6 +363,8 @@ def observe(view: Any, role: str, tracker: Optional[BeliefTracker] = None) -> Ob
     # Private info
     for e in view.private_events:
         payload = e.get("payload", {}) or {}
+        if payload.get("kind") == "seer_result":
+            obs.private["seer_check"] = payload
         if "check_result" in payload:
             obs.private["seer_check"] = payload
         if "victim_id" in payload:
@@ -391,6 +402,9 @@ def format_observation(obs: Observation) -> str:
         f"存活：{'，'.join(f'{p.seat}号:{p.name}' for p in obs.alive)}",
         f"死亡：{'，'.join(f'{p.seat}号:{p.name}' for p in obs.dead) or '无'}",
     ]
+
+    if obs.legal_targets:
+        lines.append(f"合法目标：{'，'.join(f'{p.seat}号:{p.name}' for p in obs.legal_targets)}")
 
     if obs.speeches:
         lines.append("\n=== 今日发言 ===")

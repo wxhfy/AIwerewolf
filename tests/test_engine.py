@@ -1,3 +1,5 @@
+import pytest
+
 from backend.engine.game import WerewolfGame
 from backend.engine.models import ActionType, Alignment, Decision, Phase, Player, Role
 from backend.engine.visibility import Visibility
@@ -71,6 +73,55 @@ def test_werewolf_knows_only_wolves() -> None:
             assert player["role"] in wolf_family
         else:
             assert "role" not in player
+
+
+def test_llm_invalid_day_vote_raises_instead_of_fallback() -> None:
+    players = [
+        Player(id="P1", seat=1, name="A", role=Role.VILLAGER, alignment=Alignment.VILLAGE),
+        Player(id="P2", seat=2, name="B", role=Role.WEREWOLF, alignment=Alignment.WOLF),
+        Player(id="P3", seat=3, name="C", role=Role.SEER, alignment=Alignment.VILLAGE),
+    ]
+    game = WerewolfGame(players=players, agents={p.id: object() for p in players}, seed=11)
+    game.state.day = 1
+
+    def invalid_batch(players, request, call_fn):
+        assert request == "VOTE"
+        return [
+            Decision(player.id, ActionType.VOTE, target_id=player.id, reasoning="self vote", metadata={"source": "llm"})
+            for player in players
+        ]
+
+    game._batch_ask = invalid_batch  # type: ignore[assignment]
+
+    with pytest.raises(RuntimeError, match="Invalid LLM decision in VOTE"):
+        game._vote_phase()
+
+    assert not any(event.payload.get("agent_fallback") for event in game.state.events)
+
+
+def test_llm_invalid_badge_vote_raises_instead_of_fallback() -> None:
+    players = [
+        Player(id="P1", seat=1, name="A", role=Role.VILLAGER, alignment=Alignment.VILLAGE),
+        Player(id="P2", seat=2, name="B", role=Role.WEREWOLF, alignment=Alignment.WOLF),
+        Player(id="P3", seat=3, name="C", role=Role.SEER, alignment=Alignment.VILLAGE),
+    ]
+    game = WerewolfGame(players=players, agents={p.id: object() for p in players}, seed=12)
+    game.state.day = 1
+    game.state.badge.candidates = ["P1"]
+
+    def invalid_batch(players, request, call_fn):
+        assert request == "BADGE_ELECTION"
+        return [
+            Decision(player.id, ActionType.VOTE, target_id="P3", reasoning="not a candidate", metadata={"source": "llm"})
+            for player in players
+        ]
+
+    game._batch_ask = invalid_batch  # type: ignore[assignment]
+
+    with pytest.raises(RuntimeError, match="Invalid LLM decision in BADGE_ELECTION"):
+        game._badge_election_phase()
+
+    assert not any(event.payload.get("agent_fallback") for event in game.state.events)
 
 
 def test_day_vote_tie_enters_pk_and_resolves() -> None:

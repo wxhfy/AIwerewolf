@@ -105,7 +105,7 @@ def _create_llm_runnable(
             "is unavailable. LLM-only games refuse heuristic fallback; configure an API key "
             "or set LLM_PROVIDER=fake for local tests."
         )
-    client.timeout = 300.0
+    client.timeout = float(os.getenv("LLM_TIMEOUT_SECONDS", "12"))
     return create_llm_from_client(client)
 
 

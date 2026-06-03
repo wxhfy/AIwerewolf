@@ -26,6 +26,24 @@ def test_create_client_defaults_to_dsv4flash(monkeypatch) -> None:
     assert client.model == "deepseek-v4-flash"
 
 
+def test_fake_llm_uses_public_pressure_when_target_is_legal() -> None:
+    client = create_client(provider="fake")
+    prompt = (
+        "=== 当前状态 ===\n"
+        "你是 3号:Carol，身份=Villager\n"
+        "合法目标：1号:Alice，2号:Bob，4号:Dave\n"
+        "=== 今日发言 ===\n"
+        "1号:Alice：我是预言家，查杀 Bob，今天归票 Bob。\n"
+        "【任务：投票】\n"
+        "选择一个存活玩家投票放逐。\n"
+    )
+
+    response = client.chat_sync([{"role": "user", "content": prompt}])
+
+    content = response["choices"][0]["message"]["content"]
+    assert '"target": "Bob"' in content
+
+
 def test_create_agents_applies_role_model_overrides() -> None:
     from backend.agents.cognitive.agent import CognitiveAgent
 

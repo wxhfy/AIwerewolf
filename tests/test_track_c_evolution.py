@@ -27,7 +27,9 @@ from backend.eval.evolution import (
     export_evolution_summary,
     load_strategy_knowledge,
 )
-from backend.eval.review import GameMetrics, MetricsCalculator, PlayerScore, ReviewReportBuilder
+from backend.eval.review import GameMetrics, MetricsCalculator, PlayerScore, ReviewReportBuilder, StrategyKnowledgeExtractor
+from backend.eval.types import ReviewReport as TrackBReviewReport
+from backend.eval.types import StrategySuggestion as TrackBStrategySuggestion
 from tests.test_review_metrics import make_death, make_player, make_seer_result, make_speech, make_state, make_vote
 
 
@@ -98,6 +100,33 @@ def test_c_extracts_sanitized_docs_only_from_approved_reports() -> None:
     assert "WolfA" not in blob
     assert "VillagerA" not in blob
     assert all(not KnowledgeDocValidator().validate(doc) for doc in docs)
+
+
+def test_strategy_knowledge_extractor_accepts_track_b_report_type_as_single_report() -> None:
+    report = TrackBReviewReport(
+        game_id="track-b-report",
+        winner="village",
+        total_days=2,
+        total_events=10,
+        game_summary="Track B reconstructed report.",
+        strategy_suggestions=[
+            TrackBStrategySuggestion(
+                target_type="role",
+                target="Seer",
+                suggestion_type="speech_conversion",
+                suggestion="Convert confirmed information into public vote pressure.",
+                source="approved Track B report",
+                priority="high",
+            )
+        ],
+        metadata={"validation_result": {"passed": True, "publish_allowed": True}},
+    )
+
+    items = StrategyKnowledgeExtractor().extract(report)
+
+    assert len(items) == 1
+    assert items[0].source_game_id == "track-b-report"
+    assert items[0].target_role == "Seer"
 
 
 def test_knowledge_store_retrieves_by_role_phase_and_updates_usage(tmp_path) -> None:

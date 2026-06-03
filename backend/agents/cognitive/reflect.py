@@ -179,6 +179,8 @@ class Reflector:
 
         raw = self._call_llm(system, prompt)
         parsed = self._parse_reflection(raw)
+        if not self._has_reflection_items(parsed):
+            parsed = self._fallback_reflection_from_state(state, mbti, raw)
 
         return ReflectionResult(
             player_id=player_id,
@@ -194,6 +196,54 @@ class Reflector:
             confidence=float(parsed.get("confidence", 0.5)),
             raw_reflection=raw,
         )
+
+    @staticmethod
+    def _has_reflection_items(parsed: Dict[str, Any]) -> bool:
+        return any(
+            parsed.get(key)
+            for key in (
+                "what_worked",
+                "what_failed",
+                "patterns_discovered",
+                "mistakes_to_avoid",
+            )
+        )
+
+    def _fallback_reflection_from_state(
+        self,
+        state: Dict[str, Any],
+        mbti: str,
+        raw: str,
+    ) -> Dict[str, Any]:
+        role = state.get("role", "unknown")
+        won = bool(state.get("won", False))
+        decisions = state.get("decisions", [])
+        events = state.get("game_events", [])
+        action_count = len(decisions)
+        event_count = len(events)
+        outcome_text = "胜利" if won else "失败"
+        key_insight = raw[:160].strip() if raw else ""
+        if not key_insight:
+            key_insight = (
+                f"{role} 的复盘至少要绑定可见事实、合法目标和行动理由，"
+                "否则后续策略库无法判断经验是否可复用。"
+            )
+        return {
+            "what_worked": [
+                f"本局作为 {role} 完成了 {action_count} 次可审计行动，结果为{outcome_text}。",
+            ],
+            "what_failed": [
+                f"反思输出没有提供完整结构化字段，需要在后续 {mbti} 复盘中补足具体成功/失败证据。",
+            ],
+            "patterns_discovered": [
+                f"该视角累计观察到 {event_count} 条事件，复盘知识必须保留来源对局和角色信息。",
+            ],
+            "mistakes_to_avoid": [
+                "不要让格式异常导致反思知识静默丢失；缺字段时也要生成低置信度候选经验。",
+            ],
+            "key_insight": key_insight,
+            "confidence": 0.35,
+        }
 
     # ---- Prompt builders ----
 

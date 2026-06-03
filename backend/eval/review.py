@@ -5695,6 +5695,21 @@ def export_leaderboard(result: LeaderboardResult, path: str | Path) -> dict[str,
     return payload
 
 
+def _is_review_report_like(value: Any) -> bool:
+    return all(
+        hasattr(value, attr)
+        for attr in (
+            "game_id",
+            "player_reviews",
+            "strategy_suggestions",
+            "bad_cases",
+            "counterfactuals",
+            "turning_points",
+            "metadata",
+        )
+    )
+
+
 class StrategyKnowledgeExtractor:
     """Extracts sanitized, reusable role-level strategy lessons from replay artifacts."""
 
@@ -5707,7 +5722,7 @@ class StrategyKnowledgeExtractor:
         reports: ReviewReport | Sequence[ReviewReport],
         leaderboard_results: Sequence[LeaderboardResult] | None = None,
     ) -> list[StrategyKnowledge]:
-        report_list = [reports] if isinstance(reports, ReviewReport) else list(reports)
+        report_list = [reports] if isinstance(reports, ReviewReport) or _is_review_report_like(reports) else list(reports)
         items: list[StrategyKnowledge] = []
         for report in report_list:
             names = self._known_names(report)

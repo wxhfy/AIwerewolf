@@ -2497,7 +2497,7 @@ class TournamentRunner:
             game = WerewolfGame(
                 seed=seed,
                 strategy_version=strategy_version,
-                strategy_bias=strategy_bias,
+                strategy_bias_by_role={target_role: strategy_bias} if target_role and strategy_bias else {},
             )
             game.play()
             metric = MetricsCalculator().compute(game.state)

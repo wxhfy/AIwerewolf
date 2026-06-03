@@ -106,6 +106,7 @@ class WerewolfGame:
         strategy_version: str | None = None,
         strategy_bias: dict[str, list[str]] | None = None,
         strategy_bias_by_role: dict[str, dict[str, list[str]]] | None = None,
+        sampled_personas: list[dict] | None = None,
     ):
         self.rng = Random(seed)
         self.strategy_version = strategy_version
@@ -139,7 +140,7 @@ class WerewolfGame:
         self.play_done: _threading.Event = _threading.Event()
         self._play_start_lock: _threading.Lock = _threading.Lock()
         self._shared_lock: _threading.RLock = _threading.RLock()
-        sampled_personas = self._sample_personas_from_db(len(self.state.players), seed)
+        sampled_personas = sampled_personas or self._sample_personas_from_db(len(self.state.players), seed)
         if not sampled_personas:
             # DB unavailable — shuffle in-memory PERSONA_POOL per seed so
             # each MBTI plays different roles across games (not name-bound).
@@ -293,7 +294,10 @@ class WerewolfGame:
         )
         for player in self.state.players:
             view = self.visibility.for_player(self.state, player.id)
-            self.agents[player.id].initialize(view, {"max_days": self.state.max_days})
+            self.agents[player.id].initialize(
+                view,
+                {"max_days": self.state.max_days, "game_id": self.state.id},
+            )
             self._log(
                 EventType.PRIVATE_INFO,
                 "private",
@@ -504,6 +508,13 @@ class WerewolfGame:
         votes: dict[str, str] = {}
         for voter, decision in zip(voters, decisions):
             if decision.target_id not in candidate_ids:
+                if self._requires_strict_llm_decision(voter):
+                    self._raise_invalid_llm_decision(
+                        voter,
+                        "BADGE_ELECTION",
+                        decision,
+                        f"target_id={decision.target_id!r} is not a badge candidate",
+                    )
                 decision = Decision(
                     voter.id,
                     ActionType.VOTE,
@@ -874,8 +885,21 @@ class WerewolfGame:
             if not self.validator.validate(self.state, decision) or (
                 allowed_targets is not None and decision.target_id not in allowed_targets
             ):
+                if self._requires_strict_llm_decision(voter):
+                    self._raise_invalid_llm_decision(
+                        voter,
+                        "VOTE",
+                        decision,
+                        "vote target is invalid or outside PK targets",
+                    )
                 target = self._fallback_vote_target(voter, target_ids=list(allowed_targets) if allowed_targets else None)
-                decision = Decision(voter.id, ActionType.VOTE, target_id=target.id, reasoning="Fallback legal vote.")
+                decision = Decision(
+                    voter.id,
+                    ActionType.VOTE,
+                    target_id=target.id,
+                    reasoning="Fallback legal vote.",
+                    metadata={"source": "fallback", "fallback": True},
+                )
             self.state.votes[voter.id] = decision.target_id or ""
             target = self.state.player(decision.target_id or "")
             self._log(
@@ -1139,6 +1163,13 @@ class WerewolfGame:
             if chosen_id in candidate_ids:
                 successor = self.state.player(chosen_id)
             else:
+                if self._requires_strict_llm_decision(former):
+                    self._raise_invalid_llm_decision(
+                        former,
+                        "TRANSFER_BADGE",
+                        decision,
+                        f"target_id={chosen_id!r} is not an eligible badge successor",
+                    )
                 # Agent picked someone invalid (dead or self) — fall back to
                 # the heuristic preference so the game keeps moving.
                 successor = self._pick_badge_successor(alive)
@@ -1398,6 +1429,21 @@ class WerewolfGame:
         pool = preferred or alive
         return sorted(pool, key=lambda player: (player.seat, player.name))[0]
 
+    def _requires_strict_llm_decision(self, player: Player) -> bool:
+        return player.is_ai and str(player.agent_type).strip().lower() in {"llm", "cognitive"}
+
+    def _raise_invalid_llm_decision(
+        self,
+        player: Player,
+        request: str,
+        decision: Decision,
+        detail: str,
+    ) -> None:
+        raise RuntimeError(
+            f"Invalid LLM decision in {request}: player={player.id} "
+            f"action={decision.action_type.value} target={decision.target_id!r}; {detail}"
+        )
+
     def _alive_role(self, role: Role) -> Player | None:
         return next((player for player in self.state.alive_players if player.role == role), None)
 
@@ -1542,10 +1588,17 @@ class WerewolfGame:
         # Populate candidate actions from legal actions or metadata
         candidate_actions = meta.get("candidate_actions", [])
         if not candidate_actions:
-            allowed = set(self.state.pk_targets) if request == "VOTE" and self.state.pk_targets else None
-            for target in self.state.alive_players:
-                if target.id != player.id and (allowed is None or target.id in allowed):
-                    candidate_actions.append({"target_id": target.id, "target_name": target.name})
+            view_targets = view.get("legal_targets", []) if isinstance(view, dict) else []
+            for target in view_targets:
+                candidate_actions.append({
+                    "target_id": target.get("id"),
+                    "target_name": target.get("name"),
+                })
+            if not candidate_actions:
+                allowed = set(self.state.pk_targets) if request == "VOTE" and self.state.pk_targets else None
+                for target in self.state.alive_players:
+                    if target.id != player.id and (allowed is None or target.id in allowed):
+                        candidate_actions.append({"target_id": target.id, "target_name": target.name})
 
         with self._shared_lock:
             self.state.decision_records.append(
