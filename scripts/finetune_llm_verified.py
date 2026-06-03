@@ -21,13 +21,13 @@ import torch.nn as nn
 
 sys.path.insert(0, ".")
 
-CONN = "postgresql://werewolf:wolf_secret_2026@127.0.0.1:5433/werewolf"
+CONN = os.environ.get("DATABASE_URL", "")
 BGE_PATH = "/home/4T-3/PLM/bge-m3/"
 GPU = "cuda:3"
 OUTPUT_PATH = "/home/4T-3/PLM/bge-m3-werewolf-ft-v2/"
 
 # LLM config
-LLM_API_KEY = os.environ.get("DSV4FLASH_API_KEY", "ark-b2f90045-5c0d-43c2-86ea-5fd078dcad81-68372")
+LLM_API_KEY = os.environ.get("DSV4FLASH_API_KEY", "")
 LLM_BASE_URL = os.environ.get("DSV4FLASH_BASE_URL", "https://ark.cn-beijing.volces.com/api/coding/v1")
 LLM_MODEL = os.environ.get("DSV4FLASH_MODEL", "deepseek-v4-flash")
 
@@ -400,6 +400,10 @@ if __name__ == "__main__":
     print("=" * 70)
     print("LLM-VERIFIED HARD NEGATIVE MINING + FINE-TUNING")
     print("=" * 70)
+    if not CONN:
+        raise RuntimeError("DATABASE_URL must be set before running fine-tuning.")
+    if not LLM_API_KEY:
+        raise RuntimeError("DSV4FLASH_API_KEY must be set before running LLM verification.")
 
     docs = load_docs()
     all_q = BASE_QUERIES + SPECIAL_QUERIES

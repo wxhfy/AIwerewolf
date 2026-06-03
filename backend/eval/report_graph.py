@@ -82,7 +82,22 @@ class LangGraphReportOptimizer:
             review_context=review_context or {},
             max_iterations=max_iterations,
         )
-        return self.graph.invoke(state)
+        result = self.graph.invoke(state)
+        # StateGraph.invoke() serializes to dict; reconstruct if needed.
+        if isinstance(result, dict):
+            return ReportOptimizationState(
+                game_id=result.get("game_id", state.game_id),
+                review_report=result.get("review_report", state.review_report),
+                review_context=result.get("review_context", state.review_context),
+                draft_markdown=result.get("draft_markdown", ""),
+                final_markdown=result.get("final_markdown", ""),
+                evaluator_result=result.get("evaluator_result"),
+                feedback_history=result.get("feedback_history", []),
+                iteration=result.get("iteration", 0),
+                max_iterations=result.get("max_iterations", max_iterations),
+                quality_passed=result.get("quality_passed", False),
+            )
+        return result
 
     def _generate_report_node(self, state: ReportOptimizationState) -> ReportOptimizationState:
         feedback = state.feedback_history[-1].feedback if state.feedback_history else ""

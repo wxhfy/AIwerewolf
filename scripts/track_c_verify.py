@@ -4,13 +4,10 @@ Critical safety:
 - Pulls approved published_reviews only from the supplied game_ids (defaults
   to all all-LLM games created today). Avoids the heuristic AB-tournament
   contamination from concurrent tenants on the shared DB.
-- Uses TournamentRunner._run_seed default (no llm_agent) for the A/B side
-  so we can quickly compare Δwin from a candidate patch without paying
-  another 10-min/game LLM cost. The candidate-side games are heuristic
-  but use the patched strategy_bias so we measure whether the patch
-  actually changes anything. If the patched heuristic stays at Δwin=0
-  the way the historical 35 tournaments did, that's a real signal that
-  the patch hook is dead.
+- Uses TournamentRunner._run_seed for the A/B side, which now creates
+  LLM-backed CognitiveAgents. Local no-cost verification may set
+  LLM_PROVIDER=fake, but the game path must still be LLM-compatible and
+  must not fall back to HeuristicAgent.
 """
 
 from __future__ import annotations
@@ -120,11 +117,10 @@ def run_dream(reports: list[Any]) -> dict[str, Any]:
 
 
 def run_one_tournament(patch_target_role: str | None = "Seer") -> dict[str, Any]:
-    """Run a fixed-seed 20-game A/B tournament with a synthetic candidate
-    patch on a target role. Uses heuristic engine (default TournamentRunner)
-    so it's fast (<1 min) and tests whether the strategy_bias hook is alive.
+    """Run a fixed-seed 20-game LLM-only A/B tournament with a candidate
+    patch on a target role.
     """
-    print(f"\n=== Stage 2: A/B Tournament (target_role={patch_target_role}, heuristic) ===")
+    print(f"\n=== Stage 2: A/B Tournament (target_role={patch_target_role}, llm-only) ===")
     runner = TournamentRunner(acceptance_policy=AcceptancePolicy())
     seeds = list(range(201, 221))  # 20 seeds disjoint from our LLM batch
 
@@ -137,7 +133,7 @@ def run_one_tournament(patch_target_role: str | None = "Seer") -> dict[str, Any]
             rationale="LLM 复盘多次提到神职信息没转化为投票指引,导致跟票失败。",
         )
     ]
-    print(f"  fixed seeds 201-220 (heuristic engine)")
+    print("  fixed seeds 201-220 (llm engine)")
 
     baseline = [runner._run_seed(seed=s, strategy_version=f"{patch_target_role}_v1",
                                   target_role=patch_target_role) for s in seeds]

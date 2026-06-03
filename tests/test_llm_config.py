@@ -1,3 +1,5 @@
+import pytest
+
 from backend.agents.factory import create_agents
 from backend.engine.models import Alignment, Player, Role
 from backend.llm import create_client
@@ -25,6 +27,8 @@ def test_create_client_defaults_to_dsv4flash(monkeypatch) -> None:
 
 
 def test_create_agents_applies_role_model_overrides() -> None:
+    from backend.agents.cognitive.agent import CognitiveAgent
+
     players = [
         Player(id="p1", seat=1, name="P1", role=Role.WEREWOLF, alignment=Alignment.WOLF),
         Player(id="p2", seat=2, name="P2", role=Role.SEER, alignment=Alignment.VILLAGE),
@@ -35,20 +39,39 @@ def test_create_agents_applies_role_model_overrides() -> None:
         players,
         {
             "type": "llm",
-            "provider": "doubao",
+            "provider": "fake",
             "model": "doubao-default",
             "role_models": {
-                "Werewolf": {"model": "deepseek-v4-pro[1m]"},
-                "SEER": {"provider": "deepseek", "model": "deepseek-v4-flash"},
-                "Villager": {"type": "heuristic"},
+                "Werewolf": {"provider": "fake", "model": "deepseek-v4-pro[1m]"},
+                "SEER": {"provider": "fake", "model": "deepseek-v4-flash"},
+                "Villager": {"provider": "fake", "model": "glm-5.1[1m]"},
             },
         },
     )
 
-    assert agents["p1"].client.model == "deepseek-v4-pro[1m]"
-    assert agents["p1"].client.provider == "doubao"
-    assert agents["p2"].client.model == "deepseek-v4-flash"
-    assert agents["p2"].client.provider == "deepseek"
+    # P1 (Werewolf): CognitiveAgent with role model override
+    assert isinstance(agents["p1"], CognitiveAgent)
     assert players[0].model_name == "deepseek-v4-pro[1m]"
+    # P2 (Seer): CognitiveAgent with provider+model override
+    assert isinstance(agents["p2"], CognitiveAgent)
     assert players[1].model_name == "deepseek-v4-flash"
-    assert players[2].agent_type == "heuristic"
+    # P3 (Villager): still LLM-backed, with role model override
+    assert isinstance(agents["p3"], CognitiveAgent)
+    assert players[2].model_name == "glm-5.1[1m]"
+    assert players[2].agent_type == "llm"
+
+
+def test_create_agents_rejects_heuristic_override() -> None:
+    players = [
+        Player(id="p1", seat=1, name="P1", role=Role.VILLAGER, alignment=Alignment.VILLAGE),
+    ]
+
+    with pytest.raises(ValueError, match="heuristic agents are disabled"):
+        create_agents(
+            players,
+            {
+                "type": "llm",
+                "provider": "fake",
+                "role_models": {"Villager": {"type": "heuristic"}},
+            },
+        )

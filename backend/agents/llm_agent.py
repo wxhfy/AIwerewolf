@@ -24,10 +24,12 @@ class LLMFallbackForbidden(RuntimeError):
 
 
 class LLMAgent(Agent):
-    """LLM-backed agent with heuristic fallback.
+    """Legacy LLM-backed agent.
 
-    The fallback preserves playability if the API is slow, unavailable, or
-    produces malformed output.
+    Game creation now uses CognitiveAgent via backend.agents.factory. This
+    legacy class keeps its fallback implementation for manual debugging, but
+    strict mode is enabled by default so games do not silently switch to
+    heuristic decisions.
 
     For acceptance validation (Track B §34 / Track C §19) we expose
     `STRICT_NO_FALLBACK`. When this class attribute is True, the agent
@@ -36,7 +38,7 @@ class LLMAgent(Agent):
     to publish data produced by a non-LLM path.
     """
 
-    STRICT_NO_FALLBACK: bool = False
+    STRICT_NO_FALLBACK: bool = True
 
     def __init__(
         self,
@@ -353,7 +355,7 @@ class LLMAgent(Agent):
         name = view.self_player.get("name", "?")
         phase = view.phase
 
-        # Part 1: Identity + Role strategy + Persona (wolfcha-style combined prompt)
+        # Part 1: Identity + role capabilities + persona (wolfcha-style combined prompt)
         win_cond = self._build_win_condition()
         persona_hint = self._build_persona_hint()
         base = (
@@ -364,23 +366,22 @@ class LLMAgent(Agent):
 
         # Part 2: Task section (varies by phase)
         if is_last_words:
-            task_line = "你已经出局，现在发表遗言——交代身份、留下信息、点出最可疑的人。"
+            task_line = "你已经出局，现在发表遗言。只能引用自己真实可见的信息和公开事实。"
         elif "BADGE" in str(phase):
             task_line = (
-                "现在是警徽竞选发言。你不是来点评别人的——你是来争取警徽的。"
-                "说明你为什么想拿警徽、你此刻更想看谁、你能不能带队。"
-                "像桌上一名真实玩家那样说出你此刻想争取的东西，不需要像演讲稿。"
+                "现在是警徽相关发言阶段。"
+                "围绕你的可见信息、角色边界和当前判断表达。"
             )
         elif str(phase) == "DAY_PK_SPEECH":
             task_line = (
-                "现在是PK发言。场上已经缩到少数焦点位，你需要更明确地打一个方向。"
-                "可以直接反驳冲你的人，也可以解释为什么另一个PK位更该出。"
+                "现在是PK发言。场上已经缩到少数焦点位。"
+                "回应与你相关的公开质疑，保持事实和推断分离。"
             )
         else:
             task_line = (
                 "现在是白天自由发言。你不是在做总结报告——你是桌子上的玩家。"
                 "从上一个发言者的观点切入，认同、质疑、补充都可以。"
-                "不需要面面俱到，只说此刻你最在意的一点，并顺手给出你的站边或保留意见。"
+                "不需要面面俱到，只说此刻你最在意的一点，并说明你的判断或保留意见。"
             )
         task = (
             "【当前处境】\n"
@@ -405,20 +406,20 @@ class LLMAgent(Agent):
             "从上一人的观点切入——回应他说的内容，然后自然过渡到你自己的判断。\n"
             "不需要总结全场、不需要逐一点评每个玩家。\n"
             "不需要每次都说「我是X号玩家」开头。\n"
-            "至少点名 1 位存活玩家，最好直接说清你更像在保谁、踩谁、还是先观望谁。\n"
+            "至少点名 1 位存活玩家，并说明你提到他的公开依据。\n"
             "尽量挂住 1 条真实桌面事实：某人的一句发言、一次投票、一次死亡信息、一次警徽动作。\n"
-            "可以分成 2-4 条消息气泡，每条 1-2 句完整的思考；首日信息少时也不要只说空话，要给出一个轻度方向。\n"
-            "如果你是第一个发言，第一句不要先解释‘信息少’或‘先观察’，而是直接抛一个你要抓的行为模式、玩家类型或警徽态度。\n"
-            "允许保留判断，但保留判断也要说明你接下来重点听谁、盯谁、或者为什么暂时不跟票。\n"
+            "可以分成 2-4 条消息气泡，每条 1-2 句完整的思考；首日信息少时可以明确说明信息边界。\n"
+            "如果你是第一个发言，基于当前已经公开的信息表达你的初始观察。\n"
+            "允许保留判断，但要说明保留判断的事实原因。\n"
             "语气像真人聊天，可以有语气词、停顿、反问，但不要喊口号，也不要写成总结报告。\n"
             "\n"
-            "【推理要求——必须遵守】\n"
+            "【推理要求】\n"
             "1. 分析角色声称时，关注逻辑一致性而非措辞规范：\n"
-            "   - 多人声称同一角色 → 必须分析谁更可信（查人方向、发言逻辑、是否与已知信息矛盾）\n"
-            "   - 遗言中的身份声称 → 必须认真对待，不能忽略\n"
+            "   - 多人声称同一角色 → 对比查人方向、发言逻辑、是否与已知信息矛盾\n"
+            "   - 遗言中的身份声称 → 纳入可见信息参考\n"
             "   - 警长竞选时的跳身份 → 要分析动机（是真跳还是狼人假跳？）\n"
             "2. 引用具体信息：\n"
-            "   - 必须引用某人的原话（用引号）来支持你的判断\n"
+            "   - 尽量引用某人的原话（用引号）来支持你的判断\n"
             "   - 不能只说“X可疑”，要说“X说了什么什么，这不对因为……”\n"
             "3. 关注逻辑而非措辞：\n"
             "   - 不能因为某人说了“验”字就判定他是假预言家\n"
@@ -455,8 +456,8 @@ class LLMAgent(Agent):
 
         # Map cognitive values to natural Chinese behavioral descriptions
         courage_map = {
-            "bold": "你不怕站边、敢带节奏",
-            "cautious": "你比较谨慎，不会第一个冲票",
+            "bold": "你不怕明确表达判断",
+            "cautious": "你比较谨慎，会先确认依据",
             "calculated": "你有把握时才明确表态",
         }
         suspicion_map = {
@@ -482,8 +483,6 @@ class LLMAgent(Agent):
         lines.append(f"态度：{courage_map.get(m.courage, '看情况表态')}")
         lines.append(f"对他人的信任度：{suspicion_map.get(m.suspicion_threshold, '中等')}")
         lines.append(f"桌面风格：{table_map.get(m.table_presence, '随和')}")
-        if p.wolf_deception_style and self.role.value.lower() in ("werewolf", "white_wolf_king"):
-            lines.append(f"拿狼时的打法：{p.wolf_deception_style}")
         if p.mistake_pattern:
             lines.append(f"你的一个弱点：{p.mistake_pattern}")
 
@@ -689,10 +688,10 @@ class LLMAgent(Agent):
         return ""
 
     def _build_win_condition(self) -> str:
-        """Wolfcha-style win condition + role strategy combined."""
+        """Wolfcha-style win condition and role capability summary."""
         role = self.role.value.lower()
         win_map = {
-            "werewolf": "【你的阵营】狼人。狼人数量 >= 好人数量时胜利。你知道狼队友是谁，白天伪装好人，夜晚和队友协调刀人。",
+            "werewolf": "【你的阵营】狼人。狼人数量 >= 好人数量时胜利。你知道狼队友是谁，夜晚参与狼人阵营击杀行动。",
             "white_wolf_king": "【你的阵营】白狼王。狼人数量 >= 好人数量时胜利。你白天可自爆带走一名玩家。",
             "seer": "【你的阵营】预言家。放逐所有狼人时好人胜利。每晚查验一人，结果只有你知道。",
             "witch": "【你的阵营】女巫。放逐所有狼人时好人胜利。有一瓶解药和一瓶毒药，各限一次。",
@@ -703,11 +702,6 @@ class LLMAgent(Agent):
         }
         base = win_map.get(role, "【你的阵营】好人。放逐所有狼人时胜利。")
 
-        # Add role-specific talk strategy from prompts.py
-        from backend.agents.prompts import get_action_strategy
-        strategy = get_action_strategy("talk", self.role)
-        if strategy:
-            base += f"\n\n【你的玩法】{strategy}"
         return base
 
     def _build_persona_section(self) -> str:
@@ -813,27 +807,27 @@ class LLMAgent(Agent):
         if is_last_words:
             return (
                 "【参考语气】\n"
-                "- “我这张如果走了，你们重点回头看3号和6号，今天这两张的站边最不干净。”\n"
-                "- “身份我先不展开复盘了，就留一句：别把警徽流断在4号这里。”"
+                "- “我只能基于我看到的信息说几句，后面请你们把今天的发言顺序和票型一起复盘。”\n"
+                "- “我留下的判断不当作事实，只是把我的依据讲清楚。”"
             )
         if phase == "DAY_BADGE_SPEECH":
             return (
                 "【参考语气】\n"
-                "- “这把警徽我想拿，因为我今天能把票型和发言都记住，不会乱归。”\n"
-                "- “如果警徽给我，我第一天会先盯2号和5号，这两张的起跳空间最大。”"
+                "- “我会先把自己看到的公开信息讲清楚，再说明为什么我现在这样判断。”\n"
+                "- “警徽相关的选择，我只基于发言、票型和公开动作来解释。”"
             )
         if phase == "DAY_PK_SPEECH":
             return (
                 "【参考语气】\n"
-                "- “PK到我头上可以，但你们得先解释为什么3号那轮跟票比我还轻却没人追。”\n"
-                "- “我这张先不求你们保死，只说一点：今天真要出我，明天请回头看一直顺着我冲的人。”"
+                "- “既然现在轮到我回应，我先把和我有关的公开质疑逐条说清楚。”\n"
+                "- “我不会把推断说成事实，只说我为什么这样理解当前局面。”"
             )
         if is_first:
             return "【参考语气】\n" + "\n".join(self._first_speaker_examples())
         return (
             "【参考语气】\n"
-            "- “你刚那句我不太认，尤其是你把4号直接保掉这一下有点快。”\n"
-            "- “我这轮先不跟着冲6号，我更想听5号为什么昨天那票能下得这么轻。”"
+            "- “你刚才那句我先记下来，我的理解和你不完全一样。”\n"
+            "- “我会把这条公开信息放进判断里，但现在还不能说它就是结论。”"
         )
 
     def _first_speaker_examples(self) -> list[str]:
@@ -841,35 +835,35 @@ class LLMAgent(Agent):
         style = self.character.persona.style_label if self.character else ""
         samples = {
             "aggressive": [
-                "- “首麦我先把话放这，等下谁发言太滑，我第一轮就追着打。”",
-                "- “别都拿第一天当挡箭牌，后面谁急着抱团我先记一笔。”",
+                "- “我先说清楚我的观察标准，后面如果信息变了我也会改。”",
+                "- “第一轮信息少，但我会把公开发言逐条记下来。”",
             ],
             "analytical": [
-                "- “我先给个筛选标准：谁先偷换概念、谁先乱保人，我就从谁开始盘。”",
-                "- “样本少不代表没法听，我先看谁后面发言会和自己的立场对不上。”",
+                "- “我先按事实、推断、结论三层来听后面的发言。”",
+                "- “样本少不代表不能记录，我会先看前后表达是否一致。”",
             ],
             "insightful": [
-                "- “我今天更想听动机，不是谁声音大，而是谁一开口就在替自己留后路。”",
-                "- “首置位先不锤人，但谁急着证明自己是好人，我会先多看一眼。”",
+                "- “我今天会多听动机，但不会把感觉当成事实。”",
+                "- “首置位先不下结论，我先把自己的观察边界说清楚。”",
             ],
             "playful": [
-                "- “先说好，谁一上来端着正义脸乱保人，我今天先给他挂个问号。”",
-                "- “第一麦没材料硬锤，但我可以先埋个钩子，后面谁自己往上撞我就接。”",
+                "- “我先轻一点说，信息少的时候更要把话说清楚。”",
+                "- “第一麦材料有限，我先留一个观察框架。”",
             ],
             "observant": [
-                "- “我先不站边，等下谁发言像提前备好稿子，我会先记他。”",
-                "- “这一轮我只抓不自然的点，谁说得太顺了反而容易进我视线。”",
+                "- “我先保留判断，后面主要记录公开发言里的前后变化。”",
+                "- “这一轮我会看表达是否自然，但不会把语气当作硬证据。”",
             ],
             "poetic": [
-                "- “今天先不急着下刀口结论，我更想看谁的话像借来的，谁的话是从心里出来的。”",
-                "- “第一天像雾里看人，但雾最厚的地方，往往也最值得多盯两眼。”",
+                "- “今天先不急着下结论，我先把雾里的轮廓说出来。”",
+                "- “第一天像雾里看人，所以我会把看到的和猜到的分开说。”",
             ],
         }
         return samples.get(
             style,
             [
-                "- “我先留个观察方向，后面谁最先抢结论、谁最先躲判断，我都会记。”",
-                "- “第一天信息少不等于只能过，我更在意谁开口先把自己摘干净。”",
+                "- “我先留个观察框架，后面根据公开信息再调整。”",
+                "- “第一天信息少，我会先把已知事实和个人推断分开。”",
             ],
         )
 
@@ -964,9 +958,9 @@ class LLMAgent(Agent):
         lines.append(f"- 记忆偏向：{memory_map.get(m.memory_bias, '均衡')}")
         lines.append(f"- 发言长度习惯：{p.speech_length_habit or '自然长度'}")
         lines.append(f"- 压力反应：{p.pressure_style or '冷静回应'}")
-        lines.append(f"- 桌面风格：{m.table_presence}（{'喜欢带节奏' if m.table_presence == 'dominant' else '话不多但有重点' if m.table_presence == 'quiet' else '既会表达也会倾听'}）")
+        lines.append(f"- 桌面风格：{m.table_presence}（{'表达更主动' if m.table_presence == 'dominant' else '话不多但有重点' if m.table_presence == 'quiet' else '既会表达也会倾听'}）")
         lines.append("")
-        lines.append("这些不是装饰——它们必须影响你关注什么信息、如何判断、发言顺序和用词。")
+        lines.append("这些不是装饰——它们会影响你关注什么信息、如何判断、发言顺序和用词。")
         lines.append("不要只改变语气，要改变你关注的信息类型和判断方式。")
         lines.append("例如：记忆偏向'first_impression'的人应该更执着于早期发现的疑点，不容易被后续发言动摇。")
         return "\n".join(lines)
@@ -985,19 +979,12 @@ class LLMAgent(Agent):
             fallback,
             "今天必须从存活玩家里投出 1 人。",
             extra_instructions=[
-                "优先根据今天桌面上已经发生的真实信息投票：发言矛盾、站边摇摆、警徽表现、历史票型都可以。",
-                "reasoning 用 2-4 句中文说清楚：你为什么投这个人、你不投另一个焦点位的原因、你希望好人接下来观察什么。",
-                "如果信息仍然不足，也要给出一个当前最差选项，而不是空泛地说都可疑。",
-                "【阅读理解要求】你必须引用目标玩家的原话（用引号括起来），然后解释这番话为什么有问题。禁止使用'位置伪逻辑'等笼统说法，必须精确引用原话。",
-                "【防跟风要求】你的推理必须独立于其他玩家。禁止说'同意X的观点'或'和X一样'。你必须给出自己的分析链条：引用原话 → 分析矛盾 → 得出结论。",
-                "【关键推理要求】\n"
-                "1. 如果有角色声称矛盾（多人声称同一角色），必须分析谁更可信：\n"
-                "   - 查人方向是否合理？\n"
-                "   - 发言逻辑是否自洽？\n"
-                "   - 是否与已知的查验结果矛盾？\n"
-                "2. 不能因为措辞不规范就判定某人是狼——要看整体逻辑。\n"
-                "3. 遗言中的身份声称必须认真对待——被投出的玩家遗言说的身份很可能是真的。\n"
-                "4. 如果有预言家遗言查了某人是好人，而另一个“预言家”给同一个人发金水，要分析矛盾。",
+                "根据你实际可见的公开信息和私有信息选择一个合法目标。",
+                "reasoning 用 2-4 句中文说清楚：你依据了哪些事实，哪些只是推断。",
+                "如果信息仍然不足，也要说明当前选择的不确定性。",
+                "尽量引用目标玩家的原话（用引号括起来），不要使用笼统标签代替依据。",
+                "推理应独立于其他玩家的结论，避免只写“同意X”。",
+                "如果有角色声称矛盾、遗言身份声称或查验信息冲突，把它们作为可见信息纳入分析。",
             ],
         )
         return Decision(
@@ -1163,8 +1150,7 @@ class LLMAgent(Agent):
             instructions=[
                 "你刚刚作为警长出局，需要决定警徽的去向。",
                 "可以做的事：把警徽传给一个你信任的好人（target=对应玩家），或者选择「撕警徽」让本局警徽失效（target=null）。",
-                "传警徽：选择你认为最可信、能继续主持归票的玩家，通常是已经跳出来的金水或座位上信息量大的好人。",
-                "撕警徽：当你怀疑场上没有足够可信的好人，或不希望警徽落入潜在的狼坑时使用。",
+                "传警徽或撕警徽都必须基于你可见的公开事实、私有信息和当前判断。",
                 "用一两句话说明你的选择理由，不要长篇大论。",
             ],
             options=cand_names,
@@ -1357,9 +1343,9 @@ class LLMAgent(Agent):
             "",
             "=== 推理硬性纪律 ===",
             "- 分析角色声称时，关注逻辑一致性而非措辞规范。不能因为某人说了“验”字就判定他是假预言家。",
-            "- 如果有角色声称矛盾（多人声称同一角色），必须分析谁更可信，不能简单地跟风投票。",
-            "- 遗言中的身份声称必须认真对待——被投出的玩家遗言说的身份很可能是真的。",
-            "- 你必须引用具体发言（用引号）来支持你的判断，不能只说“X可疑”。",
+            "- 如果有角色声称矛盾（多人声称同一角色），应基于可见信息说明你的判断依据。",
+            "- 遗言中的身份声称属于公开信息，可纳入分析但不能当作未验证事实。",
+            "- 尽量引用具体发言（用引号）来支持你的判断，不能只说“X可疑”。",
             "",
             f"请只输出 JSON：{get_output_format(action)}",
         ])
@@ -1674,8 +1660,6 @@ class LLMAgent(Agent):
             lines.append(f"- 不确定性：{p.uncertainty_style}")
         if p.mistake_pattern:
             lines.append(f"- 常见误判：{p.mistake_pattern}")
-        if p.wolf_deception_style:
-            lines.append(f"- 拿狼伪装：{p.wolf_deception_style}")
         lines.append("</hidden_communication_profile>")
         return "\n".join(lines)
 
@@ -1688,7 +1672,7 @@ class LLMAgent(Agent):
         lines = [
             "",
             "<hidden_player_mind>",
-            "这些信息是你稳定的玩家心智，只用于塑造你如何判断、站边、改口、承压和发言，不要向其他玩家明说。",
+            "这些信息是你稳定的玩家心智，只用于塑造你如何判断、表达立场、改口、承压和发言，不要向其他玩家明说。",
             f"- 胆量：{m.courage}",
             f"- 记忆偏好：{m.memory_bias}",
             f"- 怀疑阈值：{m.suspicion_threshold}",

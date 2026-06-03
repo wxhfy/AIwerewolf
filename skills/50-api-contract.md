@@ -158,7 +158,7 @@ updated: 2026-05-22
 |------|------|------|------|
 | `action` | string | yes | 目前仅 `"start"` |
 | `seed` | int | no | 默认 7 |
-| `agent_type` | string | no | `"llm"` / `"heuristic"`,默认 `"llm"` |
+| `agent_type` | string | no | `"llm"` only for AI seats; `"cognitive"` is accepted as legacy alias and normalized to `"llm"` |
 | `show_private` | bool | no | 主持视角,默认 false |
 | `player_count` | int | no | 默认 7 |
 

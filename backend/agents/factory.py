@@ -6,19 +6,16 @@ from copy import deepcopy
 from typing import Any
 
 from backend.agents.base import Agent
-from backend.agents.heuristic import HeuristicAgent
 from backend.agents.human_agent import HumanAgent
-from backend.agents.llm_agent import LLMAgent
+from backend.agents.cognitive.factory import (
+    create_cognitive_agent_with_character,
+    create_llm_from_client,
+)
 from backend.engine.models import Player
 
 
 def _resolve_model_pool(config: dict[str, Any]) -> list[str]:
-    """Parse model pool entries from config or env.
-
-    Supports two formats:
-      - Simple: "model1,model2,model3"  (all use default provider)
-      - Prefixed: "ark:model1,doubao:model2,deepseek:model3"
-    """
+    """Parse model pool entries from config or env."""
     raw = config.get("model_pool")
     if raw is None:
         raw = os.getenv("MODEL_POOL", "") or os.getenv("DOUBAO_MODEL_POOL", "")
@@ -32,18 +29,13 @@ def _resolve_model_pool(config: dict[str, Any]) -> list[str]:
 
 
 def _resolve_pool_specs(config: dict[str, Any]) -> list[dict[str, str]]:
-    """Build (provider, api_key, base_url, model) pool for multi-model assignment.
-
-    Each pool entry can specify its provider explicitly (e.g. "ark:deepseek-v4-pro").
-    Without a provider prefix, the default provider "dsv4flash" is used.
-    """
+    """Build (provider, api_key, base_url, model) pool for multi-model assignment."""
     pool_entries = _resolve_model_pool(config)
     if not pool_entries:
         return []
 
     specs = []
     for entry in pool_entries:
-        # Parse "provider:model" or just "model"
         if ":" in entry:
             provider, model = entry.split(":", 1)
             provider = provider.strip()
@@ -52,7 +44,6 @@ def _resolve_pool_specs(config: dict[str, Any]) -> list[dict[str, str]]:
             provider = "dsv4flash"
             model = entry.strip()
 
-        # Resolve API key and base URL per provider
         spec = _spec_for_provider(provider, model)
         if spec:
             specs.append(spec)
@@ -62,6 +53,13 @@ def _resolve_pool_specs(config: dict[str, Any]) -> list[dict[str, str]]:
 
 def _spec_for_provider(provider: str, model: str) -> dict[str, str] | None:
     """Resolve (api_key, base_url) for a given provider and model."""
+    if provider in {"fake", "fake_llm", "offline_llm"}:
+        return {
+            "provider": "fake",
+            "api_key": "",
+            "base_url": "local://fake-llm",
+            "model": model,
+        }
     if provider == "doubao":
         api_key = os.getenv("DOUBAO_API_KEY", "").strip()
         base_url = os.getenv("DOUBAO_BASE_URL", "").strip()
@@ -86,11 +84,45 @@ def _spec_for_provider(provider: str, model: str) -> dict[str, str] | None:
     }
 
 
+def _create_llm_runnable(
+    provider: str | None,
+    model: str | None,
+    api_key: str | None,
+    base_url: str | None,
+) -> Any:
+    """Create a LangChain Runnable wrapping an LLM client for CognitiveAgent."""
+    from backend.llm import create_client as create_llm_client
+
+    client = create_llm_client(
+        provider=provider,
+        model=model,
+        api_key=api_key,
+        base_url=base_url,
+    )
+    if getattr(client, "available", True) is False:
+        raise RuntimeError(
+            f"LLM provider {getattr(client, 'provider', provider) or provider or 'default'} "
+            "is unavailable. LLM-only games refuse heuristic fallback; configure an API key "
+            "or set LLM_PROVIDER=fake for local tests."
+        )
+    client.timeout = 300.0
+    return create_llm_from_client(client)
+
+
+def _normalize_agent_type(agent_type: str | None) -> str:
+    normalized = str(agent_type or "llm").strip().lower()
+    if normalized in {"llm", "cognitive"}:
+        return "llm"
+    if normalized == "heuristic":
+        raise ValueError("heuristic agents are disabled for games; use agent_type=llm")
+    raise ValueError(f"Unsupported agent_type={agent_type!r}; only llm is allowed for AI seats")
+
+
 def create_agents(players: list[Player], agent_config: dict[str, Any] | None = None) -> dict[str, Agent]:
-    """Create the configured agents for each seat."""
+    """Create LLM-backed agents for each AI seat."""
     config = agent_config or {}
     seed = int(config.get("seed", 7))
-    agent_type = str(config.get("type", "llm"))
+    agent_type = _normalize_agent_type(str(config.get("type", "llm")))
     human_seat = int(config["human_seat"]) if config.get("human_seat") else None
     character_map = config.get("character_map") or {}
     role_models = config.get("role_models") or {}
@@ -98,6 +130,7 @@ def create_agents(players: list[Player], agent_config: dict[str, Any] | None = N
     pool_specs = _resolve_pool_specs(config)
     pool_rng = random.Random(seed) if pool_specs else None
     agents: dict[str, Agent] = {}
+
     for player in players:
         character = character_map.get(player.id)
         if human_seat is not None and player.seat == human_seat:
@@ -105,43 +138,44 @@ def create_agents(players: list[Player], agent_config: dict[str, Any] | None = N
             player.agent_type = "human"
             agents[player.id] = HumanAgent(player.id)
             continue
+
         player.is_ai = True
         player_config = _config_for_player(config, role_models, player)
-        player_agent_type = str(player_config.get("type", agent_type))
+        player_agent_type = _normalize_agent_type(str(player_config.get("type", agent_type)))
         player.agent_type = player_agent_type
-        if player_agent_type == "heuristic":
-            agents[player.id] = HeuristicAgent(
-                player.id,
-                seed=seed + player.seat,
-                character=character,
-                strategy_bias=player_config.get("strategy_bias") or strategy_bias,
-            )
-        else:
-            model_override = player_config.get("model")
-            forced_provider = player_config.get("provider")
-            api_key_override = player_config.get("api_key")
-            base_url_override = player_config.get("base_url")
-            if not model_override and pool_rng is not None and pool_specs:
-                spec = pool_rng.choice(pool_specs)
-                model_override = spec["model"]
-                api_key_override = spec["api_key"]
-                base_url_override = spec["base_url"]
-                # Use the provider from the pool spec if available
-                if not forced_provider:
-                    forced_provider = spec.get("provider", "dsv4flash")
-            player.model_name = str(model_override or "")
-            agents[player.id] = LLMAgent(
-                player.id,
-                seed=seed + player.seat,
-                provider=forced_provider,
-                model=model_override if model_override else None,
-                api_key=api_key_override if api_key_override else None,
-                base_url=base_url_override if base_url_override else None,
-                temperature=float(player_config.get("temperature", 0.4)),
-                speech_temperature=float(player_config.get("speech_temperature", 1.1)),
-                character=character,
-                strategy_bias=player_config.get("strategy_bias") or strategy_bias,
-            )
+
+        model_override = player_config.get("model")
+        forced_provider = player_config.get("provider")
+        api_key_override = player_config.get("api_key")
+        base_url_override = player_config.get("base_url")
+
+        if not model_override and pool_rng is not None and pool_specs:
+            spec = pool_rng.choice(pool_specs)
+            model_override = spec["model"]
+            api_key_override = spec["api_key"]
+            base_url_override = spec["base_url"]
+            if not forced_provider:
+                forced_provider = spec.get("provider", "dsv4flash")
+
+        player.model_name = str(model_override or "")
+
+        llm_runnable = _create_llm_runnable(
+            provider=forced_provider,
+            model=model_override if model_override else None,
+            api_key=api_key_override if api_key_override else None,
+            base_url=base_url_override if base_url_override else None,
+        )
+
+        agents[player.id] = create_cognitive_agent_with_character(
+            player_id=player.id,
+            role=player.role.value,
+            llm=llm_runnable,
+            player_name=player.name,
+            player_seat=player.seat,
+            character=character,
+            strategy_bias=player_config.get("strategy_bias") or strategy_bias,
+        )
+
     return agents
 
 

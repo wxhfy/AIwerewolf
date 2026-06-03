@@ -13,11 +13,11 @@ Also compares:
   D. Parallel Agentic + RRF → RRF fusion on union set
 """
 
-import sys, time, json, re, requests
+import os, sys, time, json, re, requests
 import numpy as np, jieba, psycopg2
 
 CONN = "postgresql://werewolf:wolf_secret_2026@127.0.0.1:5433/werewolf"
-LLM_KEY = "ark-b2f90045-5c0d-43c2-86ea-5fd078dcad81-68372"
+LLM_KEY = os.environ.get("DSV4FLASH_API_KEY", "")
 LLM_URL = "https://ark.cn-beijing.volces.com/api/coding/v1/chat/completions"
 
 TEST_QUERIES = [
@@ -178,6 +178,8 @@ if __name__ == "__main__":
     print("="*70)
     print("HYBRID: Agentic Search + RRF Rerank")
     print("="*70)
+    if not LLM_KEY:
+        raise RuntimeError("DSV4FLASH_API_KEY must be set before running LLM evaluation.")
 
     docs = load_docs()
     print(f"Docs: {len(docs)}")

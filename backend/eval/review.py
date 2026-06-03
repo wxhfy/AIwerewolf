@@ -36,6 +36,7 @@ from backend.eval.types import (
     ReportEvaluationResult, ReportOptimizationState,
     ROLE_LABELS, ALIGNMENT_LABELS, PHASE_LABELS, MVP_TYPE_LABELS,
     COUNTERFACTUAL_TYPE_LABELS, SEVERITY_LABELS,
+    EvidenceRef, EvolutionCandidate, SafetyFlags,
 )
 
 
@@ -194,6 +195,14 @@ class PlayerScore:
     impact_bonus: float = 0.0
     semantic_highlight_bonus: float = 0.0
     review_penalty: float = 0.0
+    # v2 structured fields
+    raw_score: float = 0.0
+    role_normalized_score: float = 0.0
+    confidence: float = 0.0
+    score_reason: str = ""
+    evidence_refs: list[Any] = field(default_factory=list)
+    rule_based: bool = True
+    judge_agreement: float | None = None
 
 
 @dataclass
@@ -227,6 +236,9 @@ class ReviewBonus:
     day: int | None = None
     phase: str | None = None
     category: str = "impact"
+    evidence_refs: list[Any] = field(default_factory=list)
+    visibility_scope: str = "public"
+    safe_for_track_c_learning: bool = True
 
 
 @dataclass
@@ -330,6 +342,15 @@ class BadCaseReport:
     suggested_fix: str
     severity: str
     evidence_event_ids: list[str] = field(default_factory=list)
+    # v2 structured fields (backward-compatible defaults)
+    id: str = ""; bad_case_type: str = ""; phase: str = ""
+    actor_id: str = ""; trigger_condition: str = ""
+    observed_action: str = ""; expected_better_action: str = ""
+    impact_estimate: float = 0.0; confidence: float = 0.0
+    evidence_refs: list[Any] = field(default_factory=list)
+    visibility_scope: str = "public"
+    safety_flags: Any = None
+    safe_for_track_c_learning: bool = True
 
 
 @dataclass
@@ -411,6 +432,14 @@ class CounterfactualCase:
     effect_type: str = "estimated"
     recomputed_outcome: dict[str, Any] = field(default_factory=dict)
     evidence_event_ids: list[str] = field(default_factory=list)
+    # v2 structured fields
+    original_action: str = ""; alternative_action: str = ""
+    expected_delta: float = 0.0
+    assumptions: list[str] = field(default_factory=list)
+    evidence_refs: list[Any] = field(default_factory=list)
+    visibility_scope: str = "public"
+    safe_for_track_c_learning: bool = True
+    actor_id: str = ""; role: str = ""
 
 
 @dataclass
@@ -439,6 +468,7 @@ class ReviewReport:
     total_days: int
     total_events: int
     game_summary: str
+    rule_variant: str = "standard_competition_v1"
     scoreboard: list[dict[str, Any]] = field(default_factory=list)
     mvp_results: list[MVPResult] = field(default_factory=list)
     turning_points: list[TurningPoint] = field(default_factory=list)
@@ -446,6 +476,11 @@ class ReviewReport:
     bad_cases: list[BadCaseReport] = field(default_factory=list)
     counterfactuals: list[CounterfactualCase] = field(default_factory=list)
     strategy_suggestions: list[StrategySuggestion] = field(default_factory=list)
+    bonuses: list[dict[str, Any]] = field(default_factory=list)
+    evolution_candidates: list[EvolutionCandidate] = field(default_factory=list)
+    judge_panel: dict[str, Any] = field(default_factory=dict)
+    calibration_info: dict[str, Any] = field(default_factory=dict)
+    safety_flags: dict[str, Any] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -1254,6 +1289,19 @@ class MetricsCalculator:
     CRITICAL_PENALTY = 0.32
     POWER_ROLES = {Role.SEER.value, Role.WITCH.value, Role.HUNTER.value, Role.GUARD.value}
 
+    # Role baseline statistics for normalization (default values — updated
+    # via calibration when enough game data is available).
+    ROLE_BASELINE_MEAN: dict[str, float] = {
+        "Seer": 52.0, "Witch": 50.0, "Hunter": 48.0,
+        "Guard": 47.0, "Villager": 42.0, "Werewolf": 55.0,
+        "WhiteWolfKing": 55.0, "Idiot": 43.0,
+    }
+    ROLE_BASELINE_STD: dict[str, float] = {
+        "Seer": 12.0, "Witch": 12.0, "Hunter": 12.0,
+        "Guard": 12.0, "Villager": 10.0, "Werewolf": 14.0,
+        "WhiteWolfKing": 14.0, "Idiot": 10.0,
+    }
+
     def __init__(
         self,
         *,
@@ -1702,12 +1750,31 @@ class MetricsCalculator:
         outcome_bonus = round(camp_result_score * 100, 2)
 
         persona_name = player.name
+        role_str = player.role.value
+
+        # Role-normalized score: standardise raw score within the role's
+        # baseline distribution so cross-role comparisons are meaningful.
+        role_norm_score = self._compute_role_normalized(final_score, role_str)
+
+        # Build evidence refs from bad case report event IDs
+        evidence_refs = [
+            EvidenceRef(
+                phase=report.phase or "",
+                actor_id=getattr(report, "actor_id", "") or "",
+                event_type=report.mistake_type,
+                public_or_private="public",
+                visibility_scope="public",
+                summary=report.description[:120],
+            )
+            for report in reports
+        ]
+
         return PlayerScore(
             player_id=player.id,
             player_name=player.name,
             persona_id=persona_name,
             persona_name=persona_name,
-            role=player.role.value,
+            role=role_str,
             alignment=player.alignment.value,
             camp_result_score=round(camp_result_score, 4),
             role_task_score=round(role_task_score, 4),
@@ -1721,6 +1788,13 @@ class MetricsCalculator:
             outcome_bonus=outcome_bonus,
             highlights=highlights,
             mistakes=mistakes,
+            # v2 fields
+            raw_score=final_score,
+            role_normalized_score=role_norm_score,
+            confidence=1.0,
+            score_reason=f"Rule-based scoring: camp={camp_result_score} role_task={role_task_score} vote={vote_score} speech={speech_score} skill={skill_score} survival={survival_score}",
+            evidence_refs=evidence_refs,
+            rule_based=True,
         )
 
     def _build_role_metrics(self, ctx: _PlayerContext, score: PlayerScore) -> RoleMetrics:
@@ -1739,6 +1813,19 @@ class MetricsCalculator:
             highlights=score.highlights,
             final_score=score.final_score,
         )
+
+    def _compute_role_normalized(self, raw: float, role: str) -> float:
+        """Normalize raw score within role distribution: (raw - mean)/std * 10 + 70.
+
+        If no baseline is available for the role, defaults to a fallback that
+        returns the raw score clamped to [0, 100].
+        """
+        mean = self.ROLE_BASELINE_MEAN.get(role)
+        std = self.ROLE_BASELINE_STD.get(role)
+        if mean is None or std is None or std <= 0:
+            return round(max(0.0, min(100.0, raw)), 2)
+        normalized = (raw - mean) / std * 10 + 70
+        return round(max(0.0, min(100.0, normalized)), 2)
 
     def _vote_score(self, state: GameState, ctx: _PlayerContext) -> float:
         if not ctx.vote_events:
@@ -2223,17 +2310,45 @@ class MetricsCalculator:
         suggested_fix: str,
         severity: str,
         evidence_event_ids: list[str] | None = None,
+        phase: str = "",
+        actor_id: str = "",
     ) -> BadCaseReport:
+        uid = f"{state.id}-{player.id}-{mistake_type}-{day}"
+        role_str = player.role.value
+        impact_map = {"critical": 0.9, "major": 0.6, "minor": 0.3}
         return BadCaseReport(
             game_id=state.id,
             day=day,
             player_name=player.name,
-            role=player.role.value,
+            role=role_str,
             mistake_type=mistake_type,
             description=description,
             suggested_fix=suggested_fix,
             severity=severity,
             evidence_event_ids=list(evidence_event_ids or []),
+            # v2 structured fields
+            id=uid,
+            bad_case_type=mistake_type,
+            phase=phase or ("DAY_VOTE" if mistake_type == "vote" else "NIGHT_ACTION" if mistake_type in ("ability", "night") else "DAY_SPEECH"),
+            actor_id=actor_id or player.id,
+            trigger_condition=description[:120],
+            observed_action=description[:200],
+            expected_better_action=suggested_fix[:200],
+            impact_estimate=impact_map.get(severity, 0.5),
+            confidence=0.8,
+            evidence_refs=[
+                EvidenceRef(
+                    phase=phase or "NIGHT_ACTION",
+                    actor_id=player.id,
+                    event_type=mistake_type,
+                    public_or_private="public",
+                    visibility_scope="public",
+                    summary=description[:120],
+                )
+            ],
+            visibility_scope="public",
+            safety_flags=SafetyFlags(safe_for_track_c_learning=True),
+            safe_for_track_c_learning=True,
         )
 
     def _target_player(self, state: GameState, event: GameEvent) -> Player | None:
@@ -2348,12 +2463,35 @@ class ReviewReportBuilder:
         player_reviews = self._build_player_reviews(ranked_scores, bonuses, bad_cases, counterfactuals)
         game_summary = self._build_game_summary(metrics, turning_points, mvp_results)
 
+        # Build v2 structured fields
+        bonuses_dicts = [_bonus_to_dict(b) for b in bonuses]
+        safety_flags = self._scan_safety(state, bad_cases, counterfactuals, strategy_suggestions, bonuses)
+        evolution_candidates = self._generate_evolution_candidates(
+            state, bad_cases, counterfactuals, strategy_suggestions, bonuses
+        )
+        judge_panel: dict[str, Any] = {
+            "judge_scores": [],
+            "agreement_score": 1.0,
+            "disagreement_reasons": [],
+            "critic_resolution": "rule_based",
+            "final_confidence": 1.0,
+        }
+        calibration_info: dict[str, Any] = {
+            "score_version": "v2",
+            "calibration_method": "role_normalization_zscore",
+            "role_normalization": True,
+            "fallback_used": metrics.metadata.get("fallback_used", False),
+            "role_baseline_mean": MetricsCalculator.ROLE_BASELINE_MEAN,
+            "role_baseline_std": MetricsCalculator.ROLE_BASELINE_STD,
+        }
+
         return ReviewReport(
             game_id=metrics.game_id,
             winner=metrics.winner,
             total_days=metrics.total_days,
             total_events=metrics.total_events,
             game_summary=game_summary,
+            rule_variant="standard_competition_v1",
             scoreboard=scoreboard,
             mvp_results=mvp_results,
             turning_points=turning_points,
@@ -2361,6 +2499,11 @@ class ReviewReportBuilder:
             bad_cases=bad_cases,
             counterfactuals=counterfactuals,
             strategy_suggestions=strategy_suggestions,
+            bonuses=bonuses_dicts,
+            evolution_candidates=evolution_candidates,
+            judge_panel=judge_panel,
+            calibration_info=calibration_info,
+            safety_flags=safety_flags,
             metadata={
                 "winner_reasoning": game_summary,
                 "score_formula": metrics.metadata.get("role_score_formula"),
@@ -2370,7 +2513,6 @@ class ReviewReportBuilder:
                 "player_scores": [asdict(score) for score in metrics.player_scores],
                 "wolf_team_votes": metrics.metadata.get("wolf_team_votes", []),
                 "source_metadata": dict(metrics.metadata),
-                # TODO: allow an LLM review narrator to append richer natural-language summaries.
             },
         )
 
@@ -2954,6 +3096,287 @@ class ReviewReportBuilder:
         return title_map.get(bonus.bonus_type, bonus.bonus_type.replace("_", " ").title())
 
 
+    # === v2 structured methods ===
+
+    def _scan_safety(
+        self,
+        state: GameState,
+        bad_cases: list[BadCaseReport],
+        counterfactuals: list[CounterfactualCase],
+        suggestions: list[StrategySuggestion],
+        bonuses: list[ReviewBonus],
+    ) -> dict[str, Any]:
+        """Scan all review items for safety issues (info leaks, private info, unsafe patterns).
+
+        Returns a safety_flags dict compatible with ReviewReport.safety_flags.
+        """
+        info_leak_count = 0
+        private_info_items: list[str] = []
+        unsafe_learning_items: list[str] = []
+
+        # Forbidden patterns — any review item containing these must be marked unsafe
+        _FORBIDDEN = [
+            re.compile(r"\bP\d+\b"),                # Player ID pattern
+            re.compile(r"\bplayer_\d+\b", re.IGNORECASE),
+            re.compile(r"hidden\s*role", re.IGNORECASE),
+            re.compile(r"private_reason", re.IGNORECASE),
+            re.compile(r"read\s*hidden\s*role", re.IGNORECASE),
+            re.compile(r"ignore\s*visibility", re.IGNORECASE),
+            re.compile(r"change\s*game\s*rule", re.IGNORECASE),
+        ]
+        _ABSOLUTE_PATTERNS = [
+            re.compile(r"\balways\b", re.IGNORECASE),
+            re.compile(r"\bnever\b", re.IGNORECASE),
+            re.compile(r"\bmust\b", re.IGNORECASE),
+        ]
+
+        wolf_names = {p.name for p in state.players if p.alignment == Alignment.WOLF}
+        wolf_roles = {p.role.value for p in state.players if p.alignment == Alignment.WOLF}
+
+        def _check_text(text: str, item_id: str) -> bool:
+            """Returns True if the item is safe, False if it has leaks."""
+            nonlocal info_leak_count
+            safe = True
+
+            for pat in _FORBIDDEN:
+                if pat.search(text):
+                    info_leak_count += 1
+                    safe = False
+                    private_info_items.append(f"{item_id}: matched forbidden pattern '{pat.pattern}'")
+                    break
+
+            # Check for wolf teammate identity leaks in public items
+            for wname in wolf_names:
+                if wname in text and "wolf" in text.lower():
+                    info_leak_count += 1
+                    safe = False
+                    private_info_items.append(f"{item_id}: contains wolf teammate identity '{wname}'")
+                    break
+
+            return safe
+
+        def _check_absolute(text: str) -> bool:
+            """Returns True if contains absolute strategy patterns."""
+            for pat in _ABSOLUTE_PATTERNS:
+                if pat.search(text):
+                    return True
+            return False
+
+        # Scan bad cases
+        for bc in bad_cases:
+            blob = f"{bc.description} {bc.suggested_fix}"
+            if not _check_text(blob, f"bad_case:{getattr(bc, 'id', bc.game_id)}"):
+                bc.safe_for_track_c_learning = False
+                unsafe_learning_items.append(f"bad_case:{bc.player_name}:{bc.mistake_type}")
+            if _check_absolute(blob):
+                bc.safe_for_track_c_learning = False
+
+        # Scan counterfactuals
+        for cf in counterfactuals:
+            blob = f"{cf.original_decision} {cf.alternative_decision} {cf.expected_effect}"
+            if not _check_text(blob, f"counterfactual:{cf.case_id}"):
+                cf.safe_for_track_c_learning = False
+                unsafe_learning_items.append(f"counterfactual:{cf.case_id}")
+            if _check_absolute(blob):
+                cf.safe_for_track_c_learning = False
+
+        # Scan suggestions
+        for sug in suggestions:
+            blob = f"{sug.suggestion} {sug.source}"
+            if not _check_text(blob, f"suggestion:{sug.target_type}:{sug.target}"):
+                unsafe_learning_items.append(f"suggestion:{sug.target_type}:{sug.target}")
+
+        # Scan bonuses
+        for bonus in bonuses:
+            blob = f"{bonus.reason}"
+            if not _check_text(blob, f"bonus:{bonus.player_id}:{bonus.bonus_type}"):
+                unsafe_learning_items.append(f"bonus:{bonus.player_id}:{bonus.bonus_type}")
+
+        return {
+            "info_leak_count": info_leak_count,
+            "private_info_items": private_info_items,
+            "unsafe_learning_items": unsafe_learning_items,
+        }
+
+    def _generate_evolution_candidates(
+        self,
+        state: GameState,
+        bad_cases: list[BadCaseReport],
+        counterfactuals: list[CounterfactualCase],
+        suggestions: list[StrategySuggestion],
+        bonuses: list[ReviewBonus],
+    ) -> list[EvolutionCandidate]:
+        """Convert review items into evolution_candidates for Track C consumption.
+
+        Entry conditions:
+          - safe_for_track_c_learning = True
+          - role not empty
+          - phase not empty
+          - trigger_condition not empty
+          - lesson not empty
+          - confidence >= 0.55
+          - has evidence_refs
+        """
+        candidates: list[EvolutionCandidate] = []
+
+        for bc in bad_cases:
+            if not getattr(bc, "safe_for_track_c_learning", True):
+                continue
+            if not bc.role:
+                continue
+            blob = bc.description + bc.suggested_fix
+            if not is_safe_for_track_c_learning(blob):
+                continue
+            ev = EvolutionCandidate(
+                source_type="bad_case",
+                source_id=getattr(bc, "id", bc.game_id),
+                role=bc.role,
+                phase=getattr(bc, "phase", ""),
+                trigger_condition=getattr(bc, "trigger_condition", bc.description[:80]),
+                lesson=bc.suggested_fix,
+                evidence_refs=list(getattr(bc, "evidence_refs", [])),
+                quality_signals={
+                    "evidence_strength": 1.0 if bc.evidence_event_ids else 0.3,
+                    "counterfactual_support": 0.0,
+                    "repeatability_hint": 0.2,
+                    "metric_relevance": 0.8 if bc.severity in ("critical", "major") else 0.55,
+                    "judge_agreement": 1.0,
+                    "confidence": getattr(bc, "confidence", 0.7),
+                },
+                visibility_scope=getattr(bc, "visibility_scope", "public"),
+                safe_for_track_c_learning=True,
+            )
+            if ev.trigger_condition and ev.lesson:
+                candidates.append(ev)
+
+        for cf in counterfactuals:
+            if not getattr(cf, "safe_for_track_c_learning", True):
+                continue
+            role = getattr(cf, "role", "") or cf.affected_players[0] if cf.affected_players else ""
+            blob = cf.original_decision + cf.alternative_decision + cf.expected_effect
+            if not is_safe_for_track_c_learning(blob):
+                continue
+            if cf.confidence < 0.55:
+                continue
+            ev = EvolutionCandidate(
+                source_type="counterfactual",
+                source_id=cf.case_id,
+                role=role,
+                phase=cf.phase or "",
+                trigger_condition=f"When {cf.original_decision[:80]}",
+                lesson=cf.alternative_decision,
+                evidence_refs=list(getattr(cf, "evidence_refs", [])),
+                quality_signals={
+                    "evidence_strength": 0.5 if cf.evidence else 0.3,
+                    "counterfactual_support": 1.0,
+                    "repeatability_hint": 0.2,
+                    "metric_relevance": 0.55,
+                    "judge_agreement": 1.0,
+                    "confidence": cf.confidence,
+                },
+                visibility_scope=getattr(cf, "visibility_scope", "public"),
+                safe_for_track_c_learning=True,
+            )
+            if ev.trigger_condition and ev.lesson:
+                candidates.append(ev)
+
+        for sug in suggestions:
+            role = sug.target if sug.target_type == "role" else ""
+            blob = sug.suggestion + sug.source
+            if not is_safe_for_track_c_learning(blob):
+                continue
+            ev = EvolutionCandidate(
+                source_type="suggestion",
+                source_id=f"{sug.target_type}:{sug.target}",
+                role=role,
+                phase="",
+                trigger_condition=f"{sug.suggestion_type}",
+                lesson=sug.suggestion,
+                evidence_refs=[],
+                quality_signals={
+                    "evidence_strength": 0.5,
+                    "counterfactual_support": 0.0,
+                    "repeatability_hint": 0.2,
+                    "metric_relevance": 0.8 if sug.priority == "high" else 0.55,
+                    "judge_agreement": 1.0,
+                    "confidence": 0.6,
+                },
+                visibility_scope="public",
+                safe_for_track_c_learning=True,
+            )
+            if ev.trigger_condition and ev.lesson:
+                candidates.append(ev)
+
+        return candidates
+
+
+# ---------------------------------------------------------------------------
+# Safety helpers (shared across Track B / Track C)
+# ---------------------------------------------------------------------------
+
+_FORBIDDEN_SAFETY_PATTERNS = [
+    re.compile(r"\bP\d+\b"),
+    re.compile(r"\bplayer_\d+\b", re.IGNORECASE),
+    re.compile(r"hidden\s*role", re.IGNORECASE),
+    re.compile(r"private_reason", re.IGNORECASE),
+    re.compile(r"read\s*hidden\s*role", re.IGNORECASE),
+    re.compile(r"ignore\s*visibility", re.IGNORECASE),
+    re.compile(r"change\s*game\s*rule", re.IGNORECASE),
+]
+_ABSOLUTE_STRATEGY_PATTERNS = [
+    re.compile(r"\balways\b", re.IGNORECASE),
+    re.compile(r"\bnever\b", re.IGNORECASE),
+    re.compile(r"\bmust\b", re.IGNORECASE),
+]
+
+
+def is_safe_for_track_c_learning(text_or_item: Any) -> bool:
+    """Check whether a review item is safe for Track C consumption.
+
+    Conditions (all must pass):
+      1. No player ID patterns (P1, P2, player_1, etc.)
+      2. No hidden role references
+      3. No private_reason references
+      4. No "read hidden role" or "ignore visibility" or "change game rule"
+      5. No absolute strategy words (always, never, must)
+    """
+    if hasattr(text_or_item, "description") and hasattr(text_or_item, "suggested_fix"):
+        text = f"{getattr(text_or_item, 'description', '')} {getattr(text_or_item, 'suggested_fix', '')}"
+        if hasattr(text_or_item, "expected_effect"):
+            text += f" {getattr(text_or_item, 'expected_effect', '')}"
+    else:
+        text = str(text_or_item)
+
+    for pat in _FORBIDDEN_SAFETY_PATTERNS:
+        if pat.search(text):
+            return False
+
+    # Absolute strategies are NOT safe but can be downgraded (soft suggestion).
+    # is_safe_for_track_c_learning still returns False for them so Track C
+    # can decide to skip or downgrade.
+    for pat in _ABSOLUTE_STRATEGY_PATTERNS:
+        if pat.search(text):
+            return False
+
+    return True
+
+
+def _bonus_to_dict(bonus: ReviewBonus) -> dict[str, Any]:
+    """Convert a ReviewBonus to a dict for storage in ReviewReport.bonuses."""
+    return {
+        "player_id": bonus.player_id,
+        "bonus_type": bonus.bonus_type,
+        "score_delta": bonus.score_delta,
+        "reason": bonus.reason,
+        "confidence": bonus.confidence,
+        "day": bonus.day,
+        "phase": bonus.phase,
+        "category": bonus.category,
+        "visibility_scope": getattr(bonus, "visibility_scope", "public"),
+        "safe_for_track_c_learning": getattr(bonus, "safe_for_track_c_learning", True),
+    }
+
+
 class CounterfactualAnalyzer:
     """Derives lightweight local counterfactuals from logs, bad cases, and turning points."""
 
@@ -3197,9 +3620,9 @@ class CounterfactualAnalyzer:
                     cases.append(CounterfactualCase(
                         case_id=f"{state.id}-witch-poison-{day}-{poison_actor.id}",
                         game_id=state.id, day=day, phase="NIGHT_WITCH_ACTION",
-                        counterfactual_type="witch_poison",
+                        counterfactual_type="skill",
                         original_decision=f"{poison_actor.name} poisoned villager-side player {poison_target.name}.",
-                        alternative_decision=f"If {poison_actor.name} had held the poison, {poison_target.name} would survive.",
+                        alternative_decision=f"If {poison_actor.name} had held poison, {poison_target.name} would survive.",
                         expected_effect=f"Village retains {poison_target.name} and one extra vote for future days.",
                         affected_players=[poison_actor.name, poison_target.name],
                         confidence=0.95,  # Exact: we know for sure they'd survive
@@ -3209,12 +3632,12 @@ class CounterfactualAnalyzer:
                         ],
                         severity="critical",
                         source_bad_case_id=self._find_bad_case_id(bad_cases, day, poison_actor.name, "ability"),
-                        effect_type="exact_recalculation",
+                        effect_type="local_recalculation",
                         recomputed_outcome={
                             "original_deaths": orig_result.deaths,
                             "cf_deaths": cf_result.deaths,
-                            "outcome_changed": poison_target_id not in {d["player_id"] for d in cf_result.deaths},
-                            "method": "exact_recalculation",
+                            "outcome_changed": witch_poison_target_id not in {d["player_id"] for d in cf_result.deaths},
+                            "method": "local_recalculation",
                         },
                         evidence_event_ids=[e.id for e in day_events[:3]],
                     ))
@@ -3234,7 +3657,7 @@ class CounterfactualAnalyzer:
                         cases.append(CounterfactualCase(
                             case_id=f"{state.id}-witch-save-{day}-{wolf_target_id}",
                             game_id=state.id, day=day, phase="NIGHT_WITCH_ACTION",
-                            counterfactual_type="witch_save",
+                            counterfactual_type="skill",
                             original_decision=f"The witch did not save {wolf_victim.name}({wolf_victim.role.value}) on night {day}.",
                             alternative_decision=f"If the witch had saved {wolf_victim.name}, they would survive the night.",
                             expected_effect=f"Preserving {wolf_victim.name} retains {wolf_victim.role.value} abilities.",
@@ -3245,12 +3668,12 @@ class CounterfactualAnalyzer:
                                 f"Exact replay: {len(orig_result.deaths)} deaths → {len(cf_result.deaths)} deaths.",
                             ],
                             severity="major" if outcome_changed else "moderate",
-                            effect_type="exact_recalculation",
+                            effect_type="local_recalculation",
                             recomputed_outcome={
                                 "original_deaths": orig_result.deaths,
                                 "cf_deaths": cf_result.deaths,
                                 "outcome_changed": outcome_changed,
-                                "method": "exact_recalculation",
+                                "method": "local_recalculation",
                             },
                             evidence_event_ids=[e.id for e in day_events[:3]],
                         ))
@@ -3276,9 +3699,9 @@ class CounterfactualAnalyzer:
             cases.append(CounterfactualCase(
                 case_id=f"{state.id}-hunter-shot-{event.day}-{hunter.id}",
                 game_id=state.id, day=event.day, phase=event.phase.value,
-                counterfactual_type="hunter_shot",
+                counterfactual_type="skill",
                 original_decision=f"{hunter.name} shot villager-side player {target.name}.",
-                alternative_decision=f"If {hunter.name} had shot {alt_name} instead, friendly fire would be avoided.",
+                alternative_decision=f"If {hunter.name} had held the shot or aimed at {alt_name} instead, friendly fire would be avoided.",
                 expected_effect=f"Village resources preserved; wolf {alt_name} eliminated instead.",
                 affected_players=[hunter.name, target.name, alt_name],
                 confidence=0.95,
@@ -3288,7 +3711,7 @@ class CounterfactualAnalyzer:
                 ],
                 severity="critical",
                 source_bad_case_id=self._find_bad_case_id(bad_cases, event.day, hunter.name, "ability"),
-                effect_type="exact_recalculation",
+                effect_type="local_recalculation",
                 recomputed_outcome=result,
                 evidence_event_ids=[event.id],
             ))

@@ -116,7 +116,7 @@ def run_one_game(
         "seed": seed,
         "strategy_map": strategy_map,
     }
-    if strict and agent_type != "heuristic":
+    if strict:
         from backend.agents.llm_agent import LLMAgent
         LLMAgent.STRICT_NO_FALLBACK = True
 
@@ -154,7 +154,7 @@ def run_one_game(
         print(f"  [FAIL] seed={seed} role={target_role} strategy={strategy_id}: {exc}", file=sys.stderr)
         return None
     finally:
-        if strict and agent_type != "heuristic":
+        if strict:
             from backend.agents.llm_agent import LLMAgent
             LLMAgent.STRICT_NO_FALLBACK = False
 
@@ -165,7 +165,7 @@ def run_one_game(
 
 def run_experiment(
     games_per_group: int = 10,
-    agent_type: str = "heuristic",
+    agent_type: str = "llm",
     player_count: int = 7,
     output_csv: str = "data/health/strategy_ab_test_results_v8.csv",
     output_md: str = "data/health/strategy_ab_test_v8.md",

@@ -12,11 +12,11 @@ call it multiple times with different search terms, self-evaluating
 result quality after each round.
 """
 
-import sys, time, json, re, requests
+import os, sys, time, json, re, requests
 import numpy as np, jieba, psycopg2
 
 CONN = "postgresql://werewolf:wolf_secret_2026@127.0.0.1:5433/werewolf"
-LLM_KEY = "ark-b2f90045-5c0d-43c2-86ea-5fd078dcad81-68372"
+LLM_KEY = os.environ.get("DSV4FLASH_API_KEY", "")
 LLM_URL = "https://ark.cn-beijing.volces.com/api/coding/v1/chat/completions"
 
 # ============================================================
@@ -354,6 +354,8 @@ if __name__ == "__main__":
     print("=" * 70)
     print("AGENTIC SEARCH vs STATIC RRF")
     print("=" * 70)
+    if not LLM_KEY:
+        raise RuntimeError("DSV4FLASH_API_KEY must be set before running LLM evaluation.")
 
     # Load docs
     conn = psycopg2.connect(CONN); c = conn.cursor()

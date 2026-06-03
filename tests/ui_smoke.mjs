@@ -58,7 +58,12 @@ const backend = spawn(
   ["-m", "uvicorn", "backend.app:app", "--host", "127.0.0.1", "--port", String(backendPort)],
   {
     stdio: "inherit",
-    env: { ...process.env, PYTHONPATH: process.cwd() },
+    env: {
+      ...process.env,
+      PYTHONPATH: process.cwd(),
+      LLM_PROVIDER: "fake",
+      AIWEREWOLF_DEFAULT_AGENT_TYPE: "llm",
+    },
   }
 );
 
@@ -93,7 +98,7 @@ try {
   await page.getByText(/Knowledge Wiki|策略知识库/).waitFor({ timeout: 30000 });
 
   const completedRoomResponse = await fetch(
-    `http://127.0.0.1:${backendPort}/api/rooms?name=SmokeReview&seed=34&player_count=7&agent_type=heuristic`,
+    `http://127.0.0.1:${backendPort}/api/rooms?name=SmokeReview&seed=34&player_count=7&agent_type=llm`,
     { method: "POST" }
   );
   const completedRoom = await completedRoomResponse.json();
@@ -172,7 +177,7 @@ try {
   await page.getByText(/Ready to Start|准备开始/).waitFor();
 
   const humanRoomResponse = await fetch(
-    `http://127.0.0.1:${backendPort}/api/rooms?name=HumanSmoke&seed=1&player_count=7&agent_type=heuristic&human_seat=1`,
+    `http://127.0.0.1:${backendPort}/api/rooms?name=HumanSmoke&seed=1&player_count=7&agent_type=llm&human_seat=1`,
     { method: "POST" }
   );
   const humanRoom = await humanRoomResponse.json();

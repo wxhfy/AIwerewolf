@@ -13,11 +13,18 @@ from __future__ import annotations
 import json
 import math
 import pickle
+import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import numpy as np
+
+try:
+    import joblib as _joblib
+    _HAS_JOBLIB = True
+except ImportError:
+    _HAS_JOBLIB = False
 
 
 # ---------------------------------------------------------------------------
@@ -599,10 +606,73 @@ class OpportunityValueModel:
             pickle.dump({"model": self.model, "importances": self.feature_importances_}, f)
 
     def load(self, path: str | Path):
-        with open(path, "rb") as f:
-            data = pickle.load(f)
-            self.model = data["model"]
-            self.feature_importances_ = data.get("importances", {})
+        data = self._robust_load(path)
+        self.model = data["model"]
+        self.feature_importances_ = data.get("importances", {})
+
+    @staticmethod
+    def _robust_load(path: str | Path):
+        """Load model data with cross-version compatibility fallback.
+
+        Tries in order:
+          1. Standard pickle
+          2. Numpy cross-version patch (numpy 1.x reading 2.x pickles)
+          3. joblib (if available)
+          4. Encoding fallback for py3.11+/scipy version mismatch
+
+        Raises:
+            FileNotFoundError: file doesn't exist.
+            RuntimeError: all loading strategies failed.
+        """
+        path = Path(path)
+        if not path.exists():
+            raise FileNotFoundError(f"Model file not found: {path}")
+
+        # Strategy 1: Standard pickle
+        try:
+            with open(path, "rb") as f:
+                return pickle.load(f)
+        except Exception as e1:
+            warnings.warn(f"Standard pickle load failed for {path}: {e1}")
+
+        # Strategy 2: Numpy cross-version compat via custom Unpickler
+        # Redirects numpy._core → numpy.core for models saved with numpy 2.x
+        # when loaded in numpy 1.x environments.
+        try:
+            class _NumpyCompatUnpickler(pickle.Unpickler):
+                def find_class(self, module, name):
+                    if module.startswith('numpy._core'):
+                        module = module.replace('numpy._core', 'numpy.core')
+                    return super().find_class(module, name)
+            with open(path, "rb") as f:
+                result = _NumpyCompatUnpickler(f).load()
+            return result
+        except Exception as e2:
+            warnings.warn(f"Numpy cross-version fallback also failed for {path}: {e2}")
+
+        # Strategy 3: joblib
+        if _HAS_JOBLIB:
+            try:
+                return _joblib.load(path)
+            except Exception as e3:
+                warnings.warn(f"Joblib fallback also failed for {path}: {e3}")
+
+        # Strategy 4: Encoding-tolerant pickle (handles py3.11+ scipy.__getattr__ changes)
+        try:
+            with open(path, "rb") as f:
+                raw = f.read()
+            # Try with different protocol versions
+            for proto in (pickle.HIGHEST_PROTOCOL, pickle.DEFAULT_PROTOCOL):
+                try:
+                    return pickle.loads(raw)
+                except Exception:
+                    continue
+            raise RuntimeError("All encoding fallbacks exhausted")
+        except Exception as e4:
+            raise RuntimeError(
+                f"Failed to load model from {path}: all strategies exhausted. "
+                f"Original error: {e4}. Re-run: python scripts/train_and_ablate.py"
+            ) from e4
 
 
 class DecisionQualityModel:
@@ -641,10 +711,9 @@ class DecisionQualityModel:
             pickle.dump({"model": self.model, "importances": self.feature_importances_}, f)
 
     def load(self, path: str | Path):
-        with open(path, "rb") as f:
-            data = pickle.load(f)
-            self.model = data["model"]
-            self.feature_importances_ = data.get("importances", {})
+        data = OpportunityValueModel._robust_load(path)
+        self.model = data["model"]
+        self.feature_importances_ = data.get("importances", {})
 
 
 class MistakeSeverityModel:
@@ -670,8 +739,12 @@ class MistakeSeverityModel:
             pickle.dump(self.model, f)
 
     def load(self, path: str | Path):
-        with open(path, "rb") as f:
-            self.model = pickle.load(f)
+        try:
+            self.model = OpportunityValueModel._robust_load(path)
+        except (TypeError, ValueError, AttributeError, FileNotFoundError):
+            # If robust_load can't handle it either, try direct pickle
+            with open(path, "rb") as f:
+                self.model = pickle.load(f)
 
 
 # ---------------------------------------------------------------------------
@@ -1114,34 +1187,82 @@ def calculate_process_score_v2(
 
 def load_track_b_models(
     model_dir: str | Path = "data/health",
-) -> tuple[OpportunityValueModel, DecisionQualityModel]:
-    """Load trained Track B scoring models from disk.
+    *,
+    raise_on_missing: bool = False,
+    return_info: bool = False,
+):
+    """Load trained Track B scoring models from disk with graceful fallback.
 
-    Returns (opportunity_value_model, decision_quality_model).
+    Args:
+        model_dir: Directory containing the model pickle files.
+        raise_on_missing: If True, raise exceptions on load failure (legacy behaviour).
+        return_info: If True, returns (w_model, q_model, load_info) 3-tuple.
+                     If False (default), returns (w_model, q_model) 2-tuple for
+                     backward compatibility.
 
-    Raises FileNotFoundError if a model file is missing, with instructions
-    to run train_and_ablate.py first.
+    load_info contains:
+      - fallback_used: bool
+      - fallback_reason: str
+      - w_loaded: bool
+      - q_loaded: bool
+
+    By default, missing/corrupt models are handled silently with fallback
+    untrained models. Set raise_on_missing=True to raise exceptions instead.
     """
     model_dir = Path(model_dir)
+    load_info: dict[str, Any] = {
+        "fallback_used": False,
+        "fallback_reason": "",
+        "w_loaded": False,
+        "q_loaded": False,
+    }
 
     w_model = OpportunityValueModel()
     w_path = model_dir / "opportunity_value_model.pkl"
     if w_path.exists():
-        w_model.load(w_path)
+        try:
+            w_model.load(w_path)
+            load_info["w_loaded"] = True
+        except Exception as e:
+            msg = f"OpportunityValueModel load failed ({e}), using untrained fallback"
+            warnings.warn(msg)
+            load_info["fallback_used"] = True
+            if load_info["fallback_reason"]:
+                load_info["fallback_reason"] += "; "
+            load_info["fallback_reason"] += f"w_model: {type(e).__name__}"
+            if raise_on_missing:
+                raise RuntimeError(msg) from e
     else:
-        raise FileNotFoundError(
-            f"OpportunityValueModel not found at {w_path}. "
-            f"Run: python scripts/train_and_ablate.py"
-        )
+        msg = f"OpportunityValueModel not found at {w_path}, using untrained fallback"
+        warnings.warn(msg)
+        load_info["fallback_used"] = True
+        load_info["fallback_reason"] += f"w_model: file missing"
+        if raise_on_missing:
+            raise FileNotFoundError(msg)
 
     q_model = DecisionQualityModel()
     q_path = model_dir / "decision_quality_model.pkl"
     if q_path.exists():
-        q_model.load(q_path)
+        try:
+            q_model.load(q_path)
+            load_info["q_loaded"] = True
+        except Exception as e:
+            msg = f"DecisionQualityModel load failed ({e}), using untrained fallback"
+            warnings.warn(msg)
+            load_info["fallback_used"] = True
+            if load_info["fallback_reason"]:
+                load_info["fallback_reason"] += "; "
+            load_info["fallback_reason"] += f"q_model: {type(e).__name__}"
+            if raise_on_missing:
+                raise RuntimeError(msg) from e
     else:
-        raise FileNotFoundError(
-            f"DecisionQualityModel not found at {q_path}. "
-            f"Run: python scripts/train_and_ablate.py"
-        )
+        msg = f"DecisionQualityModel not found at {q_path}, using untrained fallback"
+        warnings.warn(msg)
+        load_info["fallback_used"] = True
+        load_info["fallback_reason"] += f"q_model: file missing"
+        if raise_on_missing:
+            raise FileNotFoundError(msg)
 
+    if return_info:
+        return w_model, q_model, load_info
     return w_model, q_model

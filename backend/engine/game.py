@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import hashlib
+import json
+import os
 from collections import Counter
 from random import Random
 from typing import Any, Callable
@@ -27,6 +30,25 @@ from backend.engine.phase_manager import PhaseManager
 from backend.engine.rules import DEFAULT_ROLE_SET, build_players, get_role_configuration
 from backend.engine.summary import build_day_summary
 from backend.engine.visibility import Visibility
+
+
+def _shuffle_personas_pool(count: int, seed: int | None) -> list[dict] | None:
+    """Shuffle in-memory PERSONA_POOL by seed so MBTI→role varies per game.
+
+    Each game gets a different set of personas (with different MBTIs)
+    assigned to different seats. Over many games each MBTI type plays
+    every role, enabling proper MBTI×Role win-rate analysis.
+    """
+    import random as _random
+    from backend.agents.characters import PERSONA_POOL
+    rng = _random.Random(seed or 0)
+    pool = list(PERSONA_POOL)
+    rng.shuffle(pool)
+    # Pick `count` unique personas (cycle if pool < count)
+    result = []
+    for i in range(count):
+        result.append(dict(pool[i % len(pool)]))
+    return result
 
 
 def _phase_already_past(current: Phase, target: Phase) -> bool:
@@ -118,6 +140,10 @@ class WerewolfGame:
         self._play_start_lock: _threading.Lock = _threading.Lock()
         self._shared_lock: _threading.RLock = _threading.RLock()
         sampled_personas = self._sample_personas_from_db(len(self.state.players), seed)
+        if not sampled_personas:
+            # DB unavailable — shuffle in-memory PERSONA_POOL per seed so
+            # each MBTI plays different roles across games (not name-bound).
+            sampled_personas = _shuffle_personas_pool(len(self.state.players), seed)
         if sampled_personas:
             # Adopt the sampled persona's display name onto the seat so the
             # in-game card, system prompt and audit log all reference the
@@ -137,9 +163,10 @@ class WerewolfGame:
             agents or create_agents(
                 self.state.players,
                 {
-                    "type": "heuristic",
+                    "type": os.environ.get("AIWEREWOLF_DEFAULT_AGENT_TYPE", "llm"),
                     "seed": seed or 0,
-                    "temperature": 0.4,
+                    "temperature": 1.0,
+                    "speech_temperature": 1.0,
                     "character_map": self.characters,
                     "strategy_bias": self.strategy_bias,
                     "role_models": role_models_from_bias,
@@ -1493,6 +1520,33 @@ class WerewolfGame:
         latency_ms = meta.get("latency_ms")
         if latency_ms is None and isinstance(usage, dict):
             latency_ms = usage.get("latency_ms")
+
+        # Compute prompt hash from the observation + request (stable fingerprint)
+        _prompt_src = json.dumps({"request": request, "day": self.state.day, "phase": self.state.phase.value}, sort_keys=True)
+        prompt_hash = hashlib.sha256(_prompt_src.encode()).hexdigest()[:16]
+
+        # Estimate cost from token usage (DeepSeek pricing: ~$0.28/M input, $1.10/M output)
+        cost_usd = None
+        if prompt_tokens is not None and completion_tokens is not None:
+            cost_usd = round((prompt_tokens * 0.28 + completion_tokens * 1.10) / 1_000_000, 6)
+
+        # Extract visible facts from player view
+        visible_facts = []
+        if isinstance(view, dict):
+            sv = view.get("self_player", {})
+            visible_facts.append("role=" + str(sv.get("role", "?")))
+            visible_facts.append("alive=" + str(sv.get("alive", "?")))
+            alive = view.get("alive_players", [])
+            visible_facts.append("alive_count=" + str(len(alive) if isinstance(alive, list) else "?"))
+
+        # Populate candidate actions from legal actions or metadata
+        candidate_actions = meta.get("candidate_actions", [])
+        if not candidate_actions:
+            allowed = set(self.state.pk_targets) if request == "VOTE" and self.state.pk_targets else None
+            for target in self.state.alive_players:
+                if target.id != player.id and (allowed is None or target.id in allowed):
+                    candidate_actions.append({"target_id": target.id, "target_name": target.name})
+
         with self._shared_lock:
             self.state.decision_records.append(
                 DecisionAudit(
@@ -1522,6 +1576,16 @@ class WerewolfGame:
                     prompt_tokens=int(prompt_tokens) if isinstance(prompt_tokens, (int, float)) else None,
                     completion_tokens=int(completion_tokens) if isinstance(completion_tokens, (int, float)) else None,
                     created_at=self.state.events[-1].ts if self.state.events else 0.0,
+                    # v2 DecisionTrace fields
+                    visible_facts=visible_facts,
+                    candidate_actions=candidate_actions,
+                    confidence=meta.get("confidence"),
+                    prompt_hash=prompt_hash,
+                    cost_usd=cost_usd,
+                    model_name=meta.get("model"),
+                    provider=meta.get("provider"),
+                    fallback_used=bool(meta.get("fallback", False)),
+                    fallback_reason=meta.get("fallback_reason"),
                 )
             )
 

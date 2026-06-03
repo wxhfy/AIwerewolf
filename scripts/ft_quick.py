@@ -8,7 +8,7 @@ import torch; from torch.utils.data import DataLoader, Dataset; import torch.nn 
 
 CONN = "postgresql://werewolf:wolf_secret_2026@127.0.0.1:5433/werewolf"
 BGP = "/home/4T-3/PLM/bge-m3/"; GPU = "cuda:3"; OUT = "/home/4T-3/PLM/bge-m3-werewolf-ft-v3/"
-LK = "ark-b2f90045-5c0d-43c2-86ea-5fd078dcad81-68372"
+LK = os.environ.get("DSV4FLASH_API_KEY", "")
 LU = "https://ark.cn-beijing.volces.com/api/coding/v1/chat/completions"
 
 QUERIES = [
@@ -101,6 +101,8 @@ if __name__ == "__main__":
     print("="*50)
     print("LLM BATCH VERIFY + QUICK FINE-TUNE")
     print("="*50)
+    if not LK:
+        raise RuntimeError("DSV4FLASH_API_KEY must be set before running LLM verification.")
     docs = load_docs()
     print(f"Docs: {len(docs)}, Queries: {len(QUERIES)}")
 

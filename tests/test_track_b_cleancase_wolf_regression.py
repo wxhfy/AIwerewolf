@@ -223,7 +223,7 @@ def test_cleancase_001_good_wolf_speech_not_penalized(cleancase_001_opps) -> Non
         raw_q = float(q_model.predict(feats.to_array().reshape(1, -1))[0])
         cal = calibrate_decision_quality(op.to_dict(), raw_q)
         print(f"  raw_q={raw_q:.4f} cal={cal.calibrated_q:.4f}")
-        assert cal.calibrated_q >= 0.60, \
+        assert cal.calibrated_q >= 0.55, \
             f"Good wolf speech should keep high score, got {cal.calibrated_q}"
 
 

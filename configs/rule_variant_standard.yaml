@@ -1,0 +1,175 @@
+# AI Werewolf 标准规则配置 v1
+# 所有规则边界测试必须绑定此配置文件。
+# 比赛中评估的是规则实现的自洽性，而非狼人杀规则本身有多少变体。
+
+name: standard_competition_v1
+version: "1.0"
+description: >
+  Standard competition rule variant for AI Werewolf.
+  All boundary tests MUST reference this configuration.
+
+# ============================================================
+# Voting
+# ============================================================
+vote:
+  tie_policy: no_exile           # no_exile | random_exile | revote
+  revote_after_tie: true         # If tie, enter PK speech + revote
+  second_tie_policy: no_exile    # If PK revote ties again
+  sheriff_vote_weight: 1.5       # Sheriff/badge holder vote multiplier
+  vote_duration_seconds: 60      # Max time for voting phase
+
+# ============================================================
+# Witch
+# ============================================================
+witch:
+  can_use_both_potions_same_night: false   # Only one potion per night
+  can_save_self_first_night: true           # Can self-save on night 0
+  can_save_self_after_first_night: false    # Cannot self-save after night 0
+  poison_blocks_hunter_shot: true           # Poisoned hunter cannot shoot
+  antidote_blocks_kill: true                # Saving blocks wolf kill
+  potions_are_one_shot: true                # Each potion used once per game
+
+# ============================================================
+# Guard
+# ============================================================
+guard:
+  can_guard_same_target_consecutively: false  # Cannot guard same target
+  same_guard_and_witch_save_causes_death: true  # Guard + Witch save = death
+  guard_blocks_wolf_kill: true                # Guard blocks one wolf attack
+  can_guard_self: true                        # Can guard self (but not consecutively)
+
+# ============================================================
+# Hunter
+# ============================================================
+hunter:
+  can_shoot_when_voted_out: true      # Can shoot after being executed
+  can_shoot_when_wolf_killed: true    # Can shoot after being killed by wolves
+  can_shoot_when_poisoned: false      # Cannot shoot when poisoned
+  can_shoot_when_bombed: false        # Cannot shoot when killed by WWK boom
+  shoot_announces_role: true          # Hunter role revealed on shoot
+
+# ============================================================
+# Seer
+# ============================================================
+seer:
+  check_result_is_binary: true        # Result: "wolf" or "not wolf"
+  can_check_each_night: true          # One check per night
+  white_wolf_king_shows_as_wolf: true # WWK checks as wolf
+
+# ============================================================
+# Death & Game End
+# ============================================================
+death:
+  last_words_enabled: true            # Dead players get last words
+  dead_players_can_vote: false        # Dead players cannot vote
+  dead_players_receive_private_info: false  # Dead players get no new private info
+  role_revealed_on_death: true        # Role is revealed on death
+
+# ============================================================
+# Night Resolution Order
+# ============================================================
+resolution_order:
+  - guard               # Guard protects target
+  - wolf_kill           # Wolf team attacks target
+  - witch_save          # Witch antidote (if used)
+  - witch_poison        # Witch poison (if used)
+  - death_settlement    # Resolve all deaths
+  - hunter_shot         # Hunter shoots (if died this night)
+  - seer_check          # Seer check result delivered
+  - night_end           # Night phase ends
+
+# ============================================================
+# Badge / Sheriff
+# ============================================================
+badge:
+  election_enabled: true              # Badge election at day start
+  badge_transfer_on_death: true       # Badge transferred on death
+  badge_holder_vote_weight: 1.5       # Badge holder vote weight
+  badgeless_pk_eligible: true         # Players without badge can enter PK
+
+# ============================================================
+# Role Distribution (matches backend.engine.rules.WOLFCHA_ROLE_CONFIGS)
+# ============================================================
+role_distribution:
+  "7":
+    village:    # 5 village
+      - Seer
+      - Witch
+      - Hunter
+      - Guard
+      - Villager
+    wolf:       # 2 wolves
+      - Werewolf
+      - Werewolf
+  "8":
+    village:    # 5 village
+      - Seer
+      - Witch
+      - Hunter
+      - Villager
+      - Villager
+    wolf:       # 3 wolves
+      - Werewolf
+      - Werewolf
+      - Werewolf
+  "9":
+    village:    # 6 village
+      - Seer
+      - Witch
+      - Hunter
+      - Villager
+      - Villager
+      - Villager
+    wolf:       # 3 wolves
+      - Werewolf
+      - Werewolf
+      - Werewolf
+  "10":
+    village:    # 7 village
+      - Seer
+      - Witch
+      - Hunter
+      - Guard
+      - Villager
+      - Villager
+      - Villager
+    wolf:       # 3 wolves
+      - Werewolf
+      - Werewolf
+      - WhiteWolfKing
+  "11":
+    village:    # 7 village
+      - Seer
+      - Witch
+      - Hunter
+      - Guard
+      - Idiot
+      - Villager
+      - Villager
+    wolf:       # 4 wolves
+      - Werewolf
+      - Werewolf
+      - Werewolf
+      - WhiteWolfKing
+  "12":
+    village:    # 8 village
+      - Seer
+      - Witch
+      - Hunter
+      - Guard
+      - Idiot
+      - Villager
+      - Villager
+      - Villager
+    wolf:       # 4 wolves
+      - Werewolf
+      - Werewolf
+      - Werewolf
+      - WhiteWolfKing
+
+# ============================================================
+# Win Conditions
+# ============================================================
+win_conditions:
+  village_wins_when: all_wolves_dead
+  wolf_wins_when: wolves_equal_or_exceed_village

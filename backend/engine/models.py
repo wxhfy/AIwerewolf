@@ -148,6 +148,16 @@ class DecisionAudit:
     prompt_tokens: int | None
     completion_tokens: int | None
     created_at: float
+    # v2 DecisionTrace fields (populated when LLM decisions are recorded)
+    visible_facts: list[str] = field(default_factory=list)
+    candidate_actions: list[dict[str, Any]] = field(default_factory=list)
+    confidence: float | None = None
+    prompt_hash: str | None = None
+    cost_usd: float | None = None
+    model_name: str | None = None
+    provider: str | None = None
+    fallback_used: bool = False
+    fallback_reason: str | None = None
 
 
 @dataclass

@@ -48,19 +48,32 @@ def _build_game(
     player_count: int = 10,
     rule_pack_id: str = "wolfcha-default",
 ) -> WerewolfGame:
+    normalized_agent_type = _normalize_agent_type(agent_type)
     game = WerewolfGame(seed=seed, player_count=player_count)
-    game.attach_agents(
-        create_agents(
-            game.state.players,
-            {
-                "type": agent_type,
-                "seed": seed,
-                "human_seat": human_seat,
-                "character_map": game.characters,
-            },
+    try:
+        game.attach_agents(
+            create_agents(
+                game.state.players,
+                {
+                    "type": normalized_agent_type,
+                    "seed": seed,
+                    "human_seat": human_seat,
+                    "character_map": game.characters,
+                },
+            )
         )
-    )
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     return game
+
+
+def _normalize_agent_type(agent_type: str | None) -> str:
+    normalized = str(agent_type or "llm").strip().lower()
+    if normalized in {"llm", "cognitive"}:
+        return "llm"
+    if normalized == "heuristic":
+        raise HTTPException(status_code=400, detail="heuristic agents are disabled; use agent_type=llm")
+    raise HTTPException(status_code=400, detail="Only agent_type=llm is supported")
 
 
 @app.post("/api/games")
@@ -445,6 +458,7 @@ def create_room(
     human_seat: Optional[int] = None,
     rule_pack_id: str = "wolfcha-default",
 ):
+    agent_type = _normalize_agent_type(agent_type)
     request = RoomCreateRequest(
         name=name,
         seed=seed,
@@ -625,6 +639,7 @@ async def stream_game(
     import threading
     import asyncio as aio
 
+    agent_type = _normalize_agent_type(agent_type)
     loop = aio.get_running_loop()
     # Thread-safe queue for real-time snapshot delivery
     queue: list[dict] = []
@@ -739,7 +754,11 @@ async def games_ws(websocket: WebSocket) -> None:
                 await websocket.send_json({"type": "error", "message": "Unsupported action"})
                 continue
             seed = int(payload.get("seed", 7))
-            agent_type = str(payload.get("agent_type", "llm"))
+            try:
+                agent_type = _normalize_agent_type(str(payload.get("agent_type", "llm")))
+            except HTTPException as exc:
+                await websocket.send_json({"type": "error", "message": str(exc.detail)})
+                continue
             show_private = bool(payload.get("show_private", False))
             await websocket.send_json({"type": "status", "status": "starting"})
             player_count = int(payload.get("player_count", 7))
@@ -771,7 +790,11 @@ async def room_ws(websocket: WebSocket, room_id: str) -> None:
                 continue
             show_private = bool(payload.get("show_private", False))
             room.seed = int(payload.get("seed", room.seed))
-            room.agent_type = str(payload.get("agent_type", room.agent_type))
+            try:
+                room.agent_type = _normalize_agent_type(str(payload.get("agent_type", room.agent_type)))
+            except HTTPException as exc:
+                await websocket.send_json({"type": "error", "message": str(exc.detail)})
+                continue
             _rooms.set_room_status(room_id, "running")
             await websocket.send_json({"type": "room", "room": room.to_dict()})
             state = await stream_game(

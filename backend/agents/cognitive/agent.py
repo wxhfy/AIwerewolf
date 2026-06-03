@@ -3,15 +3,18 @@
 Implements the Agent protocol. ALL cognitive work is delegated:
 - Observation extraction → observe.py + BeliefTracker
 - Reasoning → Pipeline (observe → think → act)
-- Memory/Stance → Memory
+- Memory/Stance → Memory (includes SocialModel + Planner)
 - Personality → Profile + Humanization
 - Strategy → retrieval.py + strategy_bias
+- Wolf coordination → wolf_team.py (legal visible information only)
+- Multi-turn planning → planner.py (StrategicIntent)
 
 This module ONLY handles:
 - Agent lifecycle (initialize, update, finish)
 - Protocol compliance (talk, vote, attack, etc.)
 - State tracking (guard history, witch potions)
-- Retry/fallback orchestration
+- Social model wiring (trust updates, deception detection)
+- LLM-only error propagation
 """
 
 from __future__ import annotations
@@ -29,8 +32,10 @@ from backend.agents.cognitive.observe import (
     Observation, BeliefTracker, observe, format_observation,
 )
 from backend.agents.cognitive.pipeline import Pipeline, parse_json_target, parse_json_array
+from backend.agents.cognitive.planner import StrategicIntent
 from backend.agents.cognitive.profiles import Profile, get_profile
 from backend.agents.cognitive.prompts import build_system_prompt
+from backend.agents.cognitive.social_model import DeceptionSignal
 from backend.engine.models import Decision, ActionType
 
 
@@ -38,8 +43,9 @@ class CognitiveAgent:
     """Werewolf agent using Observe-Think-Act cognitive architecture.
 
     Production-grade: integrates Character system, BeliefTracker, Playbooks,
-    Humanization, Strategy Bias, and three-tier retry/fallback.
+    Humanization, and Strategy Bias.
 
+    LLM-only game mode: failures raise instead of degrading to heuristic decisions.
     Implements the full Agent protocol.
     """
 
@@ -52,6 +58,8 @@ class CognitiveAgent:
         player_seat: int = 0,
         profile: Optional[Profile] = None,
         strategy_bias: Optional[Dict[str, List[str]]] = None,
+        fallback_heuristic: Any = None,
+        strict_no_fallback: bool = True,
     ):
         self.player_id = player_id
         self.role = role
@@ -72,6 +80,15 @@ class CognitiveAgent:
 
         # Strategy bias (forced policy for A/B testing)
         self._strategy_bias = strategy_bias or {}
+
+        # Fallback configuration
+        self._fallback_heuristic = fallback_heuristic
+        self._strict_no_fallback = strict_no_fallback
+
+        # Fallback tracking (for monitoring)
+        self._fallback_count = 0
+        self._fallback_reasons: list[str] = []
+        self._validation_error_count = 0
 
         # Pipeline (stateless cognitive engine — now persona-aware)
         self._pipeline = Pipeline(
@@ -101,6 +118,13 @@ class CognitiveAgent:
         self._game_id = ""
         self._turn_phase = ""  # Track phase changes for analysis cache invalidation
 
+        # Wolf team coordination (legal visible information, no fixed tactics)
+        self._wolf_team_view: Any = None
+        self._wolf_tactics: Dict[str, str] = {}
+
+        # Speech targets for social model (speech-vote mismatch detection)
+        self._last_speech_targets: List[str] = []
+
     # === Agent Protocol ===
 
     def initialize(self, view: Any, game_setting: dict) -> None:
@@ -111,15 +135,42 @@ class CognitiveAgent:
         self._game_id = getattr(view, "game_id", "") or str(game_setting.get("game_id", ""))
         self._tracker = BeliefTracker()
 
+        # Wire wolf team coordination with legally visible teammate list only.
+        if "wolf" in self.role.lower():
+            known = getattr(view, 'known_wolves', [])
+            if known:
+                all_wolf_ids = [self.player_id] + [
+                    w.get("id", w.get("player_id", "")) for w in known
+                    if w.get("id", w.get("player_id", "")) != self.player_id
+                ]
+                alive_ids = [p["id"] for p in view.players if p.get("alive")]
+                try:
+                    from backend.agents.cognitive.wolf_team import assign_wolf_tactics
+                    self._wolf_tactics = assign_wolf_tactics(
+                        all_wolf_ids,
+                        {"alive_player_ids": alive_ids},
+                    )
+                except Exception:
+                    self._wolf_tactics = {}
+
     def update(self, view: Any, request: str) -> None:
         self._view = view
         # Clear cached analysis when phase changes (new turn/new action type)
         new_phase = f"{view.day}:{view.phase}"
         if new_phase != self._turn_phase:
+            # Check if an active intent's target phase was in the previous phase
+            # and mark it as missed if the target has now passed without execution
+            if self._turn_phase:
+                old_phase = self._turn_phase.split(":", 1)[-1] if ":" in self._turn_phase else ""
+                active = self.memory.planner.get_active(view.day, old_phase)
+                if active and not active.resolved:
+                    active.resolved = True
+                    active.resolution_note = f"phase_passed_to_{view.phase}"
             self._pipeline._cached_analysis = ""
             self._turn_phase = new_phase
         self.memory.update_round(view.day, view.phase)
         self._today_speech_count = 0
+        self._last_speech_targets = []
 
     def day_start(self) -> None:
         pass
@@ -150,6 +201,14 @@ class CognitiveAgent:
         self.memory.remember_opening(segments)
         self._today_speech_count += len(segments)
 
+        # Record speech content for social model mismatch detection
+        self._last_speech_targets = segments
+
+        # Mark strategic intent as executed if this was the target phase
+        active = self.memory.planner.get_active(self.memory.day, self.memory.phase)
+        if active and "SPEECH" in active.target_phase:
+            self.memory.planner.mark_executed(self.memory.day, self.memory.phase)
+
         return self._decision(
             ActionType.TALK,
             speech="\n".join(segments),
@@ -162,15 +221,51 @@ class CognitiveAgent:
         obs = self._observe()
         result = self._pipeline.run_vote(obs, self.memory)
         target_id = self._resolve_target(result["target"])
+        if not target_id and self._strict_no_fallback:
+            raise RuntimeError(f"LLM returned unresolved vote target: {result['target']!r}")
         self.memory.add_action("vote", result["target"], f"投{result['target']}", result["reasoning"])
+
+        # Feed 3: Detect speech-vote mismatch and update social model
+        self._detect_speech_vote_mismatch()
+
+        # Mark strategic intent as executed if this was the target phase
+        active = self.memory.planner.get_active(self.memory.day, self.memory.phase)
+        if active and "VOTE" in active.target_phase:
+            self.memory.planner.mark_executed(self.memory.day, self.memory.phase)
+
         return self._decision(ActionType.VOTE, target_id=target_id, reasoning=result["reasoning"])
 
     # ---- Night actions ----
 
     def attack(self) -> Decision:
+        # Build WolfTeamView each night for coordinated wolf play
+        if "wolf" in self.role.lower():
+            known = getattr(self._view, 'known_wolves', [])
+            if known:
+                try:
+                    from backend.agents.cognitive.wolf_team import build_wolf_team_view
+                    all_wolf_ids = [self.player_id] + [
+                        w.get("id", w.get("player_id", "")) for w in known
+                    ]
+                    all_alive = [p["id"] for p in self._view.players if p.get("alive")]
+                    self._wolf_team_view = build_wolf_team_view(
+                        wolf_ids=all_wolf_ids,
+                        all_alive_ids=all_alive,
+                        belief_tracker=self._tracker,
+                        public_events=self._view.public_events,
+                    )
+                except Exception:
+                    self._wolf_team_view = None
+
         obs = self._observe()
         extra = self._build_wolf_extra()
         result = self._pipeline.run_night(obs, self.memory, extra)
+
+        # Mark strategic intent as executed if this is the target phase
+        active = self.memory.planner.get_active(self.memory.day, self.memory.phase)
+        if active and "NIGHT" in active.target_phase and "WOLF" in active.target_phase:
+            self.memory.planner.mark_executed(self.memory.day, self.memory.phase)
+
         return self._night_decision(result, ActionType.ATTACK)
 
     def divine(self) -> Decision:
@@ -244,9 +339,10 @@ class CognitiveAgent:
 
         result = self._pipeline.direct_call(prompt)
         parsed = parse_json_target(result)
-        target_id = self._resolve_target(parsed["target"]) or (
-            self._view.players[0]["id"] if self._view.players else None
-        )
+        target_id = self._resolve_target(parsed["target"])
+        if not target_id and self._strict_no_fallback:
+            raise RuntimeError(f"LLM returned unresolved shoot target: {parsed['target']!r}")
+        target_id = target_id or (self._view.players[0]["id"] if self._view.players else None)
         return self._decision(ActionType.SHOOT, target_id=target_id, reasoning=parsed["reasoning"])
 
     def boom(self) -> Decision:
@@ -264,7 +360,10 @@ class CognitiveAgent:
 
         result = self._pipeline.direct_call(prompt)
         parsed = parse_json_target(result)
-        target_id = self._resolve_target(parsed["target"]) or (candidates[0] if candidates else None)
+        target_id = self._resolve_target(parsed["target"])
+        if not target_id and self._strict_no_fallback:
+            raise RuntimeError(f"LLM returned unresolved badge target: {parsed['target']!r}")
+        target_id = target_id or (candidates[0] if candidates else None)
         return self._decision(ActionType.VOTE, target_id=target_id, reasoning=parsed["reasoning"])
 
     def finish(self, winner: Optional[str]) -> None:
@@ -275,8 +374,118 @@ class CognitiveAgent:
     # === Internal Helpers ===
 
     def _observe(self) -> Observation:
-        """Build observation from current view with belief tracking."""
-        return observe(self._view, self.role, tracker=self._tracker)
+        """Build observation from current view with belief tracking.
+
+        Also syncs social model: contradictions from the belief tracker
+        become deception signals, and vote alignment updates trust scores.
+        """
+        obs = observe(self._view, self.role, tracker=self._tracker)
+        self._sync_social_from_tracker(obs)
+        self._update_trust_from_events(obs)
+        return obs
+
+    # ---- Social Model Feeds ----
+
+    def _sync_social_from_tracker(self, obs: Observation) -> None:
+        """Feed 1: BeliefTracker contradictions → SocialModel deception signals.
+
+        When multiple players claim the same unique role, all claimants
+        get flagged for potential deception.
+        """
+        for c in obs.contradictions:
+            for claimant_name in c.claimants:
+                # Don't flag self
+                if claimant_name == self.player_name:
+                    continue
+                signal = DeceptionSignal(
+                    player_id=claimant_name,
+                    signal_type="role_contradiction",
+                    description=f"与{', '.join(c.claimants)}冲突声称是{c.role}",
+                    severity=0.6,
+                    day=obs.day,
+                )
+                self.memory.social_model.add_deception_signal(signal)
+
+    def _update_trust_from_events(self, obs: Observation) -> None:
+        """Feed 2: Vote alignment updates trust scores.
+
+        Players who vote the same way gain slight trust.
+        Players who vote against the agent lose slight trust.
+        """
+        # Vote alignment: same target → slight trust
+        today_votes = [v for v in obs.votes if v.day == obs.day]
+        my_vote = next(
+            (v for v in today_votes if v.voter_name == self.player_name
+             or v.voter_id == self.player_id),
+            None,
+        )
+        if my_vote and my_vote.target_name:
+            my_target = my_vote.target_name
+            for v in today_votes:
+                voter_name = v.voter_name or v.voter_id
+                if voter_name == self.player_name or voter_name == self.player_id:
+                    continue
+                if v.target_name == my_target:
+                    self.memory.social_model.update_trust(
+                        self.player_name, voter_name, +0.08,
+                        f"D{obs.day}: 投票一致投{my_target}",
+                        day=obs.day,
+                    )
+                elif my_target and v.target_name:
+                    # Voted differently — slight distrust
+                    self.memory.social_model.update_trust(
+                        self.player_name, voter_name, -0.03,
+                        f"D{obs.day}: 投票分歧",
+                        day=obs.day,
+                    )
+
+        # Accusations in speeches: if someone names the agent as suspicious
+        for speech in obs.speeches:
+            if self.player_name in speech.content and speech.player_name != self.player_name:
+                # Check for accusatory language
+                accusatory = any(w in speech.content for w in
+                    ["狼", "坏人", "可疑", "票", "出", "查杀", "铁狼"])
+                if accusatory:
+                    self.memory.social_model.update_trust(
+                        self.player_name, speech.player_name, -0.10,
+                        f"D{obs.day}: {speech.player_name}在发言中指控你",
+                        day=obs.day,
+                    )
+
+    def _detect_speech_vote_mismatch(self) -> None:
+        """Feed 3: Check if the agent's own speech accused someone different
+        from who they voted for, and record the mismatch for social tracking."""
+        # Get recent speech and vote actions
+        speech_actions = [a for a in self.memory.actions
+                          if a.action_type == "speech" and a.day == self.memory.day]
+        vote_actions = [a for a in self.memory.actions
+                        if a.action_type == "vote" and a.day == self.memory.day]
+
+        for speech_a in speech_actions:
+            speech_text = speech_a.content
+            # Extract named targets from speech (simple heuristic)
+            speech_targets = set()
+            for p in self._view.players:
+                name = p.get("name", "")
+                if name and name in speech_text:
+                    # Check if mentioned in accusatory context
+                    for phrase in [f"投{name}", f"出{name}", f"{name}是狼",
+                                   f"怀疑{name}", f"查杀{name}"]:
+                        if phrase in speech_text:
+                            speech_targets.add(name)
+                            break
+
+            for vote_a in vote_actions:
+                vote_target = vote_a.target
+                if speech_targets and vote_target and vote_target not in speech_targets:
+                    # Agent accused X in speech but voted Y
+                    for st in list(speech_targets)[:1]:  # just record one mismatch
+                        self.memory.social_model.detect_speech_vote_mismatch(
+                            player_id=self.player_name,
+                            speech_target=st,
+                            vote_target=vote_target,
+                            day=self.memory.day,
+                        )
 
     def _decision(
         self,
@@ -287,7 +496,14 @@ class CognitiveAgent:
         metadata: Optional[Dict[str, Any]] = None,
     ) -> Decision:
         """Create a Decision with standard metadata."""
-        meta = {"source": "cognitive", "model": "cognitive"}
+        provider = str(getattr(self._llm, "provider", "") or "")
+        model = str(getattr(self._llm, "model", "") or "cognitive")
+        meta = {
+            "source": "llm",
+            "provider": provider,
+            "model": model,
+            "fallback": False,
+        }
         if metadata:
             meta.update(metadata)
         return Decision(
@@ -299,9 +515,104 @@ class CognitiveAgent:
             metadata=meta,
         )
 
+    async def decide_with_fallback(
+        self,
+        action_type: str,
+        player_view: Any,
+        **kwargs: Any,
+    ) -> Decision:
+        """Execute a decision through the cognitive path.
+
+        Strict mode raises on failure so LLM-only games do not silently
+        degrade to heuristic or pass-through decisions.
+        """
+        import logging
+        _log = logging.getLogger(__name__)
+
+        # Primary: CognitiveAgent
+        last_error: Exception | None = None
+        try:
+            return await self._decide_cognitive(action_type, player_view, **kwargs)
+        except Exception as e:
+            last_error = e
+            _log.warning(
+                f"CognitiveAgent.{action_type} failed for {self.player_name}: {e}"
+            )
+            self._fallback_count += 1
+            self._fallback_reasons.append(f"{action_type}: {type(e).__name__}")
+            if self._strict_no_fallback:
+                raise RuntimeError(
+                    f"CognitiveAgent.{action_type} failed in LLM-only mode for {self.player_name}"
+                ) from e
+
+        if self._fallback_heuristic is not None:
+            try:
+                _log.info(
+                    f"Falling back to HeuristicAgent for {self.player_name}.{action_type}"
+                )
+                decision = getattr(self._fallback_heuristic, action_type, lambda: None)()
+                if decision is not None:
+                    decision.metadata["fallback_used"] = True
+                    decision.metadata["fallback_from"] = "cognitive"
+                    decision.metadata["fallback_to"] = "heuristic"
+                    decision.metadata["fallback_reason"] = str(last_error)[:200]
+                    return decision
+            except Exception as e2:
+                _log.error(
+                    f"HeuristicAgent fallback also failed for {self.player_name}: {e2}"
+                )
+                self._validation_error_count += 1
+
+        # Absolute last resort: provide a pass/skip action
+        if self._strict_no_fallback:
+            raise RuntimeError(
+                f"All fallbacks exhausted for {self.player_name}.{action_type}"
+            )
+
+        _log.critical(f"Returning pass for {self.player_name}.{action_type}")
+        return Decision(
+            actor_id=self.player_id,
+            action_type=ActionType.SKIP,
+            reasoning="fallback exhausted",
+            metadata={
+                "fallback_used": True,
+                "fallback_from": "cognitive",
+                "fallback_to": "pass",
+                "fallback_reason": "all fallbacks exhausted",
+            },
+        )
+
+    async def _decide_cognitive(
+        self,
+        action_type: str,
+        player_view: Any,
+        **kwargs: Any,
+    ) -> Decision:
+        """Execute cognitive decision (internal, called by decide_with_fallback)."""
+        self._view = player_view
+        method_map = {
+            "talk": self.talk,
+            "vote": self.vote,
+            "attack": self.attack,
+            "divine": self.divine,
+            "guard": self.guard,
+            "shoot": self.shoot,
+            "boom": self.boom,
+            "witch_act": self.witch_act,
+            "transfer_badge": self.transfer_badge,
+        }
+        method = method_map.get(action_type)
+        if method is None:
+            raise ValueError(f"Unknown action_type: {action_type}")
+        return method(**kwargs) if kwargs else method()
+
     def _night_decision(self, result: Dict[str, str], action_type: ActionType) -> Decision:
         """Create a Decision for a night action."""
         target_id = self._resolve_target(result["target"])
+        if not target_id and self._strict_no_fallback:
+            raise RuntimeError(
+                f"LLM returned unresolved {action_type.value} target: {result['target']!r}"
+            )
         if not target_id:
             for p in self._view.players:
                 if p["alive"]:
@@ -313,8 +624,20 @@ class CognitiveAgent:
         """Resolve player name to player id."""
         if not name:
             return None
+        candidate = str(name).strip().lstrip("@")
         for p in self._view.players:
-            if p.get("name") == name:
+            player_name = str(p.get("name", "")).strip()
+            player_id = str(p.get("id", "")).strip()
+            seat = str(p.get("seat", "")).strip()
+            seat_label = f"{seat}号" if seat else ""
+            if (
+                candidate == player_name
+                or candidate == player_id
+                or candidate == seat
+                or candidate == seat_label
+                or (player_name and player_name in candidate)
+                or (seat_label and seat_label in candidate)
+            ):
                 return p["id"]
         return None
 
@@ -326,12 +649,41 @@ class CognitiveAgent:
         return None
 
     def _build_wolf_extra(self) -> str:
-        """Build extra context for wolf kill decisions."""
+        """Build extra context for wolf kill decisions.
+
+        Uses only legally visible information:
+        - known_wolves from PlayerView (teammates' private_dict)
+        - Public events (speeches, votes, deaths)
+        - BeliefTracker inferences
+        - WolfTeamView (legal wolf-team context, no fixed tactic recommendations)
+        - StrategicIntent (multi-turn plans)
+
+        Does NOT access any non-wolf player's true role or alignment.
+        """
         parts = []
-        wolf_team = self._view.self_player.get("wolf_team", [])
-        if wolf_team:
-            parts.append(f"狼队友: {', '.join(wolf_team)}")
+        # Use known_wolves from view (only populated for wolf-aligned players)
+        known_wolves = getattr(self._view, 'known_wolves', [])
+        if known_wolves:
+            wolf_names = [w.get("name", w.get("id", "?")) for w in known_wolves]
+            parts.append(f"狼队友: {', '.join(wolf_names)}")
+
+        # Optional LLM-declared tactic labels. The non-strategy layer never
+        # assigns or describes a fixed wolf plan.
+        if self._wolf_tactics:
+            my_tactic = self._wolf_tactics.get(self.player_id, "")
+            if my_tactic:
+                parts.append(f"你的狼队标签: {my_tactic}")
+
+        # Include legal wolf-team context if available
+        if self._wolf_team_view is not None:
+            from backend.agents.cognitive.wolf_team import build_wolf_coordination_context
+            coord_ctx = build_wolf_coordination_context(
+                self.player_id, self._wolf_team_view
+            )
+            parts.append(coord_ctx)
+
         parts.append("作为狼人阵营的一员，选择击杀目标。")
+        parts.append("注意：你只能基于公开发言、投票和狼队内部信息做判断，不能查看其他玩家的真实身份。")
         return "\n".join(parts)
 
     def _reflect_on_game(self, winner: Optional[str]) -> None:

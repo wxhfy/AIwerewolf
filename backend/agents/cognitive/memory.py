@@ -17,6 +17,8 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from backend.agents.cognitive.humanization import HumanizationProfile
+from backend.agents.cognitive.planner import Planner, StrategicIntent
+from backend.agents.cognitive.social_model import SocialModel
 
 
 @dataclass
@@ -73,6 +75,12 @@ class Memory:
 
         # Humanization (behavioral parameters from personality)
         self.humanization = humanization
+
+        # Social model (trust network and deception detection)
+        self.social_model = SocialModel()
+
+        # Planner (strategic intent for multi-turn planning)
+        self.planner = Planner()
 
         # Playbook notes (role-specific strategy hints)
         self.playbook_notes: Dict[str, List[str]] = {}
@@ -198,6 +206,17 @@ class Memory:
             for a in recent:
                 lines.append(f"  D{a.day} [{a.phase}] {a.action_type}: {a.content[:60]}")
             parts.append("\n".join(lines))
+
+        # Strategic intent (multi-turn planning)
+        plan_info = self.planner.format_active_for_prompt(self.day, self.phase)
+        if plan_info:
+            parts.append(plan_info)
+
+        # Social model (trust network)
+        social_info = self.social_model.format_for_prompt(self.player_id)
+        if social_info:
+            parts.append("=== 信任网络 ===")
+            parts.append(social_info)
 
         # Playbook hints (compact)
         if self.playbook_notes:

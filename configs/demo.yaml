@@ -4,9 +4,9 @@ game:
   # roles auto-derived from player_count via WOLFCHA_ROLE_CONFIGS:
   #   2x Werewolf, WhiteWolfKing, Seer, Witch, Hunter, Guard, 3x Villager
 agents:
-  type: heuristic
+  type: llm
   seed: 7
-  # Switch type to llm to let roles call different model names.
+  # Set LLM_PROVIDER=fake for local no-cost smoke tests, or configure provider/model below.
   # provider: doubao
   # model: doubao-seed-2-0-pro-250528
   # role_models:

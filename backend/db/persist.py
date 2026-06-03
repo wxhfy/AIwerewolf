@@ -170,7 +170,18 @@ def save_event(game_id: str, event: GameEvent) -> None:
 
 def save_decision(game_id: str, player_id: str, day: int, phase: str,
                   observation: dict, action: dict, raw: str,
-                  latency_ms: int | None = None) -> None:
+                  latency_ms: int | None = None,
+                  *,
+                  candidate_actions: list | None = None,
+                  visible_facts: list | None = None,
+                  confidence: float | None = None,
+                  prompt_hash: str | None = None,
+                  cost_usd: float | None = None,
+                  model_name: str | None = None,
+                  provider: str | None = None,
+                  prompt_tokens: int | None = None,
+                  completion_tokens: int | None = None,
+                  ) -> None:
     db = SessionLocal()
     try:
         db.add(AgentDecision(
@@ -183,6 +194,16 @@ def save_decision(game_id: str, player_id: str, day: int, phase: str,
             parsed_action=action,
             raw_output=raw,
             latency_ms=latency_ms,
+            # v2 DecisionTrace fields
+            candidate_actions=candidate_actions or [],
+            visible_facts=visible_facts or [],
+            confidence=confidence,
+            prompt_hash=prompt_hash,
+            cost_usd=cost_usd,
+            model_name=model_name,
+            provider=provider,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
         ))
         db.commit()
     finally:
@@ -266,6 +287,14 @@ def save_game_end(state: GameState) -> None:
                 latency_ms=record.latency_ms,
                 prompt_tokens=record.prompt_tokens,
                 completion_tokens=record.completion_tokens,
+                # v2 DecisionTrace fields
+                candidate_actions=_clean(getattr(record, 'candidate_actions', None) or []),
+                visible_facts=_clean(getattr(record, 'visible_facts', None) or []),
+                confidence=getattr(record, 'confidence', None),
+                prompt_hash=getattr(record, 'prompt_hash', None),
+                cost_usd=getattr(record, 'cost_usd', None),
+                model_name=getattr(record, 'model_name', None),
+                provider=getattr(record, 'provider', None),
             ))
 
         # Bulk-save votes from history
@@ -618,10 +647,12 @@ def get_leaderboard(*, role: str | None = None, limit: int = 20) -> list[dict]:
     db = SessionLocal()
     try:
         init_db()
+        review_sample_limit = max(100, min(max(1, limit) * 5, 1000))
         approved = (
             db.query(PublishedReview)
             .filter(PublishedReview.publish_allowed.is_(True))
             .order_by(PublishedReview.published_at.desc(), PublishedReview.created_at.desc())
+            .limit(review_sample_limit)
             .all()
         )
         if approved:
@@ -807,6 +838,26 @@ def _knowledge_row_to_dict(row: StrategyKnowledgeDoc) -> dict[str, Any]:
         "tags": row.tags or [],
         "created_at": row.created_at.isoformat() if row.created_at else None,
         "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+        # L0-L4 Confidence Tier
+        "confidence_tier": row.confidence_tier or "L3_strategic",
+        "judge_agreement": row.judge_agreement,
+        "times_upvoted": row.times_upvoted or 0,
+        "contradiction_count": row.contradiction_count or 0,
+        "games_since_creation": row.games_since_creation or 0,
+        "human_verdict": row.human_verdict,
+        # Access Control
+        "visibility_scope": row.visibility_scope or "public",
+        "allowed_roles": row.allowed_roles,
+        "deidentified": bool(row.deidentified),
+        "contains_current_game_private_info": bool(row.contains_current_game_private_info),
+        # Applicability
+        "applicability_role": row.applicability_role,
+        "applicability_phase": row.applicability_phase,
+        "min_players": row.min_players,
+        "max_players": row.max_players,
+        "required_public_facts": row.required_public_facts or [],
+        "forbidden_public_facts": row.forbidden_public_facts or [],
+        "required_private_state": row.required_private_state or [],
     }
 
 
@@ -843,6 +894,30 @@ def _upsert_strategy_knowledge_rows(db, docs: list[StrategyKnowledgeDocData]) ->
         row.failure_count = doc.failure_count
         row.status = doc.status
         row.tags = doc.tags
+
+        # L0-L4 Confidence Tier
+        row.confidence_tier = getattr(doc, 'confidence_tier', None) or "L3_strategic"
+        row.judge_agreement = getattr(doc, 'judge_agreement', None)
+        row.times_upvoted = getattr(doc, 'times_upvoted', 0)
+        row.contradiction_count = getattr(doc, 'contradiction_count', 0)
+        row.games_since_creation = getattr(doc, 'games_since_creation', 0)
+        row.human_verdict = getattr(doc, 'human_verdict', None)
+
+        # Access Control
+        row.visibility_scope = getattr(doc, 'visibility_scope', None) or "public"
+        row.allowed_roles = getattr(doc, 'allowed_roles', None)
+        row.deidentified = bool(getattr(doc, 'deidentified', False))
+        row.contains_current_game_private_info = bool(getattr(doc, 'contains_current_game_private_info', False))
+
+        # Applicability
+        row.applicability_role = getattr(doc, 'applicability_role', None)
+        row.applicability_phase = getattr(doc, 'applicability_phase', None)
+        row.min_players = getattr(doc, 'min_players', None)
+        row.max_players = getattr(doc, 'max_players', None)
+        row.required_public_facts = getattr(doc, 'required_public_facts', None) or []
+        row.forbidden_public_facts = getattr(doc, 'forbidden_public_facts', None) or []
+        row.required_private_state = getattr(doc, 'required_private_state', None) or []
+
         saved.append(doc.to_dict())
     return saved
 
@@ -892,6 +967,14 @@ def list_strategy_knowledge(
 
 
 def retrieve_strategy_knowledge(query: StrategyRetrievalQuery) -> list[dict[str, Any]]:
+    """Retrieve strategy knowledge with the 4-filter safety pipeline.
+
+    Filters (all must pass):
+      1. confidence_allowed — L0-L3 only, no rejected, L3 with high agreement
+      2. visibility_allowed — agent role/wolf status can see this
+      3. leaks_current_game_private_info — no current-game info leak
+      4. applicability_matches — knowledge applies to current situation
+    """
     init_db()
     db = SessionLocal()
     try:
@@ -903,7 +986,42 @@ def retrieve_strategy_knowledge(query: StrategyRetrievalQuery) -> list[dict[str,
         store = StrategyKnowledgeStore()
         docs = [StrategyKnowledgeDocData(**_knowledge_row_to_dict(row)) for row in rows]
         store.upsert_many(docs)
-        return _clean([asdict(item) for item in store.retrieve(query)])
+
+        # Get raw candidates from BM25 + embedding hybrid search
+        candidates_raw = store.retrieve(query)
+        candidates = [asdict(item) for item in candidates_raw]
+
+        # Apply 4-filter pipeline from knowledge_confidence
+        from backend.eval.knowledge_confidence import (
+            confidence_allowed, visibility_allowed,
+            leaks_current_game_private_info, applicability_matches,
+        )
+
+        public_facts = set(query.situation_tags or [])
+        private_state = set()
+
+        filtered: list[dict[str, Any]] = []
+        for doc in candidates:
+            if not confidence_allowed(doc):
+                continue
+            is_wolf = query.role in {"Werewolf", "WhiteWolfKing", "BigBadWolf", "WolfCub", "AlphaWolf"}
+            if not visibility_allowed(doc, query.role, is_wolf):
+                continue
+            if leaks_current_game_private_info(doc, getattr(query, 'game_id', '') or ''):
+                continue
+            if not applicability_matches(
+                doc, query.role, query.phase or "",
+                getattr(query, 'rule_variant', 'standard_competition_v1') or "standard_competition_v1",
+                getattr(query, 'player_count', 0) or 0,
+                public_facts, private_state,
+            ):
+                continue
+            if doc.get("status") in ("disputed", "deprecated"):
+                continue
+            filtered.append(doc)
+
+        filtered.sort(key=lambda d: d.get("quality_score", 0.0), reverse=True)
+        return _clean(filtered[:query.top_k])
     finally:
         db.close()
 
@@ -2371,5 +2489,67 @@ def get_strategy_attribution(
             "by_doc": by_doc,
             "by_role_phase": by_role_phase,
         })
+    finally:
+        db.close()
+
+
+# ---------------------------------------------------------------------------
+# DecisionTrace coverage tracking (v2 §G2 / §G10)
+# ---------------------------------------------------------------------------
+
+_DECISION_TRACE_FIELDS = (
+    "candidate_actions", "visible_facts", "confidence",
+    "prompt_hash", "cost_usd", "model_name",
+)
+
+
+def get_decision_trace_coverage(game_ids: list[str] | None = None) -> dict[str, Any]:
+    """Compute DecisionTrace field coverage across finished games.
+
+    Returns fraction of decisions that have each field populated,
+    plus an overall scorecard suitable for the GameHealthReport.
+    """
+    init_db()
+    db = SessionLocal()
+    try:
+        query = db.query(AgentDecision)
+        if game_ids:
+            query = query.filter(AgentDecision.game_id.in_(game_ids))
+        decisions = query.all()
+        total = len(decisions)
+        if total == 0:
+            return {"total": 0, "coverage_rate": 0.0, "fields": {}}
+
+        field_counts: dict[str, int] = {}
+        for field in _DECISION_TRACE_FIELDS:
+            count = 0
+            for d in decisions:
+                val = getattr(d, field, None)
+                if val is not None and val != [] and val != "":
+                    count += 1
+            field_counts[field] = count
+
+        full_count = sum(
+            1 for d in decisions
+            if all(
+                getattr(d, f, None) is not None
+                and getattr(d, f, None) != []
+                and getattr(d, f, None) != ""
+                for f in _DECISION_TRACE_FIELDS
+            )
+        )
+
+        return {
+            "total": total,
+            "full_trace_count": full_count,
+            "coverage_rate": round(full_count / total, 4),
+            "fields": {
+                field: {
+                    "count": cnt,
+                    "rate": round(cnt / total, 4),
+                }
+                for field, cnt in field_counts.items()
+            },
+        }
     finally:
         db.close()

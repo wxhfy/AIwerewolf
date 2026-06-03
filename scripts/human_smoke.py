@@ -68,7 +68,7 @@ def drive(room_id: str, max_steps: int = 60) -> dict:
 
 
 def main() -> int:
-    room = post("/api/rooms?name=HumanSmoke&seed=11&player_count=7&agent_type=heuristic&human_seat=3")
+    room = post("/api/rooms?name=HumanSmoke&seed=11&player_count=7&agent_type=llm&human_seat=3")
     print("Room:", room["id"])
     state = drive(room["id"])
     print(json.dumps({

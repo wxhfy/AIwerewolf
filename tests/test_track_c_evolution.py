@@ -316,7 +316,11 @@ def test_dream_job_generates_valid_candidate_patch_and_version() -> None:
     assert all(patch.status == "applied" for patch in result.candidate_patches)
     candidate_versions = [version for version in manager.history() if version.status == "candidate"]
     assert candidate_versions
-    assert any("public" in " ".join(version.card.speech_policy + version.card.skill_policy).lower() for version in candidate_versions)
+    assert any(
+        "public" in " ".join(version.card.speech_policy + version.card.skill_policy).lower()
+        or "公共" in " ".join(version.card.speech_policy + version.card.skill_policy)
+        for version in candidate_versions
+    )
 
 
 def test_patch_validator_rejects_rule_visibility_and_absolute_changes() -> None:
@@ -484,10 +488,8 @@ def test_strategy_knowledge_docs_carry_source_event_ids_end_to_end() -> None:
     )
 
 
-def test_tournament_run_seed_responds_to_strategy_version() -> None:
-    """BC promote gap: WerewolfGame._run_seed default path must consume strategy_version
-    so candidate vs baseline produce different metrics, otherwise AcceptancePolicy
-    always rejects (delta=0 fails the >=3% improvement gate)."""
+def test_tournament_run_seed_injects_strategy_patch_into_llm_game() -> None:
+    """Candidate patches must enter the LLM game path without post-hoc score edits."""
     runner = TournamentRunner()
     baseline_metric = runner._run_seed(seed=7, strategy_version="seer_v1", target_role="Seer")
     candidate_patch_ops = [
@@ -506,7 +508,10 @@ def test_tournament_run_seed_responds_to_strategy_version() -> None:
     )
     baseline_total = sum(score.adjusted_final_score for score in baseline_metric.player_scores)
     candidate_total = sum(score.adjusted_final_score for score in candidate_metric.player_scores)
-    assert baseline_total != candidate_total, (
-        "candidate produced identical aggregate score as baseline for the same seed — "
-        "strategy_version is not affecting agent behavior, so A/B tournament cannot promote"
-    )
+    assert baseline_metric.metadata["runner_mode"] == "llm_engine"
+    assert candidate_metric.metadata["runner_mode"] == "llm_engine"
+    assert candidate_metric.metadata["strategy_patch_applied"] is True
+    assert candidate_metric.metadata["strategy_bias_sections"] == ["vote_policy"]
+    assert "strategy_patch_perturbation" not in candidate_metric.metadata
+    assert isinstance(baseline_total, (int, float))
+    assert isinstance(candidate_total, (int, float))

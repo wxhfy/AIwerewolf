@@ -1,13 +1,23 @@
 """
-Production Strategy Retrieval — BM25 + Keyword Grep + Role/Phase Bonus.
+Production Strategy Retrieval — Regex Grep + Inverted Index + BM25 Fallback.
+
+Design philosophy: "Search, Don't Index" (inspired by Claude Code's ripgrep approach).
+- No embeddings, no vector DB, no GPU.
+- LLM drives the search: it picks keywords/regex, sees results, refines.
+- Three output modes: "count" (quick assessment), "overview" (titles only), "content" (full).
 
 GPU-free. Data source: PostgreSQL → in-memory indices.
-Build time ~0.3s for 941 docs. Query latency <1ms.
+Build time ~0.3s for 941 docs. Grep query latency <0.05ms.
 
 Architecture:
-  Fast path: Agent keywords → inverted index grep → BM25 rerank subset (NDCG~0.85)
-  Standard:  BM25 full-text + role/phase bonus → top-K
-  Ultra-fast: jieba tokenize → grep only (no BM25, ~0.1ms)
+  Primary:   Agent keywords/regex → inverted index grep → multi-field weighted rank
+  Fallback:  Grep insufficient (<3 hits) → BM25 full-text rerank
+  Legacy:    jieba-only tokenize → grep (ultra-fast ~0.05ms)
+  Count:     Inverted index grep with distinct doc count → no content load
+
+Key insight from Claude Code: for a domain with <1000 canonical entries,
+grep over tokenized fields is all you need. The LLM's reasoning ability
+chooses better search terms than any embedding could capture.
 
 Simplicity over complexity. Amazon 2025: "Keyword Search Is All You Need."
 KRAFTON PUBG Ally: BM25-only for game agent knowledge retrieval.
@@ -24,8 +34,54 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_CONN = "postgresql://werewolf:wolf_secret_2026@127.0.0.1:5433/werewolf"
 
+# ================================================================
+# Werewolf Domain Dictionary (jieba doesn't know these by default)
+# ================================================================
+_WEREWOLF_TERMS = [
+    # Core actions
+    "悍跳", "查杀", "表水", "归票", "自爆", "刀人",
+    "银水", "金水", "铜水", "警徽流", "警徽",
+    # Role compounds
+    "悍跳狼", "冲锋狼", "倒钩狼", "深水狼", "自刀狼",
+    "预言家", "真预言家", "悍跳预言家",
+    # Strategy terms
+    "扛推", "抗推", "穿衣服", "反水", "退水",
+    "站边", "撕警徽", "爆刀", "自刀",
+    # Phase terms
+    "上警", "警上", "警下", "放逐", "归底",
+    # Quality markers
+    "心路历程", "发言漏洞", "视角", "轮次",
+]
+_WEREWOLF_TERMS.sort(key=lambda x: -len(x))  # longest first for greedy matching
+
+# Register with jieba on import
+try:
+    import jieba
+    for term in _WEREWOLF_TERMS:
+        jieba.add_word(term, freq=100, tag='nz')
+    logger.info(f"Registered {len(_WEREWOLF_TERMS)} werewolf domain terms in jieba")
+except Exception:
+    pass
+
 TOP_K_CANDIDATES = 20
 TOP_K_FINAL = 5
+
+# Multi-field weights for grep scoring (situation > strategy > rationale).
+# Inspired by Claude Code's layered grep — field relevance matters.
+FIELD_WEIGHTS = {
+    "situation": 1.0,
+    "strategy": 0.7,
+    "rationale": 0.4,
+}
+
+
+def _safe_str(val: Any) -> str:
+    """Coerce field value to str. Handles tuples, lists from card.content."""
+    if isinstance(val, str):
+        return val
+    if isinstance(val, (list, tuple)):
+        return " ".join(str(v) for v in val)
+    return str(val) if val else ""
 
 
 # ============================================================
@@ -55,27 +111,37 @@ class StrategyRetriever:
 
     def build(self) -> int:
         """Load docs from PostgreSQL and build BM25 + inverted index. ~0.3s."""
+        self._docs = _load_from_pg(self._conn)
+        if not self._docs:
+            logger.error("No active strategies found in PostgreSQL")
+            return 0
+        return self._build_indexes()
+
+    def build_from_docs(self, docs: List[Dict]) -> int:
+        """Build BM25 + inverted index from in-memory strategy docs (no PG required)."""
+        self._docs = docs
+        if not self._docs:
+            logger.warning("StrategyRetriever.build_from_docs: empty doc list")
+            return 0
+        return self._build_indexes()
+
+    def _build_indexes(self) -> int:
+        """Build BM25 + keyword inverted index from self._docs."""
         import time
         from rank_bm25 import BM25Okapi
         import jieba
 
         t0 = time.perf_counter()
 
-        # 1. Load from PostgreSQL
-        self._docs = _load_from_pg(self._conn)
-        if not self._docs:
-            logger.error("No active strategies found in PostgreSQL")
-            return 0
-
-        # 2. Build inverted index (for keyword grep)
+        # 1. Build inverted index (for keyword grep)
         for i, d in enumerate(self._docs):
-            text = f"{d['situation']} {d['strategy']} {d['rationale']}"
+            text = f"{d.get('situation', '')} {d.get('strategy', '')} {d.get('rationale', '')}"
             for w in set(jieba.cut(text)):
                 if len(w) >= 2:
                     self._inverted_index.setdefault(w, set()).add(i)
 
-        # 3. Build BM25 index
-        corpus = [" ".join(jieba.cut(f"{d['situation']} {d['strategy']} {d['rationale']}"))
+        # 2. Build BM25 index
+        corpus = [" ".join(jieba.cut(f"{d.get('situation', '')} {d.get('strategy', '')} {d.get('rationale', '')}"))
                   for d in self._docs]
         self._bm25 = BM25Okapi([t.split() for t in corpus])
 
@@ -94,15 +160,31 @@ class StrategyRetriever:
         role: str = "",
         phase: str = "",
         k: int = TOP_K_FINAL,
+        output_mode: str = "content",
     ) -> List[Dict[str, str]]:
         """BM25 full-text search + role/phase bonus → top-K.
 
-        Returns list of {situation, strategy, quality} dicts.
+        Args:
+            output_mode: "content" (full), "overview" (situation+quality only),
+                         "count" (just match count).
+
+        Returns list of {situation, strategy, quality} dicts (fields depend on mode).
         """
         if not self._built:
             return []
 
-        return self._bm25_search(query, role, phase, k=k)
+        if output_mode == "count":
+            import jieba
+            tokens = " ".join(jieba.cut(query)).split()
+            n = len(set(i for t in tokens if len(t) >= 2 and t in self._inverted_index
+                        for i in self._inverted_index[t]))
+            return [{"match_count": n, "total_docs": len(self._docs)}]
+
+        results = self._bm25_search(query, role, phase, k=k)
+        if output_mode == "overview":
+            return [{k: v for k, v in r.items() if k in ("situation", "quality", "doc_type")}
+                    for r in results]
+        return results
 
     # ================================================================
     # Agentic Search (keyword-driven)
@@ -115,32 +197,80 @@ class StrategyRetriever:
         phase: str = "",
         k: int = TOP_K_FINAL,
         use_bm25_rerank: bool = True,
+        output_mode: str = "content",
+        regex_mode: bool = False,
     ) -> List[Dict[str, str]]:
-        """Agent-driven search: Agent keywords → inverted index grep → BM25 rerank.
+        """Agent-driven search: keywords/regex → inverted index grep → BM25 rerank.
 
         HIGH-PRECISION fast path. Agent-formulated keywords beat raw jieba
         tokenization (NDCG@5 ~0.85 vs 0.62).
 
+        Multi-field weighted grep: situation match ×1.0, strategy match ×0.7,
+        rationale match ×0.4. Inspired by Claude Code's layered grep strategy.
+
         Args:
-            keywords: Agent-formulated search terms (e.g. ["被查杀应对","保护狼队友"])
+            keywords: Agent-formulated search terms (e.g. ["被查杀应对","保护狼队友"]).
+                      With regex_mode=True, supports Python regex patterns.
             k: Results to return.
             use_bm25_rerank: If True, BM25-score the grep candidates for ranking.
-                             If False, return raw grep results (ultra-fast ~0.1ms).
+            output_mode: "content" (full), "overview" (situation+quality only), "count".
+            regex_mode: If True, treat keywords as regex patterns (re.compile).
         """
         if not self._built:
             return []
 
-        grep_indices = self._keyword_grep(keywords, role, phase, k=TOP_K_CANDIDATES * 2)
+        grep_indices = self._keyword_grep(keywords, role, phase, k=TOP_K_CANDIDATES * 2,
+                                          regex_mode=regex_mode)
+
+        if output_mode == "count":
+            return [{"match_count": len(grep_indices), "total_docs": len(self._docs)}]
 
         if len(grep_indices) < 3:
-            return self.search(" ".join(keywords), role, phase, k=k)
+            return self.search(" ".join(keywords), role, phase, k=k,
+                               output_mode=output_mode)
 
         if not use_bm25_rerank:
+            if output_mode == "overview":
+                return [{"situation": self._docs[i]["situation"],
+                         "quality": self._docs[i]["quality"],
+                         "doc_type": self._docs[i].get("doc_type", "")} for i in grep_indices[:k]]
             return [{"situation": self._docs[i]["situation"],
                      "strategy": self._docs[i]["strategy"],
-                     "quality": self._docs[i]["quality"]} for i in grep_indices[:k]]
+                     "quality": self._docs[i]["quality"],
+                     "doc_type": self._docs[i].get("doc_type", "")} for i in grep_indices[:k]]
 
-        return self._bm25_rerank_subset(" ".join(keywords), role, phase, grep_indices, k=k)
+        results = self._bm25_rerank_subset(" ".join(keywords), role, phase, grep_indices, k=k)
+        if output_mode == "overview":
+            return [{k: v for k, v in r.items() if k in ("situation", "quality", "doc_type")}
+                    for r in results]
+        return results
+
+    def search_regex(
+        self,
+        patterns: List[str],
+        role: str = "",
+        phase: str = "",
+        k: int = TOP_K_FINAL,
+        output_mode: str = "content",
+    ) -> List[Dict[str, str]]:
+        """Regex-based search: Python regex patterns → inverted index grep → BM25 rerank.
+
+        Use when keywords are too imprecise and you need pattern matching,
+        e.g. ["验.*查杀", "刀(民|神)$"].
+        """
+        return self.search_with_keywords(patterns, role=role, phase=phase, k=k,
+                                         output_mode=output_mode, regex_mode=True)
+
+    def count(self, keywords: List[str], role: str = "", phase: str = "") -> Dict[str, int]:
+        """Quick count: how many docs match these keywords? No content loading.
+
+        Returns {"match_count": N, "total_docs": N}.
+        Use this to assess keyword quality before fetching full results.
+        """
+        if not self._built:
+            return {"match_count": 0, "total_docs": 0}
+        grep_indices = self._keyword_grep(keywords, role, phase, k=TOP_K_CANDIDATES * 2)
+        return {"match_count": len(grep_indices), "total_docs": len(self._docs)}
 
     def search_fast(
         self,
@@ -172,26 +302,83 @@ class StrategyRetriever:
         idx = np.argsort(scores)[::-1][:k]
         return [{"situation": self._docs[i]["situation"],
                  "strategy": self._docs[i]["strategy"],
-                 "quality": self._docs[i]["quality"]} for i in idx]
+                 "quality": self._docs[i]["quality"],
+                 "doc_type": self._docs[i].get("doc_type", "")} for i in idx]
 
     # ================================================================
     # Internal: Keyword Grep + BM25 Rerank
     # ================================================================
 
-    def _keyword_grep(self, keywords: List[str], role: str, phase: str, k: int) -> List[int]:
-        """Grep inverted index with agent-chosen keywords."""
+    def _keyword_grep(
+        self, keywords: List[str], role: str, phase: str, k: int,
+        regex_mode: bool = False,
+    ) -> List[int]:
+        """Grep inverted index with agent-chosen keywords or regex patterns.
+
+        Multi-field weighted scoring: situation ×1.0, strategy ×0.7, rationale ×0.4.
+        Inspired by Claude Code's layered grep — field hit quality matters.
+
+        Args:
+            keywords: Search terms. With regex_mode, treated as re.compile patterns.
+            regex_mode: If True, match keywords as regex against field text.
+        """
         import jieba
+        import re as _re
+
         scores = np.zeros(len(self._docs))
 
-        for kw in keywords:
-            for token in jieba.cut(str(kw)):
-                if len(token) >= 2 and token in self._inverted_index:
-                    for idx in self._inverted_index[token]:
-                        scores[idx] += 1
+        if regex_mode:
+            # Compile regex patterns once
+            compiled = []
+            for kw in keywords:
+                try:
+                    compiled.append(_re.compile(str(kw)))
+                except _re.error:
+                    compiled.append(str(kw))
+
+            for i, d in enumerate(self._docs):
+                for pat in compiled:
+                    if isinstance(pat, _re.Pattern):
+                        for field, weight in FIELD_WEIGHTS.items():
+                            text = _safe_str(d.get(field, ""))
+                            if pat.search(text):
+                                scores[i] += weight
+                    else:
+                        for field, weight in FIELD_WEIGHTS.items():
+                            text = _safe_str(d.get(field, ""))
+                            if pat in text:
+                                scores[i] += weight
+        else:
+            for i, d in enumerate(self._docs):
+                for kw in keywords:
+                    # 1. Try jieba tokenization first
+                    tokens = list(jieba.cut(str(kw)))
+                    valid_tokens = [t for t in tokens if len(t) >= 2]
+
+                    if valid_tokens:
+                        for token in valid_tokens:
+                            if token in self._inverted_index and i in self._inverted_index[token]:
+                                field_hit = False
+                                for field, weight in FIELD_WEIGHTS.items():
+                                    text = _safe_str(d.get(field, ""))
+                                    if token in text:
+                                        scores[i] += weight
+                                        field_hit = True
+                                if not field_hit:
+                                    scores[i] += 0.2
+                    else:
+                        # 2. Fallback: literal substring match (for terms jieba doesn't know)
+                        kw_str = str(kw)
+                        for field, weight in FIELD_WEIGHTS.items():
+                            text = _safe_str(d.get(field, ""))
+                            if kw_str in text:
+                                scores[i] += weight * 0.8  # slightly lower than token match
 
         for i, d in enumerate(self._docs):
-            if d["role"] == role: scores[i] += 0.5
-            if d["phase"] == phase: scores[i] += 0.3
+            if d["role"] == role:
+                scores[i] += 0.5
+            if d["phase"] == phase:
+                scores[i] += 0.3
 
         top = np.argsort(scores)[::-1][:k]
         return [int(i) for i in top if scores[i] > 0]
@@ -216,7 +403,8 @@ class StrategyRetriever:
         top = sorted(candidate_indices, key=lambda i: b_raw[i], reverse=True)[:k]
         return [{"situation": self._docs[i]["situation"],
                  "strategy": self._docs[i]["strategy"],
-                 "quality": self._docs[i]["quality"]} for i in top]
+                 "quality": self._docs[i]["quality"],
+                 "doc_type": self._docs[i].get("doc_type", "")} for i in top]
 
     # ================================================================
     # Helpers
@@ -361,15 +549,17 @@ def _load_from_pg(conn_str: str) -> List[Dict]:
     c = conn.cursor()
     c.execute("""
         SELECT COALESCE(situation_pattern, ''), COALESCE(recommended_action, ''),
-               COALESCE(rationale, ''), role, phase, quality_score
+               COALESCE(rationale, ''), role, phase, quality_score,
+               COALESCE(doc_type, '')
         FROM strategy_knowledge_docs WHERE status = 'active'
     """)
     docs = []
-    for sit, rec, rat, role, phase, q in c.fetchall():
+    for sit, rec, rat, role, phase, q, dtype in c.fetchall():
         docs.append({
             "situation": sit or "", "strategy": rec or "", "rationale": rat or "",
             "role": role or "global", "phase": phase or "global",
             "quality": float(q) if q else 0.8,
+            "doc_type": dtype or "",
         })
     conn.close()
     return docs
@@ -385,22 +575,95 @@ _retriever: Optional[StrategyRetriever] = None
 def get_retriever(conn_str: str = "") -> Optional[StrategyRetriever]:
     """Get or build the global production retriever (singleton). GPU-free.
 
-    Returns None only if PostgreSQL is unreachable.
+    Tries PostgreSQL first; falls back to in-memory strategy store (cold-start).
     """
     global _retriever
     if _retriever is not None and _retriever.ready:
         return _retriever
 
+    # Primary: PostgreSQL
     try:
         _retriever = StrategyRetriever(conn_str=conn_str)
         n = _retriever.build()
-        if n == 0:
-            logger.warning("Production retriever built but no docs loaded")
-            return None
-        return _retriever
+        if n > 0:
+            return _retriever
     except Exception as e:
-        logger.warning(f"Failed to build production retriever: {e}")
-        return None
+        logger.warning(f"Failed to build production retriever from PG: {e}")
+
+    # Fallback: in-memory strategy store (cold-start YAML)
+    try:
+        docs = _load_docs_from_cold_start()
+        if docs:
+            _retriever = StrategyRetriever()
+            n = _retriever.build_from_docs(docs)
+            if n > 0:
+                logger.info(f"StrategyRetriever built from {n} cold-start docs (in-memory)")
+                return _retriever
+    except Exception as e:
+        logger.warning(f"Failed to build retriever from cold-start store: {e}")
+
+    return None
+
+
+def _load_docs_from_cold_start() -> list[dict]:
+    """Load cold-start strategy docs from YAML config + strategy registry.
+
+    Converts StrategyKnowledgeDoc → retriever dict format.
+    No PostgreSQL required.
+    """
+    from backend.eval.evolution import StrategyKnowledgeStore
+    from backend.agents.strategy_registry import get_strategy_registry
+
+    store = StrategyKnowledgeStore()
+
+    # 1. Load from strategy registry (YAML cold-start cards)
+    try:
+        registry = get_strategy_registry()
+        for card in registry.list_all():
+            doc_id = f"cold-{card.strategy_id}"
+            if doc_id not in store.docs:
+                from backend.eval.evolution import StrategyKnowledgeDoc
+                roles = card.applicable_roles
+                role = roles[0] if roles else "global"
+                doc = StrategyKnowledgeDoc(
+                    doc_id=doc_id,
+                    doc_type="cold_start",
+                    role=role,
+                    phase="global",
+                    persona_scope=None,
+                    situation_pattern=card.summary or card.strategy_name,
+                    trigger_conditions=[],
+                    recommended_action=card.content[:300] if card.content else "",
+                    avoid_action=None,
+                    rationale=card.risk_notes or "",
+                    evidence_summary="Cold-start strategy from YAML",
+                    source_report_ids=[],
+                    source_item_ids=[],
+                    source_event_ids=[],
+                    counterfactual_ids=[],
+                    expected_metric_effects=[],
+                    quality_score=0.90,
+                    confidence=0.85,
+                    status="active",
+                    tags=card.applicable_roles,
+                )
+                store.upsert(doc)
+    except Exception:
+        pass
+
+    # Convert to retriever dict format
+    docs = []
+    for doc in store.all(include_deprecated=False):
+        docs.append({
+            "situation": doc.situation_pattern or "",
+            "strategy": doc.recommended_action or "",
+            "rationale": doc.rationale or "",
+            "role": doc.role or "global",
+            "phase": doc.phase or "global",
+            "quality": doc.quality_score,
+            "doc_type": doc.doc_type or "",
+        })
+    return docs
 
 
 def retrieve_strategies_prod(
@@ -409,8 +672,16 @@ def retrieve_strategies_prod(
     situation: str = "",
     keywords: Optional[List[str]] = None,
     limit: int = 3,
+    include_reflections: bool = True,
+    output_mode: str = "content",
+    regex_mode: bool = False,
 ) -> List[Dict[str, str]]:
-    """Production strategy retrieval: BM25 + keyword grep + role/phase bonus.
+    """Production strategy retrieval: Grep + BM25 + role/phase bonus.
+
+    Supports three output modes (inspired by Claude Code's grep modes):
+      - "count": just return match count (quick keyword assessment)
+      - "overview": situation + quality only (lightweight scan)
+      - "content": full strategy content (default)
 
     Args:
         role: Current role (e.g., "Seer", "Werewolf").
@@ -418,19 +689,47 @@ def retrieve_strategies_prod(
         situation: Natural language description of the current situation.
         keywords: Optional agent-formulated keywords for higher precision.
         limit: Max entries to return.
+        include_reflections: If False, exclude doc_type='reflection' results.
+        output_mode: "content" | "overview" | "count"
+        regex_mode: If True, keywords are treated as Python regex patterns.
 
     Returns:
-        List of {situation, strategy, quality} dicts.
+        List of dicts (fields depend on output_mode).
     """
     retriever = get_retriever()
     if retriever is None:
         return []
 
-    if keywords and len(keywords) >= 2:
-        return retriever.search_with_keywords(keywords, role=role, phase=phase, k=limit)
+    if keywords and len(keywords) >= 1:
+        results = retriever.search_with_keywords(
+            keywords, role=role, phase=phase, k=limit,
+            output_mode=output_mode, regex_mode=regex_mode,
+        )
+    else:
+        query = situation or _default_query_text(role, phase)
+        results = retriever.search(query, role=role, phase=phase, k=limit,
+                                   output_mode=output_mode)
 
-    query = situation or _default_query_text(role, phase)
-    return retriever.search(query, role=role, phase=phase, k=limit)
+    if not include_reflections and output_mode != "count":
+        results = [r for r in results if not (r.get("doc_type") or "").startswith("reflection")]
+
+    return results
+
+
+def count_strategies(
+    role: str,
+    phase: str,
+    keywords: List[str],
+) -> Dict[str, int]:
+    """Quick keyword match count — no content loading, ~0.05ms.
+
+    Use before search_strategies to test keyword quality.
+    Inspired by Claude Code's "count" output mode.
+    """
+    retriever = get_retriever()
+    if retriever is None:
+        return {"match_count": 0, "total_docs": 0}
+    return retriever.count(keywords, role=role, phase=phase)
 
 
 def _default_query_text(role: str, phase: str) -> str:
@@ -449,12 +748,38 @@ def _default_query_text(role: str, phase: str) -> str:
 
 
 def format_strategies_for_prompt(strategies: List[Dict[str, str]]) -> str:
-    """Format retrieved strategies for LLM prompt."""
+    """Format retrieved strategies for LLM prompt.
+
+    Handles all output modes:
+      - "count" → "找到 N 条匹配策略（共 M 条）"
+      - "overview" → compact list of situations
+      - "content" → full situation + strategy
+    """
     if not strategies:
         return ""
+
+    # Count mode
+    if len(strategies) == 1 and "match_count" in strategies[0]:
+        s = strategies[0]
+        return f"(找到 {s['match_count']} 条匹配策略，共 {s.get('total_docs', '?')} 条。用更精确的关键词缩小范围。)"
+
+    # Overview mode (situation only)
+    if "strategy" not in strategies[0]:
+        lines = ["=== 策略概况（用 search_strategies(mode='content', keywords=...) 查看完整内容） ==="]
+        for i, s in enumerate(strategies, 1):
+            doc_type = s.get("doc_type", "")
+            type_label = " [反思经验]" if (doc_type or "").startswith("reflection") else ""
+            quality = s.get("quality", "?")
+            lines.append(f"{i}. [{quality:.0%}] {s.get('situation', '?')}{type_label}")
+        return "\n".join(lines)
+
+    # Content mode (full)
     lines = ["=== 相关策略参考 ==="]
     for i, s in enumerate(strategies, 1):
-        lines.append(f"{i}. 场景：{s.get('situation', '')}")
+        doc_type = s.get("doc_type", "")
+        is_reflection = (doc_type or "").startswith("reflection")
+        type_label = " [反思经验]" if is_reflection else ""
+        lines.append(f"{i}. 场景：{s.get('situation', '')}{type_label}")
         lines.append(f"   策略：{s.get('strategy', '')}")
         lines.append("")
     return "\n".join(lines)

@@ -190,6 +190,7 @@ class Pipeline:
     def _call_legacy(
         self, system: str, user: str, max_tokens: int = 500, max_retries: int = 2,
     ) -> str:
+        last_error: Exception | None = None
         for attempt in range(max_retries + 1):
             try:
                 resp = self._llm.invoke([
@@ -199,9 +200,11 @@ class Pipeline:
                 content = resp.content.strip()
                 if content and len(content) > 10:
                     return content
-            except Exception:
-                pass
-        return "[LLM: no response]"
+            except Exception as exc:
+                last_error = exc
+        if last_error is not None:
+            raise RuntimeError("LLM legacy call failed") from last_error
+        raise RuntimeError("LLM legacy call returned empty response")
 
 
 # ============================================================

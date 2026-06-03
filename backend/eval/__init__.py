@@ -1,11 +1,12 @@
 """Evaluation, review, and future self-improvement interfaces.
 
 Module structure (decoupled):
-  types.py            DATA:   Shared dataclasses + labels (zero logic)
-  game_replay.py      ENGINE: Deterministic night/vote/hunter replay
-  review.py           LOGIC:  Metrics + detection + counterfactuals + builder
-  track_b.py          PUBLISH: Validation + repair loop + publishing
-  evolution.py        TRACK C: DreamJob + self-evolution + tournament
+  types.py               DATA:   Shared dataclasses + labels (zero logic)
+  game_replay.py         ENGINE: Deterministic night/vote/hunter replay
+  review.py              LOGIC:  Metrics + detection + counterfactuals + builder
+  track_b.py             PUBLISH: Validation + repair loop + publishing
+  evolution.py           TRACK C: DreamJob + self-evolution + tournament
+  knowledge_confidence.py SAFETY: L0-L4 tiers + AccessControl + Applicability
 """
 
 from backend.eval.game_replay import (
@@ -14,7 +15,7 @@ from backend.eval.game_replay import (
 )
 from backend.eval.types import (
     CounterfactualCase, BadCaseReport, ReviewReport, GameMetrics,
-    COUNTERFACTUAL_TYPE_LABELS,
+    COUNTERFACTUAL_TYPE_LABELS, DecisionTrace,
 )
 
 from backend.eval.evolution import (

@@ -124,6 +124,14 @@ updated: 2026-05-23
 - **教训**：狼人杀游戏大量 LLM 调用天然适合并行——夜晚不同角色互不可见，白天投票同时进行。并行化的关键是区分"真实游戏依赖"（发言必须顺序、女巫必须等狼刀结果）和"实现偶然的串行"（投票本可同时）。不改 Agent 代码、在引擎层加 ThreadPoolExecutor 是最低风险的加速路径。
 - **预期加速比**：夜晚 3-4x、白天投票 8-10x、整轮 3-5x
 
+### 问题 A10：PK 测试桩漏接并行投票
+- **发生时间 / Session**：2026-06-02 ｜ Codex
+- **现象**：全量 `pytest tests/ -q` 时，`tests/test_engine.py::test_day_vote_tie_enters_pk_and_resolves` 的 PK 结果不稳定；针对性重跑时发现测试只 monkeypatch 了 `_ask()`，但投票阶段已由引擎并行化为 `_batch_ask()`，实际仍调用真实 heuristic agent，可能放逐到猎人并进入 `HUNTER_SHOOT`。
+- **根因**：引擎并行化后，独立投票动作不再经过 `_ask()`；旧测试桩只覆盖顺序调用路径，没有覆盖批量调用路径，也没有为可能触发的猎人开枪补兜底。
+- **解决方案**：在该测试中同时 monkeypatch `_batch_ask()`，让批量投票也走同一套脚本投票；并在 `scripted_ask()` 中增加 `SHOOT` 分支，给特殊死亡技能路径留合法动作。
+- **涉及文件 / 模块**：`tests/test_engine.py`、`backend/engine/game.py`
+- **教训**：阶段流测试的脚本 Agent 必须覆盖当前调度入口；引擎从顺序调用改成批量调用后，只替换 `_ask()` 不再等于控制了所有 Agent 决策。
+
 ---
 
 ## §B. 前端 / UI 渲染
@@ -396,6 +404,62 @@ updated: 2026-05-23
 - **涉及文件 / 模块**：`backend/eval/evolution.py`、`backend/agents/llm_agent.py`、`scripts/bc_quantify.py`、`.env`（本地非提交）
 - **教训**：豆包 chat endpoint 与 embedding endpoint 不能混用；正式 RAG/GraphRAG 验收前必须先拿到 embedding 专用 `ep-...`，否则只能证明 chat LLM 可用，不能证明远程向量检索可用。
 
+### 问题 C14：技能反事实被吞掉
+- **发生时间 / Session**：2026-06-02 ｜ Codex
+- **现象**：运行 `pytest tests/test_b_full_acceptance.py tests/test_c_acceptance_verification.py -q` 时，`test_b_gate6_counterfactual_three_types_exist` 失败；女巫毒错好人已生成反事实，但测试按通用 `counterfactual_type="skill"` 查找，结果为空。
+- **根因**：`backend/eval/review.py` 的 `CounterfactualAnalyzer._skill_cases()` 有两个回归叠加：第一，女巫毒药、女巫解药、猎人开枪生成了 `witch_poison` / `witch_save` / `hunter_shot` 子类型，但验收与旧报告口径仍以 `skill` 聚合；第二，女巫毒药分支使用了不存在的局部变量 `poison_target_id`，触发 `NameError`，又被 `CounterfactualAnalyzer.analyze()` 的 debug-level catch 吞掉，最终报告里没有任何技能反事实。
+- **解决方案**：将 `_skill_cases()` 产出的技能反事实 `counterfactual_type` 归一为 `skill`，并把错误变量修为 `witch_poison_target_id`；具体技能语义继续通过 `case_id`、`phase`、`original_decision` 和 `effect_type` 保留。
+- **涉及文件 / 模块**：`backend/eval/review.py`、`tests/test_b_full_acceptance.py`
+- **教训**：评分/验收的聚合维度要稳定；新增更细子类型时，要么同步所有验收口径，要么在输出层保留向后兼容的通用类型。
+
+### 问题 C15：认知 Agent 缺离线全链路验收
+- **发生时间 / Session**：2026-06-03 ｜ Codex
+- **现象**：项目只有 `scripts/test_cognitive_*.py` 这类依赖真实 LLM API key 的手动脚本；CI / 离线验收无法证明 CognitiveAgent 的 Observe → AgentLoop → Decision 真实跑过，也无法覆盖发言、投票、夜晚行动三类决策。
+- **根因**：认知 Agent 集成测试绑定 `llm_provider`，没有 fake Runnable；而引擎默认创建 cognitive agent 又会走真实 provider，导致无 key 环境只能测接口形状，不能测执行链路。
+- **解决方案**：新增 `tests/test_cognitive_offline.py`，用 deterministic fake LLM 返回 `DECISION: {...}`，创建 7 个真正的 CognitiveAgent 并跑完整 `WerewolfGame`，断言终局、发言事件、投票事件、夜晚行动、AgentLoop prompt 和 decision_records 都存在。
+- **涉及文件 / 模块**：`tests/test_cognitive_offline.py`、`backend/agents/cognitive/agent_loop.py`、`backend/engine/game.py`
+- **教训**：LLM Agent 的验收要拆成两层：离线 fake LLM 证明本地链路与协议，真实 LLM 长跑再证明模型质量；不能只靠有 key 的手动脚本。
+
+### 问题 C16：验收仍能开 heuristic 对局
+- **发生时间 / Session**：2026-06-03 ｜ Codex
+- **现象**：用户纠正“确保所有对局都是只有 llm”“不要启发式”；复查发现 API 测试、E2E smoke、`TournamentRunner` 默认元数据和 demo 配置仍可创建或标记 heuristic 对局，容易把流程 smoke 当成 LLM-only 验收。
+- **根因**：历史规范把 heuristic 当作低成本 CI 路径；`create_agents()` 对 `agent_type=heuristic` 和 role override 没有限制；无 API key 时 LLM client 会返回 unavailable client，再由上层潜在 fallback/默认动作继续推进。
+- **解决方案**：`create_agents()` 只允许 AI 席位使用 `llm/cognitive`（统一落为 `llm`），API/WS 对 `agent_type=heuristic` 返回 400/error；新增 `LLM_PROVIDER=fake` 本地 LLM-compatible client 供测试；pytest、API、E2E、UI smoke、demo 配置全部切到 `agent_type=llm`；Track C 默认 runner 记录 `runner_mode=llm_engine` 并移除 post-hoc 分数扰动。
+- **涉及文件 / 模块**：`backend/agents/factory.py`、`backend/llm/__init__.py`、`backend/app.py`、`backend/engine/game.py`、`backend/eval/evolution.py`、`tests/conftest.py`、`tests/test_api.py`、`scripts/e2e_smoke.py`、`configs/demo.yaml`
+- **教训**：低成本测试可以 fake LLM，但不能换 agent 类型；“无启发式”必须在创建对局入口强制，而不是只靠验收脚本自觉。
+
+### 问题 C17：LLM-only 切换后旧 heuristic 测试失效
+- **发生时间 / Session**：2026-06-03 ｜ Codex
+- **现象**：完整 `pytest tests -q` 失败 4 项，集中在 `tests/test_humanization.py`：测试从 `WerewolfGame.agents[...]` 取到的已是 `CognitiveAgent`，不再有 `human_profile/suspicion/known_wolf_ids/public_stance` 等 HeuristicAgent 私有字段。
+- **根因**：旧测试默认 `WerewolfGame()` 会创建 heuristic agents；LLM-only 后这个默认假设失效，但测试目标其实是 HeuristicAgent 的人性化层单元行为，不应该通过游戏默认 agent 类型间接取得。
+- **解决方案**：humanization 测试改为用当前 LLM GameState 生成 `PlayerView`，再直接初始化 `HeuristicAgent` 做类单测；对局默认仍保持 LLM-only。
+- **涉及文件 / 模块**：`tests/test_humanization.py`、`backend/engine/game.py`
+- **教训**：如果测试目标是某个 legacy 类，应直接实例化该类；不能依赖“游戏默认 agent 类型”这种全局策略。
+
+### 问题 C18：技能反事实 effect_type 错误
+- **发生时间 / Session**：2026-06-03 ｜ Codex
+- **现象**：fake LLM API 对局能完成，但 `/api/games/{id}/reviews` 返回 `needs_revision`；validation issue 指出 skill 反事实必须是 `effect_type=local_recalculation`，实际输出为 `exact_recalculation`。
+- **根因**：`CounterfactualAnalyzer._skill_cases()` 的女巫毒、女巫救、猎人枪分支仍沿用投票重算的 `exact_recalculation` 标记；文件顶部和 gate 约定技能类应是局部重算。
+- **解决方案**：三类技能反事实统一改为 `effect_type="local_recalculation"`，`recomputed_outcome.method` 同步改为 `local_recalculation`；API review 重新变为 approved。
+- **涉及文件 / 模块**：`backend/eval/review.py`、`tests/test_api.py`
+- **教训**：Track B gate 的字段语义要和生成器保持一致；新增 fake LLM 对局会暴露过去 heuristic seed 没触发到的评测分支。
+
+### 问题 C19：非策略层混入硬玩法
+- **发生时间 / Session**：2026-06-03 ｜ Codex
+- **现象**：用户要求检查“硬逻辑/硬策略”，并明确角色层只能介绍性格、role 层只能介绍职业目标和能力，只有策略层能教怎么玩。复查发现 CognitiveAgent 的 profile/system prompt、legacy role prompt、人格池、狼队协调模块中混有“必须跳、优先守、带偏、归票、拿狼伪装、固定狼队战术角色”等硬玩法。
+- **根因**：历史实现把“让 LLM 玩得更像会玩的人”的提示直接塞进 profile / role / persona / wolf_team 等非策略层，缺少自动化分层测试；`wolf_team.py` 还保留了非 LLM 的战术角色分配和刀人推荐函数。
+- **解决方案**：将 profile/system/persona 改为身份、能力、目标、信息边界和表达风格；移除 `_build_role_think_hint()` 的角色固定打法；规则工具只答机制不推荐策略；狼队模块降级为合法可见信息摘要，不再分配固定战术或推荐刀口；新增 `tests/test_prompt_layering.py` 防止硬策略回流。
+- **涉及文件 / 模块**：`backend/agents/cognitive/profiles.py`、`backend/agents/cognitive/prompts.py`、`backend/agents/cognitive/agent_loop.py`、`backend/agents/cognitive/tools.py`、`backend/agents/cognitive/wolf_team.py`、`backend/agents/cognitive/agent.py`、`backend/agents/profiles.py`、`backend/agents/prompts.py`、`backend/agents/characters.py`、`backend/agents/llm_agent.py`、`tests/test_prompt_layering.py`
+- **教训**：能力说明和玩法指导必须物理分层；只要 profile/system/persona 能直接进入 prompt，就不能写“什么时候该做什么”。
+
+### 问题 C20：规则工具字符级误匹配
+- **发生时间 / Session**：2026-06-03 ｜ Codex
+- **现象**：新增分层测试查询 `check_rules("狼人可以空刀吗")`，结果返回“守卫不能连续两晚守护同一人”，说明规则工具会误答。
+- **根因**：`check_rules()` 使用 `any(w in question for w in q[:4])`，实际按单个字符做模糊匹配；问题里有“可”字就可能命中“守卫可以连续守同一个人吗”。
+- **解决方案**：改为短语级匹配：完整问题包含、反向包含或 FAQ 前四字短语包含；同时把“空刀通常不推荐”的策略建议改成纯机制回答。
+- **涉及文件 / 模块**：`backend/agents/cognitive/tools.py`、`tests/test_prompt_layering.py`
+- **教训**：规则工具不能用字符级模糊匹配；规则层只回答机制，不能顺手给策略建议。
+
 ---
 
 ## §D. 数据库 / 持久化
@@ -430,6 +494,30 @@ updated: 2026-05-23
 - **解决方案**：`TournamentRunner._metric_summary()` 增加递归 `json_safe()`，对 dataclass 使用 `asdict()`，并清洗 list/dict 后再返回给持久化层。
 - **涉及文件 / 模块**：`backend/eval/evolution.py`、`backend/db/persist.py`
 - **教训**：评测对象可以是富 dataclass，但跨 DB/API 边界前必须转换为 JSON-safe artifact。
+
+### 问题 D5：旧知识文档 NULL 字段导致聚合接口 500
+- **发生时间 / Session**：2026-06-02 ｜ Codex
+- **现象**：全量 `pytest tests/ -q` 时，`tests/test_api.py::test_runtime_metrics_and_aggregate_endpoints` 调用 `/api/metrics/aggregate` 返回 500；堆栈落在 `KnowledgeDocValidator.validate()`，`" ".join(...)` 尝试拼接旧数据库行里的 `evidence_summary=None`，触发 `TypeError: sequence item ... expected str instance, NoneType found`。
+- **根因**：`StrategyKnowledgeDoc` dataclass 声明为字符串字段，但持久化层会从历史 DB 行恢复出 `NULL`；校验器假设所有字段都是干净字符串，没有在 API 聚合这种“读历史数据”路径上做兼容清洗。
+- **解决方案**：在 `KnowledgeDocValidator.validate()` 内部统一把参与文本拼接的值经 `_text()` 归一化，`None` 变为空字符串；同时把 `trigger_conditions` 的 `None` 兼容为 `[]`，保留后续 `missing_*` 校验语义。
+- **涉及文件 / 模块**：`backend/eval/evolution.py`、`backend/app.py`、`tests/test_api.py`
+- **教训**：dataclass 的类型标注不能替代数据库边界清洗；凡是从历史持久化记录恢复的评测对象，都要把 `NULL` 当成正常输入处理。
+
+### 问题 D6：知识扩展字段导致 aggregate 500
+- **发生时间 / Session**：2026-06-03 ｜ Codex
+- **现象**：`/api/metrics/aggregate?limit_games=20` 抛出 `TypeError: __init__() got an unexpected keyword argument 'confidence_tier'`；API 单测 `test_runtime_metrics_and_aggregate_endpoints` 失败。
+- **根因**：`backend/db/models.py` 已给 `strategy_knowledge_docs` 增加 L0-L4 置信度、可见性、适用性字段，但 `backend/eval/evolution.py` 的 `StrategyKnowledgeDoc` dataclass 仍是旧结构；持久化层 `_knowledge_row_to_dict()` 把新字段还原后直接 `StrategyKnowledgeDocData(**payload)`，强类型边界炸掉。
+- **解决方案**：给 Track C `StrategyKnowledgeDoc` 补齐 `confidence_tier / visibility_scope / applicability_*` 等兼容字段，并同步更新 `StrategyKnowledgeStore.load_from_pg()` 与 `sync_to_pg()`，保证从 DB 恢复和写回都不丢元数据。
+- **涉及文件 / 模块**：`backend/eval/evolution.py`、`backend/db/persist.py`、`backend/db/models.py`
+- **教训**：DB schema 扩展必须同步 dataclass / API 恢复结构；只改 ORM model 不改评测对象，会在聚合和自进化恢复路径上 500。
+
+### 问题 D7：leaderboard 全量聚合历史复盘
+- **发生时间 / Session**：2026-06-03 ｜ Codex
+- **现象**：`tests/test_api.py::test_leaderboard_api_returns_cross_game_views` 卡住；手动请求确认两个 `/api/games` 1 秒内完成，但 `/api/leaderboard` 60 秒超时。本地库有 7404 局、6298 条 approved review。
+- **根因**：`get_leaderboard()` 查询所有 `PublishedReview.publish_allowed=True` 后再做内存聚合，只在返回 entries 时按 `limit` 截断；历史库越大，接口越慢，测试也会被历史数据拖垮。
+- **解决方案**：在查询层增加最近复盘采样上限 `review_sample_limit = max(100, min(limit * 5, 1000))`，再做聚合；复测 `/api/leaderboard` 约 3 秒返回。
+- **涉及文件 / 模块**：`backend/db/persist.py`、`tests/test_api.py`
+- **教训**：聚合接口的 `limit` 必须约束数据库查询，不应只约束返回 JSON；本地验收库会长期增长，不能假设数据量小。
 
 ---
 
@@ -473,6 +561,30 @@ updated: 2026-05-23
 - **现象**："Room not found"、路由对不上等错觉，实际是旧进程还在跑。
 - **解决方案**：开发环境一律 `uvicorn ... --reload`。
 - **教训**：开发期间宁可重启慢也别让人怀疑代码是否生效。
+
+### 问题 F4：实验脚本硬编码敏感默认值
+- **发生时间 / Session**：2026-06-02 ｜ Codex
+- **现象**：满分验收安全扫描时发现多个实验脚本内存在硬编码的 LLM API key 默认值；`scripts/finetune_llm_verified.py` 还存在本地数据库连接串默认值。即使只是历史脚本，也违反“不得把 API Key、`.env` 写进代码”的项目红线。
+- **根因**：实验脚本为本机快速运行写死了默认配置，没有收敛到环境变量；后续被纳入仓库后没有经过敏感信息扫描。
+- **解决方案**：删除硬编码 LLM key 默认值，统一改为读取 `DSV4FLASH_API_KEY`；`scripts/finetune_llm_verified.py` 同时改为读取 `DATABASE_URL`。脚本入口在缺少必要环境变量时显式 `RuntimeError` 退出，不再携带敏感默认值。
+- **涉及文件 / 模块**：`scripts/finetune_llm_verified.py`、`scripts/ft_quick.py`、`scripts/eval_hybrid_agentic_rrf.py`、`scripts/finetune_llm_batch.py`、`scripts/eval_agentic_search.py`
+- **教训**：实验脚本和生产代码一样必须遵守密钥红线；进入仓库前至少跑一次 `API_KEY` / `sk-` / provider key pattern 扫描。
+
+### 问题 F5：pytest 解释器与依赖安装不一致
+- **发生时间 / Session**：2026-06-03 ｜ Codex
+- **现象**：直接运行 `pytest` 时收集阶段报 `ModuleNotFoundError: No module named 'langchain_core'`；安装依赖后仍失败，但 `python -c "import langchain_core"` 正常。
+- **根因**：项目认知 Agent 顶层依赖 `langchain_core`，但 `requirements.txt` 未声明；同时 shell 里的 `pytest` 来自 `~/.local/bin/pytest`，而项目 `python` 是 `/home/fyh0106/miniconda3/bin/python`，两个解释器环境不一致。
+- **解决方案**：`requirements.txt` 增加 `langchain-core>=0.2` 并安装到项目解释器；验收命令统一使用 `python -m pytest ...`，避免调用到另一个 Python 环境的 pytest entrypoint。
+- **涉及文件 / 模块**：`requirements.txt`、`backend/agents/cognitive/*`、测试执行命令
+- **教训**：Python 项目验收优先使用 `python -m pytest`；新增运行时依赖必须进 requirements，否则换环境后会在导入阶段失败。
+
+### 问题 F6：pickle 模型跨 numpy 版本不可加载
+- **发生时间 / Session**：2026-06-03 ｜ Codex
+- **现象**：全量 `python -m pytest tests -q` 唯一失败为 `tests/test_track_b_speech_semantic_scorer.py::test_scorer_model_artifact`，直接 `pickle.load()` 报 `ModuleNotFoundError: No module named 'numpy._core'`。
+- **根因**：`models/open_data/speech_act_classifier_v0.pkl` 由另一个 numpy 版本/包路径生成，当前环境是 numpy 1.24.4，pickle 里引用的 `numpy._core` 模块不存在；测试因为 artifact 文件存在，不会 skip。
+- **解决方案**：用当前解释器重新运行 `scripts/train_speech_semantic_scorer.py`，从 open speech samples 重训并重导出 `speech_act_classifier_v0.pkl`；单测复跑通过。
+- **涉及文件 / 模块**：`models/open_data/speech_act_classifier_v0.pkl`、`scripts/train_speech_semantic_scorer.py`、`tests/test_track_b_speech_semantic_scorer.py`
+- **教训**：pickle 模型 artifact 不是跨环境稳定格式；如果要随仓库保存，就要在目标 Python/numpy/sklearn 环境下重导出，或改成显式版本化的可迁移格式。
 
 ---
 
@@ -581,6 +693,22 @@ updated: 2026-05-23
 - **Session**：a9b3dd5d
 - **解决方案**：测试目录命名 + `conftest.py` 补齐。
 
+### 问题 H9：标准规则配置与代码板子不一致
+- **发生时间 / Session**：2026-06-02 ｜ Codex
+- **现象**：满分导向验收审查时发现 `configs/rule_variant_standard.yaml` 的 `role_distribution` 与 `backend/engine/rules.py` 中 `WOLFCHA_ROLE_CONFIGS` 不一致：7P 配置缺少 Guard、12P 配置缺少 Idiot，且缺少 8P/10P/11P 配置。
+- **根因**：规则配置文件是后补的验收证据文档，没有从代码中的唯一运行时板子表同步生成；文档标题写“所有规则边界测试必须绑定此配置”，但内容未覆盖当前真实 7-12P 代码路径。
+- **解决方案**：将 `configs/rule_variant_standard.yaml` 的 7-12P `role_distribution` 同步到 `WOLFCHA_ROLE_CONFIGS` 当前实现，不改引擎逻辑。
+- **涉及文件 / 模块**：`configs/rule_variant_standard.yaml`、`backend/engine/rules.py`
+- **教训**：验收配置必须对齐运行时代码入口；否则后续测试即使“绑定标准配置”，也可能验证的是不存在的规则变体。
+
+### 问题 H10：E2E smoke 仍按 7 人默认断言
+- **发生时间 / Session**：2026-06-03 ｜ Codex
+- **现象**：`python scripts/e2e_smoke.py` 失败在 `assert len(data["players"]) == 7`；房间路径通过，裸 `/api/games?seed=...&agent_type=heuristic` 路径失败。
+- **根因**：API `/api/games` 默认 `player_count=10`，`tests/test_api.py` 也已按 10 人默认断言；但 `scripts/e2e_smoke.py` 的裸游戏请求没有显式传 `player_count=7`，仍沿用旧默认预期。
+- **解决方案**：smoke 脚本在裸 `/api/games` 请求中显式追加 `player_count=7`，使请求参数和断言一致；复测 E2E smoke 通过。
+- **涉及文件 / 模块**：`scripts/e2e_smoke.py`、`backend/app.py`、`tests/test_api.py`
+- **教训**：验收脚本不要隐式依赖 API 默认值；如果断言 7 人局，请求里必须显式写 `player_count=7`。
+
 ---
 
 ## §I. 用户反复强调或纠正的偏好（沉淀）
@@ -594,6 +722,8 @@ updated: 2026-05-23
 - **B/C 验收禁止“手造 metrics / heuristic fallback”替代真实链路** —— Track C 的 A/B 必须实际跑固定 seed 对局；Track B 发现 fallback 决策不得发布为 ApprovedReviewReport。
 - **策略库必须可量化、可审计** —— 检索不能只靠关键词重叠；每一步验收都要有成功率、样本分母、阈值和展示入口，空数据不能当作通过。
 - **最终实验必须带 LLM 来源证明** —— heuristic smoke 只验流程；正式结论必须由 `scripts/run_full_llm_pipeline.py` 产生，并包含 `runner_mode=llm`、`llm_decision_count`、`fallback_count=0` 等审计字段。
+- **【2026-06-03 纠正】所有对局都必须是 LLM-only，不要启发式** —— 即使是本地 smoke / A-B tournament / human mixed room，AI 席位也必须走 LLM-compatible Agent；离线测试只能用 `LLM_PROVIDER=fake` 这种 LLM 接口 stub，不能用 `HeuristicAgent` 代替。
+- **【2026-06-03 纠正】只有策略层可以教玩法** —— persona/角色性格层只描述表达和性格；role/system 层只描述职业目标、能力、规则和信息边界；“什么时候该做什么、优先级、跳身份、刀口、归票”等必须只出现在策略层。
 - **豆包 embedding 必须用 endpoint ID** —— `doubao-embedding-vision` Model ID 在个人 API 下可能 404；正式 RAG 验收必须配置 embedding 专用 `DOUBAO_EMBEDDING_ENDPOINT=ep-...`。
 
 ### 关于 UI / UX

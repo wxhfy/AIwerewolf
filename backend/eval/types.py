@@ -11,6 +11,84 @@ from typing import Any
 
 
 # ============================================================
+# EvidenceRef — standardized evidence references
+# ============================================================
+
+@dataclass
+class EvidenceRef:
+    """Standardised evidence anchor for all review conclusions.
+
+    Every bad case, counterfactual, suggestion, bonus, and score_reason
+    MUST link to at least one EvidenceRef.
+    """
+
+    phase: str = ""
+    turn_index: int | None = None
+    actor_id: str | None = None
+    target_id: str | None = None
+    event_type: str = ""
+    public_or_private: str = "public"    # "public" | "private"
+    visibility_scope: str = "public"      # "public" | "self_private" | "wolf_team_private" | "postgame_only"
+    summary: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    def to_public_dict(self) -> dict[str, Any]:
+        """Sanitized version for public display — redacts private details."""
+        data = self.to_dict()
+        if data.get("visibility_scope") in ("self_private", "wolf_team_private"):
+            data["summary"] = "[private evidence — redacted]"
+            data["actor_id"] = None
+            data["target_id"] = None
+        return data
+
+
+# ============================================================
+# Safety Flags
+# ============================================================
+
+@dataclass
+class SafetyFlags:
+    """Per-item safety metadata for Track C consumption."""
+
+    safe_for_track_c_learning: bool = True
+    safe_for_in_game_retrieval: bool = True
+    visibility_scope: str = "public"   # "public" | "self_private" | "wolf_team_private" | "postgame_only"
+    contains_player_ids: bool = False
+    contains_private_info: bool = False
+    contains_absolute_strategy: bool = False
+    contains_rule_tampering: bool = False
+    contains_visibility_bypass: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+# ============================================================
+# Evolution Candidate — Track B → Track C bridge
+# ============================================================
+
+@dataclass
+class EvolutionCandidate:
+    """A review conclusion packaged for Track C self-evolution consumption."""
+
+    source_type: str = ""           # "bad_case" | "counterfactual" | "suggestion" | "bonus"
+    source_id: str = ""
+    role: str = ""
+    phase: str = ""
+    trigger_condition: str = ""
+    lesson: str = ""
+    evidence_refs: list[EvidenceRef] = field(default_factory=list)
+    quality_signals: dict[str, float] = field(default_factory=dict)
+    visibility_scope: str = "public"
+    safe_for_track_c_learning: bool = True
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+# ============================================================
 # Label Constants
 # ============================================================
 
@@ -74,6 +152,14 @@ class PlayerScore:
     adjusted_final_score: float | None = None
     impact_bonus: float = 0.0; semantic_highlight_bonus: float = 0.0
     review_penalty: float = 0.0
+    # v2 structured fields
+    raw_score: float = 0.0
+    role_normalized_score: float = 0.0
+    confidence: float = 0.0
+    score_reason: str = ""
+    evidence_refs: list[EvidenceRef] = field(default_factory=list)
+    rule_based: bool = True
+    judge_agreement: float | None = None
 
 
 @dataclass
@@ -91,6 +177,9 @@ class ReviewBonus:
     evidence: list[str]; confidence: float
     day: int | None = None; phase: str | None = None
     category: str = "impact"
+    evidence_refs: list[EvidenceRef] = field(default_factory=list)
+    visibility_scope: str = "public"
+    safe_for_track_c_learning: bool = True
 
 
 @dataclass
@@ -146,6 +235,15 @@ class BadCaseReport:
     game_id: str; day: int; player_name: str; role: str
     mistake_type: str; description: str; suggested_fix: str; severity: str
     evidence_event_ids: list[str] = field(default_factory=list)
+    # v2 structured fields (backward-compatible defaults)
+    id: str = ""; bad_case_type: str = ""; phase: str = ""
+    actor_id: str = ""; trigger_condition: str = ""
+    observed_action: str = ""; expected_better_action: str = ""
+    impact_estimate: float = 0.0; confidence: float = 0.0
+    evidence_refs: list[EvidenceRef] = field(default_factory=list)
+    visibility_scope: str = "public"
+    safety_flags: SafetyFlags | None = None
+    safe_for_track_c_learning: bool = True
 
 
 @dataclass
@@ -193,6 +291,14 @@ class CounterfactualCase:
     effect_type: str = "estimated"
     recomputed_outcome: dict[str, Any] = field(default_factory=dict)
     evidence_event_ids: list[str] = field(default_factory=list)
+    # v2 structured fields
+    original_action: str = ""; alternative_action: str = ""
+    expected_delta: float = 0.0
+    assumptions: list[str] = field(default_factory=list)
+    evidence_refs: list[EvidenceRef] = field(default_factory=list)
+    visibility_scope: str = "public"
+    safe_for_track_c_learning: bool = True
+    actor_id: str = ""; role: str = ""
 
 
 @dataclass
@@ -208,6 +314,7 @@ class StrategyKnowledge:
 class ReviewReport:
     game_id: str; winner: str | None; total_days: int; total_events: int
     game_summary: str
+    rule_variant: str = "standard_competition_v1"
     scoreboard: list[dict[str, Any]] = field(default_factory=list)
     mvp_results: list[MVPResult] = field(default_factory=list)
     turning_points: list[TurningPoint] = field(default_factory=list)
@@ -215,8 +322,29 @@ class ReviewReport:
     bad_cases: list[BadCaseReport] = field(default_factory=list)
     counterfactuals: list[CounterfactualCase] = field(default_factory=list)
     strategy_suggestions: list[StrategySuggestion] = field(default_factory=list)
+    bonuses: list[dict[str, Any]] = field(default_factory=list)
+    evolution_candidates: list[EvolutionCandidate] = field(default_factory=list)
+    judge_panel: dict[str, Any] = field(default_factory=dict)
+    calibration_info: dict[str, Any] = field(default_factory=dict)
+    safety_flags: dict[str, Any] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
-    def to_dict(self) -> dict[str, Any]: return asdict(self)
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    def to_public_dict(self) -> dict[str, Any]:
+        """Public-safe version that redacts private evidence in safety_flags."""
+        data = self.to_dict()
+        sf = data.get("safety_flags", {})
+        if isinstance(sf, dict) and sf:
+            # Redact private_info_items for public consumption
+            private_items = sf.get("private_info_items", [])
+            if private_items:
+                sf["private_info_items"] = [
+                    "[redacted]" for _ in private_items
+                ]
+            data["safety_flags"] = sf
+        return data
 
 
 @dataclass
@@ -234,3 +362,80 @@ class ReportOptimizationState:
     evaluator_result: ReportEvaluationResult | None = None
     feedback_history: list[ReportEvaluationResult] = field(default_factory=list)
     iteration: int = 0; max_iterations: int = 2; quality_passed: bool = False
+
+
+# ============================================================
+# DecisionTrace — structured decision audit trail (v2 G2)
+# ============================================================
+
+@dataclass
+class DecisionTrace:
+    """Structured, replayable decision record.
+
+    Captures the complete context of every agent decision for
+    post-game review, counterfactual analysis, and audit.
+
+    Three hard constraints:
+      1. visible_facts only from final legal input (PlayerView + Memory + Retrieval)
+      2. candidate_actions from ActionValidator.legal_actions()
+      3. Internal vs Public versions — Public removes prompt text and private info
+    """
+
+    decision_id: str
+    game_id: str
+    agent_id: str
+    agent_version: str = "cognitive_v1"
+    prompt_hash: str = ""
+    prompt_template_version: str = ""
+
+    # Phase context
+    phase: str = ""
+    day: int = 0
+
+    # === Input provenance ===
+    visible_facts: list[str] = field(default_factory=list)
+    visible_facts_source: str = ""  # "PlayerView + AllowedMemory + AllowedRetrieval"
+    visibility_scope_hash: str = ""
+
+    # === Decision content ===
+    belief_delta: dict[str, Any] = field(default_factory=dict)
+    candidate_actions: list[dict[str, Any]] = field(default_factory=list)
+    chosen_action: str = ""
+    confidence: float = 0.0
+    rationale: str = ""
+
+    # === Strategy trace ===
+    retrieved_strategy_ids: list[str] = field(default_factory=list)
+    active_playbook: str | None = None
+    strategy_memory_snapshot: dict[str, Any] = field(default_factory=dict)
+
+    # === Model metadata ===
+    model_name: str = ""
+    provider: str = ""
+    token_in: int = 0
+    token_out: int = 0
+    latency_ms: int = 0
+    cost_usd: float = 0.0
+
+    # === Audit ===
+    validation_errors: int = 0
+    fallback_used: bool = False
+    fallback_reason: str | None = None
+    error_type: str | None = None
+    random_seed: int = 0
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    def to_public_dict(self) -> dict[str, Any]:
+        """Sanitized version for public display — removes prompt text, costs, seeds."""
+        data = self.to_dict()
+        # Remove internal-only fields
+        for key in ("prompt_hash", "prompt_template_version", "token_in", "token_out",
+                     "cost_usd", "random_seed", "visibility_scope_hash"):
+            data.pop(key, None)
+        # Truncate rationale for display
+        if len(data.get("rationale", "")) > 300:
+            data["rationale"] = data["rationale"][:297] + "..."
+        return data
+

@@ -7,7 +7,8 @@ from backend.agents.characters import Character, Persona, PlayerMind
 from backend.agents.heuristic import HeuristicAgent
 from backend.agents.humanization import build_humanization_profile, build_stance_summary
 from backend.engine.game import WerewolfGame
-from backend.engine.models import Role
+from backend.engine.models import Player, Role
+from backend.engine.visibility import Visibility
 
 
 def _bold_character() -> Character:
@@ -36,6 +37,17 @@ def _cautious_character() -> Character:
             logic_depth="moderate", table_presence="quiet",
         ),
     )
+
+
+def _heuristic_agent_for(game: WerewolfGame, player: Player) -> HeuristicAgent:
+    agent = HeuristicAgent(
+        player.id,
+        seed=player.seat,
+        character=game.characters.get(player.id),
+    )
+    view = Visibility().for_player(game.state, player.id)
+    agent.initialize(view, {"game_id": game.state.id})
+    return agent
 
 
 class TestHumanizationProfile:
@@ -78,7 +90,7 @@ class TestHeuristicSegments:
         game = WerewolfGame(seed=3, player_count=7)
         game.initialize()
         villager = next(p for p in game.state.players if p.role == Role.VILLAGER)
-        agent = game.agents[villager.id]
+        agent = _heuristic_agent_for(game, villager)
         decision = agent.talk()
         segments = decision.metadata.get("segments", [])
         assert isinstance(segments, list)
@@ -89,7 +101,7 @@ class TestHeuristicSegments:
         game = WerewolfGame(seed=3, player_count=7)
         game.initialize()
         villager = next(p for p in game.state.players if p.role == Role.VILLAGER)
-        agent = game.agents[villager.id]
+        agent = _heuristic_agent_for(game, villager)
         hp = agent.human_profile
         decision = agent.talk()
         segments = decision.metadata.get("segments", [])
@@ -103,7 +115,7 @@ class TestProbabilisticVoting:
         game.initialize()
         game.state.day = 2
         villager = next(p for p in game.state.players if p.role == Role.VILLAGER)
-        agent = game.agents[villager.id]
+        agent = _heuristic_agent_for(game, villager)
         # Give all others a moderate suspicion so no single candidate dominates
         for p in game.state.players:
             if p.id != villager.id:
@@ -126,7 +138,7 @@ class TestProbabilisticVoting:
         targets: dict[str, int] = {}
         for player in game.state.players:
             if player.role in (Role.VILLAGER, Role.SEER, Role.WITCH, Role.HUNTER, Role.GUARD):
-                agent = game.agents[player.id]
+                agent = _heuristic_agent_for(game, player)
                 decision = agent.vote()
                 targets[decision.target_id] = targets.get(decision.target_id, 0) + 1
 
@@ -138,7 +150,7 @@ class TestProbabilisticVoting:
         game = WerewolfGame(seed=5, player_count=7)
         game.initialize()
         seer = next(p for p in game.state.players if p.role == Role.SEER)
-        agent = game.agents[seer.id]
+        agent = _heuristic_agent_for(game, seer)
         # Mark a specific player as known wolf
         wolf = next(p for p in game.state.players if p.role == Role.WEREWOLF)
         agent.known_wolf_ids.add(wolf.id)
@@ -189,7 +201,7 @@ class TestPublicStance:
         game = WerewolfGame(seed=7, player_count=7)
         game.initialize()
         villager = next(p for p in game.state.players if p.role == Role.VILLAGER)
-        agent = game.agents[villager.id]
+        agent = _heuristic_agent_for(game, villager)
 
         assert agent.public_stance["grudges"] == {}
         # Simulate being mentioned by another player's speech

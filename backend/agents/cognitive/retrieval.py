@@ -42,19 +42,26 @@ class StrategyIndex:
     # ---- Build ----
 
     def build(self) -> int:
-        """Load all active strategies from PostgreSQL and build TF-IDF index.
-
-        Returns number of documents indexed.
-        """
-        import jieba
-        from sklearn.feature_extraction.text import TfidfVectorizer
-
+        """Load all active strategies from PostgreSQL and build TF-IDF index."""
         self._docs = _load_docs_from_pg(self._conn_str)
         if not self._docs:
             logger.warning("StrategyIndex: no active strategies found in DB")
             return 0
+        return self._build_tfidf()
 
-        # Tokenize Chinese text for TF-IDF
+    def build_from_docs(self, docs: List[Dict[str, Any]]) -> int:
+        """Build TF-IDF index from in-memory strategy docs (no PG required)."""
+        self._docs = docs
+        if not self._docs:
+            logger.warning("StrategyIndex.build_from_docs: empty doc list")
+            return 0
+        return self._build_tfidf()
+
+    def _build_tfidf(self) -> int:
+        """Build TF-IDF vector index from self._docs."""
+        import jieba
+        from sklearn.feature_extraction.text import TfidfVectorizer
+
         self._doc_texts = []
         for d in self._docs:
             text = f"{d.get('situation', '')} {d.get('recommended', '')} {d.get('rationale', '')}"
@@ -153,6 +160,7 @@ class StrategyIndex:
                 "strategy": d.get("recommended", ""),
                 "quality": d.get("quality", 0.8),
                 "persona_scope": d.get("persona_scope", ""),
+                "doc_type": d.get("doc_type", ""),
             })
         return results
 
@@ -175,13 +183,32 @@ _index: Optional[StrategyIndex] = None
 
 
 def get_index(conn_str: str = "") -> StrategyIndex:
-    """Get or build the global strategy index (singleton)."""
+    """Get or build the global strategy index (singleton).
+
+    Tries PostgreSQL first; falls back to in-memory cold-start strategy store.
+    """
     global _index
     if _index is None or not _index.ready:
         _index = StrategyIndex(conn_str)
         n = _index.build()
         if n == 0:
-            logger.warning("StrategyIndex is empty — retrieval will fall back to SQL")
+            # Try in-memory cold-start store
+            try:
+                from backend.agents.cognitive.retrieval_prod import _load_docs_from_cold_start
+                docs = _load_docs_from_cold_start()
+                if docs:
+                    # Convert to retrieval.py's expected format
+                    formatted = [
+                        {"situation": d["situation"], "recommended": d["strategy"],
+                         "rationale": d["rationale"], "role": d["role"],
+                         "phase": d["phase"], "quality": d["quality"]}
+                        for d in docs
+                    ]
+                    n = _index.build_from_docs(formatted)
+                    if n > 0:
+                        logger.info(f"StrategyIndex built from {n} cold-start docs (in-memory)")
+            except Exception:
+                logger.warning("StrategyIndex is empty — retrieval will fall back to SQL")
     return _index
 
 
@@ -204,6 +231,7 @@ def retrieve_strategies(
     conn_str: str = "",
     persona_mbti: str = "",
     persona_style: str = "",
+    include_reflections: bool = True,
 ) -> List[Dict[str, str]]:
     """Retrieve relevant strategies for a game situation.
 
@@ -221,22 +249,29 @@ def retrieve_strategies(
         limit: Max entries to return.
         persona_mbti: Agent's MBTI for persona-scoped retrieval.
         persona_style: Agent's style label for further filtering.
+        include_reflections: If False, exclude doc_type='reflection' results.
 
     Returns:
-        List of {situation, strategy, quality, persona_scope} dicts.
+        List of {situation, strategy, quality, persona_scope, doc_type} dicts.
     """
     try:
         idx = get_index(conn_str)
         if idx.ready:
             query = situation or _default_query(role, phase)
-            return idx.search(
+            results = idx.search(
                 query, role=role, phase=phase, limit=limit,
                 persona_mbti=persona_mbti, persona_style=persona_style,
             )
+            if not include_reflections:
+                results = [r for r in results if not r.get("doc_type", "").startswith("reflection")]
+            return results
     except Exception as e:
         logger.warning(f"Vector retrieval failed, falling back to SQL: {e}")
 
-    return _fallback_sql(role, phase, limit, conn_str, persona_mbti)
+    results = _fallback_sql(role, phase, limit, conn_str, persona_mbti)
+    if not include_reflections:
+        results = [r for r in results if not r.get("doc_type", "").startswith("reflection")]
+    return results
 
 
 def format_strategies_for_prompt(strategies: List[Dict[str, str]]) -> str:
@@ -247,7 +282,9 @@ def format_strategies_for_prompt(strategies: List[Dict[str, str]]) -> str:
     lines = ["=== 相关策略参考 ==="]
     for i, s in enumerate(strategies, 1):
         persona_tag = f" [{s['persona_scope']}]" if s.get('persona_scope') else ""
-        lines.append(f"{i}. 场景：{s['situation']}{persona_tag}")
+        doc_type = s.get('doc_type', '')
+        type_label = " [反思经验]" if doc_type == "reflection" else ""
+        lines.append(f"{i}. 场景：{s['situation']}{persona_tag}{type_label}")
         lines.append(f"   策略：{s['strategy']}")
         lines.append("")
 
@@ -268,12 +305,13 @@ def _load_docs_from_pg(conn_str: str) -> List[Dict[str, Any]]:
                COALESCE(recommended_action, ''),
                COALESCE(rationale, ''),
                role, phase, quality_score,
-               COALESCE(persona_scope, '')
+               COALESCE(persona_scope, ''),
+               COALESCE(doc_type, '')
         FROM strategy_knowledge_docs
         WHERE status IN ('active', 'candidate')
     """)
     docs = []
-    for sit, rec, rat, role, phase, q, pscope in c.fetchall():
+    for sit, rec, rat, role, phase, q, pscope, dtype in c.fetchall():
         docs.append({
             "situation": sit or "",
             "recommended": rec or "",
@@ -282,6 +320,7 @@ def _load_docs_from_pg(conn_str: str) -> List[Dict[str, Any]]:
             "phase": phase or "global",
             "quality": float(q) if q else 0.8,
             "persona_scope": pscope or "",
+            "doc_type": dtype or "",
         })
     conn.close()
     return docs
@@ -319,7 +358,8 @@ def _fallback_sql(
         if persona_pattern:
             c.execute("""
                 SELECT situation_pattern, recommended_action, quality_score,
-                       COALESCE(persona_scope, '') as persona_scope
+                       COALESCE(persona_scope, '') as persona_scope,
+                       COALESCE(doc_type, '') as doc_type
                 FROM strategy_knowledge_docs
                 WHERE status IN ('active', 'candidate')
                   AND (role = %s OR role = 'global')
@@ -335,7 +375,8 @@ def _fallback_sql(
         else:
             c.execute("""
                 SELECT situation_pattern, recommended_action, quality_score,
-                       COALESCE(persona_scope, '') as persona_scope
+                       COALESCE(persona_scope, '') as persona_scope,
+                       COALESCE(doc_type, '') as doc_type
                 FROM strategy_knowledge_docs
                 WHERE status IN ('active', 'candidate')
                   AND (role = %s OR role = 'global')
@@ -351,11 +392,13 @@ def _fallback_sql(
         for row in c.fetchall():
             sit, rec, q = row[0], row[1], row[2]
             pscope = row[3] if len(row) > 3 else ""
+            dtype = row[4] if len(row) > 4 else ""
             results.append({
                 "situation": sit or "",
                 "strategy": rec or "",
                 "quality": float(q) if q else 0.8,
                 "persona_scope": pscope or "",
+                "doc_type": dtype or "",
             })
         conn.close()
         return results

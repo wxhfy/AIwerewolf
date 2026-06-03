@@ -33,7 +33,7 @@ class DeepSeekClient:
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
         model: Optional[str] = None,
-        timeout: float = 60.0,
+        timeout: float = 300.0,
     ):
         self.api_key = api_key or os.getenv("DEEPSEEK_API_KEY", "")
         self.base_url = base_url or os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
@@ -55,8 +55,9 @@ class DeepSeekClient:
         thinking: bool = True,
         reasoning_effort: str = "medium",
         stream: bool = False,
+        **kwargs,
     ) -> dict:
-        """Send a chat completion request to DeepSeek API."""
+        """Send a chat completion request. Extra kwargs pass through to API payload."""
         payload = {
             "model": model or self.model,
             "messages": messages,
@@ -64,7 +65,11 @@ class DeepSeekClient:
             "max_tokens": max_tokens,
             "stream": stream,
         }
-        if thinking:
+        # Forward extra kwargs to API (tools, tool_choice, etc.)
+        payload.update(kwargs)
+        # Disable thinking when tools are present — some endpoints don't support both
+        has_tools = "tools" in payload or "tool_choice" in payload or "functions" in payload
+        if thinking and not has_tools:
             payload["thinking"] = {"type": "enabled"}
             payload["reasoning_effort"] = reasoning_effort
 
@@ -88,8 +93,9 @@ class DeepSeekClient:
         max_tokens: int = 2048,
         thinking: bool = True,
         reasoning_effort: str = "medium",
+        **kwargs,
     ) -> dict:
-        """Synchronous version of chat()."""
+        """Synchronous version of chat(). Extra kwargs pass through to API payload."""
         payload = {
             "model": model or self.model,
             "messages": messages,
@@ -97,7 +103,11 @@ class DeepSeekClient:
             "max_tokens": max_tokens,
             "stream": False,
         }
-        if thinking:
+        # Forward extra kwargs to API (tools, tool_choice, etc.)
+        payload.update(kwargs)
+        # Disable thinking when tools are present — some endpoints don't support both
+        has_tools = "tools" in payload or "tool_choice" in payload or "functions" in payload
+        if thinking and not has_tools:
             payload["thinking"] = {"type": "enabled"}
             payload["reasoning_effort"] = reasoning_effort
 
@@ -108,6 +118,15 @@ class DeepSeekClient:
                 headers=self._headers(),
                 json=payload,
             )
+            if response.status_code >= 400:
+                # Log error details for debugging
+                import logging
+                _log = logging.getLogger(__name__)
+                try:
+                    err = response.json()
+                    _log.error(f"API error {response.status_code}: {err}")
+                except Exception:
+                    _log.error(f"API error {response.status_code}: {response.text[:500]}")
             response.raise_for_status()
             data = response.json()
             data["_latency_ms"] = int((time.perf_counter() - t0) * 1000)

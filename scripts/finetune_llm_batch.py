@@ -16,7 +16,7 @@ CONN = "postgresql://werewolf:wolf_secret_2026@127.0.0.1:5433/werewolf"
 BGE_PATH = "/home/4T-3/PLM/bge-m3/"
 GPU = "cuda:3"
 OUTPUT_PATH = "/home/4T-3/PLM/bge-m3-werewolf-ft-v2/"
-LLM_KEY = "ark-b2f90045-5c0d-43c2-86ea-5fd078dcad81-68372"
+LLM_KEY = os.environ.get("DSV4FLASH_API_KEY", "")
 LLM_URL = "https://ark.cn-beijing.volces.com/api/coding/v1/chat/completions"
 LLM_MODEL = "deepseek-v4-flash"
 
@@ -219,6 +219,8 @@ if __name__ == "__main__":
     print("="*60)
     print("LLM BATCH-VERIFIED HARD NEGATIVE MINING")
     print("="*60)
+    if not LLM_KEY:
+        raise RuntimeError("DSV4FLASH_API_KEY must be set before running LLM verification.")
     docs = load_docs()
     all_q = BASE[:15] + BASE[15:]  # all 20
     print(f"Docs: {len(docs)}, Queries: {len(all_q)}")

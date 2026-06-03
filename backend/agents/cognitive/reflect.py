@@ -55,6 +55,29 @@ class ReflectionResult:
     confidence: float = 0.5      # how confident the agent is in this reflection
     raw_reflection: str = ""     # full LLM output for debugging
 
+    def to_strategy_docs(self) -> list[dict]:
+        """Convert reflection to strategy docs for PG storage."""
+        docs = []
+        role = self.role.lower()
+        mapping = [
+            (self.what_worked, "reflection_what_worked"),
+            (self.what_failed, "reflection_what_failed"),
+            (self.patterns_discovered, "reflection_patterns"),
+            (self.mistakes_to_avoid, "reflection_mistakes"),
+        ]
+        for items, doc_type in mapping:
+            for item in items:
+                docs.append({
+                    "situation": "",
+                    "strategy": item if isinstance(item, str) else str(item),
+                    "rationale": "",
+                    "role": role,
+                    "phase": "global",
+                    "quality": self.confidence,
+                    "doc_type": doc_type,
+                })
+        return docs
+
 
 # ============================================================
 # MBTI Reflection Angles
@@ -317,8 +340,10 @@ def reflections_to_knowledge_docs(
 ) -> List[Dict[str, Any]]:
     """Convert reflection results to StrategyKnowledgeDoc-compatible dicts.
 
-    Each "what_worked" and "patterns_discovered" becomes a knowledge doc.
-    Each "what_failed" and "mistakes_to_avoid" also becomes a doc (avoid-type).
+    Each experience item (what_worked, what_failed, patterns_discovered,
+    mistakes_to_avoid) becomes one strategy_knowledge_docs row with
+    doc_type='reflection'. Status is 'active' so the retriever picks them up
+    immediately for the next game.
 
     Args:
         reflections: List of reflection results.
@@ -332,15 +357,15 @@ def reflections_to_knowledge_docs(
         persona_scope = r.persona_scope
         role = r.role
 
-        # What worked → action-type docs
+        # what_worked → positive experience reflections
         for item in r.what_worked:
             docs.append({
                 "doc_id": _make_doc_id(game_id, r.player_id, item[:40]),
-                "doc_type": "action",
+                "doc_type": "reflection",
                 "role": role,
                 "phase": "global",
                 "persona_scope": persona_scope,
-                "situation_pattern": f"{r.player_name}({role}, {persona_scope}) 对局总结",
+                "situation_pattern": f"{r.player_name}({role}, {persona_scope}) 对局总结 — 成功经验",
                 "recommended_action": item,
                 "rationale": f"来自 {persona_scope} 视角的成功经验。{r.key_insight}" if r.key_insight else "",
                 "evidence_summary": f"对局 {game_id} 中验证有效",
@@ -350,19 +375,19 @@ def reflections_to_knowledge_docs(
                 "usage_count": 0,
                 "success_count": 0,
                 "failure_count": 0,
-                "status": "candidate",
-                "tags": [persona_scope, role, "reflection"],
+                "status": "active",
+                "tags": [persona_scope, role, "reflection", "success"],
             })
 
-        # What failed → avoid-type docs
+        # what_failed + mistakes_to_avoid → negative experience reflections
         for item in r.what_failed + r.mistakes_to_avoid:
             docs.append({
                 "doc_id": _make_doc_id(game_id, r.player_id, item[:40]),
-                "doc_type": "avoid",
+                "doc_type": "reflection",
                 "role": role,
                 "phase": "global",
                 "persona_scope": persona_scope,
-                "situation_pattern": f"{r.player_name}({role}, {persona_scope}) 对局教训",
+                "situation_pattern": f"{r.player_name}({role}, {persona_scope}) 对局教训 — 失败/应避免",
                 "avoid_action": item,
                 "rationale": f"来自 {persona_scope} 视角的失败教训。{r.key_insight}" if r.key_insight else "",
                 "evidence_summary": f"对局 {game_id} 中验证应避免",
@@ -372,15 +397,15 @@ def reflections_to_knowledge_docs(
                 "usage_count": 0,
                 "success_count": 0,
                 "failure_count": 0,
-                "status": "candidate",
-                "tags": [persona_scope, role, "reflection"],
+                "status": "active",
+                "tags": [persona_scope, role, "reflection", "failure"],
             })
 
-        # Patterns discovered → pattern-type docs
+        # patterns_discovered → pattern reflection
         for item in r.patterns_discovered:
             docs.append({
                 "doc_id": _make_doc_id(game_id, r.player_id, item[:40]),
-                "doc_type": "pattern",
+                "doc_type": "reflection",
                 "role": role,
                 "phase": "global",
                 "persona_scope": persona_scope,
@@ -394,8 +419,8 @@ def reflections_to_knowledge_docs(
                 "usage_count": 0,
                 "success_count": 0,
                 "failure_count": 0,
-                "status": "candidate",
-                "tags": [persona_scope, role, "pattern"],
+                "status": "active",
+                "tags": [persona_scope, role, "reflection", "pattern"],
             })
 
     return docs
@@ -482,3 +507,28 @@ def save_reflections_to_db(
     except Exception as e:
         logger.error(f"Failed to save reflections to DB: {e}")
         return 0
+
+
+# ============================================================
+# Raw PG batch insert — direct psycopg2 path
+# ============================================================
+
+def save_reflections_to_pg(reflections: list, conn_str: str = "") -> int:
+    """Save reflection results to PostgreSQL strategy_knowledge_docs."""
+    import psycopg2
+    conn = psycopg2.connect(conn_str or _DEFAULT_CONN)
+    cur = conn.cursor()
+    count = 0
+    for ref in reflections:
+        for doc in ref.to_strategy_docs():
+            cur.execute("""
+                INSERT INTO strategy_knowledge_docs
+                (situation_pattern, recommended_action, rationale, role, phase, quality_score, doc_type, status)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, 'active')
+            """, (doc["situation"], doc["strategy"], doc["rationale"],
+                  doc["role"], doc["phase"], doc["quality"], doc["doc_type"]))
+            count += 1
+    conn.commit()
+    cur.close()
+    conn.close()
+    return count

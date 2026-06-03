@@ -44,7 +44,7 @@ def load_game_state(db, game_id: str):
             id=pr.id, name=pr.name, seat=pr.seat_no,
             role=role, alignment=alignment,
             alive=pr.is_alive, is_ai=pr.is_ai,
-            agent_type=pr.agent_type or "heuristic",
+            agent_type=pr.agent_type or "llm",
             model_name=pr.model_name or "",
             death_day=pr.death_day, death_reason=pr.death_reason,
         ))

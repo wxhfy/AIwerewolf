@@ -107,9 +107,14 @@ def test_day_vote_tie_enters_pk_and_resolves() -> None:
             return Decision(player.id, ActionType.VOTE, target_id=target, reasoning="scripted")
         if request == "BOOM":
             return Decision(player.id, ActionType.SKIP, reasoning="scripted")
+        if request == "SHOOT":
+            return Decision(player.id, ActionType.SKIP, reasoning="no target")
+        if request == "BADGE_TRANSFER":
+            return Decision(player.id, ActionType.BADGE_TRANSFER, target_id=game.state.alive_players[-1].id, reasoning="scripted")
         raise AssertionError(request)
 
     game._ask = scripted_ask  # type: ignore[assignment]
+    game._batch_ask = lambda players, request, call_fn: [scripted_ask(p, request, call_fn) for p in players]  # type: ignore[assignment]
     game._speech_phase()
     game._vote_phase()
     game._day_resolve()

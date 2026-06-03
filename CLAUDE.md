@@ -2,144 +2,148 @@
 
 > **项目根目录**: `/home/fyh0106/AIwerewolf/`
 > **参考仓库**: `/home/fyh0106/AIwerewolf/references/`
+> **主攻方向**: Track B 评测 + 复盘 + 轻量自进化
 
-## 项目运行模式（**最高优先级，覆盖 skills/ 中的多人协作规则**）
+## 项目运行模式
 
 **当前阶段：单人开发**（owner: wxhfy / 付一涵）。
 
-- AI 可在用户授权后**直接 `git push` 到 main**：**无需** PR、**无需** review、**无需** 2 人 approve；merge / rebase / squash / cherry-pick 可自主决定。
-- 仍保留的护栏（**任何阶段都不放松**）：
-  1. 修改"重灾区"文件（`backend/engine/*`、`backend/protocols/schemas.py`、`backend/db/models.py`、`CLAUDE.md`、`AGENTS.md`、`SKILLS.md`、`skills/*`）前用一句话告知用户范围；
+- AI 可在用户授权后**直接 `git push` 到 main**：无需 PR、无需 review、无需 2 人 approve。
+- 保留的护栏：
+  1. 修改"重灾区"文件（`backend/engine/*`、`backend/protocols/schemas.py`、`backend/db/models.py`、`CLAUDE.md`）前告知用户；
   2. 不得 `git push --force` 到 main；
   3. 不得跳过 hook（`--no-verify` / `--no-gpg-sign`）；
   4. 不得把 API Key、`.env`、Prompt 全文写进 commit / PR / 代码注释；
-  5. commit message 仍走 Conventional Commits（`feat / fix / docs / chore / refactor / test / perf`）。
-- **当团队规模 ≥ 2 时本段失效**，恢复 `skills/10-git-workflow.md` §一 / §三 / §七 与 `skills/70-ai-collaboration.md` §四的多人 PR 规则。
-
-> 本段显式覆盖：
-> - `skills/10-git-workflow.md` §一"main 受保护、禁止直推"
-> - `skills/10-git-workflow.md` §三"至少 1 人 approve" + 重灾区"2 人 approve"
-> - `skills/10-git-workflow.md` §七"禁止 AI 直接 `git push` 到 main"
-> - `skills/70-ai-collaboration.md` §四"AI 必须先问人 → `git push origin main`"
+  5. commit message 走 Conventional Commits（`feat / fix / docs / chore / refactor / test / perf`）。
 
 ---
 
-## AI 助手开工指引（**必读**）
+## 项目目标（最终版）
 
-接到任务后，按下面顺序读，缺一不可：
+> 做一个 AI 狼人杀多智能体系统：会玩（Play），能复盘（Evaluate），会进化（Evolve）。
 
-1. **本文件（CLAUDE.md）** — 项目速查
-2. **`SKILLS.md`** — 狼人杀业务知识 + 参考仓库
-3. **`skills/README.md`** → 进入 **团队协作规范** 索引：
-   - `skills/00-team-overview.md` — **全员必读**：三人横向分工、决策权
-   - `skills/10-git-workflow.md` — **全员必读**：分支 / Commit / PR / Review
-   - `skills/70-ai-collaboration.md` — **必读**：你（AI）必须遵守的红线
-   - 改后端代码：`skills/20-backend-conventions.md`
-   - 改前端代码：`skills/30-frontend-conventions.md`
-   - 改 Agent：`skills/40-agent-development.md`
-   - 改 API / Schema：`skills/50-api-contract.md`（任何跨前后端必读）
-   - 写测试：`skills/60-testing-ci.md`
+### 三个关键词
 
-**铁律**：动代码前必须查对应 skills/ 文件；跨模块改动必须先列计划让人类确认。
-**披露**：PR 描述里必须说明哪些代码由 AI 生成（详见 `skills/70`）。
-**问题追踪（必读 + 必写）**：开发中遇到的任何「问题 → 定位 → 修复」闭环，**必须**在闭环关上的同一次会话内追加一条记录到 [`docs/DEVELOPMENT_ISSUES.md`](docs/DEVELOPMENT_ISSUES.md) 对应主题节（§A 后端引擎 / §B 前端 / §C Agent / §D 数据库 / §E WebSocket / §F DevOps / §G Git / §H 工具坑）；用户用纠正 / 抱怨语气提的反馈（"不对"/"错了"/"应该…"），即便不算 bug 也要进 §I "用户反复强调的偏好" 节。条目模板见该文件顶部，按「现象 / 根因 / 解决方案 / 涉及文件 / 教训」五段填写。用途：累积阶段性总结报告素材 + 防止后续 agent 重犯同错。
+```
+玩 Play       = CognitiveAgent + RoleStrategyCard + WolfTeamView + BeliefTracker
+评 Evaluate   = 三级评分 + 反事实推演 + Judge校准 + DecisionTrace + 结构化报告
+进化 Evolve   = L0-L4 知识分层 + 权限过滤 + 回验 + A/B Leaderboard
+```
+
+### 主申报方向：Track B — 评测 + 复盘
+
+通过确定性 replay、反事实推演、级联评分和结构化报告，定位 Agent 在发言、投票、技能使用、阵营协作中的关键失误。复盘结果沉淀为带可信度和权限控制的策略知识，作为轻量自进化能力。
 
 ---
 
-## 项目概述
+## 评判标准（评分细则与权重）
 
-AI 狼人杀多智能体对战系统。多 Agent 协作/对抗：每个 Agent 根据扮演角色拥有独立目标、策略与行动空间，在严格信息隔离下推理、发言与决策。
+总分 100 分。核心选拔目标：**Agent 调优和多智能体系统设计能力**。
+Agent 相关维度合计 70%，工程相关维度合计 30%。
 
-## 项目目标
+### 评分维度
 
-1. **基础对局引擎** — 回合流转、行动校验、胜负裁决、EventLog
-2. **Agent 系统** — 角色化 Agent、信息隔离、独立决策
-3. **进阶方向**（三选一）：
-   - ① 通用 Agent → 自演化系统
-   - ② 评测+复盘 → 多维量化评测 + Leaderboard
-   - ③ 自进化 Agent → 对局→分析→优化→再对局循环
+| 维度 | 权重 | 考察要点 | 满分档 | 及格档 | 不及格 |
+|---|---|---|---|---|---|
+| **单 Agent 能力**（Prompt 工程与决策质量） | 20% | Prompt 设计质量（角色人设、思维链、few-shot 等）；迭代调优过程；各角色策略差异度；决策推理链路可追溯性 | Prompt 精细且有迭代调优痕迹，不同角色行为差异显著；决策有可追溯推理链路，有量化评估手段，能识别并分析 bad case | 各角色有独立 Prompt 和基本合理行为，但 Prompt 粗糙、策略雷同；有日志但缺推理过程记录 | 所有角色共用 Prompt 或行为随机不合理；无法了解决策原因 |
+| **多 Agent 协作与系统设计** | 20% | 上下文管理：每个 Agent 的对话历史、公共/私有信息如何维护与传递；技能管理：角色技能的抽象与调度逻辑设计；Agent 间博弈行为（伪装、欺骗检测、归票、站队等）；多 Agent 通信与协调机制 | 上下文管理清晰（公共/私有信息分离、历史管理合理），技能调度抽象良好（加新角色/技能改动小），Agent 间有明确博弈行为（归票、交叉验证、选择性暴露等） | 上下文有基本管理但不够精细，技能逻辑硬编码耦合度高；Agent 能按规则交互但缺主动博弈 | 无上下文管理（Agent 每轮无记忆或信息混乱），技能逻辑散落无设计；Agent 各自独立决策不参考他人 |
+| **工程实现与系统完整度** | 30% | 对局引擎正确性与边界处理；信息隔离实现（无泄露）；前端可视化与交互体验；可观测性（日志/监控）；代码质量与规范；文档与演示材料完整度 | 对局全流程正确，边界处理完善；信息隔离严格经测试无泄露；前端直观好用，非技术人员能看懂；代码清晰、文档/视频齐全 | 核心流程跑通但部分边界出错；信息隔离基本有效；有前端但粗糙；有基本文档能跑起来 | 对局无法跑完或严重规则错误；信息隔离形同虚设；无前端或无文档，评委无法运行 |
+| **进阶课题 — 评测+复盘** | 30% | 多维评测（发言/投票/技能）→关键决策复盘→反事实推演→结构化报告→Leaderboard | 构造含明显失误的对局，系统能精准定位失误并给改进建议；Leaderboard 能区分不同模型/Agent 版本能力 | 有基本多维评分和报告输出，但复盘深度不足或 Leaderboard 不完整 | 仅有胜负统计，无多维评测能力 |
 
-## 技术栈（规划）
+### 加分项（不限于此）
+
+| 加分项 | 说明 | 本项目现状 |
+|---|---|---|
+| 策略深度 | Agent 有明确的博弈策略设计，不同角色行为差异显著 | ✅ RoleStrategyCard + 6 角色独立策略卡 |
+| 工程完整度超预期 | 错误处理、并发支持、监控告警等生产级能力 | ✅ 三级降级链 + AgentDecisionLog + GameHealthReport |
+| 前端体验出色 | 有动画、状态可视化，非技术人员也能看懂对战 | ⚠️ Replay Viewer 单独规划 |
+| 可扩展架构 | 加新角色或规则变体改动量小 | ✅ Skill Protocol + RoleRegistry + 规则配置分离 |
+| 人机交互 | 真人玩家可加入对局与 Agent 混合博弈 | ✅ HumanAgent 已支持 |
+| 进阶课题有独创性 | 方案有新意且效果可验证 | ✅ 可信知识回流驱动的轻量自进化 |
+
+---
+
+## 技术栈
 
 - **后端**: Python（FastAPI + asyncio）+ WebSocket
 - **前端**: Next.js + TypeScript + Tailwind CSS
-- **AI**: LLM API 多模型接入
+- **AI**: LLM API 多模型接入（MiniMax / Anthropic / DeepSeek）
 - **配置**: YAML
 
 ## 项目结构
 
 ```
 AIwerewolf/
-├── CLAUDE.md              # 本文档
-├── README.md              # 项目说明
+├── CLAUDE.md                  # 项目速查（本文档）
+├── README.md                  # 项目说明
 ├── docs/
-│   └── REFERENCE.md       # 参考仓库详细分析
+│   ├── architecture_scoring_review.md         # 架构评审
+│   ├── architecture_improvement_blueprint_v2.md # v2 改进蓝图
+│   └── solution_blueprint.md                  # 解决方案
+├── configs/
+│   ├── rule_variant_standard.yaml             # 标准规则配置
+│   ├── demo.yaml                              # 演示对局配置
+│   └── strategy_library.yaml                  # 策略知识库
 ├── backend/
-│   ├── engine/            # 游戏引擎
-│   ├── agents/            # AI Agent
-│   ├── protocols/         # 通信协议
-│   └── eval/              # 评测系统
-├── frontend/              # 观战 UI
-├── configs/               # 配置文件
-└── references/            # 克隆的参考仓库（gitignored）
+│   ├── engine/            # 游戏引擎（Phase/Visibility/ActionValidator/GameState）
+│   ├── agents/
+│   │   ├── cognitive/     # ★ 主 Agent — Observe-Think-Act 架构
+│   │   │   ├── strategies/ # 角色策略卡（Seer/Witch/Hunter/Guard/Villager/Werewolf）
+│   │   │   ├── agent.py, pipeline.py, observe.py, memory.py
+│   │   │   ├── profiles.py, prompts.py, humanization.py
+│   │   │   ├── retrieval.py, retrieval_prod.py, tools.py
+│   │   │   ├── reflect.py, repository.py, factory.py
+│   │   │   └── wolf_team.py    # 狼队安全协调（WolfTeamView）
+│   │   ├── heuristic.py    # 启发式 Agent（降级兜底）
+│   │   ├── llm_agent.py    # 旧 LLM Agent（保留兼容）
+│   │   ├── human_agent.py  # 真人玩家 Agent
+│   │   └── characters.py   # Character 系统（32 个具名角色）
+│   ├── eval/               # ★ 评测系统（Track B + Track C）
+│   │   ├── review.py       # 核心评审（MetricsCalculator/CounterfactualAnalyzer）
+│   │   ├── track_b.py      # Track B 发布管道
+│   │   ├── evolution.py    # Track C 自进化
+│   │   ├── llm_judge.py    # LLM Judge Panel（三法官 + Critic）
+│   │   ├── per_step_scorer.py  # 三级评分级联
+│   │   ├── knowledge_confidence.py  # 知识可信度 + 权限 + 适用条件
+│   │   └── types.py        # 共享数据类型（含 DecisionTrace）
+│   ├── protocols/          # 通信协议（Room/Snapshot/WebSocket）
+│   ├── db/                 # 数据库（PostgreSQL/SQLite）
+│   └── llm/                # LLM 客户端
+├── frontend/               # 观战 UI
+├── tests/                  # 测试
+├── scripts/                # 评测/训练/实验脚本
+└── references/             # 克隆的参考仓库（gitignored）
 ```
 
-## 参考仓库速查
+---
 
-所有参考仓库已克隆到 `references/` 目录。详细分析见 `docs/REFERENCE.md`。
+## AI 助手开工指引
 
-### 优先级排序
+接到任务后：
+1. 读本文件（CLAUDE.md）了解项目目标与评判标准
+2. 读 `docs/architecture_improvement_blueprint_v2.md` 了解当前架构蓝图
+3. 动代码前检查对应模块的现有实现，避免重复
+4. 跨模块改动先列计划
 
-| 优先级 | 仓库 | 核心价值 |
-|--------|------|----------|
-| #1 | wolfcha | AI 狼人杀产品形态、双层扮演、Phase 设计、Persona 系统 |
-| #2 | xiong35/werewolf | 前后端实时架构、房间系统、事件表 |
-| #3 | WereWolfPlus | 多模型评测、Prompt 模板、批量对局 |
-| #4 | AIWolfPy | Python Agent 接口规范 |
-| #5 | AIWolfSharp | Server/Client 分离架构 |
-| #6 | werewolf-brain | 60+ 角色库、平衡算法、夜晚序列 |
-| #7 | open_mafia_engine | 事件驱动架构、Python 引擎 |
-| #8 | OpenWerewolf | 在线多人房间/大厅设计 |
-| #9 | AlecM33/Werewolf | 主持工具参考（GPL-3.0，不可复制） |
-| #10 | lykos | 复杂角色扩展、Python Bot |
+**铁律**：
+- 每个非平凡改动必须有可量化的验证手段（测试/指标/对比实验）
+- 不引入与现有架构冲突的重复实现
+- 改动效果要能量化：对局完成率、信息泄露测试通过数、降级率、评测分数等
 
-### 三个最值得深入阅读的文件
-
-1. `/home/fyh0106/AIwerewolf/references/WereWolfPlus/agent_manager/prompts/werewolf_prompt.py` — Google 品质的完整 Prompt 模板（所有动作+角色+JSON Schema）
-2. `/home/fyh0106/AIwerewolf/references/wolfcha/src/types/game.ts` — Phase 枚举、Player 类型、Persona 系统定义
-3. `/home/fyh0106/AIwerewolf/references/AIWolfPy/aiwolfpy/agentproxy.py` — Agent 接口生命周期（9 个方法）
-
-## 自研核心模块（不可搬参考代码）
-
-- **GameState** — 完整游戏状态
-- **PhaseMachine** — 阶段流转
-- **ActionValidator** — 行动校验
-- **ResolutionEngine** — 行动结算
-- **Visibility** — 信息隔离
-- **AgentDecision Schema** — 统一决策协议
-- **EventLog Schema** — 结构化日志
-- **Replay Analyzer** — 复盘分析
-- **Evaluation Metrics** — 评测指标
+---
 
 ## 关键设计参考
 
-### 阶段流转（来自 wolfcha）
+### 阶段流转
 夜晚：NIGHT_START → GUARD → WOLF → WITCH → SEER → NIGHT_RESOLVE
 白天：DAY_START → BADGE_SIGNUP → BADGE_SPEECH → BADGE_ELECTION → DAY_SPEECH → VOTE → DAY_RESOLVE
 特殊：HUNTER_SHOOT / WHITE_WOLF_KING_BOOM / BADGE_TRANSFER / GAME_END
 
-### 角色列表（来自多个仓库）
+### 角色列表
 基础：Villager / Werewolf / Seer / Witch / Hunter / Guard
 扩展：Idiot / WhiteWolfKing / Cupid / BigBadWolf / WolfCub 等 60+
 
-### Prompt 结构（来自 WereWolfPlus）
-GAME 规则 → STATE 状态 → OBSERVATIONS 观察 → 角色策略指引 → JSON Schema 输出
-
-### Agent 接口（来自 AIWolfPy）
-initialize → dayStart → {talk, vote} / {attack, guard, divine} → finish
-
-## 开发约定
-
+### 开发约定
 - Python 代码使用 type hints
 - 配置使用 YAML 格式
 - 事件日志使用结构化 JSON

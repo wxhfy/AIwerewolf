@@ -1,83 +1,11 @@
 {
   "OpportunityValueModel": {
-    "fold_metrics": [
-      {
-        "fold": 0,
-        "mse": 0.1436,
-        "mae": 0.3039,
-        "n_train": 505,
-        "n_test": 135
-      },
-      {
-        "fold": 1,
-        "mse": 0.1291,
-        "mae": 0.2907,
-        "n_train": 526,
-        "n_test": 114
-      },
-      {
-        "fold": 2,
-        "mse": 0.1257,
-        "mae": 0.2797,
-        "n_train": 522,
-        "n_test": 118
-      },
-      {
-        "fold": 3,
-        "mse": 0.1213,
-        "mae": 0.2766,
-        "n_train": 509,
-        "n_test": 131
-      },
-      {
-        "fold": 4,
-        "mse": 0.1271,
-        "mae": 0.2804,
-        "n_train": 498,
-        "n_test": 142
-      }
-    ],
-    "mean_mae": 0.2863
+    "fold_metrics": [],
+    "mean_mae": 0
   },
   "DecisionQualityModel": {
-    "fold_metrics": [
-      {
-        "fold": 0,
-        "accuracy": 0.8519,
-        "pairwise_accuracy": 0.9123,
-        "n_train": 505,
-        "n_test": 135
-      },
-      {
-        "fold": 1,
-        "accuracy": 0.807,
-        "pairwise_accuracy": 0.8967,
-        "n_train": 526,
-        "n_test": 114
-      },
-      {
-        "fold": 2,
-        "accuracy": 0.8729,
-        "pairwise_accuracy": 0.9516,
-        "n_train": 522,
-        "n_test": 118
-      },
-      {
-        "fold": 3,
-        "accuracy": 0.8702,
-        "pairwise_accuracy": 0.9457,
-        "n_train": 509,
-        "n_test": 131
-      },
-      {
-        "fold": 4,
-        "accuracy": 0.8169,
-        "pairwise_accuracy": 0.8852,
-        "n_train": 498,
-        "n_test": 142
-      }
-    ],
-    "mean_accuracy": 0.8438,
-    "mean_pairwise_accuracy": 0.9183
+    "fold_metrics": [],
+    "mean_accuracy": 0,
+    "mean_pairwise_accuracy": 0
   }
 }

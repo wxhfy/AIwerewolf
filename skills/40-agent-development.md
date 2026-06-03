@@ -156,22 +156,21 @@ USER:      STATE (day/phase/alive) + OBSERVATIONS + ACTION_STRATEGY + OUTPUT_FOR
 
 ## 五、LLM 调用与降级
 
-### LLMAgent 的设计
+### LLM-only 对局的设计
 
 ```python
-class LLMAgent(Agent):
-    """LLM-backed agent with heuristic fallback."""
+class CognitiveAgent(Agent):
+    """LLM-backed agent; failures raise in game mode."""
 
     def __init__(self, ...):
         self.client = create_client(provider=..., model=...)
         self.client.timeout = 12.0
-        self.fallback = HeuristicAgent(player_id, seed=seed, character=character)
 ```
 
 **核心约定**：
 
-1. 每个 LLMAgent 都**必须**有一个 `HeuristicAgent` 作为 fallback
-2. LLM 调用超时 / 报错 / 输出非法 JSON → **立刻**调 fallback，不让游戏卡住
+1. 对局中的 AI 席位必须走 LLM-compatible Agent（真实 LLM 或 `LLM_PROVIDER=fake` 测试 stub）
+2. LLM 调用超时 / 报错 / 输出非法 JSON → **抛错或标记失败**，不得切到 `HeuristicAgent`
 3. timeout 上限 **12 秒**，不要无脑加长
 4. 必须缓存 `system prompt`（前缀缓存）以省 token
 5. `temperature` 默认 `0.4`，狼人/女巫等需要创造性的 ≤ 0.7
@@ -180,10 +179,10 @@ class LLMAgent(Agent):
 
 | 触发场景 | 行为 |
 |----------|------|
-| LLM 调用 timeout / 异常 | 用 fallback 决策 + 记录 `self.last_error` |
-| LLM 返回非 JSON | 同上 |
-| LLM 返回的 target 不在合法范围 | 同上 |
-| LLM 返回的 action 与 phase 不匹配 | 同上 |
+| LLM 调用 timeout / 异常 | 记录错误并让本局 / 本轮验收失败 |
+| LLM 返回非 JSON | 记录解析错误，不发布为 ApprovedReviewReport |
+| LLM 返回的 target 不在合法范围 | 记录 invalid decision，不得用 heuristic 替换 |
+| LLM 返回的 action 与 phase 不匹配 | 记录 invalid decision，不得用 heuristic 替换 |
 
 ### LLM 调用规范
 

@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional
 from backend.agents.cognitive.observe import Observation
 from backend.agents.cognitive.memory import Memory
 from backend.agents.cognitive.retrieval import retrieve_strategies as retrieve_tfidf
-from backend.agents.cognitive.retrieval import format_strategies_for_prompt
+from backend.agents.cognitive.retrieval_prod import format_strategies_for_prompt
 
 
 def create_tools(
@@ -26,17 +26,33 @@ def create_tools(
     """
 
     # ---- search_strategies ----
-    def search_strategies(keywords: List[str], limit: int = 3) -> str:
-        """Search the strategy knowledge base with agent-chosen keywords.
+    def search_strategies(
+        keywords: List[str],
+        limit: int = 3,
+        include_reflections: bool = True,
+        mode: str = "content",
+        use_regex: bool = False,
+    ) -> str:
+        """Search the strategy knowledge base with agent-chosen keywords or regex.
 
-        Use this when you need tactical guidance for a specific situation.
-        Choose precise, domain-specific keywords (e.g., "被查杀应对", "警徽流").
+        Three output modes (inspired by Claude Code's grep):
+          - "count": just return match count (use FIRST to test keyword quality)
+          - "overview": situation + quality only (use to scan broadly)
+          - "content": full strategy text (default, use when you've identified
+                        relevant keywords)
+
+        Workflow: start with mode="count" → refine keywords → mode="overview"
+        → pick promising strategies → mode="content" with focused keywords.
+
+        Keywords: choose precise domain terms (e.g., "被查杀应对", "警徽流").
+        With use_regex=True, keywords are Python regex patterns.
+        Set include_reflections=False to exclude post-game reflections.
         """
         try:
             from backend.agents.cognitive.retrieval_prod import retrieve_strategies_prod
-            # Production retriever: BM25 + keyword grep, GPU-free, always available
             results = retrieve_strategies_prod(
                 obs.player_role, obs.phase, keywords=keywords, limit=limit,
+                output_mode=mode, regex_mode=use_regex,
             )
         except Exception:
             results = []
@@ -47,6 +63,11 @@ def create_tools(
             )
         if not results:
             return "(未找到相关策略)"
+        if not include_reflections and mode != "count":
+            results = [r for r in results
+                       if not r.get("doc_type", "").startswith("reflection")]
+            if not results:
+                return "(未找到相关策略)"
         return format_strategies_for_prompt(results)
 
     # ---- recall_memory ----
@@ -110,15 +131,27 @@ def create_tools(
         "白痴被投票放逐会怎样": "白痴被放逐后翻开身份牌，不会出局，但失去投票权。",
         "白狼王自爆有什么效果": "白狼王可以在白天任意时刻自爆，带走一名玩家后立即进入黑夜。",
         "警长有什么特权": "警长拥有1.5票投票权，死时可以转移警徽给任意存活玩家。",
-        "狼人可以空刀吗": "可以，但通常不推荐。空刀意味着放弃击杀机会。",
+        "狼人可以空刀吗": "可以。若选择空刀，当夜不会产生狼人击杀目标。",
     }
 
     def check_rules(question: str) -> str:
         """Query game rules. Use this when unsure about mechanics."""
+        normalized = question.strip()
         for q, a in _RULES_FAQ.items():
-            if q in question or any(w in question for w in q[:4]):
+            if q in normalized or normalized in q or q[:4] in normalized:
                 return a
         return f"关于「{question}」没有确切的规则记录。请基于标准狼人杀规则推理。"
+
+    # ---- get_social_info ----
+    def get_social_info() -> str:
+        """Query the trust network and deception signals for this agent.
+
+        Returns trusted/distrusted players and recent deception signals.
+        """
+        result = memory.social_model.format_for_prompt(memory.player_id)
+        if not result:
+            return "(暂无信任网络信息)"
+        return result
 
     # ---- analyze_votes ----
     def analyze_votes() -> str:
@@ -139,14 +172,59 @@ def create_tools(
         lines.append(f"  总投票人数: {len(votes)}")
         return "\n".join(lines)
 
+    # ---- set_strategic_intent ----
+    def set_strategic_intent(
+        objective: str,
+        target_phase: str,
+        conditions: str = "",
+        fallback: str = "",
+    ) -> str:
+        """Declare a multi-turn strategic intention.
+
+        Use this when you want to commit to a plan that spans multiple turns,
+        e.g., "I'll fake claim Seer tomorrow" or "I'll frame player X over
+        two days of speeches." The system will remind you of your intent in
+        future turns.
+
+        Args:
+            objective: What you want to achieve (short phrase).
+            target_phase: When to execute (e.g., "DAY_SPEECH", "DAY_VOTE",
+                         "NIGHT_WOLF_ACTION").
+            conditions: What must hold true for the plan to proceed.
+            fallback: What to do if conditions fail.
+        """
+        cond_list = [c.strip() for c in conditions.split(";")] if conditions else []
+        intent = memory.planner.set_intent(
+            objective=objective,
+            target_phase=target_phase,
+            day=obs.day,
+            phase=obs.phase,
+            conditions=cond_list if cond_list else None,
+            fallback=fallback,
+        )
+        lines = [f"策略意图已记录: {intent.objective}"]
+        lines.append(f"  触发阶段: {intent.target_phase}")
+        if intent.conditions:
+            lines.append(f"  前置条件: {', '.join(intent.conditions)}")
+        if intent.fallback:
+            lines.append(f"  失败回退: {intent.fallback}")
+        lines.append("  系统会在对应阶段提醒你执行。可以在新信息出现后更新或放弃。")
+        return "\n".join(lines)
+
     # ---- Tool registry ----
     return {
         "search_strategies": {
             "fn": search_strategies,
             "description": (
-                'search_strategies(keywords: list[str], limit: int = 3)\n'
-                '  用关键词搜索狼人杀策略库。选精准的领域术语（如「被查杀」「警徽流」「表水」）。\n'
-                '  例: search_strategies(keywords=["被查杀应对", "反跳预言家"], limit=3)'
+                'search_strategies(keywords: list[str], limit: int = 3, include_reflections: bool = True, mode: str = "content", use_regex: bool = False)\n'
+                '  用关键词或正则搜索狼人杀策略库。三层模式：\n'
+                '  mode="count" — 仅返回匹配数量（先测试关键词好坏）\n'
+                '  mode="overview" — 仅返回场景标题和评分（快速扫描）\n'
+                '  mode="content" — 返回完整策略（默认，确认关键词后使用）\n'
+                '  推荐流程: count → overview → content，逐步缩小范围。\n'
+                '  use_regex=True 时关键词被视为 Python 正则。\n'
+                '  例: search_strategies(keywords=["被查杀"], mode="count")\n'
+                '  例: search_strategies(keywords=["查杀.*狼", "悍跳"], use_regex=True)'
             ),
         },
         "recall_memory": {
@@ -165,6 +243,27 @@ def create_tools(
                 'check_rules(question: str)\n'
                 '  查询游戏规则。当你对某个机制不确定时使用。\n'
                 '  例: check_rules(question="守卫可以连续守护同一人吗")'
+            ),
+        },
+        "get_social_info": {
+            "fn": get_social_info,
+            "description": (
+                "get_social_info()\n"
+                "  查询信任网络信息，包括你信任/怀疑的玩家和最近的欺骗信号。\n"
+                "  例: get_social_info()"
+            ),
+        },
+        "set_strategic_intent": {
+            "fn": set_strategic_intent,
+            "description": (
+                'set_strategic_intent(objective: str, target_phase: str, conditions: str = "", fallback: str = "")\n'
+                '  设定跨回合策略意图。告诉系统你的多步计划，后续回合会自动提醒你。\n'
+                '  objective: 计划目标（如 "bluff_seer_day2"）\n'
+                '  target_phase: 执行阶段（"DAY_SPEECH", "DAY_VOTE", "NIGHT_WOLF_ACTION"）\n'
+                '  conditions: 分号分隔的前置条件\n'
+                '  fallback: 条件不满足时的备选方案\n'
+                '  例: set_strategic_intent(objective="fake_claim_seer", target_phase="DAY_SPEECH", '
+                'conditions="no_other_seer_claim", fallback="continue_deep_cover")'
             ),
         },
         "analyze_votes": {
