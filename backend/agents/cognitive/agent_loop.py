@@ -27,7 +27,11 @@ from langchain_core.runnables import Runnable
 
 from backend.agents.cognitive.memory import Memory
 from backend.agents.cognitive.observe import Observation, format_observation
-from backend.agents.cognitive.prompts import build_game_context, build_strategy_bias_block
+from backend.agents.cognitive.prompts import (
+    build_game_context,
+    build_strategy_bias_block,
+    get_role_anti_patterns,
+)
 from backend.agents.cognitive.tools import create_tools
 
 logger = logging.getLogger(__name__)
@@ -304,8 +308,9 @@ class AgentLoop:
                 "(你刚分析过这个局势，直接基于已有判断做决策。如需补充信息可以调用工具。)"
             )
 
-        # Action task
-        blocks.append(self._task_for_action())
+        # Action task (with role-specific anti-patterns)
+        role = getattr(obs, 'player_role', '')
+        blocks.append(self._task_for_action(role))
 
         strategy_bias_text = build_strategy_bias_block(self._strategy_bias, self._strategy_action())
         if strategy_bias_text:
@@ -346,8 +351,8 @@ class AgentLoop:
             f"最多调用 {MAX_ITERATIONS} 轮工具，之后必须输出 DECISION。"
         )
 
-    def _task_for_action(self) -> str:
-        """Return the action-specific task description."""
+    def _task_for_action(self, role: str = "") -> str:
+        """Return the action-specific task description with anti-patterns."""
         tasks = {
             "speech": (
                 "【任务：发言】\n"
@@ -372,7 +377,15 @@ class AgentLoop:
                 "- 给出行动理由（reasoning）\n"
             ),
         }
-        return tasks.get(self._action_type, tasks["speech"])
+        base = tasks.get(self._action_type, tasks["speech"])
+
+        # Inject role-specific anti-patterns to close the Track C feedback loop
+        if role:
+            anti = get_role_anti_patterns(role, self._action_type)
+            if anti:
+                return base + "\n" + anti
+
+        return base
 
     def _format_tools(self, tools: Dict[str, Any]) -> str:
         """Format tool descriptions for the system prompt (text fallback mode)."""
