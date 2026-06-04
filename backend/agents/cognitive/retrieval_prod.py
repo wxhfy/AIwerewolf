@@ -162,7 +162,10 @@ class StrategyRetriever:
         k: int = TOP_K_FINAL,
         output_mode: str = "content",
     ) -> List[Dict[str, str]]:
-        """BM25 full-text search + role/phase bonus → top-K.
+        """BM25 full-text search with role-priority filtering → top-K.
+
+        Searches same-role + global docs first. If fewer than k/2 results found,
+        fills with other-role docs. Rank order: same-role > global > other.
 
         Args:
             output_mode: "content" (full), "overview" (situation+quality only),
@@ -180,7 +183,7 @@ class StrategyRetriever:
                         for i in self._inverted_index[t]))
             return [{"match_count": n, "total_docs": len(self._docs)}]
 
-        results = self._bm25_search(query, role, phase, k=k)
+        results = self._bm25_search_roled(query, role, phase, k=k)
         if output_mode == "overview":
             return [{k: v for k, v in r.items() if k in ("situation", "quality", "doc_type")}
                     for r in results]
@@ -228,6 +231,9 @@ class StrategyRetriever:
         if len(grep_indices) < 3:
             return self.search(" ".join(keywords), role, phase, k=k,
                                output_mode=output_mode)
+
+        # Reorder grep results by role priority: same-role > global > other
+        grep_indices = self._reorder_by_role_priority(grep_indices, role)
 
         if not use_bm25_rerank:
             if output_mode == "overview":
@@ -304,6 +310,62 @@ class StrategyRetriever:
                  "strategy": self._docs[i]["strategy"],
                  "quality": self._docs[i]["quality"],
                  "doc_type": self._docs[i].get("doc_type", "")} for i in idx]
+
+    def _bm25_search_roled(self, query: str, role: str, phase: str, k: int) -> List[Dict]:
+        """BM25 search with role-priority filtering.
+
+        Priority: same-role > global > other-role.
+        If same-role + global results < k, fills with other-role docs.
+        """
+        # Split docs by role priority
+        same_role = [i for i, d in enumerate(self._docs)
+                     if d.get("role", "").lower() == role.lower()]
+        global_docs = [i for i, d in enumerate(self._docs)
+                       if d.get("role", "").lower() == "global" and i not in same_role]
+        other_docs = [i for i, d in enumerate(self._docs)
+                      if i not in same_role and i not in global_docs]
+
+        # Priority groups
+        groups = [same_role, global_docs, other_docs]
+
+        import jieba
+        tokens = " ".join(jieba.cut(query)).split()
+        bm25_scores = np.array(self._bm25.get_scores(tokens), dtype=np.float64)
+        if bm25_scores.max() > 0:
+            bm25_scores = bm25_scores / bm25_scores.max()
+
+        results = []
+        seen = set()
+
+        # First pass: collect from priority groups, up to k per group
+        for group_idx, group in enumerate(groups):
+            if not group:
+                continue
+            # Score only docs in this group
+            group_scores = [(i, bm25_scores[i]) for i in group if i not in seen]
+            group_scores.sort(key=lambda x: -x[1])
+            group_take = group_scores[:k] if group_idx == 0 else group_scores[:k - len(results)]
+            for idx, _ in group_take:
+                if idx not in seen:
+                    results.append(idx)
+                    seen.add(idx)
+
+            if len(results) >= k:
+                break
+
+        # Second pass: if still not enough, fill from any remaining
+        if len(results) < k:
+            for i in np.argsort(bm25_scores)[::-1]:
+                if i not in seen:
+                    results.append(i)
+                    seen.add(i)
+                    if len(results) >= k:
+                        break
+
+        return [{"situation": self._docs[i]["situation"],
+                 "strategy": self._docs[i]["strategy"],
+                 "quality": self._docs[i]["quality"],
+                 "doc_type": self._docs[i].get("doc_type", "")} for i in results[:k]]
 
     # ================================================================
     # Internal: Keyword Grep + BM25 Rerank
@@ -405,6 +467,17 @@ class StrategyRetriever:
                  "strategy": self._docs[i]["strategy"],
                  "quality": self._docs[i]["quality"],
                  "doc_type": self._docs[i].get("doc_type", "")} for i in top]
+
+    def _reorder_by_role_priority(self, indices: List[int], role: str) -> List[int]:
+        """Reorder doc indices by role priority: same-role > global > other."""
+        if not role:
+            return indices
+        rl = role.lower()
+        same = [i for i in indices if self._docs[i].get("role", "").lower() == rl]
+        glbl = [i for i in indices if self._docs[i].get("role", "").lower() == "global"
+                and i not in same]
+        other = [i for i in indices if i not in same and i not in glbl]
+        return same + glbl + other
 
     # ================================================================
     # Helpers
