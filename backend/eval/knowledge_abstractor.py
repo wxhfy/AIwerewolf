@@ -123,10 +123,6 @@ class KnowledgeAbstractor:
         lessons: List[AbstractedLesson] = []
 
         for step in review.scored_steps:
-            # Only extract lessons from meaningful steps
-            if not step.lesson_abstract:
-                continue
-
             # From highlights: what worked well
             if step.is_highlight:
                 lesson = self._from_highlight(step, review)
@@ -291,7 +287,7 @@ class KnowledgeAbstractor:
                 f"在{step.phase}阶段，{review.role}应保持{step.action_summary[:80]}的决策风格"
             ),
             rationale=f"该决策得分为{step.step_score:.0%}，为中等表现。保持并略作优化。",
-            quality_score=step.step_score * 0.85,
+            quality_score=max(0.50, step.step_score),
             confidence=0.70,
             source_type="observation",
             tags=step.lesson_tags + [review.role, tag_val],
