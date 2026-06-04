@@ -40,6 +40,21 @@ logger = logging.getLogger(__name__)
 
 MAX_ITERATIONS = 3
 _TRACK_C_RETRIEVAL_CACHE: dict[tuple[str, str, str], tuple[float, list[dict[str, Any]]]] = {}
+_LAST_RETRIEVED_STRATEGIES: dict = {}
+_LAST_LOOP_TRACE: dict = {}
+
+
+def get_last_loop_trace(player_id: str) -> dict:
+    """Return the last agent-loop trace for a player, then clear it."""
+    return _LAST_LOOP_TRACE.pop(player_id, {})
+
+
+def _feature_enabled(env_var: str, default: bool = True) -> bool:
+    """Check if a feature flag is enabled via environment variable."""
+    val = os.getenv(env_var, "").strip().lower()
+    if not val:
+        return default
+    return val in ("1", "true", "yes", "on")
 
 # JSON Schema parameter definitions for each tool (used by bind_tools)
 _TOOL_PARAM_SCHEMAS: Dict[str, Dict] = {
@@ -175,6 +190,7 @@ class AgentLoop:
         tools = create_tools(obs, memory)
         tool_schemas = self._tools_to_bind_schemas(tools) if self._supports_bind_tools else None
         context = []  # list of messages for the conversation
+        tool_trace: list[dict] = []  # track tool calls for auditing
 
         # Build initial system prompt
         system_text = self._build_system_text(obs, memory, tools, extra_context, cached_analysis)
@@ -203,6 +219,19 @@ class AgentLoop:
                     f"({'native' if is_native else 'text'}) - "
                     f"{', '.join(t.split(chr(10))[0][:80] for t in tool_results)}"
                 )
+
+                # Record tool trace for auditing
+                tool_names = self._extract_tool_names(response, is_native)
+                tool_keywords = self._extract_tool_keywords(response, is_native)
+                for idx, tr in enumerate(tool_results):
+                    tname = tool_names[idx] if idx < len(tool_names) else "unknown"
+                    tool_trace.append({
+                        "iteration": iteration,
+                        "tool": tname,
+                        "keywords": tool_keywords.get(tname, []),
+                        "timestamp": time.time(),
+                        "result_summary": tr[:200],
+                    })
 
                 # Add assistant response + tool results to context
                 if is_native:
@@ -233,6 +262,7 @@ class AgentLoop:
             if decision:
                 keys = list(decision.keys())
                 logger.info(f"Iter {iteration}/{MAX_ITERATIONS}: DECISION found ({keys})")
+                self._inject_tool_trace(decision, tool_trace, obs)
                 return decision
 
             # Neither tool call nor valid decision — ask LLM to be clearer
@@ -258,6 +288,7 @@ class AgentLoop:
             )
             if decision:
                 logger.info(f"Final call: DECISION found ({list(decision.keys())})")
+                self._inject_tool_trace(decision, tool_trace, obs)
                 return decision
 
         raise RuntimeError(
@@ -316,7 +347,9 @@ class AgentLoop:
         role = str(getattr(obs, "player_role", "") or "")
         blocks.append(self._task_for_action(role))
 
-        track_c_strategy_text = _build_track_c_strategy_block(obs, self._action_type)
+        track_c_strategy_text = ""
+        if _feature_enabled("COGNITIVE_ENABLE_TRACK_C", True):
+            track_c_strategy_text = _build_track_c_strategy_block(obs, self._action_type)
         if track_c_strategy_text:
             blocks.append(track_c_strategy_text)
 
@@ -387,7 +420,7 @@ class AgentLoop:
         }
         base = tasks.get(self._action_type, tasks["speech"])
         # Inject static anti-patterns as fallback (complements DB-backed Track C block)
-        if role:
+        if role and _feature_enabled("COGNITIVE_ENABLE_ANTI_PATTERNS", True):
             anti = get_role_anti_patterns(role, self._action_type)
             if anti:
                 return base + "\n" + anti
@@ -591,6 +624,57 @@ class AgentLoop:
         except Exception as e:
             return f"[{name}] 执行失败: {e}"
 
+    def _extract_tool_names(self, response, is_native: bool) -> list[str]:
+        """Extract tool names from an LLM response (native or text)."""
+        if is_native and hasattr(response, 'tool_calls') and response.tool_calls:
+            return [tc.get("name", "unknown") for tc in response.tool_calls]
+        text = response.content if hasattr(response, 'content') else str(response)
+        return [m.group(1) for m in re.finditer(r'TOOL:\s*(\w+)', text, re.IGNORECASE)]
+
+    def _extract_tool_keywords(self, response, is_native: bool) -> dict[str, list[str]]:
+        """Extract keywords per tool name from an LLM response."""
+        result: dict[str, list[str]] = {}
+        if is_native and hasattr(response, 'tool_calls') and response.tool_calls:
+            for tc in response.tool_calls:
+                name = tc.get("name", "unknown")
+                args = tc.get("args", {})
+                if isinstance(args, dict):
+                    kw = args.get("keywords", [])
+                    if isinstance(kw, list):
+                        result[name] = [str(k)[:80] for k in kw]
+                else:
+                    result[name] = []
+            return result
+        text = response.content if hasattr(response, 'content') else str(response)
+        for m in re.finditer(r'TOOL:\s*(\w+)', text, re.IGNORECASE):
+            name = m.group(1)
+            result[name] = []
+        for m in re.finditer(r'ARGUMENTS:\s*(\{[^}]*\})', text, re.IGNORECASE):
+            try:
+                args = json.loads(m.group(1))
+                kw = args.get("keywords", [])
+                if isinstance(kw, list):
+                    for name in result:
+                        result[name] = [str(k)[:80] for k in kw]
+                        break
+            except json.JSONDecodeError:
+                pass
+        return result
+
+    @staticmethod
+    def _inject_tool_trace(decision: dict, tool_trace: list[dict], obs: Observation) -> None:
+        """Inject tool trace and auto-injected strategy IDs into the decision dict."""
+        decision["_tool_trace"] = tool_trace
+        player_id = str(getattr(obs, "player_id", "") or "")
+        auto_injected = _LAST_RETRIEVED_STRATEGIES.pop(player_id, [])
+        decision["_auto_injected_strategies"] = [
+            s.get("doc_id", "") for s in auto_injected
+        ]
+        _LAST_LOOP_TRACE[player_id] = {
+            "tool_trace": tool_trace,
+            "auto_injected_strategies": decision["_auto_injected_strategies"],
+        }
+
     def _parse_decision(self, response: str) -> Optional[Dict[str, str]]:
         """Parse final decision from LLM response.
 
@@ -729,6 +813,14 @@ def _build_track_c_strategy_block(obs: Observation, action_type: str) -> str:
         rationale = str(item.get("rationale") or item.get("evidence_summary") or "").strip()
         score = item.get("score", item.get("quality_score", ""))
         score_text = f" score={float(score):.2f}" if isinstance(score, (int, float)) else ""
+        doc_type = str(item.get("doc_type", ""))
+        status = str(item.get("status", ""))
+        label_parts = []
+        if doc_type == "reflection":
+            label_parts.append("反思经验")
+        if status == "candidate":
+            label_parts.append("候选/未验证")
+        label_str = f" [{'/'.join(label_parts)}]" if label_parts else ""
 
         detail_parts = []
         if trigger:
@@ -740,7 +832,7 @@ def _build_track_c_strategy_block(obs: Observation, action_type: str) -> str:
         if rationale:
             detail_parts.append(f"依据：{rationale}")
         if detail_parts:
-            lines.append(f"{index}. [{doc_id}{score_text}] " + "；".join(detail_parts))
+            lines.append(f"{index}. [{doc_id}{label_str}{score_text}] " + "；".join(detail_parts))
     return "\n".join(lines) if len(lines) > 2 else ""
 
 
@@ -772,6 +864,9 @@ def _retrieve_track_c_strategy_lessons(obs: Observation, action_type: str) -> li
         lessons = [_normalize_strategy_row(row, index) for index, row in enumerate(rows, start=1) if isinstance(row, dict)]
         if cache_ttl > 0:
             _TRACK_C_RETRIEVAL_CACHE[cache_key] = (time.monotonic(), lessons)
+        if lessons:
+            player_id = str(getattr(obs, "player_id", "") or "")
+            _LAST_RETRIEVED_STRATEGIES[player_id] = lessons
         return lessons
     except Exception as exc:
         logger.debug("Track C strategy retrieval skipped: %s", exc)
@@ -794,4 +889,7 @@ def _normalize_strategy_row(row: dict[str, Any], index: int) -> dict[str, Any]:
         "avoid_action": row.get("avoid_action") or "",
         "rationale": row.get("rationale") or row.get("evidence_summary") or "",
         "score": row.get("score", row.get("quality", row.get("quality_score", ""))),
+        "doc_type": row.get("doc_type", ""),
+        "status": row.get("status", ""),
+        "quality_score": row.get("quality_score", row.get("quality", "")),
     }

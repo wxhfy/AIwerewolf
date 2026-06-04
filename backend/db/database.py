@@ -17,10 +17,14 @@ DATABASE_URL = os.getenv("DATABASE_URL", "")
 if DATABASE_URL:
     # PostgreSQL (Supabase / cloud / local pg)
     SQLALCHEMY_DATABASE_URL = DATABASE_URL
+    _pool_size = int(os.getenv("DB_POOL_SIZE", "5"))
+    _max_overflow = int(os.getenv("DB_MAX_OVERFLOW", "5"))
     engine = create_engine(
         SQLALCHEMY_DATABASE_URL,
         pool_pre_ping=True,
         pool_recycle=1800,
+        pool_size=_pool_size,
+        max_overflow=_max_overflow,
     )
 else:
     # SQLite fallback for local development

@@ -28,6 +28,7 @@ from langchain_core.runnables import Runnable
 
 from backend.agents.cognitive.humanization import HumanizationProfile, build_humanization_profile
 from backend.agents.cognitive.memory import Memory
+from backend.agents.cognitive.agent_loop import get_last_loop_trace
 from backend.agents.cognitive.observe import (
     Observation, BeliefTracker, observe, format_observation,
 )
@@ -385,7 +386,7 @@ class CognitiveAgent:
 
     def finish(self, winner: Optional[str]) -> None:
         self.memory.add_action("game_end", None, f"胜者: {winner}", "")
-        # Trigger personal post-game reflection (non-blocking — best-effort)
+        # Trigger personal post-game reflection (opt-in via COGNITIVE_ENABLE_REFLECTION)
         self._reflect_on_game(winner)
 
     # === Internal Helpers ===
@@ -523,6 +524,22 @@ class CognitiveAgent:
         }
         if metadata:
             meta.update(metadata)
+
+        # Inject agent-loop tool trace + auto-injected strategies
+        try:
+            trace = get_last_loop_trace(self.player_id)
+            if trace:
+                if trace.get("tool_trace"):
+                    meta["_tool_trace"] = trace["tool_trace"]
+                if trace.get("auto_injected_strategies"):
+                    meta["_auto_injected_strategies"] = trace["auto_injected_strategies"]
+                    meta["retrieval_used"] = True
+                    meta["retrieved_knowledge_ids"] = trace["auto_injected_strategies"]
+                # Best-effort: record knowledge usage for each auto-injected strategy
+                self._record_strategy_usage(trace.get("auto_injected_strategies", []))
+        except Exception:
+            pass  # trace injection is best-effort
+
         return Decision(
             actor_id=self.player_id,
             action_type=action_type,
@@ -729,16 +746,46 @@ class CognitiveAgent:
         parts.append("注意：你只能基于公开发言、投票和狼队内部信息做判断，不能查看其他玩家的真实身份。")
         return "\n".join(parts)
 
+    def _record_strategy_usage(self, doc_ids: list[str]) -> None:
+        """Best-effort record of auto-injected strategy knowledge usage."""
+        if not doc_ids or not self._game_id:
+            return
+        try:
+            from backend.db.persist import record_knowledge_usage
+            for doc_id in doc_ids:
+                if not doc_id:
+                    continue
+                record_knowledge_usage({
+                    "game_id": self._game_id,
+                    "player_id": self.player_id,
+                    "knowledge_doc_id": doc_id,
+                    "retrieved": True,
+                    "used": False,
+                    "metadata": {
+                        "phase": self._view.phase if self._view else "",
+                        "role": self.role,
+                        "action_type": "auto_injected",
+                    },
+                })
+        except Exception:
+            pass  # best-effort, never block decision flow
+
     def _reflect_on_game(self, winner: Optional[str]) -> None:
         """Trigger post-game personal reflection and persist to PostgreSQL.
 
-        Collects real game events from the agent's view + BeliefTracker,
-        runs an MBTI-differentiated LLM reflection, and writes structured
-        knowledge docs to strategy_knowledge_docs table.
+        Controlled via COGNITIVE_ENABLE_REFLECTION (default: enabled).
+        When enabled, collects real game events from the agent's view +
+        BeliefTracker, runs an MBTI-differentiated LLM reflection, and
+        writes structured knowledge docs as 'candidate' status.
+        Set COGNITIVE_ENABLE_REFLECTION=false to disable.
 
         Failures are logged but never raised — reflection is best-effort
         and must not block game completion.
         """
+        import os
+        val = os.getenv("COGNITIVE_ENABLE_REFLECTION", "").strip().lower()
+        if val in ("0", "false", "no", "off"):
+            return
         import logging
         _log = logging.getLogger(__name__)
 

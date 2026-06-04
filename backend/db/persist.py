@@ -295,6 +295,7 @@ def save_game_end(state: GameState) -> None:
                 cost_usd=getattr(record, 'cost_usd', None),
                 model_name=getattr(record, 'model_name', None),
                 provider=getattr(record, 'provider', None),
+                metadata=_clean(getattr(record, 'metadata', None) or {}),
             ))
 
         # Bulk-save votes from history
@@ -817,6 +818,7 @@ def _knowledge_row_to_dict(row: StrategyKnowledgeDoc) -> dict[str, Any]:
         "doc_type": row.doc_type,
         "role": row.role,
         "phase": row.phase,
+        "source_game_id": (row.source_report_ids[0] if row.source_report_ids else None),
         "persona_scope": row.persona_scope,
         "situation_pattern": row.situation_pattern,
         "trigger_conditions": row.trigger_conditions or [],

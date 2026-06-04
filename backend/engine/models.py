@@ -158,6 +158,7 @@ class DecisionAudit:
     provider: str | None = None
     fallback_used: bool = False
     fallback_reason: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass

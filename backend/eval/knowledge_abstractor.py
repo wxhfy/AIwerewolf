@@ -64,6 +64,9 @@ class AbstractedLesson:
     evidence_summary: str = ""
     source_event_ids: List[str] = field(default_factory=list)
 
+    # Experiment tracking
+    experiment_id: str = ""
+
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
     def to_pg_dict(self) -> Dict[str, Any]:
@@ -85,7 +88,9 @@ class AbstractedLesson:
             "source_event_ids": self.source_event_ids,
             "evidence_summary": self.evidence_summary,
             "tags": self.tags,
-            "status": "active",
+            "status": "candidate",
+            "experiment_id": self.experiment_id or None,
+            "game_id": self.source_game_id,
         }
 
 
@@ -103,7 +108,7 @@ class KnowledgeAbstractor:
     StrategyRetrievalQuery (role + phase + persona + situation).
     """
 
-    def __init__(self, min_quality: float = 0.5):
+    def __init__(self, min_quality: float = 0.50):
         self._min_quality = min_quality
 
     def abstract_from_review(self, review: PlayerReviewReport) -> List[AbstractedLesson]:
@@ -140,6 +145,12 @@ class KnowledgeAbstractor:
                 if lesson and lesson.quality_score >= self._min_quality:
                     lessons.append(lesson)
 
+            # From general observations: medium-scoring steps still carry lessons
+            if not step.is_highlight and not step.is_mistake and not step.strategy_applied:
+                lesson = self._from_observation(step, review)
+                if lesson and lesson.quality_score >= self._min_quality:
+                    lessons.append(lesson)
+
         # Deduplicate similar lessons
         lessons = self._deduplicate(lessons)
 
@@ -171,6 +182,8 @@ class KnowledgeAbstractor:
         self, step: ScoredStep, review: PlayerReviewReport
     ) -> Optional[AbstractedLesson]:
         """Extract a lesson from a highlight (successful action)."""
+        st = getattr(step.step_type, "value", step.step_type) if hasattr(step.step_type, "value") else str(step.step_type)
+        tag_val = st.value if hasattr(st, "value") else str(st)
         return AbstractedLesson(
             source_game_id=review.game_id,
             source_player_id=review.player_id,
@@ -185,7 +198,7 @@ class KnowledgeAbstractor:
             quality_score=step.step_score,
             confidence=0.85,
             source_type="highlight",
-            tags=step.lesson_tags + [review.role, step.step_type.value],
+            tags=step.lesson_tags + [review.role, tag_val],
             evidence_summary=step.action_summary,
             source_event_ids=list(step.evidence_event_ids),
         )
@@ -259,6 +272,33 @@ class KnowledgeAbstractor:
             source_event_ids=list(step.evidence_event_ids),
         )
 
+    def _from_observation(
+        self, step: ScoredStep, review: PlayerReviewReport
+    ) -> Optional[AbstractedLesson]:
+        """Extract a general observation lesson from any scored step."""
+        st = getattr(step.step_type, "value", step.step_type) if hasattr(step.step_type, "value") else str(step.step_type)
+        tag_val = st.value if hasattr(st, "value") else str(st)
+        return AbstractedLesson(
+            source_game_id=review.game_id,
+            source_player_id=review.player_id,
+            source_step_id=step.step_id,
+            target_role=review.role,
+            target_persona_scope=review.persona_style or review.persona_mbti,
+            phase=step.phase,
+            situation_pattern=self._infer_situation(step, review),
+            trigger_conditions=self._infer_triggers(step),
+            recommended_action=(
+                f"在{step.phase}阶段，{review.role}应保持{step.action_summary[:80]}的决策风格"
+            ),
+            rationale=f"该决策得分为{step.step_score:.0%}，为中等表现。保持并略作优化。",
+            quality_score=step.step_score * 0.85,
+            confidence=0.70,
+            source_type="observation",
+            tags=step.lesson_tags + [review.role, tag_val],
+            evidence_summary=step.action_summary,
+            source_event_ids=list(step.evidence_event_ids),
+        )
+
     # ============================================================
     # Helpers
     # ============================================================
@@ -269,9 +309,10 @@ class KnowledgeAbstractor:
         parts = [review.role, step.phase]
         if step.day > 0:
             parts.append(f"D{step.day}")
-        if step.step_type.value == "speech":
+        st = getattr(step.step_type, "value", step.step_type) if hasattr(step.step_type, "value") else str(step.step_type)
+        if st == "speech":
             parts.append("发言阶段")
-        elif step.step_type.value == "vote":
+        elif st == "vote":
             parts.append("投票阶段")
         else:
             parts.append("夜晚行动")
@@ -316,15 +357,32 @@ def store_lessons_to_db(
     if not lessons:
         return 0
 
+    import logging
+    import os as _os
     import psycopg2
+
+    logger = logging.getLogger(__name__)
+    auto_promote = _os.getenv("AUTO_PROMOTE_LESSONS", "").lower() == "true"
+
     conn = psycopg2.connect(
         conn_str or "postgresql://werewolf:wolf_secret_2026@127.0.0.1:5433/werewolf"
     )
     c = conn.cursor()
 
     stored = 0
+    role_counts: dict[str, int] = {}
     for lesson in lessons:
         doc = lesson.to_pg_dict()
+        # Auto-promote to active if all conditions met
+        if (
+            auto_promote
+            and lesson.confidence >= 0.90
+            and not lesson.source_type.startswith("reflection")
+        ):
+            doc["status"] = "active"
+        # Pop extra keys not present in the INSERT column list
+        doc.pop("experiment_id", None)
+        doc.pop("game_id", None)
         try:
             c.execute("""
                 INSERT INTO strategy_knowledge_docs
@@ -340,10 +398,20 @@ def store_lessons_to_db(
                         %(evidence_summary)s, %(tags)s, %(status)s)
             """, doc)
             stored += 1
+            role_counts[lesson.target_role] = role_counts.get(lesson.target_role, 0) + 1
         except Exception:
             conn.rollback()
             continue
 
     conn.commit()
     conn.close()
+
+    logger.info(
+        "Stored %d candidate lessons (status=candidate). "
+        "Set AUTO_PROMOTE_LESSONS=true to auto-promote to active.",
+        stored,
+    )
+    if role_counts:
+        logger.info("Lessons by role: %s", dict(role_counts))
+
     return stored
