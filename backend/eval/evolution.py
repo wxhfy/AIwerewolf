@@ -1907,6 +1907,60 @@ class PatchValidator:
         return valid, rejected
 
 
+def promote_candidates(
+    store: StrategyKnowledgeStore,
+    *,
+    quality_threshold: float = 0.85,
+    deprecation_threshold: float = 0.60,
+    dry_run: bool = False,
+) -> dict[str, int]:
+    """Promote high-quality candidates to active, deprecate low-quality ones.
+
+    Goal 1: Higher promotion bar for Track C strategy knowledge.
+    - quality_score >= 0.85 → candidate → active
+    - quality_score < 0.60 → candidate → deprecated
+    - Everything else stays as candidate
+    """
+    promoted = 0
+    deprecated_count = 0
+    skipped = 0
+    for doc in list(store.docs.values()):
+        if doc.status != "candidate":
+            continue
+        if doc.quality_score >= quality_threshold:
+            if not dry_run:
+                store.docs[doc.doc_id] = replace(
+                    doc,
+                    status="active",
+                    updated_at=datetime.now(timezone.utc).isoformat(),
+                )
+            promoted += 1
+        elif doc.quality_score < deprecation_threshold:
+            if not dry_run:
+                store.docs[doc.doc_id] = replace(
+                    doc,
+                    status="deprecated",
+                    updated_at=datetime.now(timezone.utc).isoformat(),
+                )
+            deprecated_count += 1
+        else:
+            skipped += 1
+    return {"promoted": promoted, "deprecated": deprecated_count, "skipped": skipped, "total_candidates": promoted + deprecated_count + skipped}
+
+
+def get_promotion_report(store: StrategyKnowledgeStore) -> dict[str, Any]:
+    """Generate a promotion report showing how many would be promoted/deprecated."""
+    stats = promote_candidates(store, dry_run=True)
+    active_total = sum(1 for d in store.docs.values() if d.status == "active")
+    cand_total = sum(1 for d in store.docs.values() if d.status == "candidate")
+    dep_total = sum(1 for d in store.docs.values() if d.status == "deprecated")
+    stats["current_active"] = active_total
+    stats["current_candidate"] = cand_total
+    stats["current_deprecated"] = dep_total
+    stats["promotion_rate"] = round(stats["promoted"] / max(stats["total_candidates"], 1) * 100, 2)
+    return stats
+
+
 class VersionManager:
     def __init__(
         self,
