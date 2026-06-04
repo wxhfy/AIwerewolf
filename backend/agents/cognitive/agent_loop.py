@@ -591,6 +591,7 @@ class AgentLoop:
 
         Uses balanced-brace extraction (not regex [^}]*) so that speech content
         containing '}' characters (emoji, punctuation) doesn't truncate the JSON.
+        Falls back to salvaging partial text when JSON is truncated by token limits.
         """
         # Find DECISION: marker
         marker_match = re.search(r'DECISION:\s*', response, re.IGNORECASE)
@@ -598,7 +599,6 @@ class AgentLoop:
             return None
 
         start = marker_match.end()
-        # Skip whitespace to find the opening brace
         while start < len(response) and response[start] in ' \t\n\r':
             start += 1
         if start >= len(response) or response[start] != '{':
@@ -630,19 +630,20 @@ class AgentLoop:
                     end = i + 1
                     break
 
-        if depth != 0:
-            logger.warning(f"Unbalanced braces in decision (depth={depth}), fallback to regex")
-            # Fallback: try regex as last resort
-            m = re.search(r'DECISION:\s*(\{.*\})', response, re.IGNORECASE | re.DOTALL)
-            if not m:
-                return None
-            json_str = m.group(1)
-        else:
-            json_str = response[start:end]
+        json_str = response[start:end] if depth == 0 else response[start:]
 
         try:
             data = json.loads(json_str)
         except json.JSONDecodeError:
+            # JSON is malformed (likely truncated by token limit).
+            # Try to salvage the speech text from the partial JSON.
+            salvaged = self._salvage_partial_json(json_str)
+            if salvaged:
+                logger.warning(
+                    f"Salvaged partial decision JSON (original parse failed). "
+                    f"Salvaged {len(salvaged.get('speech', salvaged.get('target', '')))} chars."
+                )
+                return salvaged
             logger.warning(f"Failed to parse decision JSON: {json_str[:100]}")
             return None
 
@@ -659,6 +660,32 @@ class AgentLoop:
             result["reasoning"] = data.get("reasoning", "")
 
         return result if any(v for v in result.values()) else None
+
+    @staticmethod
+    def _salvage_partial_json(json_str: str) -> Optional[Dict[str, str]]:
+        """Attempt to extract usable content from a truncated/malformed JSON.
+
+        Handles the common case where max_tokens truncates a speech JSON
+        mid-string, e.g. {"speech": "long text here... (truncated)
+        """
+        result: Dict[str, str] = {}
+        # Try to extract "speech" value even from truncated JSON
+        for key in ("speech", "target", "reasoning"):
+            # Match "key": "value" where value might be unterminated
+            m = re.search(rf'"{key}"\s*:\s*"((?:[^"\\]|\\.)*)"?', json_str)
+            if m:
+                val = m.group(1)
+                # Unescape common escape sequences
+                val = val.replace('\\"', '"').replace('\\n', '\n').replace('\\t', '\t')
+                result[key] = val
+        # If we couldn't extract speech but the JSON has content after "speech":
+        if not result and '"speech"' in json_str:
+            m = re.search(r'"speech"\s*:\s*"(.*)', json_str, re.DOTALL)
+            if m:
+                raw = m.group(1).rstrip('"').rstrip('\\')
+                if len(raw) > 5:
+                    result["speech"] = raw[:500]
+        return result if result else None
 
 
 def _build_track_c_strategy_block(obs: Observation, action_type: str) -> str:
