@@ -846,6 +846,11 @@ class WerewolfGame:
                 self.phase_manager.run(Phase.HUNTER_SHOOT, self)
         if self.pending_badge_transfer_from_id and self.state.winner is None:
             self.phase_manager.run(Phase.BADGE_TRANSFER, self)
+            self._set_phase(Phase.NIGHT_RESOLVE)  # restore: while-loop routes NIGHT_RESOLVE → DAY
+        # If hunter shot happened, restore phase so the main while-loop routes
+        # NIGHT_RESOLVE → DAY_START instead of HUNTER_SHOOT → NIGHT_START.
+        if self.state.phase != Phase.NIGHT_RESOLVE:
+            self._set_phase(Phase.NIGHT_RESOLVE)
         self._mark_phase_done(Phase.NIGHT_RESOLVE)
 
     def _speech_phase(self) -> None:
