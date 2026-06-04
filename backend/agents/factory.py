@@ -69,6 +69,9 @@ def _spec_for_provider(provider: str, model: str) -> dict[str, str] | None:
     elif provider == "deepseek":
         api_key = os.getenv("DEEPSEEK_API_KEY", "").strip()
         base_url = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com").strip()
+    elif provider in {"mimo", "local_mimo"}:
+        api_key = os.getenv("MIMO_API_KEY", "local").strip()
+        base_url = os.getenv("MIMO_BASE_URL", "").strip()
     else:
         api_key = os.getenv("DOUBAO_API_KEY", "").strip()
         base_url = os.getenv("DOUBAO_BASE_URL", "").strip()

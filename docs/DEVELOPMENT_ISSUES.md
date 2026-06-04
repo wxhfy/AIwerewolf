@@ -494,6 +494,22 @@ updated: 2026-06-03
 - **涉及文件 / 模块**：`backend/llm/__init__.py`、`backend/agents/cognitive/reflect.py`、`backend/engine/game.py`、`backend/engine/visibility.py`、`tests/test_cognitive_offline.py`
 - **教训**：自进化链路不能把“LLM 返回可解析 JSON”当作“有知识产出”；空复盘必须告警或降级生成可审计低置信文档，且 source id 必须贯通。
 
+### 问题 C24：反例优化把硬玩法塞回非策略层
+- **发生时间 / Session**：2026-06-04 ｜ Codex
+- **现象**：最新增量补丁在 `build_think_prompt()` 和 `AgentLoop._task_for_action()` 中注入了 `_ROLE_ANTI_PATTERNS`，包含“查到狼人必须”“跟随预言家”“首夜优先守护”“刀人优先级”等硬策略，违反用户反复强调的“只有策略层可以教玩法”。
+- **根因**：为了闭合 Track C 反例反馈，直接把 MetricsCalculator 常见失误硬编码进角色思考/任务提示；这绕过了策略知识库，也让 role/persona/task 层重新承担玩法教学。
+- **解决方案**：删除 `_ROLE_ANTI_PATTERNS` 与 `get_role_anti_patterns()`，`build_think_prompt()` 只接收外部 `strategy_text/strategy_bias`；`AgentLoop` 新增独立 `【策略层：Track C 复盘知识】` 块，只从已发布策略知识库检索经验后注入；新增分层测试防止硬策略短语回流到非策略层。
+- **涉及文件 / 模块**：`backend/agents/cognitive/prompts.py`、`backend/agents/cognitive/agent_loop.py`、`tests/test_prompt_layering.py`
+- **教训**：Track C 反馈闭环不能靠代码里写死角色打法；反例、建议、避免项都必须经过策略层和可审计知识库进入 Prompt。
+
+### 问题 C25：Prompt 构造期重检索拖慢 LLM-only 对局
+- **发生时间 / Session**：2026-06-04 ｜ Codex
+- **现象**：尝试在每次 `AgentLoop._build_system_text()` 中走完整 Track C/RAG 检索后，fake LLM 对局也出现长时间 CPU 占用，单局 20-60 秒仍不能稳定完成。
+- **根因**：Prompt 构造是高频路径；完整检索链路会触发较重的知识恢复、排序和兼容处理，本应服务于离线评测/检索 API，不适合每个 agent 每个动作同步执行。
+- **解决方案**：改为轻量 SQL 读取 `list_strategy_knowledge(role, phase, status="active", limit=3)`，不足时补 role-only active 文档；增加短 TTL 进程缓存 `TRACK_C_AUTO_RETRIEVAL_CACHE_SECONDS`，保持策略层注入可用但不拖垮对局推进。
+- **涉及文件 / 模块**：`backend/agents/cognitive/agent_loop.py`、`backend/db/persist.py`、`tests/test_prompt_layering.py`
+- **教训**：自进化知识进入在线决策时必须控制延迟边界；在线 Prompt 拼装只读已经沉淀的轻量结果，重排序和候选生成留给 Track C 离线链路。
+
 ## §D. 数据库 / 持久化
 
 ### 问题 D1：以为在用 PostgreSQL，其实是 SQLite
@@ -560,6 +576,14 @@ updated: 2026-06-03
 - **解决方案**：抽取器入口改为按报告字段形状识别单个 ReviewReport-like 对象；新增 `types.ReviewReport` 单报告输入回归测试。
 - **涉及文件 / 模块**：`backend/eval/review.py`、`tests/test_track_c_evolution.py`、`backend/eval/types.py`、`backend/eval/evolution.py`
 - **教训**：跨模块 dataclass 去重前，公共 API 不能只靠类身份判断；DB 重建对象尤其要做 shape-compatible 输入测试。
+
+### 问题 D9：全流程脚本生成复盘但未显式落库
+- **发生时间 / Session**：2026-06-04 ｜ Codex
+- **现象**：`run_full_llm_pipeline.py` 跑 5 局时内存态显示 5/5 `approved` 且 `publish=True`，但随后 Track C 只读取到 4 份 published review，导致 `track_c.games=4`。
+- **根因**：脚本只调用 `generate_published_review_document(state)` 取得内存文档，未在该路径显式调用 `save_published_review(state)`；部分 seed 的复盘没有进入持久化表，Track C 从 DB 汇总时样本缺失。
+- **解决方案**：在生成复盘文档后立即调用 `save_published_review(state)`，确保 B/C 主流程的复盘报告与后续 Track C DB 输入一致；复跑 5 局后 `track_c.games=5`。
+- **涉及文件 / 模块**：`scripts/run_full_llm_pipeline.py`、`backend/db/persist.py`、`backend/eval/review.py`
+- **教训**：全链路验收不能只看内存对象通过；只要下一阶段从数据库读，就必须在阶段边界显式落库并校验样本数一致。
 
 ## §E. WebSocket / 实时通信
 

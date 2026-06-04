@@ -99,6 +99,8 @@ def run_one_game(seed: int, strict: bool) -> dict[str, Any]:
         )
 
     document = generate_published_review_document(state)
+    from backend.db.persist import save_published_review
+    save_published_review(state)
     review_report = document.review_report
     validation = document.validation_result
 

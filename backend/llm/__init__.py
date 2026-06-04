@@ -16,10 +16,10 @@ _DEFAULT_ARK_BASE_URL = "https://ark.cn-beijing.volces.com/api/coding/v1"
 _DEFAULT_PROVIDER = "dsv4flash"
 
 # Multi-model pool: "provider:model" entries, comma-separated
-# Supports: doubao, dsv4flash, ark (generic Ark API), deepseek
+# Supports: doubao, dsv4flash, ark (generic Ark API), deepseek, mimo
 # Examples:
 #   DOUBAO_MODEL_POOL="deepseek-v4-pro[1m],kimi-k2.6[1m],glm-5.1[1m]"
-#   MODEL_POOL="ark:deepseek-v4-pro[1m],ark:kimi-k2.6[1m],doubao:ep-xxx,deepseek:deepseek-v4-flash"
+#   MODEL_POOL="ark:deepseek-v4-pro[1m],ark:kimi-k2.6[1m],doubao:ep-xxx,deepseek:deepseek-v4-flash,mimo:mimo-local"
 
 
 class _UnavailableLLMClient:
@@ -153,6 +153,7 @@ def create_client(provider: str | None = None, **kwargs) -> Any:
     Supports:
     - doubao: 方舟 doubao-seed 2.0 pro & code (primary)
     - deepseek: DeepSeek v4 Flash (fallback)
+    - mimo: local OpenAI-compatible endpoint configured by MIMO_BASE_URL
     - fake: deterministic local LLM-compatible client for tests
     """
     import os
@@ -165,12 +166,16 @@ def create_client(provider: str | None = None, **kwargs) -> Any:
             base_url = str(explicit_base_url).lower()
             if "deepseek" in base_url:
                 provider = "deepseek"
+            elif "mimo" in base_url:
+                provider = "mimo"
             elif "ark." in base_url or "volces" in base_url:
                 provider = "doubao"
         if provider is None and explicit_model:
             model_name = str(explicit_model).lower()
             if "deepseek" in model_name:
                 provider = "deepseek"
+            elif "mimo" in model_name:
+                provider = "mimo"
             elif "doubao" in model_name:
                 provider = "doubao"
         if provider is None:
@@ -264,8 +269,22 @@ def create_client(provider: str | None = None, **kwargs) -> Any:
         )
         client.provider = "ark"
         return client
+    elif provider in {"mimo", "local_mimo"}:
+        base_url = kwargs.pop("base_url", None) or os.getenv("MIMO_BASE_URL", "")
+        model = kwargs.pop("model", None) or os.getenv("MIMO_MODEL", "mimo-local")
+        api_key = kwargs.pop("api_key", None) or os.getenv("MIMO_API_KEY", "local")
+        if not base_url:
+            return _UnavailableLLMClient(provider="mimo", model=model, base_url="")
+        client = DeepSeekClient(
+            api_key=api_key,
+            base_url=base_url.rstrip("/"),
+            model=model,
+            **kwargs,
+        )
+        client.provider = "mimo"
+        return client
     else:
         raise ValueError(
             f"Unknown LLM provider: {provider}. "
-            f"Supported: doubao, deepseek, dsv4flash, ark, fake"
+            f"Supported: doubao, deepseek, dsv4flash, ark, mimo, fake"
         )
