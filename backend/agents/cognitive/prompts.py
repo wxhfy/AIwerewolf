@@ -123,6 +123,11 @@ def build_think_prompt(
     if strategy_bias_text:
         parts.extend(["", strategy_bias_text])
 
+    # Static anti-pattern fallback for legacy think path
+    anti_patterns = get_role_anti_patterns(obs.player_role, "speech")
+    if anti_patterns:
+        parts.extend(["", anti_patterns])
+
     parts.extend([
         "",
         "【推理任务】",
@@ -131,6 +136,7 @@ def build_think_prompt(
         "2. 逐一点评每个存活玩家：发言逻辑、投票行为、角色声称是否可信",
         "3. 综合判断：最怀疑谁（按嫌疑度排序 top-2），最信任谁",
         "4. 结合你的角色能力和私有信息边界，说明哪些信息是事实，哪些只是推断。",
+        "5. 对照上面的「常见失误」清单，确认你当前的分析没有落入同样的陷阱。",
         "",
         "用 4-6 句话总结，要具体点名人名，不能泛泛而谈。",
     ])
@@ -319,6 +325,127 @@ def build_strategy_bias_block(strategy_bias: dict, action: str) -> str:
             lines.append(f"- [{section}] {item}")
 
     return "\n".join(lines) if len(lines) > 3 else ""
+
+
+# ============================================================
+# Role Anti-Patterns (derived from MetricsCalculator bad case types)
+# ============================================================
+
+_ROLE_ANTI_PATTERNS: dict[str, dict[str, list[str]]] = {
+    "Seer": {
+        "speech": [
+            "查到狼人必须在发言中明确报出查验结果，不能含糊或隐瞒",
+            "报查验时要说清楚第几夜查了谁、结果是什么",
+        ],
+        "vote": [
+            "查到狼人必须投票给狼人，不能分票或弃票",
+            "不能投票给你查验确认是好人的人",
+        ],
+        "night": [
+            "优先查验发言最可疑或行为最异常的玩家",
+            "不要重复查验同一个玩家",
+        ],
+    },
+    "Witch": {
+        "speech": [
+            "毒死好人是最严重的失误，毒人前必须有2条以上独立证据",
+        ],
+        "vote": [
+            "跟随预言家投票，不要自己带票",
+            "不能投票给你用解药救过的人（你的银水）",
+        ],
+        "night": [
+            "解药优先救预言家或关键神职，不要救自刀狼",
+            "绝对不能同一晚使用解药和毒药",
+            "毒药必须毒杀证据充分的狼人，不能凭直觉毒人",
+        ],
+    },
+    "Hunter": {
+        "speech": [
+            "不能直接跳猎人身份，但可以通过积极发言暗示存在感",
+        ],
+        "vote": [
+            "出局时必须开枪带走你最怀疑的人，不能不开枪",
+            "被毒死或炸死时不能开枪",
+        ],
+        "night": [
+            "猎人没有夜晚行动能力，等待白天",
+        ],
+    },
+    "Guard": {
+        "speech": [
+            "不要暴露自己是守卫，隐藏的守卫比暴露的守卫更强大",
+        ],
+        "vote": [
+            "结合预言家查验信息投票，不要盲投",
+        ],
+        "night": [
+            "绝对不能连续两晚守护同一人",
+            "首夜优先守护预言家，形成预言家→女巫→预言家循环",
+            "同守同救会导致死亡（奶穿），注意女巫可能用解药",
+        ],
+    },
+    "Villager": {
+        "speech": [
+            "不要乱穿神职的衣服！你是村民就做村民该做的事",
+            "你虽然没技能，但是票型决定者，必须明确表达立场",
+        ],
+        "vote": [
+            "不能分票！好人分票=狼人控场，要跟随预言家归票",
+            "不能反复投票给好人",
+            "不能投票给预言家查验确认的好人",
+        ],
+        "night": [
+            "村民没有夜晚行动能力，等待白天",
+        ],
+    },
+    "Werewolf": {
+        "speech": [
+            "绝对不能在发言中泄露夜间信息（如刀口、狼队友）",
+            "不要用「我们狼人」等暴露身份的措辞",
+            "悍跳预言家时要复刻真预言家的查验逻辑和发言风格",
+        ],
+        "vote": [
+            "不能投票给狼队友！除非是做身份的战略性牺牲",
+            "狼队要统一冲票同一个好人，不能分票",
+        ],
+        "night": [
+            "刀人优先级：预言家 > 女巫 > 猎人 > 守卫 > 村民",
+            "狼队友之间要协调一致，不要各自为战",
+        ],
+    },
+    "WhiteWolfKing": {
+        "speech": [
+            "绝对不能在发言中泄露夜间信息或狼队友",
+            "自爆时机要把握好，带走关键神职",
+        ],
+        "vote": [
+            "不能投票给狼队友",
+        ],
+        "night": [
+            "刀人优先级：预言家 > 女巫 > 猎人 > 守卫 > 村民",
+        ],
+    },
+}
+
+
+def get_role_anti_patterns(role: str, action: str = "speech") -> str:
+    """Return role-specific anti-patterns as a formatted prompt block.
+
+    Derived from BadCase types that MetricsCalculator consistently detects.
+    Injects directly into task descriptions to close the Track C feedback loop.
+    """
+    role_patterns = _ROLE_ANTI_PATTERNS.get(role, {})
+    patterns = role_patterns.get(action, [])
+    if not patterns:
+        patterns = role_patterns.get("speech", [])
+    if not patterns:
+        return ""
+
+    lines = ["【本角色常见失误 — 务必避免】"]
+    for i, p in enumerate(patterns, 1):
+        lines.append(f"  {i}. {p}")
+    return "\n".join(lines)
 
 
 # ============================================================
