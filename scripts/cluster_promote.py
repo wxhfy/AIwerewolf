@@ -3,7 +3,8 @@
 Cluster-based strategy promotion using TF-IDF + KMeans.
 
 Groups candidate docs by (role, doc_type), clusters them, and promotes
-the highest-quality representative from each cluster to active status.
+the Top-3 highest-quality docs per cluster to active status. Also deprecates
+candidates with quality_score below the deprecation threshold.
 
 Usage:
   python scripts/cluster_promote.py                    # Full run
@@ -46,6 +47,9 @@ logger = logging.getLogger("cluster_promote")
 MIN_DOCS_PER_BUCKET = 5
 DEFAULT_MIN_CLUSTERS = 5
 DEFAULT_MAX_CLUSTERS = 50
+TOP_PER_CLUSTER = 3
+MIN_QUALITY_FOR_PROMOTION = 0.70
+DEPRECATION_QUALITY_THRESHOLD = 0.60
 
 
 def _build_text(doc: StrategyKnowledgeDoc) -> str:
@@ -61,7 +65,12 @@ def _build_text(doc: StrategyKnowledgeDoc) -> str:
 
 
 def _optimal_k(vectors: np.ndarray, min_k: int, max_k: int) -> int:
-    """Determine optimal K using silhouette score with fallback to elbow."""
+    """Determine optimal K using silhouette score or fast heuristic.
+
+    For large buckets (n > 300), uses a fast sqrt-based heuristic to avoid
+    expensive silhouette computation. For small/medium buckets, samples
+    a few K values and evaluates with silhouette score.
+    """
     n_samples = vectors.shape[0]
     max_possible = min(max_k, n_samples - 1)
     min_possible = min(min_k, max_possible - 1)
@@ -69,18 +78,47 @@ def _optimal_k(vectors: np.ndarray, min_k: int, max_k: int) -> int:
     if max_possible <= min_possible or max_possible <= 1:
         return max(1, n_samples // 3)
 
+    # Fast heuristic for large buckets: sqrt-based with bounds
+    if n_samples > 300:
+        return max(min_possible, min(max_possible, int(n_samples ** 0.5) + 3))
+
+    # For small/medium buckets, evaluate a few K values
+    import math as _math
+    k_candidates = set()
+    k_candidates.add(max(2, n_samples // 10))   # ~10% of samples
+    k_candidates.add(max(2, n_samples // 5))    # ~20% of samples
+    k_candidates.add(max(2, n_samples // 3))    # ~33% of samples
+    k_candidates.add(min_possible)
+    k_candidates.add(max_possible)
+    # Add a few log-spaced points
+    log_min = _math.log(max(min_possible, 2))
+    log_max = _math.log(max_possible)
+    for i in range(5):
+        k = int(_math.exp(log_min + (log_max - log_min) * i / 4))
+        k = max(2, min(max_possible, k))
+        k_candidates.add(k)
+
+    k_candidates = sorted([k for k in k_candidates if min_possible <= k <= max_possible and k < n_samples])
+
+    if len(k_candidates) <= 1:
+        return max(2, n_samples // 5)
+
     best_k = max(2, n_samples // 5)
     best_score = -1.0
 
-    for k in range(max(min_possible, 2), max_possible + 1):
-        if k >= n_samples:
-            break
+    for k in k_candidates:
         try:
-            km = KMeans(n_clusters=k, random_state=42, n_init=10)
+            km = KMeans(n_clusters=k, random_state=42, n_init=5)
             labels = km.fit_predict(vectors)
             if len(set(labels)) < 2:
                 continue
-            score = silhouette_score(vectors, labels)
+            # Use sample-based silhouette for buckets > 100
+            if n_samples > 100:
+                sample_size = min(n_samples, 500)
+                indices = np.random.RandomState(42).choice(n_samples, sample_size, replace=False)
+                score = silhouette_score(vectors[indices], labels[indices])
+            else:
+                score = silhouette_score(vectors, labels)
             if score > best_score:
                 best_score = score
                 best_k = k
@@ -141,6 +179,7 @@ def run_cluster_promotion(
     report_buckets: list[dict[str, Any]] = []
     total_promoted = 0
     all_promoted_ids: list[str] = []
+    deprecated_count = 0
 
     # ── Step 3: Process each bucket ───────────────────────────────────
     for (role, doc_type), docs in sorted(buckets.items()):
@@ -179,14 +218,16 @@ def run_cluster_promotion(
             continue
 
         if vectors.shape[0] < 3 or vectors.nnz == 0:
-            # Too few features — promote top 20% by quality
-            n_promote = max(1, n_docs // 5)
+            # Too few features — promote top N by quality, filtered by MIN_QUALITY_FOR_PROMOTION
             docs_sorted = sorted(docs, key=lambda d: d.quality_score, reverse=True)
-            promoted = docs_sorted[:n_promote]
+            promoted = [d for d in docs_sorted[:TOP_PER_CLUSTER * 3]
+                       if d.quality_score >= MIN_QUALITY_FOR_PROMOTION]
+            if not promoted:
+                promoted = docs_sorted[:1]  # Always promote at least 1 if any exist
 
             report_buckets.append({
                 "role": role, "doc_type": doc_type, "n_docs": n_docs,
-                "n_clusters": n_promote, "n_promoted": n_promote,
+                "n_clusters": len(promoted), "n_promoted": len(promoted),
                 "qualities": qualities, "skipped": False,
                 "reason": "top_quality_fallback",
             })
@@ -200,19 +241,25 @@ def run_cluster_promotion(
                 labels = km.fit_predict(dense)
             except Exception:
                 logger.warning("KMeans failed for %s/%s, using top-N fallback", role, doc_type)
-                k = max(1, n_docs // 3)
                 docs_sorted = sorted(docs, key=lambda d: (d.quality_score, d.confidence), reverse=True)
-                promoted = docs_sorted[:k]
+                promoted = [d for d in docs_sorted[:TOP_PER_CLUSTER * 3]
+                           if d.quality_score >= MIN_QUALITY_FOR_PROMOTION]
+                if not promoted:
+                    promoted = docs_sorted[:1]
                 labels = np.zeros(n_docs, dtype=int)
             else:
-                # Select highest quality doc per cluster
-                cluster_best: dict[int, tuple[float, StrategyKnowledgeDoc]] = {}
+                # Select Top-3 highest quality docs per cluster
+                cluster_docs: dict[int, list[StrategyKnowledgeDoc]] = defaultdict(list)
                 for i, doc in enumerate(docs):
                     cluster_id = int(labels[i])
-                    q = doc.quality_score
-                    if cluster_id not in cluster_best or q > cluster_best[cluster_id][0]:
-                        cluster_best[cluster_id] = (q, doc)
-                promoted = [doc for _, doc in cluster_best.values()]
+                    cluster_docs[cluster_id].append(doc)
+                promoted: list[StrategyKnowledgeDoc] = []
+                for cluster_id, cdocs in cluster_docs.items():
+                    cdocs_sorted = sorted(cdocs, key=lambda d: d.quality_score, reverse=True)
+                    # Take Top-3 per cluster, filtered by quality >= MIN_QUALITY_FOR_PROMOTION
+                    for doc in cdocs_sorted[:TOP_PER_CLUSTER]:
+                        if doc.quality_score >= MIN_QUALITY_FOR_PROMOTION:
+                            promoted.append(doc)
 
             report_buckets.append({
                 "role": role, "doc_type": doc_type, "n_docs": n_docs,
@@ -221,17 +268,37 @@ def run_cluster_promotion(
             })
 
         # ── Promote representatives ───────────────────────────────────
+        promoted_ids = set()
         if not dry_run:
             for doc in promoted:
                 doc.status = "active"
+                promoted_ids.add(doc.id)
+            # Deprecate non-selected candidates in this bucket
+            bucket_deprecated = 0
+            for doc in docs:
+                if doc.id not in promoted_ids and doc.status == "candidate":
+                    doc.status = "deprecated"
+                    bucket_deprecated += 1
+            deprecated_count += bucket_deprecated
+            logger.info("Bucket %s/%s: promoted %d, deprecated %d non-selected",
+                        role, doc_type, len(promoted), bucket_deprecated)
             db.flush()
 
         bucket_promoted_ids = [doc.id for doc in promoted]
         all_promoted_ids.extend(bucket_promoted_ids)
         total_promoted += len(promoted)
 
-    # ── Step 4: Commit ────────────────────────────────────────────────
-    if not dry_run and total_promoted > 0:
+    # ── Step 4: Deprecate low-quality candidates (remaining) ─────────
+    for doc in candidates:
+        if doc.status == "candidate" and doc.quality_score < DEPRECATION_QUALITY_THRESHOLD:
+            if not dry_run:
+                doc.status = "deprecated"
+            deprecated_count += 1
+    if deprecated_count > 0:
+        logger.info("Total deprecated: %d (non-selected + low-quality < %.2f)", deprecated_count, DEPRECATION_QUALITY_THRESHOLD)
+
+    # ── Step 5: Commit ────────────────────────────────────────────────
+    if not dry_run and (total_promoted > 0 or deprecated_count > 0):
         try:
             db.commit()
             logger.info("Committed %d promotions to DB", total_promoted)
@@ -243,6 +310,7 @@ def run_cluster_promotion(
     return {
         "buckets": report_buckets,
         "total_promoted": total_promoted,
+        "total_deprecated": deprecated_count,
         "total_docs": len(candidates),
         "all_promoted_ids": all_promoted_ids,
     }
@@ -252,16 +320,20 @@ def print_report(report: dict[str, Any]) -> None:
     """Print a structured cluster promotion report."""
     buckets = report.get("buckets", [])
     total_promoted = report.get("total_promoted", 0)
+    total_deprecated = report.get("total_deprecated", 0)
     total_docs = report.get("total_docs", 0)
 
     print()
     print("=" * 80)
     print("  CLUSTER PROMOTION REPORT")
     print("=" * 80)
-    print(f"  Total candidates processed: {total_docs}")
-    print(f"  Total promoted to active:   {total_promoted}")
+    print(f"  Total candidates processed:  {total_docs}")
+    print(f"  Total promoted to active:    {total_promoted}")
+    print(f"  Total deprecated (low qual): {total_deprecated}")
     if total_docs > 0:
-        print(f"  Promotion rate:             {total_promoted / total_docs * 100:.1f}%")
+        print(f"  Promotion rate:              {total_promoted / total_docs * 100:.1f}%")
+    print(f"  Parameters: Top-{TOP_PER_CLUSTER}/cluster, min_quality={MIN_QUALITY_FOR_PROMOTION}, "
+          f"deprecate < {DEPRECATION_QUALITY_THRESHOLD}")
     print()
 
     # Group buckets by role for cleaner display
@@ -290,7 +362,8 @@ def print_report(report: dict[str, Any]) -> None:
 
     print("  " + "-" * 78)
     print(f"  Buckets: {len(buckets)} total, {skipped_count} skipped (too few docs)")
-    print(f"  Quality threshold for fallback promotion: top 20% by quality_score")
+    print(f"  Quality minimum for promotion: {MIN_QUALITY_FOR_PROMOTION}")
+    print(f"  Deprecation threshold: < {DEPRECATION_QUALITY_THRESHOLD}")
     print("=" * 80)
 
 
