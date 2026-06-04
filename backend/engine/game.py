@@ -335,7 +335,10 @@ class WerewolfGame:
                 from backend.db.persist import save_game_start
                 save_game_start(self.state)
             except Exception:
-                pass
+                import logging
+                logging.getLogger(__name__).warning(
+                    "save_game_start failed (non-fatal, game continues)", exc_info=True
+                )
         self.state.pending_input = None
         self.interrupt_phase_cycle = False
         try:
@@ -377,7 +380,10 @@ class WerewolfGame:
                 from backend.db.persist import save_game_end
                 save_game_end(self.state)
             except Exception:
-                pass
+                import logging
+                logging.getLogger(__name__).warning(
+                    "save_game_end failed (non-fatal)", exc_info=True
+                )
         return self.state
 
     def submit_human_action(self, payload: dict[str, object]) -> GameState:
