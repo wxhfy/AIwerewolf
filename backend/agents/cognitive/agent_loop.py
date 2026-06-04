@@ -19,7 +19,9 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
+import time
 from typing import Any, Dict, List, Optional
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
@@ -36,6 +38,7 @@ from backend.agents.cognitive.tools import create_tools
 logger = logging.getLogger(__name__)
 
 MAX_ITERATIONS = 3
+_TRACK_C_RETRIEVAL_CACHE: dict[tuple[str, str, str], tuple[float, list[dict[str, Any]]]] = {}
 
 # JSON Schema parameter definitions for each tool (used by bind_tools)
 _TOOL_PARAM_SCHEMAS: Dict[str, Dict] = {
@@ -586,16 +589,61 @@ class AgentLoop:
         Expected format:
           DECISION: {"speech": "..."}  or  DECISION: {"target": "...", "reasoning": "..."}
 
-        Returns decision dict or None.
+        Uses balanced-brace extraction (not regex [^}]*) so that speech content
+        containing '}' characters (emoji, punctuation) doesn't truncate the JSON.
         """
-        m = re.search(r'DECISION:\s*(\{[^}]*\})', response, re.IGNORECASE)
-        if not m:
+        # Find DECISION: marker
+        marker_match = re.search(r'DECISION:\s*', response, re.IGNORECASE)
+        if not marker_match:
             return None
 
+        start = marker_match.end()
+        # Skip whitespace to find the opening brace
+        while start < len(response) and response[start] in ' \t\n\r':
+            start += 1
+        if start >= len(response) or response[start] != '{':
+            return None
+
+        # Balanced brace extraction
+        depth = 0
+        in_string = False
+        escape = False
+        end = start
+        for i in range(start, len(response)):
+            ch = response[i]
+            if escape:
+                escape = False
+                continue
+            if ch == '\\':
+                escape = True
+                continue
+            if ch == '"':
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+            if ch == '{':
+                depth += 1
+            elif ch == '}':
+                depth -= 1
+                if depth == 0:
+                    end = i + 1
+                    break
+
+        if depth != 0:
+            logger.warning(f"Unbalanced braces in decision (depth={depth}), fallback to regex")
+            # Fallback: try regex as last resort
+            m = re.search(r'DECISION:\s*(\{.*\})', response, re.IGNORECASE | re.DOTALL)
+            if not m:
+                return None
+            json_str = m.group(1)
+        else:
+            json_str = response[start:end]
+
         try:
-            data = json.loads(m.group(1))
+            data = json.loads(json_str)
         except json.JSONDecodeError:
-            logger.warning(f"Failed to parse decision JSON: {m.group(1)[:100]}")
+            logger.warning(f"Failed to parse decision JSON: {json_str[:100]}")
             return None
 
         result: Dict[str, str] = {}
@@ -603,8 +651,7 @@ class AgentLoop:
             result["speech"] = data.get("speech", data.get("content", ""))
             result["reasoning"] = data.get("reasoning", "")
             if not result["speech"]:
-                # Try to extract speech from surrounding text
-                text = response.replace(m.group(0), "").strip()
+                text = response[:marker_match.start()].strip()
                 if len(text) > 10:
                     result["speech"] = text[:500]
         else:
@@ -612,3 +659,104 @@ class AgentLoop:
             result["reasoning"] = data.get("reasoning", "")
 
         return result if any(v for v in result.values()) else None
+
+
+def _build_track_c_strategy_block(obs: Observation, action_type: str) -> str:
+    """Format DB-backed Track C lessons for the strategy layer.
+
+    This is intentionally separate from role/persona/task prompts: it may
+    contain gameplay advice, but only when the knowledge store returns approved
+    lessons from prior reviews.
+    """
+    lessons = _retrieve_track_c_strategy_lessons(obs, action_type)
+    if not lessons:
+        return ""
+
+    lines = [
+        "【策略层：Track C 复盘知识】",
+        "以下内容来自已发布复盘/策略知识库，只能作为一般玩法经验；不能当成本局隐藏身份事实。",
+    ]
+    for index, item in enumerate(lessons[:3], start=1):
+        doc_id = str(item.get("doc_id") or item.get("id") or f"lesson-{index}")
+        trigger = str(
+            item.get("trigger")
+            or item.get("situation_pattern")
+            or item.get("trigger_conditions")
+            or ""
+        ).strip()
+        recommendation = str(
+            item.get("recommendation")
+            or item.get("recommended_action")
+            or item.get("strategy")
+            or ""
+        ).strip()
+        avoid = str(item.get("avoid_action") or "").strip()
+        rationale = str(item.get("rationale") or item.get("evidence_summary") or "").strip()
+        score = item.get("score", item.get("quality_score", ""))
+        score_text = f" score={float(score):.2f}" if isinstance(score, (int, float)) else ""
+
+        detail_parts = []
+        if trigger:
+            detail_parts.append(f"触发：{trigger}")
+        if recommendation:
+            detail_parts.append(f"建议：{recommendation}")
+        if avoid:
+            detail_parts.append(f"避免：{avoid}")
+        if rationale:
+            detail_parts.append(f"依据：{rationale}")
+        if detail_parts:
+            lines.append(f"{index}. [{doc_id}{score_text}] " + "；".join(detail_parts))
+    return "\n".join(lines) if len(lines) > 2 else ""
+
+
+def _retrieve_track_c_strategy_lessons(obs: Observation, action_type: str) -> list[dict[str, Any]]:
+    """Retrieve Track C lessons without making prompt construction fragile."""
+    try:
+        from backend.db.persist import list_strategy_knowledge
+
+        phase = str(getattr(obs, "phase", "") or "")
+        role = str(getattr(obs, "player_role", "") or "")
+        action = _strategy_query_action(action_type)
+        cache_ttl = float(os.getenv("TRACK_C_AUTO_RETRIEVAL_CACHE_SECONDS", "120") or 0)
+        cache_key = (role, phase, action)
+        if cache_ttl > 0:
+            cached = _TRACK_C_RETRIEVAL_CACHE.get(cache_key)
+            now = time.monotonic()
+            if cached and now - cached[0] <= cache_ttl:
+                return [dict(row) for row in cached[1]]
+        rows = list_strategy_knowledge(role=role, phase=phase, status="active", limit=3)
+        if len(rows) < 3:
+            seen = {str(row.get("doc_id") or row.get("id") or "") for row in rows}
+            for row in list_strategy_knowledge(role=role, status="active", limit=6):
+                row_id = str(row.get("doc_id") or row.get("id") or "")
+                if row_id and row_id not in seen:
+                    rows.append(row)
+                    seen.add(row_id)
+                if len(rows) >= 3:
+                    break
+        lessons = [_normalize_strategy_row(row, index) for index, row in enumerate(rows, start=1) if isinstance(row, dict)]
+        if cache_ttl > 0:
+            _TRACK_C_RETRIEVAL_CACHE[cache_key] = (time.monotonic(), lessons)
+        return lessons
+    except Exception as exc:
+        logger.debug("Track C strategy retrieval skipped: %s", exc)
+        return []
+
+
+def _strategy_query_action(action_type: str) -> str:
+    if action_type == "speech":
+        return "talk"
+    if action_type == "night":
+        return "night_action"
+    return action_type
+
+
+def _normalize_strategy_row(row: dict[str, Any], index: int) -> dict[str, Any]:
+    return {
+        "doc_id": row.get("doc_id") or row.get("id") or row.get("doc_type") or f"strategy-{index}",
+        "trigger": row.get("trigger") or row.get("situation") or row.get("situation_pattern") or "",
+        "recommendation": row.get("recommendation") or row.get("strategy") or row.get("recommended_action") or "",
+        "avoid_action": row.get("avoid_action") or "",
+        "rationale": row.get("rationale") or row.get("evidence_summary") or "",
+        "score": row.get("score", row.get("quality", row.get("quality_score", ""))),
+    }
