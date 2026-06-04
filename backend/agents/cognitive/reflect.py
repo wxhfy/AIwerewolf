@@ -425,7 +425,7 @@ def reflections_to_knowledge_docs(
                 "usage_count": 0,
                 "success_count": 0,
                 "failure_count": 0,
-                "status": "active",
+                "status": "candidate",
                 "tags": [persona_scope, role, "reflection", "success"],
             })
 
@@ -447,7 +447,7 @@ def reflections_to_knowledge_docs(
                 "usage_count": 0,
                 "success_count": 0,
                 "failure_count": 0,
-                "status": "active",
+                "status": "candidate",
                 "tags": [persona_scope, role, "reflection", "failure"],
             })
 
@@ -469,7 +469,7 @@ def reflections_to_knowledge_docs(
                 "usage_count": 0,
                 "success_count": 0,
                 "failure_count": 0,
-                "status": "active",
+                "status": "candidate",
                 "tags": [persona_scope, role, "reflection", "pattern"],
             })
 
@@ -574,7 +574,7 @@ def save_reflections_to_pg(reflections: list, conn_str: str = "") -> int:
             cur.execute("""
                 INSERT INTO strategy_knowledge_docs
                 (situation_pattern, recommended_action, rationale, role, phase, quality_score, doc_type, status)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, 'active')
+                VALUES (%s, %s, %s, %s, %s, %s, %s, 'candidate')
             """, (doc["situation"], doc["strategy"], doc["rationale"],
                   doc["role"], doc["phase"], doc["quality"], doc["doc_type"]))
             count += 1

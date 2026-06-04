@@ -308,7 +308,8 @@ def _load_docs_from_pg(conn_str: str) -> List[Dict[str, Any]]:
                COALESCE(persona_scope, ''),
                COALESCE(doc_type, '')
         FROM strategy_knowledge_docs
-        WHERE status IN ('active', 'candidate')
+        WHERE status = 'active'
+          AND (doc_type != 'reflection' OR quality_score >= 0.85)
     """)
     docs = []
     for sit, rec, rat, role, phase, q, pscope, dtype in c.fetchall():
@@ -361,7 +362,7 @@ def _fallback_sql(
                        COALESCE(persona_scope, '') as persona_scope,
                        COALESCE(doc_type, '') as doc_type
                 FROM strategy_knowledge_docs
-                WHERE status IN ('active', 'candidate')
+                WHERE status = 'active'
                   AND (role = %s OR role = 'global')
                   AND (phase = %s OR phase = 'global')
                 ORDER BY (
@@ -378,7 +379,7 @@ def _fallback_sql(
                        COALESCE(persona_scope, '') as persona_scope,
                        COALESCE(doc_type, '') as doc_type
                 FROM strategy_knowledge_docs
-                WHERE status IN ('active', 'candidate')
+                WHERE status = 'active'
                   AND (role = %s OR role = 'global')
                   AND (phase = %s OR phase = 'global')
                 ORDER BY (

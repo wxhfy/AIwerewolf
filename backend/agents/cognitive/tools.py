@@ -29,7 +29,7 @@ def create_tools(
     def search_strategies(
         keywords: List[str],
         limit: int = 3,
-        include_reflections: bool = True,
+        include_reflections: bool = False,
         mode: str = "content",
         use_regex: bool = False,
     ) -> str:
@@ -216,7 +216,7 @@ def create_tools(
         "search_strategies": {
             "fn": search_strategies,
             "description": (
-                'search_strategies(keywords: list[str], limit: int = 3, include_reflections: bool = True, mode: str = "content", use_regex: bool = False)\n'
+                'search_strategies(keywords: list[str], limit: int = 3, include_reflections: bool = False, mode: str = "content", use_regex: bool = False)\n'
                 '  用关键词或正则搜索狼人杀策略库。三层模式：\n'
                 '  mode="count" — 仅返回匹配数量（先测试关键词好坏）\n'
                 '  mode="overview" — 仅返回场景标题和评分（快速扫描）\n'

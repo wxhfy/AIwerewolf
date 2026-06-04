@@ -551,7 +551,9 @@ def _load_from_pg(conn_str: str) -> List[Dict]:
         SELECT COALESCE(situation_pattern, ''), COALESCE(recommended_action, ''),
                COALESCE(rationale, ''), role, phase, quality_score,
                COALESCE(doc_type, '')
-        FROM strategy_knowledge_docs WHERE status = 'active'
+        FROM strategy_knowledge_docs
+        WHERE status = 'active'
+          AND (doc_type != 'reflection' OR quality_score >= 0.85)
     """)
     docs = []
     for sit, rec, rat, role, phase, q, dtype in c.fetchall():
@@ -672,7 +674,7 @@ def retrieve_strategies_prod(
     situation: str = "",
     keywords: Optional[List[str]] = None,
     limit: int = 3,
-    include_reflections: bool = True,
+    include_reflections: bool = False,
     output_mode: str = "content",
     regex_mode: bool = False,
 ) -> List[Dict[str, str]]:

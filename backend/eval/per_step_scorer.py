@@ -30,6 +30,39 @@ class DecisionScore:
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass
+class ScoredStep:
+    """A single scored decision step — bridges PerStepScorer → KnowledgeAbstractor."""
+    step_id: str = ""
+    step_type: str = ""        # "speech" | "vote" | "night_action"
+    day: int = 0
+    phase: str = ""
+    role: str = ""
+    step_score: float = 0.0     # 0-1 overall score from PerStepScorer
+    scoring_tier: str = "deterministic"
+    action_summary: str = ""    # What the agent did
+    is_highlight: bool = False  # score >= 0.75
+    is_mistake: bool = False    # score <= 0.30
+    mistake_type: str = ""      # "fabrication" | "empty_speech" | "wrong_vote" | "missed_skill" | "bad_target"
+    strategy_applied: bool = False
+    strategy_impact: float = 0.0
+    retrieved_strategies: list[dict] = field(default_factory=list)
+    lesson_abstract: str = ""   # Extracted lesson text
+    lesson_tags: list[str] = field(default_factory=list)
+    evidence_event_ids: list[str] = field(default_factory=list)
+
+
+@dataclass
+class PlayerReviewReport:
+    """Per-player review report — bridges PerStepScorer → KnowledgeAbstractor."""
+    game_id: str = ""
+    player_id: str = ""
+    role: str = ""
+    persona_style: str = ""
+    persona_mbti: str = ""
+    scored_steps: list[ScoredStep] = field(default_factory=list)
+
+
 class PerStepScorer:
     """Three-tier decision scorer with cascade architecture.
 

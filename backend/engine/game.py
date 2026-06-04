@@ -384,6 +384,20 @@ class WerewolfGame:
                 logging.getLogger(__name__).warning(
                     "save_game_end failed (non-fatal)", exc_info=True
                 )
+            # Track B→C: score decisions + extract knowledge (post-game, has ground truth)
+            try:
+                from backend.eval.post_game import run_post_game_scoring
+                n = run_post_game_scoring(self.state, str(self.state.id))
+                if n > 0:
+                    import logging
+                    logging.getLogger(__name__).info(
+                        f"Post-game scoring: {n} knowledge lessons extracted for game {self.state.id}"
+                    )
+            except Exception:
+                import logging
+                logging.getLogger(__name__).warning(
+                    "Post-game scoring failed (non-fatal)", exc_info=True
+                )
         return self.state
 
     def submit_human_action(self, payload: dict[str, object]) -> GameState:
@@ -1645,6 +1659,7 @@ class WerewolfGame:
                     provider=meta.get("provider"),
                     fallback_used=bool(meta.get("fallback", False)),
                     fallback_reason=meta.get("fallback_reason"),
+                    metadata=decision.metadata if isinstance(decision.metadata, dict) else {},
                 )
             )
 
