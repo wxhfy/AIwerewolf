@@ -42,7 +42,7 @@ from backend.agents.cognitive.tools import create_tools
 
 logger = logging.getLogger(__name__)
 
-MAX_ITERATIONS = 3
+MAX_ITERATIONS = 2
 import threading as _threading
 
 _STRATEGY_LOCK = _threading.Lock()
@@ -648,37 +648,22 @@ class AgentLoop:
 
         When tool_schemas is provided and the LLM supports bind_tools,
         uses native function calling. Otherwise falls back to plain invoke.
-        """
-        import time as _time
 
-        last_error: Exception | None = None
-        for attempt in range(3):
-            try:
-                if tool_schemas and self._supports_bind_tools:
-                    llm = self._llm.bind_tools(tool_schemas)
-                else:
-                    llm = self._llm
-                if self._temperature is not None:
-                    resp = llm.invoke(messages, temperature=self._temperature)
-                else:
-                    resp = llm.invoke(messages)
-                # Accept if has tool_calls or reasonable content
-                has_tools = hasattr(resp, "tool_calls") and resp.tool_calls
-                has_content = resp.content and len(resp.content.strip()) > 5
-                if has_tools or has_content:
-                    # Accumulate token usage from response_metadata
-                    self._accumulate_usage(resp)
-                    return resp
-                # Empty response — wait and retry
-                logger.warning(f"LLM returned empty/short response (attempt {attempt + 1}), retrying...")
-                _time.sleep(1)
-            except Exception as e:
-                last_error = e
-                logger.warning(f"LLM call failed (attempt {attempt + 1}): {e}")
-                _time.sleep(1)
-        if last_error is not None:
-            raise RuntimeError("LLM call failed after 3 attempts") from last_error
-        raise RuntimeError("LLM returned empty response after 3 attempts")
+        No retry loop here — DeepSeekClient handles retries with exponential
+        backoff internally. We just make one call and return the result.
+        """
+        if tool_schemas and self._supports_bind_tools:
+            llm = self._llm.bind_tools(tool_schemas)
+        else:
+            llm = self._llm
+        if self._temperature is not None:
+            resp = llm.invoke(messages, temperature=self._temperature)
+        else:
+            resp = llm.invoke(messages)
+
+        # Accumulate token usage from response_metadata
+        self._accumulate_usage(resp)
+        return resp
 
     def _accumulate_usage(self, resp: Any) -> None:
         """Accumulate token usage from AIMessage.response_metadata across loop iterations."""
