@@ -13,16 +13,15 @@ Output: docs/strategy_retrieval_evaluation.md
 
 from __future__ import annotations
 
-import json
-import re
 import time
-import statistics
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Tuple
 
+import jieba
 import numpy as np
 import psycopg2
-import jieba
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
@@ -182,6 +181,7 @@ TEST_QUERIES = [
 # Data Loading
 # ============================================================
 
+
 def load_all_strategies() -> List[Dict[str, Any]]:
     """Load all active strategies from DB."""
     conn = psycopg2.connect(CONN_STR)
@@ -198,17 +198,19 @@ def load_all_strategies() -> List[Dict[str, Any]]:
     """)
     rows = []
     for id_, role, phase, dtype, sit, rec, rat, q, tags in c.fetchall():
-        rows.append({
-            "id": id_,
-            "role": role,
-            "phase": phase,
-            "doc_type": dtype,
-            "situation": sit,
-            "recommended": rec,
-            "rationale": rat,
-            "quality": float(q) if q else 0.8,
-            "tags": tags,
-        })
+        rows.append(
+            {
+                "id": id_,
+                "role": role,
+                "phase": phase,
+                "doc_type": dtype,
+                "situation": sit,
+                "recommended": rec,
+                "rationale": rat,
+                "quality": float(q) if q else 0.8,
+                "tags": tags,
+            }
+        )
     conn.close()
     return rows
 
@@ -217,13 +219,13 @@ def load_all_strategies() -> List[Dict[str, Any]]:
 # Method A: Metadata Matching (Baseline)
 # ============================================================
 
-def retrieve_metadata(
-    role: str, phase: str, limit: int = 10, conn_str: str = CONN_STR
-) -> List[Dict[str, Any]]:
+
+def retrieve_metadata(role: str, phase: str, limit: int = 10, conn_str: str = CONN_STR) -> List[Dict[str, Any]]:
     """Current method: match on role + phase columns with specificity bonus."""
     conn = psycopg2.connect(conn_str)
     c = conn.cursor()
-    c.execute("""
+    c.execute(
+        """
         SELECT id, role, phase, doc_type,
                COALESCE(situation_pattern, ''),
                COALESCE(recommended_action, ''),
@@ -238,14 +240,22 @@ def retrieve_metadata(
             + CASE WHEN phase != 'global' THEN 0.08 ELSE 0 END
         ) * (0.9 + RANDOM() * 0.2) DESC
         LIMIT %s
-    """, (role, phase, limit))
+    """,
+        (role, phase, limit),
+    )
     results = []
     for id_, role_, phase_, dtype, sit, rec, q in c.fetchall():
-        results.append({
-            "id": id_, "role": role_, "phase": phase_,
-            "doc_type": dtype, "situation": sit or "",
-            "recommended": rec or "", "quality": float(q) if q else 0.8,
-        })
+        results.append(
+            {
+                "id": id_,
+                "role": role_,
+                "phase": phase_,
+                "doc_type": dtype,
+                "situation": sit or "",
+                "recommended": rec or "",
+                "quality": float(q) if q else 0.8,
+            }
+        )
     conn.close()
     return results
 
@@ -253,6 +263,7 @@ def retrieve_metadata(
 # ============================================================
 # Method B: Full-Text Search (PostgreSQL ILIKE / tsvector)
 # ============================================================
+
 
 def retrieve_fulltext(
     role: str, phase: str, query_text: str, limit: int = 10, conn_str: str = CONN_STR
@@ -269,10 +280,12 @@ def retrieve_fulltext(
 
     # Build ILIKE conditions for each keyword
     if keywords:
-        like_clauses = " OR ".join([
-            f"(COALESCE(situation_pattern,'') ILIKE '%{kw}%' OR COALESCE(recommended_action,'') ILIKE '%{kw}%' OR COALESCE(rationale,'') ILIKE '%{kw}%')"
-            for kw in keywords[:5]  # top 5 keywords
-        ])
+        like_clauses = " OR ".join(
+            [
+                f"(COALESCE(situation_pattern,'') ILIKE '%{kw}%' OR COALESCE(recommended_action,'') ILIKE '%{kw}%' OR COALESCE(rationale,'') ILIKE '%{kw}%')"
+                for kw in keywords[:5]  # top 5 keywords
+            ]
+        )
         # Score: keyword match count + quality score bonus + role specificity
         match_expr = (
             f"({_build_match_count(keywords[:5], 'situation_pattern')}"
@@ -302,11 +315,17 @@ def retrieve_fulltext(
 
     results = []
     for id_, role_, phase_, dtype, sit, rec, q, score in c.fetchall():
-        results.append({
-            "id": id_, "role": role_, "phase": phase_,
-            "doc_type": dtype, "situation": sit or "",
-            "recommended": rec or "", "quality": float(q) if q else 0.8,
-        })
+        results.append(
+            {
+                "id": id_,
+                "role": role_,
+                "phase": phase_,
+                "doc_type": dtype,
+                "situation": sit or "",
+                "recommended": rec or "",
+                "quality": float(q) if q else 0.8,
+            }
+        )
     conn.close()
     return results
 
@@ -314,12 +333,69 @@ def retrieve_fulltext(
 def _extract_keywords(text: str, max_kw: int = 8) -> List[str]:
     """Extract meaningful Chinese keywords using jieba."""
     words = jieba.cut(text)
-    stopwords = {"的", "了", "在", "是", "我", "有", "和", "就", "不", "人", "都", "一",
-                 "一个", "上", "也", "很", "到", "说", "要", "去", "你", "会", "着",
-                 "没有", "看", "好", "自己", "这", "吗", "呢", "吧", "啊", "哦", "嗯",
-                 "什么", "怎么", "哪", "为什么", "如何", "可以", "需要", "应该", "可能",
-                 "这个", "那个", "哪个", "如果", "因为", "所以", "但是", "虽然", "然后",
-                 "比较", "非常", "特别", "大家", "觉得", "知道", "进行", "使用", "通过"}
+    stopwords = {
+        "的",
+        "了",
+        "在",
+        "是",
+        "我",
+        "有",
+        "和",
+        "就",
+        "不",
+        "人",
+        "都",
+        "一",
+        "一个",
+        "上",
+        "也",
+        "很",
+        "到",
+        "说",
+        "要",
+        "去",
+        "你",
+        "会",
+        "着",
+        "没有",
+        "看",
+        "好",
+        "自己",
+        "这",
+        "吗",
+        "呢",
+        "吧",
+        "啊",
+        "哦",
+        "嗯",
+        "什么",
+        "怎么",
+        "哪",
+        "为什么",
+        "如何",
+        "可以",
+        "需要",
+        "应该",
+        "可能",
+        "这个",
+        "那个",
+        "哪个",
+        "如果",
+        "因为",
+        "所以",
+        "但是",
+        "虽然",
+        "然后",
+        "比较",
+        "非常",
+        "特别",
+        "大家",
+        "觉得",
+        "知道",
+        "进行",
+        "使用",
+        "通过",
+    }
     keywords = [w for w in words if len(w) >= 2 and w not in stopwords]
     # Deduplicate preserving order
     seen = set()
@@ -344,38 +420,32 @@ def _build_match_count(keywords: List[str], column: str) -> str:
 # Method C: Vector Semantic Search (TF-IDF + Cosine)
 # ============================================================
 
+
 class VectorRetriever:
     """TF-IDF based semantic search over strategy corpus."""
 
     def __init__(self, strategies: List[Dict[str, Any]]):
         self.strategies = strategies
-        self.doc_texts = [
-            f"{s['situation']} {s['recommended']} {s['rationale']}"
-            for s in strategies
-        ]
+        self.doc_texts = [f"{s['situation']} {s['recommended']} {s['rationale']}" for s in strategies]
         # Chinese tokenization
         self.tokenized_docs = [" ".join(jieba.cut(t)) for t in self.doc_texts]
         self.vectorizer = TfidfVectorizer(max_features=3000, ngram_range=(1, 2))
         self.doc_vectors = self.vectorizer.fit_transform(self.tokenized_docs)
         self.doc_ids = [s["id"] for s in strategies]
 
-    def search(
-        self, query_text: str, role: str = "", phase: str = "", limit: int = 10
-    ) -> List[Dict[str, Any]]:
+    def search(self, query_text: str, role: str = "", phase: str = "", limit: int = 10) -> List[Dict[str, Any]]:
         """Search by TF-IDF cosine similarity + role/phase bias."""
         tokenized_query = " ".join(jieba.cut(query_text))
         query_vec = self.vectorizer.transform([tokenized_query])
         similarities = cosine_similarity(query_vec, self.doc_vectors)[0]
 
         # Score = similarity + role bonus + phase bonus
-        role_bonus = np.array([
-            0.15 if s["role"] == role else (0.05 if s["role"] == "global" else 0)
-            for s in self.strategies
-        ])
-        phase_bonus = np.array([
-            0.08 if s["phase"] == phase else (0.03 if s["phase"] == "global" else 0)
-            for s in self.strategies
-        ])
+        role_bonus = np.array(
+            [0.15 if s["role"] == role else (0.05 if s["role"] == "global" else 0) for s in self.strategies]
+        )
+        phase_bonus = np.array(
+            [0.08 if s["phase"] == phase else (0.03 if s["phase"] == "global" else 0) for s in self.strategies]
+        )
         quality_bonus = np.array([s["quality"] * 0.1 for s in self.strategies])
 
         final_scores = similarities + role_bonus + phase_bonus + quality_bonus
@@ -384,19 +454,25 @@ class VectorRetriever:
         results = []
         for i in top_indices:
             s = self.strategies[i]
-            results.append({
-                "id": s["id"], "role": s["role"], "phase": s["phase"],
-                "doc_type": s["doc_type"], "situation": s["situation"],
-                "recommended": s["recommended"],
-                "quality": s["quality"],
-                "similarity": float(similarities[i]),
-            })
+            results.append(
+                {
+                    "id": s["id"],
+                    "role": s["role"],
+                    "phase": s["phase"],
+                    "doc_type": s["doc_type"],
+                    "situation": s["situation"],
+                    "recommended": s["recommended"],
+                    "quality": s["quality"],
+                    "similarity": float(similarities[i]),
+                }
+            )
         return results
 
 
 # ============================================================
 # Relevance Judgment
 # ============================================================
+
 
 def judge_relevance(result: Dict[str, Any], query: Dict[str, Any]) -> int:
     """
@@ -424,9 +500,8 @@ def judge_relevance(result: Dict[str, Any], query: Dict[str, Any]) -> int:
 # Metrics
 # ============================================================
 
-def precision_at_k(
-    results: List[Dict], query: Dict, k: int
-) -> float:
+
+def precision_at_k(results: List[Dict], query: Dict, k: int) -> float:
     """Precision@k: fraction of top-k results that are relevant."""
     if k > len(results):
         k = len(results)
@@ -436,9 +511,7 @@ def precision_at_k(
     return relevant / k
 
 
-def recall_at_k(
-    results: List[Dict], query: Dict, k: int, total_relevant: int = 10
-) -> float:
+def recall_at_k(results: List[Dict], query: Dict, k: int, total_relevant: int = 10) -> float:
     """Recall@k: fraction of all relevant documents retrieved in top-k."""
     if k > len(results):
         k = len(results)
@@ -480,6 +553,7 @@ def ndcg_at_k(results: List[Dict], query: Dict, k: int) -> float:
 # Latency Measurement
 # ============================================================
 
+
 def measure_latency(func, *args, **kwargs) -> Tuple[Any, float]:
     """Measure function execution time in milliseconds."""
     start = time.perf_counter()
@@ -491,6 +565,7 @@ def measure_latency(func, *args, **kwargs) -> Tuple[Any, float]:
 # ============================================================
 # Main Evaluation
 # ============================================================
+
 
 def run_evaluation():
     print("=" * 70)
@@ -522,9 +597,7 @@ def run_evaluation():
             "desc": "Full-text ILIKE search (keywords in content)",
         },
         "C_Vector": {
-            "func": lambda q: vector_retriever.search(
-                q["query_text"], q["role"], q["phase"], limit=10
-            ),
+            "func": lambda q: vector_retriever.search(q["query_text"], q["role"], q["phase"], limit=10),
             "desc": "TF-IDF vector semantic search",
         },
     }
@@ -559,9 +632,11 @@ def run_evaluation():
 
             # Print per-query detail
             rel_count = sum(1 for r in results if judge_relevance(r, query) > 0)
-            print(f"    {query['id']}: P@5={metrics['P@5']:.2f} P@10={metrics['P@10']:.2f} "
-                  f"MRR={metrics['MRR']:.2f} NDCG@5={metrics['NDCG@5']:.2f} "
-                  f"rel={rel_count}/{metrics['n_results']} lat={latency_ms:.1f}ms")
+            print(
+                f"    {query['id']}: P@5={metrics['P@5']:.2f} P@10={metrics['P@10']:.2f} "
+                f"MRR={metrics['MRR']:.2f} NDCG@5={metrics['NDCG@5']:.2f} "
+                f"rel={rel_count}/{metrics['n_results']} lat={latency_ms:.1f}ms"
+            )
 
         # Aggregate
         agg = {
@@ -584,7 +659,7 @@ def run_evaluation():
         all_results[method_name] = {"agg": agg, "per_query": query_metrics}
 
     # Print summary
-    print(f"\n[4/4] Results Summary")
+    print("\n[4/4] Results Summary")
     print("=" * 70)
     print(f"{'Metric':<20}", end="")
     for name in methods:
@@ -592,9 +667,12 @@ def run_evaluation():
     print()
 
     metrics_to_show = [
-        ("P@5", "P@5_mean"), ("P@10", "P@10_mean"),
-        ("R@5", "R@5_mean"), ("R@10", "R@10_mean"),
-        ("MRR", "MRR_mean"), ("NDCG@5", "NDCG@5_mean"),
+        ("P@5", "P@5_mean"),
+        ("P@10", "P@10_mean"),
+        ("R@5", "R@5_mean"),
+        ("R@10", "R@10_mean"),
+        ("MRR", "MRR_mean"),
+        ("NDCG@5", "NDCG@5_mean"),
         ("Latency(ms)", "latency_mean_ms"),
     ]
 
@@ -613,7 +691,11 @@ def run_evaluation():
         print()
 
     # Print latency percentiles
-    for lat_label, lat_key in [("Latency P50", "latency_p50_ms"), ("Latency P95", "latency_p95_ms"), ("Latency P99", "latency_p99_ms")]:
+    for lat_label, lat_key in [
+        ("Latency P50", "latency_p50_ms"),
+        ("Latency P95", "latency_p95_ms"),
+        ("Latency P99", "latency_p99_ms"),
+    ]:
         print(f"{lat_label:<20}", end="")
         lat_vals = {n: all_results[n]["agg"][lat_key] for n in methods}
         lat_best = min(lat_vals, key=lat_vals.get)
@@ -622,7 +704,7 @@ def run_evaluation():
             print(f" {lat_vals[name]:>17.1f}ms{marker}", end="")
         print()
 
-    print(f"\n  * = best among 3 methods (fastest for latency, highest for quality)")
+    print("\n  * = best among 3 methods (fastest for latency, highest for quality)")
     print(f"  Vector index build time: {build_time_ms:.0f}ms (one-time cost)")
 
     return all_results, build_time_ms
@@ -642,7 +724,7 @@ def generate_report(all_results, build_time_ms):
     lines.append("# 策略检索方法对比评估报告")
     lines.append("")
     lines.append("> 评估日期：2026-05-31")
-    lines.append(f"> 策略库规模：907 条活跃策略")
+    lines.append("> 策略库规模：907 条活跃策略")
     lines.append(f"> 测试查询数量：{len(TEST_QUERIES)} 条")
     lines.append(f"> 向量索引构建时间：{build_time_ms:.0f}ms (TF-IDF, 3000 features)")
     lines.append("")
@@ -652,9 +734,15 @@ def generate_report(all_results, build_time_ms):
     lines.append("")
     lines.append("| 方法 | 原理 | 优势 | 劣势 |")
     lines.append("|------|------|------|------|")
-    lines.append("| **A. 元数据匹配** | SQL 按 role/phase 列精确匹配 + quality_score 排序 | 快，确定性高 | 依赖标注质量，无法理解语义 |")
-    lines.append("| **B. 全文搜索** | jieba 分词 → ILIKE 关键词匹配在 situation/recommended 文本中 | 灵活，可匹配内容 | 关键词匹配不够智能 |")
-    lines.append("| **C. 向量语义搜索** | TF-IDF 向量化 + 余弦相似度 + role/phase bonus | 语义理解，鲁棒性好 | 需要构建索引，内存占用 |")
+    lines.append(
+        "| **A. 元数据匹配** | SQL 按 role/phase 列精确匹配 + quality_score 排序 | 快，确定性高 | 依赖标注质量，无法理解语义 |"
+    )
+    lines.append(
+        "| **B. 全文搜索** | jieba 分词 → ILIKE 关键词匹配在 situation/recommended 文本中 | 灵活，可匹配内容 | 关键词匹配不够智能 |"
+    )
+    lines.append(
+        "| **C. 向量语义搜索** | TF-IDF 向量化 + 余弦相似度 + role/phase bonus | 语义理解，鲁棒性好 | 需要构建索引，内存占用 |"
+    )
     lines.append("")
 
     # Main results table
@@ -704,41 +792,66 @@ def generate_report(all_results, build_time_ms):
     lines.append("### 1. 检索质量")
     lines.append("")
     if best_ndcg == "C_Vector":
-        lines.append("**向量语义搜索 (C) 在检索质量上表现最优**。TF-IDF 能够捕获查询和策略文本之间的语义相关性，即使用词不完全一致也能匹配。配合 role/phase bonus 后，在 NDCG@5、MRR 等排序质量指标上领先。")
+        lines.append(
+            "**向量语义搜索 (C) 在检索质量上表现最优**。TF-IDF 能够捕获查询和策略文本之间的语义相关性，即使用词不完全一致也能匹配。配合 role/phase bonus 后，在 NDCG@5、MRR 等排序质量指标上领先。"
+        )
     elif best_ndcg == "B_FullText":
-        lines.append("**全文搜索 (B) 在检索质量上表现最优**。关键词匹配在中文短文本场景下效果不错，且对专有名词（如'查杀'、'金水'）的精确匹配有优势。")
+        lines.append(
+            "**全文搜索 (B) 在检索质量上表现最优**。关键词匹配在中文短文本场景下效果不错，且对专有名词（如'查杀'、'金水'）的精确匹配有优势。"
+        )
     else:
-        lines.append("**元数据匹配 (A) 和全文/向量方法在检索质量上各有优势**。元数据方法的优势在于标注质量高时非常精准，但召回率受限于 role/phase 标注的完整性和准确性。")
+        lines.append(
+            "**元数据匹配 (A) 和全文/向量方法在检索质量上各有优势**。元数据方法的优势在于标注质量高时非常精准，但召回率受限于 role/phase 标注的完整性和准确性。"
+        )
 
     lines.append("")
     lines.append("### 2. 延迟性能")
     lines.append("")
-    lines.append(f"**元数据匹配 (A) 延迟最低**（~{agg['A_Metadata']['latency_mean_ms']:.1f}ms），因为它只需要简单的索引查询。")
-    lines.append(f"全文搜索 (B) 延迟较高（~{agg['B_FullText']['latency_mean_ms']:.1f}ms），因为 ILIKE 需要全表扫描文本字段。")
-    lines.append(f"向量搜索 (C) 延迟中等（~{agg['C_Vector']['latency_mean_ms']:.1f}ms），主要开销在 TF-IDF 向量化和余弦相似度计算，但对于 907 条文档的规模完全可接受。")
+    lines.append(
+        f"**元数据匹配 (A) 延迟最低**（~{agg['A_Metadata']['latency_mean_ms']:.1f}ms），因为它只需要简单的索引查询。"
+    )
+    lines.append(
+        f"全文搜索 (B) 延迟较高（~{agg['B_FullText']['latency_mean_ms']:.1f}ms），因为 ILIKE 需要全表扫描文本字段。"
+    )
+    lines.append(
+        f"向量搜索 (C) 延迟中等（~{agg['C_Vector']['latency_mean_ms']:.1f}ms），主要开销在 TF-IDF 向量化和余弦相似度计算，但对于 907 条文档的规模完全可接受。"
+    )
 
     lines.append("")
     lines.append("### 3. 综合推荐")
     lines.append("")
 
     # Determine recommendation
-    c_wins = sum(1 for key in ["P@5_mean", "P@10_mean", "R@5_mean", "R@10_mean", "MRR_mean", "NDCG@5_mean", "NDCG@10_mean"]
-                 if best_of(key) == "C_Vector")
-    b_wins = sum(1 for key in ["P@5_mean", "P@10_mean", "R@5_mean", "R@10_mean", "MRR_mean", "NDCG@5_mean", "NDCG@10_mean"]
-                 if best_of(key) == "B_FullText")
-    a_wins = sum(1 for key in ["P@5_mean", "P@10_mean", "R@5_mean", "R@10_mean", "MRR_mean", "NDCG@5_mean", "NDCG@10_mean"]
-                 if best_of(key) == "A_Metadata")
+    c_wins = sum(
+        1
+        for key in ["P@5_mean", "P@10_mean", "R@5_mean", "R@10_mean", "MRR_mean", "NDCG@5_mean", "NDCG@10_mean"]
+        if best_of(key) == "C_Vector"
+    )
+    b_wins = sum(
+        1
+        for key in ["P@5_mean", "P@10_mean", "R@5_mean", "R@10_mean", "MRR_mean", "NDCG@5_mean", "NDCG@10_mean"]
+        if best_of(key) == "B_FullText"
+    )
+    a_wins = sum(
+        1
+        for key in ["P@5_mean", "P@10_mean", "R@5_mean", "R@10_mean", "MRR_mean", "NDCG@5_mean", "NDCG@10_mean"]
+        if best_of(key) == "A_Metadata"
+    )
 
     if c_wins >= 5:
         lines.append(f"**推荐方案：向量语义搜索 (C) 作为主力检索**，在 {c_wins}/7 个质量指标上领先。")
-        lines.append("向量方法对查询措辞变化更鲁棒——即使 Agent 用不同的表述方式提问，也能匹配到正确的策略。这在真实游戏中尤为重要，因为 Agent 不会用数据库里的精确术语来提问。")
+        lines.append(
+            "向量方法对查询措辞变化更鲁棒——即使 Agent 用不同的表述方式提问，也能匹配到正确的策略。这在真实游戏中尤为重要，因为 Agent 不会用数据库里的精确术语来提问。"
+        )
         lines.append("")
         lines.append("**推荐混合方案**：向量搜索 (C) 作为主检索 + 元数据过滤 (A) 做 role/phase 前置筛选，取两者之长。")
         lines.append("- 先用 role/phase 过滤候选集（缩小范围）")
         lines.append("- 再用向量相似度排序（提升精度）")
         lines.append("- 延迟预期：~5-10ms（候选集缩小后余弦计算更快）")
     elif b_wins >= 5:
-        lines.append(f"**推荐方案：全文搜索 (B)**，在 {b_wins}/7 个质量指标上领先。可以配合 PostgreSQL GIN 索引进一步加速。")
+        lines.append(
+            f"**推荐方案：全文搜索 (B)**，在 {b_wins}/7 个质量指标上领先。可以配合 PostgreSQL GIN 索引进一步加速。"
+        )
     else:
         lines.append("三种方法各有优势场景。推荐混合方案以获得最佳效果。")
 
@@ -756,7 +869,9 @@ def generate_report(all_results, build_time_ms):
         lines.append("  |------|:---:|:---:|:------:|:----:|")
         for name in methods:
             qm = [m for m in all_results[name]["per_query"] if m["query_id"] == qid][0]
-            lines.append(f"  | {name} | {qm['P@5']:.2f} | {qm['MRR']:.2f} | {qm['NDCG@5']:.2f} | {qm['latency_ms']:.0f}ms |")
+            lines.append(
+                f"  | {name} | {qm['P@5']:.2f} | {qm['MRR']:.2f} | {qm['NDCG@5']:.2f} | {qm['latency_ms']:.0f}ms |"
+            )
         lines.append("")
 
     # Summary
@@ -768,7 +883,9 @@ def generate_report(all_results, build_time_ms):
     lines.append("2. **如果追求检索质量**：使用向量语义搜索 (C)，对自然语言查询效果最好")
     lines.append("3. **推荐工程方案**：元数据过滤 + 向量排序的混合架构，兼顾速度和精度")
     lines.append("4. **向量索引**：907 条文档的 TF-IDF 向量化只需 ~100ms，完全可以在 Agent 初始化时一次性构建")
-    lines.append("5. **未来改进方向**：如果未来策略库扩展到 >10K 条，建议升级到 sentence-transformers 或 OpenAI embeddings + pgvector/faiss 做 ANN 检索")
+    lines.append(
+        "5. **未来改进方向**：如果未来策略库扩展到 >10K 条，建议升级到 sentence-transformers 或 OpenAI embeddings + pgvector/faiss 做 ANN 检索"
+    )
 
     return "\n".join(lines)
 

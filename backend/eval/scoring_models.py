@@ -11,10 +11,10 @@ MVP uses LightGBM / Logistic Regression with pairwise training.
 from __future__ import annotations
 
 import json
-import math
 import pickle
 import warnings
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from dataclasses import field
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +22,7 @@ import numpy as np
 
 try:
     import joblib as _joblib
+
     _HAS_JOBLIB = True
 except ImportError:
     _HAS_JOBLIB = False
@@ -30,6 +31,7 @@ except ImportError:
 # ---------------------------------------------------------------------------
 # Feature extraction
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class ModelFeatures:
@@ -109,56 +111,125 @@ class ModelFeatures:
     lack_of_public_evidence_support: float = 0.0
 
     def to_array(self) -> np.ndarray:
-        return np.array([
-            self.role_seer, self.role_witch, self.role_guard,
-            self.role_hunter, self.role_werewolf, self.role_villager,
-            self.op_seer_check, self.op_witch_save, self.op_witch_poison,
-            self.op_guard_protect, self.op_hunter_shot, self.op_werewolf_kill,
-            self.op_vote, self.op_speech,
-            self.day, self.alive_count, self.is_endgame,
-            self.village_alive, self.wolf_alive, self.camp_balance_ratio,
-            self.target_role_is_good, self.target_role_is_wolf,
-            self.target_alive, self.target_is_exposed,
-            self.target_died, self.target_died_reason_hunter,
-            self.target_died_reason_vote, self.target_died_reason_wolf,
-            self.target_died_reason_witch,
-            self.action_is_llm, self.action_is_fallback, self.action_parse_success,
-            self.nearest_good_similarity, self.nearest_bad_similarity,
-            self.good_bad_similarity_margin,
-            self.similar_good_avg_quality, self.similar_bad_avg_quality,
-            # Private-context features (10 new fields)
-            self.private_has_confirmed_wolf, self.private_has_confirmed_good,
-            self.target_is_private_confirmed_wolf, self.target_is_private_confirmed_good,
-            self.private_info_should_release, self.private_info_was_released,
-            self.private_info_withheld, self.voted_elsewhere_despite_known_wolf,
-            self.risky_private_info_release, self.consecutive_same_guard_target,
-            # Dynamic wolf-specific features (6 new float fields)
-            self.wolf_perspective_leak_score, self.teammate_overprotection,
-            self.vote_coordination_failure, self.night_kill_target_value,
-            self.counterfactual_target_gap, self.speech_grounding_score,
-            self.role_goal_conflict_score, self.lack_of_public_evidence_support,
-        ], dtype=np.float32)
+        return np.array(
+            [
+                self.role_seer,
+                self.role_witch,
+                self.role_guard,
+                self.role_hunter,
+                self.role_werewolf,
+                self.role_villager,
+                self.op_seer_check,
+                self.op_witch_save,
+                self.op_witch_poison,
+                self.op_guard_protect,
+                self.op_hunter_shot,
+                self.op_werewolf_kill,
+                self.op_vote,
+                self.op_speech,
+                self.day,
+                self.alive_count,
+                self.is_endgame,
+                self.village_alive,
+                self.wolf_alive,
+                self.camp_balance_ratio,
+                self.target_role_is_good,
+                self.target_role_is_wolf,
+                self.target_alive,
+                self.target_is_exposed,
+                self.target_died,
+                self.target_died_reason_hunter,
+                self.target_died_reason_vote,
+                self.target_died_reason_wolf,
+                self.target_died_reason_witch,
+                self.action_is_llm,
+                self.action_is_fallback,
+                self.action_parse_success,
+                self.nearest_good_similarity,
+                self.nearest_bad_similarity,
+                self.good_bad_similarity_margin,
+                self.similar_good_avg_quality,
+                self.similar_bad_avg_quality,
+                # Private-context features (10 new fields)
+                self.private_has_confirmed_wolf,
+                self.private_has_confirmed_good,
+                self.target_is_private_confirmed_wolf,
+                self.target_is_private_confirmed_good,
+                self.private_info_should_release,
+                self.private_info_was_released,
+                self.private_info_withheld,
+                self.voted_elsewhere_despite_known_wolf,
+                self.risky_private_info_release,
+                self.consecutive_same_guard_target,
+                # Dynamic wolf-specific features (6 new float fields)
+                self.wolf_perspective_leak_score,
+                self.teammate_overprotection,
+                self.vote_coordination_failure,
+                self.night_kill_target_value,
+                self.counterfactual_target_gap,
+                self.speech_grounding_score,
+                self.role_goal_conflict_score,
+                self.lack_of_public_evidence_support,
+            ],
+            dtype=np.float32,
+        )
 
     FEATURE_NAMES = [
-        "role_seer", "role_witch", "role_guard", "role_hunter", "role_werewolf", "role_villager",
-        "op_seer_check", "op_witch_save", "op_witch_poison", "op_guard_protect",
-        "op_hunter_shot", "op_werewolf_kill", "op_vote", "op_speech",
-        "day", "alive_count", "is_endgame", "village_alive", "wolf_alive", "camp_balance_ratio",
-        "target_role_is_good", "target_role_is_wolf", "target_alive", "target_is_exposed",
-        "target_died", "target_died_reason_hunter", "target_died_reason_vote",
-        "target_died_reason_wolf", "target_died_reason_witch",
-        "action_is_llm", "action_is_fallback", "action_parse_success",
-        "nearest_good_similarity", "nearest_bad_similarity", "good_bad_similarity_margin",
-        "similar_good_avg_quality", "similar_bad_avg_quality",
-        "private_has_confirmed_wolf", "private_has_confirmed_good",
-        "target_is_private_confirmed_wolf", "target_is_private_confirmed_good",
-        "private_info_should_release", "private_info_was_released",
-        "private_info_withheld", "voted_elsewhere_despite_known_wolf",
-        "risky_private_info_release", "consecutive_same_guard_target",
-        "wolf_perspective_leak_score", "teammate_overprotection",
-        "vote_coordination_failure", "night_kill_target_value",
-        "counterfactual_target_gap", "speech_grounding_score",
-        "role_goal_conflict_score", "lack_of_public_evidence_support",
+        "role_seer",
+        "role_witch",
+        "role_guard",
+        "role_hunter",
+        "role_werewolf",
+        "role_villager",
+        "op_seer_check",
+        "op_witch_save",
+        "op_witch_poison",
+        "op_guard_protect",
+        "op_hunter_shot",
+        "op_werewolf_kill",
+        "op_vote",
+        "op_speech",
+        "day",
+        "alive_count",
+        "is_endgame",
+        "village_alive",
+        "wolf_alive",
+        "camp_balance_ratio",
+        "target_role_is_good",
+        "target_role_is_wolf",
+        "target_alive",
+        "target_is_exposed",
+        "target_died",
+        "target_died_reason_hunter",
+        "target_died_reason_vote",
+        "target_died_reason_wolf",
+        "target_died_reason_witch",
+        "action_is_llm",
+        "action_is_fallback",
+        "action_parse_success",
+        "nearest_good_similarity",
+        "nearest_bad_similarity",
+        "good_bad_similarity_margin",
+        "similar_good_avg_quality",
+        "similar_bad_avg_quality",
+        "private_has_confirmed_wolf",
+        "private_has_confirmed_good",
+        "target_is_private_confirmed_wolf",
+        "target_is_private_confirmed_good",
+        "private_info_should_release",
+        "private_info_was_released",
+        "private_info_withheld",
+        "voted_elsewhere_despite_known_wolf",
+        "risky_private_info_release",
+        "consecutive_same_guard_target",
+        "wolf_perspective_leak_score",
+        "teammate_overprotection",
+        "vote_coordination_failure",
+        "night_kill_target_value",
+        "counterfactual_target_gap",
+        "speech_grounding_score",
+        "role_goal_conflict_score",
+        "lack_of_public_evidence_support",
     ]
 
 
@@ -176,18 +247,26 @@ def extract_features(opportunity: dict[str, Any]) -> ModelFeatures:
     # Role encoding
     feats = ModelFeatures()
     role_map = {
-        "Seer": "role_seer", "Witch": "role_witch", "Guard": "role_guard",
-        "Hunter": "role_hunter", "Werewolf": "role_werewolf", "Villager": "role_villager",
+        "Seer": "role_seer",
+        "Witch": "role_witch",
+        "Guard": "role_guard",
+        "Hunter": "role_hunter",
+        "Werewolf": "role_werewolf",
+        "Villager": "role_villager",
     }
     if role in role_map:
         setattr(feats, role_map[role], 1)
 
     # Opportunity type encoding
     op_map = {
-        "seer_check": "op_seer_check", "witch_save": "op_witch_save",
-        "witch_poison": "op_witch_poison", "guard_protect": "op_guard_protect",
-        "hunter_shot": "op_hunter_shot", "werewolf_kill": "op_werewolf_kill",
-        "vote": "op_vote", "speech": "op_speech",
+        "seer_check": "op_seer_check",
+        "witch_save": "op_witch_save",
+        "witch_poison": "op_witch_poison",
+        "guard_protect": "op_guard_protect",
+        "hunter_shot": "op_hunter_shot",
+        "werewolf_kill": "op_werewolf_kill",
+        "vote": "op_vote",
+        "speech": "op_speech",
     }
     if op_type in op_map:
         setattr(feats, op_map[op_type], 1)
@@ -213,8 +292,12 @@ def extract_features(opportunity: dict[str, Any]) -> ModelFeatures:
     if outcome_feat:
         feats.target_died = 1 if outcome_feat.get("target_died_same_phase") else 0
         reason = outcome_feat.get("target_died_reason", "") or ""
-        for r, field in [("hunter", "target_died_reason_hunter"), ("vote", "target_died_reason_vote"),
-                         ("wolf", "target_died_reason_wolf"), ("witch", "target_died_reason_witch")]:
+        for r, field in [
+            ("hunter", "target_died_reason_hunter"),
+            ("vote", "target_died_reason_vote"),
+            ("wolf", "target_died_reason_wolf"),
+            ("witch", "target_died_reason_witch"),
+        ]:
             if r in reason:
                 setattr(feats, field, 1)
 
@@ -312,7 +395,7 @@ def _extract_private_context(
 
     # Also check if private_ctx mentions specific player IDs with wolf/good context
     # Use regex to find P-IDs since Chinese text doesn't have word boundaries
-    for match in re.finditer(r'P\d+', private_ctx):
+    for match in re.finditer(r"P\d+", private_ctx):
         word = match.group(0).strip().upper()
         start = max(0, match.start() - 20)
         end = min(len(private_ctx), match.end() + 30)
@@ -385,8 +468,7 @@ def _extract_private_context(
     feats.consecutive_same_guard_target = consecutive_guard
 
     # ---- Dynamic wolf-specific features ----
-    _extract_wolf_dynamic_features(feats, opportunity, role, op_type, speech_text,
-                                    target_id, known_wolf_ids)
+    _extract_wolf_dynamic_features(feats, opportunity, role, op_type, speech_text, target_id, known_wolf_ids)
 
 
 def _extract_wolf_dynamic_features(
@@ -436,11 +518,25 @@ def _extract_wolf_dynamic_features(
         other_wolf_ids = {wid for wid in known_wolf_ids if wid != player_id}
         defending_teammate = any(wid in speech_text for wid in other_wolf_ids)
         # Light cut phrases like "不强保" "不硬保" "先按查杀走" indicate GOOD wolf play
-        light_cut = any(kw in speech_text for kw in ["不强保", "不硬保", "按查杀走", "先出",
-                                                      "不保", "切割", "牺牲"])
-        has_evidence = any(kw in speech_text.lower() for kw in
-                           ["因为", "证据", "查验", "投票记录", "发言记录", "行为",
-                            "逻辑", "金水", "银水", "刀法", "票型", "解释", "原因"])
+        light_cut = any(kw in speech_text for kw in ["不强保", "不硬保", "按查杀走", "先出", "不保", "切割", "牺牲"])
+        has_evidence = any(
+            kw in speech_text.lower()
+            for kw in [
+                "因为",
+                "证据",
+                "查验",
+                "投票记录",
+                "发言记录",
+                "行为",
+                "逻辑",
+                "金水",
+                "银水",
+                "刀法",
+                "票型",
+                "解释",
+                "原因",
+            ]
+        )
         if defending_teammate:
             if light_cut:
                 overprotection = 0.0  # Light cutting is good wolf play
@@ -485,8 +581,11 @@ def _extract_wolf_dynamic_features(
 
         # Role value baseline
         role_value = {
-            "Seer": 0.95, "Witch": 0.90, "Guard": 0.80,
-            "Hunter": 0.70, "Villager": 0.30,
+            "Seer": 0.95,
+            "Witch": 0.90,
+            "Guard": 0.80,
+            "Hunter": 0.70,
+            "Villager": 0.30,
         }.get(target_role, 0.40)
 
         # Boost for exposed power roles
@@ -521,10 +620,29 @@ def _extract_wolf_dynamic_features(
     if op_type in ("speech", "seer_release") and speech_text:
         # Check for references to public events
         references = [
-            "查验", "查杀", "金水", "投票", "票型", "发言",
-            "昨天", "刚才", "这轮", "上轮", "之前",
-            "P1", "P2", "P3", "P4", "P5", "P6", "P7",
-            "因为", "所以", "证据", "逻辑", "综上"
+            "查验",
+            "查杀",
+            "金水",
+            "投票",
+            "票型",
+            "发言",
+            "昨天",
+            "刚才",
+            "这轮",
+            "上轮",
+            "之前",
+            "P1",
+            "P2",
+            "P3",
+            "P4",
+            "P5",
+            "P6",
+            "P7",
+            "因为",
+            "所以",
+            "证据",
+            "逻辑",
+            "综上",
         ]
         ref_count = sum(1 for r in references if r in speech_text)
         grounding = 0.3 + 0.07 * min(ref_count, 10)
@@ -574,6 +692,7 @@ def _extract_wolf_dynamic_features(
 # Scikit-learn wrapper models
 # ---------------------------------------------------------------------------
 
+
 class OpportunityValueModel:
     """w(o): predict how important an opportunity is. §5.1"""
 
@@ -583,6 +702,7 @@ class OpportunityValueModel:
 
     def fit(self, X: np.ndarray, y: np.ndarray):
         from sklearn.linear_model import LogisticRegression
+
         self.model = LogisticRegression(max_iter=1000, class_weight="balanced")
         # Median split for binary classification (high-value vs low-value opportunity)
         threshold = float(np.median(y)) if len(y) > 0 else 0.5
@@ -590,14 +710,15 @@ class OpportunityValueModel:
         if len(set(y_binary)) < 2:
             raise ValueError("Need at least 2 classes to train OpportunityValueModel")
         self.model.fit(X, y_binary)
-        self.feature_importances_ = dict(
-            zip(ModelFeatures.FEATURE_NAMES, np.abs(self.model.coef_[0]))
-        )
+        self.feature_importances_ = dict(zip(ModelFeatures.FEATURE_NAMES, np.abs(self.model.coef_[0])))
 
     def predict(self, X: np.ndarray) -> np.ndarray:
-        if self.model is None or not hasattr(self.model, 'classes_'):
+        if self.model is None or not hasattr(self.model, "classes_"):
             import warnings
-            warnings.warn("OpportunityValueModel.predict() called on untrained model, returning 0.5. Run train_and_ablate.py first.")
+
+            warnings.warn(
+                "OpportunityValueModel.predict() called on untrained model, returning 0.5. Run train_and_ablate.py first."
+            )
             return np.full(len(X), 0.5)
         return self.model.predict_proba(X)[:, 1]
 
@@ -639,11 +760,13 @@ class OpportunityValueModel:
         # Redirects numpy._core → numpy.core for models saved with numpy 2.x
         # when loaded in numpy 1.x environments.
         try:
+
             class _NumpyCompatUnpickler(pickle.Unpickler):
                 def find_class(self, module, name):
-                    if module.startswith('numpy._core'):
-                        module = module.replace('numpy._core', 'numpy.core')
+                    if module.startswith("numpy._core"):
+                        module = module.replace("numpy._core", "numpy.core")
                     return super().find_class(module, name)
+
             with open(path, "rb") as f:
                 result = _NumpyCompatUnpickler(f).load()
             return result
@@ -684,18 +807,23 @@ class DecisionQualityModel:
 
     def fit(self, X: np.ndarray, y: np.ndarray):
         from sklearn.ensemble import GradientBoostingClassifier
+
         self.model = GradientBoostingClassifier(
-            n_estimators=100, max_depth=4, learning_rate=0.05, random_state=42,
+            n_estimators=100,
+            max_depth=4,
+            learning_rate=0.05,
+            random_state=42,
         )
         self.model.fit(X, y)
-        self.feature_importances_ = dict(
-            zip(ModelFeatures.FEATURE_NAMES, self.model.feature_importances_)
-        )
+        self.feature_importances_ = dict(zip(ModelFeatures.FEATURE_NAMES, self.model.feature_importances_))
 
     def predict(self, X: np.ndarray) -> np.ndarray:
-        if self.model is None or not hasattr(self.model, 'classes_'):
+        if self.model is None or not hasattr(self.model, "classes_"):
             import warnings
-            warnings.warn("DecisionQualityModel.predict() called on untrained model, returning 0.5. Run train_and_ablate.py first.")
+
+            warnings.warn(
+                "DecisionQualityModel.predict() called on untrained model, returning 0.5. Run train_and_ablate.py first."
+            )
             return np.full(len(X), 0.5)
         return self.model.predict_proba(X)[:, 1]
 
@@ -724,13 +852,17 @@ class MistakeSeverityModel:
 
     def fit(self, X: np.ndarray, y: np.ndarray):
         from sklearn.linear_model import Ridge
+
         self.model = Ridge(alpha=1.0)
         self.model.fit(X, y)
 
     def predict(self, X: np.ndarray) -> np.ndarray:
-        if self.model is None or not hasattr(self.model, 'coef_'):
+        if self.model is None or not hasattr(self.model, "coef_"):
             import warnings
-            warnings.warn("MistakeSeverityModel.predict() called on untrained model, returning 0.5. Run train_and_ablate.py first.")
+
+            warnings.warn(
+                "MistakeSeverityModel.predict() called on untrained model, returning 0.5. Run train_and_ablate.py first."
+            )
             return np.full(len(X), 0.5)
         return np.clip(self.model.predict(X), 0.0, 1.0)
 
@@ -751,9 +883,11 @@ class MistakeSeverityModel:
 # ProcessScore calculator (§2.11)
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class ProcessScoreResult:
     """Per-player process score breakdown."""
+
     player_id: str
     role: str
     adjusted_role_process_score: float
@@ -799,10 +933,7 @@ def calculate_process_score(
             qualities.append(q)
 
         total_w = sum(weights)
-        role_process = (
-            sum(w * q for w, q in zip(weights, qualities)) / total_w
-            if total_w > 0 else 0.5
-        )
+        role_process = sum(w * q for w, q in zip(weights, qualities)) / total_w if total_w > 0 else 0.5
 
         # Bayesian smoothing for low-opportunity roles (§2.6)
         k = 2.0
@@ -831,18 +962,20 @@ def calculate_process_score(
             + 0.10 * robustness
         )
 
-        results.append(ProcessScoreResult(
-            player_id=player_id,
-            role=role,
-            adjusted_role_process_score=round(adjusted_process, 4),
-            speech_score=round(speech, 4),
-            counterfactual_impact=round(counterfactual_impact, 4),
-            mistake_penalty=round(mistake_penalty, 4),
-            robustness_score=round(robustness, 4),
-            process_score=round(process_score, 4),
-            num_opportunities=n_opps,
-            total_weight=round(total_w, 2),
-        ))
+        results.append(
+            ProcessScoreResult(
+                player_id=player_id,
+                role=role,
+                adjusted_role_process_score=round(adjusted_process, 4),
+                speech_score=round(speech, 4),
+                counterfactual_impact=round(counterfactual_impact, 4),
+                mistake_penalty=round(mistake_penalty, 4),
+                robustness_score=round(robustness, 4),
+                process_score=round(process_score, 4),
+                num_opportunities=n_opps,
+                total_weight=round(total_w, 2),
+            )
+        )
 
     return results
 
@@ -851,9 +984,11 @@ def calculate_process_score(
 # Calibration layer: rule-backed adjustments to raw model Q scores
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class CalibratedScore:
     """Score with calibration metadata."""
+
     raw_model_q: float
     calibrated_q: float
     calibration_reasons: list[str] = field(default_factory=list)
@@ -994,6 +1129,7 @@ def calibrate_decision_quality(
 # Speech score heuristic (rule-based, NOT trained model)
 # ---------------------------------------------------------------------------
 
+
 def compute_speech_scores(opportunities: list[dict[str, Any]]) -> dict[str, float]:
     """Compute per-player speech scores from opportunity data.
 
@@ -1027,8 +1163,21 @@ def compute_speech_scores(opportunities: list[dict[str, Any]]) -> dict[str, floa
             score += 0.25
 
         # Game-relevant keywords
-        reasoning_kw = ["狼", "vote", "票", "查杀", "金水", "嫌疑", "归票",
-                        "验", "预言家", "女巫", "守卫", "猎人", "村民"]
+        reasoning_kw = [
+            "狼",
+            "vote",
+            "票",
+            "查杀",
+            "金水",
+            "嫌疑",
+            "归票",
+            "验",
+            "预言家",
+            "女巫",
+            "守卫",
+            "猎人",
+            "村民",
+        ]
         if any(kw in speech for kw in reasoning_kw):
             score += 0.15
 
@@ -1047,6 +1196,7 @@ def compute_speech_scores(opportunities: list[dict[str, Any]]) -> dict[str, floa
 # ---------------------------------------------------------------------------
 # Process score v2 — private-context-aware aggregation
 # ---------------------------------------------------------------------------
+
 
 def calculate_process_score_v2(
     opportunities: list[dict[str, Any]],
@@ -1067,7 +1217,10 @@ def calculate_process_score_v2(
 
     # First, compute legacy scores
     legacy_results = calculate_process_score(
-        opportunities, w_model, q_model, speech_scores,
+        opportunities,
+        w_model,
+        q_model,
+        speech_scores,
     )
 
     # Group by player
@@ -1101,12 +1254,12 @@ def calculate_process_score_v2(
 
             weighted_qs.append(w * cal.calibrated_q)
 
-        total_w = sum(max(w_model.predict(extract_features(opp).to_array().reshape(1, -1))[0], 0.01)
-                       if w_model else 0.5 for opp in opps)
-
-        weighted_decision_quality = (
-            sum(weighted_qs) / total_w if total_w > 0 else 0.5
+        total_w = sum(
+            max(w_model.predict(extract_features(opp).to_array().reshape(1, -1))[0], 0.01) if w_model else 0.5
+            for opp in opps
         )
+
+        weighted_decision_quality = sum(weighted_qs) / total_w if total_w > 0 else 0.5
 
         n_opps = len(opps)
         critical_rate = critical_count / max(n_opps, 1)
@@ -1114,34 +1267,32 @@ def calculate_process_score_v2(
 
         # Role-critical action quality (night actions / key votes)
         role_critical_opps = [
-            opp for opp in opps
-            if opp.get("opportunity_type", "") in (
-                "werewolf_kill", "witch_save", "witch_poison",
-                "guard_protect", "seer_check", "hunter_shot",
+            opp
+            for opp in opps
+            if opp.get("opportunity_type", "")
+            in (
+                "werewolf_kill",
+                "witch_save",
+                "witch_poison",
+                "guard_protect",
+                "seer_check",
+                "hunter_shot",
             )
         ]
         role_critical_qs = []
         for opp in role_critical_opps:
             cal = calibrate_decision_quality(
                 opp,
-                q_model.predict(
-                    extract_features(opp).to_array().reshape(1, -1)
-                )[0] if q_model else 0.5,
+                q_model.predict(extract_features(opp).to_array().reshape(1, -1))[0] if q_model else 0.5,
             )
             role_critical_qs.append(cal.calibrated_q)
-        role_critical_action_quality = (
-            sum(role_critical_qs) / len(role_critical_qs)
-            if role_critical_qs else 0.5
-        )
+        role_critical_action_quality = sum(role_critical_qs) / len(role_critical_qs) if role_critical_qs else 0.5
 
         # Speech score
         speech = speech_scores.get(player_id, 0.5) if speech_scores else 0.5
 
         # Robustness
-        n_fallback = sum(
-            1 for o in opps
-            if o.get("chosen_action", {}).get("metadata", {}).get("fallback")
-        )
+        n_fallback = sum(1 for o in opps if o.get("chosen_action", {}).get("metadata", {}).get("fallback"))
         robustness = 1.0 - (n_fallback / max(n_opps, 1))
 
         # Outcome impact proxy (placeholder)
@@ -1165,18 +1316,20 @@ def calculate_process_score_v2(
         mu_role = 0.5
         adjusted_process = alpha * process_score + (1 - alpha) * mu_role
 
-        calibrated_results.append(ProcessScoreResult(
-            player_id=player_id,
-            role=role,
-            adjusted_role_process_score=round(adjusted_process, 4),
-            speech_score=round(speech, 4),
-            counterfactual_impact=0.0,
-            mistake_penalty=round(0.25 * critical_rate + 0.15 * major_rate, 4),
-            robustness_score=round(robustness, 4),
-            process_score=round(process_score, 4),
-            num_opportunities=n_opps,
-            total_weight=round(total_w, 2),
-        ))
+        calibrated_results.append(
+            ProcessScoreResult(
+                player_id=player_id,
+                role=role,
+                adjusted_role_process_score=round(adjusted_process, 4),
+                speech_score=round(speech, 4),
+                counterfactual_impact=0.0,
+                mistake_penalty=round(0.25 * critical_rate + 0.15 * major_rate, 4),
+                robustness_score=round(robustness, 4),
+                process_score=round(process_score, 4),
+                num_opportunities=n_opps,
+                total_weight=round(total_w, 2),
+            )
+        )
 
     return legacy_results, calibrated_results
 
@@ -1184,6 +1337,7 @@ def calculate_process_score_v2(
 # ---------------------------------------------------------------------------
 # Model loading
 # ---------------------------------------------------------------------------
+
 
 def load_track_b_models(
     model_dir: str | Path = "data/health",
@@ -1236,7 +1390,7 @@ def load_track_b_models(
         msg = f"OpportunityValueModel not found at {w_path}, using untrained fallback"
         warnings.warn(msg)
         load_info["fallback_used"] = True
-        load_info["fallback_reason"] += f"w_model: file missing"
+        load_info["fallback_reason"] += "w_model: file missing"
         if raise_on_missing:
             raise FileNotFoundError(msg)
 
@@ -1259,7 +1413,7 @@ def load_track_b_models(
         msg = f"DecisionQualityModel not found at {q_path}, using untrained fallback"
         warnings.warn(msg)
         load_info["fallback_used"] = True
-        load_info["fallback_reason"] += f"q_model: file missing"
+        load_info["fallback_reason"] += "q_model: file missing"
         if raise_on_missing:
             raise FileNotFoundError(msg)
 

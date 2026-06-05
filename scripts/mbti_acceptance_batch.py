@@ -14,8 +14,10 @@ import os
 import sys
 import time
 import traceback
-from collections import Counter, defaultdict
-from datetime import datetime, timezone
+from collections import Counter
+from collections import defaultdict
+from datetime import datetime
+from datetime import timezone
 from pathlib import Path
 from typing import Any
 
@@ -27,15 +29,26 @@ from backend.agents.characters import PERSONA_POOL
 from backend.agents.llm_agent import LLMAgent
 from backend.engine.game import WerewolfGame
 
-
 HEALTH_DIR = ROOT / "data" / "health"
 HEALTH_DIR.mkdir(parents=True, exist_ok=True)
 
 MBTI_TYPES = (
-    "INTJ", "INTP", "ENTJ", "ENTP",
-    "INFJ", "INFP", "ENFJ", "ENFP",
-    "ISTJ", "ISFJ", "ESTJ", "ESFJ",
-    "ISTP", "ISFP", "ESTP", "ESFP",
+    "INTJ",
+    "INTP",
+    "ENTJ",
+    "ENTP",
+    "INFJ",
+    "INFP",
+    "ENFJ",
+    "ENFP",
+    "ISTJ",
+    "ISFJ",
+    "ESTJ",
+    "ESFJ",
+    "ISTP",
+    "ISFP",
+    "ESTP",
+    "ESFP",
 )
 
 
@@ -102,8 +115,7 @@ def play_one(seed: int, target_mbti: str, game_index: int) -> dict[str, Any]:
     target_player = next(player for player in state.players if player.seat == target_seat)
     if str((target_player.persona or {}).get("mbti", "")).upper() != target_mbti:
         raise RuntimeError(
-            f"target MBTI mismatch: expected {target_mbti}, "
-            f"got {(target_player.persona or {}).get('mbti')}"
+            f"target MBTI mismatch: expected {target_mbti}, got {(target_player.persona or {}).get('mbti')}"
         )
     winner = state.winner.value if state.winner else None
     target_team = target_player.alignment.value

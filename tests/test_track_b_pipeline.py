@@ -1,13 +1,11 @@
 from backend.engine.game import WerewolfGame
 from backend.eval.review import generate_review_report
-from backend.eval.track_b import (
-    ReplayBundleBuilder,
-    ReviewRepairLoop,
-    SpeechActAnalyzer,
-    SuspicionMatrixBuilder,
-    TrackBValidator,
-    generate_published_review_document,
-)
+from backend.eval.track_b import ReplayBundleBuilder
+from backend.eval.track_b import ReviewRepairLoop
+from backend.eval.track_b import SpeechActAnalyzer
+from backend.eval.track_b import SuspicionMatrixBuilder
+from backend.eval.track_b import TrackBValidator
+from backend.eval.track_b import generate_published_review_document
 
 
 def test_track_b_pipeline_generates_publishable_review_document() -> None:

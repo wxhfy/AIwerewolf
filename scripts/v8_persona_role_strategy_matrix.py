@@ -49,28 +49,36 @@ def build_matrix(input_csv: str) -> list[dict]:
             confidence = "MEDIUM"
             reason = ""
 
-        matrix.append({
-            "persona_name": persona_name,
-            "role": role,
-            "strategy_id": strategy_id,
-            "strategy_name": group_rows[0].get("strategy_name", ""),
-            "n": n,
-            "raw_win_rate": round(raw_wr, 4),
-            "adjusted_win_lift": "",  # requires camp baseline
-            "avg_role_normalized_pre_action_score": "",  # requires V7 scoring
-            "confidence_level": confidence,
-            "low_confidence_reason": reason,
-        })
+        matrix.append(
+            {
+                "persona_name": persona_name,
+                "role": role,
+                "strategy_id": strategy_id,
+                "strategy_name": group_rows[0].get("strategy_name", ""),
+                "n": n,
+                "raw_win_rate": round(raw_wr, 4),
+                "adjusted_win_lift": "",  # requires camp baseline
+                "avg_role_normalized_pre_action_score": "",  # requires V7 scoring
+                "confidence_level": confidence,
+                "low_confidence_reason": reason,
+            }
+        )
 
     return matrix
 
 
 def write_csv(matrix: list[dict], output_csv: str) -> None:
     fields = [
-        "persona_name", "role", "strategy_id", "strategy_name",
-        "n", "raw_win_rate", "adjusted_win_lift",
+        "persona_name",
+        "role",
+        "strategy_id",
+        "strategy_name",
+        "n",
+        "raw_win_rate",
+        "adjusted_win_lift",
         "avg_role_normalized_pre_action_score",
-        "confidence_level", "low_confidence_reason",
+        "confidence_level",
+        "low_confidence_reason",
     ]
     Path(output_csv).parent.mkdir(parents=True, exist_ok=True)
     with open(output_csv, "w", newline="") as f:

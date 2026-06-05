@@ -11,10 +11,10 @@ from __future__ import annotations
 from random import Random
 from typing import Any
 
-from backend.agents.characters import PERSONA_POOL, build_system_prompt, _hydrate_persona
+from backend.agents.characters import PERSONA_POOL
+from backend.agents.characters import _hydrate_persona
 from backend.db.database import SessionLocal
 from backend.db.models import Persona as PersonaRow
-
 
 _PERSONA_FIELDS: tuple[str, ...] = (
     "mbti",

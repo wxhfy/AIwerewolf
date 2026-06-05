@@ -1,7 +1,9 @@
 import pytest
 
 from backend.agents.factory import create_agents
-from backend.engine.models import Alignment, Player, Role
+from backend.engine.models import Alignment
+from backend.engine.models import Player
+from backend.engine.models import Role
 from backend.llm import create_client
 
 
@@ -15,11 +17,24 @@ def test_create_client_defaults_to_dsv4flash(monkeypatch) -> None:
     # Stub load_env_file so the test exercises the in-code defaults rather
     # than the user's .env.
     monkeypatch.setattr("backend.llm.load_env_file", lambda *a, **k: None)
-    for var in ("LLM_PROVIDER", "DSV4FLASH_API_KEY", "DSV4FLASH_BASE_URL", "DSV4FLASH_MODEL",
-                "DOUBAO_API_KEY", "ARK_API_KEY", "ANTHROPIC_AUTH_TOKEN",
-                "DOUBAO_ENDPOINT", "DOUBAO_MODEL", "ANTHROPIC_MODEL", "DOUBAO_BASE_URL",
-                "ARK_BASE_URL", "ANTHROPIC_BASE_URL", "MIMO_BASE_URL", "MIMO_MODEL",
-                "MIMO_API_KEY"):
+    for var in (
+        "LLM_PROVIDER",
+        "DSV4FLASH_API_KEY",
+        "DSV4FLASH_BASE_URL",
+        "DSV4FLASH_MODEL",
+        "DOUBAO_API_KEY",
+        "ARK_API_KEY",
+        "ANTHROPIC_AUTH_TOKEN",
+        "DOUBAO_ENDPOINT",
+        "DOUBAO_MODEL",
+        "ANTHROPIC_MODEL",
+        "DOUBAO_BASE_URL",
+        "ARK_BASE_URL",
+        "ANTHROPIC_BASE_URL",
+        "MIMO_BASE_URL",
+        "MIMO_MODEL",
+        "MIMO_API_KEY",
+    ):
         monkeypatch.delenv(var, raising=False)
     monkeypatch.setenv("DSV4FLASH_API_KEY", "test-key")
     client = create_client(provider=None)

@@ -4,11 +4,14 @@ These are the four roles `is_god=True` because they hold meaningful private
 information or one-shot abilities. The flag is reserved for future "all gods
 dead" rules (e.g. Big Bad Wolf's extra kill trigger).
 """
+
 from __future__ import annotations
 
-from backend.engine.models import ActionType, Alignment, Role
-from backend.engine.roles.registry import RoleSpec, register_role
-
+from backend.engine.models import ActionType
+from backend.engine.models import Alignment
+from backend.engine.models import Role
+from backend.engine.roles.registry import RoleSpec
+from backend.engine.roles.registry import register_role
 
 register_role(
     RoleSpec(

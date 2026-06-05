@@ -1,10 +1,13 @@
 """Quick debug: test LLM agent talk/vote in isolation."""
-import sys, os
+
+import sys
 from pathlib import Path
+
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from backend.llm.env import load_env_file
+
 load_env_file()
 
 from backend.llm import create_client
@@ -20,7 +23,7 @@ try:
     resp = client.chat_sync(
         messages=[
             {"role": "system", "content": "你是狼人杀玩家，输出JSON"},
-            {"role": "user", "content": "请用JSON数组格式发言：[\"第一句话\", \"第二句话\"]"},
+            {"role": "user", "content": '请用JSON数组格式发言：["第一句话", "第二句话"]'},
         ],
         temperature=1.1,
         max_tokens=256,
@@ -28,9 +31,10 @@ try:
     )
     text = client.parse_response(resp)
     print(f"Raw response: {text[:500]}")
-    
+
     # Try parsing
     import json
+
     try:
         parsed = json.loads(text)
         print(f"Parsed OK: {parsed}")
@@ -39,7 +43,7 @@ try:
         start = text.find("[")
         end = text.rfind("]")
         if start >= 0 and end > start:
-            parsed = json.loads(text[start:end+1])
+            parsed = json.loads(text[start : end + 1])
             print(f"Parsed (extracted): {parsed}")
         else:
             print("FAILED to parse as JSON array")
@@ -52,7 +56,7 @@ try:
     resp = client.chat_sync(
         messages=[
             {"role": "system", "content": "你是狼人杀玩家，输出JSON对象"},
-            {"role": "user", "content": "投票阶段，请输出JSON: {\"target\": \"@3号\", \"reasoning\": \"理由\"}"},
+            {"role": "user", "content": '投票阶段，请输出JSON: {"target": "@3号", "reasoning": "理由"}'},
         ],
         temperature=0.4,
         max_tokens=256,
@@ -60,8 +64,9 @@ try:
     )
     text = client.parse_response(resp)
     print(f"Raw response: {text[:500]}")
-    
+
     import json
+
     try:
         parsed = json.loads(text)
         print(f"Parsed OK: {parsed}")
@@ -69,7 +74,7 @@ try:
         start = text.find("{")
         end = text.rfind("}")
         if start >= 0 and end > start:
-            parsed = json.loads(text[start:end+1])
+            parsed = json.loads(text[start : end + 1])
             print(f"Parsed (extracted): {parsed}")
         else:
             print("FAILED to parse as JSON object")

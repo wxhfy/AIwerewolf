@@ -6,7 +6,6 @@ Validates leaderboard data integrity, report structure, and rubric alignment.
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 
 import pytest
@@ -45,6 +44,7 @@ def games_jsonl():
 
 # ---- Existence ----
 
+
 def test_summary_exists(summary_json):
     assert "entries" in summary_json
     assert len(summary_json["entries"]) >= 2
@@ -60,6 +60,7 @@ def test_games_exist(games_jsonl):
 
 # ---- Agent versions ----
 
+
 def test_at_least_two_agent_versions(summary_json):
     versions = {e["agent_version"] for e in summary_json["entries"]}
     assert len(versions) >= 2, f"Need >= 2 agent versions, got {versions}"
@@ -72,11 +73,17 @@ def test_each_version_has_games_played(summary_json):
 
 # ---- Required fields ----
 
+
 def test_each_entry_has_required_fields(summary_json):
     required = [
-        "agent_version", "model_id", "games_played",
-        "avg_process_score", "avg_speech_score", "avg_vote_score",
-        "avg_skill_score", "critical_mistake_rate",
+        "agent_version",
+        "model_id",
+        "games_played",
+        "avg_process_score",
+        "avg_speech_score",
+        "avg_vote_score",
+        "avg_skill_score",
+        "critical_mistake_rate",
     ]
     for e in summary_json["entries"]:
         for field in required:
@@ -92,14 +99,17 @@ def test_each_entry_has_confidence_interval(summary_json):
 
 # ---- Low sample warning ----
 
+
 def test_low_sample_warning_when_games_lt_10(summary_json):
     for e in summary_json["entries"]:
         if e["games_played"] < 10:
-            assert e.get("low_sample_warning") is True, \
+            assert e.get("low_sample_warning") is True, (
                 f"{e['agent_version']}: {e['games_played']} games but low_sample_warning not True"
+            )
 
 
 # ---- Ranking ----
+
 
 def test_not_ranked_by_win_rate_only(report_text, summary_json):
     """Leaderboard should not be sorted purely by win_rate."""
@@ -108,11 +118,13 @@ def test_not_ranked_by_win_rate_only(report_text, summary_json):
     if len(entries) >= 2:
         # The ranking should be by avg_process_score
         for i in range(len(entries) - 1):
-            assert entries[i]["avg_process_score"] >= entries[i+1]["avg_process_score"], \
-                f"Entries not sorted by avg_process_score: {entries[i]['agent_version']} < {entries[i+1]['agent_version']}"
+            assert entries[i]["avg_process_score"] >= entries[i + 1]["avg_process_score"], (
+                f"Entries not sorted by avg_process_score: {entries[i]['agent_version']} < {entries[i + 1]['agent_version']}"
+            )
 
 
 # ---- Report sections ----
+
 
 def test_report_has_required_sections(report_text):
     required = [
@@ -129,8 +141,12 @@ def test_report_has_required_sections(report_text):
 
 
 def test_report_mentions_low_sample(report_text):
-    assert "LOW_SAMPLE" in report_text or "low_sample" in report_text.lower() or \
-           "低样本" in report_text or "不是统计" in report_text
+    assert (
+        "LOW_SAMPLE" in report_text
+        or "low_sample" in report_text.lower()
+        or "低样本" in report_text
+        or "不是统计" in report_text
+    )
 
 
 def test_report_mentions_smoke_test(report_text):
@@ -139,13 +155,14 @@ def test_report_mentions_smoke_test(report_text):
 
 # ---- Rubric alignment ----
 
+
 def test_rubric_leaderboard_is_pass_smoke(report_text):
     rubric_section = report_text.split("## 8. Rubric Alignment")[1].split("---")[0] if "## 8." in report_text else ""
-    assert "PASS_SMOKE" in rubric_section or "PASS_SMOKE" in report_text, \
-        "Leaderboard rubric should be PASS_SMOKE"
+    assert "PASS_SMOKE" in rubric_section or "PASS_SMOKE" in report_text, "Leaderboard rubric should be PASS_SMOKE"
 
 
 # ---- Games JSONL ----
+
 
 def test_games_have_source(games_jsonl):
     for g in games_jsonl:

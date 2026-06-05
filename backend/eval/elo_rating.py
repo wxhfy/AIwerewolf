@@ -10,14 +10,16 @@ Standard Elo with multi-agent K-factor adjustment:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
-import math
+from dataclasses import dataclass
+from dataclasses import field
+from typing import Dict
+from typing import List
 
 
 @dataclass
 class EloEntry:
     """One entry in an Elo rating table."""
+
     key: str  # e.g., "Seer", "INTJ-Werewolf", "strategy_v2"
     rating: float = 1200.0
     games_played: int = 0
@@ -119,8 +121,7 @@ class EloRating:
             self.update_single("role", role, process_score, opp_roles)
 
             # Per-persona-role Elo
-            opp_pr = [f"{p[1].get('persona_mbti', '')}-{p[1].get('role', 'unknown')}"
-                      for p in players if p[0] != pid]
+            opp_pr = [f"{p[1].get('persona_mbti', '')}-{p[1].get('role', 'unknown')}" for p in players if p[0] != pid]
             self.update_single("persona_role", persona_role, process_score, opp_pr)
 
             # Per-strategy-version Elo
@@ -149,7 +150,8 @@ class EloRating:
                 "losses": e.losses,
                 "win_rate": round(e.wins / max(1, e.games_played), 3),
             }
-            for e in entries if e.games_played > 0
+            for e in entries
+            if e.games_played > 0
         ]
 
     def to_dict(self) -> Dict[str, Any]:
@@ -164,6 +166,7 @@ class EloRating:
                     "losses": e.losses,
                     "rating_history": e.rating_history,
                 }
-                for key, e in entries.items() if e.games_played > 0
+                for key, e in entries.items()
+                if e.games_played > 0
             }
         return result

@@ -1,6 +1,7 @@
 """Role win-rate experiment: compare baseline vs strategy-enhanced agent.
 Runs N games, tracks per-role win rate, survival, and decision quality.
 """
+
 from __future__ import annotations
 
 import json
@@ -9,14 +10,12 @@ import time
 import warnings
 from collections import defaultdict
 from pathlib import Path
-from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 warnings.filterwarnings("ignore")
 
 from backend.engine.game import WerewolfGame
-from backend.engine.models import Role
 
 
 def run_baseline(n: int = 20) -> tuple[list[dict], dict]:
@@ -44,10 +43,10 @@ def run_baseline(n: int = 20) -> tuple[list[dict], dict]:
                 role_stats[role]["alive_sum"] += 1 if p.alive else 0
 
             results.append({"seed": seed, "winner": winner, "days": state.day, "time_s": round(elapsed, 1)})
-            print(f"  [{i+1}/{n}] seed={seed} winner={winner} days={state.day} time={elapsed:.0f}s")
+            print(f"  [{i + 1}/{n}] seed={seed} winner={winner} days={state.day} time={elapsed:.0f}s")
 
         except Exception as e:
-            print(f"  [{i+1}/{n}] seed={seed} FAILED: {e}")
+            print(f"  [{i + 1}/{n}] seed={seed} FAILED: {e}")
             results.append({"seed": seed, "error": str(e)})
 
     stats = _compile_stats(role_stats)
@@ -82,8 +81,10 @@ def print_report(baseline_stats: dict, enhanced_stats: dict | None = None):
         if enhanced_stats and role in enhanced_stats:
             e = enhanced_stats[role]
             delta = e["win_rate"] - b["win_rate"]
-            print(f"{role:<16s} {b['win_rate']:>8.1%} {e['win_rate']:>8.1%} {delta:>+7.1%} "
-                  f"{b['avg_survival_days']:>9.1f} {e['avg_survival_days']:>9.1f}")
+            print(
+                f"{role:<16s} {b['win_rate']:>8.1%} {e['win_rate']:>8.1%} {delta:>+7.1%} "
+                f"{b['avg_survival_days']:>9.1f} {e['avg_survival_days']:>9.1f}"
+            )
         else:
             print(f"{role:<16s} {b['win_rate']:>8.1%} {b['avg_survival_days']:>9.1f} {b['alive_endgame_rate']:>9.1%}")
 
@@ -91,17 +92,18 @@ def print_report(baseline_stats: dict, enhanced_stats: dict | None = None):
 
     # Team-level
     for team in ["village", "wolf"]:
-        roles_in_team = [r for r, d in baseline_stats.items()
-                        if (r in ("Werewolf", "WhiteWolfKing")) == (team == "wolf")]
+        roles_in_team = [
+            r for r, d in baseline_stats.items() if (r in ("Werewolf", "WhiteWolfKing")) == (team == "wolf")
+        ]
         wins = sum(baseline_stats[r]["win_rate"] * baseline_stats[r]["games"] for r in roles_in_team)
         games = sum(baseline_stats[r]["games"] for r in roles_in_team)
         if games > 0:
-            print(f"{team.capitalize()} overall: {wins/games:.1%} ({games} role-games)", end="")
+            print(f"{team.capitalize()} overall: {wins / games:.1%} ({games} role-games)", end="")
             if enhanced_stats:
                 e_wins = sum(enhanced_stats[r]["win_rate"] * enhanced_stats[r]["games"] for r in roles_in_team)
                 e_games = sum(enhanced_stats[r]["games"] for r in roles_in_team)
                 if e_games > 0:
-                    print(f" → {e_wins/e_games:.1%} ({e_games} role-games)")
+                    print(f" → {e_wins / e_games:.1%} ({e_games} role-games)")
                 else:
                     print()
             else:
@@ -109,7 +111,9 @@ def print_report(baseline_stats: dict, enhanced_stats: dict | None = None):
 
 
 def main():
-    import argparse, os
+    import argparse
+    import os
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--games", type=int, default=20)
     parser.add_argument("--output", default="data/experiment/winrate_experiment.json")
@@ -128,7 +132,7 @@ def main():
     print_report(base_stats)
 
     print(f"\nTotal: {len([r for r in base_results if 'error' not in r])}/{args.games} games completed")
-    print(f"Time: {base_time:.0f}s ({base_time/60:.1f} min)")
+    print(f"Time: {base_time:.0f}s ({base_time / 60:.1f} min)")
 
     # Save
     output_path = Path(args.output)

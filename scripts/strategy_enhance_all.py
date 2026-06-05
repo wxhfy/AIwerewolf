@@ -24,7 +24,9 @@ import subprocess
 import sys
 import time
 from datetime import datetime
-from typing import Dict, List, Tuple
+from typing import Dict
+from typing import List
+from typing import Tuple
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -35,11 +37,11 @@ SCRIPTS_DIR: str = "/home/fyh0106/AIwerewolf/scripts"
 LOGS_DIR: str = "/home/fyh0106/AIwerewolf/logs"
 
 STEPS: List[Tuple[str, str]] = [
-    ("crawl_general_strategies.py",  "Step 1 — Generate Chinese strategies"),
-    ("translate_strategies.py",      "Step 2 — Translate English strategies"),
-    ("build_strategy_graph.py",      "Step 3 — Build strategy graph (LLM)"),
-    ("cluster_promote.py",           "Step 4 — Cluster-based promotion (TF-IDF + KMeans)"),
-    ("promote_candidates.py",        "Step 5 — Quality-based promotion + cleaning (dedup/prune)"),
+    ("crawl_general_strategies.py", "Step 1 — Generate Chinese strategies"),
+    ("translate_strategies.py", "Step 2 — Translate English strategies"),
+    ("build_strategy_graph.py", "Step 3 — Build strategy graph (LLM)"),
+    ("cluster_promote.py", "Step 4 — Cluster-based promotion (TF-IDF + KMeans)"),
+    ("promote_candidates.py", "Step 5 — Quality-based promotion + cleaning (dedup/prune)"),
 ]
 
 SEPARATOR: str = "=" * 72
@@ -48,6 +50,7 @@ SEPARATOR: str = "=" * 72
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _ensure_log_dir() -> str:
     """Create the logs directory if it does not exist and return its path."""
@@ -70,6 +73,7 @@ def tee(msg: str, log_file) -> None:
 # ---------------------------------------------------------------------------
 # Core
 # ---------------------------------------------------------------------------
+
 
 def run_step(
     script_name: str,
@@ -100,7 +104,7 @@ def run_step(
         tee(f"  {step_label}", log_file)
         tee(f"{SEPARATOR}", log_file)
         tee(f"[SKIP] Script not found: {script_path}", log_file)
-        tee(f"       Please create it before running this step.", log_file)
+        tee("       Please create it before running this step.", log_file)
         result["rc"] = -99
         result["status"] = "MISSING"
         return result
@@ -152,7 +156,7 @@ def run_step(
 
     if proc.returncode != 0:
         tee(f"\n[WARN]  Step failed: {script_name}", log_file)
-        tee(f"        Continuing to next step anyway.", log_file)
+        tee("        Continuing to next step anyway.", log_file)
 
     return result
 
@@ -171,7 +175,7 @@ def print_summary(results: List[Dict], total_start: float, log_file) -> None:
     total_duration: float = time.time() - total_start
 
     tee(f"\n\n{SEPARATOR}", log_file)
-    tee(f"  Strategy Enhancement — Final Summary", log_file)
+    tee("  Strategy Enhancement — Final Summary", log_file)
     tee(f"{SEPARATOR}", log_file)
 
     width_label: int = 42
@@ -190,6 +194,7 @@ def print_summary(results: List[Dict], total_start: float, log_file) -> None:
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+
 
 def main() -> int:
     """Run the full strategy enhancement pipeline."""
@@ -221,7 +226,7 @@ def main() -> int:
                     break
             else:
                 tee(
-                    f"[INFO] Non-interactive mode — automatically continuing.",
+                    "[INFO] Non-interactive mode — automatically continuing.",
                     log_file,
                 )
 

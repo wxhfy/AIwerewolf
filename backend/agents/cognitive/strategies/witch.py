@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from dataclasses import field
 
-from backend.agents.cognitive.strategies.base import RoleStrategyCard, register_strategy
+from backend.agents.cognitive.strategies.base import RoleStrategyCard
+from backend.agents.cognitive.strategies.base import register_strategy
 
 
 @register_strategy("witch")
@@ -22,19 +24,21 @@ class WitchStrategyCard(RoleStrategyCard):
     information_seeking: float = 0.55
 
     # Potion strategy
-    save_first_night: bool = True             # Use antidote on night 0
-    save_threshold: float = 0.60              # Only save if target has >60% survival value
-    poison_priority: list[str] = field(default_factory=lambda: [
-        "likely_wolf",
-        "contradiction_detected",
-        "vote_leader_wolf",
-        "silent_suspicious",
-    ])
+    save_first_night: bool = True  # Use antidote on night 0
+    save_threshold: float = 0.60  # Only save if target has >60% survival value
+    poison_priority: list[str] = field(
+        default_factory=lambda: [
+            "likely_wolf",
+            "contradiction_detected",
+            "vote_leader_wolf",
+            "silent_suspicious",
+        ]
+    )
 
     # Identity protection
-    reveal_when_potions_used: bool = True     # Reveal after both potions used
+    reveal_when_potions_used: bool = True  # Reveal after both potions used
     reveal_when_counter_claimed: bool = True
-    poison_early: str = "conservative"        # conservative | aggressive
+    poison_early: str = "conservative"  # conservative | aggressive
 
     def format_for_prompt(self) -> str:
         base = super().format_for_prompt()

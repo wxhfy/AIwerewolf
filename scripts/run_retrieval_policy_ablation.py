@@ -29,8 +29,11 @@ import json
 import os
 import sys
 import time
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from dataclasses import dataclass
+from dataclasses import field
+from typing import Any
+from typing import Dict
+from typing import List
 
 import numpy as np
 
@@ -56,6 +59,7 @@ MBTI_TYPES = ["INTJ", "ENFP", "ISTJ", "ESFP", "INTP", "ENTJ", "ISFJ", "ESTP", "I
 @dataclass
 class GameOutcome:
     """Per-game outcome metrics."""
+
     game_id: str = ""
     seed: int = 0
     policy: str = ""
@@ -90,6 +94,7 @@ class GameOutcome:
 @dataclass
 class PolicyStats:
     """Aggregated stats per policy."""
+
     policy: str
     n_games: int = 0
     n_completed: int = 0
@@ -299,9 +304,7 @@ def run_ablation(
             stats.avg_tokens = float(np.mean([o.tokens_per_game for o in completed]))
             stats.avg_cost = float(np.mean([o.cost_per_game for o in completed]))
             stats.avg_latency_ms = float(np.mean([o.latency_per_decision_ms for o in completed]))
-            stats.tool_trace_policy_rate = float(
-                np.mean([1.0 if o.tool_trace_has_policy else 0.0 for o in completed])
-            )
+            stats.tool_trace_policy_rate = float(np.mean([1.0 if o.tool_trace_has_policy else 0.0 for o in completed]))
 
         all_stats[policy] = stats
         status = f"✓ {stats.n_completed}/{stats.n_games}" if stats.n_errors == 0 else f"✗ {stats.n_errors} errors"
@@ -316,8 +319,10 @@ def run_ablation(
         candidate = all_stats.get(policy)
         if baseline and candidate:
             for metric in [
-                "avg_process_score", "avg_vote_accuracy",
-                "avg_speech_quality", "avg_skill_efficiency",
+                "avg_process_score",
+                "avg_vote_accuracy",
+                "avg_speech_quality",
+                "avg_skill_efficiency",
             ]:
                 comp = compute_paired_stats(baseline, candidate, metric)
                 comp["policy"] = policy
@@ -360,22 +365,43 @@ def run_ablation(
 
     # CSV
     csv_headers = [
-        "policy", "n_games", "completed", "win_rate_wolf", "win_rate_village",
-        "process_score", "vote_accuracy", "speech_quality", "skill_efficiency",
-        "strategy_usage", "retrieved_relevance", "candidate_lessons",
-        "invalid_actions", "tokens", "cost", "latency_ms",
+        "policy",
+        "n_games",
+        "completed",
+        "win_rate_wolf",
+        "win_rate_village",
+        "process_score",
+        "vote_accuracy",
+        "speech_quality",
+        "skill_efficiency",
+        "strategy_usage",
+        "retrieved_relevance",
+        "candidate_lessons",
+        "invalid_actions",
+        "tokens",
+        "cost",
+        "latency_ms",
     ]
     with open(os.path.join(output_dir, "results.csv"), "w") as f:
         f.write(",".join(csv_headers) + "\n")
         for p, s in all_stats.items():
             row = [
-                p, str(s.n_games), str(s.n_completed),
-                f"{s.win_rate_wolf:.4f}", f"{s.win_rate_village:.4f}",
-                f"{s.avg_process_score:.4f}", f"{s.avg_vote_accuracy:.4f}",
-                f"{s.avg_speech_quality:.4f}", f"{s.avg_skill_efficiency:.4f}",
-                f"{s.avg_strategy_usage:.2f}", f"{s.avg_retrieved_relevance:.4f}",
-                f"{s.avg_candidate_lessons:.2f}", f"{s.avg_invalid_actions:.2f}",
-                str(int(s.avg_tokens)), f"{s.avg_cost:.6f}", f"{s.avg_latency_ms:.1f}",
+                p,
+                str(s.n_games),
+                str(s.n_completed),
+                f"{s.win_rate_wolf:.4f}",
+                f"{s.win_rate_village:.4f}",
+                f"{s.avg_process_score:.4f}",
+                f"{s.avg_vote_accuracy:.4f}",
+                f"{s.avg_speech_quality:.4f}",
+                f"{s.avg_skill_efficiency:.4f}",
+                f"{s.avg_strategy_usage:.2f}",
+                f"{s.avg_retrieved_relevance:.4f}",
+                f"{s.avg_candidate_lessons:.2f}",
+                f"{s.avg_invalid_actions:.2f}",
+                str(int(s.avg_tokens)),
+                f"{s.avg_cost:.6f}",
+                f"{s.avg_latency_ms:.1f}",
             ]
             f.write(",".join(row) + "\n")
 
@@ -385,7 +411,7 @@ def run_ablation(
         f.write(md)
 
     print(f"\nResults saved to {output_dir}/")
-    print(f"  results.json, results.csv, summary.md")
+    print("  results.json, results.csv, summary.md")
 
     return results
 
@@ -400,8 +426,8 @@ def _build_ablation_summary(
         "# Retrieval Policy Ablation — Online Game Results",
         "",
         f"**Games per policy**: {n_games}",
-        f"**Model**: deepseek-v4-pro",
-        f"**Comparison**: Paired seed with bootstrap 95% CI",
+        "**Model**: deepseek-v4-pro",
+        "**Comparison**: Paired seed with bootstrap 95% CI",
         "",
         "## Policy Comparison",
         "",
@@ -466,7 +492,7 @@ def _build_ablation_summary(
         "**`hybrid_role_mbti_global`** (or the policy with highest combined offline+online score)",
         "",
         "---",
-        f"*Generated by scripts/run_retrieval_policy_ablation.py*",
+        "*Generated by scripts/run_retrieval_policy_ablation.py*",
     ]
 
     return "\n".join(lines)

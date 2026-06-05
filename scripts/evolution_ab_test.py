@@ -33,11 +33,16 @@ def save_game_state(state, filepath: Path) -> None:
     players_data = []
     for p in state.players:
         mbti = (p.persona or {}).get("mbti", "UNKNOWN") if hasattr(p, "persona") else "UNKNOWN"
-        players_data.append({
-            "name": p.name, "role": p.role.value, "seat": p.seat,
-            "mbti": mbti, "alive": p.alive,
-            "death_day": p.death_day if hasattr(p, "death_day") else None,
-        })
+        players_data.append(
+            {
+                "name": p.name,
+                "role": p.role.value,
+                "seat": p.seat,
+                "mbti": mbti,
+                "alive": p.alive,
+                "death_day": p.death_day if hasattr(p, "death_day") else None,
+            }
+        )
     events_data = []
     for e in getattr(state, "events", []) or []:
         try:
@@ -73,7 +78,7 @@ def run_games(n_games: int, start_seed: int, tag: str, output_dir: Path) -> list
     for i in range(n_games):
         seed = start_seed + i
         t0 = time.perf_counter()
-        print(f"  [{i+1}/{n_games}] seed={seed}...", end=" ", flush=True)
+        print(f"  [{i + 1}/{n_games}] seed={seed}...", end=" ", flush=True)
 
         try:
             game = WerewolfGame(seed=seed, player_count=7)
@@ -86,16 +91,14 @@ def run_games(n_games: int, start_seed: int, tag: str, output_dir: Path) -> list
             # Save game state for evolution
             save_game_state(state, states_dir / f"game_seed{seed}.json")
 
-            result = {"seed": seed, "winner": winner, "days": state.day,
-                      "duration_s": round(elapsed, 1), "players": []}
+            result = {"seed": seed, "winner": winner, "days": state.day, "duration_s": round(elapsed, 1), "players": []}
             for p in state.players:
                 role = p.role.value
                 team = "wolf" if role in ("Werewolf", "WhiteWolfKing") else "village"
                 mbti = (p.persona or {}).get("mbti", "UNKNOWN") if hasattr(p, "persona") else "UNKNOWN"
-                result["players"].append({
-                    "name": p.name, "role": role, "mbti": mbti,
-                    "alive": p.alive, "won": (team == winner)
-                })
+                result["players"].append(
+                    {"name": p.name, "role": role, "mbti": mbti, "alive": p.alive, "won": (team == winner)}
+                )
             results.append(result)
 
         except Exception as e:
@@ -209,6 +212,7 @@ def run_evolution_on_states(states_dir: Path, output_dir: Path) -> dict:
 def _minimal_review_report(data: dict):
     """Create a minimal ReviewReport from saved game data."""
     from backend.eval.types import ReviewReport
+
     winner = data.get("winner", "")
     days = data.get("days", 0)
     events = data.get("events", [])
@@ -231,6 +235,7 @@ def _minimal_review_report(data: dict):
 
 def main():
     import argparse
+
     p = argparse.ArgumentParser()
     p.add_argument("--baseline-games", type=int, default=5)
     p.add_argument("--evolved-games", type=int, default=5)
@@ -241,19 +246,21 @@ def main():
     output_dir = ROOT / "data" / "evolution_ab"
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"=== Evolution A/B Test ===")
+    print("=== Evolution A/B Test ===")
     print(f"Started: {datetime.now()}")
     print(f"Baseline: {args.baseline_games} games (seed {args.baseline_seed})")
     print(f"Evolved:  {args.evolved_games} games (seed {args.evolved_seed})")
 
     # Phase 1: Baseline
-    print(f"\n--- Phase 1: Baseline Games ---")
+    print("\n--- Phase 1: Baseline Games ---")
     baseline_results = run_games(
-        args.baseline_games, args.baseline_seed,
-        "baseline", output_dir,
+        args.baseline_games,
+        args.baseline_seed,
+        "baseline",
+        output_dir,
     )
     baseline_stats = compute_stats(baseline_results)
-    print(f"\nBaseline Stats:")
+    print("\nBaseline Stats:")
     _print_stats(baseline_stats)
 
     # Save baseline
@@ -261,7 +268,7 @@ def main():
         json.dump({"results": baseline_results, "stats": baseline_stats}, f, indent=2, ensure_ascii=False)
 
     # Phase 2: Evolution
-    print(f"\n--- Phase 2: Evolution Pipeline ---")
+    print("\n--- Phase 2: Evolution Pipeline ---")
     states_dir = output_dir / "states_baseline"
     evo_result = run_evolution_on_states(states_dir, output_dir)
 
@@ -271,27 +278,29 @@ def main():
 
     # Phase 3: Evolved games (if patches were generated)
     if evo_result.get("candidate_patches", 0) > 0:
-        print(f"\n--- Phase 3: Evolved Games ---")
+        print("\n--- Phase 3: Evolved Games ---")
         evolved_results = run_games(
-            args.evolved_games, args.evolved_seed,
-            "evolved", output_dir,
+            args.evolved_games,
+            args.evolved_seed,
+            "evolved",
+            output_dir,
         )
         evolved_stats = compute_stats(evolved_results)
-        print(f"\nEvolved Stats:")
+        print("\nEvolved Stats:")
         _print_stats(evolved_stats)
 
         with open(output_dir / "evolved_results.json", "w") as f:
             json.dump({"results": evolved_results, "stats": evolved_stats}, f, indent=2, ensure_ascii=False)
 
         # Comparison
-        print(f"\n=== A/B Comparison ===")
+        print("\n=== A/B Comparison ===")
         b_wr = baseline_stats["_overall"]["wolf_win_rate"]
         e_wr = evolved_stats["_overall"]["wolf_win_rate"]
         print(f"Baseline wolf win rate: {b_wr:.1%}")
         print(f"Evolved wolf win rate:  {e_wr:.1%}")
         print(f"Delta: {e_wr - b_wr:+.1%}")
     else:
-        print(f"\n--- Phase 3: Skipped (no evolution patches generated) ---")
+        print("\n--- Phase 3: Skipped (no evolution patches generated) ---")
 
     print(f"\nCompleted at: {datetime.now()}")
     print(f"Results saved to: {output_dir}")
@@ -301,14 +310,14 @@ def _print_stats(stats: dict) -> None:
     """Print formatted stats including role + MBTI."""
     overall = stats["_overall"]
     print(f"  Wolf wins: {overall['wolf_win_rate']:.1%} | Village wins: {overall['village_win_rate']:.1%}")
-    print(f"  --- By Role ---")
+    print("  --- By Role ---")
     for role, s in stats.get("by_role", {}).items():
         print(f"  {role:<12s}: {s['win_rate']:.1%} ({s['wins']}/{s['games']})")
-    print(f"  --- By MBTI ---")
-    for mbti, s in sorted(stats.get("by_mbti", {}).items(), key=lambda x: -x[1]['win_rate'])[:8]:
+    print("  --- By MBTI ---")
+    for mbti, s in sorted(stats.get("by_mbti", {}).items(), key=lambda x: -x[1]["win_rate"])[:8]:
         print(f"  {mbti:<8s}: {s['win_rate']:.1%} ({s['wins']}/{s['games']})")
-    print(f"  --- Best MBTI+Role ---")
-    best = sorted(stats.get("by_mbti_role", {}).items(), key=lambda x: -x[1]['win_rate'])
+    print("  --- Best MBTI+Role ---")
+    best = sorted(stats.get("by_mbti_role", {}).items(), key=lambda x: -x[1]["win_rate"])
     for key, s in best[:5]:
         print(f"  {key:<22s}: {s['win_rate']:.1%} ({s['wins']}/{s['games']})")
 

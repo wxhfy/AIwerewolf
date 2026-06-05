@@ -46,16 +46,18 @@ def fetch_candidates(conn) -> list[dict[str, Any]]:
     )
     docs = []
     for row in cur.fetchall():
-        docs.append({
-            "id": row[0],
-            "role": row[1] or "global",
-            "doc_type": row[2] or "unknown",
-            "phase": row[3] or "global",
-            "quality_score": float(row[4]) if row[4] else 0.8,
-            "situation": str(row[5] or ""),
-            "action": str(row[6] or ""),
-            "rationale": str(row[7] or ""),
-        })
+        docs.append(
+            {
+                "id": row[0],
+                "role": row[1] or "global",
+                "doc_type": row[2] or "unknown",
+                "phase": row[3] or "global",
+                "quality_score": float(row[4]) if row[4] else 0.8,
+                "situation": str(row[5] or ""),
+                "action": str(row[6] or ""),
+                "rationale": str(row[7] or ""),
+            }
+        )
     cur.close()
     return docs
 
@@ -150,6 +152,7 @@ def main():
     args = ap.parse_args()
 
     import psycopg2
+
     conn = psycopg2.connect(DB_URL)
 
     candidates = fetch_candidates(conn)
@@ -168,11 +171,15 @@ def main():
             # Single candidate — promote if quality >= threshold
             if docs and docs[0]["quality_score"] >= args.min_quality:
                 to_promote.append(docs[0]["id"])
-                promotion_details.append({
-                    "role": role, "doc_type": doc_type,
-                    "cluster_size": 1, "doc_id": docs[0]["id"][:20],
-                    "quality": docs[0]["quality_score"],
-                })
+                promotion_details.append(
+                    {
+                        "role": role,
+                        "doc_type": doc_type,
+                        "cluster_size": 1,
+                        "doc_id": docs[0]["id"][:20],
+                        "quality": docs[0]["quality_score"],
+                    }
+                )
             continue
 
         clusters = cluster_by_similarity(docs)
@@ -183,29 +190,32 @@ def main():
             # Sort cluster by quality_score DESC
             cluster.sort(key=lambda d: -d["quality_score"])
             # Pick top-N
-            for doc in cluster[:args.cluster_top_n]:
+            for doc in cluster[: args.cluster_top_n]:
                 if doc["quality_score"] >= args.min_quality:
                     to_promote.append(doc["id"])
-                    promotion_details.append({
-                        "role": role, "doc_type": doc_type,
-                        "cluster_size": len(cluster),
-                        "doc_id": doc["id"][:20],
-                        "quality": doc["quality_score"],
-                    })
+                    promotion_details.append(
+                        {
+                            "role": role,
+                            "doc_type": doc_type,
+                            "cluster_size": len(cluster),
+                            "doc_id": doc["id"][:20],
+                            "quality": doc["quality_score"],
+                        }
+                    )
 
     # Print summary
-    print(f"\n{'='*70}")
-    print(f"  Auto-Promotion Summary")
-    print(f"{'='*70}")
+    print(f"\n{'=' * 70}")
+    print("  Auto-Promotion Summary")
+    print(f"{'=' * 70}")
     print(f"  Candidates loaded: {len(candidates)}")
     print(f"  Candidates to promote: {len(to_promote)}")
     print(f"  Quality threshold: >= {args.min_quality}")
     print(f"  Cluster top-N: {args.cluster_top_n}")
-    print(f"")
+    print("")
 
     if promotion_details:
         print(f"  {'Role':<15} {'DocType':<20} {'Cluster':>7} {'Quality':>8}")
-        print(f"  {'-'*50}")
+        print(f"  {'-' * 50}")
         for d in promotion_details[:30]:
             print(f"  {d['role']:<15} {d['doc_type']:<20} {d['cluster_size']:>7} {d['quality']:>8.2%}")
         if len(promotion_details) > 30:
@@ -237,7 +247,7 @@ def main():
         for s, cnt in sorted(statuses.items()):
             logger.info("  %s: %d", s, cnt)
     else:
-        print(f"\n  [DRY RUN] Add --apply to execute.")
+        print("\n  [DRY RUN] Add --apply to execute.")
 
     conn.close()
     return 0

@@ -18,9 +18,10 @@ No LLM calls, no game logic — pure data definitions.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import List, Optional
-
+from dataclasses import dataclass
+from dataclasses import field
+from typing import List
+from typing import Optional
 
 # ============================================================
 # Layer 1: MBTI — Cognitive Operating System
@@ -62,7 +63,6 @@ _MBTI_PROFILES: dict[str, str] = {
         "你的语速快、观点多。你可能会在一个发言中抛出一连串的分析角度，然后在最后选一个最可能的结论。"
         "你的弱点是：有时为了辩论而辩论，让好人误以为你在搅局。在压力下你会变得更爱争论——用更多的观点来淹没质疑。"
     ),
-
     # Diplomats (NF)
     "INFJ": (
         "你的底层认知风格是 INFJ — 提倡者型。\n"
@@ -97,7 +97,6 @@ _MBTI_PROFILES: dict[str, str] = {
         "你的弱点是：注意力容易跳跃。上一秒还在深入分析A，下一秒就被B的发言吸引了注意力。有经验的玩家可能会利用这一点来分散你的视线。"
         "在压力下你会变得更加发散——用更多的可能性来寻找突破口。"
     ),
-
     # Sentinels (SJ)
     "ISTJ": (
         "你的底层认知风格是 ISTJ — 物流师型。\n"
@@ -131,7 +130,6 @@ _MBTI_PROFILES: dict[str, str] = {
         "你倾向于在做出判断前先充分了解每个人的立场。你不会第一个投票——你会等大家都表达完意见后再做决定。"
         "在压力下你会更加注重团队——确保好人阵营还是团结的，确保决策是大家共同做出的而不是被少数人绑架的。"
     ),
-
     # Explorers (SP)
     "ISTP": (
         "你的底层认知风格是 ISTP — 鉴赏家型。\n"
@@ -178,6 +176,7 @@ def mbti_natural_language(mbti: str) -> str:
 # Layer 1 data: PersonaTraits (prompt-facing personality)
 # ============================================================
 
+
 @dataclass
 class PersonaTraits:
     """Personality traits — used EXCLUSIVELY for prompt construction.
@@ -187,35 +186,36 @@ class PersonaTraits:
     """
 
     name: str = ""
-    mbti: str = ""                      # e.g. "INTJ", "ENFP"
-    gender: str = ""                    # "male" | "female"
+    mbti: str = ""  # e.g. "INTJ", "ENFP"
+    gender: str = ""  # "male" | "female"
     age: int = 25
-    basic_info: str = ""                # 1-2 sentence backstory
+    basic_info: str = ""  # 1-2 sentence backstory
 
     # Speaking style (natural language descriptors only)
-    vocabulary_style: str = ""          # "academic", "colloquial", "dramatic", "terse"
-    speech_length_habit: str = ""       # "short_and_punchy", "detailed", "storyteller"
-    reasoning_style: str = ""           # "logical_chain", "gut_feeling", "comparative"
+    vocabulary_style: str = ""  # "academic", "colloquial", "dramatic", "terse"
+    speech_length_habit: str = ""  # "short_and_punchy", "detailed", "storyteller"
+    reasoning_style: str = ""  # "logical_chain", "gut_feeling", "comparative"
 
     # Social behavior
-    social_habit: str = ""              # "leader", "follower", "lone_wolf", "mediator"
-    humor_style: str = ""               # "dry", "self_deprecating", "sarcastic", "none"
-    pressure_style: str = ""            # "defensive", "counter_attack", "deflect", "calm"
-    uncertainty_style: str = ""         # "admit_ignorance", "overcompensate", "stay_quiet"
+    social_habit: str = ""  # "leader", "follower", "lone_wolf", "mediator"
+    humor_style: str = ""  # "dry", "self_deprecating", "sarcastic", "none"
+    pressure_style: str = ""  # "defensive", "counter_attack", "deflect", "calm"
+    uncertainty_style: str = ""  # "admit_ignorance", "overcompensate", "stay_quiet"
 
     # Wolf-specific
     wolf_deception_style: str = ""
     mistake_pattern: str = ""
 
     # Meta
-    werewolf_experience: str = ""       # "rookie", "experienced", "veteran"
+    werewolf_experience: str = ""  # "rookie", "experienced", "veteran"
     trigger_topics: List[str] = field(default_factory=list)
-    style_label: str = ""               # "analytical", "aggressive", "passive", "chaotic"
+    style_label: str = ""  # "analytical", "aggressive", "passive", "chaotic"
 
 
 # ============================================================
 # Layer 1 data: MindTraits (used ONLY for HumanizationProfile params)
 # ============================================================
+
 
 @dataclass
 class MindTraits:
@@ -226,17 +226,18 @@ class MindTraits:
     suspicion thresholds, etc.
     """
 
-    courage: str = "calculated"              # "bold", "cautious", "calculated"
-    memory_bias: str = "recent"              # "recent", "first_impression", "selective", "comprehensive"
-    suspicion_threshold: str = "medium"      # "low", "medium", "high"
-    self_protection: str = "passive"         # "aggressive", "passive", "sacrificial"
-    logic_depth: str = "moderate"            # "shallow", "moderate", "deep"
-    table_presence: str = "balanced"         # "dominant", "balanced", "quiet"
+    courage: str = "calculated"  # "bold", "cautious", "calculated"
+    memory_bias: str = "recent"  # "recent", "first_impression", "selective", "comprehensive"
+    suspicion_threshold: str = "medium"  # "low", "medium", "high"
+    self_protection: str = "passive"  # "aggressive", "passive", "sacrificial"
+    logic_depth: str = "moderate"  # "shallow", "moderate", "deep"
+    table_presence: str = "balanced"  # "dominant", "balanced", "quiet"
 
 
 # ============================================================
 # Layer 2: Role Profile
 # ============================================================
+
 
 @dataclass
 class Profile:
@@ -319,8 +320,7 @@ class Profile:
         blocks.append("\n".join(role_lines))
 
         # Game context footer
-        blocks.append("你正在参与一局狼人杀游戏。请用中文回答。"
-                       "你的推理过程是内部思考，不要在发言中暴露。")
+        blocks.append("你正在参与一局狼人杀游戏。请用中文回答。你的推理过程是内部思考，不要在发言中暴露。")
 
         return "\n\n".join(blocks)
 
@@ -329,9 +329,13 @@ class Profile:
 # Default Builder Helpers
 # ============================================================
 
+
 def _default_persona(**overrides) -> PersonaTraits:
     defaults = {
-        "name": "", "mbti": "INTJ", "gender": "male", "age": 28,
+        "name": "",
+        "mbti": "INTJ",
+        "gender": "male",
+        "age": 28,
         "basic_info": "经验丰富的狼人杀玩家。",
         "style_label": "analytical",
         "vocabulary_style": "用词精准",

@@ -1,20 +1,24 @@
 from __future__ import annotations
 
-import asyncio
 import json
-from typing import Any, Dict, Optional
+from typing import Any
+from typing import Dict
+from typing import Optional
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI
+from fastapi import HTTPException
+from fastapi import WebSocket
+from fastapi import WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, PlainTextResponse, Response
+from fastapi.responses import HTMLResponse
+from fastapi.responses import Response
 
 from backend.agents.factory import create_agents
 from backend.db.database import init_db
 from backend.engine.game import WerewolfGame
 from backend.engine.models import GameState
-from backend.engine.rules import build_players, get_role_configuration
-from backend.protocols import RoomCreateRequest, RoomManager
-
+from backend.protocols import RoomCreateRequest
+from backend.protocols import RoomManager
 
 app = FastAPI(title="AI Werewolf Demo", version="0.2.0")
 app.add_middleware(
@@ -330,7 +334,6 @@ def eval_role_scores(role: Optional[str] = None):
     still in progress), returns ``{"available": false, ...}`` with partial
     raw counts so the dashboard can show "running" state.
     """
-    import os
     from pathlib import Path
 
     experiment_dir = Path(__file__).resolve().parent.parent / "data" / "experiment"
@@ -657,8 +660,8 @@ async def stream_game(
     clients first receive the entire snapshot buffer accumulated so far, then
     follow live frames until the game finishes.
     """
-    import threading
     import asyncio as aio
+    import threading
 
     loop = aio.get_running_loop()
     # Thread-safe queue for real-time snapshot delivery

@@ -8,6 +8,7 @@ Covers:
 - Every Role has an `ACTION_PLAYBOOKS` entry AND a `ROLE_PROFILES` entry AND
   a `ROLE_SYSTEM_PROMPTS` entry (so prompt assembly never KeyErrors).
 """
+
 from __future__ import annotations
 
 import pytest
@@ -16,7 +17,10 @@ from backend.agents.playbooks import ACTION_PLAYBOOKS
 from backend.agents.profiles import ROLE_PROFILES
 from backend.agents.prompts import ROLE_SYSTEM_PROMPTS
 from backend.engine.models import Role
-from backend.engine.roles import ROLE_REGISTRY, RoleSpec, get_playable_roles, register_role
+from backend.engine.roles import ROLE_REGISTRY
+from backend.engine.roles import RoleSpec
+from backend.engine.roles import get_playable_roles
+from backend.engine.roles import register_role
 from backend.engine.rules import WOLFCHA_ROLE_CONFIGS
 
 
@@ -45,9 +49,7 @@ def test_locked_configs_only_use_playable_roles() -> None:
     playable = set(get_playable_roles())
     for player_count, roles in WOLFCHA_ROLE_CONFIGS.items():
         for role in roles:
-            assert role in playable, (
-                f"{player_count}P config contains template role {role.value!r}"
-            )
+            assert role in playable, f"{player_count}P config contains template role {role.value!r}"
 
 
 def test_register_role_rejects_duplicates() -> None:
@@ -89,8 +91,6 @@ def test_template_roles_have_correct_pack() -> None:
     """
     for role, spec in ROLE_REGISTRY.items():
         if not spec.playable:
-            assert spec.pack in ("wolfcha", "extensions"), (
-                f"{role.value} is unplayable but in pack {spec.pack!r}"
-            )
+            assert spec.pack in ("wolfcha", "extensions"), f"{role.value} is unplayable but in pack {spec.pack!r}"
         if spec.pack == "basic":
             assert spec.playable, f"basic-pack role {role.value} should be playable"

@@ -2,35 +2,43 @@ from __future__ import annotations
 
 import json
 
-from backend.engine.models import Alignment, Role
-from backend.engine.visibility import PlayerView
 from backend.agents.llm_agent import LLMAgent
-from backend.eval.evolution import (
-    AcceptancePolicy,
-    DreamJob,
-    EvolutionPipeline,
-    HashingVectorEmbeddingProvider,
-    KnowledgeDocValidator,
-    PatchOperation,
-    PatchValidator,
-    RoleStrategyCard,
-    StrategyContextRenderer,
-    StrategyKnowledgeDoc,
-    StrategyKnowledgeDocExtractor,
-    StrategyKnowledgeStore,
-    StrategyPatch,
-    StrategyRetrievalQuery,
-    TournamentRunner,
-    VersionManager,
-    build_acceptance_step_metric,
-    build_bc_acceptance_audit,
-    export_evolution_summary,
-    load_strategy_knowledge,
-)
-from backend.eval.review import GameMetrics, MetricsCalculator, PlayerScore, ReviewReportBuilder, StrategyKnowledgeExtractor
+from backend.engine.models import Alignment
+from backend.engine.models import Role
+from backend.engine.visibility import PlayerView
+from backend.eval.evolution import AcceptancePolicy
+from backend.eval.evolution import DreamJob
+from backend.eval.evolution import EvolutionPipeline
+from backend.eval.evolution import HashingVectorEmbeddingProvider
+from backend.eval.evolution import KnowledgeDocValidator
+from backend.eval.evolution import PatchOperation
+from backend.eval.evolution import PatchValidator
+from backend.eval.evolution import RoleStrategyCard
+from backend.eval.evolution import StrategyContextRenderer
+from backend.eval.evolution import StrategyKnowledgeDoc
+from backend.eval.evolution import StrategyKnowledgeDocExtractor
+from backend.eval.evolution import StrategyKnowledgeStore
+from backend.eval.evolution import StrategyPatch
+from backend.eval.evolution import StrategyRetrievalQuery
+from backend.eval.evolution import TournamentRunner
+from backend.eval.evolution import VersionManager
+from backend.eval.evolution import build_acceptance_step_metric
+from backend.eval.evolution import build_bc_acceptance_audit
+from backend.eval.evolution import export_evolution_summary
+from backend.eval.evolution import load_strategy_knowledge
+from backend.eval.review import GameMetrics
+from backend.eval.review import MetricsCalculator
+from backend.eval.review import PlayerScore
+from backend.eval.review import ReviewReportBuilder
+from backend.eval.review import StrategyKnowledgeExtractor
 from backend.eval.types import ReviewReport as TrackBReviewReport
 from backend.eval.types import StrategySuggestion as TrackBStrategySuggestion
-from tests.test_review_metrics import make_death, make_player, make_seer_result, make_speech, make_state, make_vote
+from tests.test_review_metrics import make_death
+from tests.test_review_metrics import make_player
+from tests.test_review_metrics import make_seer_result
+from tests.test_review_metrics import make_speech
+from tests.test_review_metrics import make_state
+from tests.test_review_metrics import make_vote
 
 
 def _approved_report():
@@ -53,7 +61,9 @@ def _approved_report():
     return report
 
 
-def _metrics(version: str, score: float, role_task: float, *, critical: bool = False, winner: str = "village") -> GameMetrics:
+def _metrics(
+    version: str, score: float, role_task: float, *, critical: bool = False, winner: str = "village"
+) -> GameMetrics:
     return GameMetrics(
         game_id=f"{version}-{score}",
         winner=winner,
@@ -153,7 +163,11 @@ def test_knowledge_store_retrieves_by_role_phase_and_updates_usage(tmp_path) -> 
         tags=["seer", "info_release"],
     )
     store = StrategyKnowledgeStore([doc], embedding_provider=HashingVectorEmbeddingProvider(), rerank_provider=None)
-    lessons = store.retrieve(StrategyRetrievalQuery(role="Seer", phase="DAY_SPEECH", observation_summary="I have a wolf check and need vote pressure"))
+    lessons = store.retrieve(
+        StrategyRetrievalQuery(
+            role="Seer", phase="DAY_SPEECH", observation_summary="I have a wolf check and need vote pressure"
+        )
+    )
     assert lessons[0].doc_id == "doc-1"
     assert lessons[0].retrieval_mode == "hybrid_vector_bm25_fts_rerank_v2"
     assert lessons[0].vector_score > 0
@@ -224,7 +238,9 @@ def test_knowledge_store_uses_vector_score_not_only_keyword_overlap() -> None:
         confidence=0.8,
         status="active",
     )
-    store = StrategyKnowledgeStore([doc_semantic, doc_keyword], embedding_provider=StubEmbeddingProvider(), rerank_provider=None)
+    store = StrategyKnowledgeStore(
+        [doc_semantic, doc_keyword], embedding_provider=StubEmbeddingProvider(), rerank_provider=None
+    )
 
     lessons = store.retrieve(
         StrategyRetrievalQuery(
@@ -336,7 +352,9 @@ def test_acceptance_audit_quantifies_pass_rates() -> None:
 
 def test_dream_job_generates_valid_candidate_patch_and_version() -> None:
     report = _approved_report()
-    manager = VersionManager([RoleStrategyCard(role="Seer", version="seer_v1", goal="Convert information into village wins.")])
+    manager = VersionManager(
+        [RoleStrategyCard(role="Seer", version="seer_v1", goal="Convert information into village wins.")]
+    )
     dream = DreamJob(version_manager=manager)
 
     result = dream.run([report])
@@ -390,7 +408,11 @@ def test_version_manager_promotes_and_rolls_back_candidate() -> None:
         source_report_ids=["g1"],
         source_knowledge_doc_ids=["doc-1"],
         source_evidence_ids=[],
-        operations=[PatchOperation("add", "speech_policy", "Release confirmed wolf checks when vote pressure matters.", "approved evidence")],
+        operations=[
+            PatchOperation(
+                "add", "speech_policy", "Release confirmed wolf checks when vote pressure matters.", "approved evidence"
+            )
+        ],
         expected_effects=[],
     )
     candidate = manager.create_candidate(patch)
@@ -425,7 +447,9 @@ def test_evolution_pipeline_exports_summary(tmp_path) -> None:
     candidate = [_metrics("seer_v2_candidate", 72.0, 0.70), _metrics("seer_v2_candidate", 74.0, 0.72)]
     path = tmp_path / "evolution_summary.json"
 
-    summary = EvolutionPipeline().run([report], baseline_metrics=baseline, candidate_metrics=candidate, summary_path=path)
+    summary = EvolutionPipeline().run(
+        [report], baseline_metrics=baseline, candidate_metrics=candidate, summary_path=path
+    )
     payload = export_evolution_summary(summary, tmp_path / "summary-copy.json")
 
     assert summary.approved_report_count == 1
@@ -437,14 +461,20 @@ def test_evolution_pipeline_exports_summary(tmp_path) -> None:
 
 
 def test_strategy_context_renderer_outputs_prompt_block() -> None:
-    lesson = StrategyContextRenderer().render_lessons([
-        type("Lesson", (), {
-            "recommendation": "Release checks into public pressure.",
-            "trigger": "When vote pressure is split.",
-            "rationale": "Approved report evidence.",
-            "doc_id": "doc-1",
-        })()
-    ])
+    lesson = StrategyContextRenderer().render_lessons(
+        [
+            type(
+                "Lesson",
+                (),
+                {
+                    "recommendation": "Release checks into public pressure.",
+                    "trigger": "When vote pressure is split.",
+                    "rationale": "Approved report evidence.",
+                    "doc_id": "doc-1",
+                },
+            )()
+        ]
+    )
     assert "Retrieved Lessons" in lesson
     assert "doc-1" in lesson
 

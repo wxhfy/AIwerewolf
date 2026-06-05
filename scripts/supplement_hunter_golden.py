@@ -12,9 +12,9 @@ Run: python scripts/supplement_hunter_golden.py
 
 from __future__ import annotations
 
-import json, sys
+import json
+import sys
 from pathlib import Path
-from collections import defaultdict
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -68,22 +68,24 @@ def create_hunter_golden_cases(opps: list[dict]) -> list[dict]:
         target_died = outcome.get("target_died_same_phase", False)
 
         if is_wolf and target_died:
-            golden.append({
-                "opportunity_id": opp["opportunity_id"],
-                "role": "Hunter",
-                "opportunity_type": "hunter_shot",
-                "task_type": "single_action",
-                "day": opp["day"],
-                "label": {
-                    "quality_score": 95,
-                    "role_alignment": 95,
-                    "risk_level": "low",
-                    "confidence": 1.0,
-                    "reason": "GOLDEN: 猎人枪杀高狼面目标，证据充分，结果正确。最高质量决策。",
-                },
-                "golden_case": True,
-                "case_type": "shot_wolf",
-            })
+            golden.append(
+                {
+                    "opportunity_id": opp["opportunity_id"],
+                    "role": "Hunter",
+                    "opportunity_type": "hunter_shot",
+                    "task_type": "single_action",
+                    "day": opp["day"],
+                    "label": {
+                        "quality_score": 95,
+                        "role_alignment": 95,
+                        "risk_level": "low",
+                        "confidence": 1.0,
+                        "reason": "GOLDEN: 猎人枪杀高狼面目标，证据充分，结果正确。最高质量决策。",
+                    },
+                    "golden_case": True,
+                    "case_type": "shot_wolf",
+                }
+            )
 
     # ---- Case 2: Shot good (low quality) ----
     for opp in shot_opps:
@@ -91,22 +93,24 @@ def create_hunter_golden_cases(opps: list[dict]) -> list[dict]:
         is_good = target.get("target_alignment") == "village"
 
         if is_good:
-            golden.append({
-                "opportunity_id": opp["opportunity_id"],
-                "role": "Hunter",
-                "opportunity_type": "hunter_shot",
-                "task_type": "single_action",
-                "day": opp["day"],
-                "label": {
-                    "quality_score": 15,
-                    "role_alignment": 10,
-                    "risk_level": "high",
-                    "confidence": 0.95,
-                    "reason": "GOLDEN: 猎人枪杀好人，无证据支持。严重负面决策。",
-                },
-                "golden_case": True,
-                "case_type": "shot_good",
-            })
+            golden.append(
+                {
+                    "opportunity_id": opp["opportunity_id"],
+                    "role": "Hunter",
+                    "opportunity_type": "hunter_shot",
+                    "task_type": "single_action",
+                    "day": opp["day"],
+                    "label": {
+                        "quality_score": 15,
+                        "role_alignment": 10,
+                        "risk_level": "high",
+                        "confidence": 0.95,
+                        "reason": "GOLDEN: 猎人枪杀好人，无证据支持。严重负面决策。",
+                    },
+                    "golden_case": True,
+                    "case_type": "shot_good",
+                }
+            )
 
     # ---- Case 3: Vote with high suspicion target ----
     for opp in vote_opps:
@@ -115,22 +119,24 @@ def create_hunter_golden_cases(opps: list[dict]) -> list[dict]:
         outcome = opp.get("outcome_features", {})
 
         if is_wolf:
-            golden.append({
-                "opportunity_id": opp["opportunity_id"],
-                "role": "Hunter",
-                "opportunity_type": "vote",
-                "task_type": "single_action",
-                "day": opp["day"],
-                "label": {
-                    "quality_score": 85,
-                    "role_alignment": 85,
-                    "risk_level": "low",
-                    "confidence": 0.9,
-                    "reason": "GOLDEN: 猎人投票高狼面目标，符合阵营目标。",
-                },
-                "golden_case": True,
-                "case_type": "vote_wolf",
-            })
+            golden.append(
+                {
+                    "opportunity_id": opp["opportunity_id"],
+                    "role": "Hunter",
+                    "opportunity_type": "vote",
+                    "task_type": "single_action",
+                    "day": opp["day"],
+                    "label": {
+                        "quality_score": 85,
+                        "role_alignment": 85,
+                        "risk_level": "low",
+                        "confidence": 0.9,
+                        "reason": "GOLDEN: 猎人投票高狼面目标，符合阵营目标。",
+                    },
+                    "golden_case": True,
+                    "case_type": "vote_wolf",
+                }
+            )
 
     # ---- Case 4: Vote for good (mistake) ----
     for opp in vote_opps:
@@ -138,43 +144,47 @@ def create_hunter_golden_cases(opps: list[dict]) -> list[dict]:
         is_good = target.get("target_alignment") == "village"
 
         if is_good:
-            golden.append({
-                "opportunity_id": opp["opportunity_id"],
-                "role": "Hunter",
-                "opportunity_type": "vote",
-                "task_type": "single_action",
-                "day": opp["day"],
-                "label": {
-                    "quality_score": 30,
-                    "role_alignment": 25,
-                    "risk_level": "medium",
-                    "confidence": 0.85,
-                    "reason": "GOLDEN: 猎人误投好人，偏离阵营目标。",
-                },
-                "golden_case": True,
-                "case_type": "vote_good",
-            })
+            golden.append(
+                {
+                    "opportunity_id": opp["opportunity_id"],
+                    "role": "Hunter",
+                    "opportunity_type": "vote",
+                    "task_type": "single_action",
+                    "day": opp["day"],
+                    "label": {
+                        "quality_score": 30,
+                        "role_alignment": 25,
+                        "risk_level": "medium",
+                        "confidence": 0.85,
+                        "reason": "GOLDEN: 猎人误投好人，偏离阵营目标。",
+                    },
+                    "golden_case": True,
+                    "case_type": "vote_good",
+                }
+            )
 
     # ---- Case 5: Speech with clear stance ----
     for opp in speech_opps[:10]:
-        golden.append({
-            "opportunity_id": opp["opportunity_id"],
-            "role": "Hunter",
-            "opportunity_type": "speech",
-            "task_type": "speech_quality",
-            "day": opp["day"],
-            "label": {
-                "groundedness": 18,
-                "stance_clarity": 15,
-                "consistency": 15,
-                "strategic_value": 15,
-                "information_safety": 12,
-                "confidence": 0.8,
-                "reason": "GOLDEN: 猎人发言有立场有依据，未暴露身份。",
-            },
-            "golden_case": True,
-            "case_type": "speech_good",
-        })
+        golden.append(
+            {
+                "opportunity_id": opp["opportunity_id"],
+                "role": "Hunter",
+                "opportunity_type": "speech",
+                "task_type": "speech_quality",
+                "day": opp["day"],
+                "label": {
+                    "groundedness": 18,
+                    "stance_clarity": 15,
+                    "consistency": 15,
+                    "strategic_value": 15,
+                    "information_safety": 12,
+                    "confidence": 0.8,
+                    "reason": "GOLDEN: 猎人发言有立场有依据，未暴露身份。",
+                },
+                "golden_case": True,
+                "case_type": "speech_good",
+            }
+        )
 
     # ---- Deduplicate by opportunity_id ----
     seen = set()

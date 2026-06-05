@@ -15,13 +15,15 @@ from __future__ import annotations
 import json
 import logging
 import statistics
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
-from backend.eval.judge_rubric import (
-    STRATEGIST_RUBRIC, LOGICIAN_RUBRIC, PSYCHOLOGIST_RUBRIC,
-    PER_STEP_RUBRIC, RUBRIC_VERSION, RUBRIC_HASH,
-)
+from backend.eval.judge_rubric import LOGICIAN_RUBRIC
+from backend.eval.judge_rubric import PER_STEP_RUBRIC
+from backend.eval.judge_rubric import PSYCHOLOGIST_RUBRIC
+from backend.eval.judge_rubric import RUBRIC_HASH
+from backend.eval.judge_rubric import RUBRIC_VERSION
+from backend.eval.judge_rubric import STRATEGIST_RUBRIC
 
 logger = logging.getLogger(__name__)
 
@@ -29,16 +31,18 @@ logger = logging.getLogger(__name__)
 @dataclass
 class JudgeVerdict:
     """One judge's score for one rubric item."""
+
     item_id: str
-    score: float         # 0-10
-    reasoning: str       # justification
+    score: float  # 0-10
+    reasoning: str  # justification
     evidence: list[str]  # event IDs cited
 
 
 @dataclass
 class JudgeReport:
     """Complete report from one judge for one player."""
-    judge_type: str       # "strategist" | "logician" | "psychologist"
+
+    judge_type: str  # "strategist" | "logician" | "psychologist"
     player_name: str
     role: str
     verdicts: list[JudgeVerdict]
@@ -48,10 +52,15 @@ class JudgeReport:
 @dataclass
 class GameLevelScore:
     """Reliable game-level score for one player."""
-    player_name: str; role: str; alignment: str
-    strategy_score: float; logic_score: float; social_score: float
-    composite: float                        # trimmed mean
-    judge_agreement: float                   # std across judges (lower = more agreement)
+
+    player_name: str
+    role: str
+    alignment: str
+    strategy_score: float
+    logic_score: float
+    social_score: float
+    composite: float  # trimmed mean
+    judge_agreement: float  # std across judges (lower = more agreement)
     individual_reports: list[JudgeReport]
     rubric_version: str = RUBRIC_VERSION
     rubric_hash: str = RUBRIC_HASH
@@ -60,10 +69,14 @@ class GameLevelScore:
 @dataclass
 class PerStepScore:
     """LLM-judged score for a single decision."""
-    decision_id: str; player_name: str; action_type: str
-    day: int; phase: str
-    reasonability: float     # 0-10: was it reasonable given known info?
-    reasoning_depth: float   # 0-10: was the reasoning sound?
+
+    decision_id: str
+    player_name: str
+    action_type: str
+    day: int
+    phase: str
+    reasonability: float  # 0-10: was it reasonable given known info?
+    reasoning_depth: float  # 0-10: was the reasoning sound?
     overall: float
     evidence: list[str]
     judge_agreement: float = 0.0  # std across judges for panel scoring
@@ -132,18 +145,31 @@ class LLMJudgePanel:
             logic_score = next((r.overall_score for r in reports if r.judge_type == "logician"), 5.0)
             social_score = next((r.overall_score for r in reports if r.judge_type == "psychologist"), 5.0)
 
-            scores.append(GameLevelScore(
-                player_name=name, role=role, alignment=alignment,
-                strategy_score=strategy_score, logic_score=logic_score,
-                social_score=social_score, composite=composite,
-                judge_agreement=judge_agreement, individual_reports=reports,
-            ))
+            scores.append(
+                GameLevelScore(
+                    player_name=name,
+                    role=role,
+                    alignment=alignment,
+                    strategy_score=strategy_score,
+                    logic_score=logic_score,
+                    social_score=social_score,
+                    composite=composite,
+                    judge_agreement=judge_agreement,
+                    individual_reports=reports,
+                )
+            )
 
         return scores
 
     def _judge_player(
-        self, judge_type: str, rubric: list, name: str, role: str,
-        alignment: str, decisions: list[dict], game_state: dict,
+        self,
+        judge_type: str,
+        rubric: list,
+        name: str,
+        role: str,
+        alignment: str,
+        decisions: list[dict],
+        game_state: dict,
     ) -> JudgeReport:
         """One judge scores one player using the locked rubric."""
         # Build the judging prompt
@@ -151,9 +177,13 @@ class LLMJudgePanel:
         decisions_summary = _summarize_decisions(decisions, max_decisions=12)
 
         prompt = _build_judge_prompt(
-            judge_type=judge_type, rubric=rubric,
-            player_name=name, role=role, alignment=alignment,
-            events=events_summary, decisions=decisions_summary,
+            judge_type=judge_type,
+            rubric=rubric,
+            player_name=name,
+            role=role,
+            alignment=alignment,
+            events=events_summary,
+            decisions=decisions_summary,
             game_state=game_state,
         )
 
@@ -168,7 +198,9 @@ class LLMJudgePanel:
         parsed = self._parse_judge_output(raw, rubric)
 
         return JudgeReport(
-            judge_type=judge_type, player_name=name, role=role,
+            judge_type=judge_type,
+            player_name=name,
+            role=role,
             verdicts=parsed,
             overall_score=statistics.mean([v.score for v in parsed]) if parsed else 5.0,
         )
@@ -227,7 +259,8 @@ class LLMJudgePanel:
                 # Weight critic at 25%, trimmed mean at 75%
                 final = trimmed_mean * 0.75 + critic_score * 0.25
                 return {
-                    "adjusted": True, "final_score": round(final, 3),
+                    "adjusted": True,
+                    "final_score": round(final, 3),
                     "disagreement": round(disagreement, 3),
                     "critic_score": critic_score,
                     "critic_reasoning": critic_data.get("reasoning", ""),
@@ -241,7 +274,9 @@ class LLMJudgePanel:
     # ---- Per-Step Scoring (lightweight, single judge) ----
 
     def score_step(
-        self, decision: dict, game_context: dict,
+        self,
+        decision: dict,
+        game_context: dict,
     ) -> PerStepScore | None:
         """Score a single decision using the per-step rubric.
 
@@ -272,7 +307,9 @@ class LLMJudgePanel:
         return None
 
     def score_step_with_panel(
-        self, decision: dict, game_context: dict,
+        self,
+        decision: dict,
+        game_context: dict,
     ) -> PerStepScore | None:
         """Score a single decision using the full 3-judge panel with per-step rubric.
 
@@ -341,7 +378,8 @@ class LLMJudgePanel:
         """Parse LLM output into structured verdicts."""
         try:
             import re
-            m = re.search(r'\{.*\}', raw, re.DOTALL)
+
+            m = re.search(r"\{.*\}", raw, re.DOTALL)
             if not m:
                 return []
             data = json.loads(m.group())
@@ -351,12 +389,14 @@ class LLMJudgePanel:
                 reason_key = f"{item.id}_reasoning"
                 ev_key = f"{item.id}_evidence"
                 if key in data:
-                    verdicts.append(JudgeVerdict(
-                        item_id=item.id,
-                        score=float(data.get(key, 5)),
-                        reasoning=str(data.get(reason_key, "")),
-                        evidence=data.get(ev_key, []) if isinstance(data.get(ev_key), list) else [],
-                    ))
+                    verdicts.append(
+                        JudgeVerdict(
+                            item_id=item.id,
+                            score=float(data.get(key, 5)),
+                            reasoning=str(data.get(reason_key, "")),
+                            evidence=data.get(ev_key, []) if isinstance(data.get(ev_key), list) else [],
+                        )
+                    )
             return verdicts
         except (json.JSONDecodeError, KeyError, ValueError) as e:
             logger.warning(f"Failed to parse judge output: {e}")
@@ -366,7 +406,8 @@ class LLMJudgePanel:
         """Parse per-step LLM output."""
         try:
             import re
-            m = re.search(r'\{.*\}', raw, re.DOTALL)
+
+            m = re.search(r"\{.*\}", raw, re.DOTALL)
             if not m:
                 return None
             return json.loads(m.group())
@@ -378,34 +419,43 @@ class LLMJudgePanel:
 # Prompt builders
 # ============================================================
 
+
 def _judge_label(judge_type: str) -> str:
-    return {"strategist": "策略分析师", "logician": "逻辑检查官", "psychologist": "社交心理学家"}.get(judge_type, judge_type)
+    return {"strategist": "策略分析师", "logician": "逻辑检查官", "psychologist": "社交心理学家"}.get(
+        judge_type, judge_type
+    )
 
 
 def _build_judge_prompt(
-    judge_type: str, rubric: list, player_name: str, role: str,
-    alignment: str, events: str, decisions: str, game_state: dict,
+    judge_type: str,
+    rubric: list,
+    player_name: str,
+    role: str,
+    alignment: str,
+    events: str,
+    decisions: str,
+    game_state: dict,
 ) -> str:
     """Build the judging prompt with locked rubric items."""
     winner = game_state.get("winner", "unknown")
     total_players = len(game_state.get("players", []))
 
     lines = [
-        f"# 游戏概况",
+        "# 游戏概况",
         f"胜方: {winner} | 总玩家: {total_players}人",
-        f"",
-        f"# 被评估玩家",
+        "",
+        "# 被评估玩家",
         f"姓名: {player_name} | 角色: {role} | 阵营: {alignment}",
-        f"",
-        f"# 游戏事件（与该玩家相关）",
+        "",
+        "# 游戏事件（与该玩家相关）",
         events,
-        f"",
-        f"# 决策记录",
+        "",
+        "# 决策记录",
         decisions,
-        f"",
+        "",
         f"# 评分量规（{_judge_label(judge_type)}视角）",
-        f"请对以下每个维度单独评分（0-10整数），并引用具体事件ID作为证据：",
-        f"",
+        "请对以下每个维度单独评分（0-10整数），并引用具体事件ID作为证据：",
+        "",
     ]
 
     for item in rubric:
@@ -413,7 +463,7 @@ def _build_judge_prompt(
         lines.append("评分标准：")
         for score, desc in sorted(item.anchors.items()):
             lines.append(f"  {score}分: {desc}")
-        lines.append(f"证据要求: 引用具体的游戏事件/发言/投票作为判断依据")
+        lines.append("证据要求: 引用具体的游戏事件/发言/投票作为判断依据")
         lines.append("")
 
     lines.append("# 输出格式（严格JSON，不要额外解释）")
@@ -430,24 +480,26 @@ def _build_judge_prompt(
 def _build_per_step_prompt(decision: dict, context: dict, rubric: list) -> str:
     """Build a lightweight per-step scoring prompt."""
     lines = [
-        f"# 决策信息",
+        "# 决策信息",
         f"玩家: {decision.get('player_name', '?')} ({decision.get('player_role', '?')})",
         f"时间: Day {decision.get('day', 0)} / {decision.get('phase', '?')}",
         f"行动类型: {decision.get('action_type', '?')}",
         f"目标: {decision.get('target_id', 'none')}",
         f"推理: {decision.get('raw_text', '')[:300]}",
-        f"",
-        f"# 当时可见信息",
+        "",
+        "# 当时可见信息",
         context.get("visible_info", "无"),
-        f"",
-        f"# 评分",
+        "",
+        "# 评分",
     ]
     for item in rubric:
         lines.append(f"{item.id}: {item.question}")
         lines.append("评分: " + ", ".join(f"{s}={d}" for s, d in sorted(item.anchors.items())))
         lines.append("")
 
-    lines.append('输出JSON: {"T1_score": <0-10>, "T2_score": <0-10>, "T1_reasoning": "...", "T2_reasoning": "...", "evidence": ["..."]}')
+    lines.append(
+        '输出JSON: {"T1_score": <0-10>, "T2_score": <0-10>, "T1_reasoning": "...", "T2_reasoning": "...", "evidence": ["..."]}'
+    )
     return "\n".join(lines)
 
 
@@ -458,9 +510,7 @@ def _summarize_events(game_state: dict, player_name: str, max_events: int = 15) 
     for e in events:
         payload = e.get("payload", {}) or {}
         text = str(payload.get("speech", "") or payload.get("message", ""))
-        if player_name in text or payload.get("actor_name") == player_name:
-            relevant.append(e)
-        elif payload.get("target_name") == player_name:
+        if player_name in text or payload.get("actor_name") == player_name or payload.get("target_name") == player_name:
             relevant.append(e)
     if len(relevant) > max_events:
         relevant = relevant[-max_events:]

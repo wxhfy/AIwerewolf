@@ -3,16 +3,16 @@
 
 from __future__ import annotations
 
-import argparse, json, sys
-from pathlib import Path
+import argparse
+import json
+import sys
 from collections import Counter
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from backend.eval.human_label_validator import (
-    validate_human_pairwise_label, validate_human_pairwise_labels,
-)
+from backend.eval.human_label_validator import validate_human_pairwise_labels
 
 
 def main():
@@ -30,13 +30,13 @@ def main():
     with open(inp) as f:
         for line in f:
             if line.strip():
-                try: labels.append(json.loads(line))
-                except json.JSONDecodeError: pass
+                try:
+                    labels.append(json.loads(line))
+                except json.JSONDecodeError:
+                    pass
 
     result = validate_human_pairwise_labels(labels)
-    result["label_distribution"] = dict(Counter(
-        l.get("label", "UNLABELED") for l in labels
-    ))
+    result["label_distribution"] = dict(Counter(l.get("label", "UNLABELED") for l in labels))
 
     print(f"Total: {result['total']}, Valid: {result['valid']}, Invalid: {result['invalid']}")
     print(f"Label distribution: {result['label_distribution']}")

@@ -14,8 +14,8 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-import time
-from datetime import datetime, timezone
+from datetime import datetime
+from datetime import timezone
 from pathlib import Path
 from typing import Any
 
@@ -66,19 +66,24 @@ def run_one_llm_game(role: str, bias: dict | None, seed: int, strict: bool) -> d
     role_scores = []
     for score in metric.player_scores:
         if score.role == role:
-            role_scores.append({
-                "final": score.adjusted_final_score if score.adjusted_final_score is not None else score.final_score,
-                "role_task": score.role_task_score,
-                "vote": score.vote_score,
-                "skill": score.skill_score,
-                "mistake": score.mistake_penalty,
-                "process": score.process_score,
-            })
+            role_scores.append(
+                {
+                    "final": score.adjusted_final_score
+                    if score.adjusted_final_score is not None
+                    else score.final_score,
+                    "role_task": score.role_task_score,
+                    "vote": score.vote_score,
+                    "skill": score.skill_score,
+                    "mistake": score.mistake_penalty,
+                    "process": score.process_score,
+                }
+            )
     avg_final = sum(s["final"] for s in role_scores) / max(len(role_scores), 1)
     avg_rt = sum(s["role_task"] for s in role_scores) / max(len(role_scores), 1)
 
     fallback_count = sum(
-        1 for rec in game.state.decision_records
+        1
+        for rec in game.state.decision_records
         if bool((rec.parsed_action or {}).get("metadata", {}).get("fallback"))
         or bool((rec.parsed_action or {}).get("agent_fallback"))
     )
@@ -114,7 +119,7 @@ def main() -> int:
 
     for i, seed in enumerate(seeds):
         tag = f"baseline seed={seed}"
-        print(f"  ({i+1}/{len(seeds)}) {tag} ▶")
+        print(f"  ({i + 1}/{len(seeds)}) {tag} ▶")
         try:
             r = run_one_llm_game(role, None, seed, strict)
             baseline_results.append(r)
@@ -125,7 +130,7 @@ def main() -> int:
 
     for i, seed in enumerate(seeds):
         tag = f"candidate seed={seed}"
-        print(f"  ({i+1}/{len(seeds)}) {tag} ▶")
+        print(f"  ({i + 1}/{len(seeds)}) {tag} ▶")
         try:
             r = run_one_llm_game(role, bias, seed, strict)
             candidate_results.append(r)
@@ -136,6 +141,7 @@ def main() -> int:
 
     # Summarize
     from statistics import mean
+
     b_final = [r["avg_final"] for r in baseline_results if "avg_final" in r]
     c_final = [r["avg_final"] for r in candidate_results if "avg_final" in r]
     b_rt = [r["avg_role_task"] for r in baseline_results if "avg_role_task" in r]
@@ -157,21 +163,22 @@ def main() -> int:
     print(f"  baseline_fallback   = {b_fallback}")
     print(f"  candidate_fallback  = {c_fallback}")
 
-    ok = (
-        delta_pct >= 3.0
-        and c_fallback == 0
-    )
+    ok = delta_pct >= 3.0 and c_fallback == 0
     print(f"  verdict             = {'PROMOTE' if ok else 'ROLLBACK/HOLD'}")
 
     # Write output
     label = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     payload = {
-        "role": role, "seeds": seeds,
-        "baseline_avg_final": avg_b, "candidate_avg_final": avg_c,
+        "role": role,
+        "seeds": seeds,
+        "baseline_avg_final": avg_b,
+        "candidate_avg_final": avg_c,
         "delta_pct": round(delta_pct, 2),
-        "baseline_fallback": b_fallback, "candidate_fallback": c_fallback,
+        "baseline_fallback": b_fallback,
+        "candidate_fallback": c_fallback,
         "verdict": "PROMOTE" if ok else "ROLLBACK/HOLD",
-        "baseline": baseline_results, "candidate": candidate_results,
+        "baseline": baseline_results,
+        "candidate": candidate_results,
     }
     out_path = OUTPUT_DIR / f"phase_h_smoke_{role}_{label}.json"
     out_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, default=str), encoding="utf-8")

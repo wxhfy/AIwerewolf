@@ -17,7 +17,8 @@ import json
 import math
 import random
 import warnings
-from collections import Counter, defaultdict
+from collections import Counter
+from collections import defaultdict
 from pathlib import Path
 
 import numpy as np
@@ -70,6 +71,7 @@ def compute_paw(good, bad):
 # ============================================================
 # V6-1: HUMAN REVIEW QUEUE
 # ============================================================
+
 
 def compute_hard_negative_difficulty(sample, good_centroids):
     """Estimate how 'hard' a negative sample is based on feature distance from good samples."""
@@ -165,24 +167,26 @@ def build_review_queue(samples, opportunities):
                 priority = "P1"
             reasons.append(f"low_label_confidence: {s.get('label_confidence', 0):.3f}")
 
-        queue.append({
-            "sample_id": s.get("sample_id", ""),
-            "game_id": s.get("game_id", ""),
-            "role": s.get("role", ""),
-            "opportunity_type": s.get("opportunity_type", ""),
-            "task_type": s.get("task_type", ""),
-            "context_summary": s.get("context_summary", ""),
-            "chosen_action": s.get("chosen_action", {}),
-            "alternative_action": s.get("alternative_action", ""),
-            "current_label": s.get("label", ""),
-            "label_source": s.get("label_source", ""),
-            "label_confidence": s.get("label_confidence", 1.0),
-            "hard_negative_difficulty": difficulty,
-            "review_priority": priority,
-            "disagreement_reason": "; ".join(reasons),
-            "is_hard_negative": s.get("is_hard_negative", False),
-            "pre_features_snapshot": s.get("pre_features_snapshot", {}),
-        })
+        queue.append(
+            {
+                "sample_id": s.get("sample_id", ""),
+                "game_id": s.get("game_id", ""),
+                "role": s.get("role", ""),
+                "opportunity_type": s.get("opportunity_type", ""),
+                "task_type": s.get("task_type", ""),
+                "context_summary": s.get("context_summary", ""),
+                "chosen_action": s.get("chosen_action", {}),
+                "alternative_action": s.get("alternative_action", ""),
+                "current_label": s.get("label", ""),
+                "label_source": s.get("label_source", ""),
+                "label_confidence": s.get("label_confidence", 1.0),
+                "hard_negative_difficulty": difficulty,
+                "review_priority": priority,
+                "disagreement_reason": "; ".join(reasons),
+                "is_hard_negative": s.get("is_hard_negative", False),
+                "pre_features_snapshot": s.get("pre_features_snapshot", {}),
+            }
+        )
 
     # Sort by priority
     priority_order = {"P0": 0, "P1": 1, "P2": 2}
@@ -194,6 +198,7 @@ def build_review_queue(samples, opportunities):
 # ============================================================
 # V6-2: MODEL-ASSISTED REVIEW
 # ============================================================
+
 
 def review_sample(sample):
     """AI acting as reviewer: assess label correctness based on pre-action features.
@@ -321,7 +326,7 @@ def review_sample(sample):
     reviewer_confidence = min(0.85, reviewer_confidence)
 
     # Check if label changed
-    is_changed = (new_label != current_label)
+    is_changed = new_label != current_label
 
     # For hard negatives: if difficulty is high (close to good) and features are mixed,
     # we may keep the label but lower confidence
@@ -345,6 +350,7 @@ def review_sample(sample):
 # ============================================================
 # V6-3: HARD NEGATIVE REBALANCE
 # ============================================================
+
 
 def rebalance_hard_negatives(all_samples):
     """Downsample easy negatives, retain hard negatives.
@@ -416,6 +422,7 @@ def rebalance_hard_negatives(all_samples):
 # MAIN V6 PIPELINE
 # ============================================================
 
+
 def main():
     print("=" * 60)
     print("V6 Benchmark Ready Sprint")
@@ -464,12 +471,25 @@ def main():
     # Count by priority
     priority_counts = Counter(q["review_priority"] for q in queue)
     print(f"  Review queue: {len(queue)} samples")
-    print(f"  P0: {priority_counts.get('P0', 0)}, P1: {priority_counts.get('P1', 0)}, P2: {priority_counts.get('P2', 0)}")
+    print(
+        f"  P0: {priority_counts.get('P0', 0)}, P1: {priority_counts.get('P1', 0)}, P2: {priority_counts.get('P2', 0)}"
+    )
 
     # Write CSV
-    csv_headers = ["sample_id", "game_id", "role", "opportunity_type", "task_type",
-                   "context_summary", "current_label", "label_source", "label_confidence",
-                   "hard_negative_difficulty", "review_priority", "disagreement_reason"]
+    csv_headers = [
+        "sample_id",
+        "game_id",
+        "role",
+        "opportunity_type",
+        "task_type",
+        "context_summary",
+        "current_label",
+        "label_source",
+        "label_confidence",
+        "hard_negative_difficulty",
+        "review_priority",
+        "disagreement_reason",
+    ]
     with open(DATA / "human_review_queue_v6.csv", "w") as f:
         f.write(",".join(csv_headers) + "\n")
         for q in queue:
@@ -480,7 +500,7 @@ def main():
     queue_lines = []
     queue_lines.append("# Human Review Queue V6")
     queue_lines.append("")
-    queue_lines.append(f"**Date**: 2026-05-28")
+    queue_lines.append("**Date**: 2026-05-28")
     queue_lines.append(f"**Total queue**: {len(queue)}")
     queue_lines.append("")
     queue_lines.append("## Priority Distribution")
@@ -507,8 +527,16 @@ def main():
     print("\n" + "=" * 40)
     print("V6-2: Model-assisted review...")
     reviewed = []
-    review_stats = {"total": 0, "changed": 0, "good_to_bad": 0, "bad_to_good": 0,
-                    "medium_assigned": 0, "p0_reviewed": 0, "p1_reviewed": 0, "p2_reviewed": 0}
+    review_stats = {
+        "total": 0,
+        "changed": 0,
+        "good_to_bad": 0,
+        "bad_to_good": 0,
+        "medium_assigned": 0,
+        "p0_reviewed": 0,
+        "p1_reviewed": 0,
+        "p2_reviewed": 0,
+    }
 
     # Review P0+P1 only (critical + important). Skip P2 routine samples.
     target_review = sum(1 for q in queue if q.get("review_priority") in ("P0", "P1"))
@@ -549,12 +577,14 @@ def main():
     review_lines = []
     review_lines.append("# Human Review Summary V6")
     review_lines.append("")
-    review_lines.append(f"**Date**: 2026-05-28")
-    review_lines.append(f"**Reviewer type**: model_assisted (AI acting as reviewer)")
+    review_lines.append("**Date**: 2026-05-28")
+    review_lines.append("**Reviewer type**: model_assisted (AI acting as reviewer)")
     review_lines.append("")
-    review_lines.append(f"## Statistics")
+    review_lines.append("## Statistics")
     review_lines.append(f"- Reviewed: {review_stats['total']}")
-    review_lines.append(f"- Label changed: {review_stats['changed']} ({review_stats['changed']/max(review_stats['total'],1):.1%})")
+    review_lines.append(
+        f"- Label changed: {review_stats['changed']} ({review_stats['changed'] / max(review_stats['total'], 1):.1%})"
+    )
     review_lines.append(f"- Good→Bad: {review_stats['good_to_bad']}")
     review_lines.append(f"- Bad→Good: {review_stats['bad_to_good']}")
     review_lines.append(f"- New medium labels: {review_stats['medium_assigned']}")
@@ -605,10 +635,8 @@ def main():
     rebalanced_samples, hn_stats = rebalance_hard_negatives(merged_samples)
 
     # V6-4 specific: count Witch save and Seer release after fix
-    witch_save = [s for s in rebalanced_samples
-                  if s["role"] == "Witch" and s["opportunity_type"] == "witch_save"]
-    seer_release = [s for s in rebalanced_samples
-                    if s["role"] == "Seer" and s["opportunity_type"] == "seer_release"]
+    witch_save = [s for s in rebalanced_samples if s["role"] == "Witch" and s["opportunity_type"] == "witch_save"]
+    seer_release = [s for s in rebalanced_samples if s["role"] == "Seer" and s["opportunity_type"] == "seer_release"]
 
     ws_good = sum(1 for s in witch_save if s["label"] == "good")
     ws_bad = sum(1 for s in witch_save if s["label"] == "bad")
@@ -634,12 +662,17 @@ def main():
     pw_count = sum(1 for s in rebalanced_samples if s.get("is_counterfactual"))
 
     # Recompute easy ratio after rebalance
-    easy_count = sum(1 for s in rebalanced_samples
-                     if s.get("is_hard_negative") and s.get("hard_negative_difficulty", 0.5) < 0.35)
-    medium_count = sum(1 for s in rebalanced_samples
-                       if s.get("is_hard_negative") and 0.35 <= s.get("hard_negative_difficulty", 0.5) < 0.70)
-    hard_count = sum(1 for s in rebalanced_samples
-                     if s.get("is_hard_negative") and s.get("hard_negative_difficulty", 0.5) >= 0.70)
+    easy_count = sum(
+        1 for s in rebalanced_samples if s.get("is_hard_negative") and s.get("hard_negative_difficulty", 0.5) < 0.35
+    )
+    medium_count = sum(
+        1
+        for s in rebalanced_samples
+        if s.get("is_hard_negative") and 0.35 <= s.get("hard_negative_difficulty", 0.5) < 0.70
+    )
+    hard_count = sum(
+        1 for s in rebalanced_samples if s.get("is_hard_negative") and s.get("hard_negative_difficulty", 0.5) >= 0.70
+    )
     easy_ratio = easy_count / max(hn_count, 1)
     human_ratio = human_reviewed / max(total, 1)
 
@@ -653,8 +686,8 @@ def main():
     card_lines = []
     card_lines.append("# Benchmark Dataset Card V6")
     card_lines.append("")
-    card_lines.append(f"**Date**: 2026-05-28")
-    card_lines.append(f"**Version**: V6 (with model-assisted review + hard negative rebalance)")
+    card_lines.append("**Date**: 2026-05-28")
+    card_lines.append("**Version**: V6 (with model-assisted review + hard negative rebalance)")
     card_lines.append("")
     card_lines.append("## Statistics")
     card_lines.append(f"- Total samples: {total}")
@@ -665,8 +698,8 @@ def main():
     card_lines.append(f"- Hard negatives: {hn_count}")
     card_lines.append(f"- Human reviewed (model_assisted): {human_reviewed} ({human_ratio:.1%})")
     card_lines.append(f"- Easy negative ratio: {easy_ratio:.3f}")
-    card_lines.append(f"- Medium negative ratio: {medium_count/max(hn_count,1):.3f}")
-    card_lines.append(f"- Hard negative ratio: {hard_count/max(hn_count,1):.3f}")
+    card_lines.append(f"- Medium negative ratio: {medium_count / max(hn_count, 1):.3f}")
+    card_lines.append(f"- Hard negative ratio: {hard_count / max(hn_count, 1):.3f}")
     card_lines.append("")
     card_lines.append("## Known Biases")
     card_lines.append("1. Review is model_assisted, not human expert — labels are silver-standard")
@@ -679,7 +712,11 @@ def main():
     for ra_key in ["Witch|witch_save", "Seer|seer_check", "Seer|seer_release", "Hunter|hunter_shot"]:
         role, action = ra_key.split("|")
         cnt = sum(1 for s in rebalanced_samples if s["role"] == role and s["opportunity_type"] == action)
-        bad_cnt = sum(1 for s in rebalanced_samples if s["role"] == role and s["opportunity_type"] == action and s["label"] == "bad")
+        bad_cnt = sum(
+            1
+            for s in rebalanced_samples
+            if s["role"] == role and s["opportunity_type"] == action and s["label"] == "bad"
+        )
         status = "PARTIAL" if cnt >= 30 and bad_cnt >= 10 else "LOW_CONF"
         card_lines.append(f"- {ra_key}: {cnt} samples, {bad_cnt} bad → {status}")
         if status == "LOW_CONF":
@@ -748,33 +785,46 @@ def main():
         cv_d = np.mean(fold_d) if fold_d else None
         cv_paw = np.mean(fold_paw) if fold_paw else None
 
-        status = "PASS" if (cv_d is not None and cv_d > 0.3) else (
-            "PARTIAL" if (cv_d is not None and cv_d > 0) else "LOW_CONF")
-        cv_results[key] = {"d": cv_d, "paw": cv_paw, "n": len(y),
-                           "n_pos": int(sum(y == 1)), "n_neg": int(sum(y == 0)),
-                           "status": status}
-        print(f"  {role:>10}/{opp_type:<18} n={len(y):>4} pos={int(sum(y==1))} neg={int(sum(y==0))} "
-              f"d={cv_d:.3f}" if cv_d else "  d=N/A" + f" PaW={cv_paw:.3f}" if cv_paw else "  PaW=N/A" + f" [{status}]")
+        status = (
+            "PASS"
+            if (cv_d is not None and cv_d > 0.3)
+            else ("PARTIAL" if (cv_d is not None and cv_d > 0) else "LOW_CONF")
+        )
+        cv_results[key] = {
+            "d": cv_d,
+            "paw": cv_paw,
+            "n": len(y),
+            "n_pos": int(sum(y == 1)),
+            "n_neg": int(sum(y == 0)),
+            "status": status,
+        }
+        print(
+            f"  {role:>10}/{opp_type:<18} n={len(y):>4} pos={int(sum(y == 1))} neg={int(sum(y == 0))} d={cv_d:.3f}"
+            if cv_d
+            else "  d=N/A" + f" PaW={cv_paw:.3f}"
+            if cv_paw
+            else "  PaW=N/A" + f" [{status}]"
+        )
 
     # Write scorer metrics
     with open(DATA / "task_scorer_metrics_v6.csv", "w") as f:
         f.write("role,action_type,n,n_pos,n_neg,cv_d,cv_paw,status\n")
         for (r, a), v in sorted(cv_results.items()):
-            d = f"{v['d']:.4f}" if v['d'] is not None else ""
-            p = f"{v['paw']:.4f}" if v['paw'] is not None else ""
+            d = f"{v['d']:.4f}" if v["d"] is not None else ""
+            p = f"{v['paw']:.4f}" if v["paw"] is not None else ""
             f.write(f"{r},{a},{v['n']},{v['n_pos']},{v['n_neg']},{d},{p},{v['status']}\n")
 
     scorer_lines = []
     scorer_lines.append("# Task Scorer Report V6")
     scorer_lines.append("")
-    scorer_lines.append(f"**Date**: 2026-05-28")
-    scorer_lines.append(f"**Models**: Logistic Regression with GroupKFold on V6 dataset")
+    scorer_lines.append("**Date**: 2026-05-28")
+    scorer_lines.append("**Models**: Logistic Regression with GroupKFold on V6 dataset")
     scorer_lines.append("")
     scorer_lines.append("| Role | Action | n | pos | neg | CV d | CV PaW | Status |")
     scorer_lines.append("|---|---|---|---|---|---|---|---|")
     for (r, a), v in sorted(cv_results.items()):
-        d_s = f"{v['d']:.3f}" if v['d'] is not None else "N/A"
-        p_s = f"{v['paw']:.3f}" if v['paw'] is not None else "N/A"
+        d_s = f"{v['d']:.3f}" if v["d"] is not None else "N/A"
+        p_s = f"{v['paw']:.3f}" if v["paw"] is not None else "N/A"
         scorer_lines.append(f"| {r} | {a} | {v['n']} | {v['n_pos']} | {v['n_neg']} | {d_s} | {p_s} | {v['status']} |")
     scorer_lines.append("")
     with open(DATA / "task_scorer_report_v6.md", "w") as f:
@@ -824,7 +874,11 @@ def main():
         train_paw_mean = float(np.mean(train_paws)) if train_paws else None
         test_paw_mean = float(np.mean(test_paws)) if test_paws else None
         gap = train_paw_mean - test_paw_mean if (train_paw_mean and test_paw_mean) else None
-        print(f"  Train PaW: {train_paw_mean:.4f}, Test PaW: {test_paw_mean:.4f}, Gap: {gap:.4f}" if gap else "  Insufficient data")
+        print(
+            f"  Train PaW: {train_paw_mean:.4f}, Test PaW: {test_paw_mean:.4f}, Gap: {gap:.4f}"
+            if gap
+            else "  Insufficient data"
+        )
     else:
         train_paw_mean, test_paw_mean, gap = None, None, None
 
@@ -864,18 +918,24 @@ def main():
     # Gate checks
     gate_checks = {
         "post_outcome_contamination": ("PASS", "0 violations"),
-        "test_paw_85": ("PASS" if test_paw_mean and test_paw_mean >= 0.85 else "WEAK",
-                       f"{test_paw_mean:.4f}" if test_paw_mean else "N/A"),
-        "train_test_gap_10": ("PASS" if gap is not None and abs(gap) <= 0.10 else "WEAK",
-                             f"{abs(gap):.4f}" if gap is not None else "N/A"),
-        "easy_negative_ratio_60": ("PASS" if easy_ratio <= 0.60 else "WEAK",
-                                  f"{easy_ratio:.3f}"),
-        "human_reviewed_ratio_50": ("PASS" if human_ratio >= 0.50 else "WEAK",
-                                    f"{human_ratio:.1%}"),
-        "role_actions_8": ("PASS" if passing_ra >= 8 else ("WEAK" if passing_ra >= 6 else "FAIL"),
-                          f"{passing_ra} passing, {passing_ra_pass} PASS"),
-        "witch_save_or_seer_release": ("PASS" if ws_status in ("PASS", "PARTIAL") else "WEAK",
-                                       f"Witch save={ws_status}"),
+        "test_paw_85": (
+            "PASS" if test_paw_mean and test_paw_mean >= 0.85 else "WEAK",
+            f"{test_paw_mean:.4f}" if test_paw_mean else "N/A",
+        ),
+        "train_test_gap_10": (
+            "PASS" if gap is not None and abs(gap) <= 0.10 else "WEAK",
+            f"{abs(gap):.4f}" if gap is not None else "N/A",
+        ),
+        "easy_negative_ratio_60": ("PASS" if easy_ratio <= 0.60 else "WEAK", f"{easy_ratio:.3f}"),
+        "human_reviewed_ratio_50": ("PASS" if human_ratio >= 0.50 else "WEAK", f"{human_ratio:.1%}"),
+        "role_actions_8": (
+            "PASS" if passing_ra >= 8 else ("WEAK" if passing_ra >= 6 else "FAIL"),
+            f"{passing_ra} passing, {passing_ra_pass} PASS",
+        ),
+        "witch_save_or_seer_release": (
+            "PASS" if ws_status in ("PASS", "PARTIAL") else "WEAK",
+            f"Witch save={ws_status}",
+        ),
         "counterfactual": ("PASS", "vote_flip=100%, skill_swap=100%"),
         "valid_agent": ("PASS", "0 critical issues"),
         "confidence_model": ("PASS", "6-factor model on all scores"),
@@ -901,7 +961,7 @@ def main():
     gate_lines = []
     gate_lines.append("# Scoring Validity Gate V6")
     gate_lines.append("")
-    gate_lines.append(f"**Date**: 2026-05-28")
+    gate_lines.append("**Date**: 2026-05-28")
     gate_lines.append(f"**Gate**: **{gate}**")
     gate_lines.append("")
     gate_lines.append("| # | Criterion | Status | Detail |")
@@ -919,8 +979,8 @@ def main():
     gate_lines.append("| Role | Action | n | d | PaW | Status |")
     gate_lines.append("|---|---|---|---|---|---|")
     for (r, a), v in sorted(cv_results.items()):
-        d_s = f"{v['d']:.3f}" if v['d'] is not None else "N/A"
-        p_s = f"{v['paw']:.3f}" if v['paw'] is not None else "N/A"
+        d_s = f"{v['d']:.3f}" if v["d"] is not None else "N/A"
+        p_s = f"{v['paw']:.3f}" if v["paw"] is not None else "N/A"
         gate_lines.append(f"| {r} | {a} | {v['n']} | {d_s} | {p_s} | {v['status']} |")
     gate_lines.append("")
     gate_lines.append("## Claims")
@@ -943,9 +1003,13 @@ def main():
         f.write("\n".join(gate_lines))
 
     gate_json = {
-        "gate": gate, "date": "2026-05-28", "version": "v6",
+        "gate": gate,
+        "date": "2026-05-28",
+        "version": "v6",
         "checks": {k: {"status": v[0], "detail": v[1]} for k, v in gate_checks.items()},
-        "n_pass": n_pass, "n_weak": n_weak, "n_fail": n_fail,
+        "n_pass": n_pass,
+        "n_weak": n_weak,
+        "n_fail": n_fail,
         "overall_paw": round(overall_paw_v6, 4) if overall_paw_v6 else None,
         "overall_d": round(overall_d_v6, 3) if overall_d_v6 else None,
         "test_paw": round(test_paw_mean, 4) if test_paw_mean else None,
@@ -954,8 +1018,13 @@ def main():
         "human_reviewed_ratio": round(human_ratio, 3),
         "passing_role_actions": passing_ra,
         "dataset_stats": {
-            "total": total, "gold": gold, "bad": bad, "medium": medium,
-            "human_reviewed": human_reviewed, "hn": hn_count, "pw": pw_count,
+            "total": total,
+            "gold": gold,
+            "bad": bad,
+            "medium": medium,
+            "human_reviewed": human_reviewed,
+            "hn": hn_count,
+            "pw": pw_count,
         },
     }
     with open(DATA / "scoring_validity_gate_v6.json", "w") as f:
@@ -966,7 +1035,7 @@ def main():
     ready_lines = []
     ready_lines.append("# Benchmark Ready Report V6")
     ready_lines.append("")
-    ready_lines.append(f"**Date**: 2026-05-28")
+    ready_lines.append("**Date**: 2026-05-28")
     ready_lines.append(f"**Gate**: {gate}")
     ready_lines.append("")
     if gate == "BENCHMARK_READY":
@@ -999,7 +1068,7 @@ def main():
     tech_lines = []
     tech_lines.append("# Werewolf Scoring Benchmark V6")
     tech_lines.append("")
-    tech_lines.append(f"**Date**: 2026-05-28")
+    tech_lines.append("**Date**: 2026-05-28")
     tech_lines.append(f"**Gate**: {gate}")
     tech_lines.append("")
     tech_lines.append("## V1→V6 Evolution")
@@ -1010,7 +1079,9 @@ def main():
     tech_lines.append("| V2 | PASS_WITH_LIMITS | 0.763 | Pre/outcome decomposition | VotePreQuality std=0.011 |")
     tech_lines.append("| V3 | PASS_WITH_LIMITS | 0.815 | 46 pre-action features | 2 role-actions PASS |")
     tech_lines.append("| V4 | PASS | 0.893 | Hard negatives + pairwise | Rule-based easy negatives |")
-    tech_lines.append("| V5 | PASS_WITH_LIMITS | 0.878 | Dataset normalization + generalization | Easy neg ratio 0.648 |")
+    tech_lines.append(
+        "| V5 | PASS_WITH_LIMITS | 0.878 | Dataset normalization + generalization | Easy neg ratio 0.648 |"
+    )
     paw_str = f"{overall_paw_v6:.3f}" if overall_paw_v6 else "N/A"
     tech_lines.append(f"| V6 | {gate} | {paw_str} | Model-assisted review + rebalance | {n_weak} weak checks |")
     tech_lines.append("")
@@ -1047,7 +1118,7 @@ def main():
     ws_audit = []
     ws_audit.append("# Witch Save V6 Audit")
     ws_audit.append("")
-    ws_audit.append(f"**Date**: 2026-05-28")
+    ws_audit.append("**Date**: 2026-05-28")
     ws_audit.append(f"**Samples**: {len(witch_save)} total, {ws_good} good, {ws_bad} bad")
     ws_audit.append(f"**Status**: {'PARTIAL' if len(witch_save) >= 30 and ws_bad >= 10 else 'LOW_CONF'}")
     ws_audit.append("")
@@ -1057,7 +1128,9 @@ def main():
     ws_changed = [r for r in ws_reviewed if r.get("is_label_changed")]
     ws_audit.append(f"- Label changes: {len(ws_changed)}")
     for r in ws_changed[:10]:
-        ws_audit.append(f"  - {r.get('sample_id','')[:50]}: {r.get('old_label')} → {r.get('new_label')} ({r.get('change_reason','')[:80]})")
+        ws_audit.append(
+            f"  - {r.get('sample_id', '')[:50]}: {r.get('old_label')} → {r.get('new_label')} ({r.get('change_reason', '')[:80]})"
+        )
     ws_audit.append("")
     ws_audit.append("**Note**: Witch save assessment is limited by sparse pre-action features.")
     ws_audit.append("Save decisions depend heavily on private witch knowledge (role info from night).")
@@ -1068,7 +1141,7 @@ def main():
     sr_audit = []
     sr_audit.append("# Seer Release V6 Audit")
     sr_audit.append("")
-    sr_audit.append(f"**Date**: 2026-05-28")
+    sr_audit.append("**Date**: 2026-05-28")
     sr_audit.append(f"**Samples**: {len(seer_release)} total, {sr_good} good, {sr_bad} bad")
     sr_audit.append(f"**Status**: {'PARTIAL' if len(seer_release) >= 30 and sr_bad >= 10 else 'LOW_CONF'}")
     sr_audit.append("")
@@ -1077,13 +1150,15 @@ def main():
     sr_changed = [r for r in sr_reviewed if r.get("is_label_changed")]
     sr_audit.append(f"- Label changes: {len(sr_changed)}")
     for r in sr_changed[:10]:
-        sr_audit.append(f"  - {r.get('sample_id','')[:50]}: {r.get('old_label')} → {r.get('new_label')} ({r.get('change_reason','')[:80]})")
+        sr_audit.append(
+            f"  - {r.get('sample_id', '')[:50]}: {r.get('old_label')} → {r.get('new_label')} ({r.get('change_reason', '')[:80]})"
+        )
     with open(DATA / "seer_release_v6_audit.md", "w") as f:
         f.write("\n".join(sr_audit))
     print("  -> witch_save_v6_audit.md + seer_release_v6_audit.md")
 
     # Final summary
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"V6 Gate: {gate}")
     print(f"Pass={n_pass}, Weak={n_weak}, Fail={n_fail}")
     print(f"Overall PaW: {overall_paw_v6:.4f}" if overall_paw_v6 else "Overall PaW: N/A")
@@ -1094,7 +1169,7 @@ def main():
     print(f"Passing RA: {passing_ra}")
     print(f"Witch save: {ws_status}")
     print(f"Dataset: {total} samples")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
 
 if __name__ == "__main__":

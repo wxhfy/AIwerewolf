@@ -9,9 +9,10 @@ Usage:
 
 from __future__ import annotations
 
-import io, json, sys
+import io
+import json
+import sys
 from pathlib import Path
-from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -102,6 +103,7 @@ class V3DashboardHTMLRenderer:
 
         try:
             import matplotlib
+
             matplotlib.use("Agg")
             import matplotlib.pyplot as plt
             import numpy as np
@@ -171,9 +173,7 @@ class V3DashboardHTMLRenderer:
             fig.savefig(buf, format="svg", bbox_inches="tight", transparent=True)
             plt.close(fig)
             buf.seek(0)
-            svg = "\n".join(
-                l for l in buf.read().decode("utf-8").splitlines() if not l.startswith("<?xml")
-            )
+            svg = "\n".join(l for l in buf.read().decode("utf-8").splitlines() if not l.startswith("<?xml"))
             chart = f'<div class="chart-container">{svg}</div>'
         except Exception as e:
             chart = f"<p>Chart error: {self._esc(str(e))}</p>"
@@ -185,12 +185,12 @@ class V3DashboardHTMLRenderer:
             if val.get("retrieval_gain_paw"):
                 retrieval_note = f' <span class="note">(retrieval +{val["retrieval_gain_paw"]:.3f} PaW)</span>'
             rows += f"""<tr>
-              <td>{self._esc(val['label'])}</td>
-              <td>{val['pairwise_acc']:.4f}</td>
-              <td>{val['witch_d']:.3f}</td>
-              <td>{val['guard_d']:.3f}</td>
-              <td>{val['hunter_d']:.3f}</td>
-              <td>{val.get('overall_d', 0):.3f}</td>
+              <td>{self._esc(val["label"])}</td>
+              <td>{val["pairwise_acc"]:.4f}</td>
+              <td>{val["witch_d"]:.3f}</td>
+              <td>{val["guard_d"]:.3f}</td>
+              <td>{val["hunter_d"]:.3f}</td>
+              <td>{val.get("overall_d", 0):.3f}</td>
               <td>{retrieval_note}</td>
             </tr>"""
 
@@ -215,6 +215,7 @@ class V3DashboardHTMLRenderer:
 
         try:
             import matplotlib
+
             matplotlib.use("Agg")
             import matplotlib.pyplot as plt
             import numpy as np
@@ -254,7 +255,7 @@ class V3DashboardHTMLRenderer:
                 ax.text(
                     val + 0.02,
                     bar.get_y() + bar.get_height() / 2,
-                    f"{val:.3f} (gap={gap:.1f}) {'⚠' if rd[role].get('confidence') in ('low','medium') else ''}",
+                    f"{val:.3f} (gap={gap:.1f}) {'⚠' if rd[role].get('confidence') in ('low', 'medium') else ''}",
                     va="center",
                     fontsize=7,
                     color="#1f1a17",
@@ -283,9 +284,7 @@ class V3DashboardHTMLRenderer:
             fig.savefig(buf, format="svg", bbox_inches="tight", transparent=True)
             plt.close(fig)
             buf.seek(0)
-            svg = "\n".join(
-                l for l in buf.read().decode("utf-8").splitlines() if not l.startswith("<?xml")
-            )
+            svg = "\n".join(l for l in buf.read().decode("utf-8").splitlines() if not l.startswith("<?xml"))
             chart = f'<div class="chart-container">{svg}</div>'
         except Exception as e:
             chart = f"<p>Chart error: {self._esc(str(e))}</p>"
@@ -313,9 +312,7 @@ class V3DashboardHTMLRenderer:
         # Build lookup
         cell_map = {(r["role"], r["action_type"]): r for r in rows}
 
-        header = "<th></th>" + "".join(
-            f"<th>{self._esc(a)}</th>" for a in all_actions
-        )
+        header = "<th></th>" + "".join(f"<th>{self._esc(a)}</th>" for a in all_actions)
         tbody = ""
         for role in all_roles:
             cells = f"<td class='ram-role'>{self._esc(role)}</td>"
@@ -364,6 +361,7 @@ class V3DashboardHTMLRenderer:
 
         try:
             import matplotlib
+
             matplotlib.use("Agg")
             import matplotlib.pyplot as plt
 
@@ -407,9 +405,7 @@ class V3DashboardHTMLRenderer:
             fig.savefig(buf, format="svg", bbox_inches="tight", transparent=True)
             plt.close(fig)
             buf.seek(0)
-            svg = "\n".join(
-                l for l in buf.read().decode("utf-8").splitlines() if not l.startswith("<?xml")
-            )
+            svg = "\n".join(l for l in buf.read().decode("utf-8").splitlines() if not l.startswith("<?xml"))
             chart = f'<div class="chart-container">{svg}</div>'
         except Exception as e:
             chart = f"<p>Chart error: {self._esc(str(e))}</p>"
@@ -432,13 +428,13 @@ class V3DashboardHTMLRenderer:
         top10 = lb.get("_overall_top10", [])
         top_rows = "\n".join(
             f"""<tr>
-              <td>{i+1}</td>
-              <td>{self._esc(r['player_id'][:16])}</td>
-              <td>{self._esc(r['role'])}</td>
-              <td>{self._esc(r.get('game_id','')[:12])}</td>
-              <td class="lb-score">{r['final_score']:.1f}</td>
-              <td class="lb-score">{r['process_score']:.1f}</td>
-              <td>{'W' if r.get('won') else 'L'}</td>
+              <td>{i + 1}</td>
+              <td>{self._esc(r["player_id"][:16])}</td>
+              <td>{self._esc(r["role"])}</td>
+              <td>{self._esc(r.get("game_id", "")[:12])}</td>
+              <td class="lb-score">{r["final_score"]:.1f}</td>
+              <td class="lb-score">{r["process_score"]:.1f}</td>
+              <td>{"W" if r.get("won") else "L"}</td>
             </tr>"""
             for i, r in enumerate(top10)
         )
@@ -446,28 +442,26 @@ class V3DashboardHTMLRenderer:
         # By role
         role_tabs = ""
         role_content = ""
-        for i, (role, data) in enumerate(
-            sorted(lb.items(), key=lambda x: x[0] != "_overall_top10")
-        ):
+        for i, (role, data) in enumerate(sorted(lb.items(), key=lambda x: x[0] != "_overall_top10")):
             if role.startswith("_"):
                 continue
             top3 = data.get("top3", [])
             rows = "\n".join(
                 f"""<tr>
-                  <td>{j+1}</td>
-                  <td>{self._esc(r['player_id'][:16])}</td>
-                  <td>{r['final_score']:.1f}</td>
-                  <td>{r['process_score']:.1f}</td>
-                  <td>{r['role_process_score']:.1f}</td>
-                  <td>{r['speech_score']:.1f}</td>
-                  <td>{r['model_confidence']:.2f}</td>
+                  <td>{j + 1}</td>
+                  <td>{self._esc(r["player_id"][:16])}</td>
+                  <td>{r["final_score"]:.1f}</td>
+                  <td>{r["process_score"]:.1f}</td>
+                  <td>{r["role_process_score"]:.1f}</td>
+                  <td>{r["speech_score"]:.1f}</td>
+                  <td>{r["model_confidence"]:.2f}</td>
                 </tr>"""
                 for j, r in enumerate(top3)
             )
             active = "active" if i == 0 else ""
             role_tabs += f'<button class="lb-tab {active}" onclick="switchTab(\'{role}\')">{self._esc(role)}</button>'
             role_content += f"""<div class="lb-panel {active}" id="lb-{self._esc(role)}">
-            <h4>{self._esc(role)} — Mean Final: {data['mean_final']:.1f} | Mean Process: {data['mean_process']:.1f} | Mean Speech: {data['mean_speech']:.1f}</h4>
+            <h4>{self._esc(role)} — Mean Final: {data["mean_final"]:.1f} | Mean Process: {data["mean_process"]:.1f} | Mean Speech: {data["mean_speech"]:.1f}</h4>
             <table class="lb-table">
               <thead><tr><th>#</th><th>Player</th><th>Final</th><th>Process</th><th>RolePro</th><th>Speech</th><th>Conf</th></tr></thead>
               <tbody>{rows}</tbody>
@@ -495,40 +489,38 @@ class V3DashboardHTMLRenderer:
 
         issues = vs.get("issues", [])
         issue_rows = "\n".join(
-            f'<li><strong>{self._esc(i.get("type","?"))}:</strong> {self._esc(i.get("detail",""))}</li>'
+            f"<li><strong>{self._esc(i.get('type', '?'))}:</strong> {self._esc(i.get('detail', ''))}</li>"
             for i in issues
         )
 
         recs = vs.get("recommendations", [])
-        rec_rows = "\n".join(
-            f"<li>{self._esc(r)}</li>" for r in recs
-        )
+        rec_rows = "\n".join(f"<li>{self._esc(r)}</li>" for r in recs)
 
         return f"""<section class="module">
     <h2>Valid Agent 通过情况</h2>
-    <div class="va-summary {'pass' if vs.get('passed') else 'fail'}">
-      <span class="va-icon">{'✓' if vs.get('passed') else '✗'}</span>
-      <span class="va-grade">Grade: {vs.get('grade', '?')}</span>
-      <span class="va-score">Score: {vs.get('score', 0):.2f}</span>
-      <span class="va-status">publish_allowed: {str(vs.get('publish_allowed', False)).lower()}</span>
+    <div class="va-summary {"pass" if vs.get("passed") else "fail"}">
+      <span class="va-icon">{"✓" if vs.get("passed") else "✗"}</span>
+      <span class="va-grade">Grade: {vs.get("grade", "?")}</span>
+      <span class="va-score">Score: {vs.get("score", 0):.2f}</span>
+      <span class="va-status">publish_allowed: {str(vs.get("publish_allowed", False)).lower()}</span>
     </div>
     <div class="va-details">
       <div class="va-col">
         <h3>Per-Game Stats</h3>
         <table class="va-table">
-          <tr><td>Total games validated</td><td>{pg.get('total', 0)}</td></tr>
-          <tr><td>Passed</td><td>{pg.get('passed', 0)}</td></tr>
-          <tr><td>Grade A</td><td>{pg.get('grade_a', 0)}</td></tr>
-          <tr><td>Grade B</td><td>{pg.get('grade_b', 0)}</td></tr>
+          <tr><td>Total games validated</td><td>{pg.get("total", 0)}</td></tr>
+          <tr><td>Passed</td><td>{pg.get("passed", 0)}</td></tr>
+          <tr><td>Grade A</td><td>{pg.get("grade_a", 0)}</td></tr>
+          <tr><td>Grade B</td><td>{pg.get("grade_b", 0)}</td></tr>
         </table>
       </div>
       <div class="va-col">
         <h3>Issues</h3>
-        <ul>{issue_rows if issues else '<li>No issues</li>'}</ul>
+        <ul>{issue_rows if issues else "<li>No issues</li>"}</ul>
       </div>
       <div class="va-col">
         <h3>Recommendations</h3>
-        <ul>{rec_rows if recs else '<li>None</li>'}</ul>
+        <ul>{rec_rows if recs else "<li>None</li>"}</ul>
       </div>
     </div>
     </section>"""
@@ -554,10 +546,10 @@ class V3DashboardHTMLRenderer:
 
             cards += f"""
             <div class="limit-card {status_class}">
-              <h3>{self._esc(lim.get('component', '?'))}</h3>
-              <div class="limit-status">{self._esc(lim.get('status', '?'))}</div>
-              <p class="limit-detail">{self._esc(lim.get('detail', ''))}</p>
-              <p class="limit-rec">→ {self._esc(lim.get('recommendation', ''))}</p>
+              <h3>{self._esc(lim.get("component", "?"))}</h3>
+              <div class="limit-status">{self._esc(lim.get("status", "?"))}</div>
+              <p class="limit-detail">{self._esc(lim.get("detail", ""))}</p>
+              <p class="limit-rec">→ {self._esc(lim.get("recommendation", ""))}</p>
             </div>"""
 
         return f"""<section class="module">
@@ -707,12 +699,8 @@ def main() -> int:
     import argparse
 
     ap = argparse.ArgumentParser()
-    ap.add_argument(
-        "--data", default="data/health/dashboard_data.json", help="Dashboard JSON path"
-    )
-    ap.add_argument(
-        "--output", default="data/health/scoring_validity_dashboard.html", help="Output HTML"
-    )
+    ap.add_argument("--data", default="data/health/dashboard_data.json", help="Dashboard JSON path")
+    ap.add_argument("--output", default="data/health/scoring_validity_dashboard.html", help="Output HTML")
     args = ap.parse_args()
 
     data_path = ROOT / args.data

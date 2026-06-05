@@ -16,13 +16,9 @@ from __future__ import annotations
 
 import argparse
 import csv
-import json
-import os
 import sys
-import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -64,6 +60,7 @@ AB_TEST_CONFIG = {
 # Game runner
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class GameResult:
     game_id: str
@@ -94,7 +91,8 @@ def run_one_game(
     """
     from backend.agents.strategy_registry import get_strategy_registry
     from backend.engine.game import WerewolfGame
-    from backend.engine.rules import build_players, get_role_configuration
+    from backend.engine.rules import build_players
+    from backend.engine.rules import get_role_configuration
 
     registry = get_strategy_registry()
     card = registry.get(strategy_id)
@@ -118,36 +116,37 @@ def run_one_game(
     }
     if strict:
         from backend.agents.llm_agent import LLMAgent
+
         LLMAgent.STRICT_NO_FALLBACK = True
 
     try:
         from backend.agents.factory import create_agents
+
         game = WerewolfGame(seed=seed, player_count=player_count)
         game.attach_agents(create_agents(game.state.players, config))
         game.play()
 
-        target_role_players = [
-            p for p in game.state.players if p.role.value == target_role
-        ]
+        target_role_players = [p for p in game.state.players if p.role.value == target_role]
         results = []
         for p in target_role_players:
-            is_win = (
-                (p.alignment.value if hasattr(p.alignment, "value") else str(p.alignment))
-                == (game.state.winner.value if hasattr(game.state.winner, "value") else str(game.state.winner))
+            is_win = (p.alignment.value if hasattr(p.alignment, "value") else str(p.alignment)) == (
+                game.state.winner.value if hasattr(game.state.winner, "value") else str(game.state.winner)
             )
-            results.append(GameResult(
-                game_id=game.state.id,
-                seed=seed,
-                role=p.role.value,
-                strategy_id=strategy_id,
-                strategy_name=card.strategy_name,
-                persona_name=p.name,
-                is_win=is_win,
-                camp=p.alignment.value if hasattr(p.alignment, "value") else str(p.alignment),
-                winner=game.state.winner.value if hasattr(game.state.winner, "value") else str(game.state.winner),
-                num_days=game.state.day,
-                num_decisions=len(game.state.decision_records),
-            ))
+            results.append(
+                GameResult(
+                    game_id=game.state.id,
+                    seed=seed,
+                    role=p.role.value,
+                    strategy_id=strategy_id,
+                    strategy_name=card.strategy_name,
+                    persona_name=p.name,
+                    is_win=is_win,
+                    camp=p.alignment.value if hasattr(p.alignment, "value") else str(p.alignment),
+                    winner=game.state.winner.value if hasattr(game.state.winner, "value") else str(game.state.winner),
+                    num_days=game.state.day,
+                    num_decisions=len(game.state.decision_records),
+                )
+            )
         return results
 
     except Exception as exc:
@@ -156,12 +155,14 @@ def run_one_game(
     finally:
         if strict:
             from backend.agents.llm_agent import LLMAgent
+
             LLMAgent.STRICT_NO_FALLBACK = False
 
 
 # ---------------------------------------------------------------------------
 # Main experiment
 # ---------------------------------------------------------------------------
+
 
 def run_experiment(
     games_per_group: int = 10,
@@ -178,10 +179,10 @@ def run_experiment(
     for exp_name, exp_config in AB_TEST_CONFIG.items():
         role = exp_config["role"]
         strategies = exp_config["strategies"]
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"Experiment: {exp_name}")
         print(f"Role: {role}, Strategies: {strategies}")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
 
         for strategy_id in strategies:
             registry = get_strategy_registry()
@@ -190,7 +191,7 @@ def run_experiment(
 
             for i in range(games_per_group):
                 seed = base_seed + i
-                print(f"  Game {i+1}/{games_per_group} (seed={seed})...", end=" ", flush=True)
+                print(f"  Game {i + 1}/{games_per_group} (seed={seed})...", end=" ", flush=True)
                 game_results = run_one_game(
                     seed=seed,
                     player_count=player_count,
@@ -213,19 +214,39 @@ def run_experiment(
     if results:
         Path(output_csv).parent.mkdir(parents=True, exist_ok=True)
         with open(output_csv, "w", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=[
-                "game_id", "seed", "role", "strategy_id", "strategy_name",
-                "persona_name", "is_win", "camp", "winner", "num_days", "num_decisions",
-            ])
+            writer = csv.DictWriter(
+                f,
+                fieldnames=[
+                    "game_id",
+                    "seed",
+                    "role",
+                    "strategy_id",
+                    "strategy_name",
+                    "persona_name",
+                    "is_win",
+                    "camp",
+                    "winner",
+                    "num_days",
+                    "num_decisions",
+                ],
+            )
             writer.writeheader()
             for r in results:
-                writer.writerow({
-                    "game_id": r.game_id, "seed": r.seed, "role": r.role,
-                    "strategy_id": r.strategy_id, "strategy_name": r.strategy_name,
-                    "persona_name": r.persona_name, "is_win": r.is_win,
-                    "camp": r.camp, "winner": r.winner,
-                    "num_days": r.num_days, "num_decisions": r.num_decisions,
-                })
+                writer.writerow(
+                    {
+                        "game_id": r.game_id,
+                        "seed": r.seed,
+                        "role": r.role,
+                        "strategy_id": r.strategy_id,
+                        "strategy_name": r.strategy_name,
+                        "persona_name": r.persona_name,
+                        "is_win": r.is_win,
+                        "camp": r.camp,
+                        "winner": r.winner,
+                        "num_days": r.num_days,
+                        "num_decisions": r.num_decisions,
+                    }
+                )
         print(f"\nResults written to {output_csv} ({len(results)} rows)")
 
         # Generate markdown report
@@ -303,18 +324,16 @@ from backend.agents.strategy_registry import get_strategy_registry  # noqa: E402
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="V8 Strategy A/B Test")
-    parser.add_argument("--games-per-group", type=int, default=10,
-                        help="Games per (role, strategy) group (default: 10)")
-    parser.add_argument("--agent-type", type=str, default="heuristic",
-                        help="Agent type: heuristic or llm (default: heuristic)")
-    parser.add_argument("--player-count", type=int, default=7,
-                        help="Players per game (default: 7)")
-    parser.add_argument("--output-csv", type=str,
-                        default="data/health/strategy_ab_test_results_v8.csv")
-    parser.add_argument("--output-md", type=str,
-                        default="data/health/strategy_ab_test_v8.md")
-    parser.add_argument("--strict", action="store_true",
-                        help="Fail on LLM fallback (for llm agent type)")
+    parser.add_argument(
+        "--games-per-group", type=int, default=10, help="Games per (role, strategy) group (default: 10)"
+    )
+    parser.add_argument(
+        "--agent-type", type=str, default="heuristic", help="Agent type: heuristic or llm (default: heuristic)"
+    )
+    parser.add_argument("--player-count", type=int, default=7, help="Players per game (default: 7)")
+    parser.add_argument("--output-csv", type=str, default="data/health/strategy_ab_test_results_v8.csv")
+    parser.add_argument("--output-md", type=str, default="data/health/strategy_ab_test_v8.md")
+    parser.add_argument("--strict", action="store_true", help="Fail on LLM fallback (for llm agent type)")
     args = parser.parse_args()
 
     run_experiment(

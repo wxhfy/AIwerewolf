@@ -7,39 +7,30 @@ Run this file to verify B is a production-ready review & validation system.
 from __future__ import annotations
 
 import json
-from dataclasses import asdict
-from pathlib import Path
 
-import pytest
-
-from backend.engine.models import Alignment, DecisionAudit, EventType, GameEvent, GameState, Phase, Player, Role
-from backend.eval.review import (
-    BadCaseReport,
-    CounterfactualAnalyzer,
-    CounterfactualCase,
-    FinalScoreCalculator,
-    GameMetrics,
-    LeaderboardAggregator,
-    MarkdownReportRenderer,
-    MockReviewLLM,
-    MVPSelector,
-    MetricsCalculator,
-    PlayerScore,
-    ReportEvaluator,
-    ReportGenerator,
-    ReportOptimizationState,
-    ReportOptimizer,
-    ReviewBonus,
-    ReviewQualityChecker,
-    ReviewReportBuilder,
-    StrategyKnowledgeExtractor,
-    StrategySuggestion,
-    export_leaderboard,
-    export_review_report,
-    export_strategy_knowledge,
-    generate_review_report,
-)
-from backend.eval.report_graph import LANGGRAPH_AVAILABLE, LangGraphReportOptimizer, create_report_optimizer
+from backend.engine.models import Alignment
+from backend.engine.models import DecisionAudit
+from backend.engine.models import EventType
+from backend.engine.models import GameEvent
+from backend.engine.models import GameState
+from backend.engine.models import Phase
+from backend.engine.models import Player
+from backend.engine.models import Role
+from backend.eval.review import BadCaseReport
+from backend.eval.review import GameMetrics
+from backend.eval.review import LeaderboardAggregator
+from backend.eval.review import MarkdownReportRenderer
+from backend.eval.review import MetricsCalculator
+from backend.eval.review import MockReviewLLM
+from backend.eval.review import PlayerScore
+from backend.eval.review import ReportEvaluator
+from backend.eval.review import ReportGenerator
+from backend.eval.review import ReportOptimizer
+from backend.eval.review import ReviewReportBuilder
+from backend.eval.review import StrategyKnowledgeExtractor
+from backend.eval.review import export_leaderboard
+from backend.eval.review import export_strategy_knowledge
+from backend.eval.review import generate_review_report
 from backend.eval.track_b import generate_published_review_document
 
 ALIGNMENT_BY_ROLE = {
@@ -53,27 +44,74 @@ ALIGNMENT_BY_ROLE = {
 
 
 def make_player(player_id: str, name: str, role: Role, *, alive: bool = True) -> Player:
-    return Player(id=player_id, seat=int(player_id[1:]) if player_id[1:].isdigit() else 1, name=name, role=role, alignment=ALIGNMENT_BY_ROLE[role], alive=alive)
+    return Player(
+        id=player_id,
+        seat=int(player_id[1:]) if player_id[1:].isdigit() else 1,
+        name=name,
+        role=role,
+        alignment=ALIGNMENT_BY_ROLE[role],
+        alive=alive,
+    )
 
 
 def make_vote(day: int, voter: Player, target: Player) -> GameEvent:
-    return GameEvent.create(day=day, phase=Phase.DAY_VOTE, type=EventType.VOTE_CAST, visibility="public", payload={"voter_id": voter.id, "voter_name": voter.name, "target_id": target.id, "target_name": target.name})
+    return GameEvent.create(
+        day=day,
+        phase=Phase.DAY_VOTE,
+        type=EventType.VOTE_CAST,
+        visibility="public",
+        payload={"voter_id": voter.id, "voter_name": voter.name, "target_id": target.id, "target_name": target.name},
+    )
 
 
 def make_speech(day: int, actor: Player, speech: str) -> GameEvent:
-    return GameEvent.create(day=day, phase=Phase.DAY_SPEECH, type=EventType.CHAT_MESSAGE, visibility="public", payload={"actor_id": actor.id, "actor_name": actor.name, "speech": speech, "last_words": False})
+    return GameEvent.create(
+        day=day,
+        phase=Phase.DAY_SPEECH,
+        type=EventType.CHAT_MESSAGE,
+        visibility="public",
+        payload={"actor_id": actor.id, "actor_name": actor.name, "speech": speech, "last_words": False},
+    )
 
 
-def make_night_action(day: int, actor: Player, action_type: str, target: Player, *, phase: Phase = Phase.NIGHT_WOLF_ACTION) -> GameEvent:
-    return GameEvent.create(day=day, phase=phase, type=EventType.NIGHT_ACTION, visibility="private", payload={"actor_id": actor.id, "actor_name": actor.name, "action_type": action_type, "target_id": target.id}, visible_to=[actor.id])
+def make_night_action(
+    day: int, actor: Player, action_type: str, target: Player, *, phase: Phase = Phase.NIGHT_WOLF_ACTION
+) -> GameEvent:
+    return GameEvent.create(
+        day=day,
+        phase=phase,
+        type=EventType.NIGHT_ACTION,
+        visibility="private",
+        payload={"actor_id": actor.id, "actor_name": actor.name, "action_type": action_type, "target_id": target.id},
+        visible_to=[actor.id],
+    )
 
 
 def make_seer_result(day: int, seer: Player, target: Player, *, is_wolf: bool) -> GameEvent:
-    return GameEvent.create(day=day, phase=Phase.NIGHT_SEER_ACTION, type=EventType.PRIVATE_INFO, visibility="private", payload={"kind": "seer_result", "target_id": target.id, "target_name": target.name, "is_wolf": is_wolf, "message": f"Seer check: {target.name}"}, visible_to=[seer.id])
+    return GameEvent.create(
+        day=day,
+        phase=Phase.NIGHT_SEER_ACTION,
+        type=EventType.PRIVATE_INFO,
+        visibility="private",
+        payload={
+            "kind": "seer_result",
+            "target_id": target.id,
+            "target_name": target.name,
+            "is_wolf": is_wolf,
+            "message": f"Seer check: {target.name}",
+        },
+        visible_to=[seer.id],
+    )
 
 
 def make_death(day: int, player: Player, reason: str) -> GameEvent:
-    return GameEvent.create(day=day, phase=Phase.DAY_RESOLVE if reason == "vote" else Phase.NIGHT_RESOLVE, type=EventType.PLAYER_DIED, visibility="public", payload={"player_id": player.id, "player_name": player.name, "reason": reason})
+    return GameEvent.create(
+        day=day,
+        phase=Phase.DAY_RESOLVE if reason == "vote" else Phase.NIGHT_RESOLVE,
+        type=EventType.PLAYER_DIED,
+        visibility="public",
+        payload={"player_id": player.id, "player_name": player.name, "reason": reason},
+    )
 
 
 def make_state(players: list[Player], events: list[GameEvent], *, winner: Alignment, day: int = 2) -> GameState:
@@ -165,7 +203,10 @@ def test_b_gate3_bad_case_types_minimum() -> None:
         winner=Alignment.WOLF,
     )
     metrics = MetricsCalculator().compute(state)
-    bad_cases = [BadCaseReport(**item) if isinstance(item, dict) else item for item in (metrics.metadata.get("bad_case_reports", []) or [])]
+    bad_cases = [
+        BadCaseReport(**item) if isinstance(item, dict) else item
+        for item in (metrics.metadata.get("bad_case_reports", []) or [])
+    ]
     detected_types = {case.mistake_type for case in bad_cases}
     assert len(detected_types) >= 2
     assert any("poison" in str(case.description).lower() for case in bad_cases)
@@ -216,10 +257,17 @@ def test_b_gate6_counterfactual_three_types_exist() -> None:
     wolf = make_player("P3", "WolfA", Role.WEREWOLF, alive=True)
     vote_state = make_state(
         [villager, villager2, wolf],
-        [make_vote(1, villager, wolf), make_vote(1, wolf, villager), make_vote(1, villager2, villager), make_death(1, villager, "vote")],
+        [
+            make_vote(1, villager, wolf),
+            make_vote(1, wolf, villager),
+            make_vote(1, villager2, villager),
+            make_death(1, villager, "vote"),
+        ],
         winner=Alignment.WOLF,
     )
-    vote_cases = counterfactuals_by_type(ReviewReportBuilder().build(vote_state, MetricsCalculator().compute(vote_state)), "vote")
+    vote_cases = counterfactuals_by_type(
+        ReviewReportBuilder().build(vote_state, MetricsCalculator().compute(vote_state)), "vote"
+    )
     assert vote_cases
 
     # skill
@@ -231,7 +279,9 @@ def test_b_gate6_counterfactual_three_types_exist() -> None:
         [make_night_action(1, witch, "witch_poison", villager), make_death(1, villager, "poison")],
         winner=Alignment.WOLF,
     )
-    skill_cases = counterfactuals_by_type(ReviewReportBuilder().build(skill_state, MetricsCalculator().compute(skill_state)), "skill")
+    skill_cases = counterfactuals_by_type(
+        ReviewReportBuilder().build(skill_state, MetricsCalculator().compute(skill_state)), "skill"
+    )
     assert skill_cases
 
     # info_release
@@ -240,10 +290,18 @@ def test_b_gate6_counterfactual_three_types_exist() -> None:
     villager = make_player("P3", "VillagerA", Role.VILLAGER, alive=False)
     info_state = make_state(
         [seer, wolf, villager],
-        [make_seer_result(1, seer, wolf, is_wolf=True), make_speech(1, seer, "Need more discussion."), make_vote(1, seer, villager), make_vote(1, wolf, villager), make_death(1, villager, "vote")],
+        [
+            make_seer_result(1, seer, wolf, is_wolf=True),
+            make_speech(1, seer, "Need more discussion."),
+            make_vote(1, seer, villager),
+            make_vote(1, wolf, villager),
+            make_death(1, villager, "vote"),
+        ],
         winner=Alignment.WOLF,
     )
-    info_cases = counterfactuals_by_type(ReviewReportBuilder().build(info_state, MetricsCalculator().compute(info_state)), "info_release")
+    info_cases = counterfactuals_by_type(
+        ReviewReportBuilder().build(info_state, MetricsCalculator().compute(info_state)), "info_release"
+    )
     assert info_cases
 
 
@@ -256,9 +314,15 @@ def test_b_gate7_review_report_structure(tmp_path) -> None:
     report = payload["report"]
     markdown = payload["final_markdown"]
     required_sections = [
-        "# 本局复盘报告", "## 1. 本局概览", "## 2. MVP", "## 3. 玩家评分榜",
-        "## 4. 关键转折点", "## 5. 反事实推演", "## 6. 玩家逐个复盘",
-        "## 7. 关键失误", "## 8. 策略建议",
+        "# 本局复盘报告",
+        "## 1. 本局概览",
+        "## 2. MVP",
+        "## 3. 玩家评分榜",
+        "## 4. 关键转折点",
+        "## 5. 反事实推演",
+        "## 6. 玩家逐个复盘",
+        "## 7. 关键失误",
+        "## 8. 策略建议",
     ]
     for section in required_sections:
         assert section in markdown
@@ -357,12 +421,66 @@ def test_b_gate11_strategy_suggestions_are_grounded() -> None:
 def test_b_gate12_leaderboard_all_dimensions(tmp_path) -> None:
     aggregator = LeaderboardAggregator()
     m = GameMetrics(
-        game_id="g1", winner="village", total_days=1, total_events=1,
-        wolf_elimination_rate=1.0, village_survival_rate=1.0, info_efficiency=1.0,
+        game_id="g1",
+        winner="village",
+        total_days=1,
+        total_events=1,
+        wolf_elimination_rate=1.0,
+        village_survival_rate=1.0,
+        info_efficiency=1.0,
         player_scores=[
-            PlayerScore("p1", "PersonaA", "persona-a", "PersonaA", "Seer", "village", 1.0, 0.9, 0.8, 0.8, 0.8, 1.0, 0.0, 80.0, adjusted_final_score=84.0, impact_bonus=2.0),
-            PlayerScore("p2", "PersonaB", "persona-b", "PersonaB", "Seer", "village", 0.0, 0.5, 0.5, 0.5, 0.5, 0.4, 0.0, 60.0, adjusted_final_score=60.0),
-            PlayerScore("p3", "PersonaA", "persona-a", "PersonaA", "Villager", "village", 0.0, 0.5, 0.4, 0.5, 0.5, 0.4, 0.0, 44.0, adjusted_final_score=50.0),
+            PlayerScore(
+                "p1",
+                "PersonaA",
+                "persona-a",
+                "PersonaA",
+                "Seer",
+                "village",
+                1.0,
+                0.9,
+                0.8,
+                0.8,
+                0.8,
+                1.0,
+                0.0,
+                80.0,
+                adjusted_final_score=84.0,
+                impact_bonus=2.0,
+            ),
+            PlayerScore(
+                "p2",
+                "PersonaB",
+                "persona-b",
+                "PersonaB",
+                "Seer",
+                "village",
+                0.0,
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.4,
+                0.0,
+                60.0,
+                adjusted_final_score=60.0,
+            ),
+            PlayerScore(
+                "p3",
+                "PersonaA",
+                "persona-a",
+                "PersonaA",
+                "Villager",
+                "village",
+                0.0,
+                0.5,
+                0.4,
+                0.5,
+                0.5,
+                0.4,
+                0.0,
+                44.0,
+                adjusted_final_score=50.0,
+            ),
         ],
         metadata={"strategy_version": "v1"},
     )
@@ -390,12 +508,31 @@ def test_b_gate13_markdown_is_localized() -> None:
     villager = make_player("P3", "Charlie", Role.VILLAGER, alive=True)
     state = make_state(
         [wolf, seer, villager],
-        [make_speech(1, wolf, "Bravo is fake. Vote Bravo."), make_vote(1, wolf, seer), make_vote(1, villager, seer), make_death(1, seer, "vote")],
+        [
+            make_speech(1, wolf, "Bravo is fake. Vote Bravo."),
+            make_vote(1, wolf, seer),
+            make_vote(1, villager, seer),
+            make_death(1, seer, "vote"),
+        ],
         winner=Alignment.WOLF,
     )
     report = ReviewReportBuilder().build(state, MetricsCalculator().compute(state))
     markdown = MarkdownReportRenderer().render(report)
-    banned = ["global_mvp", "winning_camp_mvp", "Seer", "Werewolf", "Witch", "Hunter", "Guard", "Villager", "village", "wolf", "DAY_SPEECH", "DAY_VOTE", "checked-good player"]
+    banned = [
+        "global_mvp",
+        "winning_camp_mvp",
+        "Seer",
+        "Werewolf",
+        "Witch",
+        "Hunter",
+        "Guard",
+        "Villager",
+        "village",
+        "wolf",
+        "DAY_SPEECH",
+        "DAY_VOTE",
+        "checked-good player",
+    ]
     for token in banned:
         assert token not in markdown
     assert "预言家" in markdown or "狼人" in markdown
@@ -482,7 +619,8 @@ def test_b_gate16_json_markdown_score_consistency() -> None:
 # ---------------------------------------------------------------------------
 def test_b_gate17_real_engine_b_to_c_pipeline(tmp_path) -> None:
     from backend.engine.game import WerewolfGame
-    from backend.eval.evolution import EvolutionPipeline, export_evolution_summary
+    from backend.eval.evolution import EvolutionPipeline
+    from backend.eval.evolution import export_evolution_summary
 
     game = WerewolfGame(seed=13)
     game.play()

@@ -12,12 +12,14 @@ ROOT = Path(__file__).resolve().parent.parent
 
 def test_import():
     from backend.eval.heads.speech_semantic import SpeechSemanticScorer
+
     scorer = SpeechSemanticScorer()
     assert scorer is not None
 
 
 def test_scorer_returns_audit_only():
     from backend.eval.heads.speech_semantic import SpeechSemanticScorer
+
     scorer = SpeechSemanticScorer()
     result = scorer.score("I think P3 is the werewolf.")
     assert result.audit_only is True
@@ -25,6 +27,7 @@ def test_scorer_returns_audit_only():
 
 def test_scorer_returns_probs():
     from backend.eval.heads.speech_semantic import SpeechSemanticScorer
+
     scorer = SpeechSemanticScorer()
     result = scorer.score("I accuse P3 of being the werewolf because of the voting pattern.")
     assert "accusation" in result.speech_act_probs
@@ -36,6 +39,7 @@ def test_scorer_returns_probs():
 
 def test_scorer_returns_audit_features():
     from backend.eval.heads.speech_semantic import SpeechSemanticScorer
+
     scorer = SpeechSemanticScorer()
     result = scorer.score("I am the Seer and I checked P1 as a werewolf.")
     assert "identity_claim_signal" in result.audit_features
@@ -46,6 +50,7 @@ def test_scorer_returns_audit_features():
 def test_scorer_no_final_q():
     """SpeechSemanticScorer must never return final_q."""
     from backend.eval.heads.speech_semantic import SpeechSemanticScorer
+
     scorer = SpeechSemanticScorer()
     result = scorer.score("test")
     d = result.to_dict()
@@ -55,6 +60,7 @@ def test_scorer_no_final_q():
 
 def test_scorer_empty_utterance():
     from backend.eval.heads.speech_semantic import SpeechSemanticScorer
+
     scorer = SpeechSemanticScorer()
     result = scorer.score("")
     assert result.audit_only is True
@@ -63,6 +69,7 @@ def test_scorer_empty_utterance():
 
 def test_scorer_batch():
     from backend.eval.heads.speech_semantic import SpeechSemanticScorer
+
     scorer = SpeechSemanticScorer()
     results = scorer.score_batch(["Hello", "I accuse P3", "I am the Seer"])
     assert len(results) == 3
@@ -76,6 +83,7 @@ def test_scorer_model_artifact():
     if not path.exists():
         pytest.skip("SpeechActClassifier not yet trained")
     import pickle
+
     with open(path, "rb") as f:
         data = pickle.load(f)
     assert data.get("audit_only") is True
@@ -98,6 +106,7 @@ def test_model_metrics_exist():
 
 def test_source_model_field():
     from backend.eval.heads.speech_semantic import SpeechSemanticScorer
+
     scorer = SpeechSemanticScorer()
     result = scorer.score("test")
     assert result.source_model == "speech_act_classifier_v0"

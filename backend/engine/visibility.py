@@ -1,9 +1,13 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from dataclasses import field
 from typing import Any
 
-from backend.engine.models import Alignment, GameEvent, GameState, Phase, Player, Role
+from backend.engine.models import Alignment
+from backend.engine.models import GameState
+from backend.engine.models import Phase
+from backend.engine.models import Player
 
 
 @dataclass(frozen=True)
@@ -28,9 +32,7 @@ class Visibility:
         player = state.player(player_id)
         public_events = [event.to_dict() for event in state.events if event.visibility == "public"]
         private_events = [
-            event.to_dict()
-            for event in state.events
-            if event.visibility == "private" and player_id in event.visible_to
+            event.to_dict() for event in state.events if event.visibility == "private" and player_id in event.visible_to
         ]
         known_wolves = []
         if player.alignment == Alignment.WOLF:

@@ -20,8 +20,12 @@ import logging
 import os
 import sys
 import time
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from dataclasses import dataclass
+from dataclasses import field
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Tuple
 
 import numpy as np
 
@@ -36,40 +40,55 @@ QUERY_SET: List[Dict[str, Any]] = [
     {
         "query_id": "q_wolf_01",
         "keywords": ["被查杀", "表水"],
-        "role": "Werewolf", "alignment": "wolf", "mbti": "INTJ",
-        "phase": "DAY_SPEECH", "action_type": "talk",
+        "role": "Werewolf",
+        "alignment": "wolf",
+        "mbti": "INTJ",
+        "phase": "DAY_SPEECH",
+        "action_type": "talk",
         "situation": "被真预言家查杀，白天需要表水解释",
         "min_relevant_role": "werewolf",
     },
     {
         "query_id": "q_wolf_02",
         "keywords": ["悍跳预言家", "警徽流"],
-        "role": "Werewolf", "alignment": "wolf", "mbti": "INTJ",
-        "phase": "DAY_BADGE_SPEECH", "action_type": "talk",
+        "role": "Werewolf",
+        "alignment": "wolf",
+        "mbti": "INTJ",
+        "phase": "DAY_BADGE_SPEECH",
+        "action_type": "talk",
         "situation": "狼人需要悍跳预言家抢警徽",
         "min_relevant_role": "werewolf",
     },
     {
         "query_id": "q_wolf_03",
         "keywords": ["刀人", "击杀", "目标"],
-        "role": "Werewolf", "alignment": "wolf", "mbti": "ENFP",
-        "phase": "NIGHT_WOLF_ACTION", "action_type": "attack",
+        "role": "Werewolf",
+        "alignment": "wolf",
+        "mbti": "ENFP",
+        "phase": "NIGHT_WOLF_ACTION",
+        "action_type": "attack",
         "situation": "狼队夜晚需要选择击杀目标",
         "min_relevant_role": "werewolf",
     },
     {
         "query_id": "q_wolf_04",
         "keywords": ["倒钩", "深水", "潜伏"],
-        "role": "Werewolf", "alignment": "wolf", "mbti": "ESFP",
-        "phase": "DAY_SPEECH", "action_type": "talk",
+        "role": "Werewolf",
+        "alignment": "wolf",
+        "mbti": "ESFP",
+        "phase": "DAY_SPEECH",
+        "action_type": "talk",
         "situation": "倒钩狼需要深水潜伏到最后",
         "min_relevant_role": "werewolf",
     },
     {
         "query_id": "q_wolf_05",
         "keywords": ["自爆", "时机"],
-        "role": "Werewolf", "alignment": "wolf", "mbti": "ISTJ",
-        "phase": "DAY_SPEECH", "action_type": "talk",
+        "role": "Werewolf",
+        "alignment": "wolf",
+        "mbti": "ISTJ",
+        "phase": "DAY_SPEECH",
+        "action_type": "talk",
         "situation": "狼人被查杀考虑是否自爆",
         "min_relevant_role": "werewolf",
     },
@@ -77,40 +96,55 @@ QUERY_SET: List[Dict[str, Any]] = [
     {
         "query_id": "q_seer_01",
         "keywords": ["查验", "首夜", "验人"],
-        "role": "Seer", "alignment": "village", "mbti": "INTJ",
-        "phase": "NIGHT_SEER_ACTION", "action_type": "check",
+        "role": "Seer",
+        "alignment": "village",
+        "mbti": "INTJ",
+        "phase": "NIGHT_SEER_ACTION",
+        "action_type": "check",
         "situation": "预言家首夜需要选择查验目标",
         "min_relevant_role": "seer",
     },
     {
         "query_id": "q_seer_02",
         "keywords": ["警徽流", "验人", "跳身份"],
-        "role": "Seer", "alignment": "village", "mbti": "INTJ",
-        "phase": "DAY_BADGE_SPEECH", "action_type": "talk",
+        "role": "Seer",
+        "alignment": "village",
+        "mbti": "INTJ",
+        "phase": "DAY_BADGE_SPEECH",
+        "action_type": "talk",
         "situation": "预言家起跳报查验争取警徽",
         "min_relevant_role": "seer",
     },
     {
         "query_id": "q_seer_03",
         "keywords": ["查杀", "日报", "跳预言家"],
-        "role": "Seer", "alignment": "village", "mbti": "ENFP",
-        "phase": "DAY_SPEECH", "action_type": "talk",
+        "role": "Seer",
+        "alignment": "village",
+        "mbti": "ENFP",
+        "phase": "DAY_SPEECH",
+        "action_type": "talk",
         "situation": "查验到狼人，需要决定是否立即跳身份",
         "min_relevant_role": "seer",
     },
     {
         "query_id": "q_seer_04",
         "keywords": ["悍跳", "对跳", "分辨"],
-        "role": "Seer", "alignment": "village", "mbti": "ESFP",
-        "phase": "DAY_SPEECH", "action_type": "talk",
+        "role": "Seer",
+        "alignment": "village",
+        "mbti": "ESFP",
+        "phase": "DAY_SPEECH",
+        "action_type": "talk",
         "situation": "面对悍跳狼对跳，需要分辨真假",
         "min_relevant_role": "seer",
     },
     {
         "query_id": "q_seer_05",
         "keywords": ["金水", "验证", "好人"],
-        "role": "Seer", "alignment": "village", "mbti": "ISTJ",
-        "phase": "DAY_SPEECH", "action_type": "talk",
+        "role": "Seer",
+        "alignment": "village",
+        "mbti": "ISTJ",
+        "phase": "DAY_SPEECH",
+        "action_type": "talk",
         "situation": "查验结果为金水，如何发布信息",
         "min_relevant_role": "seer",
     },
@@ -118,32 +152,44 @@ QUERY_SET: List[Dict[str, Any]] = [
     {
         "query_id": "q_witch_01",
         "keywords": ["女巫", "解药", "救人"],
-        "role": "Witch", "alignment": "village", "mbti": "INTJ",
-        "phase": "NIGHT_WITCH_ACTION", "action_type": "save",
+        "role": "Witch",
+        "alignment": "village",
+        "mbti": "INTJ",
+        "phase": "NIGHT_WITCH_ACTION",
+        "action_type": "save",
         "situation": "女巫首夜有玩家被刀，是否使用解药",
         "min_relevant_role": "witch",
     },
     {
         "query_id": "q_witch_02",
         "keywords": ["女巫", "毒药", "投毒"],
-        "role": "Witch", "alignment": "village", "mbti": "INTJ",
-        "phase": "NIGHT_WITCH_ACTION", "action_type": "save",
+        "role": "Witch",
+        "alignment": "village",
+        "mbti": "INTJ",
+        "phase": "NIGHT_WITCH_ACTION",
+        "action_type": "save",
         "situation": "女巫怀疑某人是狼，考虑使用毒药",
         "min_relevant_role": "witch",
     },
     {
         "query_id": "q_witch_03",
         "keywords": ["双药", "用药", "决策"],
-        "role": "Witch", "alignment": "village", "mbti": "ENFP",
-        "phase": "NIGHT_WITCH_ACTION", "action_type": "save",
+        "role": "Witch",
+        "alignment": "village",
+        "mbti": "ENFP",
+        "phase": "NIGHT_WITCH_ACTION",
+        "action_type": "save",
         "situation": "女巫双药齐全时的用药策略",
         "min_relevant_role": "witch",
     },
     {
         "query_id": "q_witch_04",
         "keywords": ["女巫跳身份", "报药水"],
-        "role": "Witch", "alignment": "village", "mbti": "ESFP",
-        "phase": "DAY_SPEECH", "action_type": "talk",
+        "role": "Witch",
+        "alignment": "village",
+        "mbti": "ESFP",
+        "phase": "DAY_SPEECH",
+        "action_type": "talk",
         "situation": "女巫用了解药后是否跳身份报银水",
         "min_relevant_role": "witch",
     },
@@ -151,16 +197,22 @@ QUERY_SET: List[Dict[str, Any]] = [
     {
         "query_id": "q_hunter_01",
         "keywords": ["猎人", "开枪", "带人"],
-        "role": "Hunter", "alignment": "village", "mbti": "INTJ",
-        "phase": "HUNTER_SHOOT", "action_type": "shoot",
+        "role": "Hunter",
+        "alignment": "village",
+        "mbti": "INTJ",
+        "phase": "HUNTER_SHOOT",
+        "action_type": "shoot",
         "situation": "猎人被放逐，需要选择开枪目标",
         "min_relevant_role": "hunter",
     },
     {
         "query_id": "q_hunter_02",
         "keywords": ["猎人", "藏身份", "发言"],
-        "role": "Hunter", "alignment": "village", "mbti": "ISTJ",
-        "phase": "DAY_SPEECH", "action_type": "talk",
+        "role": "Hunter",
+        "alignment": "village",
+        "mbti": "ISTJ",
+        "phase": "DAY_SPEECH",
+        "action_type": "talk",
         "situation": "猎人白天如何隐藏身份避免被狼刀",
         "min_relevant_role": "hunter",
     },
@@ -168,16 +220,22 @@ QUERY_SET: List[Dict[str, Any]] = [
     {
         "query_id": "q_guard_01",
         "keywords": ["守卫", "守护", "目标"],
-        "role": "Guard", "alignment": "village", "mbti": "INTJ",
-        "phase": "NIGHT_GUARD_ACTION", "action_type": "guard",
+        "role": "Guard",
+        "alignment": "village",
+        "mbti": "INTJ",
+        "phase": "NIGHT_GUARD_ACTION",
+        "action_type": "guard",
         "situation": "守卫夜晚选择守护目标",
         "min_relevant_role": "guard",
     },
     {
         "query_id": "q_guard_02",
         "keywords": ["守卫", "连续", "同一人"],
-        "role": "Guard", "alignment": "village", "mbti": "ENFP",
-        "phase": "NIGHT_GUARD_ACTION", "action_type": "guard",
+        "role": "Guard",
+        "alignment": "village",
+        "mbti": "ENFP",
+        "phase": "NIGHT_GUARD_ACTION",
+        "action_type": "guard",
         "situation": "守卫是否可以连续守护同一人",
         "min_relevant_role": "guard",
     },
@@ -185,40 +243,55 @@ QUERY_SET: List[Dict[str, Any]] = [
     {
         "query_id": "q_vil_01",
         "keywords": ["投票", "归票", "放逐"],
-        "role": "Villager", "alignment": "village", "mbti": "INTJ",
-        "phase": "DAY_VOTE", "action_type": "vote",
+        "role": "Villager",
+        "alignment": "village",
+        "mbti": "INTJ",
+        "phase": "DAY_VOTE",
+        "action_type": "vote",
         "situation": "白天投票阶段需要归票放逐嫌疑人",
         "min_relevant_role": "villager",
     },
     {
         "query_id": "q_vil_02",
         "keywords": ["表水", "自证", "解释"],
-        "role": "Villager", "alignment": "village", "mbti": "INTJ",
-        "phase": "DAY_SPEECH", "action_type": "talk",
+        "role": "Villager",
+        "alignment": "village",
+        "mbti": "INTJ",
+        "phase": "DAY_SPEECH",
+        "action_type": "talk",
         "situation": "平民被怀疑是狼人，需要表水自证",
         "min_relevant_role": "villager",
     },
     {
         "query_id": "q_vil_03",
         "keywords": ["站边", "判断", "预言家"],
-        "role": "Villager", "alignment": "village", "mbti": "ENFP",
-        "phase": "DAY_SPEECH", "action_type": "talk",
+        "role": "Villager",
+        "alignment": "village",
+        "mbti": "ENFP",
+        "phase": "DAY_SPEECH",
+        "action_type": "talk",
         "situation": "多人对跳预言家，平民如何选择站边",
         "min_relevant_role": "villager",
     },
     {
         "query_id": "q_vil_04",
         "keywords": ["金水", "银水", "判断"],
-        "role": "Villager", "alignment": "village", "mbti": "ESFP",
-        "phase": "DAY_SPEECH", "action_type": "talk",
+        "role": "Villager",
+        "alignment": "village",
+        "mbti": "ESFP",
+        "phase": "DAY_SPEECH",
+        "action_type": "talk",
         "situation": "如何判断金水和银水的可信度",
         "min_relevant_role": "villager",
     },
     {
         "query_id": "q_vil_05",
         "keywords": ["发言", "分析", "逻辑"],
-        "role": "Villager", "alignment": "village", "mbti": "ISTJ",
-        "phase": "DAY_SPEECH", "action_type": "talk",
+        "role": "Villager",
+        "alignment": "village",
+        "mbti": "ISTJ",
+        "phase": "DAY_SPEECH",
+        "action_type": "talk",
         "situation": "平民如何进行有效的发言和分析",
         "min_relevant_role": "villager",
     },
@@ -226,36 +299,48 @@ QUERY_SET: List[Dict[str, Any]] = [
     {
         "query_id": "q_cross_01",
         "keywords": ["警徽流", "警长"],
-        "role": "Villager", "alignment": "village", "mbti": "INTJ",
-        "phase": "DAY_BADGE_SPEECH", "action_type": "talk",
+        "role": "Villager",
+        "alignment": "village",
+        "mbti": "INTJ",
+        "phase": "DAY_BADGE_SPEECH",
+        "action_type": "talk",
         "situation": "如何判断警长候选人的警徽流是否合理",
         "min_relevant_role": "any",
     },
     {
         "query_id": "q_cross_02",
         "keywords": ["轮次", "计算", "胜负"],
-        "role": "Werewolf", "alignment": "wolf", "mbti": "INTJ",
-        "phase": "DAY_SPEECH", "action_type": "talk",
+        "role": "Werewolf",
+        "alignment": "wolf",
+        "mbti": "INTJ",
+        "phase": "DAY_SPEECH",
+        "action_type": "talk",
         "situation": "狼队如何计算轮次和胜负手",
         "min_relevant_role": "werewolf",
     },
     {
         "query_id": "q_cross_03",
         "keywords": ["悍跳", "反跳", "打格式"],
-        "role": "Werewolf", "alignment": "wolf", "mbti": "ENFP",
-        "phase": "DAY_SPEECH", "action_type": "talk",
+        "role": "Werewolf",
+        "alignment": "wolf",
+        "mbti": "ENFP",
+        "phase": "DAY_SPEECH",
+        "action_type": "talk",
         "situation": "悍跳狼如何对抗真预言家的查验格式",
         "min_relevant_role": "werewolf",
     },
 ]
 
-print(f"Query set: {len(QUERY_SET)} queries "
-      f"({len(set(q['role'] for q in QUERY_SET))} roles × "
-      f"{len(set(q['mbti'] for q in QUERY_SET))} MBTI types)")
+print(
+    f"Query set: {len(QUERY_SET)} queries "
+    f"({len(set(q['role'] for q in QUERY_SET))} roles × "
+    f"{len(set(q['mbti'] for q in QUERY_SET))} MBTI types)"
+)
 
 # ================================================================
 # Relevance Scoring
 # ================================================================
+
 
 def weak_label_relevance(doc: Dict, query: Dict) -> Tuple[int, Dict]:
     """Auto-label relevance using rule-based heuristics.
@@ -352,6 +437,7 @@ def weak_label_relevance(doc: Dict, query: Dict) -> Tuple[int, Dict]:
 # ================================================================
 # Evaluation Metrics
 # ================================================================
+
 
 @dataclass
 class PolicyMetrics:
@@ -476,7 +562,8 @@ def compute_metrics(
 
         # Role match rate
         role_matches = [
-            1.0 if str(h.get("role_scope", h.get("role", ""))).lower().strip() in (query_role, "global", "any", "")
+            1.0
+            if str(h.get("role_scope", h.get("role", ""))).lower().strip() in (query_role, "global", "any", "")
             else 0.0
             for h in hits[:5]
         ]
@@ -484,17 +571,14 @@ def compute_metrics(
 
         # MBTI match rate
         mbti_matches = [
-            1.0 if str(h.get("mbti_scope", "")).upper().strip() in (query_mbti, "")
-            else 0.0
-            for h in hits[:5]
+            1.0 if str(h.get("mbti_scope", "")).upper().strip() in (query_mbti, "") else 0.0 for h in hits[:5]
         ]
         mbti_match_list.append(sum(mbti_matches) / max(len(mbti_matches), 1))
 
         # Phase match rate
         query_phase = result.get("query", {}).get("phase", "").lower().strip()
         phase_matches = [
-            1.0 if str(h.get("phase_scope", h.get("phase", ""))).lower().strip() in (query_phase, "", "global")
-            else 0.0
+            1.0 if str(h.get("phase_scope", h.get("phase", ""))).lower().strip() in (query_phase, "", "global") else 0.0
             for h in hits[:5]
         ]
         phase_match_list.append(sum(phase_matches) / max(len(phase_matches), 1))
@@ -557,17 +641,16 @@ def compute_offline_score(m: PolicyMetrics) -> float:
 # Main Evaluation
 # ================================================================
 
+
 def run_evaluation(output_dir: str = "outputs/retrieval_policy_eval") -> Dict[str, Any]:
     """Run the full policy comparison evaluation."""
     os.makedirs(output_dir, exist_ok=True)
 
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-    from backend.agents.cognitive.retrieval_prod import (
-        AgentContext,
-        RetrievalPolicy,
-        _derive_alignment_from_role,
-        get_retriever,
-    )
+    from backend.agents.cognitive.retrieval_prod import AgentContext
+    from backend.agents.cognitive.retrieval_prod import RetrievalPolicy
+    from backend.agents.cognitive.retrieval_prod import _derive_alignment_from_role
+    from backend.agents.cognitive.retrieval_prod import get_retriever
 
     retriever = get_retriever()
     if retriever is None or not retriever.ready:
@@ -620,24 +703,28 @@ def run_evaluation(output_dir: str = "outputs/retrieval_policy_eval") -> Dict[st
                 h["_relevance_reason"] = reason
 
             # Compute metrics for this query
-            results_for_policy.append({
-                "query_id": query["query_id"],
-                "query": query,
-                "results": hits,
-                "relevance_scores": rel_scores,
-                "latency_ms": elapsed_ms,
-            })
+            results_for_policy.append(
+                {
+                    "query_id": query["query_id"],
+                    "query": query,
+                    "results": hits,
+                    "relevance_scores": rel_scores,
+                    "latency_ms": elapsed_ms,
+                }
+            )
 
-            per_query_details.append({
-                "query_id": query["query_id"],
-                "policy": policy.value,
-                "role": query["role"],
-                "mbti": query["mbti"],
-                "n_results": len(hits),
-                "relevance_scores": rel_scores,
-                "doc_ids": [h.get("doc_id", "") for h in hits[:5]],
-                "buckets": [h.get("bucket", "") for h in hits[:5]],
-            })
+            per_query_details.append(
+                {
+                    "query_id": query["query_id"],
+                    "policy": policy.value,
+                    "role": query["role"],
+                    "mbti": query["mbti"],
+                    "n_results": len(hits),
+                    "relevance_scores": rel_scores,
+                    "doc_ids": [h.get("doc_id", "") for h in hits[:5]],
+                    "buckets": [h.get("bucket", "") for h in hits[:5]],
+                }
+            )
 
         m = compute_metrics(policy.value, results_for_policy, latencies)
         all_policy_metrics[policy.value] = m
@@ -700,24 +787,51 @@ def run_evaluation(output_dir: str = "outputs/retrieval_policy_eval") -> Dict[st
 
     # CSV
     csv_headers = [
-        "policy", "P@1", "P@3", "P@5", "R@3", "R@5", "MRR",
-        "nDCG@3", "nDCG@5", "AvgRel", "RoleMatch", "MBTIMatch",
-        "PhaseMatch", "Coverage", "CandidateLeak", "Diversity",
-        "LatencyP50ms", "LatencyP95ms", "OfflineScore", "NEmpty",
+        "policy",
+        "P@1",
+        "P@3",
+        "P@5",
+        "R@3",
+        "R@5",
+        "MRR",
+        "nDCG@3",
+        "nDCG@5",
+        "AvgRel",
+        "RoleMatch",
+        "MBTIMatch",
+        "PhaseMatch",
+        "Coverage",
+        "CandidateLeak",
+        "Diversity",
+        "LatencyP50ms",
+        "LatencyP95ms",
+        "OfflineScore",
+        "NEmpty",
     ]
     with open(os.path.join(output_dir, "results.csv"), "w") as f:
         f.write(",".join(csv_headers) + "\n")
         for pname, m in all_policy_metrics.items():
             row = [
                 pname,
-                f"{m.precision_at_1:.4f}", f"{m.precision_at_3:.4f}", f"{m.precision_at_5:.4f}",
-                f"{m.recall_at_3:.4f}", f"{m.recall_at_5:.4f}", f"{m.mrr:.4f}",
-                f"{m.ndcg_at_3:.4f}", f"{m.ndcg_at_5:.4f}", f"{m.avg_relevance:.4f}",
-                f"{m.role_match_rate:.4f}", f"{m.mbti_match_rate:.4f}",
-                f"{m.phase_match_rate:.4f}", f"{m.coverage_rate:.4f}",
-                str(m.candidate_leakage_count), f"{m.diversity_score:.4f}",
-                f"{m.latency_p50_ms:.2f}", f"{m.latency_p95_ms:.2f}",
-                f"{scores[pname]:.4f}", str(m.n_empty),
+                f"{m.precision_at_1:.4f}",
+                f"{m.precision_at_3:.4f}",
+                f"{m.precision_at_5:.4f}",
+                f"{m.recall_at_3:.4f}",
+                f"{m.recall_at_5:.4f}",
+                f"{m.mrr:.4f}",
+                f"{m.ndcg_at_3:.4f}",
+                f"{m.ndcg_at_5:.4f}",
+                f"{m.avg_relevance:.4f}",
+                f"{m.role_match_rate:.4f}",
+                f"{m.mbti_match_rate:.4f}",
+                f"{m.phase_match_rate:.4f}",
+                f"{m.coverage_rate:.4f}",
+                str(m.candidate_leakage_count),
+                f"{m.diversity_score:.4f}",
+                f"{m.latency_p50_ms:.2f}",
+                f"{m.latency_p95_ms:.2f}",
+                f"{scores[pname]:.4f}",
+                str(m.n_empty),
             ]
             f.write(",".join(row) + "\n")
 
@@ -732,7 +846,7 @@ def run_evaluation(output_dir: str = "outputs/retrieval_policy_eval") -> Dict[st
         f.write(md)
 
     print(f"\nResults saved to {output_dir}/")
-    print(f"  results.json, results.csv, summary.md, per_query_details.jsonl")
+    print("  results.json, results.csv, summary.md, per_query_details.jsonl")
     print(f"\nTop policy: {ranked[0][0]} (score={ranked[0][1]:.4f})")
 
     return results_json
@@ -748,7 +862,7 @@ def _build_markdown_summary(
         "# Retrieval Policy Evaluation Summary",
         "",
         f"**Query set**: {len(QUERY_SET)} queries covering 6 roles × 4 MBTI types",
-        f"**Relevance scoring**: Rule-based weak labeling (role + phase + keywords + actionability + MBTI fit)",
+        "**Relevance scoring**: Rule-based weak labeling (role + phase + keywords + actionability + MBTI fit)",
         "",
         "## Policy Ranking (Offline Score)",
         "",
@@ -773,17 +887,17 @@ def _build_markdown_summary(
     # Analysis per policy
     analyses = {
         "global_only": "**Baseline.** Highest coverage but no personalization. All docs treated equally. "
-                         "Best when knowledge base is small or MBTI data is sparse.",
+        "Best when knowledge base is small or MBTI data is sparse.",
         "self_mbti_only": "Only docs matching agent's MBTI. Expected: high precision but low coverage. "
-                           "Risk: empty results for rare MBTI types.",
+        "Risk: empty results for rare MBTI types.",
         "same_role_all_mbti": "All docs for agent's role regardless of MBTI. "
-                               "Should balance role relevance with good coverage.",
+        "Should balance role relevance with good coverage.",
         "same_role_same_mbti": "Most restrictive: same role AND same MBTI. "
-                                "Expected: highest relevance but sparsest coverage.",
+        "Expected: highest relevance but sparsest coverage.",
         "hybrid_role_mbti_global": "**Recommended default.** 3-layer: same_role_same_mbti → same_role_all_mbti → global. "
-                                     "Balances personalization with fallback coverage.",
+        "Balances personalization with fallback coverage.",
         "hybrid_role_alignment_phase": "4-layer with phase constraint. Most granular. "
-                                        "Expected: best for specific scenarios but lower coverage.",
+        "Expected: best for specific scenarios but lower coverage.",
     }
 
     for pname, _ in ranked:
@@ -832,7 +946,7 @@ def _build_markdown_summary(
         f"**Recommended default policy**: `{ranked[0][0]}` (offline_score={ranked[0][1]:.4f})",
         "",
         "---",
-        f"*Generated by scripts/evaluate_retrieval_policies.py*",
+        "*Generated by scripts/evaluate_retrieval_policies.py*",
     ]
 
     return "\n".join(lines)

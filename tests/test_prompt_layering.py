@@ -3,17 +3,16 @@ from __future__ import annotations
 from backend.agents.cognitive import agent_loop as agent_loop_module
 from backend.agents.cognitive.agent_loop import AgentLoop
 from backend.agents.cognitive.memory import Memory
-from backend.agents.cognitive.observe import Observation, PlayerInfo
+from backend.agents.cognitive.observe import Observation
+from backend.agents.cognitive.observe import PlayerInfo
 from backend.agents.cognitive.profiles import PROFILES
-from backend.agents.cognitive.prompts import build_system_prompt, build_think_prompt
+from backend.agents.cognitive.prompts import build_system_prompt
+from backend.agents.cognitive.prompts import build_think_prompt
 from backend.agents.cognitive.tools import create_tools
-from backend.agents.cognitive.wolf_team import (
-    WolfTeamView,
-    assign_wolf_tactics,
-    negotiate_wolf_kill,
-)
+from backend.agents.cognitive.wolf_team import WolfTeamView
+from backend.agents.cognitive.wolf_team import assign_wolf_tactics
+from backend.agents.cognitive.wolf_team import negotiate_wolf_kill
 from backend.agents.prompts import ROLE_SYSTEM_PROMPTS
-
 
 NON_STRATEGY_FORBIDDEN = (
     "核心策略",

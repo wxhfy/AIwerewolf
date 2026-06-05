@@ -10,7 +10,6 @@ import json
 import sys
 import time
 import traceback
-from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 
@@ -18,8 +17,8 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from backend.engine.game import WerewolfGame
-from backend.eval.review import generate_review_report
 from backend.eval.evolution import DreamJob
+from backend.eval.review import generate_review_report
 
 
 def run_evolution_test(n_games: int = 5, start_seed: int = 500) -> None:
@@ -38,7 +37,7 @@ def run_evolution_test(n_games: int = 5, start_seed: int = 500) -> None:
     for i in range(n_games):
         seed = start_seed + i
         t0 = time.perf_counter()
-        print(f"\n[{i+1}/{n_games}] Game seed={seed}...")
+        print(f"\n[{i + 1}/{n_games}] Game seed={seed}...")
 
         try:
             # Step 1: Run game
@@ -49,13 +48,17 @@ def run_evolution_test(n_games: int = 5, start_seed: int = 500) -> None:
             winner = state.winner.value if hasattr(state.winner, "value") else str(state.winner)
             print(f"  Winner: {winner}, Days: {state.day}, Time: {elapsed:.0f}s")
 
-            game_results.append({
-                "seed": seed, "winner": winner, "days": state.day,
-                "duration_s": round(elapsed, 1),
-            })
+            game_results.append(
+                {
+                    "seed": seed,
+                    "winner": winner,
+                    "days": state.day,
+                    "duration_s": round(elapsed, 1),
+                }
+            )
 
             # Step 2: Generate review report (fast mode, 1 iteration)
-            print(f"  Generating review report...")
+            print("  Generating review report...")
             try:
                 report = generate_review_report(state, max_iterations=1)
                 if report:
@@ -63,7 +66,7 @@ def run_evolution_test(n_games: int = 5, start_seed: int = 500) -> None:
                     evo_count = len(report.evolution_candidates) if report.evolution_candidates else 0
                     print(f"  Review OK, evolution_candidates: {evo_count}")
                 else:
-                    print(f"  Review returned None")
+                    print("  Review returned None")
             except Exception as e:
                 print(f"  Review failed: {e}")
 
@@ -83,7 +86,7 @@ def run_evolution_test(n_games: int = 5, start_seed: int = 500) -> None:
 
             # Print patch details
             for i, patch in enumerate(result.accepted_patches):
-                print(f"\n--- Patch {i+1} ---")
+                print(f"\n--- Patch {i + 1} ---")
                 print(f"Role: {patch.target_role}")
                 print(f"Situation: {patch.situation_pattern[:100]}...")
                 print(f"Recommendation: {patch.recommended_action[:100]}...")
@@ -113,6 +116,7 @@ def run_evolution_test(n_games: int = 5, start_seed: int = 500) -> None:
 
 if __name__ == "__main__":
     import argparse
+
     p = argparse.ArgumentParser()
     p.add_argument("--games", type=int, default=5)
     p.add_argument("--start-seed", type=int, default=500)

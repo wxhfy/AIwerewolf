@@ -7,47 +7,39 @@ answers: "Is Track C a production-ready, end-to-end self-evolution pipeline?"
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import pytest
 
-from backend.engine.models import Alignment, Role
-from backend.eval.evolution import (
-    ABComparison,
-    AcceptancePolicy,
-    DreamJob,
-    EvolutionPipeline,
-    EvolutionSummary,
-    KnowledgeDocValidator,
-    PatchOperation,
-    PatchValidator,
-    RoleStrategyCard,
-    StrategyContextRenderer,
-    StrategyKnowledgeDoc,
-    StrategyKnowledgeDocExtractor,
-    StrategyKnowledgeStore,
-    StrategyPatch,
-    StrategyRetrievalQuery,
-    TournamentRunner,
-    VersionManager,
-    export_evolution_summary,
-)
-from backend.eval.review import (
-    GameMetrics,
-    MetricsCalculator,
-    PlayerScore,
-    ReviewReport,
-    ReviewReportBuilder,
-)
-from tests.test_review_metrics import (
-    make_death,
-    make_player,
-    make_seer_result,
-    make_speech,
-    make_state,
-    make_vote,
-)
-
+from backend.engine.models import Alignment
+from backend.engine.models import Role
+from backend.eval.evolution import ABComparison
+from backend.eval.evolution import AcceptancePolicy
+from backend.eval.evolution import DreamJob
+from backend.eval.evolution import EvolutionPipeline
+from backend.eval.evolution import KnowledgeDocValidator
+from backend.eval.evolution import PatchOperation
+from backend.eval.evolution import PatchValidator
+from backend.eval.evolution import RoleStrategyCard
+from backend.eval.evolution import StrategyContextRenderer
+from backend.eval.evolution import StrategyKnowledgeDoc
+from backend.eval.evolution import StrategyKnowledgeDocExtractor
+from backend.eval.evolution import StrategyKnowledgeStore
+from backend.eval.evolution import StrategyPatch
+from backend.eval.evolution import StrategyRetrievalQuery
+from backend.eval.evolution import TournamentRunner
+from backend.eval.evolution import VersionManager
+from backend.eval.evolution import export_evolution_summary
+from backend.eval.review import GameMetrics
+from backend.eval.review import MetricsCalculator
+from backend.eval.review import PlayerScore
+from backend.eval.review import ReviewReport
+from backend.eval.review import ReviewReportBuilder
+from tests.test_review_metrics import make_death
+from tests.test_review_metrics import make_player
+from tests.test_review_metrics import make_seer_result
+from tests.test_review_metrics import make_speech
+from tests.test_review_metrics import make_state
+from tests.test_review_metrics import make_vote
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -100,7 +92,9 @@ def _rejected_report() -> ReviewReport:
     return report
 
 
-def _metrics(version: str, score: float, role_task: float, *, critical: bool = False, winner: str = "village") -> GameMetrics:
+def _metrics(
+    version: str, score: float, role_task: float, *, critical: bool = False, winner: str = "village"
+) -> GameMetrics:
     return GameMetrics(
         game_id=f"{version}-{score}",
         winner=winner,
@@ -111,8 +105,20 @@ def _metrics(version: str, score: float, role_task: float, *, critical: bool = F
         info_efficiency=1.0,
         player_scores=[
             PlayerScore(
-                "p1", "PersonaA", "persona-a", "PersonaA", "Seer", "village",
-                1.0 if winner == "village" else 0.0, role_task, 0.8, 0.8, 0.8, 1.0, 0.0, score,
+                "p1",
+                "PersonaA",
+                "persona-a",
+                "PersonaA",
+                "Seer",
+                "village",
+                1.0 if winner == "village" else 0.0,
+                role_task,
+                0.8,
+                0.8,
+                0.8,
+                1.0,
+                0.0,
+                score,
                 adjusted_final_score=score,
                 mistakes=["[critical] miss"] if critical else [],
             )
@@ -157,10 +163,7 @@ def test_c2_knowledge_sanitized_no_player_leaks() -> None:
         issues = validator.validate(doc)
         assert not issues
 
-    blob = " ".join(
-        f"{doc.situation_pattern} {doc.recommended_action} {doc.rationale}"
-        for doc in docs
-    )
+    blob = " ".join(f"{doc.situation_pattern} {doc.recommended_action} {doc.rationale}" for doc in docs)
     for name in {"SeerA", "WolfA", "VillagerA"}:
         assert name not in blob
     assert "P1" not in blob
@@ -221,21 +224,36 @@ def test_c3_knowledge_store_role_phase_situation_retrieval() -> None:
     store = StrategyKnowledgeStore([doc, doc_villager])
 
     # Role match
-    seer_results = store.retrieve(StrategyRetrievalQuery(role="Seer", phase="DAY_SPEECH", observation_summary="I have a wolf check and need to create vote pressure"))
+    seer_results = store.retrieve(
+        StrategyRetrievalQuery(
+            role="Seer", phase="DAY_SPEECH", observation_summary="I have a wolf check and need to create vote pressure"
+        )
+    )
     assert seer_results
     assert seer_results[0].doc_id == "c3-doc-1"
 
     # Phase filter
-    villager_results = store.retrieve(StrategyRetrievalQuery(role="Villager", phase="DAY_VOTE", observation_summary="Close vote coming"))
+    villager_results = store.retrieve(
+        StrategyRetrievalQuery(role="Villager", phase="DAY_VOTE", observation_summary="Close vote coming")
+    )
     assert villager_results
     assert villager_results[0].doc_id == "c3-doc-2"
 
     # Situation tag overlap boost
-    tagged_results = store.retrieve(StrategyRetrievalQuery(role="Seer", phase="DAY_SPEECH", observation_summary="Need info release", situation_tags=["wolf_check_unreleased"]))
+    tagged_results = store.retrieve(
+        StrategyRetrievalQuery(
+            role="Seer",
+            phase="DAY_SPEECH",
+            observation_summary="Need info release",
+            situation_tags=["wolf_check_unreleased"],
+        )
+    )
     assert tagged_results
 
     # Wrong role should get nothing
-    no_results = store.retrieve(StrategyRetrievalQuery(role="Hunter", phase="DAY_SPEECH", observation_summary="Any advice?"))
+    no_results = store.retrieve(
+        StrategyRetrievalQuery(role="Hunter", phase="DAY_SPEECH", observation_summary="Any advice?")
+    )
     assert not no_results
 
     assert store.get("c3-doc-1").usage_count == 2  # used by two queries
@@ -281,12 +299,25 @@ def test_c4_knowledge_usage_feedback_updates_scores() -> None:
 
     # Create a fresh doc with no successes — 3 failures should deprecate
     doc2 = StrategyKnowledgeDoc(
-        doc_id="c4-doc2", doc_type="good_play", role="Seer", phase="DAY_SPEECH",
-        persona_scope=None, situation_pattern="P2", trigger_conditions=["t1"],
-        recommended_action="Do Y.", avoid_action=None, rationale="R2",
-        evidence_summary="OK", source_report_ids=["g2"],
-        source_item_ids=[], source_event_ids=[], counterfactual_ids=[],
-        expected_metric_effects=[], quality_score=0.7, confidence=0.7, status="active",
+        doc_id="c4-doc2",
+        doc_type="good_play",
+        role="Seer",
+        phase="DAY_SPEECH",
+        persona_scope=None,
+        situation_pattern="P2",
+        trigger_conditions=["t1"],
+        recommended_action="Do Y.",
+        avoid_action=None,
+        rationale="R2",
+        evidence_summary="OK",
+        source_report_ids=["g2"],
+        source_item_ids=[],
+        source_event_ids=[],
+        counterfactual_ids=[],
+        expected_metric_effects=[],
+        quality_score=0.7,
+        confidence=0.7,
+        status="active",
     )
     store.upsert(doc2)
     store.update_usage("c4-doc2", helpful=False)
@@ -307,10 +338,12 @@ def test_c4_knowledge_usage_feedback_updates_scores() -> None:
 def test_c5_dream_job_aggregates_multiple_reports() -> None:
     seer_report = _approved_seer_report()
     witch_report = _approved_witch_report()
-    manager = VersionManager([
-        RoleStrategyCard(role="Seer", version="seer_v1", goal="Seer mission."),
-        RoleStrategyCard(role="Witch", version="witch_v1", goal="Witch mission."),
-    ])
+    manager = VersionManager(
+        [
+            RoleStrategyCard(role="Seer", version="seer_v1", goal="Seer mission."),
+            RoleStrategyCard(role="Witch", version="witch_v1", goal="Witch mission."),
+        ]
+    )
     result = DreamJob(version_manager=manager).run([seer_report, witch_report])
     assert result.knowledge_docs
     assert result.candidate_patches
@@ -340,7 +373,14 @@ def test_c6_strategy_patch_generation() -> None:
     assert patch.operations
     for op in patch.operations:
         assert op.op in {"add", "update", "remove", "deprecate", "promote"}
-        assert op.section in {"speech_policy", "vote_policy", "skill_policy", "risk_rules", "compensation_rules", "retrieval_policy"}
+        assert op.section in {
+            "speech_policy",
+            "vote_policy",
+            "skill_policy",
+            "risk_rules",
+            "compensation_rules",
+            "retrieval_policy",
+        }
         assert op.new_value
         assert op.rationale
 
@@ -418,7 +458,14 @@ def test_c7_patch_validator_rejects_illegal_patches() -> None:
         source_report_ids=["g1"],
         source_knowledge_doc_ids=["d1"],
         source_evidence_ids=["e1"],
-        operations=[PatchOperation("add", "speech_policy", "Release wolf checks publicly when vote pressure matters.", "Approved report evidence shows this improves conversion.")],
+        operations=[
+            PatchOperation(
+                "add",
+                "speech_policy",
+                "Release wolf checks publicly when vote pressure matters.",
+                "Approved report evidence shows this improves conversion.",
+            )
+        ],
         expected_effects=[{"metric": "vote_accuracy", "direction": "increase"}],
     )
     good_result = validator.validate(good_patch)
@@ -523,11 +570,18 @@ def test_c10_acceptance_policy_promotes_or_rejects() -> None:
 
     # Should accept: clear improvement
     comparison_good = ABComparison(
-        baseline_version="v1", candidate_version="v2",
-        total_games=2, baseline_wins=0, candidate_wins=0,
-        baseline_avg_score=61.0, candidate_avg_score=73.0,
-        target_role_avg_score_delta=19.67, role_task_score_delta=40.0,
-        critical_mistakes_delta=-0.5, info_leak_count=0, invalid_action_rate=0.0,
+        baseline_version="v1",
+        candidate_version="v2",
+        total_games=2,
+        baseline_wins=0,
+        candidate_wins=0,
+        baseline_avg_score=61.0,
+        candidate_avg_score=73.0,
+        target_role_avg_score_delta=19.67,
+        role_task_score_delta=40.0,
+        critical_mistakes_delta=-0.5,
+        info_leak_count=0,
+        invalid_action_rate=0.0,
     )
     decision_good = policy.decide(comparison_good)
     assert decision_good.accepted
@@ -536,11 +590,18 @@ def test_c10_acceptance_policy_promotes_or_rejects() -> None:
 
     # Should reject: info leak
     comparison_leak = ABComparison(
-        baseline_version="v1", candidate_version="v2",
-        total_games=2, baseline_wins=0, candidate_wins=2,
-        baseline_avg_score=61.0, candidate_avg_score=73.0,
-        target_role_avg_score_delta=19.0, role_task_score_delta=40.0,
-        critical_mistakes_delta=-0.5, info_leak_count=1, invalid_action_rate=0.0,
+        baseline_version="v1",
+        candidate_version="v2",
+        total_games=2,
+        baseline_wins=0,
+        candidate_wins=2,
+        baseline_avg_score=61.0,
+        candidate_avg_score=73.0,
+        target_role_avg_score_delta=19.0,
+        role_task_score_delta=40.0,
+        critical_mistakes_delta=-0.5,
+        info_leak_count=1,
+        invalid_action_rate=0.0,
     )
     decision_leak = policy.decide(comparison_leak)
     assert not decision_leak.accepted
@@ -548,11 +609,18 @@ def test_c10_acceptance_policy_promotes_or_rejects() -> None:
     # Should reject: any candidate fallback means the A/B result is not a valid
     # proof of strategy quality.
     comparison_fallback = ABComparison(
-        baseline_version="v1", candidate_version="v2",
-        total_games=2, baseline_wins=0, candidate_wins=2,
-        baseline_avg_score=61.0, candidate_avg_score=73.0,
-        target_role_avg_score_delta=19.0, role_task_score_delta=40.0,
-        critical_mistakes_delta=-0.5, info_leak_count=0, invalid_action_rate=0.0,
+        baseline_version="v1",
+        candidate_version="v2",
+        total_games=2,
+        baseline_wins=0,
+        candidate_wins=2,
+        baseline_avg_score=61.0,
+        candidate_avg_score=73.0,
+        target_role_avg_score_delta=19.0,
+        role_task_score_delta=40.0,
+        critical_mistakes_delta=-0.5,
+        info_leak_count=0,
+        invalid_action_rate=0.0,
         candidate_fallback_count=1,
     )
     decision_fallback = policy.decide(comparison_fallback)
@@ -560,11 +628,18 @@ def test_c10_acceptance_policy_promotes_or_rejects() -> None:
 
     # Should reject: regression
     comparison_regress = ABComparison(
-        baseline_version="v1", candidate_version="v2",
-        total_games=2, baseline_wins=2, candidate_wins=0,
-        baseline_avg_score=80.0, candidate_avg_score=50.0,
-        target_role_avg_score_delta=-37.5, role_task_score_delta=-20.0,
-        critical_mistakes_delta=0.5, info_leak_count=0, invalid_action_rate=0.0,
+        baseline_version="v1",
+        candidate_version="v2",
+        total_games=2,
+        baseline_wins=2,
+        candidate_wins=0,
+        baseline_avg_score=80.0,
+        candidate_avg_score=50.0,
+        target_role_avg_score_delta=-37.5,
+        role_task_score_delta=-20.0,
+        critical_mistakes_delta=0.5,
+        info_leak_count=0,
+        invalid_action_rate=0.0,
     )
     decision_regress = policy.decide(comparison_regress)
     assert not decision_regress.accepted
@@ -578,6 +653,7 @@ def test_c11_leaderboard_shows_version_differences() -> None:
     metrics_v2 = [_metrics("v2", 72.0, 0.70), _metrics("v2", 74.0, 0.72)]
 
     from backend.eval.review import LeaderboardAggregator
+
     result = LeaderboardAggregator().aggregate_version(metrics_v1 + metrics_v2)
     assert result.leaderboard_type == "version"
     entries = {entry.key: entry for entry in result.entries}
@@ -654,14 +730,20 @@ def test_c14_strategy_context_renderer_prompt_block() -> None:
     result = renderer.render_lessons([])
     assert result == ""
 
-    result = renderer.render_lessons([
-        type("L", (), {
-            "recommendation": "Release wolf checks into public vote pressure.",
-            "trigger": "When the Seer has a wolf check and village votes are split.",
-            "rationale": "Approved report evidence shows hidden checks cause misvotes.",
-            "doc_id": "doc-1",
-        })(),
-    ])
+    result = renderer.render_lessons(
+        [
+            type(
+                "L",
+                (),
+                {
+                    "recommendation": "Release wolf checks into public vote pressure.",
+                    "trigger": "When the Seer has a wolf check and village votes are split.",
+                    "rationale": "Approved report evidence shows hidden checks cause misvotes.",
+                    "doc_id": "doc-1",
+                },
+            )(),
+        ]
+    )
     assert "=== Retrieved Lessons ===" in result
     assert "doc-1" in result
     assert "Release wolf checks" in result

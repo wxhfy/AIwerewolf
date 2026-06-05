@@ -10,7 +10,7 @@ import json
 import math
 import random
 import sys
-from collections import Counter, defaultdict
+from collections import defaultdict
 from pathlib import Path
 
 import numpy as np
@@ -39,33 +39,69 @@ def load_json(path):
 # TASK 1: SCORING VALIDITY APPENDIX V7
 # ============================================================
 
+
 def generate_appendix():
     """Generate scoring validity appendix HTML and MD."""
     print("Task 1: Generating Scoring Validity Appendix V7...")
 
     # V1→V7 evolution data
     evolution = [
-        ("V1", "PARTIAL_PASS", "0.721", "0.199",
-         "Rule-based scoring with target_alignment",
-         "Post-outcome contamination; Witch d=-0.15; Guard vote d=2.39"),
-        ("V2", "PASS_WITH_LIMITS", "0.763", "0.294",
-         "Pre/Outcome decomposition; 0 post-outcome violations",
-         "VotePreQuality std=0.011; only 1 role-action validated"),
-        ("V3", "PASS_WITH_LIMITS", "0.815", "0.205",
-         "46 pre-action features from replay events; per-role-action ML",
-         "2 role-actions validated; non-Guard roles sparse"),
-        ("V4", "PASS", "0.893", "0.166",
-         "Hard negative mining + pairwise generation; 11 models trained",
-         "Easy negatives rule-generated; Witch/Seer LOW_CONF"),
-        ("V5", "PASS_WITH_LIMITS", "0.878", "0.166",
-         "Dataset normalization; generalization validation; confidence model",
-         "Easy neg ratio 0.648; human review 21.6%"),
-        ("V6", "PASS_WITH_LIMITS", "0.877", "N/A",
-         "Model-assisted review; hard negative rebalance; easy ratio→0.067",
-         "Human review 57.4%; Witch save/Seer release still LOW_CONF"),
-        ("V7", "PASS_WITH_LIMITS", "0.877", "N/A",
-         "Private-context-aware scoring; 0 visibility violations; 89.5% coverage",
-         "Witch save (1 bad label); Seer release (0 bad labels); Hunter shot LOW_CONF"),
+        (
+            "V1",
+            "PARTIAL_PASS",
+            "0.721",
+            "0.199",
+            "Rule-based scoring with target_alignment",
+            "Post-outcome contamination; Witch d=-0.15; Guard vote d=2.39",
+        ),
+        (
+            "V2",
+            "PASS_WITH_LIMITS",
+            "0.763",
+            "0.294",
+            "Pre/Outcome decomposition; 0 post-outcome violations",
+            "VotePreQuality std=0.011; only 1 role-action validated",
+        ),
+        (
+            "V3",
+            "PASS_WITH_LIMITS",
+            "0.815",
+            "0.205",
+            "46 pre-action features from replay events; per-role-action ML",
+            "2 role-actions validated; non-Guard roles sparse",
+        ),
+        (
+            "V4",
+            "PASS",
+            "0.893",
+            "0.166",
+            "Hard negative mining + pairwise generation; 11 models trained",
+            "Easy negatives rule-generated; Witch/Seer LOW_CONF",
+        ),
+        (
+            "V5",
+            "PASS_WITH_LIMITS",
+            "0.878",
+            "0.166",
+            "Dataset normalization; generalization validation; confidence model",
+            "Easy neg ratio 0.648; human review 21.6%",
+        ),
+        (
+            "V6",
+            "PASS_WITH_LIMITS",
+            "0.877",
+            "N/A",
+            "Model-assisted review; hard negative rebalance; easy ratio→0.067",
+            "Human review 57.4%; Witch save/Seer release still LOW_CONF",
+        ),
+        (
+            "V7",
+            "PASS_WITH_LIMITS",
+            "0.877",
+            "N/A",
+            "Private-context-aware scoring; 0 visibility violations; 89.5% coverage",
+            "Witch save (1 bad label); Seer release (0 bad labels); Hunter shot LOW_CONF",
+        ),
     ]
 
     # Role-Action Matrix
@@ -158,7 +194,7 @@ MBTI conclusions must be marked as exploratory with disclosed limitations.
 <h2>1. V1 → V7 Evolution</h2>
 <table>
 <tr><th>Ver</th><th>Gate</th><th>PaW</th><th>ECE</th><th>Key Innovation</th><th>Remaining Issue</th></tr>
-{''.join(f'<tr><td><b>{v[0]}</b></td><td>{v[1]}</td><td>{v[2]}</td><td>{v[3]}</td><td>{v[4]}</td><td>{v[5]}</td></tr>' for v in evolution)}
+{"".join(f"<tr><td><b>{v[0]}</b></td><td>{v[1]}</td><td>{v[2]}</td><td>{v[3]}</td><td>{v[4]}</td><td>{v[5]}</td></tr>" for v in evolution)}
 </table>
 
 <h2>2. Post-Outcome Contamination: Resolved</h2>
@@ -205,13 +241,13 @@ V7 adds private-context-aware scoring: Witch sees night_attacked_player, Seer se
 <h2>7. Role-Action Matrix V7</h2>
 <table>
 <tr><th>Role</th><th>Action</th><th>n</th><th>d</th><th>PaW</th><th>Status</th><th>Note</th></tr>
-{''.join('<tr><td>' + r[0] + '</td><td>' + r[1] + '</td><td>' + r[2] + '</td><td>' + r[3] + '</td><td>' + r[4] + '</td><td class="' + ('pass' if r[5]=='PASS' else 'low-conf') + '">' + r[5] + '</td><td>' + r[6] + '</td></tr>' for r in ra_matrix)}
+{"".join("<tr><td>" + r[0] + "</td><td>" + r[1] + "</td><td>" + r[2] + "</td><td>" + r[3] + "</td><td>" + r[4] + '</td><td class="' + ("pass" if r[5] == "PASS" else "low-conf") + '">' + r[5] + "</td><td>" + r[6] + "</td></tr>" for r in ra_matrix)}
 </table>
 
 <h2>8. Gate V7 Checks</h2>
 <table>
 <tr><th>Criterion</th><th>Status</th><th>Detail</th></tr>
-{''.join('<tr><td>' + g[0] + '</td><td class="' + ('pass' if g[1]=='PASS' else 'weak') + '">' + g[1] + '</td><td>' + g[2] + '</td></tr>' for g in gate_checks)}
+{"".join("<tr><td>" + g[0] + '</td><td class="' + ("pass" if g[1] == "PASS" else "weak") + '">' + g[1] + "</td><td>" + g[2] + "</td></tr>" for g in gate_checks)}
 </table>
 
 <h2>9. LOW_CONF Items</h2>
@@ -311,6 +347,7 @@ def _appendix_md(evolution, ra_matrix, gate_checks):
 # TASK 2: EXPLORATORY MBTI DASHBOARD V7
 # ============================================================
 
+
 def generate_mbti_dashboard():
     """Generate exploratory MBTI performance dashboard HTML."""
     print("Task 2: Generating Exploratory MBTI Dashboard V7...")
@@ -329,9 +366,7 @@ def generate_mbti_dashboard():
     from db.models import PublishedReview
 
     session = SessionLocal()
-    reviews = session.query(PublishedReview).filter(
-        PublishedReview.replay_bundle != None
-    ).all()
+    reviews = session.query(PublishedReview).filter(PublishedReview.replay_bundle != None).all()
 
     # Build player_id -> MBTI mapping
     player_mbti = {}
@@ -370,12 +405,12 @@ def generate_mbti_dashboard():
         # Wilson CI for win rate
         z = 1.96
         p = win_rate
-        ci_lo = (p + z**2/(2*n) - z*math.sqrt(p*(1-p)/n + z**2/(4*n**2))) / (1 + z**2/n)
-        ci_hi = (p + z**2/(2*n) + z*math.sqrt(p*(1-p)/n + z**2/(4*n**2))) / (1 + z**2/n)
+        ci_lo = (p + z**2 / (2 * n) - z * math.sqrt(p * (1 - p) / n + z**2 / (4 * n**2))) / (1 + z**2 / n)
+        ci_hi = (p + z**2 / (2 * n) + z * math.sqrt(p * (1 - p) / n + z**2 / (4 * n**2))) / (1 + z**2 / n)
 
         # Camp-balanced WR (approximate from player roles)
-        village_games = [r for r in records if player_role.get(r.get("player_id",""),"") not in ("Werewolf",)]
-        wolf_games = [r for r in records if player_role.get(r.get("player_id",""),"") == "Werewolf"]
+        village_games = [r for r in records if player_role.get(r.get("player_id", ""), "") not in ("Werewolf",)]
+        wolf_games = [r for r in records if player_role.get(r.get("player_id", ""), "") == "Werewolf"]
         v_wr = sum(r.get("won", False) for r in village_games) / max(len(village_games), 1)
         w_wr = sum(r.get("won", False) for r in wolf_games) / max(len(wolf_games), 1)
         camp_balanced_wr = (v_wr + w_wr) / 2 if village_games and wolf_games else win_rate
@@ -398,9 +433,12 @@ def generate_mbti_dashboard():
     # Sort by composite: 0.40*PreScore + 0.30*WinRate + 0.15*CampBalWR + 0.10*(1-Mistake) + 0.05*Process
     for mbti, s in mbti_stats.items():
         s["composite"] = round(
-            0.40 * s["pre_mean"] + 0.30 * s["win_rate"]
-            + 0.15 * s["camp_balanced_wr"] + 0.10 * (1 - s["mistake_rate"])
-            + 0.05 * s["process_mean"], 3
+            0.40 * s["pre_mean"]
+            + 0.30 * s["win_rate"]
+            + 0.15 * s["camp_balanced_wr"]
+            + 0.10 * (1 - s["mistake_rate"])
+            + 0.05 * s["process_mean"],
+            3,
         )
 
     sorted_mbti = sorted(mbti_stats.items(), key=lambda x: -x[1]["composite"])
@@ -427,10 +465,10 @@ def _mbti_html(sorted_mbti, mbti_stats, mbti_role):
     for i, (mbti, s) in enumerate(sorted_mbti):
         n_warn = " low-conf" if s["n"] < 10 else ""
         rows += f"""<tr class="{n_warn}">
-<td>{i+1}</td><td><b>{mbti}</b></td><td>{s['n']}</td>
-<td>{s['composite']:.3f}</td><td>{s['pre_mean']:.3f}</td>
-<td>{s['win_rate']:.3f} ({s['win_rate_ci_lo']:.3f}–{s['win_rate_ci_hi']:.3f})</td>
-<td>{s['camp_balanced_wr']:.3f}</td><td>{s['mistake_rate']:.3f}</td>
+<td>{i + 1}</td><td><b>{mbti}</b></td><td>{s["n"]}</td>
+<td>{s["composite"]:.3f}</td><td>{s["pre_mean"]:.3f}</td>
+<td>{s["win_rate"]:.3f} ({s["win_rate_ci_lo"]:.3f}–{s["win_rate_ci_hi"]:.3f})</td>
+<td>{s["camp_balanced_wr"]:.3f}</td><td>{s["mistake_rate"]:.3f}</td>
 </tr>"""
 
     # Role matrix
@@ -498,34 +536,34 @@ Total player-games: {all_n}</p>
 <p class="note" style="font-size:0.85rem;">Win rates include both village and wolf camp games. Not adjusted for role difficulty.</p>
 <table>
 <tr><th>MBTI</th><th>n</th><th>WinRate</th><th>CI Lo</th><th>CI Hi</th></tr>
-{''.join(f'<tr><td><b>{mbti}</b></td><td>{s["n"]}</td><td>{s["win_rate"]:.3f}</td><td>{s["win_rate_ci_lo"]:.3f}</td><td>{s["win_rate_ci_hi"]:.3f}</td></tr>' for mbti, s in sorted_mbti)}
+{"".join(f"<tr><td><b>{mbti}</b></td><td>{s["n"]}</td><td>{s["win_rate"]:.3f}</td><td>{s["win_rate_ci_lo"]:.3f}</td><td>{s["win_rate_ci_hi"]:.3f}</td></tr>" for mbti, s in sorted_mbti)}
 </table>
 
 <h2>3. Camp-Balanced Win Rate</h2>
 <p class="note" style="font-size:0.85rem;">Average of village-camp WR and wolf-camp WR. Reduces camp-assignment bias.</p>
 <table>
 <tr><th>MBTI</th><th>n</th><th>Raw WR</th><th>Camp-Balanced WR</th></tr>
-{''.join(f'<tr><td><b>{mbti}</b></td><td>{s["n"]}</td><td>{s["win_rate"]:.3f}</td><td>{s["camp_balanced_wr"]:.3f}</td></tr>' for mbti, s in sorted_mbti)}
+{"".join(f"<tr><td><b>{mbti}</b></td><td>{s["n"]}</td><td>{s["win_rate"]:.3f}</td><td>{s["camp_balanced_wr"]:.3f}</td></tr>" for mbti, s in sorted_mbti)}
 </table>
 
 <h2>4. Role-Adjusted Win Lift</h2>
 <p class="note" style="font-size:0.85rem;">Comparison of individual win rate vs expected win rate for their role. Positive = above average for that role.</p>
 <table>
 <tr><th>MBTI</th><th>n</th><th>Avg PreAction</th></tr>
-{''.join(f'<tr><td><b>{mbti}</b></td><td>{s["n"]}</td><td>{s["pre_mean"]:.3f}</td></tr>' for mbti, s in sorted_mbti)}
+{"".join(f"<tr><td><b>{mbti}</b></td><td>{s["n"]}</td><td>{s["pre_mean"]:.3f}</td></tr>" for mbti, s in sorted_mbti)}
 </table>
 
 <h2>5. Avg PreActionScore</h2>
 <p class="note" style="font-size:0.85rem;">Pre-action decision quality (0 post-outcome contamination). Higher = better in-game decision-making.</p>
 <table>
 <tr><th>MBTI</th><th>n</th><th>PreAction</th><th>Process</th></tr>
-{''.join(f'<tr><td><b>{mbti}</b></td><td>{s["n"]}</td><td>{s["pre_mean"]:.3f}</td><td>{s["process_mean"]:.3f}</td></tr>' for mbti, s in sorted_mbti)}
+{"".join(f"<tr><td><b>{mbti}</b></td><td>{s["n"]}</td><td>{s["pre_mean"]:.3f}</td><td>{s["process_mean"]:.3f}</td></tr>" for mbti, s in sorted_mbti)}
 </table>
 
 <h2>6. MBTI × Role Matrix</h2>
 <p class="note" style="font-size:0.85rem;">Mean PreActionScore per MBTI-Role combination. Empty cells = no data.</p>
 <table>
-<tr><th>MBTI</th><th>n</th>{''.join(f'<th>{r}</th>' for r in roles)}</tr>
+<tr><th>MBTI</th><th>n</th>{"".join(f"<th>{r}</th>" for r in roles)}</tr>
 {role_rows}
 </table>
 
@@ -533,21 +571,21 @@ Total player-games: {all_n}</p>
 <p class="note" style="font-size:0.85rem;">Win rate by camp. Village WR vs Wolf WR.</p>
 <table>
 <tr><th>MBTI</th><th>n</th><th>Total WR</th></tr>
-{''.join(f'<tr><td><b>{mbti}</b></td><td>{s["n"]}</td><td>{s["win_rate"]:.3f}</td></tr>' for mbti, s in sorted_mbti)}
+{"".join(f"<tr><td><b>{mbti}</b></td><td>{s["n"]}</td><td>{s["win_rate"]:.3f}</td></tr>" for mbti, s in sorted_mbti)}
 </table>
 
 <h2>8. Mistake Rate</h2>
 <p class="note" style="font-size:0.85rem;">Fraction of opportunities with final_review_score &lt; 0.4.</p>
 <table>
 <tr><th>MBTI</th><th>n</th><th>Mistake Rate</th></tr>
-{''.join(f'<tr><td><b>{mbti}</b></td><td>{s["n"]}</td><td>{s["mistake_rate"]:.3f}</td></tr>' for mbti, s in sorted_mbti)}
+{"".join(f"<tr><td><b>{mbti}</b></td><td>{s["n"]}</td><td>{s["mistake_rate"]:.3f}</td></tr>" for mbti, s in sorted_mbti)}
 </table>
 
 <h2>9. Low Confidence Rate</h2>
 <p class="note" style="font-size:0.85rem;">MBTI groups with insufficient data or relying on LOW_CONF role-actions.</p>
 <table>
 <tr><th>MBTI</th><th>n</th><th>Confidence</th></tr>
-{''.join('<tr class="' + ('low-conf' if s["n"] < 10 else '') + '"><td><b>' + mbti + '</b></td><td>' + str(s["n"]) + '</td><td>' + ('LOW_CONF (n<10)' if s["n"]<10 else 'EXPLORATORY') + '</td></tr>' for mbti, s in sorted_mbti)}
+{"".join('<tr class="' + ("low-conf" if s["n"] < 10 else "") + '"><td><b>' + mbti + "</b></td><td>" + str(s["n"]) + "</td><td>" + ("LOW_CONF (n<10)" if s["n"] < 10 else "EXPLORATORY") + "</td></tr>" for mbti, s in sorted_mbti)}
 </table>
 
 <h2>10. Known Limits</h2>
@@ -574,6 +612,7 @@ Generated 2026-05-28 · AI Werewolf Scoring System V7 · Track B · Exploratory 
 # TASK 3: SINGLE GAME REVIEW HTML V7
 # ============================================================
 
+
 def generate_single_game_review(game_id=None):
     """Generate single game review HTML."""
     print("Task 3: Generating Single Game Review HTML V7...")
@@ -594,10 +633,11 @@ def generate_single_game_review(game_id=None):
     if game_id is None:
         for score in opp_scores:
             gid = score.get("game_id", "")
-            review = session.query(PublishedReview).filter(
-                PublishedReview.game_id == gid,
-                PublishedReview.replay_bundle != None
-            ).first()
+            review = (
+                session.query(PublishedReview)
+                .filter(PublishedReview.game_id == gid, PublishedReview.replay_bundle != None)
+                .first()
+            )
             if review:
                 game_id = gid
                 break
@@ -607,9 +647,7 @@ def generate_single_game_review(game_id=None):
         session.close()
         return
 
-    review = session.query(PublishedReview).filter(
-        PublishedReview.game_id == game_id
-    ).first()
+    review = session.query(PublishedReview).filter(PublishedReview.game_id == game_id).first()
     bundle = review.replay_bundle or {}
     events = bundle.get("events", [])
     players = bundle.get("players", [])
@@ -647,7 +685,7 @@ def generate_single_game_review(game_id=None):
         out_m = np.mean(scores["out"])
         fin_m = np.mean(scores["final"])
         sb_rows += f"""<tr>
-<td>{name}</td><td>{role}</td><td>{scores['n']}</td>
+<td>{name}</td><td>{role}</td><td>{scores["n"]}</td>
 <td>{pre_m:.3f}</td><td>{out_m:.3f}</td><td>{fin_m:.3f}</td>
 </tr>"""
 
@@ -658,9 +696,9 @@ def generate_single_game_review(game_id=None):
         conf = opp.get("score_confidence", "LOW")
         low_class = ' class="low-conf"' if conf == "LOW" else ""
         top_good_rows += f"""<tr{low_class}>
-<td>D{opp.get('day',0)}</td><td>{opp.get('role','')}</td><td>{opp.get('opportunity_type','')}</td>
-<td>{opp.get('pre_action_score',0):.3f}</td><td>{opp.get('outcome_impact_score',0):.3f}</td>
-<td>{opp.get('final_review_score',0):.3f}</td><td>{conf}</td>
+<td>D{opp.get("day", 0)}</td><td>{opp.get("role", "")}</td><td>{opp.get("opportunity_type", "")}</td>
+<td>{opp.get("pre_action_score", 0):.3f}</td><td>{opp.get("outcome_impact_score", 0):.3f}</td>
+<td>{opp.get("final_review_score", 0):.3f}</td><td>{conf}</td>
 </tr>"""
 
     bottom_opps = sorted(game_opps, key=lambda o: o.get("pre_action_score", 0))
@@ -669,9 +707,9 @@ def generate_single_game_review(game_id=None):
         conf = opp.get("score_confidence", "LOW")
         low_class = ' class="low-conf"' if conf == "LOW" else ""
         top_bad_rows += f"""<tr{low_class}>
-<td>D{opp.get('day',0)}</td><td>{opp.get('role','')}</td><td>{opp.get('opportunity_type','')}</td>
-<td>{opp.get('pre_action_score',0):.3f}</td><td>{opp.get('outcome_impact_score',0):.3f}</td>
-<td>{opp.get('final_review_score',0):.3f}</td><td>{conf}</td>
+<td>D{opp.get("day", 0)}</td><td>{opp.get("role", "")}</td><td>{opp.get("opportunity_type", "")}</td>
+<td>{opp.get("pre_action_score", 0):.3f}</td><td>{opp.get("outcome_impact_score", 0):.3f}</td>
+<td>{opp.get("final_review_score", 0):.3f}</td><td>{conf}</td>
 </tr>"""
 
     # Vote flow
@@ -681,7 +719,7 @@ def generate_single_game_review(game_id=None):
         for v in day_votes:
             voter = player_info.get(v.get("voter_id", ""), {})
             target = player_info.get(v.get("target_id", ""), {})
-            vote_rows += f"<tr><td>D{day}</td><td>{voter.get('name','?')} ({voter.get('role','?')})</td><td>{target.get('name','?')} ({target.get('role','?')})</td></tr>"
+            vote_rows += f"<tr><td>D{day}</td><td>{voter.get('name', '?')} ({voter.get('role', '?')})</td><td>{target.get('name', '?')} ({target.get('role', '?')})</td></tr>"
 
     # Event timeline
     event_rows = ""
@@ -694,14 +732,14 @@ def generate_single_game_review(game_id=None):
         content = e.get("content", {}) or {}
         desc = ""
         if et == "CHAT_MESSAGE":
-            desc = f"{content.get('actor_name','')}：{content.get('speech','')[:100]}"
+            desc = f"{content.get('actor_name', '')}：{content.get('speech', '')[:100]}"
         elif et == "VOTE_CAST":
-            desc = f"{content.get('voter_name','?')} → {content.get('target_name','?')}"
+            desc = f"{content.get('voter_name', '?')} → {content.get('target_name', '?')}"
         elif et == "NIGHT_ACTION":
             target = content.get("target", {}) or {}
-            desc = f"{content.get('reasoning','')[:80]}"
+            desc = f"{content.get('reasoning', '')[:80]}"
         elif et == "PLAYER_DIED":
-            desc = f"{content.get('player_name','')} died ({content.get('reason','')})"
+            desc = f"{content.get('player_name', '')} died ({content.get('reason', '')})"
         elif et == "PRIVATE_INFO":
             desc = content.get("message", "")[:120]
         else:
@@ -759,7 +797,7 @@ summary {{ cursor: pointer; font-weight: bold; padding: 0.3rem 0; }}
 <h2>2. Players</h2>
 <table>
 <tr><th>Name</th><th>Role</th><th>Alive</th><th>MBTI</th></tr>
-{''.join(f'<tr><td>{p.get("name","?")}</td><td>{p.get("role","?")}</td><td>{"✓" if p.get("alive") else "✗"}</td><td>{ (p.get("persona") or {{}}).get("mbti","?") }</td></tr>' for p in players)}
+{"".join(f"<tr><td>{p.get("name", "?")}</td><td>{p.get("role", "?")}</td><td>{"✓" if p.get("alive") else "✗"}</td><td>{(p.get("persona") or {{}}).get("mbti", "?")}</td></tr>" for p in players)}
 </table>
 
 <h2>3. Scoreboard</h2>
@@ -827,6 +865,7 @@ Generated 2026-05-28 · AI Werewolf Scoring V7 · Game {game_id[:8]} · PASS_WIT
 # ============================================================
 # TASK 4: LABEL BACKLOG
 # ============================================================
+
 
 def generate_label_backlog():
     """Generate V7.1 label backlog."""
@@ -901,6 +940,7 @@ When labeling Witch save / Seer release / Hunter shot decisions:
 # ============================================================
 # TASK 5: README UPDATE
 # ============================================================
+
 
 def update_readme():
     """Update project README with V7 status."""
@@ -988,6 +1028,7 @@ def update_readme():
 # ============================================================
 # MAIN
 # ============================================================
+
 
 def main():
     print("=" * 60)

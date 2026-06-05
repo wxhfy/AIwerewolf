@@ -15,18 +15,17 @@ from __future__ import annotations
 import json
 import pickle
 import sys
-from collections import Counter
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import f1_score
+from sklearn.metrics import hamming_loss
+from sklearn.metrics import precision_score
+from sklearn.metrics import recall_score
 from sklearn.multioutput import MultiOutputClassifier
-from sklearn.metrics import (
-    classification_report, hamming_loss,
-    f1_score, precision_score, recall_score,
-)
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -35,8 +34,12 @@ COMBINED_DIR = ROOT / "data" / "open" / "combined"
 SPLITS_DIR = ROOT / "data" / "splits" / "open_data"
 MODEL_DIR = ROOT / "models" / "open_data"
 SPEECH_LABELS = [
-    "accusation", "interrogation", "defense",
-    "evidence_use", "identity_declaration", "call_for_action",
+    "accusation",
+    "interrogation",
+    "defense",
+    "evidence_use",
+    "identity_declaration",
+    "call_for_action",
 ]
 
 
@@ -89,7 +92,9 @@ def _extract_features_and_labels(samples: list[dict]) -> tuple[list[str], np.nda
 
 
 def _split_by_game(
-    texts: list[str], labels: np.ndarray, game_ids: list[str],
+    texts: list[str],
+    labels: np.ndarray,
+    game_ids: list[str],
 ) -> tuple:
     """Split data by game_id using the pre-computed split files."""
     train_games = _load_game_ids(SPLITS_DIR / "speech_train_games.txt")
@@ -102,17 +107,20 @@ def _split_by_game(
         n_train = int(len(unique_games) * 0.7)
         n_val = int(len(unique_games) * 0.15)
         train_games = set(unique_games[:n_train])
-        val_games = set(unique_games[n_train:n_train + n_val])
-        test_games = set(unique_games[n_train + n_val:])
+        val_games = set(unique_games[n_train : n_train + n_val])
+        test_games = set(unique_games[n_train + n_val :])
 
     train_idx = [i for i, g in enumerate(game_ids) if g in train_games]
     val_idx = [i for i, g in enumerate(game_ids) if g in val_games]
     test_idx = [i for i, g in enumerate(game_ids) if g in test_games]
 
     return (
-        [texts[i] for i in train_idx], labels[train_idx],
-        [texts[i] for i in val_idx], labels[val_idx],
-        [texts[i] for i in test_idx], labels[test_idx],
+        [texts[i] for i in train_idx],
+        labels[train_idx],
+        [texts[i] for i in val_idx],
+        labels[val_idx],
+        [texts[i] for i in test_idx],
+        labels[test_idx],
     )
 
 
@@ -142,8 +150,11 @@ def train_speech_act_classifier() -> dict[str, Any]:
     # TF-IDF vectorization
     print("\nVectorizing...")
     vectorizer = TfidfVectorizer(
-        max_features=5000, ngram_range=(1, 2),
-        min_df=2, max_df=0.9, stop_words="english",
+        max_features=5000,
+        ngram_range=(1, 2),
+        min_df=2,
+        max_df=0.9,
+        stop_words="english",
     )
     X_train = vectorizer.fit_transform(X_train_text)
     X_val = vectorizer.transform(X_val_text)
@@ -225,21 +236,21 @@ def train_speech_act_classifier() -> dict[str, Any]:
         if hasattr(estimator, "coef_"):
             coef = estimator.coef_[0]
             top_indices = np.argsort(np.abs(coef))[-10:][::-1]
-            top_features[name] = [
-                {"feature": str(feature_names[j]), "weight": float(coef[j])}
-                for j in top_indices
-            ]
+            top_features[name] = [{"feature": str(feature_names[j]), "weight": float(coef[j])} for j in top_indices]
 
     # Save model
     model_path = MODEL_DIR / "speech_act_classifier_v0.pkl"
     with open(model_path, "wb") as f:
-        pickle.dump({
-            "vectorizer": vectorizer,
-            "classifier": clf,
-            "labels": SPEECH_LABELS,
-            "version": "v0",
-            "audit_only": True,
-        }, f)
+        pickle.dump(
+            {
+                "vectorizer": vectorizer,
+                "classifier": clf,
+                "labels": SPEECH_LABELS,
+                "version": "v0",
+                "audit_only": True,
+            },
+            f,
+        )
     print(f"\nModel saved: {model_path} ({model_path.stat().st_size} bytes)")
 
     # Save metrics
@@ -252,8 +263,16 @@ def train_speech_act_classifier() -> dict[str, Any]:
         "test_samples": len(X_test_text),
         "split_n_games": {
             "train": len(set(game_ids[i] for i in range(len(game_ids)) if i < len(X_train_text) and i < len(game_ids))),
-            "val": len(set(game_ids[i] for i in range(len(X_train_text), len(X_train_text) + len(X_val_text)) if i < len(game_ids))),
-            "test": len(set(game_ids[i] for i in range(len(X_train_text) + len(X_val_text), len(game_ids)) if i < len(game_ids))),
+            "val": len(
+                set(
+                    game_ids[i]
+                    for i in range(len(X_train_text), len(X_train_text) + len(X_val_text))
+                    if i < len(game_ids)
+                )
+            ),
+            "test": len(
+                set(game_ids[i] for i in range(len(X_train_text) + len(X_val_text), len(game_ids)) if i < len(game_ids))
+            ),
         },
         "vocabulary_size": len(vectorizer.vocabulary_),
         "train_exact_accuracy": round(train_acc, 4),

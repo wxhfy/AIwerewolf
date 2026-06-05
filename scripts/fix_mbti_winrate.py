@@ -9,7 +9,8 @@ Fix: rebuild from replay_bundle (player role → camp, game winner → is_win).
 import json
 import math
 import sys
-from collections import Counter, defaultdict
+from collections import Counter
+from collections import defaultdict
 from pathlib import Path
 
 import numpy as np
@@ -55,6 +56,7 @@ def normalize_winner(winner_str):
 # FIX 1-2: AUDIT + REPAIR is_win
 # ============================================================
 
+
 def audit_and_fix():
     """Audit existing data and fix is_win mapping."""
     print("=" * 60)
@@ -74,9 +76,7 @@ def audit_and_fix():
     from db.models import PublishedReview
 
     session = SessionLocal()
-    reviews = session.query(PublishedReview).filter(
-        PublishedReview.replay_bundle != None
-    ).all()
+    reviews = session.query(PublishedReview).filter(PublishedReview.replay_bundle != None).all()
 
     # Build game_id → (winner, player_map) index
     game_index = {}
@@ -152,7 +152,7 @@ def audit_and_fix():
 
         camp = player_info["camp"]
         winner = game_info["winner"]
-        is_win = (camp == winner)
+        is_win = camp == winner
 
         if camp == "village":
             audit_stats["village_players"] += 1
@@ -208,18 +208,18 @@ Rebuilt `is_win` from replay_bundle:
 
 | Metric | Value |
 |--------|-------|
-| Total player-games | {audit_stats['total']} |
-| Matched to game | {audit_stats['matched_game']} |
-| Matched to player | {audit_stats['matched_player']} |
-| is_win = True | {audit_stats['is_win_true']} |
-| is_win = False | {audit_stats['is_win_false']} |
-| Village players | {audit_stats['village_players']} |
-| Village wins | {audit_stats['village_wins']} |
-| Wolf wins | {audit_stats['wolf_wins']} |
+| Total player-games | {audit_stats["total"]} |
+| Matched to game | {audit_stats["matched_game"]} |
+| Matched to player | {audit_stats["matched_player"]} |
+| is_win = True | {audit_stats["is_win_true"]} |
+| is_win = False | {audit_stats["is_win_false"]} |
+| Village players | {audit_stats["village_players"]} |
+| Village wins | {audit_stats["village_wins"]} |
+| Wolf wins | {audit_stats["wolf_wins"]} |
 | Overall WR | {overall_wr:.3f} |
 | Village WR | {village_wr:.3f} |
 | Wolf WR | {wolf_wr:.3f} |
-| Role-camp mismatches | {audit_stats['camp_mismatch']} |
+| Role-camp mismatches | {audit_stats["camp_mismatch"]} |
 
 ## Winner Distribution (all games)
 {winners_table(winner_counter)}
@@ -245,7 +245,7 @@ Rebuilt from replay_bundle:
 - Winner normalization: village/villagers/good/town → village; wolf/werewolf/wolves/evil → wolf
 
 ## Results
-- {audit_stats['matched_player']}/{audit_stats['total']} players matched to replay data
+- {audit_stats["matched_player"]}/{audit_stats["total"]} players matched to replay data
 - Overall WR: {overall_wr:.3f} (village {village_wr:.3f}, wolf {wolf_wr:.3f})
 """
     with open(DATA / "mbti_winrate_fix_report_v7.md", "w") as f:
@@ -265,6 +265,7 @@ def winners_table(winner_counter):
 # ============================================================
 # FIX 3-6: REGENERATE MBTI METRICS
 # ============================================================
+
 
 def regenerate_mbti_metrics(fixed_scores):
     """Regenerate all MBTI metrics with correct win rates."""
@@ -298,8 +299,8 @@ def regenerate_mbti_metrics(fixed_scores):
         # Wilson CI
         z = 1.96
         p = raw_wr
-        wilson_lo = (p + z**2/(2*n) - z*math.sqrt(p*(1-p)/n + z**2/(4*n**2))) / (1 + z**2/n)
-        wilson_hi = (p + z**2/(2*n) + z*math.sqrt(p*(1-p)/n + z**2/(4*n**2))) / (1 + z**2/n)
+        wilson_lo = (p + z**2 / (2 * n) - z * math.sqrt(p * (1 - p) / n + z**2 / (4 * n**2))) / (1 + z**2 / n)
+        wilson_hi = (p + z**2 / (2 * n) + z * math.sqrt(p * (1 - p) / n + z**2 / (4 * n**2))) / (1 + z**2 / n)
 
         # Camp-specific win rates
         village_records = [r for r in records if r.get("camp") == "village"]
@@ -338,15 +339,11 @@ def regenerate_mbti_metrics(fixed_scores):
 
         pre_norm = (np.mean(pre_scores) - pre_min) / max(pre_max - pre_min, 0.01)
         proc_norm = (np.mean(process_scores) - proc_min) / max(proc_max - proc_min, 0.01)
-        lift_norm = (role_adj_lift + 0.5)  # Shift to positive range
+        lift_norm = role_adj_lift + 0.5  # Shift to positive range
         cbwr_norm = camp_balanced_wr
 
         composite = (
-            0.35 * pre_norm
-            + 0.25 * max(0, lift_norm)
-            + 0.15 * cbwr_norm
-            + 0.15 * proc_norm
-            - 0.10 * mistake_rate
+            0.35 * pre_norm + 0.25 * max(0, lift_norm) + 0.15 * cbwr_norm + 0.15 * proc_norm - 0.10 * mistake_rate
         )
         composite = max(0.01, min(0.99, composite))
 
@@ -386,17 +383,40 @@ def regenerate_mbti_metrics(fixed_scores):
 
     # Leaderboard CSV
     with open(DATA / "mbti_leaderboard_v7_fixed.csv", "w") as f:
-        headers = ["MBTI", "n", "Composite", "RawWR", "WilsonCI_Lo", "WilsonCI_Hi",
-                   "VillageWR", "WolfWR", "CampBalWR", "RoleAdjLift",
-                   "AvgPreAction", "AvgProcess", "MistakeRate", "Confidence"]
+        headers = [
+            "MBTI",
+            "n",
+            "Composite",
+            "RawWR",
+            "WilsonCI_Lo",
+            "WilsonCI_Hi",
+            "VillageWR",
+            "WolfWR",
+            "CampBalWR",
+            "RoleAdjLift",
+            "AvgPreAction",
+            "AvgProcess",
+            "MistakeRate",
+            "Confidence",
+        ]
         f.write(",".join(headers) + "\n")
         for mbti, s in sorted_stats:
-            row = [mbti, str(s["n"]), f"{s['composite']:.4f}", f"{s['raw_win_rate']:.4f}",
-                   f"{s['wilson_ci_lo']:.4f}", f"{s['wilson_ci_hi']:.4f}",
-                   f"{s['village_win_rate']:.4f}", f"{s['wolf_win_rate']:.4f}",
-                   f"{s['camp_balanced_win_rate']:.4f}", f"{s['role_adjusted_win_lift']:.4f}",
-                   f"{s['avg_pre_action_score']:.4f}", f"{s['avg_process_score']:.4f}",
-                   f"{s['mistake_rate']:.4f}", s["confidence"]]
+            row = [
+                mbti,
+                str(s["n"]),
+                f"{s['composite']:.4f}",
+                f"{s['raw_win_rate']:.4f}",
+                f"{s['wilson_ci_lo']:.4f}",
+                f"{s['wilson_ci_hi']:.4f}",
+                f"{s['village_win_rate']:.4f}",
+                f"{s['wolf_win_rate']:.4f}",
+                f"{s['camp_balanced_win_rate']:.4f}",
+                f"{s['role_adjusted_win_lift']:.4f}",
+                f"{s['avg_pre_action_score']:.4f}",
+                f"{s['avg_process_score']:.4f}",
+                f"{s['mistake_rate']:.4f}",
+                s["confidence"],
+            ]
             f.write(",".join(row) + "\n")
     print("  -> mbti_leaderboard_v7_fixed.csv")
 
@@ -445,9 +465,15 @@ def regenerate_mbti_metrics(fixed_scores):
     print("  -> mbti_camp_matrix_v7_fixed.csv")
 
     print(f"\n  MBTI types: {len(mbti_stats)}")
-    print(f"  Composite range: {min(s['composite'] for s in mbti_stats.values()):.3f} - {max(s['composite'] for s in mbti_stats.values()):.3f}")
-    print(f"  Raw WR range: {min(s['raw_win_rate'] for s in mbti_stats.values()):.3f} - {max(s['raw_win_rate'] for s in mbti_stats.values()):.3f}")
-    print(f"  CampBal WR range: {min(s['camp_balanced_win_rate'] for s in mbti_stats.values()):.3f} - {max(s['camp_balanced_win_rate'] for s in mbti_stats.values()):.3f}")
+    print(
+        f"  Composite range: {min(s['composite'] for s in mbti_stats.values()):.3f} - {max(s['composite'] for s in mbti_stats.values()):.3f}"
+    )
+    print(
+        f"  Raw WR range: {min(s['raw_win_rate'] for s in mbti_stats.values()):.3f} - {max(s['raw_win_rate'] for s in mbti_stats.values()):.3f}"
+    )
+    print(
+        f"  CampBal WR range: {min(s['camp_balanced_win_rate'] for s in mbti_stats.values()):.3f} - {max(s['camp_balanced_win_rate'] for s in mbti_stats.values()):.3f}"
+    )
 
     return sorted_stats, mbti_stats, mbti_role, roles
 
@@ -455,6 +481,7 @@ def regenerate_mbti_metrics(fixed_scores):
 # ============================================================
 # FIX 7: REBUILD MBTI DASHBOARD HTML
 # ============================================================
+
 
 def build_html(sorted_stats, mbti_stats, mbti_role, roles):
     """Build fixed MBTI dashboard HTML."""
@@ -469,13 +496,13 @@ def build_html(sorted_stats, mbti_stats, mbti_role, roles):
     for i, (mbti, s) in enumerate(sorted_stats):
         low_class = ' class="low-conf"' if s["n"] < 10 else ""
         lb_rows += f"""<tr{low_class}>
-<td>{i+1}</td><td><b>{mbti}</b></td><td>{s['n']}</td>
-<td>{s['composite']:.3f}</td><td>{s['avg_pre_action_score']:.3f}</td>
-<td>{s['avg_process_score']:.3f}</td>
-<td>{s['raw_win_rate']:.3f}<br><small>[{s['wilson_ci_lo']:.3f}, {s['wilson_ci_hi']:.3f}]</small></td>
-<td>{s['camp_balanced_win_rate']:.3f}</td>
-<td>{s['role_adjusted_win_lift']:+.3f}</td>
-<td>{s['mistake_rate']:.3f}</td>
+<td>{i + 1}</td><td><b>{mbti}</b></td><td>{s["n"]}</td>
+<td>{s["composite"]:.3f}</td><td>{s["avg_pre_action_score"]:.3f}</td>
+<td>{s["avg_process_score"]:.3f}</td>
+<td>{s["raw_win_rate"]:.3f}<br><small>[{s["wilson_ci_lo"]:.3f}, {s["wilson_ci_hi"]:.3f}]</small></td>
+<td>{s["camp_balanced_win_rate"]:.3f}</td>
+<td>{s["role_adjusted_win_lift"]:+.3f}</td>
+<td>{s["mistake_rate"]:.3f}</td>
 </tr>"""
 
     # Role matrix
@@ -548,34 +575,34 @@ tr:nth-child(even) {{ background: #faf8f2; }}
 <p style="font-size:0.85rem;color:#666;">Raw win rate = fraction of games won (both camps). Wilson CI shown in brackets.</p>
 <table>
 <tr><th>MBTI</th><th>n</th><th>WinRate</th><th>95% CI Lo</th><th>95% CI Hi</th><th>Village WR</th><th>Wolf WR</th><th>Confidence</th></tr>
-{''.join(f'<tr class="{"low-conf" if s["n"]<10 else ""}"><td><b>{mbti}</b></td><td>{s["n"]}</td><td>{s["raw_win_rate"]:.3f}</td><td>{s["wilson_ci_lo"]:.3f}</td><td>{s["wilson_ci_hi"]:.3f}</td><td>{s["village_win_rate"]:.3f} (n={s["n_village"]})</td><td>{s["wolf_win_rate"]:.3f} (n={s["n_wolf"]})</td><td>{s["confidence"]}</td></tr>' for mbti, s in sorted_stats)}
+{"".join(f'<tr class="{"low-conf" if s["n"] < 10 else ""}"><td><b>{mbti}</b></td><td>{s["n"]}</td><td>{s["raw_win_rate"]:.3f}</td><td>{s["wilson_ci_lo"]:.3f}</td><td>{s["wilson_ci_hi"]:.3f}</td><td>{s["village_win_rate"]:.3f} (n={s["n_village"]})</td><td>{s["wolf_win_rate"]:.3f} (n={s["n_wolf"]})</td><td>{s["confidence"]}</td></tr>' for mbti, s in sorted_stats)}
 </table>
 
 <h2>3. Camp-Balanced Win Rate</h2>
 <p style="font-size:0.85rem;color:#666;">Average of village-camp WR and wolf-camp WR. Reduces camp-assignment bias.</p>
 <table>
 <tr><th>MBTI</th><th>n</th><th>Raw WR</th><th>Camp-Balanced WR</th><th>Village WR (n)</th><th>Wolf WR (n)</th></tr>
-{''.join(f'<tr><td><b>{mbti}</b></td><td>{s["n"]}</td><td>{s["raw_win_rate"]:.3f}</td><td>{s["camp_balanced_win_rate"]:.3f}</td><td>{s["village_win_rate"]:.3f} ({s["n_village"]})</td><td>{s["wolf_win_rate"]:.3f} ({s["n_wolf"]})</td></tr>' for mbti, s in sorted_stats)}
+{"".join(f"<tr><td><b>{mbti}</b></td><td>{s["n"]}</td><td>{s["raw_win_rate"]:.3f}</td><td>{s["camp_balanced_win_rate"]:.3f}</td><td>{s["village_win_rate"]:.3f} ({s["n_village"]})</td><td>{s["wolf_win_rate"]:.3f} ({s["n_wolf"]})</td></tr>" for mbti, s in sorted_stats)}
 </table>
 
 <h2>4. Role-Adjusted Win Lift</h2>
 <p style="font-size:0.85rem;color:#666;">Actual WR − Expected WR for same role distribution. Positive = above average for assigned roles.</p>
 <table>
 <tr><th>MBTI</th><th>n</th><th>Actual WR</th><th>Expected WR</th><th>RoleAdjWinLift</th><th>Confidence</th></tr>
-{''.join(f'<tr class="{"low-conf" if s["n"]<10 else ""}"><td><b>{mbti}</b></td><td>{s["n"]}</td><td>{s["raw_win_rate"]:.3f}</td><td>{"N/A" if True else "N/A"}</td><td>{s["role_adjusted_win_lift"]:+.3f}</td><td>{s["confidence"]}</td></tr>' for mbti, s in sorted_stats)}
+{"".join(f'<tr class="{"low-conf" if s["n"] < 10 else ""}"><td><b>{mbti}</b></td><td>{s["n"]}</td><td>{s["raw_win_rate"]:.3f}</td><td>{"N/A" if True else "N/A"}</td><td>{s["role_adjusted_win_lift"]:+.3f}</td><td>{s["confidence"]}</td></tr>' for mbti, s in sorted_stats)}
 </table>
 
 <h2>5. Avg PreActionScore</h2>
 <p style="font-size:0.85rem;color:#666;">Mean pre-action decision quality (0 post-outcome contamination). Higher = better in-game decision-making.</p>
 <table>
 <tr><th>MBTI</th><th>n</th><th>PreAction</th><th>Process</th><th>Mistake%</th></tr>
-{''.join(f'<tr><td><b>{mbti}</b></td><td>{s["n"]}</td><td>{s["avg_pre_action_score"]:.3f}</td><td>{s["avg_process_score"]:.3f}</td><td>{s["mistake_rate"]:.3f}</td></tr>' for mbti, s in sorted_stats)}
+{"".join(f"<tr><td><b>{mbti}</b></td><td>{s["n"]}</td><td>{s["avg_pre_action_score"]:.3f}</td><td>{s["avg_process_score"]:.3f}</td><td>{s["mistake_rate"]:.3f}</td></tr>" for mbti, s in sorted_stats)}
 </table>
 
 <h2>6. MBTI × Role Matrix</h2>
 <p style="font-size:0.85rem;color:#666;">Mean PreActionScore per MBTI-Role combination. n≥5 normal, n=3-4 LOW_SAMPLE, n&lt;3 —.</p>
 <table>
-<tr><th>MBTI</th><th>n</th>{''.join(f'<th>{r}</th>' for r in roles)}</tr>
+<tr><th>MBTI</th><th>n</th>{"".join(f"<th>{r}</th>" for r in roles)}</tr>
 {role_rows}
 </table>
 
@@ -583,20 +610,20 @@ tr:nth-child(even) {{ background: #faf8f2; }}
 <p style="font-size:0.85rem;color:#666;">Win rate by camp.</p>
 <table>
 <tr><th>MBTI</th><th>n</th><th>Village WR (n)</th><th>Wolf WR (n)</th><th>CampBalWR</th></tr>
-{''.join(f'<tr><td><b>{mbti}</b></td><td>{s["n"]}</td><td>{s["village_win_rate"]:.3f} ({s["n_village"]})</td><td>{s["wolf_win_rate"]:.3f} ({s["n_wolf"]})</td><td>{s["camp_balanced_win_rate"]:.3f}</td></tr>' for mbti, s in sorted_stats)}
+{"".join(f"<tr><td><b>{mbti}</b></td><td>{s["n"]}</td><td>{s["village_win_rate"]:.3f} ({s["n_village"]})</td><td>{s["wolf_win_rate"]:.3f} ({s["n_wolf"]})</td><td>{s["camp_balanced_win_rate"]:.3f}</td></tr>" for mbti, s in sorted_stats)}
 </table>
 
 <h2>8. Mistake Rate</h2>
 <p style="font-size:0.85rem;color:#666;">Fraction of opportunities with process_score &lt; 0.4.</p>
 <table>
 <tr><th>MBTI</th><th>n</th><th>Mistake Rate</th></tr>
-{''.join(f'<tr><td><b>{mbti}</b></td><td>{s["n"]}</td><td>{s["mistake_rate"]:.3f}</td></tr>' for mbti, s in sorted_stats)}
+{"".join(f"<tr><td><b>{mbti}</b></td><td>{s["n"]}</td><td>{s["mistake_rate"]:.3f}</td></tr>" for mbti, s in sorted_stats)}
 </table>
 
 <h2>9. Low Confidence</h2>
 <table>
 <tr><th>MBTI</th><th>n</th><th>Confidence Level</th></tr>
-{''.join(f'<tr class="{"low-conf" if s["n"]<10 else ""}"><td><b>{mbti}</b></td><td>{s["n"]}</td><td>{"LOW_CONF (n<10)" if s["n"]<10 else "EXPLORATORY"}</td></tr>' for mbti, s in sorted_stats)}
+{"".join(f'<tr class="{"low-conf" if s["n"] < 10 else ""}"><td><b>{mbti}</b></td><td>{s["n"]}</td><td>{"LOW_CONF (n<10)" if s["n"] < 10 else "EXPLORATORY"}</td></tr>' for mbti, s in sorted_stats)}
 </table>
 
 <h2>10. Known Limits</h2>
@@ -626,7 +653,7 @@ Generated 2026-05-28 · AI Werewolf Scoring V7 · Track B · Exploratory MBTI An
     # Verify
     n_zeros = sum(1 for _, s in sorted_stats if s["raw_win_rate"] == 0)
     n_fake = sum(1 for _, s in sorted_stats if s["role_adjusted_win_lift"] == s["avg_pre_action_score"])
-    print(f"  -> mbti_performance_dashboard_v7_fixed.html")
+    print("  -> mbti_performance_dashboard_v7_fixed.html")
     print(f"  Verification: raw_wr=0 count: {n_zeros} (should be 0)")
     print(f"  Verification: roleAdjLift == PreAction count: {n_fake} (should be 0)")
 
@@ -634,6 +661,7 @@ Generated 2026-05-28 · AI Werewolf Scoring V7 · Track B · Exploratory MBTI An
 # ============================================================
 # MAIN
 # ============================================================
+
 
 def main():
     # Fix 1-2: Audit and repair
@@ -646,19 +674,23 @@ def main():
     build_html(sorted_stats, mbti_stats, mbti_role, roles)
 
     # Final verification
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("VERIFICATION")
     print("=" * 60)
 
     # Check 1: raw win rate is not all 0
     raw_wrs = [s["raw_win_rate"] for _, s in sorted_stats]
     all_zero = all(w == 0 for w in raw_wrs)
-    print(f"1. Raw win rate not all zero: {'PASS' if not all_zero else 'FAIL'} (range: {min(raw_wrs):.3f} - {max(raw_wrs):.3f})")
+    print(
+        f"1. Raw win rate not all zero: {'PASS' if not all_zero else 'FAIL'} (range: {min(raw_wrs):.3f} - {max(raw_wrs):.3f})"
+    )
 
     # Check 2: camp-balanced win rate is not all 0
     cb_wrs = [s["camp_balanced_win_rate"] for _, s in sorted_stats]
     all_zero_cb = all(w == 0 for w in cb_wrs)
-    print(f"2. Camp-balanced WR not all zero: {'PASS' if not all_zero_cb else 'FAIL'} (range: {min(cb_wrs):.3f} - {max(cb_wrs):.3f})")
+    print(
+        f"2. Camp-balanced WR not all zero: {'PASS' if not all_zero_cb else 'FAIL'} (range: {min(cb_wrs):.3f} - {max(cb_wrs):.3f})"
+    )
 
     # Check 3: role-adjusted lift is not equal to PreAction
     lifts = [s["role_adjusted_win_lift"] for _, s in sorted_stats]
@@ -670,7 +702,7 @@ def main():
     print(f"4. MBTI types: {len(sorted_stats)}")
     print(f"5. Total player-games: {len(fixed_scores)}")
 
-    print(f"\nDone. Open: data/health/mbti_performance_dashboard_v7_fixed.html")
+    print("\nDone. Open: data/health/mbti_performance_dashboard_v7_fixed.html")
 
 
 if __name__ == "__main__":

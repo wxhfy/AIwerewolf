@@ -12,8 +12,15 @@ call it multiple times with different search terms, self-evaluating
 result quality after each round.
 """
 
-import os, sys, time, json, re, requests
-import numpy as np, jieba, psycopg2
+import json
+import os
+import re
+import time
+
+import jieba
+import numpy as np
+import psycopg2
+import requests
 
 CONN = "postgresql://werewolf:wolf_secret_2026@127.0.0.1:5433/werewolf"
 LLM_KEY = os.environ.get("DSV4FLASH_API_KEY", "")
@@ -22,6 +29,7 @@ LLM_URL = "https://ark.cn-beijing.volces.com/api/coding/v1/chat/completions"
 # ============================================================
 # Strategy DB + Search Tool
 # ============================================================
+
 
 class StrategyDB:
     """The searchable strategy database."""
@@ -53,13 +61,15 @@ class StrategyDB:
         results = []
         for i in top:
             if scores[i] > 0:
-                results.append({
-                    "situation": self.docs[i]["situation"],
-                    "strategy": self.docs[i]["strategy"],
-                    "role": self.docs[i]["role"],
-                    "phase": self.docs[i]["phase"],
-                    "match_score": int(scores[i]),
-                })
+                results.append(
+                    {
+                        "situation": self.docs[i]["situation"],
+                        "strategy": self.docs[i]["strategy"],
+                        "role": self.docs[i]["role"],
+                        "phase": self.docs[i]["phase"],
+                        "match_score": int(scores[i]),
+                    }
+                )
         return results
 
     def to_text(self, results, max_items=5):
@@ -155,6 +165,7 @@ TEST_QUERIES = [
 # Method A: Agentic Search
 # ============================================================
 
+
 def agentic_search(db, context, max_rounds=3, verbose=True):
     """
     Agent reads game context → formulates search keywords →
@@ -180,11 +191,11 @@ def agentic_search(db, context, max_rounds=3, verbose=True):
 
         resp = _call_llm(prompt, max_tokens=200)
         if verbose:
-            print(f"    Round {round_num+1} agent response: {resp[:120]}")
+            print(f"    Round {round_num + 1} agent response: {resp[:120]}")
 
         # Parse agent response
         try:
-            m = re.search(r'\[.*?\]', resp, re.DOTALL)
+            m = re.search(r"\[.*?\]", resp, re.DOTALL)
             if m:
                 parsed = json.loads(m.group())
                 if isinstance(parsed, list) and all(isinstance(x, str) for x in parsed):
@@ -193,7 +204,7 @@ def agentic_search(db, context, max_rounds=3, verbose=True):
                     keywords = []
             else:
                 # Try extract keywords directly
-                keywords = [w.strip().strip('"\'') for w in resp.replace('[','').replace(']','').split(',')]
+                keywords = [w.strip().strip("\"'") for w in resp.replace("[", "").replace("]", "").split(",")]
                 keywords = [k for k in keywords if len(k) >= 2]
         except:
             keywords = []
@@ -201,11 +212,13 @@ def agentic_search(db, context, max_rounds=3, verbose=True):
         # Check if agent says "done"
         done_match = re.search(r'"done"\s*:\s*true', resp)
         if done_match and round_num > 0:
-            if verbose: print(f"    Agent decided results are sufficient")
+            if verbose:
+                print("    Agent decided results are sufficient")
             break
 
         if not keywords:
-            if verbose: print(f"    No keywords extracted, stopping")
+            if verbose:
+                print("    No keywords extracted, stopping")
             break
 
         # Execute search
@@ -231,15 +244,16 @@ def agentic_search(db, context, max_rounds=3, verbose=True):
     all_results = []
     seen = set()
     for h in history:
-        for match in re.finditer(r'\[(\d+)\]\s*场景:', h):
+        for match in re.finditer(r"\[(\d+)\]\s*场景:", h):
             pass  # Can't easily map back, just return first search results
     # Return first round results as default
-    return db.search(jieba.cut(context.split('\n')[0]), topk=5)
+    return db.search(jieba.cut(context.split("\n")[0]), topk=5)
 
 
 # ============================================================
 # Method B: Simple keyword extraction + search (no LLM agent)
 # ============================================================
+
 
 def keyword_search(db, context, topk=5):
     """Extract keywords from context using jieba + search."""
@@ -257,6 +271,7 @@ def keyword_search(db, context, topk=5):
 # Method C: Hybrid RRF (our baseline)
 # ============================================================
 
+
 def build_rrf(docs):
     """Build BM25 + BGE-M3 Dense RRF retriever."""
     from rank_bm25 import BM25Okapi
@@ -267,7 +282,9 @@ def build_rrf(docs):
 
     model = SentenceTransformer("/home/4T-3/PLM/bge-m3/", device="cuda:3")
     dtx = [f"{d['situation']} {d['strategy']} {d['rationale']}" for d in docs]
-    dembs = np.asarray(model.encode(dtx, normalize_embeddings=True, batch_size=32, show_progress_bar=False), dtype=np.float32)
+    dembs = np.asarray(
+        model.encode(dtx, normalize_embeddings=True, batch_size=32, show_progress_bar=False), dtype=np.float32
+    )
 
     return bm25, model, dembs
 
@@ -276,37 +293,58 @@ def rrf_search(docs, bm25, model, dembs, query_text, role="", phase="", topk=5):
     """BM25 + Dense RRF search."""
     # BM25
     bs = bm25.get_scores(" ".join(jieba.cut(query_text)).split())
-    if bs.max() > 0: bs = bs / bs.max()
-    bs += np.array([0.1 if d["role"]==role else (0.03 if d["role"]=="global" else 0) for d in docs])
-    bs += np.array([0.05 if d["phase"]==phase else (0.02 if d["phase"]=="global" else 0) for d in docs])
+    if bs.max() > 0:
+        bs = bs / bs.max()
+    bs += np.array([0.1 if d["role"] == role else (0.03 if d["role"] == "global" else 0) for d in docs])
+    bs += np.array([0.05 if d["phase"] == phase else (0.02 if d["phase"] == "global" else 0) for d in docs])
     bt = list(np.argsort(bs)[::-1][:20])
 
     # Dense
     qe = np.asarray(model.encode(query_text, normalize_embeddings=True), dtype=np.float32)
-    ds = np.dot(dembs, qe) + np.array([0.12 if d["role"]==role else (0.03 if d["role"]=="global" else 0) for d in docs], dtype=np.float32)
-    ds += np.array([0.06 if d["phase"]==phase else (0.02 if d["phase"]=="global" else 0) for d in docs], dtype=np.float32)
+    ds = np.dot(dembs, qe) + np.array(
+        [0.12 if d["role"] == role else (0.03 if d["role"] == "global" else 0) for d in docs], dtype=np.float32
+    )
+    ds += np.array(
+        [0.06 if d["phase"] == phase else (0.02 if d["phase"] == "global" else 0) for d in docs], dtype=np.float32
+    )
     dt = list(np.argsort(ds)[::-1][:20])
 
     # RRF
     rrf = {}
-    for r, i in enumerate(bt, 1): rrf[int(i)] = rrf.get(int(i), 0) + 1/(60+r)
-    for r, i in enumerate(dt, 1): rrf[int(i)] = rrf.get(int(i), 0) + 1/(60+r)
+    for r, i in enumerate(bt, 1):
+        rrf[int(i)] = rrf.get(int(i), 0) + 1 / (60 + r)
+    for r, i in enumerate(dt, 1):
+        rrf[int(i)] = rrf.get(int(i), 0) + 1 / (60 + r)
     final = [i for i, _ in sorted(rrf.items(), key=lambda x: x[1], reverse=True)[:topk]]
-    return [{"situation": docs[i]["situation"], "strategy": docs[i]["strategy"],
-             "role": docs[i]["role"], "phase": docs[i]["phase"]} for i in final]
+    return [
+        {
+            "situation": docs[i]["situation"],
+            "strategy": docs[i]["strategy"],
+            "role": docs[i]["role"],
+            "phase": docs[i]["phase"],
+        }
+        for i in final
+    ]
 
 
 # ============================================================
 # LLM Helper
 # ============================================================
 
+
 def _call_llm(prompt, max_tokens=200):
     try:
-        resp = requests.post(LLM_URL,
+        resp = requests.post(
+            LLM_URL,
             headers={"Authorization": f"Bearer {LLM_KEY}", "Content-Type": "application/json"},
-            json={"model": "deepseek-v4-flash", "messages": [{"role": "user", "content": prompt}],
-                  "temperature": 0.1, "max_tokens": max_tokens},
-            timeout=30)
+            json={
+                "model": "deepseek-v4-flash",
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.1,
+                "max_tokens": max_tokens,
+            },
+            timeout=30,
+        )
         return resp.json()["choices"][0]["message"]["content"].strip()
     except Exception as e:
         return f"[LLM Error: {e}]"
@@ -316,8 +354,10 @@ def _call_llm(prompt, max_tokens=200):
 # LLM-as-Judge: Evaluate result quality
 # ============================================================
 
+
 def llm_judge(context, results_a, results_b, method_a="Agentic", method_b="RRF"):
     """LLM judges which set of retrieved strategies is more useful."""
+
     def format_results(results, label):
         lines = [f"=== {label} 检索结果 ==="]
         for i, r in enumerate(results, 1):
@@ -340,9 +380,11 @@ def llm_judge(context, results_a, results_b, method_a="Agentic", method_b="RRF")
 
     resp = _call_llm(prompt, max_tokens=200)
     try:
-        m = re.search(r'\{[^}]+\}', resp)
-        if m: return json.loads(m.group())
-    except: pass
+        m = re.search(r"\{[^}]+\}", resp)
+        if m:
+            return json.loads(m.group())
+    except:
+        pass
     return {"winner": "tie", "score_a": 3, "score_b": 3, "reasoning": "parse failed"}
 
 
@@ -358,15 +400,23 @@ if __name__ == "__main__":
         raise RuntimeError("DSV4FLASH_API_KEY must be set before running LLM evaluation.")
 
     # Load docs
-    conn = psycopg2.connect(CONN); c = conn.cursor()
+    conn = psycopg2.connect(CONN)
+    c = conn.cursor()
     c.execute("""SELECT COALESCE(situation_pattern,''), COALESCE(recommended_action,''),
                COALESCE(rationale,''), role, phase, quality_score
                FROM strategy_knowledge_docs WHERE status='active'""")
     docs = []
     for sit, rec, rat, role, phase, q in c.fetchall():
-        docs.append({"situation": sit or "", "strategy": rec or "", "rationale": rat or "",
-                     "role": role or "global", "phase": phase or "global",
-                     "quality": float(q) if q else 0.8})
+        docs.append(
+            {
+                "situation": sit or "",
+                "strategy": rec or "",
+                "rationale": rat or "",
+                "role": role or "global",
+                "phase": phase or "global",
+                "quality": float(q) if q else 0.8,
+            }
+        )
     conn.close()
 
     db = StrategyDB(docs)
@@ -385,19 +435,19 @@ if __name__ == "__main__":
     rrf_scores = []
 
     for qi, q in enumerate(TEST_QUERIES):
-        print(f"{'='*70}")
-        print(f"Query {qi+1}/{len(TEST_QUERIES)}: {q['id']}")
+        print(f"{'=' * 70}")
+        print(f"Query {qi + 1}/{len(TEST_QUERIES)}: {q['id']}")
         print(f"  Keywords: {q['keywords']}")
 
         context = q["context"]
         # Extract role and phase from context
-        role_match = re.search(r'身份=(\w+)', context)
-        phase_match = re.search(r'当前阶段:\s*(\w+)', context)
+        role_match = re.search(r"身份=(\w+)", context)
+        phase_match = re.search(r"当前阶段:\s*(\w+)", context)
         role = role_match.group(1) if role_match else ""
         phase = phase_match.group(1) if phase_match else ""
 
         # Method A: Agentic Search
-        print(f"\n  --- Agentic Search ---")
+        print("\n  --- Agentic Search ---")
         t0 = time.perf_counter()
         agentic_results = db.search(q["keywords"], topk=5)  # agent would choose keywords
         agentic_time = (time.perf_counter() - t0) * 1000
@@ -405,10 +455,10 @@ if __name__ == "__main__":
         # Also try with LLM-guided keyword selection
         t0 = time.perf_counter()
         llm_keywords_resp = _call_llm(
-            f"根据以下狼人杀局势，提取3-5个搜索关键词(只返回JSON数组):\n\n{context}",
-            max_tokens=100)
+            f"根据以下狼人杀局势，提取3-5个搜索关键词(只返回JSON数组):\n\n{context}", max_tokens=100
+        )
         try:
-            m = re.search(r'\[.*?\]', llm_keywords_resp, re.DOTALL)
+            m = re.search(r"\[.*?\]", llm_keywords_resp, re.DOTALL)
             llm_keywords = json.loads(m.group()) if m else q["keywords"]
         except:
             llm_keywords = q["keywords"]
@@ -416,7 +466,7 @@ if __name__ == "__main__":
         llm_agentic_time = (time.perf_counter() - t0) * 1000
 
         # Method B: Static RRF
-        print(f"  --- Static RRF ---")
+        print("  --- Static RRF ---")
         t0 = time.perf_counter()
         query_text = f"{role} {phase} " + " ".join(q["keywords"])
         rrf_results = rrf_search(docs, bm25, model, dembs, query_text, role=role, phase=phase, topk=5)
@@ -437,32 +487,44 @@ if __name__ == "__main__":
             print(f"    [{i}] [{r['role']}] {r['situation'][:60]}")
 
         # LLM Judge
-        print(f"\n  --- LLM Judge Evaluation ---")
-        judgment = llm_judge(context, llm_guided_results[:5], rrf_results[:5],
-                            method_a="Agentic Search (LLM关键词)", method_b="Static RRF")
-        print(f"  Winner: {judgment.get('winner','?')} | "
-              f"Agentic: {judgment.get('score_a','?')}/5 | "
-              f"RRF: {judgment.get('score_b','?')}/5")
-        print(f"  Reason: {judgment.get('reasoning','?')[:100]}")
+        print("\n  --- LLM Judge Evaluation ---")
+        judgment = llm_judge(
+            context,
+            llm_guided_results[:5],
+            rrf_results[:5],
+            method_a="Agentic Search (LLM关键词)",
+            method_b="Static RRF",
+        )
+        print(
+            f"  Winner: {judgment.get('winner', '?')} | "
+            f"Agentic: {judgment.get('score_a', '?')}/5 | "
+            f"RRF: {judgment.get('score_b', '?')}/5"
+        )
+        print(f"  Reason: {judgment.get('reasoning', '?')[:100]}")
 
-        winner = judgment.get('winner', 'tie')
-        if winner == 'A': agentic_wins += 1
-        elif winner == 'B': rrf_wins += 1
-        else: ties += 1
+        winner = judgment.get("winner", "tie")
+        if winner == "A":
+            agentic_wins += 1
+        elif winner == "B":
+            rrf_wins += 1
+        else:
+            ties += 1
 
-        if 'score_a' in judgment: agentic_scores.append(judgment['score_a'])
-        if 'score_b' in judgment: rrf_scores.append(judgment['score_b'])
+        if "score_a" in judgment:
+            agentic_scores.append(judgment["score_a"])
+        if "score_b" in judgment:
+            rrf_scores.append(judgment["score_b"])
 
     # Final summary
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print("FINAL RESULTS (LLM Judge)")
-    print(f"{'='*70}")
+    print(f"{'=' * 70}")
     print(f"  Agentic Search wins:  {agentic_wins}/{len(TEST_QUERIES)}")
     print(f"  Static RRF wins:      {rrf_wins}/{len(TEST_QUERIES)}")
     print(f"  Ties:                 {ties}/{len(TEST_QUERIES)}")
     if agentic_scores:
         print(f"  Avg Agentic score:    {np.mean(agentic_scores):.2f}/5")
         print(f"  Avg RRF score:        {np.mean(rrf_scores):.2f}/5")
-    print(f"\n  Key insight: Agentic Search uses the LLM's game understanding")
-    print(f"  to choose precise keywords, while Static RRF relies on")
-    print(f"  pre-computed embeddings that may not capture game context.")
+    print("\n  Key insight: Agentic Search uses the LLM's game understanding")
+    print("  to choose precise keywords, while Static RRF relies on")
+    print("  pre-computed embeddings that may not capture game context.")

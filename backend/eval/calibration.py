@@ -11,11 +11,15 @@ Also implements Rulers (2026) quantile mapping for distribution matching.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
 import json
-import math
+from dataclasses import dataclass
+from dataclasses import field
 from pathlib import Path
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
+from typing import Tuple
 
 import numpy as np
 
@@ -95,9 +99,13 @@ class ScoreCalibrator:
 
         if n < self._min_anchors:
             return CalibrationResult(
-                dimension=dimension, method="none", n_anchors=n,
-                raw_mean=float(raw_arr.mean()), calibrated_mean=float(raw_arr.mean()),
-                raw_std=float(raw_arr.std()), calibrated_std=float(raw_arr.std()),
+                dimension=dimension,
+                method="none",
+                n_anchors=n,
+                raw_mean=float(raw_arr.mean()),
+                calibrated_mean=float(raw_arr.mean()),
+                raw_std=float(raw_arr.std()),
+                calibrated_std=float(raw_arr.std()),
                 calibration_scores=raw_scores,
             )
 
@@ -114,7 +122,9 @@ class ScoreCalibrator:
         kl = self._compute_kl(raw_arr, anchor_human)
 
         return CalibrationResult(
-            dimension=dimension, method="ridge", n_anchors=n,
+            dimension=dimension,
+            method="ridge",
+            n_anchors=n,
             raw_mean=float(raw_arr.mean()),
             calibrated_mean=float(calibrated.mean()),
             raw_std=float(raw_arr.std()),
@@ -131,6 +141,7 @@ class ScoreCalibrator:
     ) -> np.ndarray:
         """Ridge regression: maps raw scores → human-aligned scores."""
         from sklearn.linear_model import Ridge
+
         model = Ridge(alpha=1.0)
         X = anchor_raw.reshape(-1, 1)
         model.fit(X, anchor_human)
@@ -169,10 +180,7 @@ class ScoreCalibrator:
 
     def save_anchors(self, path: str) -> None:
         """Persist anchors to JSON file."""
-        data = {
-            dim: {"raw": raw, "human": human}
-            for dim, (raw, human) in self._anchors.items()
-        }
+        data = {dim: {"raw": raw, "human": human} for dim, (raw, human) in self._anchors.items()}
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         with open(path, "w") as f:
             json.dump(data, f, indent=2)
@@ -204,6 +212,7 @@ class ScoreCalibrator:
 # ============================================================
 # Calibration Data Collector (for building anchor sets)
 # ============================================================
+
 
 def collect_calibration_sample(
     game_id: str,
@@ -242,10 +251,12 @@ def collect_calibration_sample(
     if human_label:
         for dim, human_score in human_label.items():
             if dim in raw_scores:
-                sample.setdefault("anchors", []).append({
-                    "dimension": dim,
-                    "raw": raw_scores[dim],
-                    "human": human_score,
-                })
+                sample.setdefault("anchors", []).append(
+                    {
+                        "dimension": dim,
+                        "raw": raw_scores[dim],
+                        "human": human_score,
+                    }
+                )
 
     return sample

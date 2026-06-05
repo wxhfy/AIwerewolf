@@ -11,27 +11,31 @@ Run: python scripts/run_diagnostics.py
 
 from __future__ import annotations
 
-import json, math, statistics, sys
-from collections import Counter, defaultdict
+import json
+import math
+import statistics
+import sys
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from backend.eval.scoring_models import ModelFeatures, extract_features, calculate_process_score
-from backend.eval.embedding_retrieval import BGEM3Provider, format_opportunity_text
-from scripts.train_and_ablate import (
-    load_opportunities, load_labeled, load_baseline,
-    rule_opportunity_value, rule_decision_quality,
-    group_kfold_split,
-)
+from backend.eval.embedding_retrieval import BGEM3Provider
+from backend.eval.embedding_retrieval import format_opportunity_text
+from backend.eval.scoring_models import ModelFeatures
+from backend.eval.scoring_models import extract_features
+from scripts.train_and_ablate import load_baseline
+from scripts.train_and_ablate import load_labeled
+from scripts.train_and_ablate import load_opportunities
+from scripts.train_and_ablate import rule_decision_quality
+from scripts.train_and_ablate import rule_opportunity_value
 
 
 def cohens_d(a, b):
-    if len(a) < 2 or len(b) < 2: return 0.0
+    if len(a) < 2 or len(b) < 2:
+        return 0.0
     ma, mb = statistics.mean(a), statistics.mean(b)
     na, nb = len(a), len(b)
     va = statistics.variance(a) if na > 1 else 0.0
@@ -45,14 +49,15 @@ def _load_data():
     labeled = load_labeled()
     baseline = load_baseline()
 
-    from backend.db.database import SessionLocal, init_db
-    from backend.db.models import PublishedReview
     from sqlalchemy import text
+
+    from backend.db.database import SessionLocal
+    from backend.db.database import init_db
+
     init_db()
     db = SessionLocal()
     clean_ids = set(json.loads(Path("/tmp/clean_llm_game_ids.json").read_text()))
-    games = db.execute(text("SELECT id, winner FROM games WHERE id IN :ids"),
-        {"ids": tuple(clean_ids)}).fetchall()
+    games = db.execute(text("SELECT id, winner FROM games WHERE id IN :ids"), {"ids": tuple(clean_ids)}).fetchall()
     winner_map = {g[0]: g[1] for g in games}
     db.close()
 
@@ -65,6 +70,7 @@ def _load_data():
 # Task 2: Guard diagnostic
 # ============================================================
 
+
 def guard_diagnostic(opps, labeled, opp_by_id, winner_map, opp_game) -> str:
     guard_opps = [o for o in opps if o["role"] == "Guard"]
     guard_protect = [o for o in guard_opps if o["opportunity_type"] == "guard_protect"]
@@ -72,20 +78,29 @@ def guard_diagnostic(opps, labeled, opp_by_id, winner_map, opp_game) -> str:
     guard_speech = [o for o in guard_opps if o["opportunity_type"] == "speech"]
     guard_labeled = [item for item in labeled if item.get("role") == "Guard"]
 
-    print(f"Guard: {len(guard_opps)} total, protect={len(guard_protect)}, vote={len(guard_vote)}, speech={len(guard_speech)}, labeled={len(guard_labeled)}")
+    print(
+        f"Guard: {len(guard_opps)} total, protect={len(guard_protect)}, vote={len(guard_vote)}, speech={len(guard_speech)}, labeled={len(guard_labeled)}"
+    )
 
     # Per-type Cohen's d
     def compute_type_d(opp_list, opp_by_id, winner_map, opp_game):
         scores_won, scores_lost = [], []
         for o in opp_list:
             gid = opp_game.get(o["opportunity_id"], "")
-            w = rule_opportunity_value(o); q = rule_decision_quality(o)
+            w = rule_opportunity_value(o)
+            q = rule_decision_quality(o)
             s = w * q
             winner = winner_map.get(gid, "")
             # Guard is village
-            if winner == "village": scores_won.append(s)
-            else: scores_lost.append(s)
-        return cohens_d(scores_won, scores_lost), statistics.mean(scores_won) if scores_won else 0, statistics.mean(scores_lost) if scores_lost else 0
+            if winner == "village":
+                scores_won.append(s)
+            else:
+                scores_lost.append(s)
+        return (
+            cohens_d(scores_won, scores_lost),
+            statistics.mean(scores_won) if scores_won else 0,
+            statistics.mean(scores_lost) if scores_lost else 0,
+        )
 
     p_d, p_w, p_l = compute_type_d(guard_protect, opp_by_id, winner_map, opp_game)
     v_d, v_w, v_l = compute_type_d(guard_vote, opp_by_id, winner_map, opp_game)
@@ -93,10 +108,19 @@ def guard_diagnostic(opps, labeled, opp_by_id, winner_map, opp_game) -> str:
 
     all_scores = []
     for o in guard_opps:
-        w = rule_opportunity_value(o); q = rule_decision_quality(o)
+        w = rule_opportunity_value(o)
+        q = rule_decision_quality(o)
         all_scores.append(w * q)
-    all_good = [s for i, s in enumerate(all_scores) if guard_opps[i]["game_id"] in winner_map and winner_map.get(guard_opps[i]["game_id"]) == "village"]
-    all_bad = [s for i, s in enumerate(all_scores) if guard_opps[i]["game_id"] in winner_map and winner_map.get(guard_opps[i]["game_id"]) == "wolf"]
+    all_good = [
+        s
+        for i, s in enumerate(all_scores)
+        if guard_opps[i]["game_id"] in winner_map and winner_map.get(guard_opps[i]["game_id"]) == "village"
+    ]
+    all_bad = [
+        s
+        for i, s in enumerate(all_scores)
+        if guard_opps[i]["game_id"] in winner_map and winner_map.get(guard_opps[i]["game_id"]) == "wolf"
+    ]
     all_d = cohens_d(all_good, all_bad)
 
     # Good/medium/bad label distribution
@@ -114,13 +138,19 @@ def guard_diagnostic(opps, labeled, opp_by_id, winner_map, opp_game) -> str:
     fn_cases = []
     for item in guard_labeled:
         opp = opp_by_id.get(item["opportunity_id"])
-        if opp is None: continue
+        if opp is None:
+            continue
         qs = item.get("label", {}).get("quality_score")
         rq = rule_decision_quality(opp)
         if qs is not None:
             delta = rq - (qs / 100.0)
-            case = {"id": opp["opportunity_id"][:24], "type": opp["opportunity_type"],
-                    "rule_q": round(rq, 3), "label_q": qs, "delta": round(delta, 3)}
+            case = {
+                "id": opp["opportunity_id"][:24],
+                "type": opp["opportunity_type"],
+                "rule_q": round(rq, 3),
+                "label_q": qs,
+                "delta": round(delta, 3),
+            }
             if delta > 0.3:  # Rule over-scores (FP)
                 fp_cases.append(case)
             if delta < -0.3:  # Rule under-scores (FN)
@@ -145,8 +175,14 @@ def guard_diagnostic(opps, labeled, opp_by_id, winner_map, opp_game) -> str:
                     feat_contrib[name] = round(float(corr), 4)
 
     # Guard-specific feature analysis
-    guard_specific = ["target_claimed_role_value", "target_kill_likelihood", "is_key_role_exposed",
-                      "guarded_self", "is_repeat_guard", "actual_block"]
+    guard_specific = [
+        "target_claimed_role_value",
+        "target_kill_likelihood",
+        "is_key_role_exposed",
+        "guarded_self",
+        "is_repeat_guard",
+        "actual_block",
+    ]
     guard_feat_contrib = {}
     for o in guard_protect:
         tf = o.get("target_features", {})
@@ -154,7 +190,9 @@ def guard_diagnostic(opps, labeled, opp_by_id, winner_map, opp_game) -> str:
         for f in guard_specific:
             val = tf.get(f, None)
             if val is not None:
-                guard_feat_contrib.setdefault(f, []).append((float(val) if isinstance(val, (int, float, bool)) else 0.0, q))
+                guard_feat_contrib.setdefault(f, []).append(
+                    (float(val) if isinstance(val, (int, float, bool)) else 0.0, q)
+                )
 
     gfc_stats = {}
     for f, pairs in guard_feat_contrib.items():
@@ -162,15 +200,17 @@ def guard_diagnostic(opps, labeled, opp_by_id, winner_map, opp_game) -> str:
         qs = [p[1] for p in pairs]
         if len(vals) >= 3 and statistics.stdev(vals) > 0:
             corr = float(np.corrcoef(vals, qs)[0, 1]) if statistics.stdev(vals) > 0 else 0.0
-            gfc_stats[f] = {"correlation": round(corr, 4) if not np.isnan(corr) else 0.0,
-                           "mean_value": round(statistics.mean(vals), 3),
-                           "n_samples": len(vals)}
+            gfc_stats[f] = {
+                "correlation": round(corr, 4) if not np.isnan(corr) else 0.0,
+                "mean_value": round(statistics.mean(vals), 3),
+                "n_samples": len(vals),
+            }
 
     # Build report
     lines = [
         "# Guard Diagnostic Report",
         "",
-        f"**Date**: 2026-05-27",
+        "**Date**: 2026-05-27",
         f"**Guard opportunities**: {len(guard_opps)} total",
         "",
         "## 1. Per-Type Cohen's d",
@@ -182,11 +222,11 @@ def guard_diagnostic(opps, labeled, opp_by_id, winner_map, opp_game) -> str:
         f"| **overall** | {len(guard_opps)} | **{all_d:.3f}** | {statistics.mean(all_good):.3f} | {statistics.mean(all_bad):.3f} |",
         "",
         "## 2. Label Distribution",
-        f"| Category | Count | Pct |",
-        f"|----------|-------|-----|",
-        f"| Good (>=70) | {good} | {good/max(len(quality_scores),1)*100:.1f}% |",
-        f"| Medium (40-69) | {medium} | {medium/max(len(quality_scores),1)*100:.1f}% |",
-        f"| Bad (<40) | {bad} | {bad/max(len(quality_scores),1)*100:.1f}% |",
+        "| Category | Count | Pct |",
+        "|----------|-------|-----|",
+        f"| Good (>=70) | {good} | {good / max(len(quality_scores), 1) * 100:.1f}% |",
+        f"| Medium (40-69) | {medium} | {medium / max(len(quality_scores), 1) * 100:.1f}% |",
+        f"| Bad (<40) | {bad} | {bad / max(len(quality_scores), 1) * 100:.1f}% |",
         "",
         "## 3. Top 20 False Positives (Rule > Label)",
         "| ID | Type | Rule q | Label q | Delta |",
@@ -212,7 +252,7 @@ def guard_diagnostic(opps, labeled, opp_by_id, winner_map, opp_game) -> str:
     ]
     sorted_feats = sorted(feat_contrib.items(), key=lambda x: -abs(x[1]))[:15]
     for i, (name, corr) in enumerate(sorted_feats):
-        lines.append(f"| {i+1} | {name} | {corr:+.4f} |")
+        lines.append(f"| {i + 1} | {name} | {corr:+.4f} |")
 
     lines += [
         "",
@@ -222,7 +262,9 @@ def guard_diagnostic(opps, labeled, opp_by_id, winner_map, opp_game) -> str:
     ]
     for f in guard_specific:
         stats = gfc_stats.get(f, {})
-        lines.append(f"| {f} | {stats.get('correlation', 0):+.4f} | {stats.get('mean_value', 0):.3f} | {stats.get('n_samples', 0)} |")
+        lines.append(
+            f"| {f} | {stats.get('correlation', 0):+.4f} | {stats.get('mean_value', 0):.3f} | {stats.get('n_samples', 0)} |"
+        )
 
     lines += [
         "",
@@ -239,6 +281,7 @@ def guard_diagnostic(opps, labeled, opp_by_id, winner_map, opp_game) -> str:
 # ============================================================
 # Task 3: Guard scoring refactor v2
 # ============================================================
+
 
 def guard_v2_scoring(opps, opp_by_id, winner_map, opp_game) -> str:
     guard_protect = [o for o in opps if o["role"] == "Guard" and o["opportunity_type"] == "guard_protect"]
@@ -271,8 +314,7 @@ def guard_v2_scoring(opps, opp_by_id, winner_map, opp_game) -> str:
         is_repeat = tf.get("is_repeat_guard", False)
         abuse_penalty = 0.15 if is_self else 0.05 if is_repeat else 0.0
 
-        score = (0.35 * protect_policy + 0.25 * target_risk + 0.25 * key_coverage
-                 + block_bonus - abuse_penalty)
+        score = 0.35 * protect_policy + 0.25 * target_risk + 0.25 * key_coverage + block_bonus - abuse_penalty
         return max(0.0, min(1.0, score))
 
     # Compute v2 scores
@@ -336,6 +378,7 @@ def guard_v2_scoring(opps, opp_by_id, winner_map, opp_game) -> str:
 # Task 4: Hunter confidence
 # ============================================================
 
+
 def hunter_confidence(opps, labeled, opp_by_id) -> str:
     hunter_opps = [o for o in opps if o["role"] == "Hunter"]
     shots = [o for o in hunter_opps if o["opportunity_type"] == "hunter_shot"]
@@ -371,11 +414,11 @@ def hunter_confidence(opps, labeled, opp_by_id) -> str:
         f"**Restraint opportunities**: {len(votes) + len(speeches)}",
         "",
         "## 1. Shot Classification",
-        f"| Category | Count | Pct |",
-        f"|----------|-------|-----|",
+        "| Category | Count | Pct |",
+        "|----------|-------|-----|",
         f"| Total shots | {len(shots)} | 100% |",
-        f"| Valid shots (target wolf) | {len(valid_shots)} | {len(valid_shots)/max(len(shots),1)*100:.0f}% |",
-        f"| Random shots (target good/unknown) | {len(random_shots)} | {len(random_shots)/max(len(shots),1)*100:.0f}% |",
+        f"| Valid shots (target wolf) | {len(valid_shots)} | {len(valid_shots) / max(len(shots), 1) * 100:.0f}% |",
+        f"| Random shots (target good/unknown) | {len(random_shots)} | {len(random_shots) / max(len(shots), 1) * 100:.0f}% |",
         f"| High suspicion, no shot | {len(high_suspicion_no_shot)} | — |",
         "",
         "## 2. Confidence Assessment",
@@ -385,8 +428,8 @@ def hunter_confidence(opps, labeled, opp_by_id) -> str:
     if n_shots < 30:
         lines += [
             f"⚠ **Shot count ({n_shots}) is below 30 — LOW CONFIDENCE.**",
-            f"Hunter d >= 0.5 is NOT achievable with current data.",
-            f"Recommendation: do NOT force Hunter d target; annotate as low-confidence in reports.",
+            "Hunter d >= 0.5 is NOT achievable with current data.",
+            "Recommendation: do NOT force Hunter d target; annotate as low-confidence in reports.",
             "",
         ]
     else:
@@ -419,14 +462,14 @@ def hunter_confidence(opps, labeled, opp_by_id) -> str:
 # Task 5: Embedding failure analysis
 # ============================================================
 
+
 def embedding_analysis(opps, labeled, opp_by_id) -> str:
-    from backend.eval.embedding_retrieval import format_opportunity_text
 
     BGE_M3_PATH = "/home/4T-3/PLM/bge-m3/"
     provider = BGEM3Provider(model_name=BGE_M3_PATH, device="cpu")
 
     # Sample 100 opportunities for analysis
-    sample = opps[:min(100, len(opps))]
+    sample = opps[: min(100, len(opps))]
     all_texts = [format_opportunity_text(o) for o in sample]
     all_embs = provider.embed(all_texts, batch_size=16)
 
@@ -440,7 +483,8 @@ def embedding_analysis(opps, labeled, opp_by_id) -> str:
     bad_opps = []
     for item in labeled[:500]:
         opp = opp_by_id.get(item["opportunity_id"])
-        if opp is None: continue
+        if opp is None:
+            continue
         qs = item.get("label", {}).get("quality_score")
         if qs is not None and qs >= 60:
             good_opps.append(opp)
@@ -453,7 +497,8 @@ def embedding_analysis(opps, labeled, opp_by_id) -> str:
     bad_embs = provider.embed(bad_texts, batch_size=16) if bad_texts else np.array([])
 
     for i, opp in enumerate(sample[:50]):
-        if i >= len(all_embs): break
+        if i >= len(all_embs):
+            break
         query_vec = all_embs[i]
         sims = np.dot(all_embs, query_vec) / (np.linalg.norm(all_embs, axis=1) * np.linalg.norm(query_vec) + 1e-8)
         top5_idx = np.argsort(sims)[-6:-1][::-1]  # exclude self (top-1 = self)
@@ -466,7 +511,9 @@ def embedding_analysis(opps, labeled, opp_by_id) -> str:
 
         # Good/Bad margin
         if len(good_embs) > 0 and len(bad_embs) > 0:
-            gsims = np.dot(good_embs, query_vec) / (np.linalg.norm(good_embs, axis=1) * np.linalg.norm(query_vec) + 1e-8)
+            gsims = np.dot(good_embs, query_vec) / (
+                np.linalg.norm(good_embs, axis=1) * np.linalg.norm(query_vec) + 1e-8
+            )
             bsims = np.dot(bad_embs, query_vec) / (np.linalg.norm(bad_embs, axis=1) * np.linalg.norm(query_vec) + 1e-8)
             ng = float(np.max(gsims)) if len(gsims) > 0 else 0.0
             nb = float(np.max(bsims)) if len(bsims) > 0 else 0.0
@@ -475,7 +522,7 @@ def embedding_analysis(opps, labeled, opp_by_id) -> str:
     lines = [
         "# Embedding Failure Analysis (BGE-M3)",
         "",
-        f"**Model**: BGE-M3, 1024-dim",
+        "**Model**: BGE-M3, 1024-dim",
         f"**Sample queries**: {len(sample[:50])}",
         f"**Good cases**: {len(good_opps[:200])}, Bad cases: {len(bad_opps[:200])}",
         "",
@@ -497,7 +544,9 @@ def embedding_analysis(opps, labeled, opp_by_id) -> str:
 
     if good_margins:
         pos_margins = sum(1 for m in good_margins if m > 0)
-        lines.append(f"Positive margins: {pos_margins}/{len(good_margins)} ({pos_margins/len(good_margins)*100:.0f}%)")
+        lines.append(
+            f"Positive margins: {pos_margins}/{len(good_margins)} ({pos_margins / len(good_margins) * 100:.0f}%)"
+        )
 
     lines += [
         "",
@@ -519,6 +568,7 @@ def embedding_analysis(opps, labeled, opp_by_id) -> str:
 # ============================================================
 # Main
 # ============================================================
+
 
 def main() -> int:
     opps, labeled, baseline, winner_map, opp_by_id, opp_game = _load_data()

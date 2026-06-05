@@ -43,19 +43,14 @@ IMPORTANT:
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
-from typing import Any
 
-from backend.eval.open_data.schema import (
-    CanonicalGameEvent,
-    OpenDataLicense,
-    OpenGameLog,
-    SpeechQualitySample,
-    VisibilityState,
-    WeakLabel,
-    WeakLabelSource,
-)
+from backend.eval.open_data.schema import CanonicalGameEvent
+from backend.eval.open_data.schema import OpenDataLicense
+from backend.eval.open_data.schema import OpenGameLog
+from backend.eval.open_data.schema import SpeechQualitySample
+from backend.eval.open_data.schema import WeakLabel
+from backend.eval.open_data.schema import WeakLabelSource
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -108,6 +103,7 @@ def _parse_timestamp(ts: str) -> int:
 # ---------------------------------------------------------------------------
 # Adapter
 # ---------------------------------------------------------------------------
+
 
 class WerewolfAmongUsAdapter:
     """Adapter for the Werewolf Among Us dataset."""
@@ -219,7 +215,11 @@ class WerewolfAmongUsAdapter:
                 # Check if werewolf survived
                 for i, name in enumerate(players):
                     if i < len(voting_outcome) and i < len(start_roles):
-                        if start_roles[i] == "Werewolf" and str(voting_outcome[i]).lower() not in ("dead", "killed", "eliminated"):
+                        if start_roles[i] == "Werewolf" and str(voting_outcome[i]).lower() not in (
+                            "dead",
+                            "killed",
+                            "eliminated",
+                        ):
                             winner = "wolf"
                             break
                 if winner == "unknown":
@@ -313,11 +313,13 @@ class WerewolfAmongUsAdapter:
                 samples.append(sample)
 
                 # Add current utterance to prior context for next events
-                prior_utterances.append({
-                    "speaker": speaker,
-                    "role_visible": role,
-                    "utterance": utterance[:200],
-                })
+                prior_utterances.append(
+                    {
+                        "speaker": speaker,
+                        "role_visible": role,
+                        "utterance": utterance[:200],
+                    }
+                )
 
         return samples
 

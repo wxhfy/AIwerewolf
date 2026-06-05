@@ -280,10 +280,7 @@ def build_role_brief(role: Role) -> str:
     # so the agent can still play instead of crashing the whole game.
     playbook = ACTION_PLAYBOOKS.get(role)
     if playbook is None:
-        return (
-            f"角色目标：{role.value}\n"
-            "（该角色暂无专属策略指引，请按基本身份逻辑发言/投票，避免暴露身份信息。）"
-        )
+        return f"角色目标：{role.value}\n（该角色暂无专属策略指引，请按基本身份逻辑发言/投票，避免暴露身份信息。）"
     lines = [
         f"角色目标：{role.value}",
         "白天策略：",

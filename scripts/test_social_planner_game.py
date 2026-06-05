@@ -18,7 +18,6 @@ if str(ROOT) not in sys.path:
 
 from backend.agents.factory import create_agents
 from backend.engine.game import WerewolfGame
-from backend.engine.models import EventType
 from backend.engine.rules import build_players
 
 
@@ -35,8 +34,10 @@ def main() -> int:
     print("\nRole Assignments:")
     wolf_players = []
     for p in players:
-        role_name = p.role.value if hasattr(p.role, 'value') else str(p.role)
-        print(f"  {p.seat}号 {p.name}: {role_name} ({p.alignment.value if hasattr(p.alignment, 'value') else p.alignment})")
+        role_name = p.role.value if hasattr(p.role, "value") else str(p.role)
+        print(
+            f"  {p.seat}号 {p.name}: {role_name} ({p.alignment.value if hasattr(p.alignment, 'value') else p.alignment})"
+        )
         if "wolf" in role_name.lower():
             wolf_players.append(p)
 
@@ -50,7 +51,7 @@ def main() -> int:
     print("Game Results")
     print("=" * 60)
 
-    winner = game.state.winner.value if hasattr(game.state.winner, 'value') else str(game.state.winner)
+    winner = game.state.winner.value if hasattr(game.state.winner, "value") else str(game.state.winner)
     print(f"Winner: {winner}")
     print(f"Days: {game.state.day}")
 
@@ -65,7 +66,7 @@ def main() -> int:
     total_wolf_tactics = 0
 
     for pid, agent in agents.items():
-        if not hasattr(agent, 'memory'):
+        if not hasattr(agent, "memory"):
             continue
 
         mem = agent.memory
@@ -83,14 +84,14 @@ def main() -> int:
         total_intents += intent_count
 
         # Wolf tactics
-        if hasattr(agent, '_wolf_tactics') and agent._wolf_tactics:
+        if hasattr(agent, "_wolf_tactics") and agent._wolf_tactics:
             total_wolf_tactics += len(agent._wolf_tactics)
 
-        role = agent.role if hasattr(agent, 'role') else "?"
+        role = agent.role if hasattr(agent, "role") else "?"
         print(f"\n  {agent.player_name} ({role}):")
         print(f"    Trust edges: {trust_count}, Deception signals: {deception_count}")
         print(f"    Strategic intents: {intent_count} (active: {active_count})")
-        if hasattr(agent, '_wolf_tactics') and agent._wolf_tactics:
+        if hasattr(agent, "_wolf_tactics") and agent._wolf_tactics:
             tactic = agent._wolf_tactics.get(agent.player_id, "?")
             print(f"    Wolf tactic: {tactic}")
             print(f"    Full tactics: {agent._wolf_tactics}")

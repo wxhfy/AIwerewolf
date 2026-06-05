@@ -1,7 +1,12 @@
 import pytest
 
 from backend.engine.game import WerewolfGame
-from backend.engine.models import ActionType, Alignment, Decision, Phase, Player, Role
+from backend.engine.models import ActionType
+from backend.engine.models import Alignment
+from backend.engine.models import Decision
+from backend.engine.models import Phase
+from backend.engine.models import Player
+from backend.engine.models import Role
 from backend.engine.visibility import Visibility
 
 
@@ -67,9 +72,7 @@ def test_werewolf_knows_only_wolves() -> None:
     assert view.known_wolves
     wolf_family = {Role.WEREWOLF.value, Role.WHITE_WOLF_KING.value}
     for player in view.players:
-        if player["id"] == wolf.id:
-            assert player["role"] in wolf_family
-        elif player["id"] in {known["id"] for known in view.known_wolves}:
+        if player["id"] == wolf.id or player["id"] in {known["id"] for known in view.known_wolves}:
             assert player["role"] in wolf_family
         else:
             assert "role" not in player
@@ -112,7 +115,9 @@ def test_llm_invalid_badge_vote_raises_instead_of_fallback() -> None:
     def invalid_batch(players, request, call_fn):
         assert request == "BADGE_ELECTION"
         return [
-            Decision(player.id, ActionType.VOTE, target_id="P3", reasoning="not a candidate", metadata={"source": "llm"})
+            Decision(
+                player.id, ActionType.VOTE, target_id="P3", reasoning="not a candidate", metadata={"source": "llm"}
+            )
             for player in players
         ]
 
@@ -161,7 +166,9 @@ def test_day_vote_tie_enters_pk_and_resolves() -> None:
         if request == "SHOOT":
             return Decision(player.id, ActionType.SKIP, reasoning="no target")
         if request == "BADGE_TRANSFER":
-            return Decision(player.id, ActionType.BADGE_TRANSFER, target_id=game.state.alive_players[-1].id, reasoning="scripted")
+            return Decision(
+                player.id, ActionType.BADGE_TRANSFER, target_id=game.state.alive_players[-1].id, reasoning="scripted"
+            )
         raise AssertionError(request)
 
     game._ask = scripted_ask  # type: ignore[assignment]
@@ -259,7 +266,9 @@ def test_wolf_phase_has_private_discussion_vote_and_tally() -> None:
     assert game.state.night_actions.wolf_votes == {"W1": "V2", "W2": "V2"}
     assert game.state.night_actions.wolf_target_id == "V2"
 
-    wolf_events = [event for event in game.state.events if event.visibility == "private" and set(event.visible_to) == {"W1", "W2"}]
+    wolf_events = [
+        event for event in game.state.events if event.visibility == "private" and set(event.visible_to) == {"W1", "W2"}
+    ]
     kinds = {event.payload.get("kind") for event in wolf_events}
     assert "wolf_chat_start" in kinds
     assert "wolf_discussion_turn" in kinds

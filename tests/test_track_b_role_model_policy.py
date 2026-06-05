@@ -10,8 +10,8 @@ import pytest
 
 ROLE_MODEL_MIN_SAMPLES = 300  # per role
 ROLE_MODEL_MIN_CRITICAL = 50  # per role
-ROLE_MODEL_MIN_CLEAN = 50     # per role
-ROLE_MODEL_MIN_HUMAN = 50     # per role
+ROLE_MODEL_MIN_CLEAN = 50  # per role
+ROLE_MODEL_MIN_HUMAN = 50  # per role
 
 
 def test_role_model_policy_documented():
@@ -39,6 +39,7 @@ def test_current_data_below_role_model_threshold():
     """
     import json
     from pathlib import Path
+
     ROOT = Path(__file__).resolve().parent.parent
 
     # Check speech samples per role
@@ -80,5 +81,4 @@ def test_shared_encoder_preferred_over_independent_models():
     has_shared = "shared" in text.lower() or "role head" in text.lower() or "role adapter" in text.lower()
     has_independent_models = "independent" in text.lower() and "model per role" in text.lower()
     # The policy should recommend shared approach
-    assert has_shared or "architect" in text.lower(), \
-        "Policy should describe shared encoder + role heads architecture"
+    assert has_shared or "architect" in text.lower(), "Policy should describe shared encoder + role heads architecture"

@@ -24,7 +24,6 @@ import warnings
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 
@@ -33,10 +32,10 @@ sys.path.insert(0, str(ROOT))
 warnings.filterwarnings("ignore")
 
 TIERS = {
-    "baseline":    {"COGNITIVE_ENABLE_ANTI_PATTERNS": "0", "COGNITIVE_ENABLE_TRACK_C": "0"},
-    "anti_only":   {"COGNITIVE_ENABLE_ANTI_PATTERNS": "1", "COGNITIVE_ENABLE_TRACK_C": "0"},
+    "baseline": {"COGNITIVE_ENABLE_ANTI_PATTERNS": "0", "COGNITIVE_ENABLE_TRACK_C": "0"},
+    "anti_only": {"COGNITIVE_ENABLE_ANTI_PATTERNS": "1", "COGNITIVE_ENABLE_TRACK_C": "0"},
     "trackc_only": {"COGNITIVE_ENABLE_ANTI_PATTERNS": "0", "COGNITIVE_ENABLE_TRACK_C": "1"},
-    "both":        {"COGNITIVE_ENABLE_ANTI_PATTERNS": "1", "COGNITIVE_ENABLE_TRACK_C": "1"},
+    "both": {"COGNITIVE_ENABLE_ANTI_PATTERNS": "1", "COGNITIVE_ENABLE_TRACK_C": "1"},
 }
 
 
@@ -54,7 +53,8 @@ def bootstrap_ci(data: list[float], n_bootstrap: int = 10000, ci: float = 0.95) 
     if len(data) < 5:
         return {
             "mean": float(np.mean(data)) if data else 0.0,
-            "ci_lower": None, "ci_upper": None,
+            "ci_lower": None,
+            "ci_upper": None,
             "n_samples": len(data),
             "warning": "Insufficient samples for bootstrap (< 5)",
         }
@@ -75,6 +75,7 @@ def bootstrap_ci(data: list[float], n_bootstrap: int = 10000, ci: float = 0.95) 
         "n_samples": len(data),
         "n_bootstrap": n_bootstrap,
     }
+
 
 # Script that runs one tier's games
 _WORKER_SCRIPT = """
@@ -179,8 +180,11 @@ print(f"DONE_{{tier}}", flush=True)
 
 
 def _run_tier_subprocess(
-    tier: str, seeds: list[int], output_file: Path,
-    experiment_id: str = "", require_db: bool = True,
+    tier: str,
+    seeds: list[int],
+    output_file: Path,
+    experiment_id: str = "",
+    require_db: bool = True,
 ) -> subprocess.Popen:
     """Launch a subprocess to run games for one tier."""
     script = _WORKER_SCRIPT.format(
@@ -197,8 +201,10 @@ def _run_tier_subprocess(
     # Ensure subprocess uses project root as cwd for .env resolution
     return subprocess.Popen(
         [sys.executable, "-c", script],
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        text=True, bufsize=1,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
         env=child_env,
         cwd=str(ROOT),
     )
@@ -206,16 +212,10 @@ def _run_tier_subprocess(
 
 def compile_stats(results: list[dict]) -> dict:
     """Compile role-level, MBTI-level, and team-level statistics."""
-    role_stats: dict[str, dict] = defaultdict(
-        lambda: {"wins": 0, "games": 0}
-    )
+    role_stats: dict[str, dict] = defaultdict(lambda: {"wins": 0, "games": 0})
     role_outcomes: dict[str, list] = defaultdict(list)
-    mbti_stats: dict[str, dict] = defaultdict(
-        lambda: {"wins": 0, "games": 0}
-    )
-    team_stats: dict[str, dict] = defaultdict(
-        lambda: {"wins": 0, "games": 0}
-    )
+    mbti_stats: dict[str, dict] = defaultdict(lambda: {"wins": 0, "games": 0})
+    team_stats: dict[str, dict] = defaultdict(lambda: {"wins": 0, "games": 0})
 
     for r in results:
         if "error" in r:
@@ -260,12 +260,12 @@ def _print_comparison(tier_summaries: dict) -> None:
     roles = sorted(set().union(*[set(s.get("role_stats", {}).keys()) for s in tier_summaries.values()]))
     mbti_types = sorted(set().union(*[set(s.get("mbti_stats", {}).keys()) for s in tier_summaries.values()]))
 
-    print(f"\n{'='*110}")
+    print(f"\n{'=' * 110}")
     print("MULTI-TIER WIN RATE COMPARISON")
-    print(f"{'='*110}")
+    print(f"{'=' * 110}")
 
     # Team-level
-    print(f"\n--- Team-Level Win Rates ---")
+    print("\n--- Team-Level Win Rates ---")
     header = f"{'Team':<12s}"
     for t in tiers:
         header += f" {t:>14s}"
@@ -281,7 +281,7 @@ def _print_comparison(tier_summaries: dict) -> None:
         print(row)
 
     # Role-level
-    print(f"\n--- Role-Level Win Rates (with 95% bootstrap CI) ---")
+    print("\n--- Role-Level Win Rates (with 95% bootstrap CI) ---")
     header = f"{'Role':<16s}"
     for t in tiers:
         header += f" {t:>24s}"
@@ -303,7 +303,7 @@ def _print_comparison(tier_summaries: dict) -> None:
         print(row)
 
     # MBTI-level
-    print(f"\n--- MBTI-Level Win Rates ---")
+    print("\n--- MBTI-Level Win Rates ---")
     header = f"{'MBTI':<8s}"
     for t in tiers:
         header += f" {t:>14s}"
@@ -319,7 +319,7 @@ def _print_comparison(tier_summaries: dict) -> None:
         print(row)
 
     # Meta
-    print(f"\n--- Meta ---")
+    print("\n--- Meta ---")
     header = f"{'Metric':<20s}"
     for t in tiers:
         header += f" {t:>14s}"
@@ -334,7 +334,7 @@ def _print_comparison(tier_summaries: dict) -> None:
             else:
                 row += f" {str(val):>14s}"
         print(row)
-    print(f"{'='*110}")
+    print(f"{'=' * 110}")
 
 
 def run_experiment(n_games: int = 12, require_db: bool = True) -> None:
@@ -350,14 +350,14 @@ def run_experiment(n_games: int = 12, require_db: bool = True) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     summary_file = output_dir / "summary.json"
 
-    print(f"{'='*70}")
+    print(f"{'=' * 70}")
     print(f"Multi-Tier Experiment: {n_games} games x {len(TIERS)} tiers = {n_games * len(TIERS)} total")
     print(f"Experiment ID: {experiment_id}")
     print(f"Started: {datetime.now()}")
     print(f"Tiers: {list(TIERS.keys())}")
     print(f"Mode: 4 parallel subprocesses, each running {n_games} games sequentially")
     print(f"Require DB: {require_db}")
-    print(f"{'='*70}")
+    print(f"{'=' * 70}")
 
     # Launch one subprocess per tier
     processes: dict[str, subprocess.Popen] = {}
@@ -373,8 +373,8 @@ def run_experiment(n_games: int = 12, require_db: bool = True) -> None:
 
     # Monitor all subprocesses
     t0 = time.perf_counter()
-    import threading
     import queue
+    import threading
 
     output_queue: queue.Queue = queue.Queue()
 
@@ -451,12 +451,13 @@ def run_experiment(n_games: int = 12, require_db: bool = True) -> None:
 
     _print_comparison(tier_summaries)
 
-    print(f"\nExperiment complete! Total: {total_elapsed:.0f}s ({total_elapsed/60:.1f}min)")
+    print(f"\nExperiment complete! Total: {total_elapsed:.0f}s ({total_elapsed / 60:.1f}min)")
     print(f"Summary: {summary_file}")
 
 
 if __name__ == "__main__":
     import argparse
+
     p = argparse.ArgumentParser()
     p.add_argument("--games", type=int, default=12)
     args = p.parse_args()

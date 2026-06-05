@@ -232,7 +232,9 @@ def create_client(provider: str | None = None, **kwargs) -> Any:
     elif provider == "dsv4flash":
         # DeepSeek V4 Flash via 火山引擎 Ark (dedicated endpoint)
         api_key = kwargs.pop("api_key", None) or os.getenv("DSV4FLASH_API_KEY", "")
-        base_url = kwargs.pop("base_url", None) or os.getenv("DSV4FLASH_BASE_URL", "https://ark.cn-beijing.volces.com/api/coding/v1")
+        base_url = kwargs.pop("base_url", None) or os.getenv(
+            "DSV4FLASH_BASE_URL", "https://ark.cn-beijing.volces.com/api/coding/v1"
+        )
         model = kwargs.pop("model", None) or os.getenv("DSV4FLASH_MODEL", "deepseek-v4-flash")
         if not api_key:
             return _UnavailableLLMClient(provider="dsv4flash", model=model, base_url=base_url)
@@ -247,11 +249,7 @@ def create_client(provider: str | None = None, **kwargs) -> Any:
     elif provider == "ark":
         # Generic Ark API (火山引擎) — supports any model deployed on Ark
         # Uses DSV4FLASH_API_KEY + DSV4FLASH_BASE_URL as defaults
-        api_key = (
-            kwargs.pop("api_key", None)
-            or os.getenv("DSV4FLASH_API_KEY", "")
-            or os.getenv("ARK_API_KEY", "")
-        )
+        api_key = kwargs.pop("api_key", None) or os.getenv("DSV4FLASH_API_KEY", "") or os.getenv("ARK_API_KEY", "")
         base_url = (
             kwargs.pop("base_url", None)
             or os.getenv("DSV4FLASH_BASE_URL", "")
@@ -284,7 +282,4 @@ def create_client(provider: str | None = None, **kwargs) -> Any:
         client.provider = "mimo"
         return client
     else:
-        raise ValueError(
-            f"Unknown LLM provider: {provider}. "
-            f"Supported: doubao, deepseek, dsv4flash, ark, mimo, fake"
-        )
+        raise ValueError(f"Unknown LLM provider: {provider}. Supported: doubao, deepseek, dsv4flash, ark, mimo, fake")

@@ -1,12 +1,13 @@
 """Test game with Cognitive Agent (Observe-Think-Act)."""
 
-import sys, os
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from backend.llm.env import load_env_file
+
 load_env_file()
 
 from backend.agents.cognitive import create_cognitive_agent
@@ -39,7 +40,7 @@ game = WerewolfGame(players=players, agents=agents, seed=SEED)
 print("\n=== Starting game (Cognitive Agent) ===")
 game.play()
 
-print(f"\n=== Results ===")
+print("\n=== Results ===")
 print(f"Winner: {game.state.winner}")
 
 # Show agent memory

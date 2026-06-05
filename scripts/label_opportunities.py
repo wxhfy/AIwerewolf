@@ -20,7 +20,7 @@ import os
 import random
 import sys
 import time
-from collections import Counter, defaultdict
+from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
@@ -29,20 +29,29 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from dotenv import load_dotenv
+
 load_dotenv()
 
 from backend.llm import create_client
 
 # ---- Sampling targets (from goal doc §7.2) ----
 SAMPLE_TARGETS = {
-    "pairwise": {"total": 220, "per_role": {"Witch": 44, "Guard": 44, "Hunter": 44,
-        "Seer": 32, "Werewolf": 32, "Villager": 24}},
-    "single_action": {"total": 120, "per_role": {"Witch": 30, "Guard": 24, "Hunter": 24,
-        "Seer": 16, "Werewolf": 14, "Villager": 12}},
-    "mistake_severity": {"total": 100, "per_role": {"Witch": 16, "Guard": 22, "Hunter": 22,
-        "Seer": 16, "Werewolf": 16, "Villager": 8}},
-    "speech_quality": {"total": 60, "per_role": {"Witch": 10, "Guard": 10, "Hunter": 10,
-        "Seer": 6, "Werewolf": 8, "Villager": 16}},
+    "pairwise": {
+        "total": 220,
+        "per_role": {"Witch": 44, "Guard": 44, "Hunter": 44, "Seer": 32, "Werewolf": 32, "Villager": 24},
+    },
+    "single_action": {
+        "total": 120,
+        "per_role": {"Witch": 30, "Guard": 24, "Hunter": 24, "Seer": 16, "Werewolf": 14, "Villager": 12},
+    },
+    "mistake_severity": {
+        "total": 100,
+        "per_role": {"Witch": 16, "Guard": 22, "Hunter": 22, "Seer": 16, "Werewolf": 16, "Villager": 8},
+    },
+    "speech_quality": {
+        "total": 60,
+        "per_role": {"Witch": 10, "Guard": 10, "Hunter": 10, "Seer": 6, "Werewolf": 8, "Villager": 16},
+    },
 }
 
 # ---- Labeling prompts (from goal doc §7.3) ----
@@ -290,14 +299,15 @@ def build_pairwise_sample(opp_a: dict, opp_b: dict) -> dict[str, Any]:
 
 def build_single_action_sample(opp: dict) -> dict[str, Any]:
     prompt = SINGLE_ACTION_PROMPT.format(
-        role=opp["role"], phase=opp["phase"], day=opp["day"],
+        role=opp["role"],
+        phase=opp["phase"],
+        day=opp["day"],
         public_context=opp.get("public_context_summary", ""),
         private_context=opp.get("private_context_summary", "")[:800],
         chosen_action=json.dumps(opp["chosen_action"], ensure_ascii=False)[:500],
         legal_actions=json.dumps(opp.get("legal_actions", []), ensure_ascii=False)[:300],
     )
-    return {"type": "single_action", "opportunity_id": opp["opportunity_id"],
-            "role": opp["role"], "prompt": prompt}
+    return {"type": "single_action", "opportunity_id": opp["opportunity_id"], "role": opp["role"], "prompt": prompt}
 
 
 def build_speech_sample(opp: dict) -> dict[str, Any]:
@@ -305,12 +315,13 @@ def build_speech_sample(opp: dict) -> dict[str, Any]:
     if not speech_text:
         speech_text = opp.get("public_context_summary", "")
     prompt = SPEECH_QUALITY_PROMPT.format(
-        role=opp["role"], phase=opp["phase"], day=opp["day"],
+        role=opp["role"],
+        phase=opp["phase"],
+        day=opp["day"],
         speech_text=str(speech_text)[:1000],
         public_context=opp.get("public_context_summary", ""),
     )
-    return {"type": "speech_quality", "opportunity_id": opp["opportunity_id"],
-            "role": opp["role"], "prompt": prompt}
+    return {"type": "speech_quality", "opportunity_id": opp["opportunity_id"], "role": opp["role"], "prompt": prompt}
 
 
 def main() -> int:
@@ -363,7 +374,7 @@ def main() -> int:
                 all_samples.append(sample)
 
     if args.limit:
-        all_samples = all_samples[:args.limit]
+        all_samples = all_samples[: args.limit]
 
     print(f"\nBuilt {len(all_samples)} labeling prompts")
     print("Calling Doubao for double-labeling...")
@@ -404,10 +415,12 @@ def main() -> int:
             labeled_count += 1
 
             if (i + 1) % 10 == 0:
-                print(f"  Labeled {i+1}/{len(all_samples)}, {inconsistent_count} inconsistent")
+                print(f"  Labeled {i + 1}/{len(all_samples)}, {inconsistent_count} inconsistent")
 
     print(f"\nLabeled {labeled_count} samples → {output_path}")
-    print(f"Inconsistent (need human review): {inconsistent_count} ({inconsistent_count/max(labeled_count,1)*100:.1f}%)")
+    print(
+        f"Inconsistent (need human review): {inconsistent_count} ({inconsistent_count / max(labeled_count, 1) * 100:.1f}%)"
+    )
 
     # Generate label quality report
     _generate_label_report(output_path, inconsistent_count, labeled_count)
@@ -426,8 +439,14 @@ def _check_consistency(sample_type: str, cold: dict, warm: dict) -> bool:
         w_score = warm.get("quality_score") or warm.get("severity_score") or 0
         return abs(c_score - w_score) <= 20  # Within 20 points
     if sample_type == "speech_quality":
-        c_total = sum(cold.get(k, 0) for k in ["groundedness","stance_clarity","consistency","strategic_value","information_safety"])
-        w_total = sum(warm.get(k, 0) for k in ["groundedness","stance_clarity","consistency","strategic_value","information_safety"])
+        c_total = sum(
+            cold.get(k, 0)
+            for k in ["groundedness", "stance_clarity", "consistency", "strategic_value", "information_safety"]
+        )
+        w_total = sum(
+            warm.get(k, 0)
+            for k in ["groundedness", "stance_clarity", "consistency", "strategic_value", "information_safety"]
+        )
         return abs(c_total - w_total) <= 15  # Within 15 points
     return True
 
@@ -437,7 +456,7 @@ def _generate_label_report(output_path, inconsistent_count, total):
         "# Label Quality Report (Phase 2)",
         "",
         f"**Total labeled**: {total}",
-        f"**Inconsistent**: {inconsistent_count} ({inconsistent_count/max(total,1)*100:.1f}%)",
+        f"**Inconsistent**: {inconsistent_count} ({inconsistent_count / max(total, 1) * 100:.1f}%)",
         f"**Need human review**: {inconsistent_count}",
         "",
         "## Consistency Check Method",

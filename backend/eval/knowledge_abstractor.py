@@ -18,11 +18,17 @@ Each game produces:
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from dataclasses import dataclass
+from dataclasses import field
+from datetime import datetime
+from datetime import timezone
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
 
-from backend.eval.per_step_scorer import PlayerReviewReport, ScoredStep
+from backend.eval.per_step_scorer import PlayerReviewReport
+from backend.eval.per_step_scorer import ScoredStep
 
 
 @dataclass
@@ -40,23 +46,23 @@ class AbstractedLesson:
     source_step_id: str
 
     # Who is this lesson for?
-    target_role: str         # "Seer", "Werewolf", "Witch", "global"
+    target_role: str  # "Seer", "Werewolf", "Witch", "global"
     target_persona_scope: str = ""  # "INTJ", "analytical", "" (empty = any persona)
 
     # When does this apply?
-    phase: str = ""          # "DAY_SPEECH", "NIGHT_WITCH_ACTION", "global"
+    phase: str = ""  # "DAY_SPEECH", "NIGHT_WITCH_ACTION", "global"
     situation_pattern: str = ""  # Natural language: "多人对跳预言家时"
     trigger_conditions: List[str] = field(default_factory=list)
 
     # What should the agent do?
-    recommended_action: str = ""   # "优先投票已查杀的狼人"
-    avoid_action: str = ""         # "不要在没有证据时强踩"
-    rationale: str = ""            # Why this works
+    recommended_action: str = ""  # "优先投票已查杀的狼人"
+    avoid_action: str = ""  # "不要在没有证据时强踩"
+    rationale: str = ""  # Why this works
 
     # Quality signals
-    quality_score: float = 0.0     # 0-1 based on step outcome + repeatability
-    confidence: float = 0.0        # based on evidence quality
-    source_type: str = ""          # "highlight" | "mistake_lesson" | "strategy_applied"
+    quality_score: float = 0.0  # 0-1 based on step outcome + repeatability
+    confidence: float = 0.0  # based on evidence quality
+    source_type: str = ""  # "highlight" | "mistake_lesson" | "strategy_applied"
 
     # Tags for retrieval
     tags: List[str] = field(default_factory=list)
@@ -77,6 +83,7 @@ class AbstractedLesson:
         inserts them correctly into jsonb columns.
         """
         import json as _json
+
         return {
             "doc_type": "per_step_lesson",
             "role": self.target_role,
@@ -165,9 +172,7 @@ class KnowledgeAbstractor:
 
         return lessons
 
-    def abstract_from_game(
-        self, reviews: List[PlayerReviewReport]
-    ) -> Dict[str, List[AbstractedLesson]]:
+    def abstract_from_game(self, reviews: List[PlayerReviewReport]) -> Dict[str, List[AbstractedLesson]]:
         """Extract all lessons from a full game.
 
         Returns:
@@ -187,11 +192,13 @@ class KnowledgeAbstractor:
     # Lesson extraction from different step types
     # ============================================================
 
-    def _from_highlight(
-        self, step: ScoredStep, review: PlayerReviewReport
-    ) -> Optional[AbstractedLesson]:
+    def _from_highlight(self, step: ScoredStep, review: PlayerReviewReport) -> Optional[AbstractedLesson]:
         """Extract a lesson from a highlight (successful action)."""
-        st = getattr(step.step_type, "value", step.step_type) if hasattr(step.step_type, "value") else str(step.step_type)
+        st = (
+            getattr(step.step_type, "value", step.step_type)
+            if hasattr(step.step_type, "value")
+            else str(step.step_type)
+        )
         tag_val = st.value if hasattr(st, "value") else str(st)
         return AbstractedLesson(
             source_game_id=review.game_id,
@@ -212,9 +219,7 @@ class KnowledgeAbstractor:
             source_event_ids=list(step.evidence_event_ids),
         )
 
-    def _from_mistake(
-        self, step: ScoredStep, review: PlayerReviewReport
-    ) -> Optional[AbstractedLesson]:
+    def _from_mistake(self, step: ScoredStep, review: PlayerReviewReport) -> Optional[AbstractedLesson]:
         """Extract a lesson from a mistake (inverted into what TO do)."""
         if not step.mistake_type:
             return None
@@ -248,9 +253,7 @@ class KnowledgeAbstractor:
             source_event_ids=list(step.evidence_event_ids),
         )
 
-    def _from_strategy_use(
-        self, step: ScoredStep, review: PlayerReviewReport
-    ) -> Optional[AbstractedLesson]:
+    def _from_strategy_use(self, step: ScoredStep, review: PlayerReviewReport) -> Optional[AbstractedLesson]:
         """Extract a lesson about whether retrieved strategy was helpful."""
         if not step.retrieved_strategies:
             return None
@@ -270,8 +273,7 @@ class KnowledgeAbstractor:
                 f"{step.retrieved_strategies[0].get('recommended', '')[:100] if step.retrieved_strategies else ''}"
             ),
             rationale=(
-                f"应用检索策略后结果{'改善' if helpful else '未改善'}。"
-                f"策略影响分: {step.strategy_impact:.0%}。"
+                f"应用检索策略后结果{'改善' if helpful else '未改善'}。策略影响分: {step.strategy_impact:.0%}。"
             ),
             quality_score=step.strategy_impact,
             confidence=0.75,
@@ -281,11 +283,13 @@ class KnowledgeAbstractor:
             source_event_ids=list(step.evidence_event_ids),
         )
 
-    def _from_observation(
-        self, step: ScoredStep, review: PlayerReviewReport
-    ) -> Optional[AbstractedLesson]:
+    def _from_observation(self, step: ScoredStep, review: PlayerReviewReport) -> Optional[AbstractedLesson]:
         """Extract a general observation lesson from any scored step."""
-        st = getattr(step.step_type, "value", step.step_type) if hasattr(step.step_type, "value") else str(step.step_type)
+        st = (
+            getattr(step.step_type, "value", step.step_type)
+            if hasattr(step.step_type, "value")
+            else str(step.step_type)
+        )
         tag_val = st.value if hasattr(st, "value") else str(st)
         return AbstractedLesson(
             source_game_id=review.game_id,
@@ -296,9 +300,7 @@ class KnowledgeAbstractor:
             phase=step.phase,
             situation_pattern=self._infer_situation(step, review),
             trigger_conditions=self._infer_triggers(step),
-            recommended_action=(
-                f"在{step.phase}阶段，{review.role}应保持{step.action_summary[:80]}的决策风格"
-            ),
+            recommended_action=(f"在{step.phase}阶段，{review.role}应保持{step.action_summary[:80]}的决策风格"),
             rationale=f"该决策得分为{step.step_score:.0%}，为中等表现。保持并略作优化。",
             quality_score=max(0.50, step.step_score),
             confidence=0.70,
@@ -318,7 +320,11 @@ class KnowledgeAbstractor:
         parts = [review.role, step.phase]
         if step.day > 0:
             parts.append(f"D{step.day}")
-        st = getattr(step.step_type, "value", step.step_type) if hasattr(step.step_type, "value") else str(step.step_type)
+        st = (
+            getattr(step.step_type, "value", step.step_type)
+            if hasattr(step.step_type, "value")
+            else str(step.step_type)
+        )
         if st == "speech":
             parts.append("发言阶段")
         elif st == "vote":
@@ -350,6 +356,7 @@ class KnowledgeAbstractor:
 # PostgreSQL Integration
 # ============================================================
 
+
 def store_lessons_to_db(
     lessons: List[AbstractedLesson],
     conn_str: str = "",
@@ -368,16 +375,16 @@ def store_lessons_to_db(
 
     import logging
     import os as _os
-    import psycopg2
     from uuid import uuid4
+
+    import psycopg2
+
     from backend.db.database import DEFAULT_DB_URL
 
     logger = logging.getLogger(__name__)
     auto_promote = _os.getenv("AUTO_PROMOTE_LESSONS", "").lower() == "true"
 
-    conn = psycopg2.connect(
-        conn_str or DEFAULT_DB_URL
-    )
+    conn = psycopg2.connect(conn_str or DEFAULT_DB_URL)
     c = conn.cursor()
 
     stored = 0
@@ -386,11 +393,7 @@ def store_lessons_to_db(
     for lesson in lessons:
         doc = lesson.to_pg_dict()
         # Auto-promote to active if all conditions met
-        if (
-            auto_promote
-            and lesson.confidence >= 0.90
-            and not lesson.source_type.startswith("reflection")
-        ):
+        if auto_promote and lesson.confidence >= 0.90 and not lesson.source_type.startswith("reflection"):
             doc["status"] = "active"
         # Pop extra keys not present in the INSERT column list
         doc.pop("game_id", None)
@@ -402,7 +405,8 @@ def store_lessons_to_db(
             # previously successful rows in this transaction.
             sp_id = f"sp_{stored}"
             c.execute(f"SAVEPOINT {sp_id}")
-            c.execute("""
+            c.execute(
+                """
                 INSERT INTO strategy_knowledge_docs
                     (id, doc_type, role, phase, persona_scope, situation_pattern,
                      trigger_conditions, recommended_action, avoid_action, rationale,
@@ -416,22 +420,27 @@ def store_lessons_to_db(
                         %(source_item_ids)s, %(source_event_ids)s,
                         %(evidence_summary)s, %(tags)s, %(status)s, %(experiment_id)s,
                         %(source_game_id)s)
-            """, doc)
+            """,
+                doc,
+            )
             stored += 1
             role_counts[lesson.target_role] = role_counts.get(lesson.target_role, 0) + 1
         except Exception as e:
             c.execute(f"ROLLBACK TO SAVEPOINT {sp_id}")
             errors += 1
             if errors <= 3:
-                logger.warning("Failed to store lesson (role=%s, type=%s): %s",
-                               lesson.target_role, lesson.source_type, str(e)[:200])
+                logger.warning(
+                    "Failed to store lesson (role=%s, type=%s): %s",
+                    lesson.target_role,
+                    lesson.source_type,
+                    str(e)[:200],
+                )
 
     conn.commit()
     conn.close()
 
     logger.info(
-        "Stored %d candidate lessons (status=candidate). "
-        "Set AUTO_PROMOTE_LESSONS=true to auto-promote to active.",
+        "Stored %d candidate lessons (status=candidate). Set AUTO_PROMOTE_LESSONS=true to auto-promote to active.",
         stored,
     )
     if role_counts:

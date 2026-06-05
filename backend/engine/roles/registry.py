@@ -8,11 +8,15 @@ The split between "playable" and "template" roles keeps the 7-12P configs
 locked while still letting us ship LLM prompts / UI translations / agent
 profiles for future roles that aren't wired into the engine yet.
 """
+
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from dataclasses import field
 
-from backend.engine.models import ActionType, Alignment, Role
+from backend.engine.models import ActionType
+from backend.engine.models import Alignment
+from backend.engine.models import Role
 
 
 @dataclass(frozen=True)
@@ -73,10 +77,7 @@ def register_role(spec: RoleSpec) -> None:
     always means the same role was defined in two pack modules by mistake.
     """
     if spec.role in ROLE_REGISTRY:
-        raise ValueError(
-            f"Role {spec.role.value} already registered. "
-            "Each role must live in exactly one pack module."
-        )
+        raise ValueError(f"Role {spec.role.value} already registered. Each role must live in exactly one pack module.")
     ROLE_REGISTRY[spec.role] = spec
 
 

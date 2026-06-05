@@ -13,11 +13,15 @@ Scoring dimensions:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from dataclasses import dataclass
+from dataclasses import field
+from typing import Any
+from typing import Dict
+from typing import List
 
-from backend.eval.hybrid_scorer import HybridScorer, ScoringCriterion, DimensionScore
-
+from backend.eval.hybrid_scorer import DimensionScore
+from backend.eval.hybrid_scorer import HybridScorer
+from backend.eval.hybrid_scorer import ScoringCriterion
 
 # ============================================================
 # Strategy Impact Rubric (L4 §6.1)
@@ -25,20 +29,26 @@ from backend.eval.hybrid_scorer import HybridScorer, ScoringCriterion, Dimension
 
 STRATEGY_IMPACT_RUBRIC: List[ScoringCriterion] = [
     ScoringCriterion(
-        id="SI1", desc="检索相关性 — 检索到的策略和当前局面匹配度",
-        criterion_type="rule", weight=0.25,
+        id="SI1",
+        desc="检索相关性 — 检索到的策略和当前局面匹配度",
+        criterion_type="rule",
+        weight=0.25,
         rule_check=lambda ctx: _check_retrieval_relevance(ctx),
         reference="LSPO (ICML 2025) strategy space mapping",
     ),
     ScoringCriterion(
-        id="SI2", desc="策略遵循度 — Agent 行动是否和检索到的 recommended_action 一致",
-        criterion_type="rule", weight=0.35,
+        id="SI2",
+        desc="策略遵循度 — Agent 行动是否和检索到的 recommended_action 一致",
+        criterion_type="rule",
+        weight=0.35,
         rule_check=lambda ctx: _check_strategy_adherence(ctx),
         reference="MaKTO (2025) preference-based feedback",
     ),
     ScoringCriterion(
-        id="SI3", desc="结果改善 — 按策略行动后局部结果是否改善",
-        criterion_type="counterfactual", weight=0.40,
+        id="SI3",
+        desc="结果改善 — 按策略行动后局部结果是否改善",
+        criterion_type="counterfactual",
+        weight=0.40,
         cf_check=lambda ctx: _check_outcome_improvement(ctx),
         reference="LSPO (ICML 2025) strategy-feedback loop",
     ),
@@ -50,20 +60,26 @@ STRATEGY_IMPACT_RUBRIC: List[ScoringCriterion] = [
 
 RETRIEVAL_QUALITY_RUBRIC: List[ScoringCriterion] = [
     ScoringCriterion(
-        id="RQ1", desc="检索命中率 — 返回了相关策略的比例",
-        criterion_type="rule", weight=0.40,
+        id="RQ1",
+        desc="检索命中率 — 返回了相关策略的比例",
+        criterion_type="rule",
+        weight=0.40,
         rule_check=lambda ctx: _check_retrieval_hit_rate(ctx),
         reference="LSPO (ICML 2025) retrieval quality",
     ),
     ScoringCriterion(
-        id="RQ2", desc="知识利用质量 — 被正确应用的策略 doc 的成功率",
-        criterion_type="rule", weight=0.35,
+        id="RQ2",
+        desc="知识利用质量 — 被正确应用的策略 doc 的成功率",
+        criterion_type="rule",
+        weight=0.35,
         rule_check=lambda ctx: _check_knowledge_utilization(ctx),
         reference="MaKTO (2025) knowledge feedback",
     ),
     ScoringCriterion(
-        id="RQ3", desc="知识时效性 — 越新的知识权重越高 (exp decay)",
-        criterion_type="rule", weight=0.25,
+        id="RQ3",
+        desc="知识时效性 — 越新的知识权重越高 (exp decay)",
+        criterion_type="rule",
+        weight=0.25,
         rule_check=lambda ctx: _check_knowledge_recency(ctx),
         reference="Morandi (2026) recency calibration",
     ),
@@ -73,6 +89,7 @@ RETRIEVAL_QUALITY_RUBRIC: List[ScoringCriterion] = [
 # ============================================================
 # Rule Check Functions
 # ============================================================
+
 
 def _check_retrieval_relevance(ctx: Dict[str, Any]) -> bool:
     """SI1: Check if retrieved strategies are relevant to the situation."""
@@ -164,6 +181,7 @@ def _check_knowledge_utilization(ctx: Dict[str, Any]) -> bool:
 def _check_knowledge_recency(ctx: Dict[str, Any]) -> bool:
     """RQ3: Check knowledge recency via exponential decay."""
     import math
+
     age_days = ctx.get("knowledge_age_days", 0)
     weight = math.exp(-age_days / 14.0)  # half-life ≈ 10 days
     return weight >= 0.3  # Not too stale
@@ -172,6 +190,7 @@ def _check_knowledge_recency(ctx: Dict[str, Any]) -> bool:
 # ============================================================
 # Strategy Scorer
 # ============================================================
+
 
 @dataclass
 class StrategyScoreResult:
@@ -308,14 +327,19 @@ class StrategyScorer:
             for strat in dctx.get("retrieved_strategies", []):
                 feedback = {
                     "doc_id": strat.get("doc_id", ""),
-                    "was_applied": _check_strategy_adherence({
-                        "retrieved_strategies": [strat],
-                        "actual_action": dctx.get("actual_action", {}),
-                    }),
-                    "outcome_improved": _check_outcome_improvement({
-                        "actual_outcome": dctx.get("actual_outcome", {}),
-                        "counterfactual_outcome": dctx.get("counterfactual_outcome", {}),
-                    }) > 0.5,
+                    "was_applied": _check_strategy_adherence(
+                        {
+                            "retrieved_strategies": [strat],
+                            "actual_action": dctx.get("actual_action", {}),
+                        }
+                    ),
+                    "outcome_improved": _check_outcome_improvement(
+                        {
+                            "actual_outcome": dctx.get("actual_outcome", {}),
+                            "counterfactual_outcome": dctx.get("counterfactual_outcome", {}),
+                        }
+                    )
+                    > 0.5,
                     "situation": dctx.get("situation", ""),
                 }
                 feedback_list.append(feedback)

@@ -11,7 +11,10 @@ Fallback: SQL metadata matching if vector index unavailable.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
 
 import numpy as np
 
@@ -23,6 +26,7 @@ _DEFAULT_CONN = "postgresql://werewolf:wolf_secret_2026@127.0.0.1:5433/werewolf"
 # ============================================================
 # Strategy Index (TF-IDF over PostgreSQL data)
 # ============================================================
+
 
 class StrategyIndex:
     """TF-IDF vector index over strategy documents loaded from PostgreSQL.
@@ -70,8 +74,7 @@ class StrategyIndex:
         self._vectorizer = TfidfVectorizer(max_features=3000, ngram_range=(1, 2))
         self._doc_vectors = self._vectorizer.fit_transform(self._doc_texts)
         self._built = True
-        logger.info(f"StrategyIndex built: {len(self._docs)} docs, "
-                     f"{self._doc_vectors.shape[1]} features")
+        logger.info(f"StrategyIndex built: {len(self._docs)} docs, {self._doc_vectors.shape[1]} features")
         return len(self._docs)
 
     # ---- Search ----
@@ -122,46 +125,45 @@ class StrategyIndex:
         persona_exact = f"mbti:{persona_mbti}+role:{role}" if persona_mbti and role else ""
         persona_partial = f"mbti:{persona_mbti}" if persona_mbti else ""
 
-        persona_bonus = np.array([
-            0.20 if persona_exact and d.get("persona_scope") == persona_exact
-            else (0.15 if persona_partial and d.get("persona_scope") == persona_partial
-            else (0.05 if d.get("persona_scope") and d.get("role") == role
-            else 0))
-            for d in self._docs
-        ])
+        persona_bonus = np.array(
+            [
+                0.20
+                if persona_exact and d.get("persona_scope") == persona_exact
+                else (
+                    0.15
+                    if persona_partial and d.get("persona_scope") == persona_partial
+                    else (0.05 if d.get("persona_scope") and d.get("role") == role else 0)
+                )
+                for d in self._docs
+            ]
+        )
 
         # Role/phase bonuses
-        role_bonus = np.array([
-            0.15 if d.get("role") == role else (0.05 if d.get("role") == "global" else 0)
-            for d in self._docs
-        ])
-        phase_bonus = np.array([
-            0.08 if d.get("phase") == phase else (0.03 if d.get("phase") == "global" else 0)
-            for d in self._docs
-        ])
+        role_bonus = np.array(
+            [0.15 if d.get("role") == role else (0.05 if d.get("role") == "global" else 0) for d in self._docs]
+        )
+        phase_bonus = np.array(
+            [0.08 if d.get("phase") == phase else (0.03 if d.get("phase") == "global" else 0) for d in self._docs]
+        )
         quality_bonus = np.array([d.get("quality", 0.8) * 0.10 for d in self._docs])
 
         # Weighted scoring
-        scores = (
-            sims * 0.50
-            + persona_bonus
-            + role_bonus * 0.70
-            + phase_bonus * 0.70
-            + quality_bonus
-        )
+        scores = sims * 0.50 + persona_bonus + role_bonus * 0.70 + phase_bonus * 0.70 + quality_bonus
         top_n = int(min(limit, len(self._docs)))
         top_idx = np.argsort(scores)[::-1][:top_n]
 
         results = []
         for i in top_idx:
             d = self._docs[i]
-            results.append({
-                "situation": d.get("situation", ""),
-                "strategy": d.get("recommended", ""),
-                "quality": d.get("quality", 0.8),
-                "persona_scope": d.get("persona_scope", ""),
-                "doc_type": d.get("doc_type", ""),
-            })
+            results.append(
+                {
+                    "situation": d.get("situation", ""),
+                    "strategy": d.get("recommended", ""),
+                    "quality": d.get("quality", 0.8),
+                    "persona_scope": d.get("persona_scope", ""),
+                    "doc_type": d.get("doc_type", ""),
+                }
+            )
         return results
 
     # ---- Properties ----
@@ -195,13 +197,19 @@ def get_index(conn_str: str = "") -> StrategyIndex:
             # Try in-memory cold-start store
             try:
                 from backend.agents.cognitive.retrieval_prod import _load_docs_from_cold_start
+
                 docs = _load_docs_from_cold_start()
                 if docs:
                     # Convert to retrieval.py's expected format
                     formatted = [
-                        {"situation": d["situation"], "recommended": d["strategy"],
-                         "rationale": d["rationale"], "role": d["role"],
-                         "phase": d["phase"], "quality": d["quality"]}
+                        {
+                            "situation": d["situation"],
+                            "recommended": d["strategy"],
+                            "rationale": d["rationale"],
+                            "role": d["role"],
+                            "phase": d["phase"],
+                            "quality": d["quality"],
+                        }
                         for d in docs
                     ]
                     n = _index.build_from_docs(formatted)
@@ -222,6 +230,7 @@ def rebuild_index(conn_str: str = "") -> int:
 # ============================================================
 # Public API (used by cognitive agent pipeline)
 # ============================================================
+
 
 def retrieve_strategies(
     role: str,
@@ -259,8 +268,12 @@ def retrieve_strategies(
         if idx.ready:
             query = situation or _default_query(role, phase)
             results = idx.search(
-                query, role=role, phase=phase, limit=limit,
-                persona_mbti=persona_mbti, persona_style=persona_style,
+                query,
+                role=role,
+                phase=phase,
+                limit=limit,
+                persona_mbti=persona_mbti,
+                persona_style=persona_style,
             )
             if not include_reflections:
                 results = [r for r in results if not r.get("doc_type", "").startswith("reflection")]
@@ -281,8 +294,8 @@ def format_strategies_for_prompt(strategies: List[Dict[str, str]]) -> str:
 
     lines = ["=== 相关策略参考 ==="]
     for i, s in enumerate(strategies, 1):
-        persona_tag = f" [{s['persona_scope']}]" if s.get('persona_scope') else ""
-        doc_type = s.get('doc_type', '')
+        persona_tag = f" [{s['persona_scope']}]" if s.get("persona_scope") else ""
+        doc_type = s.get("doc_type", "")
         type_label = " [反思经验]" if doc_type == "reflection" else ""
         lines.append(f"{i}. 场景：{s['situation']}{persona_tag}{type_label}")
         lines.append(f"   策略：{s['strategy']}")
@@ -295,15 +308,19 @@ def format_strategies_for_prompt(strategies: List[Dict[str, str]]) -> str:
 # Internal helpers
 # ============================================================
 
+
 def _load_docs_from_pg(conn_str: str) -> List[Dict[str, Any]]:
     """Load all active strategy documents from PostgreSQL (now includes persona_scope + experiment_id filter for tier isolation)."""
     import os as _os
+
     import psycopg2
+
     conn = psycopg2.connect(conn_str)
     c = conn.cursor()
     exp_id = _os.getenv("TIER_EXPERIMENT_ID", "")
     if exp_id:
-        c.execute("""
+        c.execute(
+            """
             SELECT COALESCE(situation_pattern, ''),
                    COALESCE(recommended_action, ''),
                    COALESCE(rationale, ''),
@@ -314,7 +331,9 @@ def _load_docs_from_pg(conn_str: str) -> List[Dict[str, Any]]:
             WHERE status = 'active'
               AND (doc_type != 'reflection' OR quality_score >= 0.85)
               AND (experiment_id = %s OR experiment_id IS NULL)
-        """, (exp_id,))
+        """,
+            (exp_id,),
+        )
     else:
         c.execute("""
             SELECT COALESCE(situation_pattern, ''),
@@ -329,16 +348,18 @@ def _load_docs_from_pg(conn_str: str) -> List[Dict[str, Any]]:
         """)
     docs = []
     for sit, rec, rat, role, phase, q, pscope, dtype in c.fetchall():
-        docs.append({
-            "situation": sit or "",
-            "recommended": rec or "",
-            "rationale": rat or "",
-            "role": role or "global",
-            "phase": phase or "global",
-            "quality": float(q) if q else 0.8,
-            "persona_scope": pscope or "",
-            "doc_type": dtype or "",
-        })
+        docs.append(
+            {
+                "situation": sit or "",
+                "recommended": rec or "",
+                "rationale": rat or "",
+                "role": role or "global",
+                "phase": phase or "global",
+                "quality": float(q) if q else 0.8,
+                "persona_scope": pscope or "",
+                "doc_type": dtype or "",
+            }
+        )
     conn.close()
     return docs
 
@@ -358,22 +379,22 @@ def _default_query(role: str, phase: str) -> str:
     return f"{role} {phase} {hint}".strip()
 
 
-def _fallback_sql(
-    role: str, phase: str, limit: int, conn_str: str, persona_mbti: str = ""
-) -> List[Dict[str, str]]:
+def _fallback_sql(role: str, phase: str, limit: int, conn_str: str, persona_mbti: str = "") -> List[Dict[str, str]]:
     """Fallback: SQL metadata matching when vector index is unavailable.
 
     Now includes persona_scope prioritization for MBTI-specific knowledge.
     """
     try:
         import psycopg2
+
         conn = psycopg2.connect(conn_str or _DEFAULT_CONN)
         c = conn.cursor()
 
         persona_pattern = f"%mbti:{persona_mbti}%" if persona_mbti else ""
 
         if persona_pattern:
-            c.execute("""
+            c.execute(
+                """
                 SELECT situation_pattern, recommended_action, quality_score,
                        COALESCE(persona_scope, '') as persona_scope,
                        COALESCE(doc_type, '') as doc_type
@@ -388,9 +409,12 @@ def _fallback_sql(
                     + CASE WHEN phase != 'global' THEN 0.08 ELSE 0 END
                 ) * (0.9 + RANDOM() * 0.2) DESC
                 LIMIT %s
-            """, (role, phase, persona_pattern, limit))
+            """,
+                (role, phase, persona_pattern, limit),
+            )
         else:
-            c.execute("""
+            c.execute(
+                """
                 SELECT situation_pattern, recommended_action, quality_score,
                        COALESCE(persona_scope, '') as persona_scope,
                        COALESCE(doc_type, '') as doc_type
@@ -404,19 +428,23 @@ def _fallback_sql(
                     + CASE WHEN phase != 'global' THEN 0.08 ELSE 0 END
                 ) * (0.9 + RANDOM() * 0.2) DESC
                 LIMIT %s
-            """, (role, phase, limit))
+            """,
+                (role, phase, limit),
+            )
         results = []
         for row in c.fetchall():
             sit, rec, q = row[0], row[1], row[2]
             pscope = row[3] if len(row) > 3 else ""
             dtype = row[4] if len(row) > 4 else ""
-            results.append({
-                "situation": sit or "",
-                "strategy": rec or "",
-                "quality": float(q) if q else 0.8,
-                "persona_scope": pscope or "",
-                "doc_type": dtype or "",
-            })
+            results.append(
+                {
+                    "situation": sit or "",
+                    "strategy": rec or "",
+                    "quality": float(q) if q else 0.8,
+                    "persona_scope": pscope or "",
+                    "doc_type": dtype or "",
+                }
+            )
         conn.close()
         return results
     except Exception:

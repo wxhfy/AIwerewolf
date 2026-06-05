@@ -9,11 +9,16 @@ from langchain_core.messages import AIMessage
 from backend.agents.cognitive.agent_loop import AgentLoop
 from backend.agents.cognitive.factory import create_cognitive_agent_with_character
 from backend.agents.cognitive.memory import Memory
-from backend.agents.cognitive.observe import Observation, PlayerInfo, observe
-from backend.agents.cognitive.reflect import Reflector, reflections_to_knowledge_docs
+from backend.agents.cognitive.observe import Observation
+from backend.agents.cognitive.observe import PlayerInfo
+from backend.agents.cognitive.observe import observe
+from backend.agents.cognitive.reflect import Reflector
+from backend.agents.cognitive.reflect import reflections_to_knowledge_docs
 from backend.engine.game import WerewolfGame
-from backend.engine.models import EventType, Phase
-from backend.engine.rules import build_players, get_role_configuration
+from backend.engine.models import EventType
+from backend.engine.models import Phase
+from backend.engine.rules import build_players
+from backend.engine.rules import get_role_configuration
 from backend.engine.visibility import PlayerView
 
 
@@ -29,21 +34,38 @@ class DeterministicCognitiveLLM:
         target = self._target_from_prompt(text)
 
         if "输出 JSON" in text:
-            return AIMessage(content=json.dumps({
-                "target": target,
-                "reasoning": "offline direct-call decision",
-            }, ensure_ascii=False))
+            return AIMessage(
+                content=json.dumps(
+                    {
+                        "target": target,
+                        "reasoning": "offline direct-call decision",
+                    },
+                    ensure_ascii=False,
+                )
+            )
 
         if "【任务：发言】" in text:
-            return AIMessage(content="DECISION: " + json.dumps({
-                "speech": f"我先按公开信息发言，重点观察 {target} 的站边和票型。",
-                "reasoning": "offline cognitive speech",
-            }, ensure_ascii=False))
+            return AIMessage(
+                content="DECISION: "
+                + json.dumps(
+                    {
+                        "speech": f"我先按公开信息发言，重点观察 {target} 的站边和票型。",
+                        "reasoning": "offline cognitive speech",
+                    },
+                    ensure_ascii=False,
+                )
+            )
 
-        return AIMessage(content="DECISION: " + json.dumps({
-            "target": target,
-            "reasoning": "offline cognitive target",
-        }, ensure_ascii=False))
+        return AIMessage(
+            content="DECISION: "
+            + json.dumps(
+                {
+                    "target": target,
+                    "reasoning": "offline cognitive target",
+                },
+                ensure_ascii=False,
+            )
+        )
 
     @staticmethod
     def _target_from_prompt(text: str) -> str:

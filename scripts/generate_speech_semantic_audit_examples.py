@@ -17,7 +17,6 @@ import json
 import sys
 from collections import defaultdict
 from pathlib import Path
-from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -83,14 +82,10 @@ def generate_examples(
 
 def main():
     parser = argparse.ArgumentParser(description="Generate speech semantic audit examples")
-    parser.add_argument("--input", default=str(DEFAULT_INPUT),
-                       help="Input speech samples JSONL")
-    parser.add_argument("--output", default=str(DEFAULT_OUTPUT),
-                       help="Output audit examples JSONL")
-    parser.add_argument("--limit", type=int, default=0,
-                       help="Limit number of samples to process")
-    parser.add_argument("--top-n", type=int, default=10,
-                       help="Show top-N representative examples for each label")
+    parser.add_argument("--input", default=str(DEFAULT_INPUT), help="Input speech samples JSONL")
+    parser.add_argument("--output", default=str(DEFAULT_OUTPUT), help="Output audit examples JSONL")
+    parser.add_argument("--limit", type=int, default=0, help="Limit number of samples to process")
+    parser.add_argument("--top-n", type=int, default=10, help="Show top-N representative examples for each label")
     args = parser.parse_args()
 
     print("=" * 60)
@@ -108,7 +103,7 @@ def main():
     print(f"  Loaded {len(samples)} samples")
 
     if args.limit > 0:
-        samples = samples[:args.limit]
+        samples = samples[: args.limit]
 
     # Generate
     print(f"\nGenerating audit examples for {len(samples)} samples...")
@@ -140,12 +135,18 @@ def main():
 
         # Top-N examples per label
         print(f"\n--- Top-{args.top_n} Examples Per Speech Act ---")
-        speech_acts = ["accusation", "interrogation", "defense",
-                       "evidence_use", "identity_declaration", "call_for_action"]
+        speech_acts = [
+            "accusation",
+            "interrogation",
+            "defense",
+            "evidence_use",
+            "identity_declaration",
+            "call_for_action",
+        ]
         for act in speech_acts:
             # Sort by probability of this act
             ranked = sorted(results, key=lambda r: r["speech_act_probs"].get(act, 0), reverse=True)
-            top = ranked[:args.top_n]
+            top = ranked[: args.top_n]
             if top and top[0]["speech_act_probs"].get(act, 0) > 0.01:
                 print(f"\n  [{act}]")
                 for item in top[:3]:

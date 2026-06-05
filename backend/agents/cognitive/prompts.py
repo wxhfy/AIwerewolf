@@ -9,16 +9,18 @@ No LLM calls, no game logic — pure string construction.
 
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import Optional
 
 from backend.agents.cognitive.memory import Memory
-from backend.agents.cognitive.observe import Observation, format_observation
-from backend.agents.cognitive.profiles import Profile, get_profile
-
+from backend.agents.cognitive.observe import Observation
+from backend.agents.cognitive.observe import format_observation
+from backend.agents.cognitive.profiles import Profile
+from backend.agents.cognitive.profiles import get_profile
 
 # ============================================================
 # System Prompt
 # ============================================================
+
 
 def build_system_prompt(role: str, profile: Optional[Profile] = None) -> str:
     """Build the system prompt from Profile.to_system_intro().
@@ -32,6 +34,7 @@ def build_system_prompt(role: str, profile: Optional[Profile] = None) -> str:
 # ============================================================
 # Game Context (wolfcha-style YAML-like)
 # ============================================================
+
 
 def build_game_context(obs: Observation) -> str:
     """Build a rich, structured game context block (wolfcha-style)."""
@@ -69,6 +72,7 @@ def _find_sheriff_from_obs(obs: Observation) -> str:
 # Stage 1: Observe
 # ============================================================
 
+
 def build_observe_prompt(obs: Observation) -> str:
     """Build prompt for the observation stage: extract key signals.
 
@@ -82,18 +86,21 @@ def build_observe_prompt(obs: Observation) -> str:
     if obs.belief_summary:
         parts.extend(["", obs.belief_summary])
 
-    parts.extend([
-        "",
-        "请用 3-5 句话总结当前局势最重要的观察。",
-        "包括：关键信号、矛盾点、信息差、可疑模式。",
-        "只描述事实和推断依据，不做最终判断。",
-    ])
+    parts.extend(
+        [
+            "",
+            "请用 3-5 句话总结当前局势最重要的观察。",
+            "包括：关键信号、矛盾点、信息差、可疑模式。",
+            "只描述事实和推断依据，不做最终判断。",
+        ]
+    )
     return "\n".join(parts)
 
 
 # ============================================================
 # Stage 2: Think
 # ============================================================
+
 
 def build_think_prompt(
     obs: Observation,
@@ -128,24 +135,27 @@ def build_think_prompt(
     if anti_patterns:
         parts.extend(["", anti_patterns])
 
-    parts.extend([
-        "",
-        "【推理任务】",
-        "请基于以上信息进行分析：",
-        "1. 当前局势的关键矛盾是什么？有哪些信息差？",
-        "2. 逐一点评每个存活玩家：发言逻辑、投票行为、角色声称是否可信",
-        "3. 综合判断：最怀疑谁（按嫌疑度排序 top-2），最信任谁",
-        "4. 结合你的角色能力和私有信息边界，说明哪些信息是事实，哪些只是推断。",
-        "5. 对照上面的「常见失误」清单，确认你当前的分析没有落入同样的陷阱。",
-        "",
-        "用 4-6 句话总结，要具体点名人名，不能泛泛而谈。",
-    ])
+    parts.extend(
+        [
+            "",
+            "【推理任务】",
+            "请基于以上信息进行分析：",
+            "1. 当前局势的关键矛盾是什么？有哪些信息差？",
+            "2. 逐一点评每个存活玩家：发言逻辑、投票行为、角色声称是否可信",
+            "3. 综合判断：最怀疑谁（按嫌疑度排序 top-2），最信任谁",
+            "4. 结合你的角色能力和私有信息边界，说明哪些信息是事实，哪些只是推断。",
+            "5. 对照上面的「常见失误」清单，确认你当前的分析没有落入同样的陷阱。",
+            "",
+            "用 4-6 句话总结，要具体点名人名，不能泛泛而谈。",
+        ]
+    )
     return "\n".join(parts)
 
 
 # ============================================================
 # Stage 3a: Speech
 # ============================================================
+
 
 def build_speech_prompt(
     obs: Observation,
@@ -206,28 +216,14 @@ def build_speech_prompt(
 def _build_speech_task(phase: str, is_first: bool, is_last_words: bool) -> str:
     """Build phase-appropriate task description for speech."""
     if is_last_words:
-        return (
-            "【遗言】你已经出局，发表遗言。只能引用自己真实可见的信息和公开事实。"
-        )
+        return "【遗言】你已经出局，发表遗言。只能引用自己真实可见的信息和公开事实。"
     if "BADGE" in str(phase):
-        return (
-            "【警徽竞选发言】当前是警徽相关发言阶段。"
-            "围绕你的可见信息、角色边界和当前判断表达。"
-        )
+        return "【警徽竞选发言】当前是警徽相关发言阶段。围绕你的可见信息、角色边界和当前判断表达。"
     if "PK" in str(phase):
-        return (
-            "【PK发言】场上已有少数焦点位。"
-            "回应与你相关的公开质疑，保持事实和推断分离。"
-        )
+        return "【PK发言】场上已有少数焦点位。回应与你相关的公开质疑，保持事实和推断分离。"
     if is_first:
-        return (
-            "【首个发言】第一个发言。"
-            "基于当前已经公开的信息表达你的初始观察。"
-        )
-    return (
-        "【白天发言】从上一个发言者的观点切入，认同、质疑、补充都可以。"
-        "不需要面面俱到，只说此刻最在意的一点。"
-    )
+        return "【首个发言】第一个发言。基于当前已经公开的信息表达你的初始观察。"
+    return "【白天发言】从上一个发言者的观点切入，认同、质疑、补充都可以。不需要面面俱到，只说此刻最在意的一点。"
 
 
 def _build_speech_style_guardrails() -> str:
@@ -246,25 +242,29 @@ def _build_speech_style_guardrails() -> str:
 # Stage 3b: Vote
 # ============================================================
 
+
 def build_vote_prompt(obs: Observation, think_result: str) -> str:
     """Build prompt for generating a vote."""
     game_ctx = build_game_context(obs)
     alive_names = ", ".join(f"{p.seat}号:{p.name}" for p in obs.alive)
 
-    return "\n".join([
-        game_ctx,
-        "",
-        f"=== 分析结论 ===\n{think_result}",
-        "",
-        f"【投票】可投: {alive_names}",
-        "请选择你要投票放逐的玩家。输出 JSON：",
-        '{"reasoning": "投票理由（1-2句，引用具体发言或行为）", "target": "玩家名字"}',
-    ])
+    return "\n".join(
+        [
+            game_ctx,
+            "",
+            f"=== 分析结论 ===\n{think_result}",
+            "",
+            f"【投票】可投: {alive_names}",
+            "请选择你要投票放逐的玩家。输出 JSON：",
+            '{"reasoning": "投票理由（1-2句，引用具体发言或行为）", "target": "玩家名字"}',
+        ]
+    )
 
 
 # ============================================================
 # Stage 3c: Night Action
 # ============================================================
+
 
 def build_night_prompt(obs: Observation, think_result: str, extra: str = "") -> str:
     """Build prompt for a night action."""
@@ -276,14 +276,16 @@ def build_night_prompt(obs: Observation, think_result: str, extra: str = "") -> 
     if extra:
         parts.extend(["", f"=== 附加信息 ===\n{extra}"])
 
-    parts.extend([
-        "",
-        f"=== 分析结论 ===\n{think_result}",
-        "",
-        f"【夜晚行动】可选目标: {alive_names}",
-        "请选择目标。输出 JSON：",
-        '{"reasoning": "选择理由（1-2句，结合可见信息和角色能力）", "target": "玩家名字"}',
-    ])
+    parts.extend(
+        [
+            "",
+            f"=== 分析结论 ===\n{think_result}",
+            "",
+            f"【夜晚行动】可选目标: {alive_names}",
+            "请选择目标。输出 JSON：",
+            '{"reasoning": "选择理由（1-2句，结合可见信息和角色能力）", "target": "玩家名字"}',
+        ]
+    )
 
     return "\n".join(parts)
 
@@ -291,6 +293,7 @@ def build_night_prompt(obs: Observation, think_result: str, extra: str = "") -> 
 # ============================================================
 # Strategy Bias Block
 # ============================================================
+
 
 def build_strategy_bias_block(strategy_bias: dict, action: str) -> str:
     """Build strategy bias block for LLM injection.
@@ -451,6 +454,7 @@ def get_role_anti_patterns(role: str, action: str = "speech") -> str:
 # ============================================================
 # Playbook Formatting
 # ============================================================
+
 
 def format_playbook_for_prompt(playbook_notes: dict, action: str = "talk") -> str:
     """Format role playbook as prompt hints.

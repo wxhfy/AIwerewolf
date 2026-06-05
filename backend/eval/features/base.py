@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from backend.eval.features.registry import FeatureExtractor
-
 
 class BaseActionFeatures:
     """Extract base structural features: role, action type, game context, target, outcome."""
@@ -16,7 +14,9 @@ class BaseActionFeatures:
     def supports(self, opportunity: dict[str, Any]) -> bool:
         return True
 
-    def extract(self, opportunity: dict[str, Any], context: dict[str, Any] | None = None) -> dict[str, float | int | str]:
+    def extract(
+        self, opportunity: dict[str, Any], context: dict[str, Any] | None = None
+    ) -> dict[str, float | int | str]:
         role = opportunity.get("role", "")
         op_type = opportunity.get("opportunity_type", "")
         game_feat = opportunity.get("game_features", {}) or {}
@@ -31,8 +31,16 @@ class BaseActionFeatures:
             feats[f"role_{r.lower()}"] = 1 if role == r else 0
 
         # Opportunity type one-hot
-        for ot in ["seer_check", "witch_save", "witch_poison", "guard_protect",
-                    "hunter_shot", "werewolf_kill", "vote", "speech"]:
+        for ot in [
+            "seer_check",
+            "witch_save",
+            "witch_poison",
+            "guard_protect",
+            "hunter_shot",
+            "werewolf_kill",
+            "vote",
+            "speech",
+        ]:
             feats[f"op_{ot}"] = 1 if op_type == ot else 0
 
         # Game context

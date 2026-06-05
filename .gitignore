@@ -256,3 +256,4 @@ backups/
 
 # Root-level experiment/result JSON artifacts
 /*.json
+outputs/

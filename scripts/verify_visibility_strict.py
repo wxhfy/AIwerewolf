@@ -20,19 +20,14 @@ from uuid import uuid4
 
 sys.path.insert(0, "/home/fyh0106/AIwerewolf")
 
-from backend.engine.models import (
-    Alignment,
-    Role,
-    Phase,
-    EventType,
-    Player,
-    GameEvent,
-    GameState,
-    BadgeState,
-    NightActions,
-)
+from backend.engine.models import Alignment
+from backend.engine.models import EventType
+from backend.engine.models import GameEvent
+from backend.engine.models import GameState
+from backend.engine.models import Phase
+from backend.engine.models import Player
+from backend.engine.models import Role
 from backend.engine.visibility import Visibility
-
 
 # ============================================================
 # Test setup: 6 players with known roles
@@ -40,10 +35,10 @@ from backend.engine.visibility import Visibility
 
 PLAYERS = [
     Player(id="p1", seat=1, name="Alice", role=Role.VILLAGER, alignment=Alignment.VILLAGE),
-    Player(id="p2", seat=2, name="Bob",   role=Role.WEREWOLF, alignment=Alignment.WOLF),
-    Player(id="p3", seat=3, name="Carol", role=Role.SEER,     alignment=Alignment.VILLAGE),
-    Player(id="p4", seat=4, name="Dave",  role=Role.WITCH,    alignment=Alignment.VILLAGE),
-    Player(id="p5", seat=5, name="Eve",   role=Role.GUARD,    alignment=Alignment.VILLAGE),
+    Player(id="p2", seat=2, name="Bob", role=Role.WEREWOLF, alignment=Alignment.WOLF),
+    Player(id="p3", seat=3, name="Carol", role=Role.SEER, alignment=Alignment.VILLAGE),
+    Player(id="p4", seat=4, name="Dave", role=Role.WITCH, alignment=Alignment.VILLAGE),
+    Player(id="p5", seat=5, name="Eve", role=Role.GUARD, alignment=Alignment.VILLAGE),
     Player(id="p6", seat=6, name="Frank", role=Role.WEREWOLF, alignment=Alignment.WOLF),
 ]
 
@@ -68,8 +63,9 @@ def check(name: str, condition: bool, detail: str = "") -> None:
         print(f"  FAIL  {name}  -- {detail}")
 
 
-def make_event(phase: Phase, etype: EventType, visibility: str, payload: dict,
-               visible_to: list[str] | None = None) -> GameEvent:
+def make_event(
+    phase: Phase, etype: EventType, visibility: str, payload: dict, visible_to: list[str] | None = None
+) -> GameEvent:
     return GameEvent(
         id=str(uuid4()),
         ts=0.0,
@@ -107,97 +103,152 @@ visibility = Visibility()
 events: list[GameEvent] = []
 
 # 1. NIGHT_START system message (public)
-events.append(make_event(
-    Phase.NIGHT_START, EventType.SYSTEM_MESSAGE, "public",
-    {"message": "Night 1 begins."},
-))
+events.append(
+    make_event(
+        Phase.NIGHT_START,
+        EventType.SYSTEM_MESSAGE,
+        "public",
+        {"message": "Night 1 begins."},
+    )
+)
 
 # 2. Role assignment messages (private, one per player)
 for p in PLAYERS:
-    events.append(make_event(
-        Phase.SETUP, EventType.PRIVATE_INFO, "private",
-        {"kind": "role_assignment",
-         "message": f"You are {p.name}, role={p.role.value}"},
-        visible_to=[p.id],
-    ))
+    events.append(
+        make_event(
+            Phase.SETUP,
+            EventType.PRIVATE_INFO,
+            "private",
+            {"kind": "role_assignment", "message": f"You are {p.name}, role={p.role.value}"},
+            visible_to=[p.id],
+        )
+    )
 
 # 3. Guard action: Eve guards Bob (private to Eve)
-events.append(make_event(
-    Phase.NIGHT_GUARD_ACTION, EventType.NIGHT_ACTION, "private",
-    {"action_type": "guard", "target_id": "p2", "target_name": "Bob"},
-    visible_to=["p5"],
-))
+events.append(
+    make_event(
+        Phase.NIGHT_GUARD_ACTION,
+        EventType.NIGHT_ACTION,
+        "private",
+        {"action_type": "guard", "target_id": "p2", "target_name": "Bob"},
+        visible_to=["p5"],
+    )
+)
 
 # 4. Wolf team discussion (private to wolves: Bob + Frank)
-events.append(make_event(
-    Phase.NIGHT_WOLF_ACTION, EventType.PRIVATE_INFO, "private",
-    {"kind": "wolf_chat_start",
-     "message": "Wolf team discussion begins.",
-     "wolf_ids": ["p2", "p6"],
-     "wolf_names": ["Bob", "Frank"]},
-    visible_to=["p2", "p6"],
-))
+events.append(
+    make_event(
+        Phase.NIGHT_WOLF_ACTION,
+        EventType.PRIVATE_INFO,
+        "private",
+        {
+            "kind": "wolf_chat_start",
+            "message": "Wolf team discussion begins.",
+            "wolf_ids": ["p2", "p6"],
+            "wolf_names": ["Bob", "Frank"],
+        },
+        visible_to=["p2", "p6"],
+    )
+)
 
 # 5. Wolf attack vote: Bob votes to kill Alice
-events.append(make_event(
-    Phase.NIGHT_WOLF_ACTION, EventType.NIGHT_ACTION, "private",
-    {"kind": "wolf_attack_vote",
-     "target_id": "p1", "target_name": "Alice",
-     "actor_id": "p2",
-     "current_votes": {"p2": "p1"}},
-    visible_to=["p2", "p6"],
-))
+events.append(
+    make_event(
+        Phase.NIGHT_WOLF_ACTION,
+        EventType.NIGHT_ACTION,
+        "private",
+        {
+            "kind": "wolf_attack_vote",
+            "target_id": "p1",
+            "target_name": "Alice",
+            "actor_id": "p2",
+            "current_votes": {"p2": "p1"},
+        },
+        visible_to=["p2", "p6"],
+    )
+)
 
 # 6. Wolf attack vote: Frank also votes Alice
-events.append(make_event(
-    Phase.NIGHT_WOLF_ACTION, EventType.NIGHT_ACTION, "private",
-    {"kind": "wolf_attack_vote",
-     "target_id": "p1", "target_name": "Alice",
-     "actor_id": "p6",
-     "current_votes": {"p2": "p1", "p6": "p1"}},
-    visible_to=["p2", "p6"],
-))
+events.append(
+    make_event(
+        Phase.NIGHT_WOLF_ACTION,
+        EventType.NIGHT_ACTION,
+        "private",
+        {
+            "kind": "wolf_attack_vote",
+            "target_id": "p1",
+            "target_name": "Alice",
+            "actor_id": "p6",
+            "current_votes": {"p2": "p1", "p6": "p1"},
+        },
+        visible_to=["p2", "p6"],
+    )
+)
 
 # 7. Wolf final tally (private to wolves)
-events.append(make_event(
-    Phase.NIGHT_WOLF_ACTION, EventType.PRIVATE_INFO, "private",
-    {"kind": "wolf_attack_tally",
-     "message": "Wolf team final attack target is Alice.",
-     "target_id": "p1", "target_name": "Alice"},
-    visible_to=["p2", "p6"],
-))
+events.append(
+    make_event(
+        Phase.NIGHT_WOLF_ACTION,
+        EventType.PRIVATE_INFO,
+        "private",
+        {
+            "kind": "wolf_attack_tally",
+            "message": "Wolf team final attack target is Alice.",
+            "target_id": "p1",
+            "target_name": "Alice",
+        },
+        visible_to=["p2", "p6"],
+    )
+)
 
 # 8. Witch is told the victim: Alice was attacked (private to Witch: Dave)
-events.append(make_event(
-    Phase.NIGHT_WITCH_ACTION, EventType.PRIVATE_INFO, "private",
-    {"kind": "witch_notify",
-     "victim_id": "p1", "victim_name": "Alice",
-     "message": "Tonight's victim is Alice."},
-    visible_to=["p4"],
-))
+events.append(
+    make_event(
+        Phase.NIGHT_WITCH_ACTION,
+        EventType.PRIVATE_INFO,
+        "private",
+        {"kind": "witch_notify", "victim_id": "p1", "victim_name": "Alice", "message": "Tonight's victim is Alice."},
+        visible_to=["p4"],
+    )
+)
 
 # 9. Witch chooses to save Alice (private to Witch: Dave)
-events.append(make_event(
-    Phase.NIGHT_WITCH_ACTION, EventType.NIGHT_ACTION, "private",
-    {"action_type": "witch_save", "target_id": "p1"},
-    visible_to=["p4"],
-))
+events.append(
+    make_event(
+        Phase.NIGHT_WITCH_ACTION,
+        EventType.NIGHT_ACTION,
+        "private",
+        {"action_type": "witch_save", "target_id": "p1"},
+        visible_to=["p4"],
+    )
+)
 
 # 10. Seer checks Bob (private to Seer: Carol)
-events.append(make_event(
-    Phase.NIGHT_SEER_ACTION, EventType.PRIVATE_INFO, "private",
-    {"kind": "seer_result",
-     "target_id": "p2", "target_name": "Bob",
-     "is_wolf": True,
-     "message": "Seer check: Bob is wolf."},
-    visible_to=["p3"],
-))
+events.append(
+    make_event(
+        Phase.NIGHT_SEER_ACTION,
+        EventType.PRIVATE_INFO,
+        "private",
+        {
+            "kind": "seer_result",
+            "target_id": "p2",
+            "target_name": "Bob",
+            "is_wolf": True,
+            "message": "Seer check: Bob is wolf.",
+        },
+        visible_to=["p3"],
+    )
+)
 
 # 11. Night deaths announced (public)
-events.append(make_event(
-    Phase.NIGHT_RESOLVE, EventType.SYSTEM_MESSAGE, "public",
-    {"message": "No one died last night."},
-))
+events.append(
+    make_event(
+        Phase.NIGHT_RESOLVE,
+        EventType.SYSTEM_MESSAGE,
+        "public",
+        {"message": "No one died last night."},
+    )
+)
 
 # Build the state
 state = build_state(Phase.NIGHT_RESOLVE, events)
@@ -221,8 +272,8 @@ print("\n--- 1. STRUCTURAL CHECKS ---\n")
 for p in PLAYERS:
     check(
         f"Player {p.name} gets a PlayerView",
-        hasattr(views[p.id], 'player_id') and views[p.id].player_id == p.id,
-        f"View missing or wrong player_id",
+        hasattr(views[p.id], "player_id") and views[p.id].player_id == p.id,
+        "View missing or wrong player_id",
     )
 
 # 1b: Self players are private_dict (include role)
@@ -265,17 +316,14 @@ alice_view = views["p1"]
 
 # 2a: Villager has only role_assignment as private event
 check(
-    f"Villager has 1 private event (role_assignment)",
+    "Villager has 1 private event (role_assignment)",
     len(alice_view.private_events) == 1,
     f"Expected 1, got {len(alice_view.private_events)}: "
-    f"{[e.get('payload',{}).get('kind','') for e in alice_view.private_events]}",
+    f"{[e.get('payload', {}).get('kind', '') for e in alice_view.private_events]}",
 )
 
 # 2b: Villager does NOT see seer result
-seer_in_villager = any(
-    e.get("payload", {}).get("kind") == "seer_result"
-    for e in alice_view.private_events
-)
+seer_in_villager = any(e.get("payload", {}).get("kind") == "seer_result" for e in alice_view.private_events)
 check(
     "Villager does NOT see seer result in private_events",
     not seer_in_villager,
@@ -283,9 +331,7 @@ check(
 )
 
 # 2c: Villager does NOT see witch victim
-witch_in_villager = any(
-    "victim_id" in e.get("payload", {}) for e in alice_view.private_events
-)
+witch_in_villager = any("victim_id" in e.get("payload", {}) for e in alice_view.private_events)
 check(
     "Villager does NOT see witch victim",
     not witch_in_villager,
@@ -313,10 +359,7 @@ check(
 )
 
 # 3b: Wolf sees wolf-team private events (chat, votes, tally)
-bob_private_kinds = [
-    e.get("payload", {}).get("kind", "")
-    for e in bob_view.private_events
-]
+bob_private_kinds = [e.get("payload", {}).get("kind", "") for e in bob_view.private_events]
 has_wolf_chat = any(k.startswith("wolf_") for k in bob_private_kinds)
 check(
     "Wolf sees wolf_* private events",
@@ -325,10 +368,7 @@ check(
 )
 
 # 3c: Wolf does NOT see seer result
-seer_in_wolf = any(
-    e.get("payload", {}).get("kind") == "seer_result"
-    for e in bob_view.private_events
-)
+seer_in_wolf = any(e.get("payload", {}).get("kind") == "seer_result" for e in bob_view.private_events)
 check(
     "Wolf does NOT see seer result",
     not seer_in_wolf,
@@ -336,9 +376,7 @@ check(
 )
 
 # 3d: Wolf does NOT see witch actions
-witch_in_wolf = any(
-    "victim_id" in e.get("payload", {}) for e in bob_view.private_events
-)
+witch_in_wolf = any("victim_id" in e.get("payload", {}) for e in bob_view.private_events)
 check(
     "Wolf does NOT see witch victim notification",
     not witch_in_wolf,
@@ -351,10 +389,7 @@ print("\n--- 4. INFORMATION ISOLATION: Seer (Carol, p3) ---\n")
 carol_view = views["p3"]
 
 # 4a: Seer sees check result in private_events
-seer_events = [
-    e for e in carol_view.private_events
-    if e.get("payload", {}).get("kind") == "seer_result"
-]
+seer_events = [e for e in carol_view.private_events if e.get("payload", {}).get("kind") == "seer_result"]
 check(
     "Seer sees seer_check result in private_events",
     len(seer_events) >= 1,
@@ -381,9 +416,7 @@ check(
 )
 
 # 4c: Seer does NOT see witch data
-witch_in_seer = any(
-    "victim_id" in e.get("payload", {}) for e in carol_view.private_events
-)
+witch_in_seer = any("victim_id" in e.get("payload", {}) for e in carol_view.private_events)
 check(
     "Seer does NOT see witch victim",
     not witch_in_seer,
@@ -396,10 +429,7 @@ print("\n--- 5. INFORMATION ISOLATION: Witch (Dave, p4) ---\n")
 dave_view = views["p4"]
 
 # 5a: Witch sees victim notification
-witch_victim_events = [
-    e for e in dave_view.private_events
-    if "victim_id" in e.get("payload", {})
-]
+witch_victim_events = [e for e in dave_view.private_events if "victim_id" in e.get("payload", {})]
 check(
     "Witch sees victim notification",
     len(witch_victim_events) >= 1,
@@ -414,10 +444,7 @@ if witch_victim_events:
     )
 
 # 5b: Witch does NOT see seer result
-seer_in_witch = any(
-    e.get("payload", {}).get("kind") == "seer_result"
-    for e in dave_view.private_events
-)
+seer_in_witch = any(e.get("payload", {}).get("kind") == "seer_result" for e in dave_view.private_events)
 check(
     "Witch does NOT see seer result",
     not seer_in_witch,
@@ -433,8 +460,7 @@ check(
 
 # 5d: Witch does NOT see wolf coordination details
 wolf_coord_in_witch = any(
-    (e.get("payload", {}) or {}).get("kind", "").startswith("wolf_")
-    for e in dave_view.private_events
+    (e.get("payload", {}) or {}).get("kind", "").startswith("wolf_") for e in dave_view.private_events
 )
 check(
     "Witch does NOT see wolf coordination events",
@@ -448,10 +474,7 @@ print("\n--- 6. INFORMATION ISOLATION: Guard (Eve, p5) ---\n")
 eve_view = views["p5"]
 
 # 6a: Guard sees own guard action
-guard_events = [
-    e for e in eve_view.private_events
-    if e.get("payload", {}).get("action_type") == "guard"
-]
+guard_events = [e for e in eve_view.private_events if e.get("payload", {}).get("action_type") == "guard"]
 check(
     "Guard sees guard action in private_events",
     len(guard_events) >= 1,
@@ -459,10 +482,7 @@ check(
 )
 
 # 6b, 6c, 6d: Guard does NOT see cross-role secrets
-seer_in_guard = any(
-    e.get("payload", {}).get("kind") == "seer_result"
-    for e in eve_view.private_events
-)
+seer_in_guard = any(e.get("payload", {}).get("kind") == "seer_result" for e in eve_view.private_events)
 check(
     "Guard does NOT see seer result",
     not seer_in_guard,
@@ -473,9 +493,7 @@ check(
     len(eve_view.known_wolves) == 0,
     f"Guard should not see wolf teammates, got {len(eve_view.known_wolves)}",
 )
-witch_in_guard = any(
-    "victim_id" in e.get("payload", {}) for e in eve_view.private_events
-)
+witch_in_guard = any("victim_id" in e.get("payload", {}) for e in eve_view.private_events)
 check(
     "Guard does NOT see witch victim",
     not witch_in_guard,
@@ -490,14 +508,11 @@ print("\n--- 7. PLAYER LIST VISIBILITY (role masking) ---\n")
 alice_view2 = views["p1"]
 for p_dict in alice_view2.players:
     if p_dict["id"] != "p1":  # Not self
-        has_role_leak = "role" in p_dict and p_dict["role"] not in (
-            "unknown", None, ""
-        )
+        has_role_leak = "role" in p_dict and p_dict["role"] not in ("unknown", None, "")
         check(
             f"Alice sees {p_dict.get('name', p_dict['id'])} without role",
             not has_role_leak,
-            f"Alice should NOT see role of {p_dict.get('name')}, "
-            f"got role={p_dict.get('role')}",
+            f"Alice should NOT see role of {p_dict.get('name')}, got role={p_dict.get('role')}",
         )
 
 # Wolf Bob should see other wolves' roles (via private_dict)
@@ -510,14 +525,11 @@ for p_dict in bob_view2.players:
             f"Bob should see Frank as Werewolf, got role={p_dict.get('role')}",
         )
     elif p_dict["id"] != "p2":  # Not self, not fellow wolf
-        has_role_leak = "role" in p_dict and p_dict["role"] not in (
-            "unknown", None, ""
-        )
+        has_role_leak = "role" in p_dict and p_dict["role"] not in ("unknown", None, "")
         check(
             f"Bob sees {p_dict.get('name', p_dict['id'])} without role",
             not has_role_leak,
-            f"Bob should NOT see role of {p_dict.get('name')}, "
-            f"got role={p_dict.get('role')}",
+            f"Bob should NOT see role of {p_dict.get('name')}, got role={p_dict.get('role')}",
         )
 
 
@@ -526,20 +538,13 @@ print("\n--- 8. NO CROSS-CONTAMINATION: Seer/Witch/Wolf secrets ---\n")
 # Verify no single player sees ALL the secrets
 for p in PLAYERS:
     view = views[p.id]
-    has_seer = any(
-        e.get("payload", {}).get("kind") == "seer_result"
-        for e in view.private_events
-    )
-    has_witch = any(
-        "victim_id" in e.get("payload", {})
-        for e in view.private_events
-    )
+    has_seer = any(e.get("payload", {}).get("kind") == "seer_result" for e in view.private_events)
+    has_witch = any("victim_id" in e.get("payload", {}) for e in view.private_events)
     has_wolf = len(view.known_wolves) > 0
 
     cnt = sum([has_seer, has_witch, has_wolf])
     check(
-        f"{p.name}({p.role.value}) has <=1 secret category "
-        f"(seer={has_seer}, witch={has_witch}, wolf={has_wolf})",
+        f"{p.name}({p.role.value}) has <=1 secret category (seer={has_seer}, witch={has_witch}, wolf={has_wolf})",
         cnt <= 1,
         f"Player {p.name} has {cnt} secret categories -- potential leak!",
     )
@@ -556,15 +561,13 @@ for p in PLAYERS:
         # Public events must not contain seer results
         if isinstance(payload, dict) and "is_wolf" in payload:
             check(
-                f"Public event (type={event.get('type')}) in {p.name}'s view "
-                f"does NOT leak seer result",
+                f"Public event (type={event.get('type')}) in {p.name}'s view does NOT leak seer result",
                 False,
                 f"Seer result leaked in public event: {payload}",
             )
         else:
             check(
-                f"Public event (type={event.get('type')}) in {p.name}'s view "
-                f"does NOT leak seer result",
+                f"Public event (type={event.get('type')}) in {p.name}'s view does NOT leak seer result",
                 True,
                 "",
             )
@@ -572,15 +575,13 @@ for p in PLAYERS:
         # Public events must not contain role assignments
         if isinstance(payload, dict) and payload.get("kind") == "role_assignment":
             check(
-                f"Public event (type={event.get('type')}) in {p.name}'s view "
-                f"does NOT leak role assignment",
+                f"Public event (type={event.get('type')}) in {p.name}'s view does NOT leak role assignment",
                 False,
                 f"Role assignment leaked in public event: {payload}",
             )
         else:
             check(
-                f"Public event (type={event.get('type')}) in {p.name}'s view "
-                f"does NOT leak role assignment",
+                f"Public event (type={event.get('type')}) in {p.name}'s view does NOT leak role assignment",
                 True,
                 "",
             )

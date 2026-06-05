@@ -11,7 +11,6 @@ Usage:
 from __future__ import annotations
 
 import csv
-import json
 from pathlib import Path
 
 
@@ -47,7 +46,7 @@ def build_strategy_html(
             f"<td>{r['role']}</td>"
             f"<td>{r['strategy_name']}</td>"
             f"<td>{r['n']}</td>"
-            f"<td>{float(r['raw_win_rate'])*100:.1f}%</td>"
+            f"<td>{float(r['raw_win_rate']) * 100:.1f}%</td>"
             f"<td class='{conf_class}'>{r['confidence_level']}</td>"
             f"</tr>\n"
         )

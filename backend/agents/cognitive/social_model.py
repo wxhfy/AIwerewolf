@@ -1,16 +1,20 @@
 """Social Model — trust network and deception detection for multi-agent play."""
 
 from __future__ import annotations
-from dataclasses import dataclass, field
-from typing import Dict, List
+
+from dataclasses import dataclass
+from dataclasses import field
+from typing import Dict
+from typing import List
 
 
 @dataclass
 class TrustEdge:
     """Trust relationship between two players."""
-    source: str        # who has this trust
-    target: str        # who is trusted/distrusted
-    score: float       # -1.0 (distrust) to 1.0 (trust)
+
+    source: str  # who has this trust
+    target: str  # who is trusted/distrusted
+    score: float  # -1.0 (distrust) to 1.0 (trust)
     evidence: List[str] = field(default_factory=list)
     day: int = 0
 
@@ -18,10 +22,11 @@ class TrustEdge:
 @dataclass
 class DeceptionSignal:
     """A signal that a player may be deceiving."""
+
     player_id: str
-    signal_type: str   # "speech_vote_mismatch", "role_claim_change", "contradiction"
+    signal_type: str  # "speech_vote_mismatch", "role_claim_change", "contradiction"
     description: str
-    severity: float    # 0-1
+    severity: float  # 0-1
     day: int = 0
 
 
@@ -73,13 +78,15 @@ class SocialModel:
     def detect_speech_vote_mismatch(self, player_id: str, speech_target: str, vote_target: str, day: int = 0):
         """Detect if player said one thing but voted differently."""
         if speech_target and vote_target and speech_target != vote_target:
-            self.add_deception_signal(DeceptionSignal(
-                player_id=player_id,
-                signal_type="speech_vote_mismatch",
-                description=f"发言指向{speech_target}但投票给了{vote_target}",
-                severity=0.4,
-                day=day,
-            ))
+            self.add_deception_signal(
+                DeceptionSignal(
+                    player_id=player_id,
+                    signal_type="speech_vote_mismatch",
+                    description=f"发言指向{speech_target}但投票给了{vote_target}",
+                    severity=0.4,
+                    day=day,
+                )
+            )
 
     def format_for_prompt(self, player_id: str) -> str:
         """Format social model info for a player's prompt."""

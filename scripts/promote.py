@@ -17,34 +17,43 @@ Usage:
 """
 
 from __future__ import annotations
-import argparse, logging, os, sys
+
+import argparse
+import sys
 from collections import defaultdict
 from pathlib import Path
-from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from backend.db.database import DEFAULT_DB_URL
+
 DB_URL = DEFAULT_DB_URL
+
 
 # --- Quality mode ---
 def promote_by_quality(conn, quality_threshold: float, deprecation_threshold: float, dry_run: bool) -> dict:
     """Promote candidates with quality >= threshold to active, deprecate those < deprecation."""
     cur = conn.cursor()
-    cur.execute("SELECT id, doc_type, role, quality_score, recommended_action FROM strategy_knowledge_docs WHERE status = 'candidate'")
+    cur.execute(
+        "SELECT id, doc_type, role, quality_score, recommended_action FROM strategy_knowledge_docs WHERE status = 'candidate'"
+    )
     candidates = [dict(zip([d[0] for d in cur.description], r)) for r in cur.fetchall()]
 
     promoted, deprecated, skipped = 0, 0, 0
     for doc in candidates:
-        qs = float(doc.get('quality_score', 0) or 0)
+        qs = float(doc.get("quality_score", 0) or 0)
         if qs >= quality_threshold:
             if not dry_run:
-                cur.execute("UPDATE strategy_knowledge_docs SET status='active', updated_at=NOW() WHERE id=%s", (doc['id'],))
+                cur.execute(
+                    "UPDATE strategy_knowledge_docs SET status='active', updated_at=NOW() WHERE id=%s", (doc["id"],)
+                )
             promoted += 1
         elif qs < deprecation_threshold:
             if not dry_run:
-                cur.execute("UPDATE strategy_knowledge_docs SET status='deprecated', updated_at=NOW() WHERE id=%s", (doc['id'],))
+                cur.execute(
+                    "UPDATE strategy_knowledge_docs SET status='deprecated', updated_at=NOW() WHERE id=%s", (doc["id"],)
+                )
             deprecated += 1
         else:
             skipped += 1
@@ -54,25 +63,31 @@ def promote_by_quality(conn, quality_threshold: float, deprecation_threshold: fl
     cur.close()
     return {"promoted": promoted, "deprecated": deprecated, "skipped": skipped, "total": len(candidates)}
 
+
 # --- Cluster mode ---
 def promote_by_cluster(conn, top_n: int, quality_threshold: float, dry_run: bool) -> dict:
     """KMeans cluster candidates by (role, doc_type), promote Top-N per cluster."""
     cur = conn.cursor()
-    cur.execute("SELECT id, role, doc_type, quality_score FROM strategy_knowledge_docs WHERE status='candidate' AND quality_score >= %s", (quality_threshold,))
+    cur.execute(
+        "SELECT id, role, doc_type, quality_score FROM strategy_knowledge_docs WHERE status='candidate' AND quality_score >= %s",
+        (quality_threshold,),
+    )
     candidates = [dict(zip([d[0] for d in cur.description], r)) for r in cur.fetchall()]
 
     # Group by (role, doc_type)
     groups = defaultdict(list)
     for doc in candidates:
-        key = (doc.get('role', 'global'), doc.get('doc_type', 'unknown'))
+        key = (doc.get("role", "global"), doc.get("doc_type", "unknown"))
         groups[key].append(doc)
 
     promoted = 0
     for key, docs in groups.items():
-        docs.sort(key=lambda d: float(d.get('quality_score', 0) or 0), reverse=True)
+        docs.sort(key=lambda d: float(d.get("quality_score", 0) or 0), reverse=True)
         for doc in docs[:top_n]:
             if not dry_run:
-                cur.execute("UPDATE strategy_knowledge_docs SET status='active', updated_at=NOW() WHERE id=%s", (doc['id'],))
+                cur.execute(
+                    "UPDATE strategy_knowledge_docs SET status='active', updated_at=NOW() WHERE id=%s", (doc["id"],)
+                )
             promoted += 1
 
     if not dry_run:
@@ -80,15 +95,19 @@ def promote_by_cluster(conn, top_n: int, quality_threshold: float, dry_run: bool
     cur.close()
     return {"promoted": promoted, "clusters": len(groups), "total_candidates": len(candidates)}
 
+
 # --- Feedback mode ---
 def promote_by_feedback(conn, min_usage: int, score_threshold: float, dry_run: bool) -> dict:
     """Promote docs with sufficient positive usage feedback."""
     cur = conn.cursor()
-    cur.execute("""
+    cur.execute(
+        """
         SELECT skd.id, skd.quality_score, skd.success_count, skd.usage_count
         FROM strategy_knowledge_docs skd
         WHERE skd.status = 'candidate' AND skd.usage_count >= %s
-    """, (min_usage,))
+    """,
+        (min_usage,),
+    )
     candidates = cur.fetchall()
 
     promoted = 0
@@ -96,13 +115,16 @@ def promote_by_feedback(conn, min_usage: int, score_threshold: float, dry_run: b
         success_rate = float(sc or 0) / max(float(uc or 1), 1)
         if success_rate >= score_threshold:
             if not dry_run:
-                cur.execute("UPDATE strategy_knowledge_docs SET status='active', updated_at=NOW() WHERE id=%s", (doc_id,))
+                cur.execute(
+                    "UPDATE strategy_knowledge_docs SET status='active', updated_at=NOW() WHERE id=%s", (doc_id,)
+                )
             promoted += 1
 
     if not dry_run:
         conn.commit()
     cur.close()
     return {"promoted": promoted, "total_candidates": len(candidates)}
+
 
 # --- Prune mode ---
 # Caps from existing prune_active.py
@@ -120,15 +142,18 @@ CAPS = {
     "per_step_lesson": 50,
 }
 
+
 def prune_active(conn, dry_run: bool) -> dict:
     """Cap active docs per (role, doc_type), demote excess to candidate."""
     cur = conn.cursor()
-    cur.execute("SELECT id, role, doc_type, quality_score FROM strategy_knowledge_docs WHERE status='active' ORDER BY role, doc_type, quality_score DESC")
+    cur.execute(
+        "SELECT id, role, doc_type, quality_score FROM strategy_knowledge_docs WHERE status='active' ORDER BY role, doc_type, quality_score DESC"
+    )
     all_active = [dict(zip([d[0] for d in cur.description], r)) for r in cur.fetchall()]
 
     groups = defaultdict(list)
     for doc in all_active:
-        key = (doc.get('role', 'global'), doc.get('doc_type', 'unknown'))
+        key = (doc.get("role", "global"), doc.get("doc_type", "unknown"))
         groups[key].append(doc)
 
     demoted = 0
@@ -137,13 +162,17 @@ def prune_active(conn, dry_run: bool) -> dict:
         if len(docs) > cap:
             for doc in docs[cap:]:
                 if not dry_run:
-                    cur.execute("UPDATE strategy_knowledge_docs SET status='candidate', updated_at=NOW() WHERE id=%s", (doc['id'],))
+                    cur.execute(
+                        "UPDATE strategy_knowledge_docs SET status='candidate', updated_at=NOW() WHERE id=%s",
+                        (doc["id"],),
+                    )
                 demoted += 1
 
     if not dry_run:
         conn.commit()
     cur.close()
     return {"demoted": demoted, "groups": len(groups), "total_active": len(all_active)}
+
 
 # --- Main ---
 def main():
@@ -159,6 +188,7 @@ def main():
     args = p.parse_args()
 
     import psycopg2
+
     conn = psycopg2.connect(DB_URL)
 
     mode_fns = {
@@ -175,6 +205,7 @@ def main():
         print(f"  {k}: {v}")
 
     conn.close()
+
 
 if __name__ == "__main__":
     main()

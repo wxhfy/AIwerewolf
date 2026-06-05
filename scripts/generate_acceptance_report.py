@@ -11,7 +11,6 @@ import sys
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -56,9 +55,10 @@ def compile_stats(results: list[dict]) -> dict:
             team_stats[team]["games"] += 1
 
     def fmt(raw):
-        return {k: {"games": v["games"], "wins": v["wins"],
-                     "win_rate": round(v["wins"] / max(v["games"], 1), 4)}
-                for k, v in sorted(raw.items())}
+        return {
+            k: {"games": v["games"], "wins": v["wins"], "win_rate": round(v["wins"] / max(v["games"], 1), 4)}
+            for k, v in sorted(raw.items())
+        }
 
     return {"role_stats": fmt(role_stats), "mbti_stats": fmt(mbti_stats), "team_stats": fmt(team_stats)}
 
@@ -103,9 +103,7 @@ def generate_report(all_results: dict, tier_stats: dict) -> str:
         team_rows.append((team.capitalize(), cells, best))
 
     # Role-level
-    all_roles = sorted(set().union(*[
-        set(tier_stats[t].get("role_stats", {}).keys()) for t in tiers
-    ]))
+    all_roles = sorted(set().union(*[set(tier_stats[t].get("role_stats", {}).keys()) for t in tiers]))
     role_rows = []
     for role in all_roles:
         cells = []
@@ -116,9 +114,7 @@ def generate_report(all_results: dict, tier_stats: dict) -> str:
         role_rows.append((role, cells, best))
 
     # MBTI-level
-    all_mbti = sorted(set().union(*[
-        set(tier_stats[t].get("mbti_stats", {}).keys()) for t in tiers
-    ]))
+    all_mbti = sorted(set().union(*[set(tier_stats[t].get("mbti_stats", {}).keys()) for t in tiers]))
     mbti_rows = []
     for mbti in all_mbti:
         cells = []
@@ -150,7 +146,7 @@ def generate_report(all_results: dict, tier_stats: dict) -> str:
     lines.append("# Track C 多层级胜率对比验收报告")
     lines.append("")
     lines.append(f"> 生成日期: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
-    lines.append(f"> 实验: 四层级并发 × 12局/tier = 48局 total")
+    lines.append("> 实验: 四层级并发 × 12局/tier = 48局 total")
     lines.append("> 对局配置: 7人局 (Werewolf×2 + Seer + Witch + Hunter + Guard + Villager)")
     lines.append("")
     lines.append("---")
@@ -231,7 +227,7 @@ def generate_report(all_results: dict, tier_stats: dict) -> str:
     best_village = max(village_wrs, key=village_wrs.get)
     best_wolf = max(wolf_wrs, key=wolf_wrs.get)
 
-    lines.append(f"### 3.1 各层级效果评估")
+    lines.append("### 3.1 各层级效果评估")
     lines.append("")
     for tier in tiers:
         label = tier_labels[tier]
@@ -244,12 +240,12 @@ def generate_report(all_results: dict, tier_stats: dict) -> str:
         lines.append(f"- 完成 {games} 局，失败 {errors} 局")
         lines.append(f"- 好人胜率 {vwr:.1%}，狼人胜率 {wwr:.1%}")
         lines.append("")
-    lines.append(f"### 3.2 关键发现")
+    lines.append("### 3.2 关键发现")
     lines.append("")
     lines.append(f"1. **最佳好人胜率**: {best_village} ({village_wrs[best_village]:.1%})")
     lines.append(f"2. **最佳狼人胜率**: {best_wolf} ({wolf_wrs[best_wolf]:.1%})")
     lines.append(f"3. **完整三层 (both) vs 纯基础 (baseline)**: 好人胜率变化 {village_delta:+.1%}")
-    lines.append(f"4. **各层级的边际贡献**:")
+    lines.append("4. **各层级的边际贡献**:")
     lines.append(f"   - Anti-Patterns 贡献: 好人胜率从 {village_wrs['baseline']:.1%} → {village_wrs['anti_only']:.1%}")
     lines.append(f"   - Track C 贡献: 好人胜率从 {village_wrs['baseline']:.1%} → {village_wrs['trackc_only']:.1%}")
     lines.append("")

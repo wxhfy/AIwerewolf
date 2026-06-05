@@ -13,14 +13,10 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from backend.eval.scoring_models import (
-    DecisionQualityModel,
-    OpportunityValueModel,
-    calculate_process_score,
-    extract_features,
-    load_track_b_models,
-)
 from backend.eval.opportunity import OpportunityExtractor
+from backend.eval.scoring_models import DecisionQualityModel
+from backend.eval.scoring_models import extract_features
+from backend.eval.scoring_models import load_track_b_models
 from backend.eval.track_b import ReplayBundleBuilder
 
 MODEL_DIR = Path("data/health")
@@ -34,13 +30,11 @@ MODELS_EXIST = W_MODEL_PATH.exists() and Q_MODEL_PATH.exists()
 # Test 1: Model file existence
 # ---------------------------------------------------------------------------
 
+
 def test_model_files_exist_or_skip() -> None:
     """If model files don't exist, skip with a clear message."""
     if not MODELS_EXIST:
-        pytest.skip(
-            "Trained model artifacts missing. "
-            "Run: python scripts/train_and_ablate.py"
-        )
+        pytest.skip("Trained model artifacts missing. Run: python scripts/train_and_ablate.py")
     assert W_MODEL_PATH.exists(), f"W model missing: {W_MODEL_PATH}"
     assert Q_MODEL_PATH.exists(), f"Q model missing: {Q_MODEL_PATH}"
 
@@ -49,6 +43,7 @@ def test_model_files_exist_or_skip() -> None:
 # Test 2: load_track_b_models() succeeds
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.skipif(not MODELS_EXIST, reason="Trained models not yet generated")
 def test_load_track_b_models_returns_trained_models() -> None:
     """Loaded models should have model.model not None after successful load, OR
@@ -56,8 +51,8 @@ def test_load_track_b_models_returns_trained_models() -> None:
     w_model, q_model = load_track_b_models()
 
     # Both models should either load successfully or fall back gracefully
-    w_ok = w_model.model is not None and hasattr(w_model.model, 'classes_')
-    q_ok = q_model.model is not None and hasattr(q_model.model, 'classes_')
+    w_ok = w_model.model is not None and hasattr(w_model.model, "classes_")
+    q_ok = q_model.model is not None and hasattr(q_model.model, "classes_")
 
     if w_ok and q_ok:
         assert True  # Models loaded successfully
@@ -75,6 +70,7 @@ def test_load_track_b_models_returns_trained_models() -> None:
 # Test 3: Predictions are not all 0.5
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.skipif(not MODELS_EXIST, reason="Trained models not yet generated")
 def test_decision_quality_model_predictions_vary() -> None:
     """A trained DecisionQualityModel must produce non-uniform predictions.
@@ -91,8 +87,9 @@ def test_decision_quality_model_predictions_vary() -> None:
     _, q_model = load_track_b_models()
 
     if q_model.model is None:
-        pytest.skip("DecisionQualityModel failed to load (pickle incompatibility). "
-                     "Re-run: python scripts/train_and_ablate.py")
+        pytest.skip(
+            "DecisionQualityModel failed to load (pickle incompatibility). Re-run: python scripts/train_and_ablate.py"
+        )
 
     X_list = [extract_features(op.to_dict()).to_array() for op in opps]
     X = np.array(X_list)
@@ -103,14 +100,14 @@ def test_decision_quality_model_predictions_vary() -> None:
     print(f"  Unique values: {len(unique)} / {len(predictions)}")
 
     assert len(unique) > 1, (
-        f"DecisionQualityModel returned all identical predictions ({unique}). "
-        f"Model may be degenerate or untrained."
+        f"DecisionQualityModel returned all identical predictions ({unique}). Model may be degenerate or untrained."
     )
 
 
 # ---------------------------------------------------------------------------
 # Test 4: BadCase-001 key opportunities score low with trained models
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.skipif(not MODELS_EXIST, reason="Trained models not yet generated")
 def test_badcase_001_key_opportunities_score_low_with_models() -> None:
@@ -136,8 +133,9 @@ def test_badcase_001_key_opportunities_score_low_with_models() -> None:
     _, q_model = load_track_b_models()
 
     if q_model.model is None:
-        pytest.skip("DecisionQualityModel failed to load (pickle incompatibility). "
-                     "Re-run: python scripts/train_and_ablate.py")
+        pytest.skip(
+            "DecisionQualityModel failed to load (pickle incompatibility). Re-run: python scripts/train_and_ablate.py"
+        )
 
     scored = []
     for op in opps:
@@ -179,26 +177,30 @@ def test_badcase_001_key_opportunities_score_low_with_models() -> None:
 
     # All key bad actions should get significant soft penalties (no hard caps)
     # hunter_shot village target → significant penalty expected
-    assert results.get("P6_D1_HUNTER_SHOT", (0, 1.0, []))[1] <= 0.45, \
-        f"Hunter shot Seer should be low, got {results.get('P6_D1_HUNTER_SHOT', (0,1))[1]}"
+    assert results.get("P6_D1_HUNTER_SHOT", (0, 1.0, []))[1] <= 0.45, (
+        f"Hunter shot Seer should be low, got {results.get('P6_D1_HUNTER_SHOT', (0, 1))[1]}"
+    )
     # witch_poison village target → significant penalty expected
-    assert results.get("P4_N2_WITCH_POISON", (0, 1.0, []))[1] <= 0.45, \
-        f"Witch poison Guard should be low, got {results.get('P4_N2_WITCH_POISON', (0,1))[1]}"
+    assert results.get("P4_N2_WITCH_POISON", (0, 1.0, []))[1] <= 0.45, (
+        f"Witch poison Guard should be low, got {results.get('P4_N2_WITCH_POISON', (0, 1))[1]}"
+    )
     # consecutive self-guard → penalty expected
     p5_guard_q = results.get("P5_GUARD_PROTECT_MIN", (0, 1.0, []))
-    assert p5_guard_q[1] <= 0.41, \
-        f"Guard consecutive should be penalized, got cal={p5_guard_q[1]:.4f}"
+    assert p5_guard_q[1] <= 0.41, f"Guard consecutive should be penalized, got cal={p5_guard_q[1]:.4f}"
     # seer withheld wolf check → penalty expected
-    assert results.get("P3_D1_SEER_RELEASE", (0, 1.0, []))[1] <= 0.50, \
-        f"P3 withheld check should be penalized, got {results.get('P3_D1_SEER_RELEASE', (0,1))[1]}"
+    assert results.get("P3_D1_SEER_RELEASE", (0, 1.0, []))[1] <= 0.50, (
+        f"P3 withheld check should be penalized, got {results.get('P3_D1_SEER_RELEASE', (0, 1))[1]}"
+    )
     # seer voted elsewhere despite known wolf → strong penalty expected
-    assert results.get("P3_D1_VOTE", (0, 1.0, []))[1] <= 0.25, \
-        f"P3 vote elsewhere despite known wolf should be very low, got {results.get('P3_D1_VOTE', (0,1))[1]}"
+    assert results.get("P3_D1_VOTE", (0, 1.0, []))[1] <= 0.25, (
+        f"P3 vote elsewhere despite known wolf should be very low, got {results.get('P3_D1_VOTE', (0, 1))[1]}"
+    )
 
 
 # ---------------------------------------------------------------------------
 # Test 5: Untrained model emits warning
 # ---------------------------------------------------------------------------
+
 
 def test_untrained_model_predict_emits_warning() -> None:
     """Untrained model should warn, not silently return 0.5."""
@@ -211,6 +213,7 @@ def test_untrained_model_predict_emits_warning() -> None:
 # ---------------------------------------------------------------------------
 # Test 6: load_track_b_models fallback behaviour
 # ---------------------------------------------------------------------------
+
 
 def test_load_track_b_models_fallback_on_missing(tmp_path) -> None:
     """Missing model files should use fallback silently (no raise by default)."""

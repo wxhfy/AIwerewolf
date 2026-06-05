@@ -11,15 +11,19 @@ Run: python scripts/generate_review_v2.py [--game-id ID] [--all]
 
 from __future__ import annotations
 
-import json, math, statistics, sys
-from collections import Counter, defaultdict
+import json
+import statistics
+import sys
+from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from scripts.train_and_ablate import rule_opportunity_value, rule_decision_quality, load_opportunities
+from scripts.train_and_ablate import load_opportunities
+from scripts.train_and_ablate import rule_decision_quality
+from scripts.train_and_ablate import rule_opportunity_value
 
 
 def load_json(path: str) -> Any:
@@ -50,7 +54,9 @@ def guard_score_v2(opp) -> float:
     is_repeat = tf.get("is_repeat_guard", False)
     abuse_penalty = 0.15 if is_self else 0.05 if is_repeat else 0.0
 
-    return max(0.0, min(1.0, 0.35 * protect_policy + 0.25 * target_risk + 0.25 * key_coverage + block_bonus - abuse_penalty))
+    return max(
+        0.0, min(1.0, 0.35 * protect_policy + 0.25 * target_risk + 0.25 * key_coverage + block_bonus - abuse_penalty)
+    )
 
 
 def hunter_shot_quality(opp) -> tuple[float, float]:
@@ -58,13 +64,17 @@ def hunter_shot_quality(opp) -> tuple[float, float]:
     tf = opp.get("target_features", {})
     is_wolf = tf.get("target_alignment") == "wolf"
     is_good = tf.get("target_alignment") == "village"
-    if is_wolf: return 0.95, 0.90
-    elif is_good: return 0.10, 0.85
-    else: return 0.25, 0.40  # unknown target
+    if is_wolf:
+        return 0.95, 0.90
+    elif is_good:
+        return 0.10, 0.85
+    else:
+        return 0.25, 0.40  # unknown target
 
 
 def main() -> int:
     import argparse
+
     ap = argparse.ArgumentParser()
     ap.add_argument("--game-id", default=None)
     ap.add_argument("--all", action="store_true")
@@ -76,14 +86,15 @@ def main() -> int:
     cf_data = load_json("data/health/counterfactual_impacts.json")
     baseline = load_json("data/health/baseline_scoring_report.json")
 
-    from backend.db.database import SessionLocal, init_db
-    from backend.db.models import PublishedReview
     from sqlalchemy import text
+
+    from backend.db.database import SessionLocal
+    from backend.db.database import init_db
+
     init_db()
     db = SessionLocal()
     clean_ids = set(json.loads(Path("/tmp/clean_llm_game_ids.json").read_text()))
-    games = db.execute(text("SELECT id, winner FROM games WHERE id IN :ids"),
-        {"ids": tuple(clean_ids)}).fetchall()
+    games = db.execute(text("SELECT id, winner FROM games WHERE id IN :ids"), {"ids": tuple(clean_ids)}).fetchall()
     winner_map = {g[0]: g[1] for g in games}
     db.close()
 
@@ -130,12 +141,16 @@ def main() -> int:
                 w = rule_opportunity_value(o)
                 q = rule_decision_quality(o)
 
-            opp_scores.append({
-                "opportunity_id": o["opportunity_id"],
-                "type": op_type, "day": o["day"],
-                "w": round(w, 3), "q": round(q, 3),
-                "score": round(w * q, 3),
-            })
+            opp_scores.append(
+                {
+                    "opportunity_id": o["opportunity_id"],
+                    "type": op_type,
+                    "day": o["day"],
+                    "w": round(w, 3),
+                    "q": round(q, 3),
+                    "score": round(w * q, 3),
+                }
+            )
 
         opp_scores.sort(key=lambda x: -x["score"])
         top3_good = opp_scores[:3]
@@ -167,9 +182,13 @@ def main() -> int:
         robustness = 1.0
 
         # ProcessScore
-        process_score = (0.40 * adjusted_process + 0.20 * speech_score
-                        + 0.15 * cf_impact + 0.15 * (1.0 - mistake_penalty)
-                        + 0.10 * robustness)
+        process_score = (
+            0.40 * adjusted_process
+            + 0.20 * speech_score
+            + 0.15 * cf_impact
+            + 0.15 * (1.0 - mistake_penalty)
+            + 0.10 * robustness
+        )
         final_score = 0.85 * process_score
 
         # Model confidence
@@ -202,30 +221,37 @@ def main() -> int:
         if not advice:
             advice.append("表现稳定")
 
-        reviews.append({
-            "game_id": gid, "player_id": pid, "role": role, "won": won,
-            "final_score": round(final_score * 100, 1),
-            "process_score": round(process_score * 100, 1),
-            "role_process_score": round(adjusted_process * 100, 1),
-            "speech_score": round(speech_score * 100, 1),
-            "counterfactual_impact": round(cf_impact, 3),
-            "mistake_penalty": round(mistake_penalty, 3),
-            "n_opportunities": n_opps,
-            "total_weight": round(total_w, 2),
-            "model_confidence": model_conf,
-            "top3_good": [{"type": s["type"], "day": s["day"], "score": s["score"]} for s in top3_good],
-            "top3_bad": [{"type": s["type"], "day": s["day"], "score": s["score"]} for s in top3_bad],
-            "key_counterfactuals": [{"type": c.get("type",""), "impact": c.get("impact_value",0)} for c in key_cfs],
-            "advice": advice,
-            "speech_detail": {
-                "n_speeches": speech.get("n_speeches", 0),
-                "groundedness": speech.get("avg_groundedness", 0),
-                "stance_clarity": speech.get("avg_stance_clarity", 0),
-                "consistency": speech.get("avg_consistency", 0),
-                "strategic_value": speech.get("avg_strategic_value", 0),
-                "information_safety": speech.get("avg_information_safety", 0),
-            },
-        })
+        reviews.append(
+            {
+                "game_id": gid,
+                "player_id": pid,
+                "role": role,
+                "won": won,
+                "final_score": round(final_score * 100, 1),
+                "process_score": round(process_score * 100, 1),
+                "role_process_score": round(adjusted_process * 100, 1),
+                "speech_score": round(speech_score * 100, 1),
+                "counterfactual_impact": round(cf_impact, 3),
+                "mistake_penalty": round(mistake_penalty, 3),
+                "n_opportunities": n_opps,
+                "total_weight": round(total_w, 2),
+                "model_confidence": model_conf,
+                "top3_good": [{"type": s["type"], "day": s["day"], "score": s["score"]} for s in top3_good],
+                "top3_bad": [{"type": s["type"], "day": s["day"], "score": s["score"]} for s in top3_bad],
+                "key_counterfactuals": [
+                    {"type": c.get("type", ""), "impact": c.get("impact_value", 0)} for c in key_cfs
+                ],
+                "advice": advice,
+                "speech_detail": {
+                    "n_speeches": speech.get("n_speeches", 0),
+                    "groundedness": speech.get("avg_groundedness", 0),
+                    "stance_clarity": speech.get("avg_stance_clarity", 0),
+                    "consistency": speech.get("avg_consistency", 0),
+                    "strategic_value": speech.get("avg_strategic_value", 0),
+                    "information_safety": speech.get("avg_information_safety", 0),
+                },
+            }
+        )
 
     # Filter
     if args.game_id:
@@ -264,8 +290,8 @@ def main() -> int:
         lines += [
             f"## {r['role']} — {r['player_id'][:12]}{conf_note}",
             "",
-            f"| Metric | Value |",
-            f"|--------|-------|",
+            "| Metric | Value |",
+            "|--------|-------|",
             f"| FinalScore | **{r['final_score']:.1f}** |",
             f"| ProcessScore | {r['process_score']:.1f} |",
             f"| RoleProcessScore | {r['role_process_score']:.1f} |",
@@ -279,11 +305,11 @@ def main() -> int:
             "### Top 3 Good Opportunities",
         ]
         for i, opp in enumerate(r["top3_good"]):
-            lines.append(f"{i+1}. [{opp['type']}] D{opp['day']} — q={opp['score']:.3f}")
+            lines.append(f"{i + 1}. [{opp['type']}] D{opp['day']} — q={opp['score']:.3f}")
 
         lines += ["", "### Top 3 Bad Opportunities"]
         for i, opp in enumerate(r["top3_bad"]):
-            lines.append(f"{i+1}. [{opp['type']}] D{opp['day']} — q={opp['score']:.3f}")
+            lines.append(f"{i + 1}. [{opp['type']}] D{opp['day']} — q={opp['score']:.3f}")
 
         if r["key_counterfactuals"]:
             lines += ["", "### Key Counterfactuals"]
@@ -296,11 +322,11 @@ def main() -> int:
         lines += ["", "---", ""]
 
     (ROOT / "data/health/review_with_learned_scores_v2.md").write_text("\n".join(lines))
-    print(f"  → review_with_learned_scores_v2.md")
+    print("  → review_with_learned_scores_v2.md")
 
     with open(ROOT / "data/health/review_with_learned_scores_v2.json", "w", encoding="utf-8") as f:
         json.dump(reviews, f, ensure_ascii=False, indent=2)
-    print(f"  → review_with_learned_scores_v2.json")
+    print("  → review_with_learned_scores_v2.json")
 
     # ---- Valid Agent v2 ----
     issues = []
@@ -341,12 +367,14 @@ def main() -> int:
             f"Hunter LOW CONFIDENCE: {len(hunter_reviews)} players, {18} shots total",
             "Embedding retrieval: hard type filter recommended",
             f"Found {len(issues)} non-blocking issues",
-        ] if passed else [f"Found {len(issues)} issues to fix"],
+        ]
+        if passed
+        else [f"Found {len(issues)} issues to fix"],
     }
 
     with open(ROOT / "data/health/validation_result_v2.json", "w", encoding="utf-8") as f:
         json.dump(validation, f, ensure_ascii=False, indent=2)
-    print(f"  → validation_result_v2.json")
+    print("  → validation_result_v2.json")
     print(f"\nValid Agent v2: passed={validation['passed']}, grade={validation['grade']}, issues={len(issues)}")
 
     return 0

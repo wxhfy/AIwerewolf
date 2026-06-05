@@ -26,7 +26,6 @@ import statistics
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
@@ -34,7 +33,9 @@ if str(ROOT) not in sys.path:
 EXPERIMENT_DIR = ROOT / "data" / "experiment"
 SUMMARY_PATH = EXPERIMENT_DIR / "discrimination_summary.json"
 
-from scripts.analyze_score_distributions import cohens_d, welch_t_p, stat_block
+from scripts.analyze_score_distributions import cohens_d
+from scripts.analyze_score_distributions import stat_block
+from scripts.analyze_score_distributions import welch_t_p
 
 
 @dataclass
@@ -47,8 +48,7 @@ class Weights:
     w_survival: float = 0.10
 
     def validate(self) -> bool:
-        total = (self.w_camp + self.w_role_task + self.w_vote
-                 + self.w_speech + self.w_skill + self.w_survival)
+        total = self.w_camp + self.w_role_task + self.w_vote + self.w_speech + self.w_skill + self.w_survival
         return abs(total - 1.0) < 0.001
 
     def label(self) -> str:
@@ -95,14 +95,16 @@ def collect_rescored(w: Weights) -> dict[str, dict[str, list[dict]]]:
             continue
         s = player_scores[0]
         new_final = rescore(s, w)
-        out.setdefault(role, {}).setdefault(variant, []).append({
-            "seed": seed,
-            "original_final": s.get("adjusted_final_score"),
-            "new_final": new_final,
-            "role_task": s.get("role_task_score"),
-            "camp": s.get("camp_result_score"),
-            "mistake": s.get("mistake_penalty"),
-        })
+        out.setdefault(role, {}).setdefault(variant, []).append(
+            {
+                "seed": seed,
+                "original_final": s.get("adjusted_final_score"),
+                "new_final": new_final,
+                "role_task": s.get("role_task_score"),
+                "camp": s.get("camp_result_score"),
+                "mistake": s.get("mistake_penalty"),
+            }
+        )
     return out
 
 
@@ -128,7 +130,6 @@ def main() -> int:
         print(f"ERROR: weights don't sum to 1.0: {w.label()}")
         return 1
 
-    from scripts.analyze_score_distributions import cohens_d, welch_t_p, stat_block
 
     data = collect_rescored(w)
 
@@ -144,8 +145,10 @@ def main() -> int:
             pass
 
     print(f"=== Re-scored with {w.label()} ===")
-    print(f"{'role':<10} {'g_n':>5} {'b_n':>5} {'g_new':>10} {'b_new':>10} "
-          f"{'g_old':>10} {'b_old':>10} {'d_new':>8} {'d_old':>8} {'p_new':>8} {'verdict':<24}")
+    print(
+        f"{'role':<10} {'g_n':>5} {'b_n':>5} {'g_new':>10} {'b_new':>10} "
+        f"{'g_old':>10} {'b_old':>10} {'d_new':>8} {'d_old':>8} {'p_new':>8} {'verdict':<24}"
+    )
     print("-" * 144)
 
     per_role = []
@@ -164,11 +167,7 @@ def main() -> int:
         b_mean_old = statistics.mean(b_old) if b_old else 0
 
         abs_d = abs(d_new) if not math.isnan(d_new) and not math.isinf(d_new) else 0.0
-        discriminates = (
-            abs_d >= 0.8
-            and (math.isnan(p_new) or p_new < 0.05)
-            and g_mean_new > b_mean_new
-        )
+        discriminates = abs_d >= 0.8 and (math.isnan(p_new) or p_new < 0.05) and g_mean_new > b_mean_new
         verdict = "DISCRIMINATES" if discriminates else "FAILS_DISCRIMINATION"
 
         d_str_new = f"{d_new:+.3f}" if not math.isnan(d_new) else "—"
@@ -176,19 +175,23 @@ def main() -> int:
         d_old = old_d_map.get(role, float("nan"))
         d_str_old = f"{d_old:+.3f}" if not math.isnan(d_old) else "—"
 
-        print(f"{role:<10} {len(g_new):>6} {len(b_new):>6} "
-              f"{g_mean_new:>10.2f} {b_mean_new:>10.2f} "
-              f"{g_mean_old:>10.2f} {b_mean_old:>10.2f} "
-              f"{d_str_new:>8} {d_str_old:>8} {p_str_new:>8} {verdict:<24}")
+        print(
+            f"{role:<10} {len(g_new):>6} {len(b_new):>6} "
+            f"{g_mean_new:>10.2f} {b_mean_new:>10.2f} "
+            f"{g_mean_old:>10.2f} {b_mean_old:>10.2f} "
+            f"{d_str_new:>8} {d_str_old:>8} {p_str_new:>8} {verdict:<24}"
+        )
 
-        per_role.append({
-            "role": role,
-            "good": {"adjusted_final_score": stat_block(g_new), "n": len(g_new)},
-            "bad": {"adjusted_final_score": stat_block(b_new), "n": len(b_new)},
-            "cohens_d_adjusted_final_score": d_new,
-            "welch_t_p_adjusted_final_score": p_new,
-            "verdict": verdict,
-        })
+        per_role.append(
+            {
+                "role": role,
+                "good": {"adjusted_final_score": stat_block(g_new), "n": len(g_new)},
+                "bad": {"adjusted_final_score": stat_block(b_new), "n": len(b_new)},
+                "cohens_d_adjusted_final_score": d_new,
+                "welch_t_p_adjusted_final_score": p_new,
+                "verdict": verdict,
+            }
+        )
 
     print()
     discriminating = sum(1 for e in per_role if e["verdict"] == "DISCRIMINATES")

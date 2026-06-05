@@ -12,11 +12,17 @@ Design:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Protocol, runtime_checkable
+from dataclasses import dataclass
+from typing import Any
+from typing import Protocol
+from typing import runtime_checkable
 
-from backend.engine.models import ActionType, Decision, GameState, Phase, Player, Role
-
+from backend.engine.models import ActionType
+from backend.engine.models import Decision
+from backend.engine.models import GameState
+from backend.engine.models import Phase
+from backend.engine.models import Player
+from backend.engine.models import Role
 
 # ================================================================
 # Skill Protocol
@@ -37,8 +43,8 @@ class Skill(Protocol):
     owner_role: Role
     phase: Phase
     action_type: ActionType
-    priority: int                      # lower = earlier in resolution order
-    consumes_resource: str | None      # e.g. "antidote", "poison", "bullet"
+    priority: int  # lower = earlier in resolution order
+    consumes_resource: str | None  # e.g. "antidote", "poison", "bullet"
     can_target_self: bool
     can_target_dead: bool
     can_execute_when_dead: bool
@@ -349,7 +355,7 @@ class VillageTalkSkill(_BaseSkill):
         return []
 
     def apply(self, decision: Decision, state: GameState) -> list[dict[str, Any]]:
-        return [{"action": "talk", "speech": getattr(decision, 'speech', '') or ''}]
+        return [{"action": "talk", "speech": getattr(decision, "speech", "") or ""}]
 
     def validate(self, decision: Decision, state: GameState) -> bool:
         actor = state.player(decision.actor_id)

@@ -1,8 +1,7 @@
 """Regenerate scoring models to match current 55-feature schema."""
+
 from __future__ import annotations
 
-import json
-import pickle
 import sys
 from pathlib import Path
 
@@ -11,12 +10,10 @@ import numpy as np
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from backend.eval.scoring_models import (
-    DecisionQualityModel,
-    ModelFeatures,
-    OpportunityValueModel,
-    extract_features,
-)
+from backend.eval.scoring_models import DecisionQualityModel
+from backend.eval.scoring_models import ModelFeatures
+from backend.eval.scoring_models import OpportunityValueModel
+from backend.eval.scoring_models import extract_features
 
 
 def generate_synthetic_opportunities(n: int = 300) -> list[dict]:
@@ -24,8 +21,18 @@ def generate_synthetic_opportunities(n: int = 300) -> list[dict]:
     rng = np.random.RandomState(42)
     opps = []
     roles = ["Werewolf", "Werewolf", "Seer", "Witch", "Guard", "Hunter", "Villager"]
-    op_types = ["speech", "vote", "werewolf_kill", "seer_check", "witch_save",
-                "witch_poison", "guard_protect", "hunter_shot", "seer_release", "witch_skip"]
+    op_types = [
+        "speech",
+        "vote",
+        "werewolf_kill",
+        "seer_check",
+        "witch_save",
+        "witch_poison",
+        "guard_protect",
+        "hunter_shot",
+        "seer_release",
+        "witch_skip",
+    ]
     alignments = ["Villager", "Villager", "Villager", "Villager", "Wolf", "Wolf"]
 
     for i in range(n):
@@ -37,8 +44,8 @@ def generate_synthetic_opportunities(n: int = 300) -> list[dict]:
 
         opp = {
             "opportunity_id": f"synth-{i:04d}",
-            "game_id": f"game-synth-{i//10:04d}",
-            "player_id": f"P{i%10+1}",
+            "game_id": f"game-synth-{i // 10:04d}",
+            "player_id": f"P{i % 10 + 1}",
             "role": role,
             "opportunity_type": op_type,
             "day": int(day),
@@ -50,8 +57,8 @@ def generate_synthetic_opportunities(n: int = 300) -> list[dict]:
                 "wolf_alive": int(max(1, alive * 0.3)),
             },
             "target_features": {
-                "target_id": f"P{(i+3)%10+1}",
-                "target_name": f"Player{(i+3)%10+1}",
+                "target_id": f"P{(i + 3) % 10 + 1}",
+                "target_name": f"Player{(i + 3) % 10 + 1}",
                 "target_role": rng.choice(roles),
                 "target_alignment": target_alignment,
                 "target_alive": bool(rng.random() > 0.3),
@@ -69,7 +76,7 @@ def generate_synthetic_opportunities(n: int = 300) -> list[dict]:
             },
             "chosen_action": {
                 "type": op_type,
-                "target_id": f"P{(i+3)%10+1}",
+                "target_id": f"P{(i + 3) % 10 + 1}",
                 "speech": f"Synthetic speech for {role} on day {day}",
             },
             "private_features": {
@@ -154,9 +161,16 @@ def main():
             # Pseudo-label: opportunity value
             op_type = opp["opportunity_type"]
             w = {
-                "werewolf_kill": 1.0, "guard_protect": 0.8, "seer_check": 0.9,
-                "witch_save": 0.9, "witch_poison": 0.95, "hunter_shot": 0.95,
-                "witch_skip": 0.6, "seer_release": 0.7, "vote": 0.5, "speech": 0.4,
+                "werewolf_kill": 1.0,
+                "guard_protect": 0.8,
+                "seer_check": 0.9,
+                "witch_save": 0.9,
+                "witch_poison": 0.95,
+                "hunter_shot": 0.95,
+                "witch_skip": 0.6,
+                "seer_release": 0.7,
+                "vote": 0.5,
+                "speech": 0.4,
             }.get(op_type, 0.5)
             y_w_list.append(w)
 
@@ -212,10 +226,10 @@ def main():
 
     # Test with cleancase fixture
     print("\nTesting with cleancase fixture...")
-    from tests.test_track_b_cleancase_wolf_regression import build_cleancase_001_fixture
-    from backend.eval.track_b import ReplayBundleBuilder
     from backend.eval.opportunity import OpportunityExtractor
     from backend.eval.scoring_models import calibrate_decision_quality
+    from backend.eval.track_b import ReplayBundleBuilder
+    from tests.test_track_b_cleancase_wolf_regression import build_cleancase_001_fixture
 
     state = build_cleancase_001_fixture()
     bundle = ReplayBundleBuilder().build(state)

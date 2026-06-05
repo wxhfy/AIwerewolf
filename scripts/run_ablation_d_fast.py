@@ -8,27 +8,28 @@ Run: python scripts/run_ablation_d_fast.py
 
 from __future__ import annotations
 
-import json, math, statistics, sys, time, gc
-from collections import defaultdict
+import gc
+import json
+import math
+import statistics
+import sys
+import time
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from backend.eval.scoring_models import (
-    DecisionQualityModel, ModelFeatures, extract_features,
-)
-from backend.eval.embedding_retrieval import (
-    BGEM3Provider, format_opportunity_text,
-)
-from scripts.train_and_ablate import (
-    load_opportunities, load_labeled, load_baseline,
-    rule_opportunity_value, rule_decision_quality,
-    group_kfold_split,
-)
+from backend.eval.embedding_retrieval import BGEM3Provider
+from backend.eval.embedding_retrieval import format_opportunity_text
+from backend.eval.scoring_models import DecisionQualityModel
+from backend.eval.scoring_models import extract_features
+from scripts.train_and_ablate import group_kfold_split
+from scripts.train_and_ablate import load_baseline
+from scripts.train_and_ablate import load_labeled
+from scripts.train_and_ablate import load_opportunities
+from scripts.train_and_ablate import rule_decision_quality
 
 BGE_M3_PATH = "/home/4T-3/PLM/bge-m3/"
 
@@ -54,14 +55,15 @@ def main() -> int:
     labeled = load_labeled()
     baseline = load_baseline()
 
-    from backend.db.database import SessionLocal, init_db
-    from backend.db.models import PublishedReview
     from sqlalchemy import text
+
+    from backend.db.database import SessionLocal
+    from backend.db.database import init_db
+
     init_db()
     db = SessionLocal()
     clean_ids = set(json.loads(Path("/tmp/clean_llm_game_ids.json").read_text()))
-    games = db.execute(text("SELECT id, winner FROM games WHERE id IN :ids"),
-        {"ids": tuple(clean_ids)}).fetchall()
+    games = db.execute(text("SELECT id, winner FROM games WHERE id IN :ids"), {"ids": tuple(clean_ids)}).fetchall()
     winner_map = {g[0]: g[1] for g in games}
     db.close()
 
@@ -99,7 +101,7 @@ def main() -> int:
     all_bad_embs = provider.embed(bad_texts, batch_size=16) if bad_texts else np.array([])
     good_game_arr = np.array(good_game_ids)
     bad_game_arr = np.array(bad_game_ids)
-    print(f"  Encoded in {time.time()-t0:.0f}s: good={all_good_embs.shape}, bad={all_bad_embs.shape}")
+    print(f"  Encoded in {time.time() - t0:.0f}s: good={all_good_embs.shape}, bad={all_bad_embs.shape}")
 
     # Build training data
     print("\n[3/4] Building features with GroupKFold retrieval...")
@@ -191,9 +193,15 @@ def main() -> int:
             continue
         feats = extract_features(opp)
         base_vec = feats.to_array()
-        ret_vec = np.array([feats.nearest_good_similarity, feats.nearest_bad_similarity,
-                           feats.good_bad_similarity_margin, feats.similar_good_avg_quality,
-                           feats.similar_bad_avg_quality])
+        ret_vec = np.array(
+            [
+                feats.nearest_good_similarity,
+                feats.nearest_bad_similarity,
+                feats.good_bad_similarity_margin,
+                feats.similar_good_avg_quality,
+                feats.similar_bad_avg_quality,
+            ]
+        )
         X_base_all.append(base_vec)
         X_ret_all.append(np.concatenate([base_vec, ret_vec]))
         label_qs = item.get("label", {}).get("quality_score")
@@ -227,14 +235,21 @@ def main() -> int:
         acc_c = float(np.mean((yp_c >= 0.5) == y_bin[test_m]))
         nc, npc = 0, 0
         for i in range(len(yp_c)):
-            for j in range(i+1, len(yp_c)):
+            for j in range(i + 1, len(yp_c)):
                 if y_bin[test_m][i] != y_bin[test_m][j]:
                     npc += 1
                     if (yp_c[i] > yp_c[j]) == (y_bin[test_m][i] > y_bin[test_m][j]):
                         nc += 1
         paw_c = nc / max(npc, 1)
-        c_results.append({"fold": fold_i, "accuracy": round(acc_c, 4), "pairwise_accuracy": round(paw_c, 4),
-                          "n_train": int(train_m.sum()), "n_test": int(test_m.sum())})
+        c_results.append(
+            {
+                "fold": fold_i,
+                "accuracy": round(acc_c, 4),
+                "pairwise_accuracy": round(paw_c, 4),
+                "n_train": int(train_m.sum()),
+                "n_test": int(test_m.sum()),
+            }
+        )
 
         # D: base + retrieval
         md = DecisionQualityModel()
@@ -246,14 +261,21 @@ def main() -> int:
         acc_d = float(np.mean((yp_d >= 0.5) == y_bin[test_m]))
         nc2, npc2 = 0, 0
         for i in range(len(yp_d)):
-            for j in range(i+1, len(yp_d)):
+            for j in range(i + 1, len(yp_d)):
                 if y_bin[test_m][i] != y_bin[test_m][j]:
                     npc2 += 1
                     if (yp_d[i] > yp_d[j]) == (y_bin[test_m][i] > y_bin[test_m][j]):
                         nc2 += 1
         paw_d = nc2 / max(npc2, 1)
-        d_results.append({"fold": fold_i, "accuracy": round(acc_d, 4), "pairwise_accuracy": round(paw_d, 4),
-                          "n_train": int(train_m.sum()), "n_test": int(test_m.sum())})
+        d_results.append(
+            {
+                "fold": fold_i,
+                "accuracy": round(acc_d, 4),
+                "pairwise_accuracy": round(paw_d, 4),
+                "n_train": int(train_m.sum()),
+                "n_test": int(test_m.sum()),
+            }
+        )
         print(f"  Fold {fold_i}: C acc={acc_c:.4f} paw={paw_c:.4f} | D acc={acc_d:.4f} paw={paw_d:.4f}")
 
     c_ma = statistics.mean([r["accuracy"] for r in c_results]) if c_results else 0
@@ -271,7 +293,7 @@ def main() -> int:
         f"**Model**: BGE-M3 ({BGE_M3_PATH})",
         f"**Dim**: {provider.dim}",
         f"**Good cases**: {len(good_opps)}, **Bad cases**: {len(bad_opps)}",
-        f"**Retrieval features**: neighbor similarity to good/bad cases",
+        "**Retrieval features**: neighbor similarity to good/bad cases",
         "",
         "## Anti-Leakage",
         "Each GroupKFold test split retrieves from train-split-only index.",
@@ -279,28 +301,28 @@ def main() -> int:
         "## Results",
         "| Metric | C (Base) | D (+Retrieval) | Delta |",
         "|--------|----------|----------------|-------|",
-        f"| Accuracy | {c_ma:.4f} | {d_ma:.4f} | {d_ma-c_ma:+.4f} |",
-        f"| Pairwise Acc | {c_mp:.4f} | {d_mp:.4f} | {d_mp-c_mp:+.4f} |",
+        f"| Accuracy | {c_ma:.4f} | {d_ma:.4f} | {d_ma - c_ma:+.4f} |",
+        f"| Pairwise Acc | {c_mp:.4f} | {d_mp:.4f} | {d_mp - c_mp:+.4f} |",
         f"| Folds | {len(c_results)} | {len(d_results)} | |",
     ]
     (ROOT / "data/health/embedding_retrieval_eval.md").write_text("\n".join(eval_lines))
-    print(f"\n  → embedding_retrieval_eval.md")
+    print("\n  → embedding_retrieval_eval.md")
 
     # Ablation D report
     abl_lines = [
         "# Learned Evaluator Ablation Report — System D",
         "",
-        f"**Date**: 2026-05-27",
+        "**Date**: 2026-05-27",
         "",
         "## Systems Compared",
         "- **C**: Opportunity + Small Models (base features)",
         "- **D**: Opportunity + Small Models + BGE-M3 Retrieval Features",
         "",
         "## Performance",
-        f"| Metric | C | D | Delta |",
-        f"|--------|---|---|-------|",
-        f"| Accuracy | {c_ma:.4f} | {d_ma:.4f} | {d_ma-c_ma:+.4f} |",
-        f"| Pairwise Acc | {c_mp:.4f} | {d_mp:.4f} | {d_mp-c_mp:+.4f} |",
+        "| Metric | C | D | Delta |",
+        "|--------|---|---|-------|",
+        f"| Accuracy | {c_ma:.4f} | {d_ma:.4f} | {d_ma - c_ma:+.4f} |",
+        f"| Pairwise Acc | {c_mp:.4f} | {d_mp:.4f} | {d_mp - c_mp:+.4f} |",
         "",
         "## Per-Fold",
         "| Fold | C Acc | C Paw | D Acc | D Paw |",
@@ -309,19 +331,21 @@ def main() -> int:
     for i in range(max(len(c_results), len(d_results))):
         c = c_results[i] if i < len(c_results) else {}
         d = d_results[i] if i < len(d_results) else {}
-        abl_lines.append(f"| {i} | {c.get('accuracy',0):.4f} | {c.get('pairwise_accuracy',0):.4f} | "
-                        f"{d.get('accuracy',0):.4f} | {d.get('pairwise_accuracy',0):.4f} |")
+        abl_lines.append(
+            f"| {i} | {c.get('accuracy', 0):.4f} | {c.get('pairwise_accuracy', 0):.4f} | "
+            f"{d.get('accuracy', 0):.4f} | {d.get('pairwise_accuracy', 0):.4f} |"
+        )
 
     status = "✓ Retrieval IMPROVES" if d_mp > c_mp else "⚠ No improvement yet"
     abl_lines += [
         "",
         f"## Verdict: {status}",
-        f"- C pairwise: {c_mp:.4f} → D pairwise: {d_mp:.4f} (Δ={d_mp-c_mp:+.4f})",
+        f"- C pairwise: {c_mp:.4f} → D pairwise: {d_mp:.4f} (Δ={d_mp - c_mp:+.4f})",
         "- Retrieval features add similarity-to-good/bad-cases signals",
         "- Benefit is limited when labeled data is small (more data → better retrieval)",
     ]
     (ROOT / "data/health/learned_evaluator_ablation_report_d.md").write_text("\n".join(abl_lines))
-    print(f"  → learned_evaluator_ablation_report_d.md")
+    print("  → learned_evaluator_ablation_report_d.md")
 
     print("\nDone!")
     return 0

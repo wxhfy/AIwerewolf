@@ -6,8 +6,8 @@ They answer "what should I do" while profiles answer "how should I say it."
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Literal
+from dataclasses import dataclass
+from dataclasses import field
 
 
 @dataclass
@@ -23,7 +23,7 @@ class RoleStrategyCard:
     # === Rule-based strategies (explicit, explainable, stable) ===
 
     # Information strategy
-    claim_policy: str = "honest"         # honest | cautious | aggressive
+    claim_policy: str = "honest"  # honest | cautious | aggressive
     info_release_policy: str = "timely"  # timely | withhold | selective
 
     # Vote strategy
@@ -32,16 +32,16 @@ class RoleStrategyCard:
     split_vote_tolerance: float = 0.3
 
     # Skill strategy
-    skill_conservation: float = 0.5       # 0=use freely, 1=hoard
+    skill_conservation: float = 0.5  # 0=use freely, 1=hoard
     skill_target_priority: list[str] = field(default_factory=list)
 
     # Risk strategy
-    risk_tolerance: float = 0.5           # 0=safe, 1=aggressive
-    information_seeking: float = 0.5      # 0=passive, 1=actively probe
+    risk_tolerance: float = 0.5  # 0=safe, 1=aggressive
+    information_seeking: float = 0.5  # 0=passive, 1=actively probe
 
     # === Wolf-specific (None for village roles) ===
     bluff_timing_preference: str | None = None  # early | mid | late | reactive
-    sacrifice_threshold: float | None = None    # when to bus a teammate
+    sacrifice_threshold: float | None = None  # when to bus a teammate
 
     def format_for_prompt(self) -> str:
         """Format strategy card as a prompt-injectable text block."""
@@ -91,21 +91,23 @@ class StrategyMemory:
     Independent of MBTI/Persona — pure decision-layer state.
     """
 
-    current_tactic: str = ""              # Current tactical approach
-    suspicion_ranking: list[str] = field(default_factory=list)    # Most→least suspicious
-    trusted_allies: list[str] = field(default_factory=list)      # Players believed village
-    exposed_risk: float = 0.0             # Risk of role exposure (0-1)
-    info_debt: list[str] = field(default_factory=list)           # Info owed to team
-    last_claim: str | None = None         # Last public role claim
-    stance_history: list[dict] = field(default_factory=list)     # Past stances
+    current_tactic: str = ""  # Current tactical approach
+    suspicion_ranking: list[str] = field(default_factory=list)  # Most→least suspicious
+    trusted_allies: list[str] = field(default_factory=list)  # Players believed village
+    exposed_risk: float = 0.0  # Risk of role exposure (0-1)
+    info_debt: list[str] = field(default_factory=list)  # Info owed to team
+    last_claim: str | None = None  # Last public role claim
+    stance_history: list[dict] = field(default_factory=list)  # Past stances
 
     def record_stance(self, target: str, stance: str, reason: str = "") -> None:
         """Record a stance toward a player for continuity tracking."""
-        self.stance_history.append({
-            "target": target,
-            "stance": stance,  # "suspect", "trust", "neutral"
-            "reason": reason,
-        })
+        self.stance_history.append(
+            {
+                "target": target,
+                "stance": stance,  # "suspect", "trust", "neutral"
+                "reason": reason,
+            }
+        )
         if len(self.stance_history) > 20:
             self.stance_history = self.stance_history[-20:]
 
@@ -123,18 +125,22 @@ _STRATEGY_REGISTRY: dict[str, type[RoleStrategyCard]] = {}
 
 def register_strategy(role: str):
     """Decorator to register a strategy card class for a role."""
+
     def decorator(cls: type[RoleStrategyCard]):
         _STRATEGY_REGISTRY[role.lower()] = cls
         return cls
+
     return decorator
 
 
 def get_strategy_card(role: str, **overrides) -> RoleStrategyCard:
     """Get the strategy card for a role, with optional parameter overrides."""
-    from backend.agents.cognitive.strategies import (
-        SeerStrategyCard, WitchStrategyCard, HunterStrategyCard,
-        GuardStrategyCard, VillagerStrategyCard, WerewolfStrategyCard,
-    )
+    from backend.agents.cognitive.strategies import GuardStrategyCard
+    from backend.agents.cognitive.strategies import HunterStrategyCard
+    from backend.agents.cognitive.strategies import SeerStrategyCard
+    from backend.agents.cognitive.strategies import VillagerStrategyCard
+    from backend.agents.cognitive.strategies import WerewolfStrategyCard
+    from backend.agents.cognitive.strategies import WitchStrategyCard
 
     # Import triggers registration; explicit mapping as fallback
     mapping = {

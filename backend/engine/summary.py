@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from backend.engine.models import EventType, GameEvent
+from backend.engine.models import EventType
+from backend.engine.models import GameEvent
 
 
 def build_day_summary(events: list[GameEvent], day: int) -> tuple[list[str], list[dict[str, Any]]]:

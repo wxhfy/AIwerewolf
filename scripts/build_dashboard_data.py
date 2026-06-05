@@ -16,21 +16,20 @@ Usage:
 
 from __future__ import annotations
 
-import json, math, statistics, sys
+import json
+import math
+import statistics
+import sys
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-import numpy as np
-
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from backend.eval.v3_report import (
-    compute_ablation_summary,
-    compute_calibration_data,
-    compute_role_action_matrix,
-)
+from backend.eval.v3_report import compute_ablation_summary
+from backend.eval.v3_report import compute_calibration_data
+from backend.eval.v3_report import compute_role_action_matrix
 
 
 def load_json(path: str) -> Any:
@@ -130,19 +129,9 @@ def main() -> int:
             "n_lost": len(lost),
             "won_mean": round(statistics.mean(won), 1) if won else 0,
             "lost_mean": round(statistics.mean(lost), 1) if lost else 0,
-            "gap": (
-                round(statistics.mean(won) - statistics.mean(lost), 1)
-                if won and lost
-                else 0
-            ),
+            "gap": (round(statistics.mean(won) - statistics.mean(lost), 1) if won and lost else 0),
             "cohens_d": round(d, 3),
-            "confidence": (
-                "low"
-                if len(won) < 30 and role == "Hunter"
-                else "medium"
-                if role == "Guard"
-                else "high"
-            ),
+            "confidence": ("low" if len(won) < 30 and role == "Hunter" else "medium" if role == "Guard" else "high"),
             "note": (
                 "LOW CONFIDENCE: 18 shots total"
                 if role == "Hunter"
@@ -194,12 +183,8 @@ def main() -> int:
         leaderboard_summary[role] = {
             "top3": entries[:3],
             "mean_final": round(statistics.mean(e["final_score"] for e in entries), 1),
-            "mean_process": round(
-                statistics.mean(e["process_score"] for e in entries), 1
-            ),
-            "mean_speech": round(
-                statistics.mean(e["speech_score"] for e in entries), 1
-            ),
+            "mean_process": round(statistics.mean(e["process_score"] for e in entries), 1),
+            "mean_speech": round(statistics.mean(e["speech_score"] for e in entries), 1),
         }
 
     # Overall top 10
@@ -295,9 +280,7 @@ def main() -> int:
     }
 
     out_path = ROOT / args.output
-    out_path.write_text(
-        json.dumps(dashboard, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    out_path.write_text(json.dumps(dashboard, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"\nDashboard data → {out_path} ({out_path.stat().st_size:,} bytes)")
     return 0
 

@@ -34,9 +34,11 @@ sys.path.insert(0, ROOT)
 DB_URL = "postgresql://werewolf:wolf_secret_2026@127.0.0.1:5433/werewolf"
 os.environ.setdefault("DATABASE_URL", DB_URL)
 
-from backend.db.database import SessionLocal, init_db
-from backend.db.models import StrategyKnowledgeDoc
 from sqlalchemy import text
+
+from backend.db.database import SessionLocal
+from backend.db.database import init_db
+from backend.db.models import StrategyKnowledgeDoc
 
 logging.basicConfig(
     level=logging.INFO,
@@ -81,14 +83,15 @@ def _optimal_k(vectors: np.ndarray, min_k: int, max_k: int) -> int:
 
     # Fast heuristic for large buckets: sqrt-based with bounds
     if n_samples > 300:
-        return max(min_possible, min(max_possible, int(n_samples ** 0.5) + 3))
+        return max(min_possible, min(max_possible, int(n_samples**0.5) + 3))
 
     # For small/medium buckets, evaluate a few K values
     import math as _math
+
     k_candidates = set()
-    k_candidates.add(max(2, n_samples // 10))   # ~10% of samples
-    k_candidates.add(max(2, n_samples // 5))    # ~20% of samples
-    k_candidates.add(max(2, n_samples // 3))    # ~33% of samples
+    k_candidates.add(max(2, n_samples // 10))  # ~10% of samples
+    k_candidates.add(max(2, n_samples // 5))  # ~20% of samples
+    k_candidates.add(max(2, n_samples // 3))  # ~33% of samples
     k_candidates.add(min_possible)
     k_candidates.add(max_possible)
     # Add a few log-spaced points
@@ -158,11 +161,7 @@ def run_cluster_promotion(
     """Main cluster promotion pipeline. Returns a report dict."""
 
     # ── Step 1: Fetch all candidate docs ───────────────────────────────
-    candidates = (
-        db.query(StrategyKnowledgeDoc)
-        .filter(StrategyKnowledgeDoc.status == "candidate")
-        .all()
-    )
+    candidates = db.query(StrategyKnowledgeDoc).filter(StrategyKnowledgeDoc.status == "candidate").all()
     logger.info("Loaded %d candidate documents from DB", len(candidates))
 
     if not candidates:
@@ -188,12 +187,18 @@ def run_cluster_promotion(
 
         if n_docs < MIN_DOCS_PER_BUCKET:
             logger.debug("Skipping small bucket: %s/%s (%d docs)", role, doc_type, n_docs)
-            report_buckets.append({
-                "role": role, "doc_type": doc_type, "n_docs": n_docs,
-                "n_clusters": 0, "n_promoted": 0,
-                "qualities": [d.quality_score for d in docs],
-                "skipped": True, "reason": "too_few_docs",
-            })
+            report_buckets.append(
+                {
+                    "role": role,
+                    "doc_type": doc_type,
+                    "n_docs": n_docs,
+                    "n_clusters": 0,
+                    "n_promoted": 0,
+                    "qualities": [d.quality_score for d in docs],
+                    "skipped": True,
+                    "reason": "too_few_docs",
+                }
+            )
             continue
 
         # Build text corpus
@@ -211,27 +216,39 @@ def run_cluster_promotion(
             vectors = vectorizer.fit_transform(texts)
         except ValueError:
             logger.warning("TF-IDF failed for bucket %s/%s, skipping", role, doc_type)
-            report_buckets.append({
-                "role": role, "doc_type": doc_type, "n_docs": n_docs,
-                "n_clusters": 0, "n_promoted": 0,
-                "qualities": qualities, "skipped": True, "reason": "tfidf_failed",
-            })
+            report_buckets.append(
+                {
+                    "role": role,
+                    "doc_type": doc_type,
+                    "n_docs": n_docs,
+                    "n_clusters": 0,
+                    "n_promoted": 0,
+                    "qualities": qualities,
+                    "skipped": True,
+                    "reason": "tfidf_failed",
+                }
+            )
             continue
 
         if vectors.shape[0] < 3 or vectors.nnz == 0:
             # Too few features — promote top N by quality, filtered by MIN_QUALITY_FOR_PROMOTION
             docs_sorted = sorted(docs, key=lambda d: d.quality_score, reverse=True)
-            promoted = [d for d in docs_sorted[:TOP_PER_CLUSTER * 3]
-                       if d.quality_score >= MIN_QUALITY_FOR_PROMOTION]
+            promoted = [d for d in docs_sorted[: TOP_PER_CLUSTER * 3] if d.quality_score >= MIN_QUALITY_FOR_PROMOTION]
             if not promoted:
                 promoted = docs_sorted[:1]  # Always promote at least 1 if any exist
 
-            report_buckets.append({
-                "role": role, "doc_type": doc_type, "n_docs": n_docs,
-                "n_clusters": len(promoted), "n_promoted": len(promoted),
-                "qualities": qualities, "skipped": False,
-                "reason": "top_quality_fallback",
-            })
+            report_buckets.append(
+                {
+                    "role": role,
+                    "doc_type": doc_type,
+                    "n_docs": n_docs,
+                    "n_clusters": len(promoted),
+                    "n_promoted": len(promoted),
+                    "qualities": qualities,
+                    "skipped": False,
+                    "reason": "top_quality_fallback",
+                }
+            )
         else:
             # KMeans clustering
             dense = vectors.toarray()
@@ -243,8 +260,9 @@ def run_cluster_promotion(
             except Exception:
                 logger.warning("KMeans failed for %s/%s, using top-N fallback", role, doc_type)
                 docs_sorted = sorted(docs, key=lambda d: (d.quality_score, d.confidence), reverse=True)
-                promoted = [d for d in docs_sorted[:TOP_PER_CLUSTER * 3]
-                           if d.quality_score >= MIN_QUALITY_FOR_PROMOTION]
+                promoted = [
+                    d for d in docs_sorted[: TOP_PER_CLUSTER * 3] if d.quality_score >= MIN_QUALITY_FOR_PROMOTION
+                ]
                 if not promoted:
                     promoted = docs_sorted[:1]
                 labels = np.zeros(n_docs, dtype=int)
@@ -262,11 +280,18 @@ def run_cluster_promotion(
                         if doc.quality_score >= MIN_QUALITY_FOR_PROMOTION:
                             promoted.append(doc)
 
-            report_buckets.append({
-                "role": role, "doc_type": doc_type, "n_docs": n_docs,
-                "n_clusters": k, "n_promoted": len(promoted),
-                "qualities": qualities, "skipped": False, "reason": "clustered",
-            })
+            report_buckets.append(
+                {
+                    "role": role,
+                    "doc_type": doc_type,
+                    "n_docs": n_docs,
+                    "n_clusters": k,
+                    "n_promoted": len(promoted),
+                    "qualities": qualities,
+                    "skipped": False,
+                    "reason": "clustered",
+                }
+            )
 
         # ── Promote representatives ───────────────────────────────────
         promoted_ids = set()
@@ -281,8 +306,13 @@ def run_cluster_promotion(
                     doc.status = "deprecated"
                     bucket_deprecated += 1
             deprecated_count += bucket_deprecated
-            logger.info("Bucket %s/%s: promoted %d, deprecated %d non-selected",
-                        role, doc_type, len(promoted), bucket_deprecated)
+            logger.info(
+                "Bucket %s/%s: promoted %d, deprecated %d non-selected",
+                role,
+                doc_type,
+                len(promoted),
+                bucket_deprecated,
+            )
             db.flush()
 
         bucket_promoted_ids = [doc.id for doc in promoted]
@@ -296,7 +326,9 @@ def run_cluster_promotion(
                 doc.status = "deprecated"
             deprecated_count += 1
     if deprecated_count > 0:
-        logger.info("Total deprecated: %d (non-selected + low-quality < %.2f)", deprecated_count, DEPRECATION_QUALITY_THRESHOLD)
+        logger.info(
+            "Total deprecated: %d (non-selected + low-quality < %.2f)", deprecated_count, DEPRECATION_QUALITY_THRESHOLD
+        )
 
     # ── Step 5: Commit ────────────────────────────────────────────────
     if not dry_run and (total_promoted > 0 or deprecated_count > 0):
@@ -333,8 +365,10 @@ def print_report(report: dict[str, Any]) -> None:
     print(f"  Total deprecated (low qual): {total_deprecated}")
     if total_docs > 0:
         print(f"  Promotion rate:              {total_promoted / total_docs * 100:.1f}%")
-    print(f"  Parameters: Top-{TOP_PER_CLUSTER}/cluster, min_quality={MIN_QUALITY_FOR_PROMOTION}, "
-          f"deprecate < {DEPRECATION_QUALITY_THRESHOLD}")
+    print(
+        f"  Parameters: Top-{TOP_PER_CLUSTER}/cluster, min_quality={MIN_QUALITY_FOR_PROMOTION}, "
+        f"deprecate < {DEPRECATION_QUALITY_THRESHOLD}"
+    )
     print()
 
     # Group buckets by role for cleaner display
@@ -371,10 +405,18 @@ def print_report(report: dict[str, Any]) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Cluster-based strategy promotion")
     parser.add_argument("--dry-run", action="store_true", help="Preview only, no DB writes")
-    parser.add_argument("--min-clusters", type=int, default=DEFAULT_MIN_CLUSTERS,
-                        help=f"Minimum K for KMeans (default: {DEFAULT_MIN_CLUSTERS})")
-    parser.add_argument("--max-clusters", type=int, default=DEFAULT_MAX_CLUSTERS,
-                        help=f"Maximum K for KMeans (default: {DEFAULT_MAX_CLUSTERS})")
+    parser.add_argument(
+        "--min-clusters",
+        type=int,
+        default=DEFAULT_MIN_CLUSTERS,
+        help=f"Minimum K for KMeans (default: {DEFAULT_MIN_CLUSTERS})",
+    )
+    parser.add_argument(
+        "--max-clusters",
+        type=int,
+        default=DEFAULT_MAX_CLUSTERS,
+        help=f"Maximum K for KMeans (default: {DEFAULT_MAX_CLUSTERS})",
+    )
     args = parser.parse_args()
 
     if args.min_clusters >= args.max_clusters:
@@ -382,8 +424,7 @@ def main() -> int:
         return 1
 
     logger.info("Starting cluster-based promotion...")
-    logger.info("  min_clusters=%d  max_clusters=%d  dry_run=%s",
-                args.min_clusters, args.max_clusters, args.dry_run)
+    logger.info("  min_clusters=%d  max_clusters=%d  dry_run=%s", args.min_clusters, args.max_clusters, args.dry_run)
 
     init_db()
     db = SessionLocal()

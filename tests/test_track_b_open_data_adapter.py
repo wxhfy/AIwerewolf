@@ -18,8 +18,11 @@ OPEN_DATA_DIR = ROOT / "data" / "open"
 # Schema tests
 # ===========================================================================
 
+
 def test_speech_quality_sample_schema():
-    from backend.eval.open_data.schema import SpeechQualitySample, OpenDataLicense
+    from backend.eval.open_data.schema import OpenDataLicense
+    from backend.eval.open_data.schema import SpeechQualitySample
+
     s = SpeechQualitySample(
         sample_id="speech_000001",
         source="werewolf_among_us",
@@ -40,6 +43,7 @@ def test_speech_quality_sample_schema():
 
 def test_vote_decision_sample_schema():
     from backend.eval.open_data.schema import VoteDecisionSample
+
     s = VoteDecisionSample(
         sample_id="vote_000001",
         source="track_b_replay",
@@ -55,13 +59,15 @@ def test_vote_decision_sample_schema():
 
 def test_counterfactual_pairwise_sample_schema():
     from backend.eval.open_data.schema import CounterfactualPairwiseSample
+
     s = CounterfactualPairwiseSample(
         pair_id="pair_000001",
         source="track_b_replay",
         game_id="g1",
         role="Werewolf",
         action_type="vote",
-        option_a={"action": "vote_P3"}, option_b={"action": "vote_P1"},
+        option_a={"action": "vote_P3"},
+        option_b={"action": "vote_P1"},
         label="A_BETTER",
     )
     d = s.to_dict()
@@ -70,6 +76,7 @@ def test_counterfactual_pairwise_sample_schema():
 
 def test_value_impact_sample_schema():
     from backend.eval.open_data.schema import ValueImpactSample
+
     s = ValueImpactSample(
         sample_id="value_000001",
         source="deep_wolf_logs",
@@ -82,6 +89,7 @@ def test_value_impact_sample_schema():
 
 def test_role_action_sample_schema():
     from backend.eval.open_data.schema import RoleActionSample
+
     s = RoleActionSample(
         sample_id="role_action_000001",
         source="track_b_replay",
@@ -93,7 +101,9 @@ def test_role_action_sample_schema():
 
 
 def test_weak_label_provenance():
-    from backend.eval.open_data.schema import WeakLabel, WeakLabelSource
+    from backend.eval.open_data.schema import WeakLabel
+    from backend.eval.open_data.schema import WeakLabelSource
+
     wl = WeakLabel(
         label_name="evidence_grounding",
         label_value=0.8,
@@ -110,9 +120,11 @@ def test_weak_label_provenance():
 # Adapter tests
 # ===========================================================================
 
+
 @pytest.fixture(scope="module")
 def adapter():
     from backend.eval.open_data.adapters import WerewolfAmongUsAdapter
+
     return WerewolfAmongUsAdapter()
 
 
@@ -207,6 +219,7 @@ def test_adapter_role_normalization(adapter_output):
 # ===========================================================================
 # Output file tests (after build script runs)
 # ===========================================================================
+
 
 def test_speech_samples_output_exists():
     path = OPEN_DATA_DIR / "track_b_open_speech_samples.jsonl"

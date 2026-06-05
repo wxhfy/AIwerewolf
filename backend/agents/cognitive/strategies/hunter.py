@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from dataclasses import field
 
-from backend.agents.cognitive.strategies.base import RoleStrategyCard, register_strategy
+from backend.agents.cognitive.strategies.base import RoleStrategyCard
+from backend.agents.cognitive.strategies.base import register_strategy
 
 
 @register_strategy("hunter")
@@ -22,21 +24,23 @@ class HunterStrategyCard(RoleStrategyCard):
     information_seeking: float = 0.40
 
     # Shoot strategy
-    shoot_when_obvious_wolf: bool = True       # Shoot if target is clearly wolf
-    shoot_when_framed: bool = False             # Don't shoot if being framed
-    hold_when_uncertain: bool = True            # Hold shot if unsure (<60% confidence)
+    shoot_when_obvious_wolf: bool = True  # Shoot if target is clearly wolf
+    shoot_when_framed: bool = False  # Don't shoot if being framed
+    hold_when_uncertain: bool = True  # Hold shot if unsure (<60% confidence)
     shoot_confidence_threshold: float = 0.60
 
     # Target priority
-    shoot_priority: list[str] = field(default_factory=lambda: [
-        "confirmed_wolf",
-        "contradiction_detected",
-        "vote_misled_good",
-        "wolf_claim_contradicted",
-    ])
+    shoot_priority: list[str] = field(
+        default_factory=lambda: [
+            "confirmed_wolf",
+            "contradiction_detected",
+            "vote_misled_good",
+            "wolf_claim_contradicted",
+        ]
+    )
 
     # Identity
-    reveal_early: bool = False                  # Don't reveal unless necessary
+    reveal_early: bool = False  # Don't reveal unless necessary
     reveal_on_death: bool = True
 
     def format_for_prompt(self) -> str:

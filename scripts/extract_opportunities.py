@@ -8,7 +8,7 @@ from __future__ import annotations
 import ast
 import json
 import sys
-from collections import Counter, defaultdict
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -16,16 +16,14 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from backend.db.database import SessionLocal, init_db
+from backend.db.database import SessionLocal
+from backend.db.database import init_db
 from backend.db.models import PublishedReview
-from backend.eval.opportunity import (
-    DecisionOpportunity,
-    GameFeatureBuilder,
-    OpportunityExtractor,
-    OpportunityType,
-    OutcomeFeatureBuilder,
-    _uid,
-)
+from backend.eval.opportunity import DecisionOpportunity
+from backend.eval.opportunity import GameFeatureBuilder
+from backend.eval.opportunity import OpportunityType
+from backend.eval.opportunity import OutcomeFeatureBuilder
+from backend.eval.opportunity import _uid
 
 
 def _parse_field(value: Any) -> Any:
@@ -50,15 +48,10 @@ def _parse_field(value: Any) -> Any:
 
 def _extract_target_id(selected_action: dict) -> str | None:
     """Extract target player ID from selected action."""
-    return (
-        selected_action.get("target_id")
-        or selected_action.get("target")
-        or selected_action.get("player_id")
-    )
+    return selected_action.get("target_id") or selected_action.get("target") or selected_action.get("player_id")
 
 
-def _classify_opportunity(role: str, phase: str, action_type: str,
-                          selected_action: dict) -> str | None:
+def _classify_opportunity(role: str, phase: str, action_type: str, selected_action: dict) -> str | None:
     """Map (role, phase, action_type) to opportunity type."""
     at = action_type.lower()
 
@@ -84,7 +77,9 @@ def _classify_opportunity(role: str, phase: str, action_type: str,
         return OpportunityType.VOTE
 
     if at in ("talk", "speech", "chat") and phase in (
-        "DAY_SPEECH", "DAY_BADGE_SPEECH", "DAY_LAST_WORDS",
+        "DAY_SPEECH",
+        "DAY_BADGE_SPEECH",
+        "DAY_LAST_WORDS",
     ):
         speech_text = str(selected_action.get("speech") or selected_action.get("text") or "")
         if role == "Seer" and any(kw in speech_text for kw in ["查验", "查杀", "金水", "divine"]):
@@ -97,7 +92,8 @@ def _classify_opportunity(role: str, phase: str, action_type: str,
 def _build_public_context(events: list[dict], day: int, phase: str) -> str:
     """Summarize recent public events."""
     recent = [
-        e for e in events
+        e
+        for e in events
         if int(e.get("day", 0)) == day
         and e.get("event_type") in ("CHAT_MESSAGE", "VOTE_CAST", "PLAYER_DIED", "BADGE_AWARDED")
     ]
@@ -109,8 +105,7 @@ def _build_public_context(events: list[dict], day: int, phase: str) -> str:
     return "\n".join(lines) if lines else "(no public events this phase)"
 
 
-def _gather_evidence(events: list[dict], day: int, player_id: str,
-                     target_id: str | None) -> list[str]:
+def _gather_evidence(events: list[dict], day: int, player_id: str, target_id: str | None) -> list[str]:
     """Collect relevant event IDs as evidence."""
     ids: list[str] = []
     for e in events:
@@ -174,10 +169,20 @@ def extract_from_bundle(bundle: dict) -> list[DecisionOpportunity]:
 
         # Build features
         game_feat, target_feat = GameFeatureBuilder.build(
-            players, events, day, phase, player_id, target_id,
+            players,
+            events,
+            day,
+            phase,
+            player_id,
+            target_id,
         )
         outcome_feat = OutcomeFeatureBuilder.build(
-            events, deaths, day, target_id, player_id, winner,
+            events,
+            deaths,
+            day,
+            target_id,
+            player_id,
+            winner,
         )
 
         # Public context
@@ -212,6 +217,7 @@ def extract_from_bundle(bundle: dict) -> list[DecisionOpportunity]:
 
 def main() -> int:
     import argparse
+
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit", type=int, default=0, help="Limit games processed")
     ap.add_argument("--output", default="data/health/opportunities.jsonl")
@@ -226,16 +232,20 @@ def main() -> int:
         clean_path = Path("/tmp/clean_llm_game_ids.json")
         clean_ids = set(json.loads(clean_path.read_text()))
 
-        reviews = db.query(PublishedReview).filter(
-            PublishedReview.game_id.in_(clean_ids),
-            PublishedReview.publish_allowed == True,
-            PublishedReview.replay_bundle != None,
-        ).all()
+        reviews = (
+            db.query(PublishedReview)
+            .filter(
+                PublishedReview.game_id.in_(clean_ids),
+                PublishedReview.publish_allowed == True,
+                PublishedReview.replay_bundle != None,
+            )
+            .all()
+        )
 
         print(f"Found {len(reviews)} reviews with replay_bundle data")
 
         if args.limit:
-            reviews = reviews[:args.limit]
+            reviews = reviews[: args.limit]
 
         all_opps: list[DecisionOpportunity] = []
         per_game_counts: dict[str, int] = {}
@@ -249,7 +259,7 @@ def main() -> int:
                 all_opps.extend(opps)
                 per_game_counts[review.game_id[:8]] = len(opps)
                 if (i + 1) % 10 == 0:
-                    print(f"  Processed {i+1}/{len(reviews)} games, {len(all_opps)} opportunities so far...")
+                    print(f"  Processed {i + 1}/{len(reviews)} games, {len(all_opps)} opportunities so far...")
             except Exception as e:
                 print(f"  ERROR game {review.game_id[:8]}: {e}")
 
@@ -294,7 +304,7 @@ def _generate_stats(
     ]
     total = len(opps)
     for op_type, cnt in type_counts.most_common():
-        lines.append(f"| {op_type} | {cnt} | {cnt/total*100:.1f}% |")
+        lines.append(f"| {op_type} | {cnt} | {cnt / total * 100:.1f}% |")
 
     lines += [
         "",
@@ -319,11 +329,11 @@ def _generate_stats(
     lines += [
         "",
         "## Evidence Coverage",
-        f"| Opportunities with evidence_event_ids | {sum(1 for o in opps if o.evidence_event_ids)} | {sum(1 for o in opps if o.evidence_event_ids)/max(total,1)*100:.1f}% |",
-        f"| Avg evidence events per opportunity | {sum(len(o.evidence_event_ids) for o in opps)/max(total,1):.1f} |",
+        f"| Opportunities with evidence_event_ids | {sum(1 for o in opps if o.evidence_event_ids)} | {sum(1 for o in opps if o.evidence_event_ids) / max(total, 1) * 100:.1f}% |",
+        f"| Avg evidence events per opportunity | {sum(len(o.evidence_event_ids) for o in opps) / max(total, 1):.1f} |",
         "",
         "## Target Feature Coverage",
-        f"| Opportunities with target_features | {sum(1 for o in opps if o.target_features)} | {sum(1 for o in opps if o.target_features)/max(total,1)*100:.1f}% |",
+        f"| Opportunities with target_features | {sum(1 for o in opps if o.target_features)} | {sum(1 for o in opps if o.target_features) / max(total, 1) * 100:.1f}% |",
     ]
 
     stats_path.parent.mkdir(parents=True, exist_ok=True)

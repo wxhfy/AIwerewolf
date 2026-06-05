@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
 import sys
 import time
@@ -26,7 +25,8 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from backend.db.database import SessionLocal, init_db
+from backend.db.database import SessionLocal
+from backend.db.database import init_db
 from backend.db.models import StrategyKnowledgeDoc
 from backend.llm import create_client
 
@@ -129,7 +129,7 @@ def parse_translation_response(raw_text: str) -> list[dict[str, str]]:
         # Remove opening fence (possibly with language tag)
         first_newline = text.find("\n")
         if first_newline != -1:
-            text = text[first_newline + 1:]
+            text = text[first_newline + 1 :]
         if text.endswith("```"):
             text = text[:-3]
         text = text.strip()
@@ -227,9 +227,7 @@ def apply_translations(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Translate English strategy knowledge docs to Chinese via batch LLM."
-    )
+    parser = argparse.ArgumentParser(description="Translate English strategy knowledge docs to Chinese via batch LLM.")
     parser.add_argument(
         "--batch-size",
         type=int,
@@ -318,24 +316,23 @@ def main() -> None:
 
             # Build lookup maps for this batch
             doc_map: dict[str, StrategyKnowledgeDoc] = {doc.id: doc for doc in batch_docs}
-            doc_english_fields: dict[str, set[str]] = {
-                doc.id: needs_translation(doc) for doc in batch_docs
-            }
+            doc_english_fields: dict[str, set[str]] = {doc.id: needs_translation(doc) for doc in batch_docs}
 
-            print(f"\nBatch {batch_idx + 1}/{total_batches}: "
-                  f"docs {start + 1}-{end} ({len(batch_docs)} entries)")
+            print(f"\nBatch {batch_idx + 1}/{total_batches}: docs {start + 1}-{end} ({len(batch_docs)} entries)")
 
             success = False
             for attempt in range(1, args.max_retries + 1):
                 try:
                     translations = translate_batch(client, batch_docs, max_tokens=args.max_tokens)
                     batch_updated = apply_translations(
-                        db, doc_map, translations, doc_english_fields,
+                        db,
+                        doc_map,
+                        translations,
+                        doc_english_fields,
                     )
                     db.commit()
                     total_updated += batch_updated
-                    print(f"  Translated {batch_updated}/{len(batch_docs)} docs "
-                          f"(attempt {attempt})")
+                    print(f"  Translated {batch_updated}/{len(batch_docs)} docs (attempt {attempt})")
                     success = True
                     break
                 except json.JSONDecodeError as exc:
@@ -353,8 +350,10 @@ def main() -> None:
 
             # Progress summary every batch
             if (batch_idx + 1) % 5 == 0 or (batch_idx + 1) == total_batches:
-                print(f"\n── Progress: {total_updated}/{len(english_docs)} docs translated "
-                      f"({batch_idx + 1}/{total_batches} batches) ──")
+                print(
+                    f"\n── Progress: {total_updated}/{len(english_docs)} docs translated "
+                    f"({batch_idx + 1}/{total_batches} batches) ──"
+                )
 
             # Rate-limit sleep
             if batch_idx < total_batches - 1:
@@ -362,7 +361,7 @@ def main() -> None:
 
         # ── Final report ─────────────────────────────────────────────────────
         print(f"\n{'=' * 60}")
-        print(f"Translation complete!")
+        print("Translation complete!")
         print(f"  Total English docs found:  {len(english_docs)}")
         print(f"  Successfully translated:   {total_updated}")
         print(f"  Skipped (all retries failed): {len(english_docs) - total_updated}")

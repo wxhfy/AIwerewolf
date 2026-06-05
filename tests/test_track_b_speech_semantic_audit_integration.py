@@ -18,6 +18,7 @@ ROOT = Path(__file__).resolve().parent.parent
 # Metrics tests
 # ===========================================================================
 
+
 @pytest.fixture(scope="module")
 def metrics():
     path = ROOT / "data" / "open" / "combined" / "speech_act_classifier_v0_metrics.json"
@@ -38,8 +39,7 @@ def test_metrics_contains_micro_f1(metrics):
 
 def test_metrics_contains_per_label_f1(metrics):
     per_label = metrics.get("per_label_metrics", {})
-    for label in ["accusation", "interrogation", "defense",
-                  "evidence_use", "identity_declaration", "call_for_action"]:
+    for label in ["accusation", "interrogation", "defense", "evidence_use", "identity_declaration", "call_for_action"]:
         assert label in per_label, f"Missing per_label_metrics for '{label}'"
         assert "f1" in per_label[label], f"Missing f1 for label '{label}'"
 
@@ -65,6 +65,7 @@ def test_metrics_has_label_distribution(metrics):
 # Audit examples tests
 # ===========================================================================
 
+
 def test_audit_examples_script_exists():
     path = ROOT / "scripts" / "generate_speech_semantic_audit_examples.py"
     assert path.exists()
@@ -72,7 +73,10 @@ def test_audit_examples_script_exists():
 
 def test_audit_examples_can_be_generated():
     """Run the generator on a small subset and verify output."""
-    import subprocess, sys, tempfile
+    import subprocess
+    import sys
+    import tempfile
+
     script = ROOT / "scripts" / "generate_speech_semantic_audit_examples.py"
     if not script.exists():
         pytest.skip("Script not found")
@@ -83,7 +87,9 @@ def test_audit_examples_can_be_generated():
     try:
         result = subprocess.run(
             [sys.executable, str(script), "--limit", "50", "--output", tmp_path],
-            capture_output=True, text=True, timeout=120,
+            capture_output=True,
+            text=True,
+            timeout=120,
             cwd=str(ROOT),
         )
         if result.returncode != 0:
@@ -109,8 +115,10 @@ def test_audit_examples_can_be_generated():
 # No final_q policy tests
 # ===========================================================================
 
+
 def test_speech_semantic_scorer_no_final_q():
     from backend.eval.heads.speech_semantic import SpeechSemanticScorer
+
     scorer = SpeechSemanticScorer()
     result = scorer.score("I think P3 is the werewolf.")
     d = result.to_dict()
@@ -142,6 +150,7 @@ def test_classifier_report_exists():
 # Profile aggregation tests
 # ===========================================================================
 
+
 def test_profile_analyzer_script_exists():
     path = ROOT / "scripts" / "analyze_profile_speech_semantics.py"
     assert path.exists()
@@ -149,7 +158,9 @@ def test_profile_analyzer_script_exists():
 
 def test_profile_aggregation_returns_distribution():
     """Run profile analyzer on small audit examples subset."""
-    import subprocess, sys, tempfile
+    import subprocess
+    import sys
+    import tempfile
 
     # First generate some audit examples if not exist
     audit_path = ROOT / "data" / "open" / "combined" / "speech_semantic_audit_examples.jsonl"
@@ -162,12 +173,21 @@ def test_profile_aggregation_returns_distribution():
 
     try:
         result = subprocess.run(
-            [sys.executable, str(script),
-             "--input", str(audit_path),
-             "--output", tmp_path,
-             "--profile-field", "role",
-             "--limit", "500"],
-            capture_output=True, text=True, timeout=120,
+            [
+                sys.executable,
+                str(script),
+                "--input",
+                str(audit_path),
+                "--output",
+                tmp_path,
+                "--profile-field",
+                "role",
+                "--limit",
+                "500",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=120,
             cwd=str(ROOT),
         )
         if result.returncode != 0:
@@ -187,9 +207,12 @@ def test_profile_aggregation_returns_distribution():
 
             # Check required audit feature fields
             for field in [
-                "avg_evidence_grounding_signal", "avg_actionability_signal",
-                "avg_identity_claim_signal", "avg_pressure_signal",
-                "avg_information_seeking_signal", "avg_defensive_posture_signal",
+                "avg_evidence_grounding_signal",
+                "avg_actionability_signal",
+                "avg_identity_claim_signal",
+                "avg_pressure_signal",
+                "avg_information_seeking_signal",
+                "avg_defensive_posture_signal",
             ]:
                 assert field in p, f"Profile missing field: {field}"
     finally:

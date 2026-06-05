@@ -3,24 +3,35 @@ probabilistic voting, stance tracking, and 10-player game initialization."""
 
 from __future__ import annotations
 
-from backend.agents.characters import Character, Persona, PlayerMind
+from backend.agents.characters import Character
+from backend.agents.characters import Persona
+from backend.agents.characters import PlayerMind
 from backend.agents.heuristic import HeuristicAgent
-from backend.agents.humanization import build_humanization_profile, build_stance_summary
+from backend.agents.humanization import build_humanization_profile
+from backend.agents.humanization import build_stance_summary
 from backend.engine.game import WerewolfGame
-from backend.engine.models import Player, Role
+from backend.engine.models import Player
+from backend.engine.models import Role
 from backend.engine.visibility import Visibility
 
 
 def _bold_character() -> Character:
     return Character(
         persona=Persona(
-            mbti="ESTP", gender="male", age=32, name="TestBold",
-            basic_info="test", style_label="aggressive",
+            mbti="ESTP",
+            gender="male",
+            age=32,
+            name="TestBold",
+            basic_info="test",
+            style_label="aggressive",
         ),
         mind=PlayerMind(
-            courage="bold", memory_bias="first_impression",
-            suspicion_threshold="low", self_protection="aggressive",
-            logic_depth="shallow", table_presence="dominant",
+            courage="bold",
+            memory_bias="first_impression",
+            suspicion_threshold="low",
+            self_protection="aggressive",
+            logic_depth="shallow",
+            table_presence="dominant",
         ),
     )
 
@@ -28,13 +39,20 @@ def _bold_character() -> Character:
 def _cautious_character() -> Character:
     return Character(
         persona=Persona(
-            mbti="ISFJ", gender="female", age=25, name="TestCautious",
-            basic_info="test", style_label="observant",
+            mbti="ISFJ",
+            gender="female",
+            age=25,
+            name="TestCautious",
+            basic_info="test",
+            style_label="observant",
         ),
         mind=PlayerMind(
-            courage="cautious", memory_bias="recent",
-            suspicion_threshold="high", self_protection="sacrificial",
-            logic_depth="moderate", table_presence="quiet",
+            courage="cautious",
+            memory_bias="recent",
+            suspicion_threshold="high",
+            self_protection="sacrificial",
+            logic_depth="moderate",
+            table_presence="quiet",
         ),
     )
 
@@ -73,11 +91,16 @@ class TestHumanizationProfile:
 
     def test_first_impression_memory_is_stubborn(self) -> None:
         char = Character(
-            persona=Persona(mbti="INTJ", gender="male", age=30, name="Stubborn", basic_info="test", style_label="analytical"),
+            persona=Persona(
+                mbti="INTJ", gender="male", age=30, name="Stubborn", basic_info="test", style_label="analytical"
+            ),
             mind=PlayerMind(
-                courage="calculated", memory_bias="first_impression",
-                suspicion_threshold="medium", self_protection="passive",
-                logic_depth="deep", table_presence="balanced",
+                courage="calculated",
+                memory_bias="first_impression",
+                suspicion_threshold="medium",
+                self_protection="passive",
+                logic_depth="deep",
+                table_presence="balanced",
             ),
         )
         profile = build_humanization_profile(char)
@@ -206,14 +229,16 @@ class TestPublicStance:
         assert agent.public_stance["grudges"] == {}
         # Simulate being mentioned by another player's speech
         other = next(p for p in game.state.players if p.id != villager.id)
-        agent.view.public_events.append({
-            "type": "CHAT_MESSAGE",
-            "payload": {
-                "actor_id": other.id,
-                "actor_name": other.name,
-                "speech": f"我怀疑{villager.name}有问题",
-            },
-        })
+        agent.view.public_events.append(
+            {
+                "type": "CHAT_MESSAGE",
+                "payload": {
+                    "actor_id": other.id,
+                    "actor_name": other.name,
+                    "speech": f"我怀疑{villager.name}有问题",
+                },
+            }
+        )
         agent._update_suspicion_from_events()
         assert other.id in agent.public_stance["grudges"]
 

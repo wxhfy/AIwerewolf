@@ -1,10 +1,13 @@
 """Debug: run a single game and track fallback stats."""
-import sys, os, json
+
+import sys
 from pathlib import Path
+
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from backend.llm.env import load_env_file
+
 load_env_file()
 
 from backend.agents.factory import create_agents
@@ -43,7 +46,7 @@ for event in game.state.private_events:
     else:
         private_llm += 1
 
-print(f"\n=== Results ===")
+print("\n=== Results ===")
 print(f"Public events:  LLM={llm_count}, Fallback={fallback_count}")
 print(f"Private events: LLM={private_llm}, Fallback={private_fb}")
 print(f"Winner: {game.state.winner}")
@@ -51,5 +54,5 @@ print(f"Winner: {game.state.winner}")
 # Show agent errors
 for p in players:
     a = agents[p.id]
-    if hasattr(a, 'last_error') and a.last_error:
+    if hasattr(a, "last_error") and a.last_error:
         print(f"  {p.id} error: {a.last_error}")

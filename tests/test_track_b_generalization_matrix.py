@@ -14,17 +14,17 @@ Tests:
 from __future__ import annotations
 
 import json
-import pytest
 from collections import defaultdict
 from pathlib import Path
 
 import numpy as np
+import pytest
 
-from backend.eval.scoring_models import (
-    calibrate_decision_quality, extract_features, load_track_b_models,
-)
-from backend.eval.track_b import ReplayBundleBuilder
 from backend.eval.opportunity import OpportunityExtractor
+from backend.eval.scoring_models import calibrate_decision_quality
+from backend.eval.scoring_models import extract_features
+from backend.eval.scoring_models import load_track_b_models
+from backend.eval.track_b import ReplayBundleBuilder
 
 MODELS_EXIST = (Path("data/health") / "decision_quality_model.pkl").exists()
 
@@ -33,12 +33,12 @@ MODELS_EXIST = (Path("data/health") / "decision_quality_model.pkl").exists()
 # Test 1: Pairwise examples generated
 # ===================================================================
 
+
 def test_pairwise_generalization_examples_generated() -> None:
     """Generate >= 50 pairwise examples from variant factory."""
-    from tests.helpers.track_b_variant_factory import (
-        generate_bad_speech_variants, generate_good_speech_variants,
-        generate_kill_target_variants,
-    )
+    from tests.helpers.track_b_variant_factory import generate_bad_speech_variants
+    from tests.helpers.track_b_variant_factory import generate_good_speech_variants
+    from tests.helpers.track_b_variant_factory import generate_kill_target_variants
 
     bad_variants = generate_bad_speech_variants(20)
     good_variants = generate_good_speech_variants(20)
@@ -60,12 +60,16 @@ def test_pairwise_generalization_examples_generated() -> None:
         b_speeches = [op for op in b_opps if op.opportunity_type == "speech" and op.role == "Werewolf"]
         g_speeches = [op for op in g_opps if op.opportunity_type == "speech" and op.role == "Werewolf"]
         if b_speeches and g_speeches:
-            pairwise.append({
-                "pair_id": f"gen-speech-{pair_id:04d}", "pair_type": "wolf_speech_quality",
-                "source": "generalization_matrix", "heldout_group": bsrc,
-                "bad": {"opportunity": b_speeches[0].to_dict(), "label_quality": 0.15},
-                "good": {"opportunity": g_speeches[0].to_dict(), "label_quality": 0.85},
-            })
+            pairwise.append(
+                {
+                    "pair_id": f"gen-speech-{pair_id:04d}",
+                    "pair_type": "wolf_speech_quality",
+                    "source": "generalization_matrix",
+                    "heldout_group": bsrc,
+                    "bad": {"opportunity": b_speeches[0].to_dict(), "label_quality": 0.15},
+                    "good": {"opportunity": g_speeches[0].to_dict(), "label_quality": 0.85},
+                }
+            )
             pair_id += 1
 
     # Pair bad votes with good votes — all available
@@ -79,15 +83,21 @@ def test_pairwise_generalization_examples_generated() -> None:
         b_votes = [op for op in b_opps if op.opportunity_type == "vote" and op.role == "Werewolf" and op.day == 1]
         g_votes = [op for op in g_opps if op.opportunity_type == "vote" and op.role == "Werewolf" and op.day == 1]
         # Use the LAST wolf vote (P2) because P1's vote is identical in both patterns
-        if len(b_votes) >= 2: b_votes = [b_votes[-1]]
-        if len(g_votes) >= 2: g_votes = [g_votes[-1]]
+        if len(b_votes) >= 2:
+            b_votes = [b_votes[-1]]
+        if len(g_votes) >= 2:
+            g_votes = [g_votes[-1]]
         if b_votes and g_votes:
-            pairwise.append({
-                "pair_id": f"gen-vote-{pair_id:04d}", "pair_type": "wolf_vote_coordination",
-                "source": "generalization_matrix", "heldout_group": bsrc,
-                "bad": {"opportunity": b_votes[0].to_dict(), "label_quality": 0.20},
-                "good": {"opportunity": g_votes[0].to_dict(), "label_quality": 0.85},
-            })
+            pairwise.append(
+                {
+                    "pair_id": f"gen-vote-{pair_id:04d}",
+                    "pair_type": "wolf_vote_coordination",
+                    "source": "generalization_matrix",
+                    "heldout_group": bsrc,
+                    "bad": {"opportunity": b_votes[0].to_dict(), "label_quality": 0.20},
+                    "good": {"opportunity": g_votes[0].to_dict(), "label_quality": 0.85},
+                }
+            )
             pair_id += 1
 
     # Pair low-value kills with high-value kills — all pairs
@@ -103,12 +113,16 @@ def test_pairwise_generalization_examples_generated() -> None:
         b_kills = [op for op in b_opps if op.opportunity_type == "werewolf_kill"]
         g_kills = [op for op in g_opps if op.opportunity_type == "werewolf_kill"]
         if b_kills and g_kills:
-            pairwise.append({
-                "pair_id": f"gen-kill-{pair_id:04d}", "pair_type": "werewolf_kill_target",
-                "source": "generalization_matrix", "heldout_group": bsrc,
-                "bad": {"opportunity": b_kills[0].to_dict(), "label_quality": 0.20},
-                "good": {"opportunity": g_kills[0].to_dict(), "label_quality": 0.90},
-            })
+            pairwise.append(
+                {
+                    "pair_id": f"gen-kill-{pair_id:04d}",
+                    "pair_type": "werewolf_kill_target",
+                    "source": "generalization_matrix",
+                    "heldout_group": bsrc,
+                    "bad": {"opportunity": b_kills[0].to_dict(), "label_quality": 0.20},
+                    "good": {"opportunity": g_kills[0].to_dict(), "label_quality": 0.90},
+                }
+            )
             pair_id += 1
 
     # Save
@@ -132,6 +146,7 @@ def test_pairwise_generalization_examples_generated() -> None:
 # Test 2: Leave-one-template-out generalization
 # ===================================================================
 
+
 @pytest.mark.slow
 @pytest.mark.skipif(not MODELS_EXIST, reason="Models not available")
 def test_leave_one_template_out_generalization() -> None:
@@ -140,7 +155,8 @@ def test_leave_one_template_out_generalization() -> None:
     Smoke test: exclude 'night_kill_certainty' templates, verify model
     still penalizes them (low calibrated_q).
     """
-    from tests.helpers.track_b_variant_factory import build_variant_fixture, WOLF_BAD_SPEECHES
+    from tests.helpers.track_b_variant_factory import WOLF_BAD_SPEECHES
+    from tests.helpers.track_b_variant_factory import build_variant_fixture
 
     heldout_type = "night_kill_certainty"
     templates = WOLF_BAD_SPEECHES[heldout_type]
@@ -151,8 +167,11 @@ def test_leave_one_template_out_generalization() -> None:
 
     for v in range(min(4, len(templates))):
         state = build_variant_fixture(
-            wolf_speech_type=heldout_type, wolf_speech_variant=v,
-            kill_target_role="Villager", vote_pattern="split", seed=600 + v,
+            wolf_speech_type=heldout_type,
+            wolf_speech_variant=v,
+            kill_target_role="Villager",
+            vote_pattern="split",
+            seed=600 + v,
         )
         bundle = ReplayBundleBuilder().build(state)
         opps = OpportunityExtractor().extract(bundle)
@@ -164,8 +183,10 @@ def test_leave_one_template_out_generalization() -> None:
                 total += 1
                 if cal.calibrated_q <= 0.55:
                     low_count += 1
-                print(f"\n  Heldout '{heldout_type}' v{v}: raw={raw_q:.4f} cal={cal.calibrated_q:.4f} "
-                      f"leak={feats.wolf_perspective_leak_score:.4f}")
+                print(
+                    f"\n  Heldout '{heldout_type}' v{v}: raw={raw_q:.4f} cal={cal.calibrated_q:.4f} "
+                    f"leak={feats.wolf_perspective_leak_score:.4f}"
+                )
 
     print(f"\n  Heldout pass rate: {low_count}/{total}")
     assert low_count >= 2, f"Expected >=2 heldout templates to score low, got {low_count}/{total}"
@@ -175,11 +196,10 @@ def test_leave_one_template_out_generalization() -> None:
 # Test 3: Seat-swap generalization
 # ===================================================================
 
+
 def test_seat_swap_generalization() -> None:
     """Verify scoring is not tied to specific seats (P1/P2=wolf, P3=seer)."""
-    from tests.helpers.track_b_variant_factory import (
-        generate_seat_swap_variants, SEAT_CONFIGS,
-    )
+    from tests.helpers.track_b_variant_factory import generate_seat_swap_variants
 
     variants = generate_seat_swap_variants()
     assert len(variants) >= 10, f"Expected >=10 seat-swap variants, got {len(variants)}"
@@ -221,6 +241,7 @@ def test_seat_swap_generalization() -> None:
 # Test 4: Phrase-swap generalization (beyond "我们狼")
 # ===================================================================
 
+
 def test_phrase_swap_generalization() -> None:
     """Verify wolf perspective detection works on varied phrasing, not just '我们狼'."""
     from tests.helpers.track_b_variant_factory import generate_phrase_swap_variants
@@ -232,7 +253,8 @@ def test_phrase_swap_generalization() -> None:
         pytest.skip("Models not available")
 
     _, q_model = load_track_b_models()
-    passed = 0; total = 0
+    passed = 0
+    total = 0
 
     for src, state in variants:
         bundle = ReplayBundleBuilder().build(state)
@@ -246,9 +268,11 @@ def test_phrase_swap_generalization() -> None:
                 has_we_lang = "我们狼" in op.chosen_action.get("speech", "")
                 if cal.calibrated_q <= 0.55:
                     passed += 1
-                print(f"\n  {src[:50]}: '{op.chosen_action.get('speech','')[:60]}...'")
-                print(f"    leak={feats.wolf_perspective_leak_score:.4f} "
-                      f"raw={raw_q:.4f} cal={cal.calibrated_q:.4f} has_we_lang={has_we_lang}")
+                print(f"\n  {src[:50]}: '{op.chosen_action.get('speech', '')[:60]}...'")
+                print(
+                    f"    leak={feats.wolf_perspective_leak_score:.4f} "
+                    f"raw={raw_q:.4f} cal={cal.calibrated_q:.4f} has_we_lang={has_we_lang}"
+                )
 
     print(f"\n  Phrase-swap pass rate: {passed}/{total}")
     assert passed >= 4, f"Expected >=4 phrase variants to score low, got {passed}/{total}"
@@ -257,6 +281,7 @@ def test_phrase_swap_generalization() -> None:
 # ===================================================================
 # Test 5: Clean wolf variants NOT over-penalized
 # ===================================================================
+
 
 def test_clean_wolf_variants_not_over_penalized() -> None:
     """Generate multiple clean wolf variants and verify no false positives."""
@@ -294,7 +319,7 @@ def test_clean_wolf_variants_not_over_penalized() -> None:
 
     print(f"\n  Clean wolf avg cal_q: {good_mean:.4f}")
     print(f"  False positive rate: {fp_rate:.3f} ({false_positives}/{total})")
-    print(f"  teammate_overprotection <= 0.25 check in features")
+    print("  teammate_overprotection <= 0.25 check in features")
 
     # Allow up to 30% FP rate — model still learning from limited pairwise data
     assert fp_rate <= 0.35, f"False positive rate too high: {fp_rate:.3f}"
@@ -305,11 +330,11 @@ def test_clean_wolf_variants_not_over_penalized() -> None:
 # Test 6: Raw model separation improves
 # ===================================================================
 
+
 def test_raw_model_separation_improves_with_pairwise() -> None:
     """Verify raw_model_q (not just calibrated_q) separates bad from good."""
-    from tests.helpers.track_b_variant_factory import (
-        generate_bad_speech_variants, generate_good_speech_variants,
-    )
+    from tests.helpers.track_b_variant_factory import generate_bad_speech_variants
+    from tests.helpers.track_b_variant_factory import generate_good_speech_variants
 
     bad_variants = generate_bad_speech_variants(8)
     good_variants = generate_good_speech_variants(8)
@@ -332,9 +357,11 @@ def test_raw_model_separation_improves_with_pairwise() -> None:
             raw_q = float(q_model.predict(feats.to_array().reshape(1, -1))[0])
             cal = calibrate_decision_quality(op.to_dict(), raw_q)
             if is_bad:
-                bad_raw.append(raw_q); bad_cal.append(cal.calibrated_q)
+                bad_raw.append(raw_q)
+                bad_cal.append(cal.calibrated_q)
             else:
-                good_raw.append(raw_q); good_cal.append(cal.calibrated_q)
+                good_raw.append(raw_q)
+                good_cal.append(cal.calibrated_q)
 
     bad_raw_mean = np.mean(bad_raw) if bad_raw else 1.0
     good_raw_mean = np.mean(good_raw) if good_raw else 0.0
@@ -349,8 +376,8 @@ def test_raw_model_separation_improves_with_pairwise() -> None:
 
     print(f"\n  Raw model separation: {raw_sep:.4f} (bad={bad_raw_mean:.4f}, good={good_raw_mean:.4f})")
     print(f"  Calibrated separation: {cal_sep:.4f} (bad={bad_cal_mean:.4f}, good={good_cal_mean:.4f})")
-    print(f"  Raw model correct: {raw_correct}/{total} ({100*raw_correct/max(total,1):.1f}%)")
-    print(f"  Calibrated correct: {cal_correct}/{total} ({100*cal_correct/max(total,1):.1f}%)")
+    print(f"  Raw model correct: {raw_correct}/{total} ({100 * raw_correct / max(total, 1):.1f}%)")
+    print(f"  Calibrated correct: {cal_correct}/{total} ({100 * cal_correct / max(total, 1):.1f}%)")
     print(f"  Cases requiring calibration: {cal_correct - raw_correct}")
 
     # Separation should exist even in raw model
@@ -361,11 +388,11 @@ def test_raw_model_separation_improves_with_pairwise() -> None:
 # Test 7: Calibration dependency reported
 # ===================================================================
 
+
 def test_calibration_dependency_reported() -> None:
     """Verify calibration dependency metrics are computable and reasonable."""
-    from tests.helpers.track_b_variant_factory import (
-        generate_bad_speech_variants, generate_good_speech_variants,
-    )
+    from tests.helpers.track_b_variant_factory import generate_bad_speech_variants
+    from tests.helpers.track_b_variant_factory import generate_good_speech_variants
 
     bad_variants = generate_bad_speech_variants(6)
     good_variants = generate_good_speech_variants(6)
@@ -375,9 +402,13 @@ def test_calibration_dependency_reported() -> None:
 
     _, q_model = load_track_b_models()
     metrics = {
-        "total_cases": 0, "raw_model_correct": 0, "calibration_correct": 0,
-        "raw_vs_calibrated_gap_mean": 0.0, "hard_cap_count": 0,
-        "false_positive": 0, "false_negative": 0,
+        "total_cases": 0,
+        "raw_model_correct": 0,
+        "calibration_correct": 0,
+        "raw_vs_calibrated_gap_mean": 0.0,
+        "hard_cap_count": 0,
+        "false_positive": 0,
+        "false_negative": 0,
     }
     gaps = []
 
@@ -406,10 +437,12 @@ def test_calibration_dependency_reported() -> None:
     metrics["raw_vs_calibrated_gap_mean"] = round(float(np.mean(gaps)), 4) if gaps else 0.0
 
     n = max(metrics["total_cases"], 1)
-    print(f"\n  === Calibration Dependency Metrics ===")
+    print("\n  === Calibration Dependency Metrics ===")
     print(f"  Total cases: {metrics['total_cases']}")
-    print(f"  Raw model correct: {metrics['raw_model_correct']}/{n} ({100*metrics['raw_model_correct']/n:.1f}%)")
-    print(f"  Calibration correct: {metrics['calibration_correct']}/{n} ({100*metrics['calibration_correct']/n:.1f}%)")
+    print(f"  Raw model correct: {metrics['raw_model_correct']}/{n} ({100 * metrics['raw_model_correct'] / n:.1f}%)")
+    print(
+        f"  Calibration correct: {metrics['calibration_correct']}/{n} ({100 * metrics['calibration_correct'] / n:.1f}%)"
+    )
     print(f"  Raw-to-calibrated gap mean: {metrics['raw_vs_calibrated_gap_mean']:.4f}")
     print(f"  Hard cap count: {metrics['hard_cap_count']}")
     print(f"  False positives (clean→low): {metrics['false_positive']}")
@@ -422,11 +455,11 @@ def test_calibration_dependency_reported() -> None:
 # Test 8: Role-action z-score generalization signals
 # ===================================================================
 
+
 def test_role_action_z_generalization_signals() -> None:
     """Verify role_action_z carries signal across variants."""
-    from tests.helpers.track_b_variant_factory import (
-        generate_bad_speech_variants, generate_good_speech_variants,
-    )
+    from tests.helpers.track_b_variant_factory import generate_bad_speech_variants
+    from tests.helpers.track_b_variant_factory import generate_good_speech_variants
 
     bad_variants = generate_bad_speech_variants(5)
     good_variants = generate_good_speech_variants(5)
@@ -476,5 +509,6 @@ def test_role_action_z_generalization_signals() -> None:
     print(f"\n  Bad wolf role_action_z mean: {bad_z_mean:.4f} (n={len(bad_zs)})")
     print(f"  Good wolf role_action_z mean: {good_z_mean:.4f} (n={len(good_zs)})")
 
-    assert bad_z_mean < good_z_mean, \
+    assert bad_z_mean < good_z_mean, (
         f"Bad wolf z should be lower than good wolf z: {bad_z_mean:.4f} vs {good_z_mean:.4f}"
+    )

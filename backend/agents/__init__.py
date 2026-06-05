@@ -2,8 +2,11 @@
 
 from backend.agents.base import Agent
 from backend.agents.heuristic import HeuristicAgent
-from backend.agents.optimization import MultiAgentOptimizer, OptimizationResult, ReplayHeuristicOptimizer
-from backend.agents.profiles import ROLE_PROFILES, RoleProfile
+from backend.agents.optimization import MultiAgentOptimizer
+from backend.agents.optimization import OptimizationResult
+from backend.agents.optimization import ReplayHeuristicOptimizer
+from backend.agents.profiles import ROLE_PROFILES
+from backend.agents.profiles import RoleProfile
 
 __all__ = [
     "Agent",

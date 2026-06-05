@@ -10,18 +10,23 @@ but optimized for the cognitive pipeline.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
 import re
-
+from dataclasses import dataclass
+from dataclasses import field
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
 
 # ============================================================
 # Structured observation types
 # ============================================================
 
+
 @dataclass
 class PlayerInfo:
     """Public information about a single player."""
+
     id: str
     name: str
     seat: int
@@ -32,6 +37,7 @@ class PlayerInfo:
 @dataclass
 class SpeechInfo:
     """A speech made in the current round."""
+
     player_id: str
     player_name: str
     seat: int
@@ -41,6 +47,7 @@ class SpeechInfo:
 @dataclass
 class VoteInfo:
     """A vote cast in a round."""
+
     voter_id: str
     voter_name: str
     target_id: str
@@ -51,6 +58,7 @@ class VoteInfo:
 @dataclass
 class DeathInfo:
     """A player death."""
+
     player_id: str
     player_name: str
     seat: int
@@ -61,6 +69,7 @@ class DeathInfo:
 @dataclass
 class RoleClaim:
     """A role claim extracted from speech or system events."""
+
     player_name: str
     player_id: str
     seat: int
@@ -72,6 +81,7 @@ class RoleClaim:
 @dataclass
 class Contradiction:
     """A detected contradiction (e.g., multiple claims of same unique role)."""
+
     role: str
     claimants: List[str]  # player names
     description: str
@@ -80,6 +90,7 @@ class Contradiction:
 # ============================================================
 # BeliefTracker — stateful game-state tracker
 # ============================================================
+
 
 class BeliefTracker:
     """Stateful tracker of game knowledge across rounds.
@@ -130,28 +141,32 @@ class BeliefTracker:
                     if speech_key in self._processed_speech_ids:
                         continue
                     self._processed_speech_ids.add(speech_key)
-                    self.claims.append(RoleClaim(
-                        player_name=actor.get("name", actor_id),
-                        player_id=actor_id,
-                        seat=actor.get("seat", 0),
-                        claimed_role=claimed,
-                        day=day,
-                        context="day_speech",
-                    ))
+                    self.claims.append(
+                        RoleClaim(
+                            player_name=actor.get("name", actor_id),
+                            player_id=actor_id,
+                            seat=actor.get("seat", 0),
+                            claimed_role=claimed,
+                            day=day,
+                            context="day_speech",
+                        )
+                    )
 
             elif etype == "PLAYER_DIED":
                 revealed = payload.get("role", "")
                 if revealed:
                     pid = payload.get("player_id", "")
                     dead = _find_player(view, pid)
-                    self.claims.append(RoleClaim(
-                        player_name=dead.get("name", pid),
-                        player_id=pid,
-                        seat=dead.get("seat", 0),
-                        claimed_role=revealed,
-                        day=day,
-                        context="revealed_on_death",
-                    ))
+                    self.claims.append(
+                        RoleClaim(
+                            player_name=dead.get("name", pid),
+                            player_id=pid,
+                            seat=dead.get("seat", 0),
+                            claimed_role=revealed,
+                            day=day,
+                            context="revealed_on_death",
+                        )
+                    )
 
     def _extract_votes(self, view: Any) -> None:
         """Extract votes from public events.
@@ -171,13 +186,15 @@ class BeliefTracker:
                 self._seen_vote_keys.add(vote_key)
                 voter = _find_player(view, voter_id)
                 target = _find_player(view, target_id)
-                self.votes.append(VoteInfo(
-                    voter_id=voter_id,
-                    voter_name=voter.get("name", ""),
-                    target_id=target_id,
-                    target_name=target.get("name", ""),
-                    day=day,
-                ))
+                self.votes.append(
+                    VoteInfo(
+                        voter_id=voter_id,
+                        voter_name=voter.get("name", ""),
+                        target_id=target_id,
+                        target_name=target.get("name", ""),
+                        day=day,
+                    )
+                )
 
     def _extract_deaths(self, view: Any) -> None:
         """Extract deaths from public events. Deduplicates by (player_id, cause)."""
@@ -191,13 +208,15 @@ class BeliefTracker:
                     continue
                 self._seen_death_keys.add(death_key)
                 dead = _find_player(view, pid)
-                self.deaths.append(DeathInfo(
-                    player_id=pid,
-                    player_name=dead.get("name", pid),
-                    seat=dead.get("seat", 0),
-                    cause=cause,
-                    revealed_role=payload.get("role", ""),
-                ))
+                self.deaths.append(
+                    DeathInfo(
+                        player_id=pid,
+                        player_name=dead.get("name", pid),
+                        seat=dead.get("seat", 0),
+                        cause=cause,
+                        revealed_role=payload.get("role", ""),
+                    )
+                )
 
     # ---- Contradiction detection ----
 
@@ -215,11 +234,13 @@ class BeliefTracker:
             if len(role_claims) >= 2:
                 names = list(set(c.player_name for c in role_claims))
                 if len(names) >= 2:
-                    self.contradictions.append(Contradiction(
-                        role=role,
-                        claimants=names,
-                        description=f"多人声称是{role}: {', '.join(names)}",
-                    ))
+                    self.contradictions.append(
+                        Contradiction(
+                            role=role,
+                            claimants=names,
+                            description=f"多人声称是{role}: {', '.join(names)}",
+                        )
+                    )
 
     # ---- Formatting ----
 
@@ -258,6 +279,7 @@ class BeliefTracker:
 # ============================================================
 # Observation — what the agent sees right now
 # ============================================================
+
 
 @dataclass
 class Observation:
@@ -335,47 +357,55 @@ def observe(view: Any, role: str, tracker: Optional[BeliefTracker] = None) -> Ob
         (obs.alive if p["alive"] else obs.dead).append(info)
 
     for p in getattr(view, "legal_targets", []):
-        obs.legal_targets.append(PlayerInfo(
-            id=p["id"],
-            name=p.get("name", ""),
-            seat=p.get("seat", 0),
-            alive=p.get("alive", True),
-        ))
+        obs.legal_targets.append(
+            PlayerInfo(
+                id=p["id"],
+                name=p.get("name", ""),
+                seat=p.get("seat", 0),
+                alive=p.get("alive", True),
+            )
+        )
 
     # Today's speeches
     for e in view.public_events:
         if e.get("type") == "CHAT_MESSAGE" and e.get("day") == view.day:
             payload = e.get("payload", {}) or {}
             actor = _find_player(view, e.get("actor_id", ""))
-            obs.speeches.append(SpeechInfo(
-                player_id=e.get("actor_id", ""),
-                player_name=actor.get("name", ""),
-                seat=actor.get("seat", 0),
-                content=payload.get("speech", ""),
-            ))
+            obs.speeches.append(
+                SpeechInfo(
+                    player_id=e.get("actor_id", ""),
+                    player_name=actor.get("name", ""),
+                    seat=actor.get("seat", 0),
+                    content=payload.get("speech", ""),
+                )
+            )
 
         elif e.get("type") == "VOTE_CAST" and e.get("day") == view.day:
             payload = e.get("payload", {}) or {}
             voter = _find_player(view, e.get("actor_id", ""))
             target = _find_player(view, payload.get("target_id", ""))
-            obs.votes.append(VoteInfo(
-                voter_id=e.get("actor_id", ""),
-                voter_name=voter.get("name", ""),
-                target_id=payload.get("target_id", ""),
-                target_name=target.get("name", ""),
-                day=e.get("day", view.day),
-            ))
+            obs.votes.append(
+                VoteInfo(
+                    voter_id=e.get("actor_id", ""),
+                    voter_name=voter.get("name", ""),
+                    target_id=payload.get("target_id", ""),
+                    target_name=target.get("name", ""),
+                    day=e.get("day", view.day),
+                )
+            )
 
         elif e.get("type") == "PLAYER_DIED":
             payload = e.get("payload", {}) or {}
             dead = _find_player(view, payload.get("player_id", ""))
-            obs.deaths.append(DeathInfo(
-                player_id=payload.get("player_id", ""),
-                player_name=dead.get("name", ""),
-                seat=dead.get("seat", 0),
-                cause=payload.get("cause", payload.get("reason", "unknown")),
-                revealed_role=payload.get("role", ""),
-            ))
+            obs.deaths.append(
+                DeathInfo(
+                    player_id=payload.get("player_id", ""),
+                    player_name=dead.get("name", ""),
+                    seat=dead.get("seat", 0),
+                    cause=payload.get("cause", payload.get("reason", "unknown")),
+                    revealed_role=payload.get("role", ""),
+                )
+            )
 
     # Private info
     for e in view.private_events:
@@ -467,6 +497,7 @@ def format_observation(obs: Observation) -> str:
 # Internal helpers
 # ============================================================
 
+
 def _find_player(view: Any, player_id: str) -> dict:
     """Find player dict by id."""
     for p in view.players:
@@ -478,9 +509,9 @@ def _find_player(view: Any, player_id: str) -> dict:
 def _detect_role_claim(speech: str) -> Optional[str]:
     """Detect if a speech contains a role claim. Returns role name or None."""
     patterns = [
-        (r'(?:我是|我就是|我是真的)\s*(?:一个\s*)?(预言家|女巫|猎人|守卫|村民|白狼王|狼人)', 1),
-        (r'(?:跳|报)\s*(?:一个\s*)?(预言家|女巫|猎人|守卫)', 1),
-        (r'(?:身份.*?是|底牌.*?是)\s*(预言家|女巫|猎人|守卫|村民|白狼王|狼人)', 1),
+        (r"(?:我是|我就是|我是真的)\s*(?:一个\s*)?(预言家|女巫|猎人|守卫|村民|白狼王|狼人)", 1),
+        (r"(?:跳|报)\s*(?:一个\s*)?(预言家|女巫|猎人|守卫)", 1),
+        (r"(?:身份.*?是|底牌.*?是)\s*(预言家|女巫|猎人|守卫|村民|白狼王|狼人)", 1),
     ]
     for pattern, group in patterns:
         m = re.search(pattern, speech)

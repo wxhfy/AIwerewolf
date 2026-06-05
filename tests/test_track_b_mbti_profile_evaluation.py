@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 
 import pytest
@@ -42,6 +41,7 @@ def games():
 
 # ---- Existence ----
 
+
 def test_summary_exists(summary_json):
     assert len(summary_json["entries"]) >= 4
 
@@ -55,6 +55,7 @@ def test_games_exist(games):
 
 
 # ---- Profiles ----
+
 
 def test_at_least_four_profiles(summary_json):
     profiles = {e["profile"] for e in summary_json["entries"]}
@@ -80,6 +81,7 @@ def test_each_profile_has_speech_audit(summary_json):
 
 # ---- Low sample ----
 
+
 def test_low_sample_warning(summary_json):
     for e in summary_json["entries"]:
         if e["games_played"] < 10:
@@ -87,6 +89,7 @@ def test_low_sample_warning(summary_json):
 
 
 # ---- Report sections ----
+
 
 def test_report_has_expected_vs_observed(report_text):
     assert "Expected vs Observed" in report_text
@@ -107,7 +110,7 @@ def test_report_says_speech_semantic_is_audit_only(report_text):
 def test_report_not_ranked_by_win_rate_only(summary_json):
     entries = summary_json["entries"]
     for i in range(len(entries) - 1):
-        assert entries[i]["avg_process_score"] >= entries[i+1]["avg_process_score"]
+        assert entries[i]["avg_process_score"] >= entries[i + 1]["avg_process_score"]
 
 
 def test_report_has_limitations(report_text):
@@ -119,6 +122,7 @@ def test_report_has_next_steps(report_text):
 
 
 # ---- Games data ----
+
 
 def test_games_have_speech_audit(games):
     for g in games:

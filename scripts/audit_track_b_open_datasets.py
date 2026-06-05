@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import json
 import sys
-from collections import Counter, defaultdict
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -135,13 +135,15 @@ def _generate_report(audit: dict[str, Any]):
             f"{'YES ⚠️' if pc.get('missing_license') else 'no ✓'} |"
         )
 
-    lines.extend([
-        "",
-        "## 2. Source Distribution",
-        "",
-        "| Source | Count |",
-        "| --- | ---: |",
-    ])
+    lines.extend(
+        [
+            "",
+            "## 2. Source Distribution",
+            "",
+            "| Source | Count |",
+            "| --- | ---: |",
+        ]
+    )
     all_sources = Counter()
     for ds in audit["datasets"]:
         for src, count in ds.get("source_distribution", {}).items():
@@ -149,13 +151,15 @@ def _generate_report(audit: dict[str, Any]):
     for src, count in all_sources.most_common():
         lines.append(f"| {src} | {count} |")
 
-    lines.extend([
-        "",
-        "## 3. Role Distribution",
-        "",
-        "| Role | Count |",
-        "| --- | ---: |",
-    ])
+    lines.extend(
+        [
+            "",
+            "## 3. Role Distribution",
+            "",
+            "| Role | Count |",
+            "| --- | ---: |",
+        ]
+    )
     all_roles = Counter()
     for ds in audit["datasets"]:
         for role, count in ds.get("role_distribution", {}).items():
@@ -163,30 +167,36 @@ def _generate_report(audit: dict[str, Any]):
     for role, count in all_roles.most_common():
         lines.append(f"| {role} | {count} |")
 
-    lines.extend([
-        "",
-        "## 4. Policy Compliance",
-        "",
-        "| Check | Status |",
-        "| --- | --- |",
-    ])
+    lines.extend(
+        [
+            "",
+            "## 4. Policy Compliance",
+            "",
+            "| Check | Status |",
+            "| --- | --- |",
+        ]
+    )
 
     any_final_q = any(ds.get("policy_checks", {}).get("has_final_q", 0) > 0 for ds in audit["datasets"])
-    any_missing_dnt = any(ds.get("policy_checks", {}).get("missing_do_not_train_flag", 0) > 0 for ds in audit["datasets"])
+    any_missing_dnt = any(
+        ds.get("policy_checks", {}).get("missing_do_not_train_flag", 0) > 0 for ds in audit["datasets"]
+    )
     all_have_source = all(ds.get("policy_checks", {}).get("missing_source", 0) == 0 for ds in audit["datasets"])
 
     lines.append(f"| No final_q in open data | {'PASS ✓' if not any_final_q else 'FAIL ⚠️'} |")
     lines.append(f"| do_not_train_final_q_directly set | {'PASS ✓' if not any_missing_dnt else 'FAIL ⚠️'} |")
     lines.append(f"| Source metadata present | {'PASS ✓' if all_have_source else 'PARTIAL'} |")
-    lines.append(f"| Splits by game_id | PASS ✓ |")
+    lines.append("| Splits by game_id | PASS ✓ |")
 
-    lines.extend([
-        "",
-        "## 5. Weak Label Distribution",
-        "",
-        "| Label | Count |",
-        "| --- | ---: |",
-    ])
+    lines.extend(
+        [
+            "",
+            "## 5. Weak Label Distribution",
+            "",
+            "| Label | Count |",
+            "| --- | ---: |",
+        ]
+    )
     all_labels = Counter()
     for ds in audit["datasets"]:
         for label, count in ds.get("weak_label_distribution", {}).items():
@@ -194,18 +204,20 @@ def _generate_report(audit: dict[str, Any]):
     for label, count in all_labels.most_common(20):
         lines.append(f"| {label} | {count} |")
 
-    lines.extend([
-        "",
-        "## 6. Gaps and TODOs",
-        "",
-        "1. **WOLF dataset**: unavailable — release location not confirmed",
-        "2. **Beyond Survival**: unavailable — contact authors for access",
-        "3. **Deep Wolf / AIWolf**: unavailable — download path pending",
-        "4. **Vote samples**: only from Track B native (6 games), need external vote data",
-        "5. **Pairwise samples**: empty — need human-labeled or reconstructed pairs",
-        "6. **Value impact samples**: empty — need Deep Wolf or AIWolf-style data",
-        "",
-    ])
+    lines.extend(
+        [
+            "",
+            "## 6. Gaps and TODOs",
+            "",
+            "1. **WOLF dataset**: unavailable — release location not confirmed",
+            "2. **Beyond Survival**: unavailable — contact authors for access",
+            "3. **Deep Wolf / AIWolf**: unavailable — download path pending",
+            "4. **Vote samples**: only from Track B native (6 games), need external vote data",
+            "5. **Pairwise samples**: empty — need human-labeled or reconstructed pairs",
+            "6. **Value impact samples**: empty — need Deep Wolf or AIWolf-style data",
+            "",
+        ]
+    )
 
     REPORT_PATH.write_text("\n".join(lines), encoding="utf-8")
     print(f"Report written: {REPORT_PATH}")
@@ -232,10 +244,8 @@ def main():
         results.append(audit)
         total_samples += audit["total"]
         pc = audit.get("policy_checks", {})
-        issues = sum(1 for k in ("has_final_q", "missing_do_not_train_flag", "missing_source")
-                    if pc.get(k, 0) > 0)
-        print(f"  {name}: {audit['total']} samples, {audit.get('total_games', 0)} games, "
-              f"policy_issues={issues}")
+        issues = sum(1 for k in ("has_final_q", "missing_do_not_train_flag", "missing_source") if pc.get(k, 0) > 0)
+        print(f"  {name}: {audit['total']} samples, {audit.get('total_games', 0)} games, policy_issues={issues}")
 
     audit = {
         "generated_at": __import__("datetime").datetime.now().isoformat(),

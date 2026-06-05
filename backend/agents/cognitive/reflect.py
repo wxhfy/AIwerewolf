@@ -16,14 +16,17 @@ from __future__ import annotations
 
 import json
 import logging
-import os
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from dataclasses import dataclass
+from dataclasses import field
+from typing import Any
+from typing import Dict
+from typing import List
 
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage
+from langchain_core.messages import SystemMessage
 from langchain_core.runnables import Runnable
 
-from backend.agents.cognitive.profiles import PersonaTraits, MindTraits
+from backend.agents.cognitive.profiles import PersonaTraits
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +36,7 @@ _DEFAULT_CONN = "postgresql://werewolf:wolf_secret_2026@127.0.0.1:5433/werewolf"
 # ============================================================
 # Reflection Output Types
 # ============================================================
+
 
 @dataclass
 class ReflectionResult:
@@ -51,9 +55,9 @@ class ReflectionResult:
     mistakes_to_avoid: List[str] = field(default_factory=list)
 
     # Meta
-    key_insight: str = ""       # single most important lesson
-    confidence: float = 0.5      # how confident the agent is in this reflection
-    raw_reflection: str = ""     # full LLM output for debugging
+    key_insight: str = ""  # single most important lesson
+    confidence: float = 0.5  # how confident the agent is in this reflection
+    raw_reflection: str = ""  # full LLM output for debugging
 
     def to_strategy_docs(self) -> list[dict]:
         """Convert reflection to strategy docs for PG storage."""
@@ -67,15 +71,17 @@ class ReflectionResult:
         ]
         for items, doc_type in mapping:
             for item in items:
-                docs.append({
-                    "situation": "",
-                    "strategy": item if isinstance(item, str) else str(item),
-                    "rationale": "",
-                    "role": role,
-                    "phase": "global",
-                    "quality": self.confidence,
-                    "doc_type": doc_type,
-                })
+                docs.append(
+                    {
+                        "situation": "",
+                        "strategy": item if isinstance(item, str) else str(item),
+                        "rationale": "",
+                        "role": role,
+                        "phase": "global",
+                        "quality": self.confidence,
+                        "doc_type": doc_type,
+                    }
+                )
         return docs
 
 
@@ -113,6 +119,7 @@ def _get_reflection_angle(mbti: str) -> str:
 # ============================================================
 # Refector
 # ============================================================
+
 
 class Reflector:
     """Post-game personal reflection engine.
@@ -157,11 +164,11 @@ class Reflector:
                 result = self._reflect_one(state)
                 results.append(result)
                 logger.info(
-                    f"Reflection done: {state.get('player_name','?')} "
-                    f"({state.get('role','?')}) → {len(result.what_worked)} learnings"
+                    f"Reflection done: {state.get('player_name', '?')} "
+                    f"({state.get('role', '?')}) → {len(result.what_worked)} learnings"
                 )
             except Exception as e:
-                logger.error(f"Reflection failed for {state.get('player_id','?')}: {e}")
+                logger.error(f"Reflection failed for {state.get('player_id', '?')}: {e}")
         return results
 
     # ---- Per-agent reflection ----
@@ -224,10 +231,7 @@ class Reflector:
         outcome_text = "胜利" if won else "失败"
         key_insight = raw[:160].strip() if raw else ""
         if not key_insight:
-            key_insight = (
-                f"{role} 的复盘至少要绑定可见事实、合法目标和行动理由，"
-                "否则后续策略库无法判断经验是否可复用。"
-            )
+            key_insight = f"{role} 的复盘至少要绑定可见事实、合法目标和行动理由，否则后续策略库无法判断经验是否可复用。"
         return {
             "what_worked": [
                 f"本局作为 {role} 完成了 {action_count} 次可审计行动，结果为{outcome_text}。",
@@ -281,10 +285,12 @@ class Reflector:
         else:
             lines.append("  (无详细决策记录)")
 
-        lines.extend([
-            "",
-            "=== 游戏事件摘要 ===",
-        ])
+        lines.extend(
+            [
+                "",
+                "=== 游戏事件摘要 ===",
+            ]
+        )
         events = state.get("game_events", [])
         if events:
             for e in events[-12:]:
@@ -294,28 +300,30 @@ class Reflector:
         else:
             lines.append("  (无事件记录)")
 
-        lines.extend([
-            "",
-            "=== 复盘任务 ===",
-            f"作为 {mbti} 型人格，请从你的视角总结这局游戏:",
-            "",
-            "1. what_worked: 你本局做得好的 2-3 件事（具体描述）",
-            "2. what_failed: 你本局做错的 2-3 件事（具体描述，不要泛泛而谈）",
-            "3. patterns_discovered: 你发现的 1-2 个规律或模式",
-            "4. mistakes_to_avoid: 下次应该避免的 2-3 个错误",
-            "5. key_insight: 本局最重要的一个教训（1-2句话）",
-            "6. confidence: 你对自己这个复盘结论的置信度（0-1之间的数字）",
-            "",
-            "输出格式（严格 JSON，不要额外解释）:",
-            '{',
-            '  "what_worked": ["...", "..."],',
-            '  "what_failed": ["...", "..."],',
-            '  "patterns_discovered": ["...", "..."],',
-            '  "mistakes_to_avoid": ["...", "..."],',
-            '  "key_insight": "...",',
-            '  "confidence": 0.7',
-            '}',
-        ])
+        lines.extend(
+            [
+                "",
+                "=== 复盘任务 ===",
+                f"作为 {mbti} 型人格，请从你的视角总结这局游戏:",
+                "",
+                "1. what_worked: 你本局做得好的 2-3 件事（具体描述）",
+                "2. what_failed: 你本局做错的 2-3 件事（具体描述，不要泛泛而谈）",
+                "3. patterns_discovered: 你发现的 1-2 个规律或模式",
+                "4. mistakes_to_avoid: 下次应该避免的 2-3 个错误",
+                "5. key_insight: 本局最重要的一个教训（1-2句话）",
+                "6. confidence: 你对自己这个复盘结论的置信度（0-1之间的数字）",
+                "",
+                "输出格式（严格 JSON，不要额外解释）:",
+                "{",
+                '  "what_worked": ["...", "..."],',
+                '  "what_failed": ["...", "..."],',
+                '  "patterns_discovered": ["...", "..."],',
+                '  "mistakes_to_avoid": ["...", "..."],',
+                '  "key_insight": "...",',
+                '  "confidence": 0.7',
+                "}",
+            ]
+        )
 
         return "\n".join(lines)
 
@@ -324,10 +332,12 @@ class Reflector:
     def _call_llm(self, system: str, user: str, max_tokens: int = 800) -> str:
         """Call LLM for reflection."""
         try:
-            resp = self._llm.invoke([
-                SystemMessage(content=system),
-                HumanMessage(content=user),
-            ])
+            resp = self._llm.invoke(
+                [
+                    SystemMessage(content=system),
+                    HumanMessage(content=user),
+                ]
+            )
             return resp.content.strip()
         except Exception as e:
             logger.error(f"Reflection LLM call failed: {e}")
@@ -340,7 +350,8 @@ class Reflector:
         try:
             # Try to extract JSON
             import re
-            m = re.search(r'\{[^}]*\}', raw, re.DOTALL)
+
+            m = re.search(r"\{[^}]*\}", raw, re.DOTALL)
             if m:
                 data = json.loads(m.group())
                 return {
@@ -384,6 +395,7 @@ class Reflector:
 # Knowledge Doc Extraction
 # ============================================================
 
+
 def reflections_to_knowledge_docs(
     reflections: List[ReflectionResult],
     game_id: str,
@@ -409,69 +421,75 @@ def reflections_to_knowledge_docs(
 
         # what_worked → positive experience reflections
         for item in r.what_worked:
-            docs.append({
-                "doc_id": _make_doc_id(game_id, r.player_id, item[:40]),
-                "doc_type": "reflection",
-                "role": role,
-                "phase": "global",
-                "persona_scope": persona_scope,
-                "situation_pattern": f"{r.player_name}({role}, {persona_scope}) 对局总结 — 成功经验",
-                "recommended_action": item,
-                "rationale": f"来自 {persona_scope} 视角的成功经验。{r.key_insight}" if r.key_insight else "",
-                "evidence_summary": f"对局 {game_id} 中验证有效",
-                "source_report_ids": [game_id],
-                "quality_score": r.confidence,
-                "confidence": r.confidence,
-                "usage_count": 0,
-                "success_count": 0,
-                "failure_count": 0,
-                "status": "candidate",
-                "tags": [persona_scope, role, "reflection", "success"],
-            })
+            docs.append(
+                {
+                    "doc_id": _make_doc_id(game_id, r.player_id, item[:40]),
+                    "doc_type": "reflection",
+                    "role": role,
+                    "phase": "global",
+                    "persona_scope": persona_scope,
+                    "situation_pattern": f"{r.player_name}({role}, {persona_scope}) 对局总结 — 成功经验",
+                    "recommended_action": item,
+                    "rationale": f"来自 {persona_scope} 视角的成功经验。{r.key_insight}" if r.key_insight else "",
+                    "evidence_summary": f"对局 {game_id} 中验证有效",
+                    "source_report_ids": [game_id],
+                    "quality_score": r.confidence,
+                    "confidence": r.confidence,
+                    "usage_count": 0,
+                    "success_count": 0,
+                    "failure_count": 0,
+                    "status": "candidate",
+                    "tags": [persona_scope, role, "reflection", "success"],
+                }
+            )
 
         # what_failed + mistakes_to_avoid → negative experience reflections
         for item in r.what_failed + r.mistakes_to_avoid:
-            docs.append({
-                "doc_id": _make_doc_id(game_id, r.player_id, item[:40]),
-                "doc_type": "reflection",
-                "role": role,
-                "phase": "global",
-                "persona_scope": persona_scope,
-                "situation_pattern": f"{r.player_name}({role}, {persona_scope}) 对局教训 — 失败/应避免",
-                "avoid_action": item,
-                "rationale": f"来自 {persona_scope} 视角的失败教训。{r.key_insight}" if r.key_insight else "",
-                "evidence_summary": f"对局 {game_id} 中验证应避免",
-                "source_report_ids": [game_id],
-                "quality_score": r.confidence,
-                "confidence": r.confidence,
-                "usage_count": 0,
-                "success_count": 0,
-                "failure_count": 0,
-                "status": "candidate",
-                "tags": [persona_scope, role, "reflection", "failure"],
-            })
+            docs.append(
+                {
+                    "doc_id": _make_doc_id(game_id, r.player_id, item[:40]),
+                    "doc_type": "reflection",
+                    "role": role,
+                    "phase": "global",
+                    "persona_scope": persona_scope,
+                    "situation_pattern": f"{r.player_name}({role}, {persona_scope}) 对局教训 — 失败/应避免",
+                    "avoid_action": item,
+                    "rationale": f"来自 {persona_scope} 视角的失败教训。{r.key_insight}" if r.key_insight else "",
+                    "evidence_summary": f"对局 {game_id} 中验证应避免",
+                    "source_report_ids": [game_id],
+                    "quality_score": r.confidence,
+                    "confidence": r.confidence,
+                    "usage_count": 0,
+                    "success_count": 0,
+                    "failure_count": 0,
+                    "status": "candidate",
+                    "tags": [persona_scope, role, "reflection", "failure"],
+                }
+            )
 
         # patterns_discovered → pattern reflection
         for item in r.patterns_discovered:
-            docs.append({
-                "doc_id": _make_doc_id(game_id, r.player_id, item[:40]),
-                "doc_type": "reflection",
-                "role": role,
-                "phase": "global",
-                "persona_scope": persona_scope,
-                "situation_pattern": item,
-                "recommended_action": f"{persona_scope} 视角发现的规律: {item}",
-                "rationale": r.key_insight or "",
-                "evidence_summary": f"对局 {game_id} 中观察到的模式",
-                "source_report_ids": [game_id],
-                "quality_score": r.confidence * 0.8,
-                "confidence": r.confidence,
-                "usage_count": 0,
-                "success_count": 0,
-                "failure_count": 0,
-                "status": "candidate",
-                "tags": [persona_scope, role, "reflection", "pattern"],
-            })
+            docs.append(
+                {
+                    "doc_id": _make_doc_id(game_id, r.player_id, item[:40]),
+                    "doc_type": "reflection",
+                    "role": role,
+                    "phase": "global",
+                    "persona_scope": persona_scope,
+                    "situation_pattern": item,
+                    "recommended_action": f"{persona_scope} 视角发现的规律: {item}",
+                    "rationale": r.key_insight or "",
+                    "evidence_summary": f"对局 {game_id} 中观察到的模式",
+                    "source_report_ids": [game_id],
+                    "quality_score": r.confidence * 0.8,
+                    "confidence": r.confidence,
+                    "usage_count": 0,
+                    "success_count": 0,
+                    "failure_count": 0,
+                    "status": "candidate",
+                    "tags": [persona_scope, role, "reflection", "pattern"],
+                }
+            )
 
     return docs
 
@@ -479,6 +497,7 @@ def reflections_to_knowledge_docs(
 def _make_doc_id(game_id: str, player_id: str, content_hash: str) -> str:
     """Generate a stable doc_id from game + player + content."""
     import hashlib
+
     raw = f"{game_id}:{player_id}:{content_hash}"
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
@@ -486,6 +505,7 @@ def _make_doc_id(game_id: str, player_id: str, content_hash: str) -> str:
 # ============================================================
 # Save reflection results to DB
 # ============================================================
+
 
 def save_reflections_to_db(
     reflections: List[ReflectionResult],
@@ -507,7 +527,8 @@ def save_reflections_to_db(
         return 0
 
     try:
-        from backend.db.database import SessionLocal, init_db
+        from backend.db.database import SessionLocal
+        from backend.db.database import init_db
         from backend.db.models import StrategyKnowledgeDoc
 
         init_db()
@@ -515,9 +536,7 @@ def save_reflections_to_db(
         try:
             saved = 0
             for doc in docs:
-                row = db.query(StrategyKnowledgeDoc).filter(
-                    StrategyKnowledgeDoc.id == doc["doc_id"]
-                ).first()
+                row = db.query(StrategyKnowledgeDoc).filter(StrategyKnowledgeDoc.id == doc["doc_id"]).first()
                 if row is not None:
                     # Update quality/confidence if reflection improved
                     if doc["quality_score"] > (row.quality_score or 0):
@@ -565,20 +584,32 @@ def save_reflections_to_db(
 # for offline batch processing but is not called from the game pipeline.
 # ============================================================
 
+
 def save_reflections_to_pg(reflections: list, conn_str: str = "") -> int:
     """Save reflection results to PostgreSQL strategy_knowledge_docs."""
     import psycopg2
+
     conn = psycopg2.connect(conn_str or _DEFAULT_CONN)
     cur = conn.cursor()
     count = 0
     for ref in reflections:
         for doc in ref.to_strategy_docs():
-            cur.execute("""
+            cur.execute(
+                """
                 INSERT INTO strategy_knowledge_docs
                 (situation_pattern, recommended_action, rationale, role, phase, quality_score, doc_type, status)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, 'candidate')
-            """, (doc["situation"], doc["strategy"], doc["rationale"],
-                  doc["role"], doc["phase"], doc["quality"], doc["doc_type"]))
+            """,
+                (
+                    doc["situation"],
+                    doc["strategy"],
+                    doc["rationale"],
+                    doc["role"],
+                    doc["phase"],
+                    doc["quality"],
+                    doc["doc_type"],
+                ),
+            )
             count += 1
     conn.commit()
     cur.close()

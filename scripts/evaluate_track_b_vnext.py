@@ -21,11 +21,11 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import sys
 import time
 from collections import defaultdict
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass
+from dataclasses import field
 from pathlib import Path
 from typing import Any
 
@@ -42,6 +42,7 @@ MODELS_EXIST = (DATA / "decision_quality_model.pkl").exists()
 # Helpers
 # ===================================================================
 
+
 def _load_opps(*paths: str) -> list[dict]:
     opps = []
     for p in paths:
@@ -51,14 +52,17 @@ def _load_opps(*paths: str) -> list[dict]:
                 for line in f:
                     line = line.strip()
                     if line:
-                        try: opps.append(json.loads(line))
-                        except json.JSONDecodeError: pass
+                        try:
+                            opps.append(json.loads(line))
+                        except json.JSONDecodeError:
+                            pass
     return opps
 
 
 def _fixture_opps(build_fn) -> list[dict]:
-    from backend.eval.track_b import ReplayBundleBuilder
     from backend.eval.opportunity import OpportunityExtractor
+    from backend.eval.track_b import ReplayBundleBuilder
+
     state = build_fn()
     bundle = ReplayBundleBuilder().build(state)
     return [op.to_dict() for op in OpportunityExtractor().extract(bundle)]
@@ -68,26 +72,33 @@ def _all_fixture_opps() -> list[dict]:
     opps = []
     try:
         from tests.test_track_b_badcase_regression import build_badcase_001_fixture
+
         opps.extend(_fixture_opps(build_badcase_001_fixture))
-    except Exception: pass
+    except Exception:
+        pass
     try:
         from tests.test_track_b_badcase_wolf_regression import build_badcase_002_fixture
+
         opps.extend(_fixture_opps(build_badcase_002_fixture))
-    except Exception: pass
+    except Exception:
+        pass
     try:
         from tests.test_track_b_cleancase_wolf_regression import build_cleancase_001_fixture
+
         opps.extend(_fixture_opps(build_cleancase_001_fixture))
-    except Exception: pass
+    except Exception:
+        pass
     try:
-        from tests.helpers.track_b_variant_factory import (
-            generate_bad_speech_variants, generate_good_speech_variants,
-        )
-        from backend.eval.track_b import ReplayBundleBuilder
         from backend.eval.opportunity import OpportunityExtractor
+        from backend.eval.track_b import ReplayBundleBuilder
+        from tests.helpers.track_b_variant_factory import generate_bad_speech_variants
+        from tests.helpers.track_b_variant_factory import generate_good_speech_variants
+
         for _, state in generate_bad_speech_variants(5) + generate_good_speech_variants(5):
             bundle = ReplayBundleBuilder().build(state)
             opps.extend([op.to_dict() for op in OpportunityExtractor().extract(bundle)])
-    except Exception: pass
+    except Exception:
+        pass
     return opps
 
 
@@ -104,7 +115,10 @@ def _score_opportunities(opps: list[dict]) -> list[dict]:
     """Run model + calibration on opportunities, populating calibrated_q etc."""
     if not opps or not MODELS_EXIST:
         return opps
-    from backend.eval.scoring_models import load_track_b_models, calibrate_decision_quality, extract_features
+    from backend.eval.scoring_models import calibrate_decision_quality
+    from backend.eval.scoring_models import extract_features
+    from backend.eval.scoring_models import load_track_b_models
+
     w_model, q_model = load_track_b_models()
     for opp in opps:
         try:
@@ -128,13 +142,14 @@ def _score_opportunities(opps: list[dict]) -> list[dict]:
 # Suite 1: Feature Quality
 # ===================================================================
 
+
 def evaluate_feature_quality(opps: list[dict]) -> EvalResult:
     print("=" * 60)
     print("Suite 1: Feature Quality")
     print("=" * 60)
 
-    from backend.eval.features.registry import FeatureRegistry
     from backend.eval.features import register_default_extractors
+
     registry = register_default_extractors()
 
     if not opps:
@@ -173,11 +188,14 @@ def evaluate_feature_quality(opps: list[dict]) -> EvalResult:
 
     action_table = []
     for atype, counts in sorted(by_action.items()):
-        action_table.append({
-            "action_type": atype, "n": len(counts),
-            "avg_feature_count": round(np.mean(counts), 1),
-            "low_sample": len(counts) < 5,
-        })
+        action_table.append(
+            {
+                "action_type": atype,
+                "n": len(counts),
+                "avg_feature_count": round(np.mean(counts), 1),
+                "low_sample": len(counts) < 5,
+            }
+        )
 
     metrics = {
         "total_opportunities": n,
@@ -193,11 +211,14 @@ def evaluate_feature_quality(opps: list[dict]) -> EvalResult:
     status = "PASS"
     warnings = []
     if metrics["feature_extraction_success_rate"] < 0.99:
-        status = "PARTIAL"; warnings.append("extraction rate < 0.99")
+        status = "PARTIAL"
+        warnings.append("extraction rate < 0.99")
     if visibility_leaks > 0:
-        status = "FAIL"; warnings.append(f"{visibility_leaks} visibility leaks detected")
+        status = "FAIL"
+        warnings.append(f"{visibility_leaks} visibility leaks detected")
     if metrics["deterministic_consistency_rate"] < 1.0:
-        status = "FAIL"; warnings.append("non-deterministic extraction")
+        status = "FAIL"
+        warnings.append("non-deterministic extraction")
 
     print(f"  Status: {status}")
     print(f"  Opportunities: {n}")
@@ -212,19 +233,19 @@ def evaluate_feature_quality(opps: list[dict]) -> EvalResult:
 # Suite 2: Pairwise Ranker
 # ===================================================================
 
+
 def evaluate_pairwise_ranker() -> EvalResult:
     print("=" * 60)
     print("Suite 2: Pairwise Ranker Evaluation")
     print("=" * 60)
 
-    from backend.eval.pairwise_ranker import (
-        PairwiseLogisticRanker, PairwiseExample, pairwise_examples_from_jsonl,
-    )
+    from backend.eval.pairwise_ranker import PairwiseExample
+    from backend.eval.pairwise_ranker import PairwiseLogisticRanker
+    from backend.eval.pairwise_ranker import pairwise_examples_from_jsonl
 
     # Load all pairwise data
     all_pairs: list[PairwiseExample] = []
-    for path in ["pairwise_training_examples.jsonl",
-                 "pairwise_training_examples_wolf_generalization.jsonl"]:
+    for path in ["pairwise_training_examples.jsonl", "pairwise_training_examples_wolf_generalization.jsonl"]:
         fp = DATA / path
         if fp.exists():
             loaded = pairwise_examples_from_jsonl(fp)
@@ -234,14 +255,13 @@ def evaluate_pairwise_ranker() -> EvalResult:
     # If not enough, generate from Generalization Matrix
     if len(all_pairs) < 30:
         print("  Generating synthetic pairs from variant factory...")
-        from tests.helpers.track_b_variant_factory import (
-            generate_bad_speech_variants, generate_good_speech_variants,
-        )
-        from backend.eval.features.registry import FeatureRegistry
         from backend.eval.features.base import BaseActionFeatures
         from backend.eval.features.private_context import PrivateContextFeatures
-        from backend.eval.track_b import ReplayBundleBuilder
+        from backend.eval.features.registry import FeatureRegistry
         from backend.eval.opportunity import OpportunityExtractor
+        from backend.eval.track_b import ReplayBundleBuilder
+        from tests.helpers.track_b_variant_factory import generate_bad_speech_variants
+        from tests.helpers.track_b_variant_factory import generate_good_speech_variants
 
         registry = FeatureRegistry()
         registry.register(BaseActionFeatures())
@@ -251,25 +271,32 @@ def evaluate_pairwise_ranker() -> EvalResult:
         good_vars = generate_good_speech_variants(15)
 
         for i in range(min(len(bad_vars), len(good_vars))):
-            _, bst = bad_vars[i]; _, gst = good_vars[i]
-            bb = ReplayBundleBuilder().build(bst); gb = ReplayBundleBuilder().build(gst)
+            _, bst = bad_vars[i]
+            _, gst = good_vars[i]
+            bb = ReplayBundleBuilder().build(bst)
+            gb = ReplayBundleBuilder().build(gst)
             b_opps = [op.to_dict() for op in OpportunityExtractor().extract(bb) if op.role == "Werewolf"]
             g_opps = [op.to_dict() for op in OpportunityExtractor().extract(gb) if op.role == "Werewolf"]
             for bo, go in zip(b_opps[:2], g_opps[:2]):
-                bf = registry.extract(bo).features; gf = registry.extract(go).features
+                bf = registry.extract(bo).features
+                gf = registry.extract(go).features
                 bf_float = {k: float(v) if isinstance(v, (int, float)) else 0.0 for k, v in bf.items()}
                 gf_float = {k: float(v) if isinstance(v, (int, float)) else 0.0 for k, v in gf.items()}
-                all_pairs.append(PairwiseExample(
-                    pair_id=f"synth-{i:04d}", source="generalization_matrix",
-                    role="Werewolf", action_type=bo.get("opportunity_type", "speech"),
-                    better_features=gf_float, worse_features=bf_float,
-                ))
+                all_pairs.append(
+                    PairwiseExample(
+                        pair_id=f"synth-{i:04d}",
+                        source="generalization_matrix",
+                        role="Werewolf",
+                        action_type=bo.get("opportunity_type", "speech"),
+                        better_features=gf_float,
+                        worse_features=bf_float,
+                    )
+                )
 
     print(f"  Total pairs: {len(all_pairs)}")
 
     if len(all_pairs) < 20:
-        return EvalResult("pairwise", "SKIPPED",
-                          warnings=[f"Only {len(all_pairs)} pairs available, need >=20"])
+        return EvalResult("pairwise", "SKIPPED", warnings=[f"Only {len(all_pairs)} pairs available, need >=20"])
 
     # Split: train/val/heldout (60/20/20)
     np.random.seed(42)
@@ -277,8 +304,8 @@ def evaluate_pairwise_ranker() -> EvalResult:
     n_train = int(len(all_pairs) * 0.6)
     n_val = int(len(all_pairs) * 0.2)
     train_pairs = [all_pairs[i] for i in indices[:n_train]]
-    val_pairs = [all_pairs[i] for i in indices[n_train:n_train + n_val]]
-    heldout_pairs = [all_pairs[i] for i in indices[n_train + n_val:]]
+    val_pairs = [all_pairs[i] for i in indices[n_train : n_train + n_val]]
+    heldout_pairs = [all_pairs[i] for i in indices[n_train + n_val :]]
 
     # Train
     ranker = PairwiseLogisticRanker()
@@ -287,10 +314,12 @@ def evaluate_pairwise_ranker() -> EvalResult:
 
     # Evaluate
     def evaluate_split(pairs, split_name):
-        correct = 0; total = 0
+        correct = 0
+        total = 0
         for p in pairs:
             bs = ranker.compare_pair(p.better_features, p.worse_features)
-            if bs > 0.5: correct += 1
+            if bs > 0.5:
+                correct += 1
             total += 1
         acc = correct / max(total, 1)
         print(f"  {split_name} accuracy: {acc:.4f} ({correct}/{total})")
@@ -308,7 +337,9 @@ def evaluate_pairwise_ranker() -> EvalResult:
     by_type_acc = {t: round(np.mean(v), 4) for t, v in by_type.items() if v}
 
     # Clean FP / Bad FN
-    clean_fp = 0; bad_fn = 0; total_check = 0
+    clean_fp = 0
+    bad_fn = 0
+    total_check = 0
     for p in val_pairs + heldout_pairs:
         total_check += 1
         bs = ranker.compare_pair(p.better_features, p.worse_features)
@@ -321,7 +352,9 @@ def evaluate_pairwise_ranker() -> EvalResult:
     n_check = max(total_check, 1)
     metrics = {
         "total_pairs": len(all_pairs),
-        "train_pairs": n_train, "val_pairs": n_val, "heldout_pairs": len(heldout_pairs),
+        "train_pairs": n_train,
+        "val_pairs": n_val,
+        "heldout_pairs": len(heldout_pairs),
         "train_accuracy": round(train_acc, 4),
         "validation_accuracy": round(val_acc, 4),
         "heldout_accuracy": round(heldout_acc, 4),
@@ -334,8 +367,12 @@ def evaluate_pairwise_ranker() -> EvalResult:
 
     status = "PASS"
     warnings = []
-    if heldout_acc < 0.60: status = "FAIL"; warnings.append("heldout < 0.60")
-    elif heldout_acc < 0.70: status = "PASS_WITH_LIMITATIONS"; warnings.append("heldout < 0.70")
+    if heldout_acc < 0.60:
+        status = "FAIL"
+        warnings.append("heldout < 0.60")
+    elif heldout_acc < 0.70:
+        status = "PASS_WITH_LIMITATIONS"
+        warnings.append("heldout < 0.70")
 
     return EvalResult("pairwise", status, metrics, warnings)
 
@@ -343,6 +380,7 @@ def evaluate_pairwise_ranker() -> EvalResult:
 # ===================================================================
 # Suite 3: Opportunity Scoring Separation
 # ===================================================================
+
 
 def evaluate_opportunity_separation(opps: list[dict]) -> EvalResult:
     print("=" * 60)
@@ -352,7 +390,9 @@ def evaluate_opportunity_separation(opps: list[dict]) -> EvalResult:
     if not opps or not MODELS_EXIST:
         return EvalResult("opportunity", "SKIPPED", warnings=["No data or models"])
 
-    from backend.eval.scoring_models import load_track_b_models, calibrate_decision_quality, extract_features
+    from backend.eval.scoring_models import calibrate_decision_quality
+    from backend.eval.scoring_models import extract_features
+    from backend.eval.scoring_models import load_track_b_models
 
     _, q_model = load_track_b_models()
 
@@ -379,8 +419,10 @@ def evaluate_opportunity_separation(opps: list[dict]) -> EvalResult:
         bad = [o for o in items if o["_cal_q"] <= 0.40]
 
         row = {
-            "action_type": atype, "n_total": len(items),
-            "n_good": len(good), "n_bad": len(bad),
+            "action_type": atype,
+            "n_total": len(items),
+            "n_good": len(good),
+            "n_bad": len(bad),
             "good_mean_raw_q": round(np.mean([o["_raw_q"] for o in good]), 4) if good else None,
             "bad_mean_raw_q": round(np.mean([o["_raw_q"] for o in bad]), 4) if bad else None,
             "good_mean_cal_q": round(np.mean([o["_cal_q"] for o in good]), 4) if good else None,
@@ -393,8 +435,12 @@ def evaluate_opportunity_separation(opps: list[dict]) -> EvalResult:
             row["calibrated_gap"] = None
 
         action_table.append(row)
-        if good: all_good_raw.extend([o["_raw_q"] for o in good]); all_good_cal.extend([o["_cal_q"] for o in good])
-        if bad: all_bad_raw.extend([o["_raw_q"] for o in bad]); all_bad_cal.extend([o["_cal_q"] for o in bad])
+        if good:
+            all_good_raw.extend([o["_raw_q"] for o in good])
+            all_good_cal.extend([o["_cal_q"] for o in good])
+        if bad:
+            all_bad_raw.extend([o["_raw_q"] for o in bad])
+            all_bad_cal.extend([o["_cal_q"] for o in bad])
 
     gaps = [r.get("calibrated_gap") for r in action_table if r.get("calibrated_gap") is not None]
     metrics = {
@@ -409,12 +455,15 @@ def evaluate_opportunity_separation(opps: list[dict]) -> EvalResult:
     status = "PASS"
     warnings = []
     if metrics["mean_calibrated_gap"] is None or (metrics["mean_calibrated_gap"] or 0) < 0.10:
-        status = "PARTIAL"; warnings.append("mean calibrated_gap < 0.10")
+        status = "PARTIAL"
+        warnings.append("mean calibrated_gap < 0.10")
 
     for r in action_table[:5]:
-        print(f"  {r['action_type']:20s} n={r['n_total']:3d} "
-              f"good_cal={r['good_mean_cal_q'] or 'N/A'} bad_cal={r['bad_mean_cal_q'] or 'N/A'} "
-              f"gap={r.get('calibrated_gap') or 'N/A'}")
+        print(
+            f"  {r['action_type']:20s} n={r['n_total']:3d} "
+            f"good_cal={r['good_mean_cal_q'] or 'N/A'} bad_cal={r['bad_mean_cal_q'] or 'N/A'} "
+            f"gap={r.get('calibrated_gap') or 'N/A'}"
+        )
 
     return EvalResult("opportunity", status, metrics, warnings)
 
@@ -422,6 +471,7 @@ def evaluate_opportunity_separation(opps: list[dict]) -> EvalResult:
 # ===================================================================
 # Suite 4: ProcessScoreV3
 # ===================================================================
+
 
 def evaluate_process_score_v3(opps: list[dict]) -> EvalResult:
     print("=" * 60)
@@ -433,8 +483,10 @@ def evaluate_process_score_v3(opps: list[dict]) -> EvalResult:
 
     opps = _score_opportunities(opps)
     from backend.eval.process_score_v3 import compute_process_score_v3
-    from backend.eval.scoring_models import calculate_process_score, calculate_process_score_v2, load_track_b_models
+    from backend.eval.scoring_models import calculate_process_score
+    from backend.eval.scoring_models import calculate_process_score_v2
     from backend.eval.scoring_models import compute_speech_scores
+    from backend.eval.scoring_models import load_track_b_models
 
     w_model, q_model = (None, None)
     if MODELS_EXIST:
@@ -470,22 +522,29 @@ def evaluate_process_score_v3(opps: list[dict]) -> EvalResult:
         lr = legacy_by_id[pid]
         v2r = v2_by_id.get(pid)
         v3r = v3_by_id.get(pid)
-        comparison.append({
-            "player_id": pid, "role": lr.role,
-            "legacy_process": lr.process_score,
-            "v2_process": v2r.process_score if v2r else None,
-            "v3_process": v3r.process_score_v3 if v3r else None,
-            "v3_confidence_interval": v3r.confidence_interval if v3r else None,
-            "v3_low_sample": v3r.low_sample_warning if v3r else None,
-        })
+        comparison.append(
+            {
+                "player_id": pid,
+                "role": lr.role,
+                "legacy_process": lr.process_score,
+                "v2_process": v2r.process_score if v2r else None,
+                "v3_process": v3r.process_score_v3 if v3r else None,
+                "v3_confidence_interval": v3r.confidence_interval if v3r else None,
+                "v3_low_sample": v3r.low_sample_warning if v3r else None,
+            }
+        )
 
     # Gap metrics
-    legacy_gaps = [abs(comparison[i]["legacy_process"] - comparison[j]["legacy_process"])
-                   for i in range(len(comparison)) for j in range(i + 1, len(comparison))]
+    legacy_gaps = [
+        abs(comparison[i]["legacy_process"] - comparison[j]["legacy_process"])
+        for i in range(len(comparison))
+        for j in range(i + 1, len(comparison))
+    ]
     v3_gaps = []
     for i in range(len(comparison)):
         for j in range(i + 1, len(comparison)):
-            a = comparison[i].get("v3_process"); b = comparison[j].get("v3_process")
+            a = comparison[i].get("v3_process")
+            b = comparison[j].get("v3_process")
             if a is not None and b is not None:
                 v3_gaps.append(abs(a - b))
 
@@ -505,8 +564,9 @@ def evaluate_process_score_v3(opps: list[dict]) -> EvalResult:
         status = "PASS_WITH_LIMITATIONS"
 
     for c in comparison[:7]:
-        print(f"  {c['player_id']} ({c['role']:10s}): legacy={c['legacy_process']:.4f} "
-              f"v3={c.get('v3_process') or 'N/A'}")
+        print(
+            f"  {c['player_id']} ({c['role']:10s}): legacy={c['legacy_process']:.4f} v3={c.get('v3_process') or 'N/A'}"
+        )
 
     return EvalResult("process", status, metrics, warnings)
 
@@ -515,62 +575,80 @@ def evaluate_process_score_v3(opps: list[dict]) -> EvalResult:
 # Suite 5: GameEvaluationValue
 # ===================================================================
 
+
 def evaluate_game_value() -> EvalResult:
     print("=" * 60)
     print("Suite 5: GameEvaluationValue")
     print("=" * 60)
 
-    from backend.eval.process_score_v3 import compute_game_value, compute_process_score_v3
+    from backend.eval.process_score_v3 import compute_game_value
+    from backend.eval.process_score_v3 import compute_process_score_v3
 
     test_cases = []
 
     # BadCase-001
     try:
         from tests.test_track_b_badcase_regression import build_badcase_001_fixture
+
         opps = _score_opportunities(_fixture_opps(build_badcase_001_fixture))
         results = compute_process_score_v3(opps)
         gv = compute_game_value("badcase-001", opps, results)
-        test_cases.append({
-            "game_id": "badcase-001", "type": "badcase",
-            "recommended_use": gv.recommended_use,
-            "badcase_value": gv.badcase_value, "clean_case_value": gv.clean_case_value,
-            "expected_uses": ["badcase_training", "pairwise_training"],
-        })
+        test_cases.append(
+            {
+                "game_id": "badcase-001",
+                "type": "badcase",
+                "recommended_use": gv.recommended_use,
+                "badcase_value": gv.badcase_value,
+                "clean_case_value": gv.clean_case_value,
+                "expected_uses": ["badcase_training", "pairwise_training"],
+            }
+        )
     except Exception as e:
         test_cases.append({"game_id": "badcase-001", "error": str(e)})
 
     # BadCase-002
     try:
         from tests.test_track_b_badcase_wolf_regression import build_badcase_002_fixture
+
         opps = _score_opportunities(_fixture_opps(build_badcase_002_fixture))
         results = compute_process_score_v3(opps)
         gv = compute_game_value("badcase-002", opps, results)
-        test_cases.append({
-            "game_id": "badcase-002", "type": "badcase",
-            "recommended_use": gv.recommended_use,
-            "badcase_value": gv.badcase_value, "clean_case_value": gv.clean_case_value,
-            "expected_uses": ["badcase_training", "pairwise_training"],
-        })
+        test_cases.append(
+            {
+                "game_id": "badcase-002",
+                "type": "badcase",
+                "recommended_use": gv.recommended_use,
+                "badcase_value": gv.badcase_value,
+                "clean_case_value": gv.clean_case_value,
+                "expected_uses": ["badcase_training", "pairwise_training"],
+            }
+        )
     except Exception as e:
         test_cases.append({"game_id": "badcase-002", "error": str(e)})
 
     # CleanCase-001
     try:
         from tests.test_track_b_cleancase_wolf_regression import build_cleancase_001_fixture
+
         opps = _score_opportunities(_fixture_opps(build_cleancase_001_fixture))
         results = compute_process_score_v3(opps)
         gv = compute_game_value("cleancase-001", opps, results)
-        test_cases.append({
-            "game_id": "cleancase-001", "type": "clean",
-            "recommended_use": gv.recommended_use,
-            "badcase_value": gv.badcase_value, "clean_case_value": gv.clean_case_value,
-            "expected_uses": ["clean_case_benchmark"],
-        })
+        test_cases.append(
+            {
+                "game_id": "cleancase-001",
+                "type": "clean",
+                "recommended_use": gv.recommended_use,
+                "badcase_value": gv.badcase_value,
+                "clean_case_value": gv.clean_case_value,
+                "expected_uses": ["clean_case_benchmark"],
+            }
+        )
     except Exception as e:
         test_cases.append({"game_id": "cleancase-001", "error": str(e)})
 
     # Evaluate accuracy
-    correct = 0; total = 0
+    correct = 0
+    total = 0
     for tc in test_cases:
         if "error" in tc:
             continue
@@ -597,6 +675,7 @@ def evaluate_game_value() -> EvalResult:
 # Suite 6: Ablation
 # ===================================================================
 
+
 def evaluate_ablation(opps: list[dict]) -> EvalResult:
     print("=" * 60)
     print("Suite 6: Ablation A/B/C/D/E")
@@ -605,13 +684,14 @@ def evaluate_ablation(opps: list[dict]) -> EvalResult:
     if not opps or not MODELS_EXIST:
         return EvalResult("ablation", "SKIPPED", warnings=["No data or models"])
 
-    from backend.eval.scoring_models import (
-        load_track_b_models, calibrate_decision_quality, extract_features,
-        calculate_process_score, calculate_process_score_v2, compute_speech_scores,
-    )
+    from backend.eval.scoring_models import calculate_process_score
+    from backend.eval.scoring_models import calibrate_decision_quality
+    from backend.eval.scoring_models import compute_speech_scores
+    from backend.eval.scoring_models import extract_features
+    from backend.eval.scoring_models import load_track_b_models
+
     opps = _score_opportunities(opps)
     from backend.eval.process_score_v3 import compute_process_score_v3
-    from backend.eval.review import MetricsCalculator
 
     w_model, q_model = load_track_b_models()
     speech = compute_speech_scores(opps)
@@ -638,28 +718,27 @@ def evaluate_ablation(opps: list[dict]) -> EvalResult:
 
     # D: PairwiseLogisticRanker only
     try:
-        from backend.eval.pairwise_ranker import pairwise_examples_from_jsonl, PairwiseLogisticRanker
+        from backend.eval.pairwise_ranker import PairwiseLogisticRanker
+        from backend.eval.pairwise_ranker import pairwise_examples_from_jsonl
+
         ranker = PairwiseLogisticRanker()
         pairs = []
-        for path in ["pairwise_training_examples.jsonl",
-                     "pairwise_training_examples_wolf_generalization.jsonl"]:
+        for path in ["pairwise_training_examples.jsonl", "pairwise_training_examples_wolf_generalization.jsonl"]:
             fp = DATA / path
             if fp.exists():
                 pairs.extend(pairwise_examples_from_jsonl(fp))
         if len(pairs) >= 10:
             ranker.fit(pairs)
             rank_qs = []
-            from backend.eval.features.registry import FeatureRegistry
             from backend.eval.features import register_default_extractors
+
             reg = register_default_extractors()
             for opp in opps:
                 fr = reg.extract(opp)
-                fv = {k: float(v) if isinstance(v, (int, float)) else 0.0
-                      for k, v in fr.features.items()}
+                fv = {k: float(v) if isinstance(v, (int, float)) else 0.0 for k, v in fr.features.items()}
                 rq = ranker.predict_rank(fv).learned_rank_q
                 rank_qs.append(rq)
-            systems["D_pairwise_ranker"] = {"mean_q": round(np.mean(rank_qs), 4) if rank_qs else 0,
-                                            "n": len(rank_qs)}
+            systems["D_pairwise_ranker"] = {"mean_q": round(np.mean(rank_qs), 4) if rank_qs else 0, "n": len(rank_qs)}
         else:
             systems["D_pairwise_ranker"] = {"error": "insufficient pairs"}
     except Exception as e:
@@ -667,15 +746,15 @@ def evaluate_ablation(opps: list[dict]) -> EvalResult:
 
     # E: Full V3
     v3_results = compute_process_score_v3(opps)
-    systems["E_full_v3"] = {"scores": {r.player_id: r.process_score_v3 for r in v3_results},
-                            "n": len(v3_results)}
+    systems["E_full_v3"] = {"scores": {r.player_id: r.process_score_v3 for r in v3_results}, "n": len(v3_results)}
 
     # Compare good/bad gap
     def good_bad_gap(scores_dict):
         vals = list(scores_dict.values())
-        if len(vals) < 4: return 0
-        hi = sorted(vals, reverse=True)[:len(vals)//3]
-        lo = sorted(vals)[:len(vals)//3]
+        if len(vals) < 4:
+            return 0
+        hi = sorted(vals, reverse=True)[: len(vals) // 3]
+        lo = sorted(vals)[: len(vals) // 3]
         return round(np.mean(hi) - np.mean(lo), 4)
 
     comparison = []
@@ -710,6 +789,7 @@ def evaluate_ablation(opps: list[dict]) -> EvalResult:
 # Main
 # ===================================================================
 
+
 def evaluate_human_pairwise() -> EvalResult:
     """Evaluate human pairwise label pipeline readiness."""
     print("=" * 60)
@@ -719,22 +799,22 @@ def evaluate_human_pairwise() -> EvalResult:
     sample_path = DATA / "human_pairwise_labels_sample.jsonl"
     queue_path = DATA / "human_pairwise_queue.jsonl"
 
-    metrics = {"sample_labels_exist": sample_path.exists(),
-               "queue_exists": queue_path.exists()}
+    metrics = {"sample_labels_exist": sample_path.exists(), "queue_exists": queue_path.exists()}
 
     if not sample_path.exists():
-        return EvalResult("human_pairwise", "SKIPPED",
-                          warnings=["No sample labels found"],
-                          metrics=metrics)
+        return EvalResult("human_pairwise", "SKIPPED", warnings=["No sample labels found"], metrics=metrics)
 
     # Validate samples
     from backend.eval.human_label_validator import validate_human_pairwise_labels
+
     samples = []
     with open(sample_path) as f:
         for line in f:
             if line.strip():
-                try: samples.append(json.loads(line))
-                except json.JSONDecodeError: pass
+                try:
+                    samples.append(json.loads(line))
+                except json.JSONDecodeError:
+                    pass
 
     val_result = validate_human_pairwise_labels(samples)
     metrics["sample_count"] = val_result["total"]
@@ -866,16 +946,19 @@ def _generate_report(results: dict[str, EvalResult], summary: dict) -> None:
 
 def main():
     parser = argparse.ArgumentParser(description="Track B vNext Evaluation")
-    parser.add_argument("--suite", choices=["feature", "pairwise", "opportunity",
-                                             "process", "game_value", "human_pairwise", "ablation"],
-                        help="Run a single suite")
+    parser.add_argument(
+        "--suite",
+        choices=["feature", "pairwise", "opportunity", "process", "game_value", "human_pairwise", "ablation"],
+        help="Run a single suite",
+    )
     parser.add_argument("--all", action="store_true", help="Run all suites")
     args = parser.parse_args()
 
     if args.suite:
         opps = _all_fixture_opps() if args.suite != "pairwise" and args.suite != "game_value" else []
         real_opps = _load_opps("data/health/opportunities.jsonl")
-        if real_opps: opps.extend(real_opps[:500])
+        if real_opps:
+            opps.extend(real_opps[:500])
 
         suite_fn = {
             "feature": lambda: evaluate_feature_quality(opps),

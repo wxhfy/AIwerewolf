@@ -21,13 +21,12 @@ Security properties tested (from v2 blueprint §4.3):
 
 from __future__ import annotations
 
-import pytest
-from unittest.mock import MagicMock, patch
-
+from unittest.mock import MagicMock
 
 # ================================================================
 # Helpers
 # ================================================================
+
 
 def _make_player(
     pid: str,
@@ -39,8 +38,11 @@ def _make_player(
 ) -> dict:
     """Create a player dict similar to what Visibility produces."""
     base = {
-        "id": pid, "name": name, "seat": seat,
-        "alive": alive, "is_ai": True,
+        "id": pid,
+        "name": name,
+        "seat": seat,
+        "alive": alive,
+        "is_ai": True,
         "agent_type": "cognitive",
     }
     # private_dict includes role + alignment; public_dict does not
@@ -53,8 +55,11 @@ def _make_public_player(pid: str, name: str, seat: int, alive: bool = True) -> d
 
 
 def _make_private_player(
-    pid: str, name: str, seat: int,
-    role: str = "Villager", alignment: str = "VILLAGE",
+    pid: str,
+    name: str,
+    seat: int,
+    role: str = "Villager",
+    alignment: str = "VILLAGE",
     alive: bool = True,
 ) -> dict:
     """A player as seen by self or teammate (private view)."""
@@ -88,14 +93,21 @@ def _mock_player_view(
 # P1: Wolves cannot see Seer check results
 # ================================================================
 
+
 def test_wolf_cannot_see_seer_check_results():
     """P1: A wolf player's view must not contain Seer's divine results.
 
     Tests that the Visibility layer correctly scopes private events —
     wolf players only get wolf-team events, not Seer's divine results.
     """
+    from backend.engine.models import Alignment
+    from backend.engine.models import EventType
+    from backend.engine.models import GameEvent
+    from backend.engine.models import GameState
+    from backend.engine.models import Phase
+    from backend.engine.models import Player
+    from backend.engine.models import Role
     from backend.engine.visibility import Visibility
-    from backend.engine.models import GameState, Player, Role, Alignment, GameEvent, EventType, Phase
 
     # Build a minimal game state
     players = [
@@ -104,29 +116,39 @@ def test_wolf_cannot_see_seer_check_results():
         Player(id="P3", name="村民B", seat=3, role=Role.VILLAGER, alignment=Alignment.VILLAGE, alive=True),
     ]
     state = GameState(
-        id="test-game", phase=Phase.DAY_SPEECH, day=1, players=players, max_days=8,
+        id="test-game",
+        phase=Phase.DAY_SPEECH,
+        day=1,
+        players=players,
+        max_days=8,
     )
 
     # Seer checks P3 — result goes to Seer's private events
-    state.events.append(GameEvent(
-        id="ev1", day=1, phase=Phase.NIGHT_SEER_ACTION,
-        type=EventType.NIGHT_ACTION,
-        payload={"target_id": "P3", "is_wolf": False, "action": "divine"},
-        ts=1000.0, visibility="private", visible_to=["P1"],
-    ))
+    state.events.append(
+        GameEvent(
+            id="ev1",
+            day=1,
+            phase=Phase.NIGHT_SEER_ACTION,
+            type=EventType.NIGHT_ACTION,
+            payload={"target_id": "P3", "is_wolf": False, "action": "divine"},
+            ts=1000.0,
+            visibility="private",
+            visible_to=["P1"],
+        )
+    )
 
     # Build view for wolf player P2
     wolf_view = Visibility().for_player(state, "P2")
 
     # Wolf's private events should NOT include Seer check
-    seer_events = [e for e in wolf_view.private_events
-                   if getattr(e, 'type', None) and str(e.type) == "SEER_CHECK"]
+    seer_events = [e for e in wolf_view.private_events if getattr(e, "type", None) and str(e.type) == "SEER_CHECK"]
     assert len(seer_events) == 0, f"Wolf should not see Seer's divine results, got {seer_events}"
 
 
 # ================================================================
 # P2: Villagers cannot see wolf team list
 # ================================================================
+
 
 def test_villager_cannot_see_wolf_team():
     """P2: A villager's view must not include wolf team membership."""
@@ -147,6 +169,7 @@ def test_villager_cannot_see_wolf_team():
 # P4: Agent Memory does not contain Hidden Truth
 # ================================================================
 
+
 def test_memory_does_not_contain_hidden_truth():
     """P4: Memory must not store other players' true roles or alignments."""
     from backend.agents.cognitive.memory import Memory
@@ -161,7 +184,7 @@ def test_memory_does_not_contain_hidden_truth():
 
     # Memory should not have any key that exposes hidden truth
     for j in mem.judgments:
-        jdict = j.__dict__ if hasattr(j, '__dict__') else {}
+        jdict = j.__dict__ if hasattr(j, "__dict__") else {}
         assert "true_role" not in jdict, f"Judgment must not contain true_role: {jdict}"
         assert "true_alignment" not in jdict, f"Judgment must not contain true_alignment: {jdict}"
 
@@ -169,6 +192,7 @@ def test_memory_does_not_contain_hidden_truth():
 # ================================================================
 # P5: Retrieval does not return current-game private info
 # ================================================================
+
 
 def test_retrieval_blocks_current_game_private_info():
     """P5: Strategy retrieval must filter out docs from current game with private info."""
@@ -206,11 +230,11 @@ def test_retrieval_blocks_current_game_private_info():
 # P8: Knowledge feedback does not leak current game to next game
 # ================================================================
 
+
 def test_knowledge_feedback_no_cross_game_leak():
     """P8: Knowledge from game N must not expose private info to game N+1 agents."""
-    from backend.eval.knowledge_confidence import (
-        confidence_allowed, visibility_allowed,
-    )
+    from backend.eval.knowledge_confidence import confidence_allowed
+    from backend.eval.knowledge_confidence import visibility_allowed
 
     # Knowledge doc from game-001 about Seer strategy
     doc = {
@@ -239,12 +263,13 @@ def test_knowledge_feedback_no_cross_game_leak():
 # P9: final_agent_input contains no hidden roles/alignments
 # ================================================================
 
+
 def test_final_agent_input_contains_no_hidden_truth():
     """P9: Complete agent input must not leak hidden roles or alignments."""
     # Simulate building the final agent input from legal components
     villager = _make_private_player("P1", "村民A", 1, role="Villager", alignment="VILLAGE")
     seer = _make_public_player("P2", "预言家B", 2)  # Public view — no role exposed
-    wolf = _make_public_player("P3", "狼人C", 3)    # Public view — no role exposed
+    wolf = _make_public_player("P3", "狼人C", 3)  # Public view — no role exposed
 
     view = _mock_player_view(
         self_player=villager,
@@ -259,33 +284,34 @@ def test_final_agent_input_contains_no_hidden_truth():
     for p in view.players:
         if p["id"] == view.self_player["id"]:
             continue
-        info = f"{p.get('seat','?')}号:{p.get('name','?')}"
+        info = f"{p.get('seat', '?')}号:{p.get('name', '?')}"
         agent_input_parts.append(info)
 
     agent_input = "\n".join(agent_input_parts)
 
     # Hidden truth must not appear in the final input
     hidden_truths = [
-        "Seer", "seer", "Werewolf", "werewolf",  # role names
-        "WOLF", "WOLF",                            # alignment values
-        "角色:", "身份:",                            # role hints
+        "Seer",
+        "seer",
+        "Werewolf",
+        "werewolf",  # role names
+        "WOLF",
+        "WOLF",  # alignment values
+        "角色:",
+        "身份:",  # role hints
     ]
     for truth in hidden_truths:
-        assert truth not in agent_input, (
-            f"Hidden truth '{truth}' leaked into agent input: {agent_input}"
-        )
+        assert truth not in agent_input, f"Hidden truth '{truth}' leaked into agent input: {agent_input}"
 
 
 # ================================================================
 # P10: Retrieved docs satisfy visibility and applicability
 # ================================================================
 
+
 def test_retrieved_docs_satisfy_visibility_and_applicability():
     """P10: All retrieved docs must pass visibility + applicability checks."""
-    from backend.eval.knowledge_confidence import (
-        retrieve_for_agent, confidence_allowed, visibility_allowed,
-        applicability_matches,
-    )
+    from backend.eval.knowledge_confidence import retrieve_for_agent
 
     docs = [
         {
@@ -357,6 +383,7 @@ def test_retrieved_docs_satisfy_visibility_and_applicability():
 # Confidence tier filtering
 # ================================================================
 
+
 def test_confidence_allowed_filters_correctly():
     """Verify that confidence_allowed correctly filters by tier."""
     from backend.eval.knowledge_confidence import confidence_allowed
@@ -366,38 +393,59 @@ def test_confidence_allowed_filters_correctly():
     assert confidence_allowed({"confidence_tier": "L2_statistical"}) is True
 
     # L3 with good scores
-    assert confidence_allowed({
-        "confidence_tier": "L3_strategic",
-        "confidence_score": 0.80,
-        "judge_agreement": 0.75,
-    }) is True
+    assert (
+        confidence_allowed(
+            {
+                "confidence_tier": "L3_strategic",
+                "confidence_score": 0.80,
+                "judge_agreement": 0.75,
+            }
+        )
+        is True
+    )
 
     # L3 with low confidence
-    assert confidence_allowed({
-        "confidence_tier": "L3_strategic",
-        "confidence_score": 0.50,
-    }) is False
+    assert (
+        confidence_allowed(
+            {
+                "confidence_tier": "L3_strategic",
+                "confidence_score": 0.50,
+            }
+        )
+        is False
+    )
 
     # L3 with low judge agreement
-    assert confidence_allowed({
-        "confidence_tier": "L3_strategic",
-        "confidence_score": 0.80,
-        "judge_agreement": 0.50,
-    }) is False
+    assert (
+        confidence_allowed(
+            {
+                "confidence_tier": "L3_strategic",
+                "confidence_score": 0.80,
+                "judge_agreement": 0.50,
+            }
+        )
+        is False
+    )
 
     # L4 always blocked
     assert confidence_allowed({"confidence_tier": "L4_speculative"}) is False
 
     # Rejected by human
-    assert confidence_allowed({
-        "confidence_tier": "L2_statistical",
-        "human_verdict": "rejected",
-    }) is False
+    assert (
+        confidence_allowed(
+            {
+                "confidence_tier": "L2_statistical",
+                "human_verdict": "rejected",
+            }
+        )
+        is False
+    )
 
 
 # ================================================================
 # Applicability matching
 # ================================================================
+
 
 def test_applicability_matches():
     """Verify applicability matching logic."""
@@ -415,49 +463,80 @@ def test_applicability_matches():
     }
 
     # Matching situation
-    assert applicability_matches(
-        doc,
-        current_role="Witch",
-        current_phase="NIGHT_WITCH_ACTION",
-        rule_variant="standard_competition_v1",
-        player_count=12,
-        public_facts={"someone_died", "day_1"},
-        private_state={"has_antidote"},
-    ) is True
+    assert (
+        applicability_matches(
+            doc,
+            current_role="Witch",
+            current_phase="NIGHT_WITCH_ACTION",
+            rule_variant="standard_competition_v1",
+            player_count=12,
+            public_facts={"someone_died", "day_1"},
+            private_state={"has_antidote"},
+        )
+        is True
+    )
 
     # Wrong role
-    assert applicability_matches(
-        doc, current_role="Seer", current_phase="NIGHT_WITCH_ACTION",
-        rule_variant="standard_competition_v1", player_count=12,
-        public_facts={"someone_died"}, private_state={"has_antidote"},
-    ) is False
+    assert (
+        applicability_matches(
+            doc,
+            current_role="Seer",
+            current_phase="NIGHT_WITCH_ACTION",
+            rule_variant="standard_competition_v1",
+            player_count=12,
+            public_facts={"someone_died"},
+            private_state={"has_antidote"},
+        )
+        is False
+    )
 
     # Forbidden fact present
-    assert applicability_matches(
-        doc, current_role="Witch", current_phase="NIGHT_WITCH_ACTION",
-        rule_variant="standard_competition_v1", player_count=12,
-        public_facts={"someone_died", "seer_confirmed_wolf"},
-        private_state={"has_antidote"},
-    ) is False
+    assert (
+        applicability_matches(
+            doc,
+            current_role="Witch",
+            current_phase="NIGHT_WITCH_ACTION",
+            rule_variant="standard_competition_v1",
+            player_count=12,
+            public_facts={"someone_died", "seer_confirmed_wolf"},
+            private_state={"has_antidote"},
+        )
+        is False
+    )
 
     # Missing required private state
-    assert applicability_matches(
-        doc, current_role="Witch", current_phase="NIGHT_WITCH_ACTION",
-        rule_variant="standard_competition_v1", player_count=12,
-        public_facts={"someone_died"}, private_state=set(),
-    ) is False
+    assert (
+        applicability_matches(
+            doc,
+            current_role="Witch",
+            current_phase="NIGHT_WITCH_ACTION",
+            rule_variant="standard_competition_v1",
+            player_count=12,
+            public_facts={"someone_died"},
+            private_state=set(),
+        )
+        is False
+    )
 
     # Wrong player count
-    assert applicability_matches(
-        doc, current_role="Witch", current_phase="NIGHT_WITCH_ACTION",
-        rule_variant="standard_competition_v1", player_count=5,
-        public_facts={"someone_died"}, private_state={"has_antidote"},
-    ) is False
+    assert (
+        applicability_matches(
+            doc,
+            current_role="Witch",
+            current_phase="NIGHT_WITCH_ACTION",
+            rule_variant="standard_competition_v1",
+            player_count=5,
+            public_facts={"someone_died"},
+            private_state={"has_antidote"},
+        )
+        is False
+    )
 
 
 # ================================================================
 # Confidence decay
 # ================================================================
+
 
 def test_confidence_decay():
     """Verify confidence decay rules."""

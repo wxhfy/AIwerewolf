@@ -15,7 +15,6 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
@@ -77,6 +76,7 @@ def _enrich_sample(sample: dict, source_name: str, rule_variant: str, license_va
 # Source: Werewolf Among Us
 # ===========================================================================
 
+
 def build_werewolf_among_us() -> dict[str, Any]:
     """Rebuild Werewolf Among Us speech samples."""
     from backend.eval.open_data.adapters import WerewolfAmongUsAdapter
@@ -100,35 +100,39 @@ def build_werewolf_among_us() -> dict[str, Any]:
     labels_path = source_dir / "track_b_open_speech_act_labels.jsonl"
     label_dicts = []
     for s in samples:
-        label_dicts.append({
-            "sample_id": s.sample_id,
-            "game_id": s.game_id,
-            "player_id": s.player_id,
-            "role": s.role,
-            "utterance": s.utterance[:200],
-            "annotations": {
-                k: v.label_value for k, v in s.weak_labels.items()
-                if v.source.value == "open_dataset_annotation"
-            },
-            "annotation_count": sum(1 for v in s.weak_labels.values()
-                                   if v.source.value == "open_dataset_annotation"),
-        })
+        label_dicts.append(
+            {
+                "sample_id": s.sample_id,
+                "game_id": s.game_id,
+                "player_id": s.player_id,
+                "role": s.role,
+                "utterance": s.utterance[:200],
+                "annotations": {
+                    k: v.label_value for k, v in s.weak_labels.items() if v.source.value == "open_dataset_annotation"
+                },
+                "annotation_count": sum(
+                    1 for v in s.weak_labels.values() if v.source.value == "open_dataset_annotation"
+                ),
+            }
+        )
     _save_jsonl(label_dicts, labels_path)
 
     # Save logs
     log_path = source_dir / "track_b_open_game_logs.jsonl"
     log_dicts = []
     for log in logs:
-        log_dicts.append({
-            "source": log.source,
-            "license": log.license.value,
-            "rule_variant": log.rule_variant,
-            "game_id": log.game_id,
-            "n_events": len(log.events),
-            "n_players": len(log.players),
-            "winner": log.winner,
-            "metadata": log.metadata,
-        })
+        log_dicts.append(
+            {
+                "source": log.source,
+                "license": log.license.value,
+                "rule_variant": log.rule_variant,
+                "game_id": log.game_id,
+                "n_events": len(log.events),
+                "n_players": len(log.players),
+                "winner": log.winner,
+                "metadata": log.metadata,
+            }
+        )
     _save_jsonl(log_dicts, log_path)
 
     return {
@@ -147,6 +151,7 @@ def build_werewolf_among_us() -> dict[str, Any]:
 # ===========================================================================
 # Source: Track B Native
 # ===========================================================================
+
 
 def build_track_b_native() -> dict[str, Any]:
     """Extract speech and vote samples from Track B native real LLM games."""
@@ -177,70 +182,88 @@ def build_track_b_native() -> dict[str, Any]:
 
             # Speech sample
             speech_idx += 1
-            speech_samples.append({
-                "sample_id": f"native_speech_{speech_idx:06d}",
-                "source": "track_b_native",
-                "license": "internal",
-                "rule_variant": "wolfcha_default_7_player",
-                "game_id": game_id,
-                "turn_id": "0",
-                "phase": "DAY_DISCUSSION",
-                "player_id": player_id,
-                "role": role,
-                "utterance": "",
-                "visible_public_context": {"game_id": game_id, "agent_version": agent_version},
-                "visible_private_context": {"own_role": role},
-                "weak_labels": {
-                    "speech_score_heuristic": {"label_name": "speech_score", "label_value": ps.get("speech_score", 0),
-                                              "source": "heuristic", "confidence": 0.5},
-                },
-                "weak_label_source": "heuristic",
-                "do_not_train_final_q_directly": True,
-            })
+            speech_samples.append(
+                {
+                    "sample_id": f"native_speech_{speech_idx:06d}",
+                    "source": "track_b_native",
+                    "license": "internal",
+                    "rule_variant": "wolfcha_default_7_player",
+                    "game_id": game_id,
+                    "turn_id": "0",
+                    "phase": "DAY_DISCUSSION",
+                    "player_id": player_id,
+                    "role": role,
+                    "utterance": "",
+                    "visible_public_context": {"game_id": game_id, "agent_version": agent_version},
+                    "visible_private_context": {"own_role": role},
+                    "weak_labels": {
+                        "speech_score_heuristic": {
+                            "label_name": "speech_score",
+                            "label_value": ps.get("speech_score", 0),
+                            "source": "heuristic",
+                            "confidence": 0.5,
+                        },
+                    },
+                    "weak_label_source": "heuristic",
+                    "do_not_train_final_q_directly": True,
+                }
+            )
 
             # Vote sample
             vote_idx += 1
-            vote_samples.append({
-                "sample_id": f"native_vote_{vote_idx:06d}",
-                "source": "track_b_native",
-                "license": "internal",
-                "rule_variant": "wolfcha_default_7_player",
-                "game_id": game_id,
-                "phase": "DAY_VOTE",
-                "player_id": player_id,
-                "role": role,
-                "visible_public_context": {"game_id": game_id},
-                "visible_private_context": {"own_role": role},
-                "vote_target": "",
-                "candidate_targets": [],
-                "weak_labels": {
-                    "vote_score_heuristic": {"label_name": "vote_score", "label_value": ps.get("vote_score", 0),
-                                            "source": "heuristic", "confidence": 0.5},
-                    "skill_score_heuristic": {"label_name": "skill_score", "label_value": ps.get("skill_score", 0),
-                                             "source": "heuristic", "confidence": 0.5},
-                },
-                "weak_label_source": "heuristic",
-                "do_not_train_final_q_directly": True,
-            })
+            vote_samples.append(
+                {
+                    "sample_id": f"native_vote_{vote_idx:06d}",
+                    "source": "track_b_native",
+                    "license": "internal",
+                    "rule_variant": "wolfcha_default_7_player",
+                    "game_id": game_id,
+                    "phase": "DAY_VOTE",
+                    "player_id": player_id,
+                    "role": role,
+                    "visible_public_context": {"game_id": game_id},
+                    "visible_private_context": {"own_role": role},
+                    "vote_target": "",
+                    "candidate_targets": [],
+                    "weak_labels": {
+                        "vote_score_heuristic": {
+                            "label_name": "vote_score",
+                            "label_value": ps.get("vote_score", 0),
+                            "source": "heuristic",
+                            "confidence": 0.5,
+                        },
+                        "skill_score_heuristic": {
+                            "label_name": "skill_score",
+                            "label_value": ps.get("skill_score", 0),
+                            "source": "heuristic",
+                            "confidence": 0.5,
+                        },
+                    },
+                    "weak_label_source": "heuristic",
+                    "do_not_train_final_q_directly": True,
+                }
+            )
 
         # Record process scores as critical decision samples
         for ps in player_scores:
             cd_idx += 1
-            critical_samples.append({
-                "sample_id": f"native_cd_{cd_idx:06d}",
-                "source": "track_b_native",
-                "game_id": game_id,
-                "player_id": ps.get("player_id", ""),
-                "role": ps.get("role", ""),
-                "process_score": ps.get("process_score", 0),
-                "final_score": ps.get("final_score", 0),
-                "speech_score": ps.get("speech_score", 0),
-                "vote_score": ps.get("vote_score", 0),
-                "skill_score": ps.get("skill_score", 0),
-                "survival_score": ps.get("survival_score", 0),
-                "mistake_penalty": ps.get("mistake_penalty", 0),
-                "agent_version": agent_version,
-            })
+            critical_samples.append(
+                {
+                    "sample_id": f"native_cd_{cd_idx:06d}",
+                    "source": "track_b_native",
+                    "game_id": game_id,
+                    "player_id": ps.get("player_id", ""),
+                    "role": ps.get("role", ""),
+                    "process_score": ps.get("process_score", 0),
+                    "final_score": ps.get("final_score", 0),
+                    "speech_score": ps.get("speech_score", 0),
+                    "vote_score": ps.get("vote_score", 0),
+                    "skill_score": ps.get("skill_score", 0),
+                    "survival_score": ps.get("survival_score", 0),
+                    "mistake_penalty": ps.get("mistake_penalty", 0),
+                    "agent_version": agent_version,
+                }
+            )
 
     # Save
     _save_jsonl(speech_samples, source_dir / "track_b_real_speech_samples.jsonl")
@@ -251,6 +274,7 @@ def build_track_b_native() -> dict[str, Any]:
     opp_path = ROOT / "data" / "health" / "track_b_minimal_leaderboard_games.jsonl"
     if opp_path.exists():
         import shutil
+
         dest = source_dir / "track_b_real_opportunities.jsonl"
         shutil.copy(opp_path, dest)
 
@@ -306,15 +330,17 @@ def merge_combined(results: dict[str, Any]):
     lb_path = ROOT / "data" / "health" / "track_b_minimal_leaderboard_games.jsonl"
     lb_games = _load_jsonl(lb_path)
     for g in lb_games:
-        combined_opportunities.append({
-            "game_id": g.get("game_id", ""),
-            "agent_version": g.get("agent_version", ""),
-            "source": "track_b_native",
-            "license": "internal",
-            "rule_variant": "wolfcha_default_7_player",
-            "winner": g.get("winner", ""),
-            "player_scores": g.get("player_scores", []),
-        })
+        combined_opportunities.append(
+            {
+                "game_id": g.get("game_id", ""),
+                "agent_version": g.get("agent_version", ""),
+                "source": "track_b_native",
+                "license": "internal",
+                "rule_variant": "wolfcha_default_7_player",
+                "winner": g.get("winner", ""),
+                "player_scores": g.get("player_scores", []),
+            }
+        )
 
     # Save combined files
     _save_jsonl(combined_speech, COMBINED_DIR / "track_b_open_speech_samples.jsonl")
@@ -330,8 +356,8 @@ def merge_combined(results: dict[str, Any]):
         n_train = int(len(speech_games) * 0.7)
         n_val = int(len(speech_games) * 0.15)
         train_games = speech_games[:n_train]
-        val_games = speech_games[n_train:n_train + n_val]
-        test_games = speech_games[n_train + n_val:]
+        val_games = speech_games[n_train : n_train + n_val]
+        test_games = speech_games[n_train + n_val :]
 
         SPLITS_DIR.mkdir(parents=True, exist_ok=True)
         (SPLITS_DIR / "speech_train_games.txt").write_text("\n".join(train_games), encoding="utf-8")
@@ -353,6 +379,7 @@ def merge_combined(results: dict[str, Any]):
 # ===========================================================================
 # Main
 # ===========================================================================
+
 
 def main():
     parser = argparse.ArgumentParser(description="Build Track B open datasets")
@@ -384,6 +411,7 @@ def main():
         except Exception as e:
             print(f"  FAILED: {e}")
             import traceback
+
             traceback.print_exc()
             results[name] = {"source": name, "status": "ERROR", "error": str(e)}
 
@@ -399,7 +427,7 @@ def main():
         print(f"  {name}: {r.get('status', '?')}")
     if "combined" in results:
         c = results["combined"]
-        print(f"\n  Combined dataset:")
+        print("\n  Combined dataset:")
         print(f"    Speech:     {c['speech_samples']}")
         print(f"    Vote:       {c['vote_samples']}")
         print(f"    Pairwise:   {c['pairwise_samples']}")

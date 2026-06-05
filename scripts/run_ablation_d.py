@@ -8,27 +8,32 @@ Run: python scripts/run_ablation_d.py
 
 from __future__ import annotations
 
-import json, math, statistics, sys, time, gc
+import gc
+import json
+import math
+import statistics
+import sys
+import time
 from collections import defaultdict
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from backend.eval.scoring_models import (
-    DecisionQualityModel, ModelFeatures, extract_features,
-)
-from backend.eval.embedding_retrieval import (
-    BGEM3Provider, format_opportunity_text, OpportunityIndex, RetrievedCase,
-)
-from scripts.train_and_ablate import (
-    load_opportunities, load_labeled, load_baseline,
-    rule_opportunity_value, rule_decision_quality,
-    group_kfold_split,
-)
+from backend.eval.embedding_retrieval import BGEM3Provider
+from backend.eval.embedding_retrieval import OpportunityIndex
+from backend.eval.embedding_retrieval import format_opportunity_text
+from backend.eval.scoring_models import DecisionQualityModel
+from backend.eval.scoring_models import ModelFeatures
+from backend.eval.scoring_models import extract_features
+from scripts.train_and_ablate import group_kfold_split
+from scripts.train_and_ablate import load_baseline
+from scripts.train_and_ablate import load_labeled
+from scripts.train_and_ablate import load_opportunities
+from scripts.train_and_ablate import rule_decision_quality
+from scripts.train_and_ablate import rule_opportunity_value
 
 BGE_M3_PATH = "/home/4T-3/PLM/bge-m3/"
 
@@ -123,14 +128,15 @@ def main() -> int:
     baseline = load_baseline()
 
     # Game outcomes
-    from backend.db.database import SessionLocal, init_db
-    from backend.db.models import PublishedReview
     from sqlalchemy import text
+
+    from backend.db.database import SessionLocal
+    from backend.db.database import init_db
+
     init_db()
     db = SessionLocal()
     clean_ids = set(json.loads(Path("/tmp/clean_llm_game_ids.json").read_text()))
-    games = db.execute(text("SELECT id, winner FROM games WHERE id IN :ids"),
-        {"ids": tuple(clean_ids)}).fetchall()
+    games = db.execute(text("SELECT id, winner FROM games WHERE id IN :ids"), {"ids": tuple(clean_ids)}).fetchall()
     winner_map = {g[0]: g[1] for g in games}
     db.close()
 
@@ -210,8 +216,10 @@ def main() -> int:
         del good_idx, bad_idx
         gc.collect()
 
-        print(f"  Fold {fold_i}: train_good={len(train_good)}, train_bad={len(train_bad)}, "
-              f"test={len(fold_test)}, build={t_build:.1f}s")
+        print(
+            f"  Fold {fold_i}: train_good={len(train_good)}, train_bad={len(train_bad)}, "
+            f"test={len(fold_test)}, build={t_build:.1f}s"
+        )
 
     print(f"  Retrieval features computed for {retrieval_features_added} test opportunities")
 
@@ -229,11 +237,15 @@ def main() -> int:
         X_base.append(base_vec)
 
         # For retrieval features: use precomputed if available, else zeros
-        ret_vec = np.array([
-            feats.nearest_good_similarity, feats.nearest_bad_similarity,
-            feats.good_bad_similarity_margin, feats.similar_good_avg_quality,
-            feats.similar_bad_avg_quality,
-        ])
+        ret_vec = np.array(
+            [
+                feats.nearest_good_similarity,
+                feats.nearest_bad_similarity,
+                feats.good_bad_similarity_margin,
+                feats.similar_good_avg_quality,
+                feats.similar_bad_avg_quality,
+            ]
+        )
         X_with_ret.append(np.concatenate([base_vec, ret_vec]))
 
         label_qs = item.get("label", {}).get("quality_score")
@@ -399,8 +411,10 @@ def main() -> int:
     for i in range(max(len(c_results), len(d_results))):
         c = c_results[i] if i < len(c_results) else {}
         d = d_results[i] if i < len(d_results) else {}
-        lines.append(f"| {i} | {c.get('accuracy', 0):.4f} | {c.get('pairwise_accuracy', 0):.4f} | "
-                     f"{d.get('accuracy', 0):.4f} | {d.get('pairwise_accuracy', 0):.4f} |")
+        lines.append(
+            f"| {i} | {c.get('accuracy', 0):.4f} | {c.get('pairwise_accuracy', 0):.4f} | "
+            f"{d.get('accuracy', 0):.4f} | {d.get('pairwise_accuracy', 0):.4f} |"
+        )
 
     lines += [
         "",
@@ -426,21 +440,21 @@ def main() -> int:
             lines.append(f"| {feat} | {statistics.mean(vals):.4f} | {statistics.stdev(vals):.4f} | {desc} |")
 
     (ROOT / "data/health/embedding_retrieval_eval.md").write_text("\n".join(lines))
-    print(f"  → embedding_retrieval_eval.md")
+    print("  → embedding_retrieval_eval.md")
 
     # Ablation D report
     abl_lines = [
         "# Learned Evaluator Ablation Report — System D",
         "",
-        f"**Date**: 2026-05-27",
+        "**Date**: 2026-05-27",
         "",
         "## Systems Compared",
         "- **C**: Opportunity + Small Models (base features only)",
         "- **D**: Opportunity + Small Models + BGE-M3 Retrieval Features",
         "",
         "## DecisionQualityModel Performance",
-        f"| Metric | System C | System D | Delta |",
-        f"|--------|----------|----------|-------|",
+        "| Metric | System C | System D | Delta |",
+        "|--------|----------|----------|-------|",
         f"| Accuracy | {c_mean_acc:.4f} | {d_mean_acc:.4f} | {d_mean_acc - c_mean_acc:+.4f} |",
         f"| Pairwise Accuracy | {c_mean_paw:.4f} | {d_mean_paw:.4f} | {d_mean_paw - c_mean_paw:+.4f} |",
         "",
@@ -461,8 +475,13 @@ def main() -> int:
     ]
     if final_model_d.feature_importances_:
         # Find retrieval features
-        ret_names = ["nearest_good_similarity", "nearest_bad_similarity", "good_bad_similarity_margin",
-                     "similar_good_avg_quality", "similar_bad_avg_quality"]
+        ret_names = [
+            "nearest_good_similarity",
+            "nearest_bad_similarity",
+            "good_bad_similarity_margin",
+            "similar_good_avg_quality",
+            "similar_bad_avg_quality",
+        ]
         # Feature names for D model (base 37 + 5 retrieval)
         all_names = list(ModelFeatures.FEATURE_NAMES) + ret_names
         sorted_imp = sorted(final_model_d.feature_importances_.items(), key=lambda x: -x[1])
@@ -470,7 +489,7 @@ def main() -> int:
         abl_lines.append("|------|---------|------------|------|")
         for i, (name, imp) in enumerate(sorted_imp[:15]):
             ftype = "retrieval" if name in ret_names else "base"
-            abl_lines.append(f"| {i+1} | {name} | {imp:.6f} | {ftype} |")
+            abl_lines.append(f"| {i + 1} | {name} | {imp:.6f} | {ftype} |")
 
     abl_lines += [
         "",
@@ -482,7 +501,7 @@ def main() -> int:
     ]
 
     (ROOT / "data/health/learned_evaluator_ablation_report_d.md").write_text("\n".join(abl_lines))
-    print(f"  → learned_evaluator_ablation_report_d.md")
+    print("  → learned_evaluator_ablation_report_d.md")
 
     print("\nDone! Phase D complete.")
     return 0
