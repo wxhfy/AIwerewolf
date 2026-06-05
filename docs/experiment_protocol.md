@@ -1,144 +1,218 @@
-# 实验协议
+# Retrieval Policy Experiment Protocol
 
-## 实验问题
+> 检索策略对比实验的完整协议
+> 日期：2026-06-05
 
-1. **Track C 策略检索是否提高过程决策质量？**
-   - 假设：开启 trackc 后 Agent 能检索到历史 lessons，避免重复犯错
-   - 对比维度：win_rate / duration_s / fallback_count
+## 实验目标
 
-2. **Anti-pattern 注入是否减少明显错误？**
-   - 假设：静态反模式规则（如"不要在没查过人时报查验"）能阻止基础性失误
-   - 对比维度：win_rate / fallback_count
+比较不同 Retrieval Policy 对 Agent 决策质量的影响，选出最佳默认策略。
 
-3. **Both（anti_pattern + trackc）是否优于单独开启？**
-   - 假设：静态规则 + 动态检索产生互补效应，既防止基础错误又提供情境策略
-   - 对比维度：win_rate / fallback_count / duration_s
+## 实验组
 
-## 实验分组
+| 组别 | Policy | 说明 |
+|------|--------|------|
+| baseline_no_trackc | 关闭 Track C | 不注入策略，不提供 search_strategies 工具 |
+| global_only | GLOBAL_ONLY | 仅检索全局通用策略 |
+| self_mbti_only | SELF_MBTI_ONLY | 仅检索自己 MBTI 的策略 |
+| same_role_all_mbti | SAME_ROLE_ALL_MBTI | 同角色所有 MBTI |
+| same_role_same_mbti | SAME_ROLE_SAME_MBTI | 同角色同 MBTI |
+| hybrid_role_mbti_global | HYBRID_ROLE_MBTI_GLOBAL | 3 层混合（推荐默认） |
+| hybrid_role_alignment_phase | HYBRID_ROLE_ALIGNMENT_PHASE | 4 层 + phase 约束 |
 
-| Tier | anti_pattern | track_c | 说明 |
-|------|-------------|---------|------|
-| **baseline** | false | false | 纯 MBTI + RoleStrategyCard（standard 层），无外部策略注入，无动态检索 |
-| **anti_only** | true | false | MBTI + Role + anti_pattern 静态反模式注入（如"空发言不得分""投票给同伴扣分"） |
-| **trackc_only** | false | true | MBTI + Role + BM25 动态策略检索（从 active 池搜索情境策略） |
-| **both** | true | true | 全部开启：anti_pattern 静态规则 + trackc 动态策略检索 |
+## 约束条件
 
-## 固定变量
+1. **不允许 fallback** — 严格模式 `ALLOW_FALLBACK=false`
+2. **不允许 candidate 进入对局检索** — 只检索 `status=active` 文档
+3. **固定 active 策略池** — 实验前 snapshot
+4. **固定 seed 集合** — 所有组相同 seeds
+5. **固定模型和 MBTI 分配**
 
-| 变量 | 值 | 理由 |
-|------|-----|------|
-| **模型** | doubao-seed-2.0-pro | 主模型固定，排除模型版本噪音 |
-| **角色配置** | Werewolf x2, Seer, Witch, Hunter, Guard, Villager | 7 人标准局，均衡阵营 |
-| **Seed 范围** | baseline: [1000, 1000+N-1], anti_only: [2000, 2000+N-1], trackc_only: [3000, 3000+N-1], both: [4000, 4000+N-1] | 每组独立 seed 区间，跨组同 offset（如 baseline seed=1000 vs anti_only seed=2000 vs trackc_only seed=3000 vs both seed=4000）保证 MBTI 分配公平 |
-| **Strategy Snapshot** | 实验前记录 active_count（活跃策略条数），记录时间戳 | 提供实验环境可追溯性。当前实现仅记录 active docs 数量；TODO: 添加 content_hash 支持以验证内容不变性 |
-| **规则版本** | standard_competition_v1 | 标准竞技规则（无特殊扩展角色） |
-| **Player Count** | 7 | 固定 7 人局 |
-| **Character Pool** | 32 个具名 Character（张飞/诸葛亮/貂蝉等） | 人格分配由 seed 决定，固定 character pool |
-| **Max Tokens** | 8000 | LLM 输出上限 |
-| **Temperature** | 0.7 | 推理创造性控制 |
-| **Speech Order** | 蛇形（snake） | 保证公平发言机会 |
-| **Witch 配置** | 不可自救（standard_competition_v1 规则） | 防止女巫过于强势 |
-| **Guard 配置** | 不可连续守同一人 | 防止守卫无风险操作 |
+## 离线评估
 
-## 指标
-
-### 当前实现指标
-
-| 指标 | 定义 | 方向 | 优先级 |
-|------|------|------|--------|
-| **win_rate** | 阵营胜率（per role, team, MBTI） | 高游戏质量下均衡为佳 | P0 |
-| **duration_s** | 单局时长（秒） | 性能参考 | P2 |
-| **fallback_count** | 降级到 heuristic 的总次数 | 越低越好 | P2 |
-
-### 计划指标（Planned）
-
-以下指标在 `multi_tier_experiment.py` 中尚未实现，计划在答辩轮次中添加：
-
-| 指标 | 定义 | 方向 | 优先级 |
-|------|------|------|--------|
-| **process_score** | 所有 decisions 的 overall_score 均值 | 越高越好 | P0 |
-| **vote_accuracy** | 投票正确率（上帝视角：投敌对阵营 = 正确） | 越高越好 | P0 |
-| **skill_efficiency** | 技能使用效率（如预言家查中狼人 / 总查验次数） | 越高越好 | P0 |
-| **speech_quality** | 发言质量分（语义丰富度 + 逻辑一致性 + 信息密度） | 越高越好 | P1 |
-| **invalid_action_count** | 无效操作次数（如投票给死人/技能目标非法） | 越低越好 | P0 |
-| **strategy_retrieval_count** | Agent 调用 search_strategies 工具的总次数 | 仅 trackc/both 组有效 | P1 |
-| **strategy_usage_count** | 策略实际被引用的次数（从 tool_trace + decision 中验证） | 越高越好（仅 trackc/both） | P1 |
-| **anti_pattern_violation_count** | Agent 违反反模式规则的次数（如空发言、投同伴） | 越低越好（仅 anti/both） | P1 |
-| **candidate_lessons_count** | 每局赛后从 ScoredStep 中提取的候选经验数 | 越多越好（上限限流） | P1 |
-| **cost_per_game** | 每局 LLM token 消耗 x 当前模型单价 | 越低越好 | P2 |
-| **llm_latency_p50** | LLM 调用延迟中位数（ms） | 越低越好 | P2 |
-| **retrieval_latency_p50** | BM25 检索延迟中位数（ms） | 越低越好 | P2 |
-
-## 统计方法
-
-当前实现使用描述性统计（各角色/阵营/MBTI 的胜率）。统计显著性检验计划在答辩轮次中添加。
-
-| 方法 | 用途 | 状态 |
-|------|------|------|
-| **Descriptive Statistics** | 按角色/阵营/MBTI 分组计算 win_rate | 已实现 |
-| **Bootstrap 95% CI** | 评估各指标的不确定性区间 | Planned |
-| **Permutation Test** | 检验组间胜率差异是否显著 | Planned |
-| **Cohen's d** | 量化组间差异的效应量 | Planned |
-| **Bonferroni Correction** | 多重比较校正 | Planned |
-
-## 最小样本量
-
-- 每组（Tier）：**12 局**（默认），推荐 **30+ 局**以获得统计显著性
-- 总样本量：**48 局**（4 tiers x 12 games，默认）/ **120 局**（4 tiers x 30 games，推荐）
-
-## 实验执行流程
-
-```
-1. for each tier in [baseline, anti_only, trackc_only, both]:
-     for seed in tier.seed_range:
-       game = run_game(seed, tier.config)
-2. 每行结果写入 {tier}.jsonl
-3. compile_stats() — 按角色/阵营/MBTI 汇总胜率
-4. _print_comparison() — 输出格式化对比表到 stdout
-5. 保存 summary.json（含 experiment_id, timestamps, tier 汇总）
+```bash
+python scripts/evaluate_retrieval_policies.py
 ```
 
-## 报告生成
+### 离线权重
 
-- `multi_tier_experiment.py` 输出：
-  - `data/experiment/multi_tier/{tier}.jsonl` — 每局的原始结果（一行 JSON per game）
-  - `data/experiment/multi_tier/results.jsonl` — 合并后的所有对局结果
-  - `data/experiment/multi_tier/summary.json` — 汇总统计（experiment_id, 各 tier 的 game_count/error_count/avg_duration_s/total_fallbacks + 角色/阵营/MBTI 胜率）
-- `_print_comparison()` 输出：
-  - 团队胜率对比表（stdout）
-  - 角色胜率对比表（stdout）
-  - MBTI 胜率对比表（stdout）
-  - Meta 对比表（game_count, error_count, avg_duration_s, total_fallbacks）（stdout）
-
-## 策略快照（Strategy Snapshot）
-
-当前实现为最小化版本：
-
-- **记录内容**：active_count（活跃策略条数）+ timestamp
-- **记录方式**：子进程启动时从 `strategy_knowledge_docs WHERE status='active'` 查询 COUNT
-- **存储位置**：每条 JSONL 记录的 `strategy_snapshot` 字段
-- **TODO**: 添加 content_hash 支持，以便验证实验期间策略内容未被修改
-
-```json
-{
-  "strategy_snapshot": {
-    "active_count": 42,
-    "timestamp": 1717459200.0
-  }
-}
+```
+offline_score =
+  0.30 × nDCG@5
++ 0.20 × Precision@3
++ 0.15 × CoverageRate
++ 0.15 × AverageRelevance
++ 0.10 × RoleMatchRate
++ 0.05 × MBTIMatchRate
+- 1.00 × CandidateLeakagePenalty
 ```
 
-## 预期结果（假设）
+## 在线评估
 
-1. **both > trackc_only > anti_only > baseline** 在 win_rate 上
-2. **trackc_only** 在 strategy_usage_count 上最高（无 anti_pattern 干扰，Agent 更依赖检索）
-3. **anti_only** 在 anti_pattern_violation_count 上最低（反模式直接阻止错误）
-4. **baseline** 在 cost_per_game 上最低（无额外检索 token 消耗）
+```bash
+# Smoke test
+python scripts/run_retrieval_policy_ablation.py --games 1
 
-## 复现说明
+# Small experiment
+python scripts/run_retrieval_policy_ablation.py --games 5
 
-1. 安装依赖：`pip install -r requirements.txt`
-2. 配置 PostgreSQL 连接：`.env` 中设置 `DATABASE_URL`
-3. 配置 LLM 密钥：`.env` 中设置对应模型的 API Key
-4. 运行实验：`python scripts/multi_tier_experiment.py --games 12`
-5. 查看结果：`cat data/experiment/multi_tier/summary.json | python -m json.tool`
+# Full experiment
+python scripts/run_retrieval_policy_ablation.py --games 20
+```
+
+### 统计方法
+
+- Paired seed comparison
+- Bootstrap 95% CI (10,000 resamples)
+- Cohen's d 效应量
+- Permutation test p-value (10,000 permutations)
+
+### 在线评分权重
+
+```
+online_score =
+  0.30 × process_score
++ 0.20 × vote_accuracy
++ 0.15 × speech_quality
++ 0.15 × skill_efficiency
++ 0.10 × strategy_usage_quality
+- 0.05 × invalid_action_rate
+- 0.05 × cost_penalty
+```
+
+### 最终评分
+
+```
+final_score = 0.45 × offline_score + 0.55 × online_score
+```
+
+## 离线评估结果 (2026-06-05)
+
+**Query set**: 26 queries (6 角色 × 4 MBTI)
+**Retriever**: 1065 docs from PostgreSQL
+
+### 综合排名
+
+| Rank | Policy | Offline Score | P@3 | nDCG@5 | Coverage | RoleMatch | MBTIMatch | P@1 | MRR |
+|------|--------|:-------------:|:---:|:------:|:--------:|:---------:|:---------:|:---:|:---:|
+| 1 | `same_role_same_mbti` | **0.7614** | 0.49 | 0.97 | 1.00 | 1.00 | 0.92 | 0.54 | 0.60 |
+| 2 | `hybrid_role_mbti_global` | **0.7412** | 0.47 | 0.94 | 1.00 | 1.00 | 0.84 | 0.42 | 0.59 |
+| 3 | `same_role_all_mbti` | **0.7364** | 0.45 | 0.94 | 1.00 | 1.00 | 0.84 | 0.46 | 0.61 |
+| 4 | `hybrid_role_alignment_phase` | **0.7114** | 0.50 | 0.94 | 1.00 | 0.65 | 0.86 | 0.42 | 0.59 |
+| 5 | `self_mbti_only` | **0.6963** | 0.41 | 0.95 | 1.00 | 0.61 | 1.00 | 0.50 | 0.61 |
+| 6 | `global_only` | **0.0386** | 0.38 | 0.67 | 0.69 | 0.69 | 0.69 | 0.35 | 0.42 |
+
+### 完整指标明细
+
+| Metric | global_only | self_mbti | same_role_all | same_role_same | hybrid_role_mbti | hybrid_align_phase |
+|--------|:-----------:|:----------:|:------------:|:-------------:|:----------------:|:------------------:|
+| P@1 | 0.346 | 0.500 | 0.462 | **0.538** | 0.423 | 0.423 |
+| P@3 | 0.385 | 0.410 | 0.449 | **0.494** | 0.474 | 0.500 |
+| P@5 | 0.370 | 0.392 | 0.462 | **0.512** | 0.462 | 0.431 |
+| R@3 | 0.500 | 0.692 | 0.731 | 0.615 | 0.731 | **0.769** |
+| R@5 | 0.500 | 0.808 | 0.846 | 0.731 | 0.846 | **0.846** |
+| MRR | 0.417 | 0.606 | **0.610** | 0.602 | 0.591 | 0.592 |
+| nDCG@3 | 0.650 | 0.877 | 0.861 | **0.931** | 0.867 | 0.885 |
+| nDCG@5 | 0.670 | 0.946 | 0.939 | **0.970** | 0.938 | 0.941 |
+| Avg Relevance | 1.06 | 1.39 | 1.46 | **1.51** | 1.46 | 1.43 |
+| Role Match | 0.69 | 0.61 | **1.00** | **1.00** | **1.00** | 0.65 |
+| MBTI Match | 0.69 | **1.00** | 0.84 | 0.92 | 0.84 | 0.86 |
+| Phase Match | 0.48 | 0.64 | 0.61 | **0.73** | 0.64 | 0.62 |
+| Coverage | 0.69 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 |
+| Diversity | 0.59 | 0.51 | 0.72 | **0.87** | 0.74 | 0.68 |
+| Empty (N) | 8 | 0 | 0 | 0 | 0 | 0 |
+| Leak (N) | 0 | 0 | 0 | 0 | 0 | 0 |
+| P50 Latency (ms) | 29.7 | 31.2 | 42.6 | 37.2 | 29.6 | 29.1 |
+
+### 假设验证
+
+| ID | 假设 | 预期 | 实际 | 结论 |
+|----|------|------|------|------|
+| H1 | SELF_MBTI sparse | coverage < 50% | coverage 100%, P@3=0.41 | **推翻** — MBTI 标签稀疏导致几乎所有 doc 通过 |
+| H2 | SAME_ROLE stable | coverage > 90% | coverage 100%, P@3=0.45 | **证实** — 同角色检索覆盖率完美 |
+| H3 | SAME_ROLE_MBTI sparse | coverage < 30% | coverage 100%, P@3=0.49 | **推翻** — 同上，MBTI 空值导致高覆盖率 |
+| H4 | HYBRID best default | best balance | P@3=0.47, nDCG5=0.94, coverage 100% | **部分证实** — offline 第二但更稳健 |
+| H5 | ALIGNMENT_PHASE narrow | coverage < 60% | coverage 100%, RoleMatch 0.65 | **部分证实** — RoleMatch 下降明显 |
+
+### 关键发现
+
+1. **所有非 global_only 的 policy 覆盖率都是 100%** — 因为当前 DB 中大部分 doc 的 mbti_scope 为空，空值在过滤时被当作"匹配所有 MBTI"
+2. **`same_role_same_mbti` 离线得分最高** (0.7614)，但随着 MBTI 标注增加覆盖率会下降
+3. **`hybrid_role_mbti_global` 更稳健** (0.7412) — 有全局 fallback，适合作为默认策略
+4. **`global_only` 严重不足** — Coverage 仅 69%，8/26 queries 空结果
+5. **H1/H3 被推翻的原因** — 当前 MBTI 标签覆盖率低，需要更大规模标注后重新验证
+
+### 推荐默认策略
+
+**`hybrid_role_mbti_global`** — 尽管离线分略低于 `same_role_same_mbti`，但分层结构保证了 MBTI 标签增加后覆盖率不下降。`same_role_same_mbti` 在当前稀疏标签下表现好，但随标注密度提升会趋于严格。
+
+## 在线评估
+
+```bash
+# Smoke test
+python scripts/run_retrieval_policy_ablation.py --games 1
+
+# Small experiment
+python scripts/run_retrieval_policy_ablation.py --games 5
+
+# Full experiment
+python scripts/run_retrieval_policy_ablation.py --games 20
+```
+
+### 统计方法
+
+- Paired seed comparison
+- Bootstrap 95% CI (10,000 resamples)
+- Cohen's d 效应量
+- Permutation test p-value (10,000 permutations)
+
+### 在线评分权重
+
+```
+online_score =
+  0.30 × process_score
++ 0.20 × vote_accuracy
++ 0.15 × speech_quality
++ 0.15 × skill_efficiency
++ 0.10 × strategy_usage_quality
+- 0.05 × invalid_action_rate
+- 0.05 × cost_penalty
+```
+
+### 最终评分
+
+```
+final_score = 0.45 × offline_score + 0.55 × online_score
+```
+
+## 输出
+
+- `outputs/retrieval_policy_eval/results.json` — 离线评估
+- `outputs/retrieval_policy_eval/results.csv` — 离线 CSV
+- `outputs/retrieval_policy_eval/summary.md` — 离线总结
+- `outputs/retrieval_policy_ablation/results.json` — 在线评估
+- `outputs/retrieval_policy_ablation/summary.md` — 在线总结
+
+## 最终离线评估 (2026-06-05, with MBTI+Action+Quality weighting)
+
+| Rank | Policy | Score | P@3 | nDCG@5 | Cov | Empty | Leak |
+|------|--------|:-----:|:---:|:------:|:---:|:-----:|:----:|
+| 1 | `same_role_same_mbti` | **0.7685** | 0.52 | 0.98 | 1.00 | 0 | 0 |
+| 2 | `hybrid_role_mbti_global` | **0.7455** | 0.49 | 0.94 | 1.00 | 0 | 0 |
+| 3 | `same_role_all_mbti` | **0.7406** | 0.46 | 0.94 | 1.00 | 0 | 0 |
+| 4 | `hybrid_role_alignment_phase` | **0.7095** | 0.49 | 0.94 | 1.00 | 0 | 0 |
+| 5 | `self_mbti_only` | **0.6976** | 0.41 | 0.95 | 1.00 | 0 | 0 |
+| 6 | `global_only` | **0.0592** | 0.37 | 0.71 | 0.73 | 7 | 0 |
+
+### 关键结论
+
+1. **Candidate Leakage: 所有 policy = 0** ✓
+2. **Coverage: 非 global_only 全部 100%** ✓ (MBTI 空值导致，标注增加后会分化)
+3. **Empty: 只有 global_only 有 7/26 空结果** ✗ (不应作为默认策略)
+4. **推荐 `hybrid_role_mbti_global`** — 离线第二 (0.7455)，分层 fallback 最稳健
+
+### 答辩一句话
+
+```
+同职业经验优先，自己 MBTI 经验加权，全局高质量策略兜底，
+带质量门槛的 1:1:1 分桶填充。
+```
