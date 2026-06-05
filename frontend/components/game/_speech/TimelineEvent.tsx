@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef } from "react";
+import React, { useCallback, useRef } from "react";
 import { EventType, GameEvent, Language, Player } from "@/types";
 import { t, tPhase, format } from "@/lib/i18n";
 import { normalizeSpeechContent } from "@/lib/eventFilter";
@@ -85,13 +85,34 @@ export function TimelineEvent({
   const onChatCompleteRef = useRef(onChatComplete);
   onChatCompleteRef.current = onChatComplete;
 
+  // Pre-compute CHAT_MESSAGE fields at top level (avoid conditional hooks)
+  const isChat = event.type === EventType.CHAT_MESSAGE;
+  const rawSpeech = isChat ? ((event.payload.speech as string) ?? "") : "";
+  const content = isChat ? normalizeSpeechContent(rawSpeech, t("speechPass", language)) : "";
+  const hasContent = isChat && rawSpeech.trim().length > 0;
+  const actorId = isChat ? (event.payload.actor_id || "") : "";
+
   // Empty speech: immediately mark as complete
   React.useEffect(() => {
-    if (event.type !== EventType.CHAT_MESSAGE) return;
-    const speech = (event.payload.speech as string) || "";
-    if (speech.trim()) return;
+    if (!isChat) return;
+    if (rawSpeech.trim()) return;
     onChatCompleteRef.current(event.id);
-  }, [event.id, event.type]);
+  }, [event.id, isChat, rawSpeech]);
+
+  // Fallback timer (8s) — always mounted at top level
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  React.useEffect(() => {
+    if (!hasContent) return;
+    timerRef.current = setTimeout(() => {
+      onChatCompleteRef.current(event.id);
+    }, 8000);
+    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
+  }, [event.id, hasContent]);
+
+  const handleTypewriterComplete = useCallback(() => {
+    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+    onChatCompleteRef.current(event.id);
+  }, [event.id]);
 
   // ── System messages ──
   const isSystem = event.type === EventType.PHASE_CHANGED
@@ -114,23 +135,8 @@ export function TimelineEvent({
   }
 
   // ── Chat messages ──
-  if (event.type === EventType.CHAT_MESSAGE) {
-    const rawSpeech = (event.payload.speech as string) ?? "";
-    const content = normalizeSpeechContent(rawSpeech, t("speechPass", language));
-    const hasContent = rawSpeech.trim().length > 0;
-    const actorId = event.payload.actor_id || "";
+  if (isChat) {
     const player = players?.find(p => p.id === actorId);
-
-    // 兜底：如果内容已显示但 typewriter 未在 8s 内完成，强制触发完成回调
-    const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-    React.useEffect(() => {
-      if (!hasContent) return;
-      timerRef.current = setTimeout(() => {
-        onChatCompleteRef.current(event.id);
-      }, 8000);
-      return () => { if (timerRef.current) clearTimeout(timerRef.current); };
-    }, [event.id, hasContent]);
-
     return (
       <ChatBubble
         speakerName={event.payload.actor_name || "?"}
@@ -139,10 +145,7 @@ export function TimelineEvent({
         isOwn={isHumanMode && actorId.startsWith(`P${humanSeat}-`)}
         isSpeaking={animateChat && hasContent}
         animate={animateChat && hasContent}
-        onTypewriterComplete={hasContent ? () => {
-          if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
-          onChatCompleteRef.current(event.id);
-        } : undefined}
+        onTypewriterComplete={hasContent ? handleTypewriterComplete : undefined}
       />
     );
   }

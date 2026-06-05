@@ -78,10 +78,13 @@ export function useTypewriter(
       return;
     }
 
-    // Not enabled yet — waiting for turn
+    // Not enabled yet — waiting for turn, but preserve partial text if
+    // animation was externally completed (e.g. fallback timer fired)
     if (!enabled) {
-      setDisplayedText("");
-      setFinished(false);
+      if (completedRef.current) {
+        setDisplayedText(fullText);
+        setFinished(true);
+      }
       return;
     }
 
