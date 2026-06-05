@@ -571,6 +571,14 @@ class CognitiveAgent:
                     meta["retrieved_knowledge_ids"] = merged
                 # Best-effort: record knowledge usage for all retrieved strategies
                 self._record_strategy_usage(merged)
+                # Propagate accumulated token usage from AgentLoop
+                usage = trace.get("usage", {})
+                if usage:
+                    meta["usage"] = {
+                        "prompt_tokens": usage.get("prompt_tokens"),
+                        "completion_tokens": usage.get("completion_tokens"),
+                        "total_tokens": usage.get("total_tokens"),
+                    }
         except Exception:
             pass  # trace injection is best-effort
 

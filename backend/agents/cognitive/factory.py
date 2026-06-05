@@ -213,9 +213,22 @@ class _ToolCallingRunnable(Runnable):
                     f"{', '.join(tc['name'] for tc in tool_calls)}"
                 )
 
+        # Extract API usage for token tracking
+        api_usage = resp.get("usage", {})
+        response_metadata: Dict[str, Any] = {}
+        if api_usage:
+            response_metadata["token_usage"] = {
+                "prompt_tokens": api_usage.get("prompt_tokens"),
+                "completion_tokens": api_usage.get("completion_tokens"),
+                "total_tokens": api_usage.get("total_tokens"),
+            }
+        # Also capture model info and latency
+        response_metadata["model"] = resp.get("model", self.model)
+        response_metadata["latency_ms"] = resp.get("_latency_ms")
+
         if tool_calls:
-            return AIMessage(content=content, tool_calls=tool_calls)
-        return AIMessage(content=content)
+            return AIMessage(content=content, tool_calls=tool_calls, response_metadata=response_metadata)
+        return AIMessage(content=content, response_metadata=response_metadata)
 
 
 def _msg_role(msg: BaseMessage) -> str:

@@ -176,6 +176,7 @@ class AgentLoop:
         self._player_id = player_id
         self._retrieval_policy = retrieval_policy
         self._temperature = temperature
+        self._accumulated_usage: Dict[str, int] = {}
         # Native function calling via llm.bind_tools().
         # DeepSeek models (dsv4flash provider) support OpenAI-compatible tool calling.
         # Set AGENT_USE_NATIVE_FC=0 to disable and fall back to text-mode parsing.
@@ -227,6 +228,7 @@ class AgentLoop:
 
         iteration = 0
         last_tool_results = False
+        self._accumulated_usage = {}
         while iteration < MAX_ITERATIONS:
             iteration += 1
 
@@ -582,6 +584,8 @@ class AgentLoop:
                 has_tools = hasattr(resp, "tool_calls") and resp.tool_calls
                 has_content = resp.content and len(resp.content.strip()) > 5
                 if has_tools or has_content:
+                    # Accumulate token usage from response_metadata
+                    self._accumulate_usage(resp)
                     return resp
                 # Empty response — wait and retry
                 logger.warning(f"LLM returned empty/short response (attempt {attempt + 1}), retrying...")
@@ -593,6 +597,18 @@ class AgentLoop:
         if last_error is not None:
             raise RuntimeError("LLM call failed after 3 attempts") from last_error
         raise RuntimeError("LLM returned empty response after 3 attempts")
+
+    def _accumulate_usage(self, resp: Any) -> None:
+        """Accumulate token usage from AIMessage.response_metadata across loop iterations."""
+        meta = getattr(resp, "response_metadata", None) or {}
+        token_usage = meta.get("token_usage", {})
+        if token_usage:
+            current = getattr(self, "_accumulated_usage", None) or {}
+            for key in ("prompt_tokens", "completion_tokens", "total_tokens"):
+                val = token_usage.get(key)
+                if isinstance(val, (int, float)):
+                    current[key] = current.get(key, 0) + int(val)
+            self._accumulated_usage = current
 
     # ================================================================
     # Parsing
@@ -701,8 +717,7 @@ class AgentLoop:
                 pass
         return result
 
-    @staticmethod
-    def _inject_tool_trace(decision: dict, tool_trace: list[dict], obs: Observation) -> None:
+    def _inject_tool_trace(self, decision: dict, tool_trace: list[dict], obs: Observation) -> None:
         """Inject tool trace and auto-injected strategy IDs into the decision dict."""
         decision["_tool_trace"] = tool_trace
         player_id = str(getattr(obs, "player_id", "") or "")
@@ -717,11 +732,17 @@ class AgentLoop:
                     if did and did not in tool_called_ids:
                         tool_called_ids.append(did)
         merged_ids = list(dict.fromkeys(decision["_auto_injected_strategies"] + tool_called_ids))
+        # Inject accumulated token usage
+        usage = getattr(self, "_accumulated_usage", None) or {}
+        if usage:
+            decision["_usage"] = dict(usage)
+
         with _STRATEGY_LOCK:
             _LAST_LOOP_TRACE[player_id] = {
                 "tool_trace": tool_trace,
                 "auto_injected_strategies": decision["_auto_injected_strategies"],
                 "retrieved_knowledge_ids": merged_ids,
+                "usage": usage,
             }
 
     def _parse_decision(self, response: str) -> Optional[Dict[str, str]]:
