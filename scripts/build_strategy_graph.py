@@ -392,7 +392,6 @@ def main():
     logger.info("Existing graph links: %d", len(existing_pairs))
 
     total_links = 0
-    target = args.limit or 100
 
     # Phase 1: Within-role analysis (major roles first)
     logger.info("\n=== Phase 1: Within-role analysis ===")

@@ -218,7 +218,7 @@ def _check_speech_length(ctx: Dict[str, Any]) -> bool:
 def _check_social_habit(ctx: Dict[str, Any]) -> bool:
     """PC2: Check if social behavior matches claimed habit."""
     habit = ctx.get("social_habit", "")
-    speech_text = ctx.get("speech_text", "")
+    ctx.get("speech_text", "")
     suspected = ctx.get("suspected_players", [])
     defended = ctx.get("defended_players", [])
 
@@ -245,7 +245,7 @@ def _references_previous_speaker(ctx: Dict[str, Any]) -> bool:
 
 def _check_manipulation_success(ctx: Dict[str, Any]) -> bool:
     """DS1: Did the wolf's speech lead to a good player being exiled?"""
-    votes_after = ctx.get("votes_after_speech", [])
+    ctx.get("votes_after_speech", [])
     your_push_target = ctx.get("push_target", "")
     if not your_push_target:
         return False

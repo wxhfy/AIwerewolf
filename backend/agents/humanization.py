@@ -200,7 +200,7 @@ def build_stance_summary(
     # Grudges (who pointed at me)
     if grudges:
         grudge_strs = []
-        for pid, score in sorted(grudges.items(), key=lambda x: -x[1]):
+        for pid, _score in sorted(grudges.items(), key=lambda x: -x[1]):
             tag = _resolve_tag(pid, view)
             grudge_strs.append(tag)
         if grudge_strs:

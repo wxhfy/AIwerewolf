@@ -145,7 +145,7 @@ class V3DashboardHTMLRenderer:
                 "C": "C_small_model",
                 "D": "D_with_embedding",
             }
-            for i, (vkey, vname) in enumerate(variants):
+            for i, (vkey, _vname) in enumerate(variants):
                 vdata = ab.get(variant_map[vkey], {})
                 offset = (i - 1) * width
                 axes[1].bar(
@@ -180,7 +180,7 @@ class V3DashboardHTMLRenderer:
 
         # Table summary
         rows = ""
-        for key, val in ab.items():
+        for _key, val in ab.items():
             retrieval_note = ""
             if val.get("retrieval_gain_paw"):
                 retrieval_note = f' <span class="note">(retrieval +{val["retrieval_gain_paw"]:.3f} PaW)</span>'
@@ -306,8 +306,8 @@ class V3DashboardHTMLRenderer:
             return '<section class="module"><h2>Role-Action 矩阵</h2><p>暂无数据</p></section>'
 
         # Build table
-        all_roles = sorted(set(r["role"] for r in rows))
-        all_actions = sorted(set(r["action_type"] for r in rows))
+        all_roles = sorted({r["role"] for r in rows})
+        all_actions = sorted({r["action_type"] for r in rows})
 
         # Build lookup
         cell_map = {(r["role"], r["action_type"]): r for r in rows}
@@ -321,7 +321,7 @@ class V3DashboardHTMLRenderer:
                 if cell is None:
                     cells += '<td class="ram-na">—</td>'
                 else:
-                    gap = cell["gap"]
+                    cell["gap"]
                     d = cell["cohens_d"]
                     n = cell["n_samples"]
                     # Color by d

@@ -273,7 +273,7 @@ def run_cluster_promotion(
                     cluster_id = int(labels[i])
                     cluster_docs[cluster_id].append(doc)
                 promoted: list[StrategyKnowledgeDoc] = []
-                for cluster_id, cdocs in cluster_docs.items():
+                for _cluster_id, cdocs in cluster_docs.items():
                     cdocs_sorted = sorted(cdocs, key=lambda d: d.quality_score, reverse=True)
                     # Take Top-3 per cluster, filtered by quality >= MIN_QUALITY_FOR_PROMOTION
                     for doc in cdocs_sorted[:TOP_PER_CLUSTER]:
@@ -381,7 +381,7 @@ def print_report(report: dict[str, Any]) -> None:
 
     skipped_count = 0
     for role in sorted(by_role.keys()):
-        for i, b in enumerate(by_role[role]):
+        for _i, b in enumerate(by_role[role]):
             qualities = b["qualities"]
             avg_q = sum(qualities) / len(qualities) if qualities else 0
             min_q = min(qualities) if qualities else 0

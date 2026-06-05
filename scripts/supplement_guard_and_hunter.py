@@ -78,12 +78,12 @@ def create_guard_golden_cases(opps: list[dict]) -> list[dict]:
         target = opp.get("target_features", {})
         outcome = opp.get("outcome_features", {})
         gf = opp.get("game_features", {})
-        game_id = opp.get("game_id", "")
+        opp.get("game_id", "")
 
         target_role = target.get("target_role", "")
-        target_died = outcome.get("target_died_same_phase", False)
+        outcome.get("target_died_same_phase", False)
         actor_died = outcome.get("actor_died_same_phase", False)
-        exposed_roles = gf.get("key_roles_exposed", [])
+        gf.get("key_roles_exposed", [])
 
         # Check if target is a key role (Seer, Witch, Hunter)
         is_key_target = target_role in ["Seer", "Witch", "Hunter"]
@@ -93,7 +93,7 @@ def create_guard_golden_cases(opps: list[dict]) -> list[dict]:
 
         # Get previous guard target from events (approximate via game context)
         # For MVP, use a simple rule: track if this player_id's previous protect target was self
-        player_id = opp.get("player_id", "")
+        opp.get("player_id", "")
 
         # Case 1: Protect exposed Seer/Seer (high quality)
         if is_key_target and target_is_exposed:
@@ -443,7 +443,7 @@ def add_guard_features(opps: list[dict]) -> int:
         if opp["role"] != "Guard" or opp["opportunity_type"] != "guard_protect":
             continue
 
-        gf = opp.get("game_features", {})
+        opp.get("game_features", {})
         tf = opp.get("target_features", {})
         game_id = opp["game_id"]
         player_id = opp.get("player_id", "")
@@ -514,7 +514,7 @@ def add_guard_features(opps: list[dict]) -> int:
 def main() -> int:
     opps = load_opps()
     labeled = load_labeled()
-    existing_ids = set(item["opportunity_id"] for item in labeled)
+    existing_ids = {item["opportunity_id"] for item in labeled}
 
     # Count existing
     existing_guard = sum(1 for item in labeled if item.get("role") == "Guard")

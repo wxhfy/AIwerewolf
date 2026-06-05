@@ -449,7 +449,7 @@ def finetune(triplets, output_path=OUTPUT_PATH, epochs=2, batch_size=12, lr=2e-5
 
     for epoch in range(epochs):
         epoch_loss = 0.0
-        for step, (encoded, n_anchors) in enumerate(loader):
+        for _step, (encoded, n_anchors) in enumerate(loader):
             encoded = {k: v.to(device) for k, v in encoded.items()}
             outputs = model.forward(encoded)
             all_embs = nn.functional.normalize(outputs["sentence_embedding"], p=2, dim=1)
@@ -507,7 +507,7 @@ def evaluate_model(model_path, docs, queries, label=""):
     from sentence_transformers import SentenceTransformer
 
     model = SentenceTransformer(model_path, device=GPU)
-    N = len(docs)
+    len(docs)
     doc_texts = [f"{d['situation']} {d['strategy']} {d['rationale']}" for d in docs]
 
     doc_embs = np.asarray(

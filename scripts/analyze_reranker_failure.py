@@ -135,7 +135,7 @@ for qi, q in enumerate(test_queries):
     rerank_idx5 = [rrf_idx20[i] for i in np.argsort(rerank_scores)[::-1][:5]]
 
     # === Which docs are actually relevant? ===
-    def rel_score(i):
+    def rel_score(i, q=q):
         content = f"{docs[i]['situation']} {docs[i]['strategy']}".lower()
         return sum(1 for k in q["kw"] if k.lower() in content)
 

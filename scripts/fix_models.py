@@ -116,7 +116,7 @@ def generate_synthetic_opportunities(n: int = 300) -> list[dict]:
 def compute_quality_label(opp: dict, feats: ModelFeatures) -> float:
     """Compute synthetic quality label based on feature heuristics."""
     q = 0.5  # neutral baseline
-    role = opp.get("role", "")
+    opp.get("role", "")
     op_type = opp.get("opportunity_type", "")
 
     # Good actions

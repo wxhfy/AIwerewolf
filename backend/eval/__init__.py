@@ -40,11 +40,11 @@ from backend.eval.evolution import TournamentRunner
 from backend.eval.evolution import VersionManager
 from backend.eval.evolution import export_evolution_summary
 from backend.eval.evolution import load_strategy_knowledge
-from backend.eval.game_replay import NightActionsSnapshot
-from backend.eval.game_replay import VoteSnapshot
-from backend.eval.game_replay import replay_hunter_shot
-from backend.eval.game_replay import replay_night_with_change
-from backend.eval.game_replay import replay_vote_with_swap
+from backend.eval.game_replay import NightActionsSnapshot  # noqa: F401
+from backend.eval.game_replay import VoteSnapshot  # noqa: F401
+from backend.eval.game_replay import replay_hunter_shot  # noqa: F401
+from backend.eval.game_replay import replay_night_with_change  # noqa: F401
+from backend.eval.game_replay import replay_vote_with_swap  # noqa: F401
 from backend.eval.report_graph import LANGGRAPH_AVAILABLE
 from backend.eval.report_graph import LangGraphReportOptimizer
 from backend.eval.report_graph import create_report_optimizer
@@ -83,10 +83,10 @@ from backend.eval.review import export_leaderboard
 from backend.eval.review import export_review_report
 from backend.eval.review import export_strategy_knowledge
 from backend.eval.review import generate_review_report
-from backend.eval.types import COUNTERFACTUAL_TYPE_LABELS
-from backend.eval.types import BadCaseReport
+from backend.eval.types import COUNTERFACTUAL_TYPE_LABELS  # noqa: F401
+from backend.eval.types import BadCaseReport  # noqa: F401
 from backend.eval.types import CounterfactualCase
-from backend.eval.types import DecisionTrace
+from backend.eval.types import DecisionTrace  # noqa: F401
 from backend.eval.types import GameMetrics
 from backend.eval.types import ReviewReport
 

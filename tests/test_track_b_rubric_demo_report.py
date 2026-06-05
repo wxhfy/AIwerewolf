@@ -66,7 +66,7 @@ def test_no_internal_cf_ids_in_report(report_text):
 def test_cd_ids_sequential(report_text):
     """CD IDs should be sequential CD-001, CD-002, ..."""
     cd_ids = re.findall(r"CD-(\d{3})", report_text)
-    nums = sorted(set(int(n) for n in cd_ids))
+    nums = sorted({int(n) for n in cd_ids})
     assert nums[0] == 1, f"First CD ID should be CD-001, got CD-{nums[0]:03d}"
     for i, n in enumerate(nums):
         assert n == i + 1, f"CD IDs not sequential: missing CD-{i + 1:03d}"
@@ -76,7 +76,7 @@ def test_cf_ids_sequential(report_text):
     """CF IDs should be sequential CF-001, CF-002, ..."""
     cf_ids = re.findall(r"CF-(\d{3})", report_text)
     if cf_ids:
-        nums = sorted(set(int(n) for n in cf_ids))
+        nums = sorted({int(n) for n in cf_ids})
         assert nums[0] == 1, f"First CF ID should be CF-001, got CF-{nums[0]:03d}"
         for i, n in enumerate(nums):
             assert n == i + 1, f"CF IDs not sequential: missing CF-{i + 1:03d}"

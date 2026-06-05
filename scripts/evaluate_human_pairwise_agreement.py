@@ -61,8 +61,8 @@ def evaluate_agreement(labels, scores):
         sb = scores.get(bid, {})
         qa = sa.get("calibrated_q", 0.5) or 0.5
         qb = sb.get("calibrated_q", 0.5) or 0.5
-        rqa = sa.get("raw_model_q", qa) or qa
-        rqb = sb.get("raw_model_q", qb) or qb
+        sa.get("raw_model_q", qa) or qa
+        sb.get("raw_model_q", qb) or qb
 
         model_prefers_a = qa >= qb
         human_prefers_a = lab["label"] == "A_BETTER"

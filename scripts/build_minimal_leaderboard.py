@@ -123,7 +123,7 @@ async def run_one_game(agent_version: str, seed: int) -> GameResult:
     doc = generate_published_review_document(state)
 
     # Extract scores
-    scoreboard = doc.review_report.get("scoreboard", [])
+    doc.review_report.get("scoreboard", [])
     player_scores_list = doc.review_report.get("metadata", {}).get("player_scores", [])
 
     player_scores = []
@@ -167,7 +167,7 @@ async def run_one_game(agent_version: str, seed: int) -> GameResult:
     bundle = ReplayBundleBuilder().build(state)
     opps = [op.to_dict() for op in OpportunityExtractor().extract(bundle)]
 
-    n = len(player_scores_list) or 1
+    len(player_scores_list) or 1
     print(
         f"  [{agent_version}] seed={seed} winner={winner} "
         f"days={state.day} events={len(state.events)} "
@@ -258,7 +258,7 @@ def build_leaderboard(games: list[GameResult]) -> dict:
                 wins += 1  # heuristic: village win rate (role-dependent)
 
         # Actually win rate is an outcome metric. Let's compute average camp_result.
-        avg_win_bonus = round(
+        round(
             float(
                 np.mean(
                     [ps.get("final_score", 0) - ps.get("process_score", 0) for g in game_list for ps in g.player_scores]

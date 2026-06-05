@@ -30,7 +30,7 @@ def build_strategy_html(
         pass
 
     # Summary stats
-    total_configs = len(set(r["strategy_id"] for r in results))
+    total_configs = len({r["strategy_id"] for r in results})
     total_groups = len(results)
 
     rows_html = ""

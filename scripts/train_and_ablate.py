@@ -72,7 +72,7 @@ def load_baseline(path: str = "data/health/baseline_scoring_report.json") -> dic
 
 def group_kfold_split(opportunities: list[dict], n_splits: int = 5) -> list[tuple[list, list]]:
     """Split opportunities by game_id for GroupKFold."""
-    game_ids = sorted(set(o["game_id"] for o in opportunities))
+    game_ids = sorted({o["game_id"] for o in opportunities})
     random.seed(42)
     random.shuffle(game_ids)
 
@@ -100,7 +100,7 @@ def rule_opportunity_value(opp: dict) -> float:
     """Rule-based opportunity importance w(o)."""
     op_type = opp.get("opportunity_type", "")
     game_feat = opp.get("game_features", {})
-    day = opp.get("day", 1)
+    opp.get("day", 1)
     alive = game_feat.get("alive_count", 6)
     is_endgame = game_feat.get("is_endgame", False)
 
@@ -214,8 +214,8 @@ def train_opportunity_value_model(
 
     model = OpportunityValueModel()
     for fold_i, (train_opps, test_opps) in enumerate(folds):
-        train_games = set(o["game_id"] for o in train_opps)
-        test_games = set(o["game_id"] for o in test_opps)
+        train_games = {o["game_id"] for o in train_opps}
+        test_games = {o["game_id"] for o in test_opps}
 
         train_mask = np.isin(game_ids_arr, list(train_games))
         test_mask = np.isin(game_ids_arr, list(test_games))
@@ -311,8 +311,8 @@ def train_decision_quality_model(
 
     model = DecisionQualityModel()
     for fold_i, (train_opps, test_opps) in enumerate(folds):
-        train_games = set(o["game_id"] for o in train_opps)
-        test_games = set(o["game_id"] for o in test_opps)
+        train_games = {o["game_id"] for o in train_opps}
+        test_games = {o["game_id"] for o in test_opps}
 
         train_mask = np.isin(game_ids_arr, list(train_games))
         test_mask = np.isin(game_ids_arr, list(test_games))
@@ -413,11 +413,11 @@ def compute_ablation(
         opp_id = item["opportunity_id"]
         game_id = opp_game_map.get(opp_id, "")
         role = opp_role_map.get(opp_id, "")
-        winner = winner_map.get(game_id, "")
+        winner_map.get(game_id, "")
         player_id = item.get("player_id", opp_id.split("-")[2] if "-" in opp_id else "unknown")
 
         label = item.get("label", {})
-        qs = label.get("quality_score", 50)
+        label.get("quality_score", 50)
 
         # System A: old rule baseline (map from stored baseline)
         # We compute B and C here, A comes from baseline_scoring_report.json
@@ -661,7 +661,7 @@ def main() -> int:
         label_qs = item.get("label", {}).get("quality_score")
         all_y.append((label_qs / 100.0) if label_qs is not None else rule_decision_quality(opp))
 
-    if len(set(int(y >= 0.5) for y in all_y)) >= 2:
+    if len({int(y >= 0.5) for y in all_y}) >= 2:
         q_model.fit(np.array(all_X), np.array([int(y >= 0.5) for y in all_y]))
 
     # Train final OpportunityValueModel on all labeled data

@@ -3347,7 +3347,7 @@ class ReviewReportBuilder:
         ]
 
         wolf_names = {p.name for p in state.players if p.alignment == Alignment.WOLF}
-        wolf_roles = {p.role.value for p in state.players if p.alignment == Alignment.WOLF}
+        {p.role.value for p in state.players if p.alignment == Alignment.WOLF}
 
         def _check_text(text: str, item_id: str) -> bool:
             """Returns True if the item is safe, False if it has leaks."""
@@ -3717,7 +3717,6 @@ class CounterfactualAnalyzer:
                     for target_id, count in counts.items()
                     if state.player(target_id).alignment == Alignment.WOLF
                 ]
-                alt_faction = "wolf"
             else:
                 # Wolf eliminated → find closest village alternative
                 alt_targets = [
@@ -3725,7 +3724,6 @@ class CounterfactualAnalyzer:
                     for target_id, count in counts.items()
                     if state.player(target_id).alignment == Alignment.VILLAGE
                 ]
-                alt_faction = "village"
             if not alt_targets:
                 continue
             alt_target_id, alt_votes = max(alt_targets, key=lambda item: item[1])
@@ -5087,7 +5085,7 @@ class CounterfactualAnalyzer:
             if len(unique_targets) >= 2:
                 # Wolves split their votes — coordination failure
                 wolf_names = [state.player(wid).name for wid in wolf_votes]
-                target_names = [state.player(tid).name for tid in unique_targets]
+                [state.player(tid).name for tid in unique_targets]
                 # Check if this split cost them the vote
                 all_votes = defaultdict(int)
                 for event in state.events:
@@ -5212,13 +5210,13 @@ class CounterfactualAnalyzer:
                         day=day,
                         phase="NIGHT_WOLF_ACTION",
                         counterfactual_type="coordination",
-                        original_decision=f"Wolves voted for {', '.join(set(state.player(t).name for t in prev_day_votes))} on day {day} but killed {kill_name}({kill_role}) that night.",
+                        original_decision=f"Wolves voted for {', '.join({state.player(t).name for t in prev_day_votes})} on day {day} but killed {kill_name}({kill_role}) that night.",
                         alternative_decision="If wolves had killed one of their day vote targets, the narrative consistency would be stronger.",
                         expected_effect="Kill-vote misalignment creates a detectable pattern that skilled players can use to identify wolves.",
                         affected_players=[state.player(wid).name for wid in wolf_ids],
                         confidence=0.70,
                         evidence=[
-                            f"Day {day} wolf votes: {', '.join(set(state.player(t).name for t in prev_day_votes))}.",
+                            f"Day {day} wolf votes: {', '.join({state.player(t).name for t in prev_day_votes})}.",
                             f"Night {day} kill: {kill_name}({kill_role}).",
                         ],
                         severity="moderate",
@@ -5785,7 +5783,7 @@ class ReportEvaluator:
         if evidence_suggestions:
             issues.append("存在无证据策略建议")
             fixes.append("所有策略建议都要带 evidence_summary")
-        for bonus in report.metadata.get("source_metadata", {}).get("review_bonuses", []):
+        for _bonus in report.metadata.get("source_metadata", {}).get("review_bonuses", []):
             pass
         score = max(0.0, 1.0 - 0.12 * len(issues))
         return ReportEvaluationResult(

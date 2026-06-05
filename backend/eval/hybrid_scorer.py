@@ -21,6 +21,8 @@ from typing import Dict
 from typing import List
 from typing import Optional
 
+import numpy as np
+
 
 @dataclass(frozen=True)
 class ScoringCriterion:
@@ -167,7 +169,7 @@ class HybridScorer:
             raw_score=round(total, 4),
             criteria_results=results,
             evidence_chain=[r.evidence for r in results if r.evidence],
-            paper_references=list(set(c.reference for c in self._rubric if c.reference)),
+            paper_references=list({c.reference for c in self._rubric if c.reference}),
             confidence=self._compute_confidence(results),
         )
 
@@ -348,9 +350,10 @@ def build_rubric_from_spec(spec: Dict[str, Any]) -> List[ScoringCriterion]:
         if crit_type == "rule" and "check_expr" in spec_crit:
             # Compile rule from expression string
             check_expr = spec_crit["check_expr"]
-            rule_check = lambda ctx, expr=check_expr: eval(
-                expr, {"__builtins__": {}}, {"context": ctx, "len": len, "min": min, "max": max}
-            )
+            def rule_check(ctx, expr=check_expr):
+                return eval(
+                            expr, {"__builtins__": {}}, {"context": ctx, "len": len, "min": min, "max": max}
+                        )
 
         criteria.append(
             ScoringCriterion(

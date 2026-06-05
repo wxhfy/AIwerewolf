@@ -34,7 +34,7 @@ def load_json(path: str) -> Any:
 def guard_score_v2(opp) -> float:
     """Guard v2: protect_policy + target_risk + key_coverage + block_bonus - abuse_penalty."""
     tf = opp.get("target_features", {})
-    gf = opp.get("game_features", {})
+    opp.get("game_features", {})
     outcome = opp.get("outcome_features", {})
 
     target_role = tf.get("target_role", "Villager")
@@ -84,7 +84,7 @@ def main() -> int:
     opps = load_opportunities()
     speech_data = load_json("data/health/speech_scores.json")
     cf_data = load_json("data/health/counterfactual_impacts.json")
-    baseline = load_json("data/health/baseline_scoring_report.json")
+    load_json("data/health/baseline_scoring_report.json")
 
     from sqlalchemy import text
 
@@ -104,7 +104,7 @@ def main() -> int:
         parts = o["opportunity_id"].split("-")
         pid = parts[2] if len(parts) > 2 else "unknown"
         opp_player[o["opportunity_id"]] = pid
-    opp_game = {o["opportunity_id"]: o["game_id"] for o in opps}
+    {o["opportunity_id"]: o["game_id"] for o in opps}
 
     # Speech per player
     player_speech = {s["player_id"]: s for s in speech_data}
@@ -257,14 +257,14 @@ def main() -> int:
     if args.game_id:
         reviews = [r for r in reviews if r["game_id"] == args.game_id]
     elif not args.all:
-        sampled = list(set(r["game_id"] for r in reviews))[:3]
+        sampled = list({r["game_id"] for r in reviews})[:3]
         reviews = [r for r in reviews if r["game_id"] in sampled]
 
     # Generate markdown
     lines = [
         "# AI Werewolf — Learned Evaluator Review Report v2",
         "",
-        f"**Games**: {len(set(r['game_id'] for r in reviews))}",
+        f"**Games**: {len({r['game_id'] for r in reviews})}",
         f"**Players**: {len(reviews)}",
         "",
         "## Scoring System v2",

@@ -232,7 +232,7 @@ class BeliefTracker:
 
         for role, role_claims in claims_by_role.items():
             if len(role_claims) >= 2:
-                names = list(set(c.player_name for c in role_claims))
+                names = list({c.player_name for c in role_claims})
                 if len(names) >= 2:
                     self.contradictions.append(
                         Contradiction(

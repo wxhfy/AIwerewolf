@@ -87,7 +87,7 @@ def quantify_information_isolation() -> SectionReport:
     m = re.search(r"(\d+)\s+failed", full_output)
     if m:
         failed = int(m.group(1))
-    total = passed + failed
+    passed + failed
 
     report = SectionReport(
         section="信息隔离",
@@ -214,7 +214,7 @@ def quantify_strategy_depth() -> SectionReport:
 
     # M2: Each role has rule-based + parameter-based strategies
     roles_with_rules = 0
-    for name, card in cards.items():
+    for _name, card in cards.items():
         prompt = card.format_for_prompt()
         has_rule_section = "专项策略" in prompt
         if has_rule_section:
@@ -731,10 +731,10 @@ def quantify_rule_correctness() -> SectionReport:
     test_names = engine_test.stdout + engine_test.stderr
 
     covered = 0
-    for eid, desc in boundary_scenarios:
+    for _eid, desc in boundary_scenarios:
         keywords = desc.split("→")[0].strip()
         # Simple keyword match
-        keyword_list = [w for w in keywords if len(w) > 1]
+        [w for w in keywords if len(w) > 1]
         if any(
             kw.lower() in test_names.lower()
             for kw in ["tie", "pk", "vote", "guard", "witch", "hunter", "poison", "death", "win", "wolf"]
@@ -881,8 +881,8 @@ def quantify_system_operability() -> SectionReport:
         cwd=str(ROOT),
     )
     test_output = test_result.stdout + test_result.stderr
-    test_passed = "passed" in test_output.lower() or "ERROR" not in test_output
-    total_tests = test_output.count("passed") + test_output.count("failed") + test_output.count("ERROR")
+    "passed" in test_output.lower() or "ERROR" not in test_output
+    test_output.count("passed") + test_output.count("failed") + test_output.count("ERROR")
 
     report.results.append(
         MetricResult(
@@ -955,7 +955,7 @@ def main():
     total_metrics = 0
 
     for s in sections:
-        section_pct = (s.score / s.max_score * 100) if s.max_score > 0 else 0
+        (s.score / s.max_score * 100) if s.max_score > 0 else 0
         total_score += s.score
         total_max += s.max_score
         total_passed += sum(1 for r in s.results if r.passed)

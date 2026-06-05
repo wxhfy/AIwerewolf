@@ -156,10 +156,10 @@ def main():
 
     try:
         # Sample finished games with LLM players only (avoid heuristic pollution)
-        llm_game_ids = set(
+        llm_game_ids = {
             row[0]
             for row in db.query(DbPlayer.game_id).filter(DbPlayer.agent_type.in_(["llm", "cognitive"])).distinct().all()
-        )
+        }
         game_rows = (
             db.query(DbGame)
             .filter(

@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 from typing import Protocol
+
+if TYPE_CHECKING:
+    from backend.engine.game import WerewolfGame  # noqa: F401
 
 from backend.engine.models import Phase
 
@@ -9,7 +13,7 @@ from backend.engine.models import Phase
 class PhaseHandler(Protocol):
     phase: Phase
 
-    def run(self, game: WerewolfGame) -> None: ...
+    def run(self, game: "WerewolfGame") -> None: ...
 
 
 @dataclass(frozen=True)
@@ -17,7 +21,7 @@ class AtomicPhase:
     phase: Phase
     runner_name: str
 
-    def run(self, game: WerewolfGame) -> None:
+    def run(self, game: "WerewolfGame") -> None:
         getattr(game, self.runner_name)()
 
 
@@ -26,7 +30,7 @@ class CompositePhase:
     phase: Phase
     steps: tuple[PhaseHandler, ...]
 
-    def run(self, game: WerewolfGame) -> None:
+    def run(self, game: "WerewolfGame") -> None:
         import time as _time
 
         micro_delay = getattr(game, "phase_delay_ms", 0) / 4000  # ~25% of phase delay, min floor 0.05s

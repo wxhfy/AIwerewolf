@@ -314,7 +314,7 @@ def retrieve_fulltext(
         return retrieve_metadata(role, phase, limit, conn_str)
 
     results = []
-    for id_, role_, phase_, dtype, sit, rec, q, score in c.fetchall():
+    for id_, role_, phase_, dtype, sit, rec, q, _score in c.fetchall():
         results.append(
             {
                 "id": id_,
@@ -786,8 +786,8 @@ def generate_report(all_results, build_time_ms):
 
     # Find best method for retrieval quality
     best_ndcg = best_of("NDCG@5_mean")
-    best_mrr = best_of("MRR_mean")
-    best_latency = best_of("latency_mean_ms")
+    best_of("MRR_mean")
+    best_of("latency_mean_ms")
 
     lines.append("### 1. 检索质量")
     lines.append("")
@@ -832,7 +832,7 @@ def generate_report(all_results, build_time_ms):
         for key in ["P@5_mean", "P@10_mean", "R@5_mean", "R@10_mean", "MRR_mean", "NDCG@5_mean", "NDCG@10_mean"]
         if best_of(key) == "B_FullText"
     )
-    a_wins = sum(
+    sum(
         1
         for key in ["P@5_mean", "P@10_mean", "R@5_mean", "R@10_mean", "MRR_mean", "NDCG@5_mean", "NDCG@10_mean"]
         if best_of(key) == "A_Metadata"

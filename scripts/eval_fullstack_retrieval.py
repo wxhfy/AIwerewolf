@@ -222,7 +222,6 @@ def build_test_sets(docs: List[Dict]) -> Dict[str, List[Dict]]:
     # Set 2: Synthetic queries from strategy corpus (60 queries)
     # Take random situation_pattern fields as queries, the source doc is the relevance target
     set2 = []
-    used_situations = set()
     # Pick diverse docs across roles and types
     candidates = [d for d in docs if len(d["situation"]) >= 10 and len(d["situation"]) <= 80]
     random.seed(42)
@@ -582,8 +581,10 @@ def judge_relevance(result, query) -> int:
     return 2 if matches >= 3 else (1 if matches >= 1 else 0)
 
 
-def compute_metrics(results: List[Dict], query: Dict, k_vals=[3, 5, 10]) -> Dict:
+def compute_metrics(results: List[Dict], query: Dict, k_vals=None) -> Dict:
     """Compute P@k, R@k, MRR, NDCG@k for a single query."""
+    if k_vals is None:
+        k_vals = [3, 5, 10]
     m = {"id": query["id"]}
     for k in k_vals:
         if k > len(results):

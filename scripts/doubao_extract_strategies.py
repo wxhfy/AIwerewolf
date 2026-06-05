@@ -145,7 +145,7 @@ def build_role_prompt(role: str, data: list[dict[str, Any]], max_games: int = 15
 
     # Sort reviews by process_score to show both good and bad examples
     reviews_sorted = sorted(reviews, key=lambda r: r.get("process_score", 0), reverse=True)
-    top_n = min(max_games, len(reviews_sorted))
+    min(max_games, len(reviews_sorted))
 
     lines = []
     lines.append(f"共 {len(reviews)} 局对局数据。以下是代表性样本：\n")

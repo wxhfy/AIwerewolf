@@ -199,7 +199,7 @@ class RRFEngine:
 
     def rerank_subset(self, text, candidate_indices, role="", phase="", topk=10):
         """RRF rerank only within given candidate indices."""
-        cand_set = set(candidate_indices)
+        set(candidate_indices)
         bs = self.bm25.get_scores(" ".join(jieba.cut(text)).split())
         if bs.max() > 0:
             bs = bs / bs.max()

@@ -389,7 +389,7 @@ def evaluate_retrieval(model_path, docs, queries, label=""):
     from sentence_transformers import SentenceTransformer
 
     model = SentenceTransformer(model_path, device=GPU)
-    N = len(docs)
+    len(docs)
     doc_texts = [f"{d['situation']} {d['strategy']} {d['rationale']}" for d in docs]
 
     # Encode docs
@@ -425,7 +425,7 @@ def evaluate_retrieval(model_path, docs, queries, label=""):
 
     # Compute metrics
     all_metrics = []
-    for i, (res, q) in enumerate(zip(results, queries)):
+    for _i, (res, q) in enumerate(zip(results, queries)):
         m = {}
         for k in [5, 10]:
             kk = min(k, len(res))

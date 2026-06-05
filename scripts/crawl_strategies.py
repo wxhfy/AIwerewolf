@@ -422,7 +422,7 @@ def main() -> int:
             print(f"Saved to {out_path}")
 
             if args.ingest or args.all:
-                player_counts = set(a["player_count"] for a in articles)
+                player_counts = {a["player_count"] for a in articles}
                 n = ingest_to_db(strategies, player_counts)
                 print(f"Ingested {n} strategies to DB")
         else:

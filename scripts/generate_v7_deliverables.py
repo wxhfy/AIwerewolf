@@ -366,7 +366,7 @@ def generate_mbti_dashboard():
     from db.models import PublishedReview
 
     session = SessionLocal()
-    reviews = session.query(PublishedReview).filter(PublishedReview.replay_bundle != None).all()
+    reviews = session.query(PublishedReview).filter(PublishedReview.replay_bundle is not None).all()
 
     # Build player_id -> MBTI mapping
     player_mbti = {}
@@ -431,7 +431,7 @@ def generate_mbti_dashboard():
         }
 
     # Sort by composite: 0.40*PreScore + 0.30*WinRate + 0.15*CampBalWR + 0.10*(1-Mistake) + 0.05*Process
-    for mbti, s in mbti_stats.items():
+    for _mbti, s in mbti_stats.items():
         s["composite"] = round(
             0.40 * s["pre_mean"]
             + 0.30 * s["win_rate"]
@@ -472,7 +472,7 @@ def _mbti_html(sorted_mbti, mbti_stats, mbti_role):
 </tr>"""
 
     # Role matrix
-    roles = sorted(set(r for mb in mbti_role.values() for r in mb.keys()))
+    roles = sorted({r for mb in mbti_role.values() for r in mb.keys()})
     role_rows = ""
     mbti_list = [m for m, _ in sorted_mbti]
     for mbti in mbti_list:
@@ -635,7 +635,7 @@ def generate_single_game_review(game_id=None):
             gid = score.get("game_id", "")
             review = (
                 session.query(PublishedReview)
-                .filter(PublishedReview.game_id == gid, PublishedReview.replay_bundle != None)
+                .filter(PublishedReview.game_id == gid, PublishedReview.replay_bundle is not None)
                 .first()
             )
             if review:
@@ -714,7 +714,7 @@ def generate_single_game_review(game_id=None):
 
     # Vote flow
     vote_rows = ""
-    for day in sorted(set(v.get("day", 0) for v in votes)):
+    for day in sorted({v.get("day", 0) for v in votes}):
         day_votes = [v for v in votes if v.get("day") == day]
         for v in day_votes:
             voter = player_info.get(v.get("voter_id", ""), {})

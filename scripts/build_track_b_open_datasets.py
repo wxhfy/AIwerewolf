@@ -172,7 +172,7 @@ def build_track_b_native() -> dict[str, Any]:
     for g in games:
         game_id = g["game_id"]
         agent_version = g.get("agent_version", "unknown")
-        role_setup = g.get("role_setup", {})
+        g.get("role_setup", {})
         player_scores = g.get("player_scores", [])
 
         # Build opportunities from each game's player scores as structured samples
@@ -351,7 +351,7 @@ def merge_combined(results: dict[str, Any]):
     _save_jsonl(combined_opportunities, COMBINED_DIR / "track_b_open_opportunities.jsonl")
 
     # Generate game-id splits for speech
-    speech_games = sorted(set(s.get("game_id", "") for s in combined_speech if s.get("game_id")))
+    speech_games = sorted({s.get("game_id", "") for s in combined_speech if s.get("game_id")})
     if len(speech_games) >= 4:
         n_train = int(len(speech_games) * 0.7)
         n_val = int(len(speech_games) * 0.15)

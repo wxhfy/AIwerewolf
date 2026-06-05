@@ -50,10 +50,10 @@ def main() -> int:
 
     print("Loading data...")
     opps = load_jsonl("data/health/opportunities.jsonl")
-    labeled = load_jsonl("data/health/labeled_opportunities.jsonl")
+    load_jsonl("data/health/labeled_opportunities.jsonl")
     speech_data = load_json("data/health/speech_scores.json")
     cf_data = load_json("data/health/counterfactual_impacts.json")
-    baseline = load_json("data/health/baseline_scoring_report.json")
+    load_json("data/health/baseline_scoring_report.json")
 
     from sqlalchemy import text
 
@@ -74,7 +74,7 @@ def main() -> int:
         pid = parts[2] if len(parts) > 2 else "unknown"
         opp_player[o["opportunity_id"]] = pid
 
-    opp_game = {o["opportunity_id"]: o["game_id"] for o in opps}
+    {o["opportunity_id"]: o["game_id"] for o in opps}
 
     # Speech per player
     player_speech: dict[str, dict] = {}
@@ -201,7 +201,7 @@ def main() -> int:
         player_reviews = [r for r in player_reviews if r["game_id"] == args.game_id]
     else:
         # Sample games
-        sampled_games = list(set(r["game_id"] for r in player_reviews))[: args.limit_games]
+        sampled_games = list({r["game_id"] for r in player_reviews})[: args.limit_games]
         player_reviews = [r for r in player_reviews if r["game_id"] in sampled_games]
 
     # Generate report
@@ -242,7 +242,7 @@ def _generate_markdown(reviews) -> str:
     lines = [
         "# AI Werewolf — Learned Evaluator Review Report v1",
         "",
-        f"**Games reviewed**: {len(set(r['game_id'] for r in reviews))}",
+        f"**Games reviewed**: {len({r['game_id'] for r in reviews})}",
         f"**Players reviewed**: {len(reviews)}",
         "**Scoring system**: Opportunity-aware learned evaluation (Track B v2)",
         "",

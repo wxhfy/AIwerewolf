@@ -173,7 +173,7 @@ def role_win_rate(player_reviews: list[dict[str, Any]]) -> dict[str, dict[str, A
         b["games"] += 1
         if pr.get("_won"):
             b["wins"] += 1
-    for role, b in out.items():
+    for _role, b in out.items():
         b["win_rate"] = round(b["wins"] / b["games"], 4) if b["games"] else 0.0
     return out
 

@@ -358,7 +358,7 @@ def main() -> int:
             by_role: dict[str, list[dict]] = defaultdict(list)
             for opp in items:
                 by_role[opp["role"]].append(opp)
-            for role, role_opps in by_role.items():
+            for _role, role_opps in by_role.items():
                 random.shuffle(role_opps)
                 for i in range(0, len(role_opps) - 1, 2):
                     sample = build_pairwise_sample(role_opps[i], role_opps[i + 1])

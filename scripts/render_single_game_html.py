@@ -171,11 +171,11 @@ class V3SingleGameHTMLRenderer:
                     fontsize=7,
                     ha="center",
                     color="#7a6c62",
-                    arrowprops=dict(
-                        arrowstyle="->",
-                        color="#d8b08d",
-                        lw=0.8,
-                    ),
+                    arrowprops={
+                        "arrowstyle": "->",
+                        "color": "#d8b08d",
+                        "lw": 0.8,
+                    },
                 )
 
             ax.set_xlabel("Event Sequence", fontsize=8, color="#7a6c62")
@@ -242,7 +242,7 @@ class V3SingleGameHTMLRenderer:
             groups.append((current_key, current_label, current_group))
 
         sections = ""
-        for key, label, group in groups:
+        for _key, label, group in groups:
             cards = ""
             for e in group:
                 etype = e.get("event_type", "")
@@ -592,7 +592,7 @@ class V3SingleGameHTMLRenderer:
             values_plot = values + [values[0]]
             angles_plot = angles + [angles[0]]
 
-            fig, ax = plt.subplots(figsize=(2.5, 2.5), subplot_kw=dict(polar=True))
+            fig, ax = plt.subplots(figsize=(2.5, 2.5), subplot_kw={"polar": True})
             ax.set_theta_offset(np.pi / 2)
             ax.set_theta_direction(-1)
 

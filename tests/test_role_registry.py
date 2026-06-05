@@ -81,7 +81,7 @@ def test_role_spec_shape() -> None:
     assert seer.wakes_up_at_night is True
     assert seer.playable is True
     # Frozen — attempts to mutate must fail.
-    with pytest.raises(Exception):
+    with pytest.raises(AttributeError):
         seer.playable = False  # type: ignore[misc]
 
 

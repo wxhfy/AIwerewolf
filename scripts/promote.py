@@ -81,7 +81,7 @@ def promote_by_cluster(conn, top_n: int, quality_threshold: float, dry_run: bool
         groups[key].append(doc)
 
     promoted = 0
-    for key, docs in groups.items():
+    for _key, docs in groups.items():
         docs.sort(key=lambda d: float(d.get("quality_score", 0) or 0), reverse=True)
         for doc in docs[:top_n]:
             if not dry_run:
@@ -111,7 +111,7 @@ def promote_by_feedback(conn, min_usage: int, score_threshold: float, dry_run: b
     candidates = cur.fetchall()
 
     promoted = 0
-    for doc_id, qs, sc, uc in candidates:
+    for doc_id, _qs, sc, uc in candidates:
         success_rate = float(sc or 0) / max(float(uc or 1), 1)
         if success_rate >= score_threshold:
             if not dry_run:
@@ -157,7 +157,7 @@ def prune_active(conn, dry_run: bool) -> dict:
         groups[key].append(doc)
 
     demoted = 0
-    for (role, dtype), docs in groups.items():
+    for (_role, dtype), docs in groups.items():
         cap = CAPS.get(dtype, 20)
         if len(docs) > cap:
             for doc in docs[cap:]:

@@ -181,7 +181,7 @@ def evaluate(model_path, docs, queries):
     from sentence_transformers import SentenceTransformer
 
     m = SentenceTransformer(model_path, device=GPU)
-    N = len(docs)
+    len(docs)
     dtx = [f"{d['situation']} {d['strategy']} {d['rationale']}" for d in docs]
     de = np.asarray(m.encode(dtx, normalize_embeddings=True, batch_size=32, show_progress_bar=False), dtype=np.float32)
     c2 = [" ".join(jieba.cut(f"{d['situation']} {d['strategy']} {d['rationale']}")) for d in docs]

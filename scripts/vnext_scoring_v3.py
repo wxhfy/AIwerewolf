@@ -310,7 +310,7 @@ def main():
     print("-" * 55)
     for role in ["Seer", "Witch", "Hunter", "Guard", "Werewolf", "Villager"]:
         vn, ps = [], []
-        for pid, ls in sbp.items():
+        for _pid, ls in sbp.items():
             if ls[0]["role"] == role:
                 vn.append(np.mean([o["q"] for o in ls]))
                 ps.append(np.mean([o["ps"] for o in ls]))
@@ -321,7 +321,7 @@ def main():
 
     # Correlation
     vn_all, ps_all = [], []
-    for pid, ls in sbp.items():
+    for _pid, ls in sbp.items():
         vn_all.append(np.mean([o["q"] for o in ls]))
         ps_all.append(np.mean([o["ps"] for o in ls]))
     if len(vn_all) > 2:

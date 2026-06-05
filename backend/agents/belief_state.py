@@ -272,7 +272,7 @@ class BeliefState:
         self, player_id: str, player_name: str, seat: int, speech: str, day: int, is_badge: bool, is_last_words: bool
     ) -> None:
         """Extract role claims from a speech."""
-        speech_lower = speech.lower()
+        speech.lower()
 
         # Determine context
         if is_badge:
@@ -370,7 +370,7 @@ class BeliefState:
         """Detect contradictions between claims."""
         # Group claims by role
         role_claimants: dict[str, list[Claim]] = {}
-        for player_id, claims in self.claims.items():
+        for _player_id, claims in self.claims.items():
             for claim in claims:
                 role_claimants.setdefault(claim.claimed_role, []).append(claim)
 
@@ -416,7 +416,7 @@ class BeliefState:
         # Role claims
         if self.claims:
             lines.append("【角色声称】")
-            for player_id, claims in self.claims.items():
+            for _player_id, claims in self.claims.items():
                 for claim in claims:
                     status = ""
                     if claim.contradicts:

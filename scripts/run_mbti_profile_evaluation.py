@@ -171,7 +171,7 @@ async def run_profile_game(profile_name: str, seed: int, player_count: int = 7) 
 
     # Inject custom personas into agents BEFORE initialize
     persona_objs = [_hydrate_persona(pd) for pd in sampled_personas]
-    for i, (pid, agent) in enumerate(agents.items()):
+    for i, (_pid, agent) in enumerate(agents.items()):
         if hasattr(agent, "character") and agent.character:
             agent.character.persona = persona_objs[i]
 
@@ -191,7 +191,7 @@ async def run_profile_game(profile_name: str, seed: int, player_count: int = 7) 
 
     # Full review
     doc = generate_published_review_document(state)
-    scoreboard = doc.review_report.get("scoreboard", [])
+    doc.review_report.get("scoreboard", [])
     player_scores_list = doc.review_report.get("metadata", {}).get("player_scores", [])
     bad_cases = doc.review_report.get("bad_cases", [])
     counterfactuals = doc.review_report.get("counterfactuals", [])
@@ -245,7 +245,7 @@ async def run_profile_game(profile_name: str, seed: int, player_count: int = 7) 
             for act, val in result.speech_act_probs.items():
                 speech_act_probs[act].append(float(val))
 
-    n = len(player_scores_list) or 1
+    len(player_scores_list) or 1
     role_setup = {p.id: p.role.value for p in state.players}
     role_dist = {}
     for r in role_setup.values():
@@ -425,7 +425,7 @@ def build_report(games: list[dict], leaderboard: dict) -> str:
         ("avg_survival_score", "存活"),
     ]:
         vals = [e[dim] for e in E]
-        rng = round(max(vals) - min(vals), 2)
+        round(max(vals) - min(vals), 2)
         top_e = max(E, key=lambda e: e[dim])
         lines.append(f"- **{label}最高**: {top_e['profile']} ({top_e[dim]})")
 

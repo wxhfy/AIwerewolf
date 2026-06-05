@@ -434,10 +434,10 @@ def main():
     opportunities = load_jsonl(DATA / "opportunities_v3_features.jsonl")
     eval_gold = load_jsonl(DATA / "eval_gold_set.jsonl")
     eval_silver = load_jsonl(DATA / "eval_silver_set.jsonl")
-    hard_negatives = load_jsonl(DATA / "hard_negative_candidates_v4.jsonl")
-    speech_data = load_json(DATA / "speech_scores.json")
+    load_jsonl(DATA / "hard_negative_candidates_v4.jsonl")
+    load_json(DATA / "speech_scores.json")
     opp_orig = load_jsonl(DATA / "opportunities.jsonl")
-    opp_orig_idx = {o["opportunity_id"]: o for o in opp_orig}
+    {o["opportunity_id"]: o for o in opp_orig}
 
     eval_index = {}
     for item in eval_gold + eval_silver:
@@ -657,7 +657,7 @@ def main():
     bad = sum(1 for s in rebalanced_samples if s["label"] == "bad")
     medium = sum(1 for s in rebalanced_samples if s["label"] == "medium")
     human_reviewed = sum(1 for s in rebalanced_samples if s.get("human_reviewed"))
-    synthetic = sum(1 for s in rebalanced_samples if s.get("is_synthetic"))
+    sum(1 for s in rebalanced_samples if s.get("is_synthetic"))
     hn_count = sum(1 for s in rebalanced_samples if s.get("is_hard_negative"))
     pw_count = sum(1 for s in rebalanced_samples if s.get("is_counterfactual"))
 
@@ -913,7 +913,7 @@ def main():
         if r == "Witch" and a == "witch_save":
             ws_status = v["status"]
         if r == "Seer" and a == "seer_release":
-            sr_status = v.get("status", "LOW_CONF")
+            v.get("status", "LOW_CONF")
 
     # Gate checks
     gate_checks = {

@@ -216,7 +216,7 @@ def main() -> int:
     golden = create_hunter_golden_cases(opps)
 
     # Identify which golden cases aren't already labeled
-    existing_ids = set(e["opportunity_id"] for e in existing)
+    existing_ids = {e["opportunity_id"] for e in existing}
     new_golden = [g for g in golden if g["opportunity_id"] not in existing_ids]
 
     print(f"\nNew golden cases to add: {len(new_golden)}")

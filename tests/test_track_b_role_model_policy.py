@@ -79,6 +79,6 @@ def test_shared_encoder_preferred_over_independent_models():
     text = path.read_text(encoding="utf-8")
     # Should mention shared model or role heads/adapters, not independent role models
     has_shared = "shared" in text.lower() or "role head" in text.lower() or "role adapter" in text.lower()
-    has_independent_models = "independent" in text.lower() and "model per role" in text.lower()
+    "independent" in text.lower() and "model per role" in text.lower()
     # The policy should recommend shared approach
     assert has_shared or "architect" in text.lower(), "Policy should describe shared encoder + role heads architecture"

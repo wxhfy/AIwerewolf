@@ -333,8 +333,8 @@ QUERY_SET: List[Dict[str, Any]] = [
 
 print(
     f"Query set: {len(QUERY_SET)} queries "
-    f"({len(set(q['role'] for q in QUERY_SET))} roles × "
-    f"{len(set(q['mbti'] for q in QUERY_SET))} MBTI types)"
+    f"({len({q['role'] for q in QUERY_SET})} roles × "
+    f"{len({q['mbti'] for q in QUERY_SET})} MBTI types)"
 )
 
 # ================================================================
@@ -352,7 +352,7 @@ def weak_label_relevance(doc: Dict, query: Dict) -> Tuple[int, Dict]:
 
     doc_role = str(doc.get("role", "")).lower().strip()
     doc_phase = str(doc.get("phase", "")).lower().strip()
-    doc_type = str(doc.get("doc_type", "")).lower().strip()
+    str(doc.get("doc_type", "")).lower().strip()
     quality = float(doc.get("quality", doc.get("quality_score", 0.0)))
     strategy = str(doc.get("strategy", doc.get("recommended_action", ""))).lower()
     situation = str(doc.get("situation", "")).lower()

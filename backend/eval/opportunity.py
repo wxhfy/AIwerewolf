@@ -171,7 +171,7 @@ class GameFeatureBuilder:
         for e in events:
             if e.get("day", 0) > up_to_day:
                 break
-            content = e.get("content", {})
+            e.get("content", {})
             text = str(e.get("public_text", "") or "")
             for role_label in ["预言家", "女巫", "守卫", "猎人", "Seer", "Witch", "Guard", "Hunter"]:
                 if role_label in text:
@@ -467,7 +467,7 @@ def extract_all_opportunities(
             if not report_json:
                 continue
             try:
-                report = reconstruct_review_report(report_json)
+                reconstruct_review_report(report_json)
             except Exception:
                 continue
 
@@ -540,7 +540,7 @@ def _extract_decisions_from_report(report: dict) -> list[dict[str, Any]]:
     for pr in report.get("player_reviews", []):
         player_id = pr.get("player_id", "")
         role = pr.get("role", "")
-        alignment = pr.get("alignment", "village")
+        pr.get("alignment", "village")
 
         # Vote opportunity
         if pr.get("rule_score_reasons") and any("投票" in str(r) for r in pr.get("rule_score_reasons", [])):

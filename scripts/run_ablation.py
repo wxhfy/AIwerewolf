@@ -64,7 +64,7 @@ def main() -> int:
     db.close()
 
     # Map: opportunity_id → game_id, player_id
-    opp_game = {o["opportunity_id"]: o["game_id"] for o in opps}
+    {o["opportunity_id"]: o["game_id"] for o in opps}
     opp_player = {}
     for o in opps:
         pid = o.get("player_id", "")
@@ -97,8 +97,8 @@ def main() -> int:
     q_model = DecisionQualityModel()
 
     for fold_i, (train_opps, test_opps) in enumerate(folds):
-        train_games = set(o["game_id"] for o in train_opps)
-        test_games = set(o["game_id"] for o in test_opps)
+        train_games = {o["game_id"] for o in train_opps}
+        test_games = {o["game_id"] for o in test_opps}
 
         train_mask = np.array([g in train_games for g in game_all])
         test_mask = np.array([g in test_games for g in game_all])

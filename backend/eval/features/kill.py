@@ -35,20 +35,19 @@ class KillTargetValueFeatures:
         private_ctx_raw = opportunity.get("private_context_summary", "") or ""
 
         # Parse private context
-        private_ctx = ""
         if isinstance(private_ctx_raw, dict):
-            private_ctx = json.dumps(private_ctx_raw, ensure_ascii=False)
+            json.dumps(private_ctx_raw, ensure_ascii=False)
         elif isinstance(private_ctx_raw, str) and private_ctx_raw.startswith("{"):
             try:
                 parsed = json.loads(private_ctx_raw)
                 if isinstance(parsed, dict):
-                    private_ctx = " ".join(str(v) for v in parsed.values())
+                    " ".join(str(v) for v in parsed.values())
                 else:
-                    private_ctx = private_ctx_raw
+                    pass
             except (json.JSONDecodeError, TypeError):
-                private_ctx = private_ctx_raw
+                pass
         else:
-            private_ctx = str(private_ctx_raw)
+            str(private_ctx_raw)
 
         feats: dict[str, float | int | str] = {}
 
@@ -97,7 +96,7 @@ class KillTargetValueFeatures:
         removes_info = 0.0
         if target_role in ("Seer", "Witch"):
             removes_info = 0.7
-        elif target_claim_strength > 0.5:
+        elif claim_strength > 0.5:
             removes_info = 0.5
         feats["kill_removes_confirmed_info"] = round(removes_info, 4)
 

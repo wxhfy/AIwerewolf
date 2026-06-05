@@ -158,7 +158,7 @@ def run_single_game(seed: int, policy: str, model: str = "deepseek-v4-pro") -> G
         )
 
         t0 = time.perf_counter()
-        game = WerewolfGame(config)
+        WerewolfGame(config)
 
         # TODO: Actually run the game with agents configured per policy
         # This requires:

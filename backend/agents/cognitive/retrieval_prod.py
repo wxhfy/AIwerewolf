@@ -859,7 +859,7 @@ class StrategyRetriever:
 
         import jieba
 
-        keywords = list(set([w for w in jieba.cut(query) if len(w) >= 2]))
+        keywords = list({w for w in jieba.cut(query) if len(w) >= 2})
         return self.search_with_keywords(keywords, role, phase, k=k, use_bm25_rerank=False)
 
     # ================================================================

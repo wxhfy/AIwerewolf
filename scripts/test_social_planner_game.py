@@ -65,7 +65,7 @@ def main() -> int:
     total_intents = 0
     total_wolf_tactics = 0
 
-    for pid, agent in agents.items():
+    for _pid, agent in agents.items():
         if not hasattr(agent, "memory"):
             continue
 

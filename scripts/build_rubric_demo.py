@@ -218,7 +218,7 @@ def _build_linked_critical_decisions(
     decisions: list[dict] = []
     display_cfs: list[dict] = []
 
-    for i, bc in enumerate(bad_cases):
+    for _i, bc in enumerate(bad_cases):
         bc_role = bc.get("role", "")
         bc_player = bc.get("player_name", "")
         bc_day = str(bc.get("day", 0))
@@ -849,7 +849,6 @@ def _build_markdown_report(games: list[DemoGameData], summary: dict) -> str:
                     linked_cd_ids.append(cd["critical_decision_id"])
 
             cf_source = cf.get("source", "pipeline")
-            synth_note = ""
             if cf.get("_global_id"):
                 cf_gid = cf["_global_id"]
 

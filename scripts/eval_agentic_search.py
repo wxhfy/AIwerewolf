@@ -241,10 +241,8 @@ def agentic_search(db, context, max_rounds=3, verbose=True):
         print(f"    Final selection: {resp[:120]}")
 
     # Gather all unique results as fallback
-    all_results = []
-    seen = set()
     for h in history:
-        for match in re.finditer(r"\[(\d+)\]\s*场景:", h):
+        for _match in re.finditer(r"\[(\d+)\]\s*场景:", h):
             pass  # Can't easily map back, just return first search results
     # Return first round results as default
     return db.search(jieba.cut(context.split("\n")[0]), topk=5)

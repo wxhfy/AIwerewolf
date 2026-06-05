@@ -262,16 +262,16 @@ def train_speech_act_classifier() -> dict[str, Any]:
         "val_samples": len(X_val_text),
         "test_samples": len(X_test_text),
         "split_n_games": {
-            "train": len(set(game_ids[i] for i in range(len(game_ids)) if i < len(X_train_text) and i < len(game_ids))),
+            "train": len({game_ids[i] for i in range(len(game_ids)) if i < len(X_train_text) and i < len(game_ids)}),
             "val": len(
-                set(
+                {
                     game_ids[i]
                     for i in range(len(X_train_text), len(X_train_text) + len(X_val_text))
                     if i < len(game_ids)
-                )
+                }
             ),
             "test": len(
-                set(game_ids[i] for i in range(len(X_train_text) + len(X_val_text), len(game_ids)) if i < len(game_ids))
+                {game_ids[i] for i in range(len(X_train_text) + len(X_val_text), len(game_ids)) if i < len(game_ids)}
             ),
         },
         "vocabulary_size": len(vectorizer.vocabulary_),

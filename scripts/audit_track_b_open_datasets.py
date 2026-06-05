@@ -67,7 +67,7 @@ def _audit_dataset(name: str, path: Path) -> dict[str, Any]:
     missing_dnt = sum(1 for s in samples if not s.get("do_not_train_final_q_directly", True))
 
     # Game-level stats
-    game_ids = set(s.get("game_id", "") for s in samples)
+    game_ids = {s.get("game_id", "") for s in samples}
     games_with_samples = Counter(s.get("game_id", "") for s in samples)
     games_per_sample_dist = Counter(games_with_samples.values())
 

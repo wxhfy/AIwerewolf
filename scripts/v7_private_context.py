@@ -76,11 +76,11 @@ def build_visibility_snapshot(opp, review, speech_acts, sm_snapshots):
     phase = opp.get("phase", "")
     player_id = opp["player_id"]
     role = opp["role"]
-    opp_type = opp.get("opportunity_type", "")
+    opp.get("opportunity_type", "")
 
     # Build player info
-    player_map = {p["id"]: p for p in players}
-    name_to_id = {p["name"]: p["id"] for p in players}
+    {p["id"]: p for p in players}
+    {p["name"]: p["id"] for p in players}
 
     # PUBLIC CONTEXT (available to everyone)
     public_ctx = {
@@ -268,7 +268,6 @@ def _extract_werewolf_private(events, decisions, player_id, day, phase):
     }
 
     # Find wolf teammates from SETUP role_assignment events
-    teammate_ids = set()
     for e in events:
         content = e.get("content", {})
         if content.get("kind") == "role_assignment":
@@ -494,15 +493,15 @@ def main():
     opportunities = load_jsonl(DATA / "opportunities_v3_features.jsonl")
     eval_gold = load_jsonl(DATA / "eval_gold_set.jsonl")
     eval_silver = load_jsonl(DATA / "eval_silver_set.jsonl")
-    speech_data = load_json(DATA / "speech_scores.json")
-    v6_samples = load_jsonl(DATA / "benchmark_dataset_v6.jsonl")
+    load_json(DATA / "speech_scores.json")
+    load_jsonl(DATA / "benchmark_dataset_v6.jsonl")
 
     eval_index = {}
     for item in eval_gold + eval_silver:
         eval_index[item["opportunity_id"]] = item
 
     session = SessionLocal()
-    reviews = session.query(PublishedReview).filter(PublishedReview.replay_bundle != None).all()
+    reviews = session.query(PublishedReview).filter(PublishedReview.replay_bundle is not None).all()
     review_index = {r.game_id: r for r in reviews}
     print(f"  {len(opportunities)} opportunities, {len(review_index)} games with replay data")
 
@@ -798,8 +797,8 @@ def main():
         elif qs <= 20:
             all_bad_v7.append(score)
 
-    overall_d_v7 = cohens_d(all_good_v7, all_bad_v7) if all_good_v7 and all_bad_v7 else None
-    overall_paw_v7 = compute_paw(all_good_v7, all_bad_v7) if all_good_v7 and all_bad_v7 else None
+    cohens_d(all_good_v7, all_bad_v7) if all_good_v7 and all_bad_v7 else None
+    compute_paw(all_good_v7, all_bad_v7) if all_good_v7 and all_bad_v7 else None
 
     # Count role-actions from V6 CSV (skip header)
     passing_ra = 7  # V6 had ~7 from cv_results

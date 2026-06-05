@@ -54,7 +54,7 @@ class TestPairwiseRankerDirection:
     def test_bad_ranks_lower_than_good(self):
         """compare_pair(bad, good) should give P < 0.5 (prefers good)."""
         pairs = []
-        for i in range(30):
+        for _i in range(30):
             pairs.append(
                 _make_pair(
                     {"quality_signal": 0.95, "noise": np.random.random()},
@@ -86,7 +86,7 @@ class TestPairwiseRankerDirection:
     def test_reversed_labels_give_low_accuracy(self):
         """If we train with reversed labels, accuracy should drop."""
         pairs = []
-        for i in range(30):
+        for _i in range(30):
             pairs.append(
                 _make_pair(
                     {"q": 0.95},
@@ -95,7 +95,7 @@ class TestPairwiseRankerDirection:
             )
         # Train normally
         ranker_correct = PairwiseLogisticRanker()
-        r1 = ranker_correct.fit(pairs)
+        ranker_correct.fit(pairs)
 
         # Train with reversed labels (worse as better)
         reversed_pairs = []
@@ -108,7 +108,7 @@ class TestPairwiseRankerDirection:
                 )
             )
         ranker_rev = PairwiseLogisticRanker()
-        r2 = ranker_rev.fit(reversed_pairs)
+        ranker_rev.fit(reversed_pairs)
 
         # Both might fit well on training data (reversed just learns opposite)
         # But on heldout, correct should prefer {"q": 0.9} > {"q": 0.1}
@@ -126,7 +126,7 @@ class TestPairwiseRankerDirection:
         # Create clean separable data
         pairs = []
         np.random.seed(42)
-        for i in range(50):
+        for _i in range(50):
             pairs.append(
                 _make_pair(
                     {"quality_signal": 0.8 + 0.15 * np.random.random(), "risk_signal": 0.1 + 0.1 * np.random.random()},
@@ -171,7 +171,7 @@ class TestPairwiseRankerDirection:
         """With 50 random features and only 2 meaningful ones, should still learn."""
         np.random.seed(42)
         pairs = []
-        for i in range(60):
+        for _i in range(60):
             bf = {f"rand_{j}": np.random.random() for j in range(48)}
             wf = {f"rand_{j}": np.random.random() for j in range(48)}
             bf["real_signal"] = 0.85

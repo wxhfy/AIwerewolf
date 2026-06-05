@@ -305,7 +305,7 @@ def split_by_game(
 
     random.seed(seed)
 
-    game_ids = list(set(o["game_id"] for o in opportunities))
+    game_ids = list({o["game_id"] for o in opportunities})
     random.shuffle(game_ids)
 
     n = len(game_ids)

@@ -76,7 +76,7 @@ def audit_and_fix():
     from db.models import PublishedReview
 
     session = SessionLocal()
-    reviews = session.query(PublishedReview).filter(PublishedReview.replay_bundle != None).all()
+    reviews = session.query(PublishedReview).filter(PublishedReview.replay_bundle is not None).all()
 
     # Build game_id → (winner, player_map) index
     game_index = {}
@@ -292,7 +292,7 @@ def regenerate_mbti_metrics(fixed_scores):
         pre_scores = [r.get("player_pre_action_score", 0.5) for r in records]
         process_scores = [r.get("player_process_score", 0.5) for r in records]
         wins = [r.get("is_win", r.get("won", False)) for r in records]
-        camps = [r.get("camp", "village") for r in records]
+        [r.get("camp", "village") for r in records]
 
         raw_wr = sum(wins) / n
 
@@ -375,7 +375,7 @@ def regenerate_mbti_metrics(fixed_scores):
         "gate": "PASS_WITH_LIMITATIONS",
         "total_player_games": len(fixed_scores),
         "mbti_types": len(mbti_stats),
-        "mbti_stats": {m: s for m, s in sorted_stats},
+        "mbti_stats": dict(sorted_stats),
     }
     with open(DATA / "mbti_performance_data_v7_fixed.json", "w") as f:
         json.dump(mbti_data, f, indent=2)
@@ -428,7 +428,7 @@ def regenerate_mbti_metrics(fixed_scores):
         if mbti and role:
             mbti_role[mbti][role].append(ps.get("player_pre_action_score", 0.5))
 
-    roles = sorted(set(r for mb in mbti_role.values() for r in mb.keys()))
+    roles = sorted({r for mb in mbti_role.values() for r in mb.keys()})
     with open(DATA / "mbti_role_matrix_v7_fixed.csv", "w") as f:
         f.write("MBTI," + ",".join(roles) + "\n")
         for mbti, _ in sorted_stats:

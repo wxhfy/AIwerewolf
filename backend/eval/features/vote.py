@@ -173,7 +173,7 @@ class VoteQualityFeatures:
         # 9. vote_is_stance_consistent: matches prior speech
         stance_consistent = 0.5
         # Check if this player had a prior speech that mentioned the target
-        speech_texts = re.findall(rf"{player_id}[^]]*?(?:speech|发言)", public_ctx)
+        re.findall(rf"{player_id}[^]]*?(?:speech|发言)", public_ctx)
         if target_id and target_id in public_ctx:
             # Simple heuristic: if target_id appears in nearby context of voter's speeches
             stance_consistent = 0.6

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from dataclasses import field
+from typing import Any
 from typing import Dict
 from typing import List
 
@@ -106,7 +107,7 @@ class EloRating:
             Updated tracks dict.
         """
         players = list(player_scores.items())
-        n = len(players)
+        len(players)
 
         for pid, info in players:
             role = info.get("role", "unknown")

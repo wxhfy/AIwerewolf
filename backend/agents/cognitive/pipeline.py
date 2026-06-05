@@ -255,7 +255,7 @@ class Pipeline:
         max_retries: int = 2,
     ) -> str:
         last_error: Exception | None = None
-        for attempt in range(max_retries + 1):
+        for _attempt in range(max_retries + 1):
             try:
                 resp = self._llm.invoke(
                     [

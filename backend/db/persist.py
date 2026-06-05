@@ -2382,7 +2382,7 @@ def get_role_model_leaderboard(
         for agent_label, role_buckets in matrix.items():
             total_games = sum(int(b["games"]) for b in role_buckets.values())
             total_wins = sum(int(b["wins"]) for b in role_buckets.values())
-            for role, bucket in role_buckets.items():
+            for _role, bucket in role_buckets.items():
                 games_n = int(bucket["games"])
                 bucket["win_rate"] = round(int(bucket["wins"]) / games_n, 4) if games_n else 0.0
             parts = agent_label.split("/", 1)

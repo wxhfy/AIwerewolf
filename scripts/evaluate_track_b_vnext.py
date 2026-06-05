@@ -157,7 +157,7 @@ def evaluate_feature_quality(opps: list[dict]) -> EvalResult:
 
     results = []
     extractor_usage: dict[str, int] = defaultdict(int)
-    missing_features: dict[str, int] = defaultdict(int)
+    defaultdict(int)
     total_features = 0
     deterministic_ok = 0
     visibility_leaks = 0
@@ -890,7 +890,6 @@ def _generate_report(results: dict[str, EvalResult], summary: dict) -> None:
 
     statuses = {name: er.status for name, er in results.items()}
     for name, status in statuses.items():
-        emoji = "PASS" if "PASS" in status else "FAIL" if "FAIL" in status else "WARN"
         lines.append(f"- **{name}**: {status}")
 
     has_fail = any("FAIL" in s for s in statuses.values())

@@ -44,8 +44,8 @@ def load_replay_bundles() -> list[dict]:
         db.query(PublishedReview)
         .filter(
             PublishedReview.game_id.in_(clean_ids),
-            PublishedReview.publish_allowed == True,
-            PublishedReview.replay_bundle != None,
+            PublishedReview.publish_allowed,
+            PublishedReview.replay_bundle is not None,
         )
         .all()
     ):
@@ -85,8 +85,8 @@ def compute_speech_scores(bundles: list[dict]) -> list[dict]:
         decisions = bundle.get("decisions", [])
         votes = bundle.get("votes", [])
 
-        player_names = {p["id"]: p.get("name", p["id"]) for p in players}
-        player_roles = {p["id"]: p.get("role", "") for p in players}
+        {p["id"]: p.get("name", p["id"]) for p in players}
+        {p["id"]: p.get("role", "") for p in players}
 
         # Build vote history per player
         player_votes: dict[str, list[dict]] = defaultdict(list)
@@ -239,8 +239,8 @@ def compute_counterfactual_impact(bundles: list[dict]) -> list[dict]:
         game_id = bundle["game_id"]
         players = bundle.get("players", [])
         events = bundle.get("events", [])
-        votes = bundle.get("votes", [])
-        deaths = bundle.get("deaths", [])
+        bundle.get("votes", [])
+        bundle.get("deaths", [])
         decisions = bundle.get("decisions", [])
 
         player_roles = {p["id"]: p.get("role", "") for p in players}
@@ -267,7 +267,7 @@ def compute_counterfactual_impact(bundles: list[dict]) -> list[dict]:
                 continue
 
             alt_target = alt_targets[0]
-            alt_role = player_roles.get(alt_target, "")
+            player_roles.get(alt_target, "")
             alt_alignment = player_alignments.get(alt_target, "")
 
             # Impact: if vote flipped to a wolf target → positive impact

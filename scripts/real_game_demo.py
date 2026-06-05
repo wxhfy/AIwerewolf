@@ -170,7 +170,7 @@ def run_demo_with_logging():
 
     # 创建日志器
     logger = LLMCallLogger()
-    observer = GameObserver()
+    GameObserver()
 
     # 创建游戏
     print("🎲 创建游戏...")

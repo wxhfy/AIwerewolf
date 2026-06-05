@@ -64,11 +64,11 @@ def main() -> int:
     db = SessionLocal()
     clean_ids = set(json.loads(Path("/tmp/clean_llm_game_ids.json").read_text()))
     games = db.execute(text("SELECT id, winner FROM games WHERE id IN :ids"), {"ids": tuple(clean_ids)}).fetchall()
-    winner_map = {g[0]: g[1] for g in games}
+    {g[0]: g[1] for g in games}
     db.close()
 
     opp_by_id = {o["opportunity_id"]: o for o in opps}
-    opp_game = {o["opportunity_id"]: o["game_id"] for o in opps}
+    {o["opportunity_id"]: o["game_id"] for o in opps}
 
     # Split labeled into good/bad for retrieval
     good_opps, bad_opps = [], []
@@ -107,11 +107,11 @@ def main() -> int:
     print("\n[3/4] Building features with GroupKFold retrieval...")
     folds = group_kfold_split(opps, n_splits=5)
 
-    X_base_list, X_ret_list, y_list, game_list = [], [], [], []
+    _X_base_list, _X_ret_list, _y_list, _game_list = [], [], [], []
     retrieval_added = 0
 
     for fold_i, (train_opps, test_opps) in enumerate(folds):
-        train_games = set(o["game_id"] for o in train_opps)
+        train_games = {o["game_id"] for o in train_opps}
 
         # Filter pre-computed embeddings by train games (anti-leakage!)
         good_mask = np.array([g in train_games for g in good_game_arr])
@@ -127,7 +127,7 @@ def main() -> int:
             continue
 
         # For each TEST opportunity, compute retrieval features
-        test_opps_fold = [o for o in test_opps]
+        test_opps_fold = list(test_opps)
         for opp in test_opps_fold:
             query_text = format_opportunity_text(opp)
             query_vec = provider.embed_single(query_text)
@@ -218,8 +218,8 @@ def main() -> int:
     c_results, d_results = [], []
 
     for fold_i, (train_opps, test_opps) in enumerate(folds5):
-        train_g = set(o["game_id"] for o in train_opps)
-        test_g = set(o["game_id"] for o in test_opps)
+        train_g = {o["game_id"] for o in train_opps}
+        test_g = {o["game_id"] for o in test_opps}
         train_m = np.array([g in train_g for g in game_arr])
         test_m = np.array([g in test_g for g in game_arr])
         if train_m.sum() < 5 or test_m.sum() < 2 or len(set(y_bin[train_m])) < 2:
@@ -284,7 +284,7 @@ def main() -> int:
     d_mp = statistics.mean([r["pairwise_accuracy"] for r in d_results]) if d_results else 0
 
     # Generate reports
-    baseline_roles = baseline.get("role_summary", {})
+    baseline.get("role_summary", {})
 
     # Eval report
     eval_lines = [

@@ -385,7 +385,7 @@ def evaluate_model(model_path, docs, queries, label=""):
     from sentence_transformers import SentenceTransformer
 
     model = SentenceTransformer(model_path, device=GPU)
-    N = len(docs)
+    len(docs)
     doc_texts = [f"{d['situation']} {d['strategy']} {d['rationale']}" for d in docs]
 
     t0 = time.perf_counter()

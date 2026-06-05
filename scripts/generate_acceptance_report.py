@@ -139,7 +139,7 @@ def generate_report(all_results: dict, tier_stats: dict) -> str:
     village_delta = both_village_wr - base_village_wr
     base_wolf_wr = tier_stats["baseline"].get("team_stats", {}).get("wolf", {}).get("win_rate", 0)
     both_wolf_wr = tier_stats["both"].get("team_stats", {}).get("wolf", {}).get("win_rate", 0)
-    wolf_delta = both_wolf_wr - base_wolf_wr
+    both_wolf_wr - base_wolf_wr
 
     # Build report
     lines = []
@@ -179,7 +179,7 @@ def generate_report(all_results: dict, tier_stats: dict) -> str:
     header = "| 阵营 | baseline | anti_only | trackc_only | both | Delta (both vs base) |"
     lines.append(header)
     lines.append("|" + "|".join(["------"] * 6) + "|")
-    for team_name, cells, best in team_rows:
+    for team_name, cells, _best in team_rows:
         delta = both_wolf_wr - base_wolf_wr if team_name == "Wolf" else village_delta
         sign = "+" if delta >= 0 else ""
         lines.append(f"| {team_name} | {cells[0]} | {cells[1]} | {cells[2]} | {cells[3]} | {sign}{delta:.1%} |")

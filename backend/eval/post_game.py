@@ -368,7 +368,7 @@ def _infer_mistake_type(score: Any, decision: dict) -> str:
     """Infer mistake type from scoring evidence and decision context."""
     correct = getattr(score, "correctness", 0.5)
     phase = str(decision.get("phase", ""))
-    action = str(decision.get("action_type", ""))
+    str(decision.get("action_type", ""))
     raw = str(decision.get("raw_text", ""))
     if correct < 0.2 and "VOTE" in phase:
         return "wrong_vote"

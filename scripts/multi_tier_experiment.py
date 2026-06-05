@@ -220,7 +220,7 @@ def compile_stats(results: list[dict]) -> dict:
     for r in results:
         if "error" in r:
             continue
-        winner = r["winner"]
+        r["winner"]
         for p in r.get("players", []):
             role = p["role"]
             team = "wolf" if role in ("Werewolf", "WhiteWolfKing") else "village"

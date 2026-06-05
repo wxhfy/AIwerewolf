@@ -78,7 +78,7 @@ def cluster_by_similarity(docs: list[dict]) -> list[list[dict]]:
 
     token_sets = []
     for d in docs:
-        tokens = set(w for w in jieba.cut(_doc_text(d)) if len(w) >= 2)
+        tokens = {w for w in jieba.cut(_doc_text(d)) if len(w) >= 2}
         token_sets.append(tokens)
 
     # Greedy clustering: assign each doc to nearest cluster

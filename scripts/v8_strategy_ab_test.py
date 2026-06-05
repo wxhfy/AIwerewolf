@@ -261,7 +261,7 @@ def _generate_md_report(results: list[GameResult], output_md: str) -> None:
         "# Strategy A/B Test V8",
         "",
         "## Summary",
-        f"Total games: {len(set(r.game_id for r in results))}",
+        f"Total games: {len({r.game_id for r in results})}",
         f"Total player-results: {len(results)}",
         "",
         "## Per-Strategy Results",
@@ -289,7 +289,7 @@ def _generate_md_report(results: list[GameResult], output_md: str) -> None:
     lines.append("")
     for role in ["Seer", "Werewolf"]:
         role_results = [r for r in results if r.role == role]
-        strategies = sorted(set(r.strategy_id for r in role_results))
+        strategies = sorted({r.strategy_id for r in role_results})
         if len(strategies) >= 2:
             lines.append(f"### {role}")
             lines.append("")

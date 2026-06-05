@@ -471,7 +471,7 @@ def test_role_action_z_generalization_signals() -> None:
     # Compute per-role/type stats from ALL variants
     all_qs: dict[tuple[str, str], list[float]] = defaultdict(list)
 
-    for src, state in bad_variants + good_variants:
+    for _src, state in bad_variants + good_variants:
         bundle = ReplayBundleBuilder().build(state)
         opps = OpportunityExtractor().extract(bundle)
         for op in opps:

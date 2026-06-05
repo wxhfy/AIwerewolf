@@ -228,7 +228,7 @@ class VisualReportAgent:
         players = document.replay_bundle.get("players", [])
         player_names = {player["id"]: player["name"] for player in players}
         ordered_ids = [player["id"] for player in players[:8]]
-        cols = max(len(snapshots), 1)
+        max(len(snapshots), 1)
         rows = max(len(ordered_ids), 1)
         width = 980
         height = 76 + rows * 36
@@ -273,7 +273,7 @@ class VisualReportAgent:
         for v in votes:
             by_day.setdefault(v.get("day", 0), []).append(v)
         days = sorted(by_day.keys())[-3:]
-        width, cell_h, row_h = 980, 28, 36
+        width, _cell_h, row_h = 980, 28, 36
         height = 50 + len(days) * (len(players) * row_h + 20)
         nodes = [
             f'<rect width="{width}" height="{height}" rx="24" fill="#fffaf3" stroke="#e5d3bd"/>',
@@ -1307,7 +1307,7 @@ class TrackBValidator:
         self, replay_bundle: ReplayBundle, review_report: dict[str, Any]
     ) -> list[ValidationIssue]:
         issues: list[ValidationIssue] = []
-        vote_events = [vote for vote in replay_bundle.votes]
+        vote_events = list(replay_bundle.votes)
         grouped_votes: dict[int, list[dict[str, Any]]] = {}
         for vote in vote_events:
             grouped_votes.setdefault(int(vote["day"]), []).append(vote)

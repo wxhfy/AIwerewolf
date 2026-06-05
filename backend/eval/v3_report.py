@@ -491,7 +491,7 @@ def _count_pivot_votes(votes: list[dict]) -> int:
         by_day[v.get("day", 0)].append(v)
 
     pivot_count = 0
-    for day, day_votes in by_day.items():
+    for _day, day_votes in by_day.items():
         tally = Counter(v.get("target_id", "") for v in day_votes)
         top_two = tally.most_common(2)
         if len(top_two) >= 2 and top_two[0][1] - top_two[1][1] <= 1:
@@ -690,7 +690,7 @@ def compute_role_action_matrix(
     for r in review_scores:
         gid = r["game_id"]
         won = r.get("won", False)
-        for opp in r.get("top3_good", []):
+        for _opp in r.get("top3_good", []):
             # Can't reliably map back, skip
             pass
         # Map game-level outcome
@@ -744,4 +744,4 @@ def compute_role_action_matrix(
             }
         )
 
-    return {"rows": rows, "roles": sorted(set(r[0] for r in groups))}
+    return {"rows": rows, "roles": sorted({r[0] for r in groups})}

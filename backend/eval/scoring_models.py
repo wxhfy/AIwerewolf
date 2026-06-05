@@ -484,7 +484,7 @@ def _extract_wolf_dynamic_features(
     target_feat = opportunity.get("target_features", {}) or {}
     game_feat = opportunity.get("game_features", {}) or {}
     player_id = opportunity.get("player_id", "")
-    private_ctx = str(opportunity.get("private_context_summary", "") or "")
+    str(opportunity.get("private_context_summary", "") or "")
     chosen = opportunity.get("chosen_action", {})
     if not isinstance(chosen, dict):
         chosen = {}
@@ -717,7 +717,7 @@ class OpportunityValueModel:
             import warnings
 
             warnings.warn(
-                "OpportunityValueModel.predict() called on untrained model, returning 0.5. Run train_and_ablate.py first."
+                "OpportunityValueModel.predict() called on untrained model, returning 0.5. Run train_and_ablate.py first.", stacklevel=2
             )
             return np.full(len(X), 0.5)
         return self.model.predict_proba(X)[:, 1]
@@ -754,7 +754,7 @@ class OpportunityValueModel:
             with open(path, "rb") as f:
                 return pickle.load(f)
         except Exception as e1:
-            warnings.warn(f"Standard pickle load failed for {path}: {e1}")
+            warnings.warn(f"Standard pickle load failed for {path}: {e1}", stacklevel=2)
 
         # Strategy 2: Numpy cross-version compat via custom Unpickler
         # Redirects numpy._core → numpy.core for models saved with numpy 2.x
@@ -771,21 +771,21 @@ class OpportunityValueModel:
                 result = _NumpyCompatUnpickler(f).load()
             return result
         except Exception as e2:
-            warnings.warn(f"Numpy cross-version fallback also failed for {path}: {e2}")
+            warnings.warn(f"Numpy cross-version fallback also failed for {path}: {e2}", stacklevel=2)
 
         # Strategy 3: joblib
         if _HAS_JOBLIB:
             try:
                 return _joblib.load(path)
             except Exception as e3:
-                warnings.warn(f"Joblib fallback also failed for {path}: {e3}")
+                warnings.warn(f"Joblib fallback also failed for {path}: {e3}", stacklevel=2)
 
         # Strategy 4: Encoding-tolerant pickle (handles py3.11+ scipy.__getattr__ changes)
         try:
             with open(path, "rb") as f:
                 raw = f.read()
             # Try with different protocol versions
-            for proto in (pickle.HIGHEST_PROTOCOL, pickle.DEFAULT_PROTOCOL):
+            for _proto in (pickle.HIGHEST_PROTOCOL, pickle.DEFAULT_PROTOCOL):
                 try:
                     return pickle.loads(raw)
                 except Exception:
@@ -822,7 +822,7 @@ class DecisionQualityModel:
             import warnings
 
             warnings.warn(
-                "DecisionQualityModel.predict() called on untrained model, returning 0.5. Run train_and_ablate.py first."
+                "DecisionQualityModel.predict() called on untrained model, returning 0.5. Run train_and_ablate.py first.", stacklevel=2
             )
             return np.full(len(X), 0.5)
         return self.model.predict_proba(X)[:, 1]
@@ -861,7 +861,7 @@ class MistakeSeverityModel:
             import warnings
 
             warnings.warn(
-                "MistakeSeverityModel.predict() called on untrained model, returning 0.5. Run train_and_ablate.py first."
+                "MistakeSeverityModel.predict() called on untrained model, returning 0.5. Run train_and_ablate.py first.", stacklevel=2
             )
             return np.full(len(X), 0.5)
         return np.clip(self.model.predict(X), 0.0, 1.0)
@@ -1010,7 +1010,7 @@ def calibrate_decision_quality(
     q = raw_q
     role = opportunity.get("role", "")
     op_type = opportunity.get("opportunity_type", "")
-    target_feat = opportunity.get("target_features", {}) or {}
+    opportunity.get("target_features", {}) or {}
     is_wolf = role in ("Werewolf", "WhiteWolfKing")
 
     feats = extract_features(opportunity)
@@ -1379,7 +1379,7 @@ def load_track_b_models(
             load_info["w_loaded"] = True
         except Exception as e:
             msg = f"OpportunityValueModel load failed ({e}), using untrained fallback"
-            warnings.warn(msg)
+            warnings.warn(msg, stacklevel=2)
             load_info["fallback_used"] = True
             if load_info["fallback_reason"]:
                 load_info["fallback_reason"] += "; "
@@ -1388,7 +1388,7 @@ def load_track_b_models(
                 raise RuntimeError(msg) from e
     else:
         msg = f"OpportunityValueModel not found at {w_path}, using untrained fallback"
-        warnings.warn(msg)
+        warnings.warn(msg, stacklevel=2)
         load_info["fallback_used"] = True
         load_info["fallback_reason"] += "w_model: file missing"
         if raise_on_missing:
@@ -1402,7 +1402,7 @@ def load_track_b_models(
             load_info["q_loaded"] = True
         except Exception as e:
             msg = f"DecisionQualityModel load failed ({e}), using untrained fallback"
-            warnings.warn(msg)
+            warnings.warn(msg, stacklevel=2)
             load_info["fallback_used"] = True
             if load_info["fallback_reason"]:
                 load_info["fallback_reason"] += "; "
@@ -1411,7 +1411,7 @@ def load_track_b_models(
                 raise RuntimeError(msg) from e
     else:
         msg = f"DecisionQualityModel not found at {q_path}, using untrained fallback"
-        warnings.warn(msg)
+        warnings.warn(msg, stacklevel=2)
         load_info["fallback_used"] = True
         load_info["fallback_reason"] += "q_model: file missing"
         if raise_on_missing:

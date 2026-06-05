@@ -12,7 +12,6 @@ import numpy as np
 import psycopg2
 import requests
 import torch
-import torch.nn as nn
 from rank_bm25 import BM25Okapi
 from torch.utils.data import DataLoader
 from torch.utils.data import Dataset
@@ -323,9 +322,9 @@ def finetune(triplets, output_path=OUTPUT_PATH, epochs=2, batch_size=12, lr=2e-5
     best_loss = float("inf")
     for ep in range(epochs):
         ep_loss = 0.0
-        for step, (enc, n) in enumerate(dl):
+        for _step, (enc, n) in enumerate(dl):
             enc = {k: v.to(device) for k, v in enc.items()}
-            embs = nn.functional.normalize(model.forward(enc)["sentence_embedding"], p=2, dim=1)
+            embs = torch.nn.functional.normalize(model.forward(enc)["sentence_embedding"], p=2, dim=1)
             a, p, nn = embs[:n], embs[n : 2 * n], embs[2 * n :]
             ps = (a * p).sum(dim=1) / 0.05
             ns = (a * nn).sum(dim=1) / 0.05
@@ -362,7 +361,7 @@ def evaluate_model(model_path, docs, queries, label=""):
     from sentence_transformers import SentenceTransformer
 
     model = SentenceTransformer(model_path, device=GPU)
-    N = len(docs)
+    len(docs)
     dtx = [f"{d['situation']} {d['strategy']} {d['rationale']}" for d in docs]
     dembs = np.asarray(
         model.encode(dtx, normalize_embeddings=True, batch_size=32, show_progress_bar=False), dtype=np.float32

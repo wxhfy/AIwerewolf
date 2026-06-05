@@ -451,7 +451,6 @@ def validate_strategy(item: dict[str, Any], role: str) -> dict[str, Any] | None:
         "villager": "Villager",
         "werewolf": "Werewolf",
         "whitewolfking": "WhiteWolfKing",
-        "白狼王": "WhiteWolfKing",
         "全局": "global",
         "global": "global",
     }
@@ -558,7 +557,7 @@ def generate_batch(
     Returns a list of raw strategy dicts (pre-validation).
     On failure after all retries, returns an empty list.
     """
-    role_cn = ROLE_CN.get(role, role)
+    ROLE_CN.get(role, role)
 
     if role == "global":
         prompt = build_global_prompt(batch_count, batch_index)

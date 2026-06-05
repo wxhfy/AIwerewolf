@@ -91,10 +91,10 @@ def main() -> int:
     # ------------------------------------------------------------------
     # 1. Data Scale Cards
     # ------------------------------------------------------------------
-    game_ids = set(r["game_id"] for r in review)
-    roles = sorted(set(r["role"] for r in review))
-    opp_types = sorted(set(o["opportunity_type"] for o in opps))
-    cf_types = sorted(set(cf.get("type", "?") for cf in cfs))
+    game_ids = {r["game_id"] for r in review}
+    roles = sorted({r["role"] for r in review})
+    opp_types = sorted({o["opportunity_type"] for o in opps})
+    cf_types = sorted({cf.get("type", "?") for cf in cfs})
 
     data_scale = {
         "games": len(game_ids),

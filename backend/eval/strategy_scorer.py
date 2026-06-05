@@ -303,7 +303,7 @@ class StrategyScorer:
         quality_scores = []
         feedback_list = []
 
-        for i, dctx in enumerate(decision_contexts):
+        for _i, dctx in enumerate(decision_contexts):
             # Score strategy impact per decision
             impact = self.score_strategy_impact(
                 dctx.get("retrieved_strategies", []),

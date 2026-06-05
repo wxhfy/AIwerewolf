@@ -141,7 +141,7 @@ def main() -> int:
     db.close()
 
     opp_by_id = {o["opportunity_id"]: o for o in opps}
-    opp_game = {o["opportunity_id"]: o["game_id"] for o in opps}
+    {o["opportunity_id"]: o["game_id"] for o in opps}
 
     # Load BGE-M3
     print("\n[2/5] Loading BGE-M3 from local path...")
@@ -177,15 +177,13 @@ def main() -> int:
     folds = group_kfold_split(opps, n_splits=5)
 
     # Collect features per fold
-    all_model_features: list[tuple[np.ndarray, str, str]] = []  # (feature_vec, game_id, opp_id)
-    opp_id_to_idx: dict[str, int] = {}
 
-    opp_list = list(opps)  # preserve order
+    list(opps)  # preserve order
     retrieval_features_added = 0
 
     for fold_i, (train_opps, test_opps) in enumerate(folds):
-        train_games = set(o["game_id"] for o in train_opps)
-        test_games = set(o["game_id"] for o in test_opps)
+        train_games = {o["game_id"] for o in train_opps}
+        test_games = {o["game_id"] for o in test_opps}
 
         # Build indices from TRAIN split only
         train_good = [o for o in good_opps_all if o["game_id"] in train_games]
@@ -265,8 +263,8 @@ def main() -> int:
     d_results = []
 
     for fold_i, (train_opps, test_opps) in enumerate(folds5):
-        train_games = set(o["game_id"] for o in train_opps)
-        test_games = set(o["game_id"] for o in test_opps)
+        train_games = {o["game_id"] for o in train_opps}
+        test_games = {o["game_id"] for o in test_opps}
 
         train_mask = np.array([g in train_games for g in game_arr])
         test_mask = np.array([g in test_games for g in game_arr])
@@ -464,7 +462,6 @@ def main() -> int:
     ]
     for role in ["Werewolf", "Seer", "Witch", "Guard", "Hunter", "Villager"]:
         a_d = baseline_roles.get(role, {}).get("cohens_d", 0)
-        c_d_old = 0.0  # from previous report
         d_d = d_cohens.get(role, 0)
         target = {"Witch": ">=0.5", "Guard": ">=0.3", "Hunter": ">=0.5"}.get(role, ">=0.5")
         abl_lines.append(f"| {role} | {a_d:.3f} | ... | {d_d:.3f} | {target} |")
@@ -483,7 +480,7 @@ def main() -> int:
             "similar_bad_avg_quality",
         ]
         # Feature names for D model (base 37 + 5 retrieval)
-        all_names = list(ModelFeatures.FEATURE_NAMES) + ret_names
+        list(ModelFeatures.FEATURE_NAMES) + ret_names
         sorted_imp = sorted(final_model_d.feature_importances_.items(), key=lambda x: -x[1])
         abl_lines.append("| Rank | Feature | Importance | Type |")
         abl_lines.append("|------|---------|------------|------|")

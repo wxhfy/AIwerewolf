@@ -491,7 +491,7 @@ def build_audit_report() -> str:
         "",
     ]
 
-    roles = sorted(set(r for c in cards for r in c.applicable_roles))
+    roles = sorted({r for c in cards for r in c.applicable_roles})
     for role in roles:
         role_cards = registry.list_by_role(role)
         lines.append(f"### {role} ({len(role_cards)} cards)")

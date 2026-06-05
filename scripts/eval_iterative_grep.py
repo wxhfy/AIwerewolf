@@ -234,7 +234,7 @@ class IterativeGrep:
     def search(self, q, topk=10):
         """Iterative search: extract terms from query → grep → extract new terms from results → grep again."""
         # Round 1: grep with original query terms
-        terms_round1 = list(set([w for w in jieba.cut(q["text"]) if len(w) >= 2]))
+        terms_round1 = list({w for w in jieba.cut(q["text"]) if len(w) >= 2})
         results_r1 = self._grep_one(terms_round1, q["role"], q["phase"])
 
         if self.max_rounds == 1:

@@ -114,7 +114,7 @@ class TestPairwiseExpansion:
                 )
 
         par = PerActionPairwiseRankers()
-        info = par.fit(all_pairs)
+        par.fit(all_pairs)
         print(f"\n  Per-action rankers: {list(par.rankers.keys())}")
         print(f"  Pair counts: {par.pair_counts}")
         assert "speech" in par.rankers, "Should have speech ranker"
@@ -135,7 +135,7 @@ class TestPairwiseExpansion:
 
         from backend.eval.features import register_default_extractors
 
-        reg = register_default_extractors()
+        register_default_extractors()
 
         print("\n  === Effective Pair Metrics ===")
         for ptype, ps in sorted(by_type.items()):

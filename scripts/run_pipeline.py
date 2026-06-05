@@ -92,7 +92,7 @@ def stage_extract(limit: int = 0) -> int:
         extractor = OpportunityExtractor()
         all_opps: list[dict] = []
 
-        for game_id, report_json, winner in rows:
+        for _game_id, report_json, _winner in rows:
             if not report_json:
                 continue
             try:
@@ -299,7 +299,7 @@ def stage_review(limit: int = 0) -> int:
     # Priority scoring based on difficulty and label confidence
     queue: list[dict] = []
     for s in samples:
-        label = s.get("label", {}) if isinstance(s.get("label"), dict) else {}
+        s.get("label", {}) if isinstance(s.get("label"), dict) else {}
         priority = _review_priority(s)
         queue.append(
             {
@@ -936,7 +936,7 @@ def _mine_hard_negative(opp: dict, feats: dict) -> dict | None:
     """Identify likely bad decisions algorithmically."""
     otype = opp.get("opportunity_type", "")
     target = opp.get("target_features", {})
-    outcome = opp.get("outcome_features", {})
+    opp.get("outcome_features", {})
     role = opp.get("role", "")
 
     # Vote for village when player is village

@@ -213,7 +213,7 @@ class WerewolfAmongUsAdapter:
             alive_count = sum(1 for v in voting_outcome if str(v).lower() not in ("dead", "killed", "eliminated"))
             if alive_count > 0:
                 # Check if werewolf survived
-                for i, name in enumerate(players):
+                for i, _name in enumerate(players):
                     if i < len(voting_outcome) and i < len(start_roles):
                         if start_roles[i] == "Werewolf" and str(voting_outcome[i]).lower() not in (
                             "dead",

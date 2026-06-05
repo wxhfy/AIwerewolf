@@ -318,7 +318,7 @@ class TestSocialPlannerIntegration:
         assert active.resolved
 
         # Verify all contradictions recorded
-        players_with_signals = set(s.player_id for s in sm.deception_signals)
+        players_with_signals = {s.player_id for s in sm.deception_signals}
         assert "Player3" in players_with_signals
         assert "Player5" in players_with_signals
 

@@ -245,7 +245,7 @@ def run_evaluation(verbose: bool = False) -> dict[str, Any]:
     results = []
     per_role: dict[str, list[dict]] = {}
 
-    for i, test in enumerate(GROUND_TRUTH):
+    for _i, test in enumerate(GROUND_TRUTH):
         role = test["role"]
         try:
             rows = retrieve_strategy_knowledge(
@@ -345,7 +345,7 @@ def main() -> int:
 
     print("=== Strategy Retrieval Precision Evaluation ===\n")
     print(f"Test queries: {len(GROUND_TRUTH)}")
-    print(f"Roles: {sorted(set(t['role'] for t in GROUND_TRUTH))}")
+    print(f"Roles: {sorted({t['role'] for t in GROUND_TRUTH})}")
     print()
 
     report = run_evaluation(verbose=args.verbose)

@@ -289,7 +289,7 @@ def guard_v2_scoring(opps, opp_by_id, winner_map, opp_game) -> str:
     def guard_score_v2(opp):
         """GuardScore = protect_policy + target_risk + key_role_coverage + actual_block_bonus - self_guard_abuse"""
         tf = opp.get("target_features", {})
-        gf = opp.get("game_features", {})
+        opp.get("game_features", {})
         outcome = opp.get("outcome_features", {})
 
         # protect_policy_quality: is this target worth protecting?

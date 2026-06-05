@@ -427,7 +427,7 @@ def main() -> None:
     print(f"  范围: [{min(scores):.1f}, {max(scores):.1f}]")
     print()
     print("  质量分布:")
-    for threshold, tier_letter, desc in QUALITY_TIERS:
+    for _threshold, tier_letter, desc in QUALITY_TIERS:
         count = tier_counts[tier_letter]
         bar = "█" * max(1, count)
         print(f"    {tier_letter} ({desc}): {count:3d} 局  {bar}")

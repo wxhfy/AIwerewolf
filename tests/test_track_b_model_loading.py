@@ -95,7 +95,7 @@ def test_decision_quality_model_predictions_vary() -> None:
     X = np.array(X_list)
     predictions = q_model.predict(X)
 
-    unique = set(round(float(p), 4) for p in predictions)
+    unique = {round(float(p), 4) for p in predictions}
     print(f"\n  Q model predictions: {sorted(unique)[:10]}...")
     print(f"  Unique values: {len(unique)} / {len(predictions)}")
 

@@ -183,7 +183,7 @@ def build_full_mbti_stats(fixed_scores, mbti_role_norm, lift_data):
             continue
 
         wins = [r.get("is_win", False) for r in records]
-        camps = [r.get("camp", "village") for r in records]
+        [r.get("camp", "village") for r in records]
         raw_wr = sum(wins) / n
 
         # Wilson CI
@@ -374,7 +374,7 @@ def build_html(stats, role_mean, role_std, camp_wr, rc_baseline):
         if mbti and role:
             mbti_role[mbti][role].append(ps.get("role_norm_pre_action", 0))
 
-    roles = sorted(set(r for mb in mbti_role.values() for r in mb.keys()))
+    roles = sorted({r for mb in mbti_role.values() for r in mb.keys()})
     mbti_order = [m for m, _ in main_sorted]
     matrix_rows = ""
     for mbti in mbti_order:
@@ -670,8 +670,8 @@ Camp-only fallback: village={camp_wr.get("village", 0):.3f}, wolf={camp_wr.get("
     # 5. Top MBTI has explanation
     if main_sorted:
         top = main_sorted[0]
-        has_strengths = len(top[1].get("strengths", [])) > 0
-        has_weaknesses = len(top[1].get("weaknesses", [])) > 0
+        assert len(top[1].get("strengths", [])) > 0
+        assert len(top[1].get("weaknesses", [])) > 0
         print(
             f"5. Top MBTI #{top[0]}: strengths={len(top[1].get('strengths', []))}, weaknesses={len(top[1].get('weaknesses', []))}"
         )

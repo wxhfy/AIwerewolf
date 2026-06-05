@@ -35,10 +35,10 @@ def load_profiles_from_db(conn_str: str = "") -> Dict[str, Profile]:
 
         profiles = {}
         for role, goal, speech, vote, skill, risk in c.fetchall():
-            speech_list = _parse_jsonb(speech)
-            vote_list = _parse_jsonb(vote)
-            skill_list = _parse_jsonb(skill)
-            risk_list = _parse_jsonb(risk)
+            _parse_jsonb(speech)
+            _parse_jsonb(vote)
+            _parse_jsonb(skill)
+            _parse_jsonb(risk)
 
             # Build Profile from DB data
             base = PROFILES.get(role, PROFILES["Villager"])

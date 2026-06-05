@@ -236,8 +236,8 @@ def main() -> int:
             db.query(PublishedReview)
             .filter(
                 PublishedReview.game_id.in_(clean_ids),
-                PublishedReview.publish_allowed == True,
-                PublishedReview.replay_bundle != None,
+                PublishedReview.publish_allowed,
+                PublishedReview.replay_bundle is not None,
             )
             .all()
         )
@@ -288,7 +288,7 @@ def _generate_stats(
     """Generate opportunity_stats.md."""
     type_counts = Counter(o.opportunity_type for o in opps)
     role_counts = Counter(o.role for o in opps)
-    role_type_counts = Counter((o.role, o.opportunity_type) for o in opps)
+    Counter((o.role, o.opportunity_type) for o in opps)
     day_counts = Counter(o.day for o in opps)
 
     lines = [
