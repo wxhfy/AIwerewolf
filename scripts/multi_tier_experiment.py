@@ -82,6 +82,10 @@ import json, os, sys, time, traceback, warnings
 sys.path.insert(0, {root!r})
 warnings.filterwarnings("ignore")
 
+# Load .env so subprocess has access to LLM API keys / provider config
+from backend.llm.env import load_env_file
+load_env_file()
+
 from backend.engine.game import WerewolfGame
 
 tier = {tier!r}
