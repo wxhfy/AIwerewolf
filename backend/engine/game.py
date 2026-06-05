@@ -690,6 +690,13 @@ class WerewolfGame:
             return
         if decision.target_id == self.state.night_actions.last_guard_target_id:
             self._log_decision(decision, "private", {"ignored": True, "reason": "guard_cannot_repeat"}, [guard.id])
+            with self._shared_lock:
+                saved = self.state.phase
+                self.state.phase = Phase.NIGHT_GUARD_ACTION
+                self._log(EventType.NIGHT_ACTION, "public", {
+                    "action_type": "skip", "actor_name": guard.name, "reason": "guard_cannot_repeat",
+                })
+                self.state.phase = saved
             self._mark_phase_done(Phase.NIGHT_GUARD_ACTION)
             return
         self.state.night_actions.guard_target_id = decision.target_id

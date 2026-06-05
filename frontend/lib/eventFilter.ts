@@ -49,6 +49,8 @@ export function isMergedChatSegment(
   prevPhase: string,
 ): boolean {
   if (event.type !== EventType.CHAT_MESSAGE) return false;
+  // Don't skip multi-segment speeches — they are separate intentional bubbles
+  if ((event.payload as any)?.segment_total > 1) return false;
   const actor = (event.payload as any)?.actor_id || "";
   const phase = event.phase || "";
   if (!actor || !phase) return false;
