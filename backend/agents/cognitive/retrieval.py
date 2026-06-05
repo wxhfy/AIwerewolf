@@ -11,7 +11,7 @@ Fallback: SQL metadata matching if vector index unavailable.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 
@@ -301,7 +301,7 @@ def _load_docs_from_pg(conn_str: str) -> List[Dict[str, Any]]:
     import psycopg2
     conn = psycopg2.connect(conn_str)
     c = conn.cursor()
-    exp_id = _os.getenv("EXPERIMENT_ID", "")
+    exp_id = _os.getenv("TIER_EXPERIMENT_ID", "")
     if exp_id:
         c.execute("""
             SELECT COALESCE(situation_pattern, ''),

@@ -901,7 +901,8 @@ def _retrieve_track_c_strategy_lessons(obs: Observation, action_type: str) -> li
             _TRACK_C_RETRIEVAL_CACHE[cache_key] = (time.monotonic(), lessons)
         if lessons:
             player_id = str(getattr(obs, "player_id", "") or "")
-            _LAST_RETRIEVED_STRATEGIES[player_id] = lessons
+            with _STRATEGY_LOCK:
+                _LAST_RETRIEVED_STRATEGIES[player_id] = lessons
         elif os.getenv("REQUIRE_STRATEGY_USAGE_TRACE", "").lower() == "true":
             logger.error("STRICT FAIL: Track C auto-retrieval returned no strategies")
         return lessons

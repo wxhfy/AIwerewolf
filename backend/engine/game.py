@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 from collections import Counter
 from random import Random
 from typing import Any, Callable
 from uuid import uuid4
+
+logger = logging.getLogger(__name__)
 
 from backend.agents.base import Agent
 from backend.agents.characters import Character, build_character_roster
@@ -1441,6 +1444,9 @@ class WerewolfGame:
         )
 
     def _check_win(self) -> bool:
+        # Guard against duplicate calls — winner is already set
+        if self.state.winner is not None:
+            return True
         alive_wolves = [player for player in self.state.alive_players if player.alignment == Alignment.WOLF]
         alive_village = [player for player in self.state.alive_players if player.alignment == Alignment.VILLAGE]
         winner: Alignment | None = None

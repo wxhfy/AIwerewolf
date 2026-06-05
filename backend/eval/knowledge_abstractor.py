@@ -155,7 +155,7 @@ class KnowledgeAbstractor:
 
         # Track experiment isolation (H6): tag every lesson with the experiment_id
         # from the environment so each tier's knowledge stays isolated.
-        exp_id = os.getenv("EXPERIMENT_ID", "")
+        exp_id = os.getenv("TIER_EXPERIMENT_ID", "")
         if exp_id:
             for lesson in lessons:
                 lesson.experiment_id = exp_id
@@ -398,6 +398,10 @@ def store_lessons_to_db(
         # Generate a primary key (raw psycopg2 bypasses SQLAlchemy default)
         doc["id"] = str(uuid4())
         try:
+            # Use savepoint so a single failed INSERT doesn't roll back
+            # previously successful rows in this transaction.
+            sp_id = f"sp_{stored}"
+            c.execute(f"SAVEPOINT {sp_id}")
             c.execute("""
                 INSERT INTO strategy_knowledge_docs
                     (id, doc_type, role, phase, persona_scope, situation_pattern,
@@ -416,7 +420,7 @@ def store_lessons_to_db(
             stored += 1
             role_counts[lesson.target_role] = role_counts.get(lesson.target_role, 0) + 1
         except Exception as e:
-            conn.rollback()
+            c.execute(f"ROLLBACK TO SAVEPOINT {sp_id}")
             errors += 1
             if errors <= 3:
                 logger.warning("Failed to store lesson (role=%s, type=%s): %s",
