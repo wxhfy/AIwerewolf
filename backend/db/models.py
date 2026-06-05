@@ -264,6 +264,7 @@ class LeaderboardEntry(Base):
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
 
 
+# NOTE: This ORM table is not written by the production pipeline. Use PublishedReview instead.
 class ReviewReport(Base):
     """Structured post-game review / replay report (Track B).
 
@@ -384,6 +385,7 @@ class StrategyKnowledgeDoc(Base):
     )
 
 
+# NOTE: Only populated by scripts/build_strategy_graph.py, not the game pipeline.
 class StrategyGraphLink(Base):
     """GraphRAG-lite edge between strategy knowledge entities."""
 
@@ -425,6 +427,7 @@ class RoleStrategyCard(Base):
     )
 
 
+# NOTE: ORM table has no insert path in production. Data class exists in eval/evolution.py.
 class PersonaRoleAdapter(Base):
     """Versioned persona-role compensation layer."""
 

@@ -561,6 +561,8 @@ def save_reflections_to_db(
 
 # ============================================================
 # Raw PG batch insert — direct psycopg2 path
+# DEPRECATED: Use save_reflections_to_db() instead. This raw-PG path is retained
+# for offline batch processing but is not called from the game pipeline.
 # ============================================================
 
 def save_reflections_to_pg(reflections: list, conn_str: str = "") -> int:
