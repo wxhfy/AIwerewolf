@@ -4,28 +4,41 @@
 
 @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600;700&family=Noto+Sans+SC:wght@300;400;500&display=swap');
 
-:root {
-  /* Day theme (极简素雅) */
-  --color-bg: #F8F5F0;
-  --color-card: #FAF7F2;
-  --color-primary: #8B5A2B;
-  --color-primary-hover: #A67C52;
-  --color-gold: #D4AF37;
-  --color-village: #2E7D32;
-  --color-danger: #B91C1C;
-  --color-text: #2D2A24;
-  --color-text-sub: #5B564D;
-  --color-border: rgba(139, 90, 43, 0.10);
-  --color-overlay: rgba(0, 0, 0, 0);
+@layer components {
+  .player-card-grid {
+    display: grid;
+    grid-template-areas:
+      "identity badges"
+      "persona persona"
+      "proc    result";
+    grid-template-columns: 1fr auto;
+    grid-template-rows: auto auto auto;
+  }
+}
 
-  /* RGB channels for Tailwind opacity modifiers (bg-primary/10 etc.) */
-  --color-primary-rgb: 139 90 43;
-  --color-gold-rgb: 212 175 55;
-  --color-village-rgb: 46 125 50;
-  --color-danger-rgb: 185 28 28;
+:root {
+  /* Day theme — warm amber tavern */
+  --color-bg: #F5F0E6;
+  --color-card: #FDF9F4;
+  --color-primary: #7A3B10;
+  --color-primary-hover: #9C551F;
+  --color-gold: #B4821D;
+  --color-village: #1B6B2E;
+  --color-danger: #A31515;
+  --color-text: #221D18;
+  --color-text-sub: #5C5245;
+  --color-border: rgba(122, 59, 16, 0.18);
+  --color-overlay: rgba(0, 0, 0, 0);
+  --card-shadow: 0 2px 8px rgba(122, 59, 16, 0.08), 0 1px 2px rgba(0,0,0,0.05);
+
+  /* RGB channels for Tailwind opacity modifiers */
+  --color-primary-rgb: 122 59 16;
+  --color-gold-rgb: 180 130 29;
+  --color-village-rgb: 27 107 46;
+  --color-danger-rgb: 163 21 21;
   --color-info-rgb: 25 118 210;
-  --color-text-rgb: 45 42 36;
-  --color-text-sub-rgb: 91 86 77;
+  --color-text-rgb: 34 29 24;
+  --color-text-sub-rgb: 92 82 69;
 
   /* Typography */
   --font-display: 'Noto Serif SC', serif;
@@ -37,51 +50,48 @@
   --transition-daynight: 450ms;
   --transition-micro: 150ms;
   --transition-enter: 300ms;
-
-  /* Spacing */
-  --sidebar-width: 20%;
-  --center-width: 60%;
 }
 
-/* Night phase overrides — dramatic dark theme with high contrast */
+/* Night phase — deep indigo with moon-gold accents */
 [data-phase="night"] {
-  --color-bg: #0F0E0C;
-  --color-card: #1C1A17;
+  --color-bg: #0B0A0F;
+  --color-card: #18161D;
   --color-primary: #E8C84A;
-  --color-primary-hover: #F0D060;
-  --color-text: #F5F0E8;
-  --color-text-sub: #B5AFA5;
-  --color-border: rgba(212, 175, 55, 0.15);
-  --color-overlay: rgba(0, 0, 0, 0.50);
+  --color-primary-hover: #F2D86E;
+  --color-text: #EDE8DE;
+  --color-text-sub: #A89E8C;
+  --color-border: rgba(232, 200, 74, 0.12);
+  --color-overlay: rgba(0, 0, 0, 0.55);
+  --card-shadow: 0 2px 12px rgba(0,0,0,0.18), 0 1px 3px rgba(232,200,74,0.04);
 
-  /* RGB overrides for night */
   --color-primary-rgb: 232 200 74;
   --color-gold-rgb: 232 200 74;
   --color-village-rgb: 46 125 50;
   --color-danger-rgb: 239 68 68;
   --color-info-rgb: 96 165 250;
-  --color-text-rgb: 245 240 232;
-  --color-text-sub-rgb: 181 175 165;
+  --color-text-rgb: 237 232 222;
+  --color-text-sub-rgb: 168 158 140;
 }
 
-/* End phase overrides — calm golden settlement state */
+/* End phase — golden resolution, calm and rich */
 [data-phase="end"] {
-  --color-bg: #F6F0E3;
-  --color-card: #FFF9EC;
-  --color-primary: #9A6A12;
-  --color-primary-hover: #B88A24;
-  --color-text: #2F2617;
-  --color-text-sub: #6F6048;
-  --color-border: rgba(154, 106, 18, 0.18);
-  --color-overlay: rgba(154, 106, 18, 0.10);
+  --color-bg: #F0E6D3;
+  --color-card: #FCF6EC;
+  --color-primary: #8B5A14;
+  --color-primary-hover: #A87324;
+  --color-text: #2A1F0F;
+  --color-text-sub: #6B5840;
+  --color-border: rgba(139, 90, 20, 0.22);
+  --color-overlay: rgba(139, 90, 20, 0.08);
+  --card-shadow: 0 2px 10px rgba(139,90,20,0.1), 0 1px 2px rgba(0,0,0,0.04);
 
-  --color-primary-rgb: 154 106 18;
-  --color-gold-rgb: 212 175 55;
-  --color-village-rgb: 46 125 50;
-  --color-danger-rgb: 185 28 28;
+  --color-primary-rgb: 139 90 20;
+  --color-gold-rgb: 190 139 36;
+  --color-village-rgb: 27 107 46;
+  --color-danger-rgb: 163 21 21;
   --color-info-rgb: 25 118 210;
-  --color-text-rgb: 47 38 23;
-  --color-text-sub-rgb: 111 96 72;
+  --color-text-rgb: 42 31 15;
+  --color-text-sub-rgb: 107 88 64;
 }
 
 /* Star particles (visible only in night) */
@@ -173,7 +183,7 @@
 }
 
 html {
-  font-size: 17px;  /* Larger base for readability (default is 16px) */
+  font-size: 18px;  /* Comfortable reading size */
 }
 
 body {
@@ -181,7 +191,8 @@ body {
   background: var(--color-bg);
   font-family: var(--font-body);
   font-size: 1rem;
-  line-height: 1.6;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
   transition:
     background-color var(--transition-daynight) var(--ease-in-out),
     color var(--transition-daynight) var(--ease-in-out);
