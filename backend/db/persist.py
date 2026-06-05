@@ -295,7 +295,7 @@ def save_game_end(state: GameState) -> None:
                 cost_usd=getattr(record, 'cost_usd', None),
                 model_name=getattr(record, 'model_name', None),
                 provider=getattr(record, 'provider', None),
-                metadata=_clean(getattr(record, 'metadata', None) or {}),
+                decision_metadata=_clean(getattr(record, 'metadata', None) or {}),
             ))
 
         # Bulk-save votes from history

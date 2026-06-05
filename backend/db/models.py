@@ -146,7 +146,7 @@ class AgentDecision(Base):
     cost_usd = Column(Float, nullable=True, comment="Estimated USD cost for this LLM call")
     model_name = Column(String, nullable=True, comment="LLM model used (e.g. doubao-seed-2.0-pro)")
     provider = Column(String, nullable=True, comment="LLM provider (e.g. doubao, deepseek)")
-    metadata = Column(JSON, nullable=True, default=dict, comment="AgentDecision metadata dict (tool traces, strategy IDs)")
+    decision_metadata = Column("metadata", JSON, nullable=True, default=dict, comment="AgentDecision metadata dict (tool traces, strategy IDs)")
 
     game = relationship("Game", back_populates="decisions")
 
