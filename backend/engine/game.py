@@ -388,12 +388,16 @@ class WerewolfGame:
             try:
                 from backend.eval.post_game import run_post_game_scoring
                 n = run_post_game_scoring(self.state, str(self.state.id))
+                import logging
                 if n > 0:
-                    import logging
                     logging.getLogger(__name__).info(
                         f"Post-game scoring: {n} knowledge lessons extracted for game {self.state.id}"
                     )
+                elif os.getenv("REQUIRE_POST_GAME_SCORING", "").lower() == "true":
+                    logging.getLogger(__name__).error("STRICT FAIL: Post-game scoring produced 0 lessons")
             except Exception:
+                if os.getenv("REQUIRE_POST_GAME_SCORING", "").lower() == "true":
+                    raise  # fail fast in strict mode
                 import logging
                 logging.getLogger(__name__).warning(
                     "Post-game scoring failed (non-fatal)", exc_info=True

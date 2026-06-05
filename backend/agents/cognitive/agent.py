@@ -20,6 +20,7 @@ This module ONLY handles:
 from __future__ import annotations
 
 import json
+import os
 import re
 from typing import Any, Dict, List, Optional
 
@@ -832,6 +833,8 @@ class CognitiveAgent:
                     _log.warning(
                         f"Agent {self.player_name}: reflection produced no new docs"
                     )
+                    if os.getenv("REQUIRE_KNOWLEDGE_WRITE", "").lower() == "true":
+                        _log.error("STRICT FAIL: Reflection produced 0 knowledge docs")
         except Exception as e:
             _log.error(f"Reflection failed for {self.player_name}: {e}")
 

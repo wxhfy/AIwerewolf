@@ -26,6 +26,7 @@ KRAFTON PUBG Ally: BM25-only for game agent knowledge retrieval.
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any, Dict, List, Optional
 
 import numpy as np
@@ -623,18 +624,26 @@ def _load_from_pg(conn_str: str) -> List[Dict]:
     c.execute("""
         SELECT COALESCE(situation_pattern, ''), COALESCE(recommended_action, ''),
                COALESCE(rationale, ''), role, phase, quality_score,
-               COALESCE(doc_type, '')
+               COALESCE(doc_type, ''),
+               COALESCE(confidence_tier, 'L3_strategic'),
+               COALESCE(visibility_scope, 'public'),
+               COALESCE(deidentified, false),
+               COALESCE(contains_current_game_private_info, false)
         FROM strategy_knowledge_docs
         WHERE status = 'active'
           AND (doc_type != 'reflection' OR quality_score >= 0.85)
     """)
     docs = []
-    for sit, rec, rat, role, phase, q, dtype in c.fetchall():
+    for sit, rec, rat, role, phase, q, dtype, ctier, vscope, deid, cgpi in c.fetchall():
         docs.append({
             "situation": sit or "", "strategy": rec or "", "rationale": rat or "",
             "role": role or "global", "phase": phase or "global",
             "quality": float(q) if q else 0.8,
             "doc_type": dtype or "",
+            "confidence_tier": ctier or "L3_strategic",
+            "visibility_scope": vscope or "public",
+            "deidentified": bool(deid) if deid is not None else False,
+            "contains_current_game_private_info": bool(cgpi) if cgpi is not None else False,
         })
     conn.close()
     return docs
@@ -787,6 +796,38 @@ def retrieve_strategies_prod(
 
     if not include_reflections and output_mode != "count":
         results = [r for r in results if not (r.get("doc_type") or "").startswith("reflection")]
+
+    # Apply 4-filter safety pipeline (strict mode: fail on filter violations)
+    if os.getenv("AIWEREWOLF_STRICT_MODE", "").lower() == "true":
+        from backend.eval.knowledge_confidence import (
+            confidence_allowed, visibility_allowed,
+            leaks_current_game_private_info, applicability_matches,
+        )
+        is_wolf = role in {"Werewolf", "WhiteWolfKing", "BigBadWolf", "WolfCub"}
+        filtered = []
+        for r in results:
+            doc_dict = {
+                "confidence_tier": r.get("confidence_tier", "L3_strategic"),
+                "visibility_scope": r.get("visibility_scope", "public"),
+                "quality_score": r.get("quality", 0.8),
+                "status": "active",
+                "applicability_role": r.get("role", ""),
+                "applicability_phase": phase,
+            }
+            if not confidence_allowed(doc_dict):
+                logger.warning(f"STRICT: doc filtered by confidence_allowed: {r.get('situation','')[:50]}")
+                continue
+            if not visibility_allowed(doc_dict, role, is_wolf):
+                logger.warning(f"STRICT: doc filtered by visibility_allowed for role={role}: {r.get('situation','')[:50]}")
+                continue
+            if not applicability_matches(doc_dict, role, phase, "standard_competition_v1", 7, set(), set()):
+                logger.warning(f"STRICT: doc filtered by applicability for role={role} phase={phase}: {r.get('situation','')[:50]}")
+                continue
+            filtered.append(r)
+
+        if len(filtered) < len(results):
+            logger.info(f"4-filter: {len(results)} -> {len(filtered)} results after safety filtering")
+        results = filtered
 
     return results
 

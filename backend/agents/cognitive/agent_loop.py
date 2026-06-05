@@ -867,6 +867,8 @@ def _retrieve_track_c_strategy_lessons(obs: Observation, action_type: str) -> li
         if lessons:
             player_id = str(getattr(obs, "player_id", "") or "")
             _LAST_RETRIEVED_STRATEGIES[player_id] = lessons
+        elif os.getenv("REQUIRE_STRATEGY_USAGE_TRACE", "").lower() == "true":
+            logger.error("STRICT FAIL: Track C auto-retrieval returned no strategies")
         return lessons
     except Exception as exc:
         logger.debug("Track C strategy retrieval skipped: %s", exc)
