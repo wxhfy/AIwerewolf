@@ -39,6 +39,14 @@ dev = [
 [tool.ruff]
 target-version = "py312"
 line-length = 120
+exclude = [
+    "references/",
+    ".venv/",
+    "node_modules/",
+    "__pycache__/",
+    "outputs/",
+    ".git/",
+]
 
 [tool.ruff.lint]
 select = [

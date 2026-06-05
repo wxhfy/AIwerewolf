@@ -15,8 +15,8 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install ruff
-      - run: ruff check .
-      - run: ruff format --check .
+      - run: ruff check backend/ scripts/ tests/ configs/
+      - run: ruff format --check backend/ scripts/ tests/ configs/
 
   test:
     needs: lint
