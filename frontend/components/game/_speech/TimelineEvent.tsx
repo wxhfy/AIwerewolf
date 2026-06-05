@@ -99,15 +99,20 @@ export function TimelineEvent({
     onChatCompleteRef.current(event.id);
   }, [event.id, isChat, rawSpeech]);
 
-  // Fallback timer (8s) — always mounted at top level
+  // Fallback timer (8s) — only active while this bubble is being animated.
+  // Waiting bubbles (animateChat=false) must NOT start timers or they'll
+  // all fire at once and skip the entire speech queue.
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   React.useEffect(() => {
-    if (!hasContent) return;
+    if (!hasContent || !animateChat) {
+      if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+      return;
+    }
     timerRef.current = setTimeout(() => {
       onChatCompleteRef.current(event.id);
     }, 8000);
     return () => { if (timerRef.current) clearTimeout(timerRef.current); };
-  }, [event.id, hasContent]);
+  }, [event.id, hasContent, animateChat]);
 
   const handleTypewriterComplete = useCallback(() => {
     if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
