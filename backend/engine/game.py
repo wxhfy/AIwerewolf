@@ -4,7 +4,6 @@ import hashlib
 import json
 import logging
 import os
-import time
 from collections import Counter
 from random import Random
 from typing import Any
@@ -696,6 +695,10 @@ class WerewolfGame:
         self.state.night_actions.guard_target_id = decision.target_id
         self.state.night_actions.last_guard_target_id = decision.target_id
         self._log_decision(decision, "private", {"target_id": decision.target_id}, [guard.id])
+        target = self.state.player(decision.target_id)
+        self._log(EventType.NIGHT_ACTION, "public", {
+            "kind": "guard_action", "actor_name": guard.name, "target_name": target.name, "target_seat": target.seat,
+        })
         self._mark_phase_done(Phase.NIGHT_GUARD_ACTION)
 
     def _wolf_phase(self) -> None:
@@ -841,6 +844,10 @@ class WerewolfGame:
         self.state.night_actions.seer_result = result
         self._log_decision(decision, "private", {"target_id": target.id}, [seer.id])
         self._log(EventType.PRIVATE_INFO, "private", result, visible_to=[seer.id])
+        self._log(EventType.NIGHT_ACTION, "public", {
+            "kind": "seer_action", "actor_name": seer.name, "target_name": target.name, "target_seat": target.seat,
+            "is_wolf": target.alignment == Alignment.WOLF,
+        })
         self._mark_phase_done(Phase.NIGHT_SEER_ACTION)
 
     def _night_resolve(self) -> None:
