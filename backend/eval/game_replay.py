@@ -9,17 +9,19 @@ Design: pure functions over snapshot data. No side effects, no LLM.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from dataclasses import field
 from typing import Any
-
 
 # ============================================================
 # Night Resolution — exact recalculation
 # ============================================================
 
+
 @dataclass
 class NightActionsSnapshot:
     """Snapshot of night actions for a single night."""
+
     day: int
     wolf_target_id: str | None = None
     guard_target_id: str | None = None
@@ -30,6 +32,7 @@ class NightActionsSnapshot:
 @dataclass
 class NightResolutionResult:
     """Deterministic result of night resolution."""
+
     deaths: list[dict[str, str]] = field(default_factory=list)
     survivors: set[str] = field(default_factory=set)
     # Who would have died under the ORIGINAL actions
@@ -52,10 +55,7 @@ def resolve_night(snapshot: NightActionsSnapshot) -> NightResolutionResult:
 
     # Wolf kill: target dies UNLESS saved by witch OR protected by guard
     if snapshot.wolf_target_id:
-        blocked = (
-            snapshot.witch_save_used
-            or snapshot.wolf_target_id == snapshot.guard_target_id
-        )
+        blocked = snapshot.witch_save_used or snapshot.wolf_target_id == snapshot.guard_target_id
         if not blocked:
             deaths.append({"player_id": snapshot.wolf_target_id, "reason": "wolf"})
 
@@ -117,7 +117,9 @@ def replay_night_with_change(
         wolf_target_id=new_wolf_target if new_wolf_target is not _UNCHANGED else original.wolf_target_id,
         guard_target_id=new_guard_target if new_guard_target is not _UNCHANGED else original.guard_target_id,
         witch_save_used=new_witch_save if new_witch_save is not _UNCHANGED else original.witch_save_used,
-        witch_poison_target_id=new_poison_target if new_poison_target is not _UNCHANGED else original.witch_poison_target_id,
+        witch_poison_target_id=new_poison_target
+        if new_poison_target is not _UNCHANGED
+        else original.witch_poison_target_id,
     )
 
     cf_result = resolve_night(cf_snapshot)
@@ -130,9 +132,11 @@ def replay_night_with_change(
 # Vote Resolution — exact recalculation
 # ============================================================
 
+
 @dataclass
 class VoteSnapshot:
     """Snapshot of a vote round."""
+
     day: int
     votes: list[tuple[str, str]]  # (voter_id, target_id)
     badge_weight: dict[str, float] | None = None  # voter_id → vote weight
@@ -195,6 +199,7 @@ def replay_vote_with_swap(
 # Hunter Shot Resolution — exact recalculation
 # ============================================================
 
+
 def replay_hunter_shot(
     original_target_id: str,
     alternative_target_id: str,
@@ -215,9 +220,11 @@ def replay_hunter_shot(
 # GameState Counterfactual Replayer
 # ============================================================
 
+
 @dataclass
 class ReplayResult:
     """Result of a counterfactual replay."""
+
     counterfactual_type: str
     original_outcome: dict[str, Any]
     alternative_outcome: dict[str, Any]
@@ -279,7 +286,7 @@ def extract_vote_snapshot(
     for event in events:
         if event.day != day:
             continue
-        if getattr(event, 'type', None) and hasattr(event.type, 'value'):
+        if getattr(event, "type", None) and hasattr(event.type, "value"):
             if event.type.value == "VOTE_CAST":
                 payload = event.payload or {}
                 voter_id = str(payload.get("voter_id", ""))

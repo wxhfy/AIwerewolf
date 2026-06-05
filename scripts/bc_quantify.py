@@ -21,8 +21,8 @@ import os
 import sys
 import time
 import traceback
-from dataclasses import asdict
-from typing import Any, Callable
+from typing import Any
+from typing import Callable
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
@@ -35,40 +35,24 @@ os.environ.setdefault("STRATEGY_RERANK_PROVIDER", "off")
 os.environ.setdefault("STRATEGY_RERANK_STRICT", "false")
 
 from backend.engine.game import WerewolfGame
-from backend.engine.models import (
-    Alignment,
-    DecisionAudit,
-    GameState,
-    Phase,
-    Role,
-)
-from backend.eval.evolution import (
-    ABComparison,
-    AcceptancePolicy,
-    DreamJob,
-    EvolutionPipeline,
-    KnowledgeDocValidator,
-    PatchValidator,
-    RoleStrategyCard,
-    StrategyKnowledgeDocExtractor,
-    StrategyKnowledgeStore,
-    StrategyRetrievalQuery,
-    TournamentRunner,
-    VersionManager,
-)
-from backend.eval.review import (
-    GameMetrics,
-    MetricsCalculator,
-    ReviewReportBuilder,
-)
-from backend.eval.track_b import (
-    generate_published_review_document,
-    ReplayBundleBuilder,
-    ReviewRepairLoop,
-    SpeechActAnalyzer,
-    SuspicionMatrixBuilder,
-    TrackBValidator,
-)
+from backend.engine.models import DecisionAudit
+from backend.engine.models import Phase
+from backend.eval.evolution import ABComparison
+from backend.eval.evolution import AcceptancePolicy
+from backend.eval.evolution import EvolutionPipeline
+from backend.eval.evolution import KnowledgeDocValidator
+from backend.eval.evolution import StrategyKnowledgeDocExtractor
+from backend.eval.evolution import StrategyKnowledgeStore
+from backend.eval.evolution import StrategyRetrievalQuery
+from backend.eval.evolution import TournamentRunner
+from backend.eval.review import MetricsCalculator
+from backend.eval.review import ReviewReportBuilder
+from backend.eval.track_b import ReplayBundleBuilder
+from backend.eval.track_b import ReviewRepairLoop
+from backend.eval.track_b import SpeechActAnalyzer
+from backend.eval.track_b import SuspicionMatrixBuilder
+from backend.eval.track_b import TrackBValidator
+from backend.eval.track_b import generate_published_review_document
 
 
 def step(name: str, total: int) -> Callable[[Callable[[], Any]], dict[str, Any]]:
@@ -90,7 +74,7 @@ def step(name: str, total: int) -> Callable[[Callable[[], Any]], dict[str, Any]]
         rate = successes / max(total, 1)
         print(
             f"[{name:>40}] success={successes:>3}/{total} "
-            f"rate={rate*100:6.2f}%  avg_ms={wall*1000/max(total,1):7.1f}"
+            f"rate={rate * 100:6.2f}%  avg_ms={wall * 1000 / max(total, 1):7.1f}"
         )
         return {
             "name": name,
@@ -102,6 +86,7 @@ def step(name: str, total: int) -> Callable[[Callable[[], Any]], dict[str, Any]]
             "avg_ms": wall * 1000 / max(total, 1),
             "artifact": artifact,
         }
+
     return runner
 
 
@@ -158,9 +143,7 @@ def fallback_injection(seed: int) -> dict[str, Any]:
     return {
         "publish_allowed": doc.validation_result["publish_allowed"],
         "status": doc.status,
-        "gates_triggered": sorted(
-            {issue.get("gate") for issue in doc.validation_result.get("issues", [])}
-        ),
+        "gates_triggered": sorted({issue.get("gate") for issue in doc.validation_result.get("issues", [])}),
     }
 
 
@@ -192,9 +175,7 @@ def invalid_decision_injection(seed: int) -> dict[str, Any]:
     doc = generate_published_review_document(game.state)
     return {
         "publish_allowed": doc.validation_result["publish_allowed"],
-        "gates_triggered": sorted(
-            {issue.get("gate") for issue in doc.validation_result.get("issues", [])}
-        ),
+        "gates_triggered": sorted({issue.get("gate") for issue in doc.validation_result.get("issues", [])}),
     }
 
 
@@ -366,8 +347,10 @@ def knowledge_round_trip(seed: int) -> dict[str, Any]:
 
 def db_persisted_retrieval() -> dict[str, Any]:
     """Persist knowledge to the real DB and re-retrieve via the DB query."""
-    from backend.db.database import init_db, SessionLocal
-    from backend.db.persist import _upsert_strategy_knowledge_rows, retrieve_strategy_knowledge
+    from backend.db.database import SessionLocal
+    from backend.db.database import init_db
+    from backend.db.persist import _upsert_strategy_knowledge_rows
+    from backend.db.persist import retrieve_strategy_knowledge
 
     # Build at least one approved report so we have something to write.
     game = build_heuristic_game(99)
@@ -497,49 +480,43 @@ def _to_jsonable(obj: Any) -> Any:
 def main() -> None:
     summary: dict[str, Any] = {}
 
-    summary["heuristic_pipeline_publish"] = step(
-        "S1: heuristic game -> publish", 10
-    )(lambda: heuristic_validation(7 + int(time.time_ns() % 1000)))
+    summary["heuristic_pipeline_publish"] = step("S1: heuristic game -> publish", 10)(
+        lambda: heuristic_validation(7 + int(time.time_ns() % 1000))
+    )
 
-    summary["fallback_blocks_publish"] = step(
-        "S2: inject fallback blocks publish", 10
-    )(lambda: fallback_injection(13 + int(time.time_ns() % 1000)))
+    summary["fallback_blocks_publish"] = step("S2: inject fallback blocks publish", 10)(
+        lambda: fallback_injection(13 + int(time.time_ns() % 1000))
+    )
 
-    summary["invalid_blocks_publish"] = step(
-        "S3: invalid decision blocks publish", 10
-    )(lambda: invalid_decision_injection(31 + int(time.time_ns() % 1000)))
+    summary["invalid_blocks_publish"] = step("S3: invalid decision blocks publish", 10)(
+        lambda: invalid_decision_injection(31 + int(time.time_ns() % 1000))
+    )
 
-    summary["fact_gate_catches_bogus_id"] = step(
-        "S4: fact gate catches bogus event id", 10
-    )(lambda: fact_consistency_check(41 + int(time.time_ns() % 1000)))
+    summary["fact_gate_catches_bogus_id"] = step("S4: fact gate catches bogus event id", 10)(
+        lambda: fact_consistency_check(41 + int(time.time_ns() % 1000))
+    )
 
-    summary["evidence_gate_catches_strip"] = step(
-        "S5: evidence gate catches missing evidence", 10
-    )(lambda: evidence_coverage_check(53 + int(time.time_ns() % 1000)))
+    summary["evidence_gate_catches_strip"] = step("S5: evidence gate catches missing evidence", 10)(
+        lambda: evidence_coverage_check(53 + int(time.time_ns() % 1000))
+    )
 
-    summary["repair_loop_recovers"] = step(
-        "S6: repair loop restores publishability", 10
-    )(lambda: repair_loop_recovery(67 + int(time.time_ns() % 1000)))
+    summary["repair_loop_recovers"] = step("S6: repair loop restores publishability", 10)(
+        lambda: repair_loop_recovery(67 + int(time.time_ns() % 1000))
+    )
 
-    summary["knowledge_round_trip"] = step(
-        "S7: B report -> knowledge -> retrieval", 10
-    )(lambda: knowledge_round_trip(73 + int(time.time_ns() % 1000)))
+    summary["knowledge_round_trip"] = step("S7: B report -> knowledge -> retrieval", 10)(
+        lambda: knowledge_round_trip(73 + int(time.time_ns() % 1000))
+    )
 
-    summary["db_persisted_retrieval"] = step(
-        "S8: DB persist + retrieve", 1
-    )(db_persisted_retrieval)
+    summary["db_persisted_retrieval"] = step("S8: DB persist + retrieve", 1)(db_persisted_retrieval)
 
-    summary["evolution_full_pipeline"] = step(
-        "S9: EvolutionPipeline.run()", 1
-    )(evolution_full_pipeline)
+    summary["evolution_full_pipeline"] = step("S9: EvolutionPipeline.run()", 1)(evolution_full_pipeline)
 
-    summary["tournament_real_20"] = step(
-        "S10: real 20-seed A/B tournament", 1
-    )(tournament_real_20)
+    summary["tournament_real_20"] = step("S10: real 20-seed A/B tournament", 1)(tournament_real_20)
 
-    summary["acceptance_rejects_fallback"] = step(
-        "S11: AcceptancePolicy rejects fallback>0", 1
-    )(acceptance_rejects_fallback)
+    summary["acceptance_rejects_fallback"] = step("S11: AcceptancePolicy rejects fallback>0", 1)(
+        acceptance_rejects_fallback
+    )
 
     out = {
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),

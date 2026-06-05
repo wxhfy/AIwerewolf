@@ -13,9 +13,15 @@ to human distributions.
 from __future__ import annotations
 
 import hashlib
-import json
-from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional
+from dataclasses import dataclass
+from dataclasses import field
+from typing import Any
+from typing import Callable
+from typing import Dict
+from typing import List
+from typing import Optional
+
+import numpy as np
 
 
 @dataclass(frozen=True)
@@ -127,9 +133,11 @@ class HybridScorer:
                 elif criterion.criterion_type == "llm":
                     if llm_judge is None:
                         result = CriterionResult(
-                            criterion_id=criterion.id, passed=False,
-                            score_contribution=0.0, method="llm",
-                            error="No LLM judge provided"
+                            criterion_id=criterion.id,
+                            passed=False,
+                            score_contribution=0.0,
+                            method="llm",
+                            error="No LLM judge provided",
                         )
                     else:
                         result = self._score_llm(criterion, context, llm_judge)
@@ -137,15 +145,19 @@ class HybridScorer:
                     result = self._score_counterfactual(criterion, context)
                 else:
                     result = CriterionResult(
-                        criterion_id=criterion.id, passed=False,
-                        score_contribution=0.0, method="unknown",
-                        error=f"Unknown criterion type: {criterion.criterion_type}"
+                        criterion_id=criterion.id,
+                        passed=False,
+                        score_contribution=0.0,
+                        method="unknown",
+                        error=f"Unknown criterion type: {criterion.criterion_type}",
                     )
             except Exception as e:
                 result = CriterionResult(
-                    criterion_id=criterion.id, passed=False,
-                    score_contribution=0.0, method=criterion.criterion_type,
-                    error=str(e)
+                    criterion_id=criterion.id,
+                    passed=False,
+                    score_contribution=0.0,
+                    method=criterion.criterion_type,
+                    error=str(e),
                 )
 
             results.append(result)
@@ -157,7 +169,7 @@ class HybridScorer:
             raw_score=round(total, 4),
             criteria_results=results,
             evidence_chain=[r.evidence for r in results if r.evidence],
-            paper_references=list(set(c.reference for c in self._rubric if c.reference)),
+            paper_references=list({c.reference for c in self._rubric if c.reference}),
             confidence=self._compute_confidence(results),
         )
 
@@ -165,12 +177,16 @@ class HybridScorer:
         """Execute a rule-based criterion check."""
         if criterion.rule_check is None:
             return CriterionResult(
-                criterion_id=criterion.id, passed=False, score_contribution=0.0,
-                method="rule", error="No rule_check function"
+                criterion_id=criterion.id,
+                passed=False,
+                score_contribution=0.0,
+                method="rule",
+                error="No rule_check function",
             )
         passed = criterion.rule_check(context)
         return CriterionResult(
-            criterion_id=criterion.id, passed=passed,
+            criterion_id=criterion.id,
+            passed=passed,
             score_contribution=criterion.weight if passed else 0.0,
             method="rule",
             evidence={"check": criterion.desc, "result": passed},
@@ -195,14 +211,17 @@ class HybridScorer:
                 # Evidence hallucinated — reject the score
                 passed = False
                 return CriterionResult(
-                    criterion_id=criterion.id, passed=False, score_contribution=0.0,
+                    criterion_id=criterion.id,
+                    passed=False,
+                    score_contribution=0.0,
                     method="llm",
                     evidence={"rejected": "evidence_not_found_in_source", "claimed": evidence_text[:100]},
-                    error="LLM evidence hallucination: claimed text not found in source"
+                    error="LLM evidence hallucination: claimed text not found in source",
                 )
 
         return CriterionResult(
-            criterion_id=criterion.id, passed=passed,
+            criterion_id=criterion.id,
+            passed=passed,
             score_contribution=criterion.weight if passed else 0.0,
             method="llm",
             evidence={
@@ -216,13 +235,17 @@ class HybridScorer:
         """Counterfactual-based scoring."""
         if criterion.cf_check is None:
             return CriterionResult(
-                criterion_id=criterion.id, passed=False, score_contribution=0.0,
-                method="counterfactual", error="No cf_check function"
+                criterion_id=criterion.id,
+                passed=False,
+                score_contribution=0.0,
+                method="counterfactual",
+                error="No cf_check function",
             )
         improvement = criterion.cf_check(context)
         passed = improvement > 0.0
         return CriterionResult(
-            criterion_id=criterion.id, passed=passed,
+            criterion_id=criterion.id,
+            passed=passed,
             score_contribution=criterion.weight * max(0.0, min(1.0, improvement)),
             method="counterfactual",
             evidence={"improvement": improvement},
@@ -288,6 +311,7 @@ class HybridScorer:
     def _quantile_map(scores: np.ndarray, target_dist: np.ndarray) -> np.ndarray:
         """Map score distribution to match target distribution quantiles."""
         from scipy import stats
+
         # Only use scipy if available, otherwise skip
         try:
             return stats.rankdata(scores) / len(scores) * (target_dist.max() - target_dist.min()) + target_dist.min()
@@ -298,6 +322,7 @@ class HybridScorer:
 # ============================================================
 # Pre-built Rubric Factory
 # ============================================================
+
 
 def build_rubric_from_spec(spec: Dict[str, Any]) -> List[ScoringCriterion]:
     """Build a rubric from a specification dict.
@@ -325,18 +350,22 @@ def build_rubric_from_spec(spec: Dict[str, Any]) -> List[ScoringCriterion]:
         if crit_type == "rule" and "check_expr" in spec_crit:
             # Compile rule from expression string
             check_expr = spec_crit["check_expr"]
-            rule_check = lambda ctx, expr=check_expr: eval(expr, {"__builtins__": {}}, {"context": ctx, "len": len, "min": min, "max": max})
 
-        criteria.append(ScoringCriterion(
-            id=spec_crit["id"],
-            desc=spec_crit["desc"],
-            criterion_type=crit_type,
-            weight=spec_crit["weight"],
-            rule_check=rule_check,
-            llm_prompt=llm_prompt,
-            cf_check=cf_check,
-            evidence_required=spec_crit.get("evidence_required", False),
-            reference=spec_crit.get("reference", ""),
-        ))
+            def rule_check(ctx, expr=check_expr):
+                return eval(expr, {"__builtins__": {}}, {"context": ctx, "len": len, "min": min, "max": max})
+
+        criteria.append(
+            ScoringCriterion(
+                id=spec_crit["id"],
+                desc=spec_crit["desc"],
+                criterion_type=crit_type,
+                weight=spec_crit["weight"],
+                rule_check=rule_check,
+                llm_prompt=llm_prompt,
+                cf_check=cf_check,
+                evidence_required=spec_crit.get("evidence_required", False),
+                reference=spec_crit.get("reference", ""),
+            )
+        )
 
     return criteria

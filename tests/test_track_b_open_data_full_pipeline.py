@@ -18,6 +18,7 @@ ROOT = Path(__file__).resolve().parent.parent
 # Manifest tests
 # ===========================================================================
 
+
 @pytest.fixture(scope="module")
 def manifest():
     path = ROOT / "docs" / "track_b_open_data_sources_manifest.yaml"
@@ -62,6 +63,7 @@ def test_manifest_werewolf_among_us_is_p0(manifest):
 # Downloader tests
 # ===========================================================================
 
+
 def test_downloader_script_exists():
     path = ROOT / "scripts" / "download_track_b_open_sources.py"
     assert path.exists()
@@ -94,6 +96,7 @@ def test_todo_files_for_unavailable_sources():
 # ===========================================================================
 # Dataset builder tests
 # ===========================================================================
+
 
 def test_builder_script_exists():
     path = ROOT / "scripts" / "build_track_b_open_datasets.py"
@@ -133,8 +136,9 @@ def test_combined_speech_has_required_metadata():
                 sample = json.loads(line)
                 for field in required:
                     assert field in sample, f"Sample {i} missing '{field}'"
-                assert sample["do_not_train_final_q_directly"] is True, \
+                assert sample["do_not_train_final_q_directly"] is True, (
                     f"Sample {i} has do_not_train_final_q_directly=False"
+                )
                 if i >= 100:
                     break
 
@@ -169,6 +173,7 @@ def test_splits_are_by_game_id():
 # ===========================================================================
 # Audit tests
 # ===========================================================================
+
 
 def test_audit_script_exists():
     path = ROOT / "scripts" / "audit_track_b_open_datasets.py"

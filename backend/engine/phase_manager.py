@@ -1,7 +1,13 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from backend.engine.game import WerewolfGame  # noqa: F401
+
 from backend.engine.models import Phase
-from backend.engine.phases import PhaseHandler, default_phase_handlers
+from backend.engine.phases import PhaseHandler
+from backend.engine.phases import default_phase_handlers
 
 
 class PhaseManager:

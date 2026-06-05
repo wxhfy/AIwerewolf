@@ -13,19 +13,23 @@ No LLM calls, no game logic — pure data management.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from dataclasses import dataclass
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
 
 from backend.agents.cognitive.humanization import HumanizationProfile
-from backend.agents.cognitive.planner import Planner, StrategicIntent
+from backend.agents.cognitive.planner import Planner
 from backend.agents.cognitive.social_model import SocialModel
 
 
 @dataclass
 class Judgment:
     """A judgment about a player."""
+
     target: str
-    label: str       # "suspicious", "trustworthy", "wolf", "good"
+    label: str  # "suspicious", "trustworthy", "wolf", "good"
     confidence: float  # 0-1
     reasoning: str
     day: int
@@ -34,6 +38,7 @@ class Judgment:
 @dataclass
 class ActionRecord:
     """Record of an action taken."""
+
     action_type: str
     target: Optional[str]
     content: str
@@ -98,11 +103,15 @@ class Memory:
     # ---- Judgments ----
 
     def add_judgment(self, target: str, label: str, confidence: float, reasoning: str) -> None:
-        self.judgments.append(Judgment(
-            target=target, label=label,
-            confidence=confidence, reasoning=reasoning,
-            day=self.day,
-        ))
+        self.judgments.append(
+            Judgment(
+                target=target,
+                label=label,
+                confidence=confidence,
+                reasoning=reasoning,
+                day=self.day,
+            )
+        )
 
     def get_latest_judgment(self, player_name: str) -> Optional[Judgment]:
         for j in reversed(self.judgments):
@@ -121,11 +130,16 @@ class Memory:
     # ---- Actions ----
 
     def add_action(self, action_type: str, target: Optional[str], content: str, reasoning: str) -> None:
-        self.actions.append(ActionRecord(
-            action_type=action_type, target=target,
-            content=content, reasoning=reasoning,
-            day=self.day, phase=self.phase,
-        ))
+        self.actions.append(
+            ActionRecord(
+                action_type=action_type,
+                target=target,
+                content=content,
+                reasoning=reasoning,
+                day=self.day,
+                phase=self.phase,
+            )
+        )
         if action_type == "vote" and target:
             self.last_vote_target = target
 

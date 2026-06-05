@@ -14,11 +14,8 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import json
-import os
 import sys
 from pathlib import Path
-from typing import Any
 
 import yaml
 
@@ -67,13 +64,15 @@ def _write_todo(source_name: str, raw_dir: Path, info: dict):
     if github:
         lines.append(f"- GitHub: {github}")
 
-    lines.extend([
-        "",
-        "## After obtaining",
-        f"Place raw data files in: `{raw_dir}/`",
-        f"Then re-run: `python scripts/build_track_b_open_datasets.py --source {source_name}`",
-        "",
-    ])
+    lines.extend(
+        [
+            "",
+            "## After obtaining",
+            f"Place raw data files in: `{raw_dir}/`",
+            f"Then re-run: `python scripts/build_track_b_open_datasets.py --source {source_name}`",
+            "",
+        ]
+    )
     todo_path.write_text("\n".join(lines), encoding="utf-8")
     print(f"  TODO written: {todo_path}")
 
@@ -86,6 +85,7 @@ def _download_huggingface(source_name: str, info: dict) -> bool:
 
     try:
         from datasets import load_dataset
+
         print(f"  Downloading {hf_id}...")
         ds = load_dataset(hf_id, trust_remote_code=True, split="train")
         print(f"  Downloaded: {len(ds)} rows")
@@ -107,24 +107,25 @@ def download_source(source_name: str, info: dict) -> bool:
         # Data already cached by datasets library; verify it exists
         try:
             from datasets import get_dataset_config_names
+
             hf_id = info.get("huggingface_id", "")
             if hf_id:
                 configs = get_dataset_config_names(hf_id)
                 print(f"  HuggingFace dataset '{hf_id}' available (configs: {configs})")
                 return True
         except Exception:
-            print(f"  HuggingFace dataset check failed, attempting download...")
+            print("  HuggingFace dataset check failed, attempting download...")
             return _download_huggingface(source_name, info)
 
     if status == "available" and method == "native_pipeline":
-        print(f"  Native data (manual collection required)")
+        print("  Native data (manual collection required)")
         # Track B native data comes from running real LLM games
         replays_dir = ROOT / "data" / "replays" / "raw_llm_games"
         if replays_dir.exists():
             n = len(list(replays_dir.glob("*.json*")))
             print(f"  Replays available: {n} files")
         else:
-            print(f"  No replays directory yet. Run real LLM games to populate.")
+            print("  No replays directory yet. Run real LLM games to populate.")
         return True
 
     # Unavailable or manual sources
@@ -143,13 +144,10 @@ def download_source(source_name: str, info: dict) -> bool:
 
 def main():
     parser = argparse.ArgumentParser(description="Download Track B open data sources")
-    parser.add_argument("--manifest", default=str(DEFAULT_MANIFEST),
-                       help="Path to sources manifest YAML")
-    parser.add_argument("--all", action="store_true",
-                       help="Download all sources in manifest")
+    parser.add_argument("--manifest", default=str(DEFAULT_MANIFEST), help="Path to sources manifest YAML")
+    parser.add_argument("--all", action="store_true", help="Download all sources in manifest")
     parser.add_argument("--source", help="Download a specific source")
-    parser.add_argument("--list", action="store_true",
-                       help="List all sources and their status")
+    parser.add_argument("--list", action="store_true", help="List all sources and their status")
     args = parser.parse_args()
 
     manifest = _load_manifest(Path(args.manifest))
@@ -159,8 +157,10 @@ def main():
         print(f"{'Source':<25} {'Priority':<12} {'Status':<15} {'Download':<20}")
         print("-" * 72)
         for name, info in sources.items():
-            print(f"{name:<25} {info.get('priority', '?'):<12} "
-                  f"{info.get('status', '?'):<15} {info.get('download_method', '?'):<20}")
+            print(
+                f"{name:<25} {info.get('priority', '?'):<12} "
+                f"{info.get('status', '?'):<15} {info.get('download_method', '?'):<20}"
+            )
         return 0
 
     print("=" * 60)
@@ -190,7 +190,7 @@ def main():
                 available += 1
             else:
                 todo += 1
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"Download complete: {available} available, {todo} TODO/manual")
 
     return 0

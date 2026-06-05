@@ -8,7 +8,8 @@ import yaml
 from backend.agents.factory import create_agents
 from backend.engine.game import WerewolfGame
 from backend.engine.models import Role
-from backend.engine.rules import build_players, get_role_configuration
+from backend.engine.rules import build_players
+from backend.engine.rules import get_role_configuration
 
 
 def load_yaml(path: str | Path) -> dict[str, Any]:

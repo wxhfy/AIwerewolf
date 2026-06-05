@@ -14,17 +14,22 @@ Usage:
 from __future__ import annotations
 
 import pickle
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from dataclasses import field
 from pathlib import Path
 from typing import Any
 
-import numpy as np
-
-MODEL_PATH = Path(__file__).resolve().parent.parent.parent.parent / "models" / "open_data" / "speech_act_classifier_v0.pkl"
+MODEL_PATH = (
+    Path(__file__).resolve().parent.parent.parent.parent / "models" / "open_data" / "speech_act_classifier_v0.pkl"
+)
 
 SPEECH_LABELS = [
-    "accusation", "interrogation", "defense",
-    "evidence_use", "identity_declaration", "call_for_action",
+    "accusation",
+    "interrogation",
+    "defense",
+    "evidence_use",
+    "identity_declaration",
+    "call_for_action",
 ]
 
 AUDIT_FEATURE_MAP = {
@@ -40,6 +45,7 @@ AUDIT_FEATURE_MAP = {
 @dataclass
 class SpeechSemanticResult:
     """Audit-only speech semantic analysis result."""
+
     speech_act_probs: dict[str, float] = field(default_factory=dict)
     audit_features: dict[str, float] = field(default_factory=dict)
     audit_only: bool = True
@@ -95,7 +101,7 @@ class SpeechSemanticScorer:
         """Score a single utterance. Returns zero probs if model unavailable."""
         if not utterance or not utterance.strip():
             return SpeechSemanticResult(
-                speech_act_probs={label: 0.0 for label in SPEECH_LABELS},
+                speech_act_probs=dict.fromkeys(SPEECH_LABELS, 0.0),
                 audit_features={AUDIT_FEATURE_MAP[label]: 0.0 for label in SPEECH_LABELS},
                 model_available=self.model_available,
                 error="empty_utterance",
@@ -103,7 +109,7 @@ class SpeechSemanticScorer:
 
         if not self.model_available:
             return SpeechSemanticResult(
-                speech_act_probs={label: 0.0 for label in SPEECH_LABELS},
+                speech_act_probs=dict.fromkeys(SPEECH_LABELS, 0.0),
                 audit_features={AUDIT_FEATURE_MAP[label]: 0.0 for label in SPEECH_LABELS},
                 model_available=False,
                 error="model_not_available",
@@ -133,7 +139,7 @@ class SpeechSemanticScorer:
             )
         except Exception as e:
             return SpeechSemanticResult(
-                speech_act_probs={label: 0.0 for label in SPEECH_LABELS},
+                speech_act_probs=dict.fromkeys(SPEECH_LABELS, 0.0),
                 audit_features={AUDIT_FEATURE_MAP[label]: 0.0 for label in SPEECH_LABELS},
                 model_available=True,
                 error=str(e)[:200],

@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from dataclasses import field
 
-from backend.agents.cognitive.strategies.base import RoleStrategyCard, register_strategy
+from backend.agents.cognitive.strategies.base import RoleStrategyCard
+from backend.agents.cognitive.strategies.base import register_strategy
 
 
 @register_strategy("guard")
@@ -22,19 +24,21 @@ class GuardStrategyCard(RoleStrategyCard):
     information_seeking: float = 0.45
 
     # Guard strategy
-    protect_priority: list[str] = field(default_factory=lambda: [
-        "claimed_seer",
-        "suspected_witch",
-        "leadership_player",
-        "self",  # self-protection when exposed
-    ])
+    protect_priority: list[str] = field(
+        default_factory=lambda: [
+            "claimed_seer",
+            "suspected_witch",
+            "leadership_player",
+            "self",  # self-protection when exposed
+        ]
+    )
 
-    protect_seer_night_0: bool = True          # Guard Seer on first night
-    self_protect_threshold: float = 0.70       # Self-guard when >70% at risk
-    consecutive_forbidden: bool = True          # Cannot guard same target consecutively
+    protect_seer_night_0: bool = True  # Guard Seer on first night
+    self_protect_threshold: float = 0.70  # Self-guard when >70% at risk
+    consecutive_forbidden: bool = True  # Cannot guard same target consecutively
 
     # Identity protection
-    reveal_when_guarded_seer: bool = False      # Don't reveal even if guarded Seer
+    reveal_when_guarded_seer: bool = False  # Don't reveal even if guarded Seer
     reveal_when_counter_claimed: bool = True
 
     def format_for_prompt(self) -> str:

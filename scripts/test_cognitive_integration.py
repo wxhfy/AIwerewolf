@@ -12,8 +12,8 @@ Usage:
 """
 
 import logging
-import sys
 import os
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -22,11 +22,14 @@ sys.path.insert(0, str(ROOT))
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
 from backend.llm.env import load_env_file
+
 load_env_file()
 
-from backend.agents.cognitive import create_cognitive_agent, CognitiveAgent
+from backend.agents.cognitive import CognitiveAgent
+from backend.agents.cognitive import create_cognitive_agent
 from backend.engine.game import WerewolfGame
-from backend.engine.rules import build_players, get_role_configuration
+from backend.engine.rules import build_players
+from backend.engine.rules import get_role_configuration
 
 SEED = 42
 PLAYER_COUNT = 7
@@ -45,24 +48,37 @@ def test_agent_creation():
         )
         print(f"  OK: agent={agent.player_name} role={agent.role} id={agent.player_id}")
         print(f"  Profile: persona={agent._profile.persona.mbti if agent._profile.persona else '?'}")
-        print(f"  Humanization: speech={agent._humanization.speech_min_segments}-{agent._humanization.speech_max_segments}")
+        print(
+            f"  Humanization: speech={agent._humanization.speech_min_segments}-{agent._humanization.speech_max_segments}"
+        )
         return True
     except Exception as e:
         print(f"  FAIL: {e}")
-        import traceback; traceback.print_exc()
+        import traceback
+
+        traceback.print_exc()
         return False
 
 
 def test_agent_protocol():
     """Test: does CognitiveAgent implement the full Agent Protocol?"""
     print("\n=== Test 2: Agent Protocol Compliance ===")
-    from backend.agents.base import Agent
 
     # CognitiveAgent should be structurally compatible with Agent Protocol
     methods = [
-        "initialize", "update", "day_start",
-        "talk", "vote", "attack", "divine", "guard",
-        "witch_act", "shoot", "boom", "transfer_badge", "finish",
+        "initialize",
+        "update",
+        "day_start",
+        "talk",
+        "vote",
+        "attack",
+        "divine",
+        "guard",
+        "witch_act",
+        "shoot",
+        "boom",
+        "transfer_badge",
+        "finish",
     ]
     agent_methods = set(dir(CognitiveAgent))
 
@@ -76,8 +92,11 @@ def test_agent_protocol():
     # Check required attributes
     try:
         agent = create_cognitive_agent(
-            player_id="p1", role="Villager",
-            llm_provider="dsv4flash", player_name="Villager1", player_seat=1,
+            player_id="p1",
+            role="Villager",
+            llm_provider="dsv4flash",
+            player_name="Villager1",
+            player_seat=1,
         )
         assert hasattr(agent, "player_id"), "missing player_id"
         assert hasattr(agent, "role"), "missing role"
@@ -115,7 +134,7 @@ def test_full_game():
             print(f"  FAIL creating agent for {p.name}({p.role.value}): {e}")
             return False
 
-    print(f"  Players:")
+    print("  Players:")
     for p in players:
         a = agents[p.id]
         mbti = a._profile.persona.mbti if a._profile.persona else "?"
@@ -123,11 +142,11 @@ def test_full_game():
 
     # Run game
     try:
-        print(f"\n  Starting game...")
+        print("\n  Starting game...")
         game = WerewolfGame(players=players, agents=agents, seed=SEED)
         game.play()
 
-        print(f"\n  Game finished!")
+        print("\n  Game finished!")
         print(f"  Winner: {game.state.winner}")
         print(f"  Days: {game.state.day}")
 
@@ -143,14 +162,15 @@ def test_full_game():
         return True
     except Exception as e:
         print(f"\n  FAIL: {e}")
-        import traceback; traceback.print_exc()
+        import traceback
+
+        traceback.print_exc()
         return False
 
 
 def test_agent_lifecycle_isolated():
     """Test: verify each agent lifecycle method works in isolation."""
     print("\n=== Test 4: Isolated Lifecycle Test ===")
-    from backend.engine.visibility import PlayerView
 
     try:
         agent = create_cognitive_agent(
@@ -162,22 +182,31 @@ def test_agent_lifecycle_isolated():
         )
 
         # Build a minimal mock view
-        mock_view = type('obj', (object,), {
-            'self_player': {'id': 'lifecycle-test', 'name': 'WolfTest', 'seat': 3, 'role': 'Werewolf'},
-            'players': [
-                {'id': 'lifecycle-test', 'name': 'WolfTest', 'seat': 3, 'alive': True, 'role': 'Werewolf'},
-                {'id': 'p2', 'name': 'Alice', 'seat': 1, 'alive': True, 'role': 'Villager'},
-                {'id': 'p3', 'name': 'Bob', 'seat': 2, 'alive': True, 'role': 'Seer'},
-            ],
-            'day': 1,
-            'phase': 'DAY_SPEECH',
-            'public_events': [
-                {'type': 'CHAT_MESSAGE', 'day': 1, 'actor_id': 'p2', 'phase': 'DAY_SPEECH',
-                 'payload': {'speech': '我觉得3号发言有问题'}},
-            ],
-            'private_events': [],
-            'game_id': 'test-game',
-        })()
+        mock_view = type(
+            "obj",
+            (object,),
+            {
+                "self_player": {"id": "lifecycle-test", "name": "WolfTest", "seat": 3, "role": "Werewolf"},
+                "players": [
+                    {"id": "lifecycle-test", "name": "WolfTest", "seat": 3, "alive": True, "role": "Werewolf"},
+                    {"id": "p2", "name": "Alice", "seat": 1, "alive": True, "role": "Villager"},
+                    {"id": "p3", "name": "Bob", "seat": 2, "alive": True, "role": "Seer"},
+                ],
+                "day": 1,
+                "phase": "DAY_SPEECH",
+                "public_events": [
+                    {
+                        "type": "CHAT_MESSAGE",
+                        "day": 1,
+                        "actor_id": "p2",
+                        "phase": "DAY_SPEECH",
+                        "payload": {"speech": "我觉得3号发言有问题"},
+                    },
+                ],
+                "private_events": [],
+                "game_id": "test-game",
+            },
+        )()
 
         # initialize
         agent.initialize(mock_view, {})
@@ -204,13 +233,25 @@ def test_agent_lifecycle_isolated():
         print(f"  OK: vote() → target={decision.target_id} reasoning={decision.reasoning[:80]}")
 
         # night actions (for werewolf)
-        mock_view_night = type('obj', (object,), {
-            'self_player': {'id': 'lifecycle-test', 'name': 'WolfTest', 'seat': 3, 'role': 'Werewolf', 'wolf_team': []},
-            'players': mock_view.players,
-            'day': 1, 'phase': 'NIGHT_WOLF_ACTION',
-            'public_events': [], 'private_events': [],
-            'game_id': 'test-game',
-        })()
+        mock_view_night = type(
+            "obj",
+            (object,),
+            {
+                "self_player": {
+                    "id": "lifecycle-test",
+                    "name": "WolfTest",
+                    "seat": 3,
+                    "role": "Werewolf",
+                    "wolf_team": [],
+                },
+                "players": mock_view.players,
+                "day": 1,
+                "phase": "NIGHT_WOLF_ACTION",
+                "public_events": [],
+                "private_events": [],
+                "game_id": "test-game",
+            },
+        )()
         agent.update(mock_view_night, "wolf_attack")
         decision = agent.attack()
         print(f"  OK: attack() → target={decision.target_id}")
@@ -222,7 +263,9 @@ def test_agent_lifecycle_isolated():
         return True
     except Exception as e:
         print(f"  FAIL: {e}")
-        import traceback; traceback.print_exc()
+        import traceback
+
+        traceback.print_exc()
         return False
 
 

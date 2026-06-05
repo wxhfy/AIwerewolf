@@ -1,20 +1,24 @@
 from __future__ import annotations
 
-import asyncio
 import json
-from typing import Any, Dict, Optional
+from typing import Any
+from typing import Dict
+from typing import Optional
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI
+from fastapi import HTTPException
+from fastapi import WebSocket
+from fastapi import WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, PlainTextResponse, Response
+from fastapi.responses import HTMLResponse
+from fastapi.responses import Response
 
 from backend.agents.factory import create_agents
 from backend.db.database import init_db
 from backend.engine.game import WerewolfGame
 from backend.engine.models import GameState
-from backend.engine.rules import build_players, get_role_configuration
-from backend.protocols import RoomCreateRequest, RoomManager
-
+from backend.protocols import RoomCreateRequest
+from backend.protocols import RoomManager
 
 app = FastAPI(title="AI Werewolf Demo", version="0.2.0")
 app.add_middleware(
@@ -85,7 +89,9 @@ def create_game(
     player_count: int = 10,
     rule_pack_id: str = "wolfcha-default",
 ):
-    game = _build_game(seed=seed, agent_type=agent_type, human_seat=human_seat, player_count=player_count, rule_pack_id=rule_pack_id)
+    game = _build_game(
+        seed=seed, agent_type=agent_type, human_seat=human_seat, player_count=player_count, rule_pack_id=rule_pack_id
+    )
     if human_seat is not None:
         state = game.play_until_blocked()
         _rooms.games[state.id] = state
@@ -113,6 +119,7 @@ def list_games():
 def game_history(limit: int = 20):
     """Return recent game history from the database for the frontend panel."""
     from backend.db.persist import list_games as db_list_games
+
     try:
         return db_list_games(limit=limit)
     except Exception:
@@ -123,6 +130,7 @@ def game_history(limit: int = 20):
 def game_history_detail(game_id: str):
     """Return one game's summary: players, speeches, votes, deaths."""
     from backend.db.persist import get_game_summary
+
     try:
         summary = get_game_summary(game_id)
         if summary is None:
@@ -138,6 +146,7 @@ def game_history_detail(game_id: str):
 # Track B reserved endpoints — replay, metrics, leaderboard, review reports
 # ---------------------------------------------------------------------------
 
+
 @app.get("/api/replay/{game_id}")
 def replay_game(game_id: str, show_private: bool = False):
     """Return the full replay payload (snapshots + all events + decisions).
@@ -147,6 +156,7 @@ def replay_game(game_id: str, show_private: bool = False):
     replay UI is built, we can extend this with per-day snapshots.
     """
     from backend.db.persist import get_replay
+
     payload = get_replay(game_id, show_private=show_private)
     if payload is None:
         raise HTTPException(status_code=404, detail="Game not found")
@@ -157,6 +167,7 @@ def replay_game(game_id: str, show_private: bool = False):
 def game_metrics(game_id: str):
     """Per-game multi-dimensional metrics (Track B). One row per (player, metric)."""
     from backend.db.persist import get_game_metrics
+
     metrics = get_game_metrics(game_id)
     if metrics is None:
         raise HTTPException(status_code=404, detail="Game not found")
@@ -170,6 +181,7 @@ def game_runtime_metrics(game_id: str):
     Stable JSON schema usable by future dashboard clients without null-checks.
     """
     from backend.db.persist import get_runtime_metrics
+
     metrics = get_runtime_metrics(game_id)
     if metrics is None:
         raise HTTPException(status_code=404, detail="Game not found")
@@ -185,6 +197,7 @@ def metrics_aggregate(limit_games: int = 200):
     strategy/patch/tournament summary.
     """
     from backend.db.persist import get_aggregate_metrics
+
     return get_aggregate_metrics(limit_games=max(1, min(limit_games, 5000)))
 
 
@@ -192,6 +205,7 @@ def metrics_aggregate(limit_games: int = 200):
 def leaderboard(role: Optional[str] = None, limit: int = 20):
     """Aggregated leaderboard rows (Track B). Filter by role if provided."""
     from backend.db.persist import get_leaderboard
+
     return get_leaderboard(role=role, limit=limit)
 
 
@@ -208,6 +222,7 @@ def leaderboard_role_matrix(
     sample to games finished after a wall-clock cutoff (ISO-8601 UTC).
     """
     from backend.db.persist import get_role_model_leaderboard
+
     return get_role_model_leaderboard(
         limit_games=max(1, min(limit_games, 5000)),
         llm_only=llm_only,
@@ -228,6 +243,7 @@ def strategy_attribution(
     (active docs with usage_count==0 are clear signals of broken retrieval).
     """
     from backend.db.persist import get_strategy_attribution
+
     return get_strategy_attribution(
         limit_games=max(1, min(limit_games, 5000)),
         llm_only=llm_only,
@@ -240,6 +256,7 @@ def strategy_attribution(
 def game_reviews(game_id: str):
     """Reviewer-agent generated post-game reports (Track B)."""
     from backend.db.persist import get_review_reports
+
     payload = get_review_reports(game_id)
     if payload is None:
         raise HTTPException(status_code=404, detail="Review not found")
@@ -249,6 +266,7 @@ def game_reviews(game_id: str):
 @app.get("/api/games/{game_id}/reviews/html", response_class=HTMLResponse)
 def game_review_html(game_id: str):
     from backend.db.persist import get_review_html
+
     payload = get_review_html(game_id)
     if payload is None:
         raise HTTPException(status_code=404, detail="HTML review not found")
@@ -265,6 +283,7 @@ def game_review_markdown(game_id: str, download: bool = True):
     named `review-<game_id>.md`. Pass `?download=false` to inline.
     """
     from backend.db.persist import get_review_markdown
+
     payload = get_review_markdown(game_id)
     if payload is None:
         raise HTTPException(status_code=404, detail="Markdown review not found")
@@ -278,10 +297,12 @@ def game_review_markdown(game_id: str, download: bool = True):
 # Track C reserved endpoints — agent versions + self-evolution chain
 # ---------------------------------------------------------------------------
 
+
 @app.get("/api/agents")
 def list_agent_versions():
     """List registered agent versions (Track C)."""
     from backend.db.persist import list_agent_versions
+
     return list_agent_versions()
 
 
@@ -292,6 +313,7 @@ def register_agent_version(payload: Dict[str, Any]):
     Body: {name, agent_type, model_name, prompt_version, config, parent_version_id, notes}
     """
     from backend.db.persist import register_agent_version
+
     try:
         record = register_agent_version(payload)
     except ValueError as exc:
@@ -303,12 +325,14 @@ def register_agent_version(payload: Dict[str, Any]):
 def list_evolution_rounds(limit: int = 20):
     """List the self-evolution iteration log (Track C)."""
     from backend.db.persist import list_evolution_rounds
+
     return list_evolution_rounds(limit=limit)
 
 
 @app.get("/api/evolution/dashboard")
 def evolution_dashboard():
     from backend.db.persist import get_evolution_dashboard
+
     return get_evolution_dashboard()
 
 
@@ -322,8 +346,8 @@ def eval_role_scores(role: Optional[str] = None):
     still in progress), returns ``{"available": false, ...}`` with partial
     raw counts so the dashboard can show "running" state.
     """
-    import os
     from pathlib import Path
+
     experiment_dir = Path(__file__).resolve().parent.parent / "data" / "experiment"
     summary_path = experiment_dir / "discrimination_summary.json"
     raw_files = sorted(experiment_dir.glob("role_*_*_seed_*.json")) if experiment_dir.exists() else []
@@ -345,17 +369,19 @@ def eval_role_scores(role: Optional[str] = None):
         per_role_counts.setdefault(rname, {}).setdefault(variant, 0)
         per_role_counts[rname][variant] += 1
         if payload.get("publish_allowed"):
-            raw_records.append({
-                "role": rname,
-                "variant": variant,
-                "seed": meta.get("seed"),
-                "game_id": payload.get("game_id"),
-                "adjusted_final_score": payload.get("target_role_avg_adjusted_final_score"),
-                "role_task_score": payload.get("target_role_avg_role_task_score"),
-                "mistakes": payload.get("target_role_total_mistakes", 0),
-                "fallback": payload.get("fallback_decision_count", 0),
-                "winner": payload.get("winner"),
-            })
+            raw_records.append(
+                {
+                    "role": rname,
+                    "variant": variant,
+                    "seed": meta.get("seed"),
+                    "game_id": payload.get("game_id"),
+                    "adjusted_final_score": payload.get("target_role_avg_adjusted_final_score"),
+                    "role_task_score": payload.get("target_role_avg_role_task_score"),
+                    "mistakes": payload.get("target_role_total_mistakes", 0),
+                    "fallback": payload.get("fallback_decision_count", 0),
+                    "winner": payload.get("winner"),
+                }
+            )
 
     if summary_path.exists():
         try:
@@ -381,6 +407,7 @@ def eval_role_scores(role: Optional[str] = None):
 @app.post("/api/evolution/cycle")
 def run_evolution_cycle(payload: Optional[Dict[str, Any]] = None):
     from backend.db.persist import run_evolution_cycle
+
     body = payload or {}
     report_ids = body.get("report_ids")
     seeds = body.get("seeds")
@@ -393,6 +420,7 @@ def run_evolution_cycle(payload: Optional[Dict[str, Any]] = None):
 @app.post("/api/evolution/dream")
 def run_track_c_dream_job(payload: Optional[Dict[str, Any]] = None):
     from backend.db.persist import run_dream_job
+
     body = payload or {}
     report_ids = body.get("report_ids")
     from_version = str(body.get("from_version") or "v1")
@@ -400,20 +428,25 @@ def run_track_c_dream_job(payload: Optional[Dict[str, Any]] = None):
 
 
 @app.get("/api/strategy/knowledge")
-def list_strategy_knowledge(role: Optional[str] = None, phase: Optional[str] = None, status: Optional[str] = None, limit: int = 100):
+def list_strategy_knowledge(
+    role: Optional[str] = None, phase: Optional[str] = None, status: Optional[str] = None, limit: int = 100
+):
     from backend.db.persist import list_strategy_knowledge
+
     return list_strategy_knowledge(role=role, phase=phase, status=status, limit=limit)
 
 
 @app.post("/api/strategy/knowledge/extract/{game_id}")
 def extract_strategy_knowledge(game_id: str):
     from backend.db.persist import extract_strategy_knowledge_from_game
+
     return extract_strategy_knowledge_from_game(game_id)
 
 
 @app.post("/api/strategy/knowledge/{doc_id}/deprecate")
 def deprecate_strategy_knowledge(doc_id: str, payload: Optional[Dict[str, Any]] = None):
     from backend.db.persist import deprecate_strategy_knowledge
+
     try:
         return deprecate_strategy_knowledge(doc_id, reason=str((payload or {}).get("reason") or "manual"))
     except KeyError:
@@ -423,12 +456,14 @@ def deprecate_strategy_knowledge(doc_id: str, payload: Optional[Dict[str, Any]] 
 @app.get("/api/strategy/cards")
 def list_strategy_cards(role: Optional[str] = None):
     from backend.db.persist import list_role_strategy_cards
+
     return list_role_strategy_cards(role=role)
 
 
 @app.post("/api/strategy/patches/{patch_id}/apply")
 def apply_strategy_patch(patch_id: str):
     from backend.db.persist import apply_strategy_patch
+
     try:
         return apply_strategy_patch(patch_id)
     except KeyError:
@@ -444,6 +479,7 @@ def list_personas_endpoint():
     """
     try:
         from backend.db.persona_db import list_personas
+
         return list_personas()
     except Exception:
         return []
@@ -669,8 +705,8 @@ async def stream_game(
     clients first receive the entire snapshot buffer accumulated so far, then
     follow live frames until the game finishes.
     """
-    import threading
     import asyncio as aio
+    import threading
 
     agent_type = _normalize_agent_type(agent_type)
     loop = aio.get_running_loop()
@@ -819,7 +855,9 @@ async def room_ws(websocket: WebSocket, room_id: str) -> None:
                 await websocket.send_json({"type": "error", "message": "Unsupported action"})
                 continue
             if room.human_seat is not None:
-                await websocket.send_json({"type": "error", "message": "Human rooms use /api/rooms/{room_id}/start and /action."})
+                await websocket.send_json(
+                    {"type": "error", "message": "Human rooms use /api/rooms/{room_id}/start and /action."}
+                )
                 continue
             show_private = bool(payload.get("show_private", False))
             room.seed = int(payload.get("seed", room.seed))

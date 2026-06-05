@@ -2,11 +2,12 @@
 
 from typing import Optional
 
-from backend.eval.features.registry import FeatureRegistry, get_feature_registry
 from backend.eval.features.base import BaseActionFeatures
-from backend.eval.features.private_context import PrivateContextFeatures
-from backend.eval.features.vote import VoteQualityFeatures
 from backend.eval.features.kill import KillTargetValueFeatures
+from backend.eval.features.private_context import PrivateContextFeatures
+from backend.eval.features.registry import FeatureRegistry
+from backend.eval.features.registry import get_feature_registry
+from backend.eval.features.vote import VoteQualityFeatures
 
 
 def register_default_extractors(registry: Optional[FeatureRegistry] = None) -> FeatureRegistry:

@@ -11,7 +11,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import sys
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -58,13 +57,22 @@ def run_preflight(db_url: str = "", strict: bool = True) -> dict[str, Any]:
 
 def _check_imports() -> tuple[bool, str]:
     modules = [
-        "backend.llm", "backend.db.database", "backend.db.models", "backend.db.persist",
-        "backend.engine.game", "backend.engine.models", "backend.engine.visibility",
-        "backend.agents.cognitive.agent", "backend.agents.cognitive.agent_loop",
-        "backend.agents.cognitive.tools", "backend.agents.cognitive.retrieval_prod",
+        "backend.llm",
+        "backend.db.database",
+        "backend.db.models",
+        "backend.db.persist",
+        "backend.engine.game",
+        "backend.engine.models",
+        "backend.engine.visibility",
+        "backend.agents.cognitive.agent",
+        "backend.agents.cognitive.agent_loop",
+        "backend.agents.cognitive.tools",
+        "backend.agents.cognitive.retrieval_prod",
         "backend.agents.cognitive.retrieval",
-        "backend.eval.per_step_scorer", "backend.eval.knowledge_abstractor",
-        "backend.eval.post_game", "backend.eval.review",
+        "backend.eval.per_step_scorer",
+        "backend.eval.knowledge_abstractor",
+        "backend.eval.post_game",
+        "backend.eval.review",
     ]
     failed = []
     for mod in modules:
@@ -79,6 +87,7 @@ def _check_imports() -> tuple[bool, str]:
 
 def _check_db_connection(db_url: str) -> tuple[bool, str]:
     import psycopg2
+
     try:
         conn = psycopg2.connect(db_url, connect_timeout=5)
         cur = conn.cursor()
@@ -92,10 +101,17 @@ def _check_db_connection(db_url: str) -> tuple[bool, str]:
 
 def _check_db_tables(db_url: str) -> tuple[bool, str]:
     required = [
-        "games", "players", "agent_decisions", "game_events", "votes",
-        "strategy_knowledge_docs", "evaluations", "leaderboard_entries",
+        "games",
+        "players",
+        "agent_decisions",
+        "game_events",
+        "votes",
+        "strategy_knowledge_docs",
+        "evaluations",
+        "leaderboard_entries",
     ]
     import psycopg2
+
     try:
         conn = psycopg2.connect(db_url)
         cur = conn.cursor()
@@ -113,6 +129,7 @@ def _check_db_tables(db_url: str) -> tuple[bool, str]:
 
 def _check_db_write(db_url: str, strict: bool) -> tuple[bool, str]:
     import psycopg2
+
     try:
         conn = psycopg2.connect(db_url)
         cur = conn.cursor()
@@ -129,6 +146,7 @@ def _check_db_write(db_url: str, strict: bool) -> tuple[bool, str]:
 def _check_llm_client(strict: bool) -> tuple[bool, str]:
     try:
         from backend.llm import create_client
+
         client = create_client()
         available = getattr(client, "available", True)
         if not available:
@@ -152,6 +170,7 @@ def _check_llm_client(strict: bool) -> tuple[bool, str]:
 
 def _check_active_strategies(db_url: str, strict: bool) -> tuple[bool, str]:
     import psycopg2
+
     try:
         conn = psycopg2.connect(db_url)
         cur = conn.cursor()

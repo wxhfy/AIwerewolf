@@ -11,19 +11,17 @@ Policy:
   - Visibility reconstruction is mandatory for every sample.
 """
 
-from backend.eval.open_data.schema import (
-    CanonicalGameEvent,
-    OpenDataLicense,
-    OpenGameLog,
-    SpeechQualitySample,
-    VoteDecisionSample,
-    CounterfactualPairwiseSample,
-    ValueImpactSample,
-    RoleActionSample,
-    VisibilityState,
-    WeakLabel,
-    WeakLabelSource,
-)
+from backend.eval.open_data.schema import CanonicalGameEvent
+from backend.eval.open_data.schema import CounterfactualPairwiseSample
+from backend.eval.open_data.schema import OpenDataLicense
+from backend.eval.open_data.schema import OpenGameLog
+from backend.eval.open_data.schema import RoleActionSample
+from backend.eval.open_data.schema import SpeechQualitySample
+from backend.eval.open_data.schema import ValueImpactSample
+from backend.eval.open_data.schema import VisibilityState
+from backend.eval.open_data.schema import VoteDecisionSample
+from backend.eval.open_data.schema import WeakLabel
+from backend.eval.open_data.schema import WeakLabelSource
 
 __all__ = [
     "CanonicalGameEvent",

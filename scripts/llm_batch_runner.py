@@ -16,10 +16,11 @@ import json
 import sys
 import time
 import traceback
-from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from dataclasses import asdict
+from dataclasses import dataclass
+from datetime import datetime
+from datetime import timezone
 from pathlib import Path
-from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
@@ -105,10 +106,10 @@ def run_one_game(seed: int) -> GameResult:
 
 def main():
     parser = argparse.ArgumentParser(description="LLM-only batch game runner")
-    parser.add_argument("--seeds", type=int, nargs="*", default=None,
-                        help="Specific seeds to run (default: 5 random games)")
-    parser.add_argument("--games", type=int, default=5,
-                        help="Number of games to run with random seeds")
+    parser.add_argument(
+        "--seeds", type=int, nargs="*", default=None, help="Specific seeds to run (default: 5 random games)"
+    )
+    parser.add_argument("--games", type=int, default=5, help="Number of games to run with random seeds")
     parser.add_argument("--output", type=str, default="data/health/llm_batch_report.json")
     parser.add_argument("--start-seed", type=int, default=1)
     args = parser.parse_args()
@@ -122,17 +123,19 @@ def main():
     t0 = time.perf_counter()
 
     for i, seed in enumerate(seeds):
-        print(f"\n[{i+1}/{len(seeds)}] Seed={seed} ...", flush=True)
+        print(f"\n[{i + 1}/{len(seeds)}] Seed={seed} ...", flush=True)
         result = run_one_game(seed)
         results.append(result)
 
         status = "OK" if not result.error else f"ERROR: {result.error}"
-        print(f"  Winner={result.winner}, Day={result.day}, "
-              f"Decisions={result.total_decisions}, Fallback={result.fallback_count}, "
-              f"Duration={result.duration_s}s ({status})")
+        print(
+            f"  Winner={result.winner}, Day={result.day}, "
+            f"Decisions={result.total_decisions}, Fallback={result.fallback_count}, "
+            f"Duration={result.duration_s}s ({status})"
+        )
 
         # Save incrementally
-        _save_report(args.output, seeds[:i+1], results, time.perf_counter() - t0)
+        _save_report(args.output, seeds[: i + 1], results, time.perf_counter() - t0)
 
     _save_report(args.output, seeds, results, time.perf_counter() - t0)
     _print_summary(results, time.perf_counter() - t0)
@@ -168,7 +171,7 @@ def _save_report(path: str, seeds: list[int], results: list[GameResult], total_d
 
 def _print_summary(results: list[GameResult], total_duration: float):
     completed = [r for r in results if not r.error]
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Batch Summary: {len(completed)}/{len(results)} games completed")
     print(f"Total duration: {total_duration:.0f}s")
     if completed:

@@ -6,6 +6,7 @@ Usage:
 Each game takes ~30 min. 20 games = ~10 hours.
 Results are saved incrementally to data/experiment/batch_results.jsonl.
 """
+
 from __future__ import annotations
 
 import json
@@ -14,8 +15,8 @@ import time
 import traceback
 import warnings
 from collections import defaultdict
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -28,13 +29,15 @@ def _save_game_state(state, filepath: Path) -> None:
     """Save full game state for Track B review and Track C evolution."""
     players_data = []
     for p in state.players:
-        players_data.append({
-            "name": p.name,
-            "role": p.role.value,
-            "seat": p.seat,
-            "alive": p.alive,
-            "death_day": p.death_day if hasattr(p, "death_day") else None,
-        })
+        players_data.append(
+            {
+                "name": p.name,
+                "role": p.role.value,
+                "seat": p.seat,
+                "alive": p.alive,
+                "death_day": p.death_day if hasattr(p, "death_day") else None,
+            }
+        )
     events_data = []
     for e in getattr(state, "events", []) or []:
         try:
@@ -59,6 +62,7 @@ def _save_game_state(state, filepath: Path) -> None:
         "event_count": len(events_data),
     }
     import json
+
     filepath.write_text(json.dumps(data, ensure_ascii=False, indent=2))
 
 
@@ -68,15 +72,13 @@ def run_batch(n_games: int = 20, start_seed: int = 100) -> None:
     results_file = output_dir / "batch_results.jsonl"
     summary_file = output_dir / "batch_summary.json"
 
-    role_stats: dict[str, dict] = defaultdict(
-        lambda: {"wins": 0, "games": 0, "survival_days": 0.0, "alive_end": 0}
-    )
+    role_stats: dict[str, dict] = defaultdict(lambda: {"wins": 0, "games": 0, "survival_days": 0.0, "alive_end": 0})
     game_results = []
 
     print(f"Experiment started: {datetime.now()}")
     print(f"Games: {n_games}, mode: cognitive")
     print(f"Output: {results_file}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     for i in range(n_games):
         seed = start_seed + i
@@ -97,7 +99,7 @@ def run_batch(n_games: int = 20, start_seed: int = 100) -> None:
             for p in state.players:
                 role = p.role.value
                 team = "wolf" if role in ("Werewolf", "WhiteWolfKing") else "village"
-                won = (team == winner)
+                won = team == winner
                 # Track by role
                 role_stats[role]["wins"] += 1 if won else 0
                 role_stats[role]["games"] += 1
@@ -110,12 +112,9 @@ def run_batch(n_games: int = 20, start_seed: int = 100) -> None:
                 role_stats[mbti_key]["games"] += 1
                 role_stats[mbti_key]["survival_days"] += state.day if p.alive else (p.death_day or 0)
                 role_stats[mbti_key]["alive_end"] += 1 if p.alive else 0
-                result["players"].append({
-                    "name": p.name, "role": role, "mbti": mbti,
-                    "alive": p.alive, "won": won
-                })
+                result["players"].append({"name": p.name, "role": role, "mbti": mbti, "alive": p.alive, "won": won})
 
-            print(f"[{i+1:2d}/{n_games}] seed={seed} winner={winner} days={state.day} time={elapsed:.0f}s")
+            print(f"[{i + 1:2d}/{n_games}] seed={seed} winner={winner} days={state.day} time={elapsed:.0f}s")
 
             # Save full game state for evolution analysis
             state_file = output_dir / f"game_state_seed{seed}.json"
@@ -129,7 +128,7 @@ def run_batch(n_games: int = 20, start_seed: int = 100) -> None:
             result["error"] = str(e)
             result["traceback"] = traceback.format_exc()[:500]
             result["duration_s"] = round(elapsed, 1)
-            print(f"[{i+1:2d}/{n_games}] seed={seed} FAILED: {e}")
+            print(f"[{i + 1:2d}/{n_games}] seed={seed} FAILED: {e}")
 
         game_results.append(result)
 
@@ -139,7 +138,7 @@ def run_batch(n_games: int = 20, start_seed: int = 100) -> None:
 
         # Print running stats every 5 games
         if (i + 1) % 5 == 0:
-            print(f"  --- Running stats after {i+1} games ---")
+            print(f"  --- Running stats after {i + 1} games ---")
             for role in sorted(role_stats.keys()):
                 s = role_stats[role]
                 wr = s["wins"] / max(s["games"], 1)
@@ -169,19 +168,20 @@ def run_batch(n_games: int = 20, start_seed: int = 100) -> None:
     with open(summary_file, "w") as f:
         json.dump(summary, f, indent=2, ensure_ascii=False)
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"FINAL RESULTS ({summary['successful']}/{n_games} completed)")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     print(f"{'Role':<14s} {'Win Rate':>9s} {'Surv Days':>10s} {'Alive End':>10s}")
-    print(f"{'-'*56}")
+    print(f"{'-' * 56}")
     for role, s in sorted(stats.items()):
         print(f"{role:<14s} {s['win_rate']:>8.1%} {s['avg_survival_days']:>9.1f} {s['alive_endgame_rate']:>9.1%}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     print(f"Results saved to: {summary_file}")
 
 
 if __name__ == "__main__":
     import argparse
+
     p = argparse.ArgumentParser()
     p.add_argument("--games", type=int, default=20)
     p.add_argument("--start-seed", type=int, default=100)

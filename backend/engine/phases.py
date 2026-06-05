@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 from typing import Protocol
+
+if TYPE_CHECKING:
+    from backend.engine.game import WerewolfGame  # noqa: F401
 
 from backend.engine.models import Phase
 
@@ -9,8 +13,7 @@ from backend.engine.models import Phase
 class PhaseHandler(Protocol):
     phase: Phase
 
-    def run(self, game: "WerewolfGame") -> None:
-        ...
+    def run(self, game: "WerewolfGame") -> None: ...
 
 
 @dataclass(frozen=True)

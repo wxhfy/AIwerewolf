@@ -17,7 +17,8 @@ Wolves MUST NOT access:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from dataclasses import field
 from typing import Any
 
 
@@ -81,10 +82,10 @@ def build_wolf_team_view(
     view.dead_wolves = [w for w in wolf_ids if w in dead_set]
 
     # Extract public claims from belief tracker
-    if hasattr(belief_tracker, 'claims'):
+    if hasattr(belief_tracker, "claims"):
         for claim in belief_tracker.claims:
-            pid = getattr(claim, 'player_id', '')
-            role = getattr(claim, 'claimed_role', '')
+            pid = getattr(claim, "player_id", "")
+            role = getattr(claim, "claimed_role", "")
             if pid and role:
                 view.public_claims_summary[pid] = role
 
@@ -104,6 +105,7 @@ def build_wolf_team_view(
     # Set agreed kill target from wolf votes
     if wolf_votes:
         from collections import Counter
+
         tally = Counter(wolf_votes.values())
         if tally:
             view.agreed_kill_target = tally.most_common(1)[0][0]

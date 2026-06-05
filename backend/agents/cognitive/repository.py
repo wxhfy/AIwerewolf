@@ -7,9 +7,12 @@ No game logic, no LLM calls — pure data access.
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any
+from typing import Dict
+from typing import List
 
-from backend.agents.cognitive.profiles import Profile, PROFILES
+from backend.agents.cognitive.profiles import PROFILES
+from backend.agents.cognitive.profiles import Profile
 
 
 def load_profiles_from_db(conn_str: str = "") -> Dict[str, Profile]:
@@ -19,7 +22,9 @@ def load_profiles_from_db(conn_str: str = "") -> Dict[str, Profile]:
     """
     try:
         import psycopg2
+
         from backend.db.database import DEFAULT_DB_URL
+
         conn = psycopg2.connect(conn_str or DEFAULT_DB_URL)
         c = conn.cursor()
         c.execute("""
@@ -30,10 +35,10 @@ def load_profiles_from_db(conn_str: str = "") -> Dict[str, Profile]:
 
         profiles = {}
         for role, goal, speech, vote, skill, risk in c.fetchall():
-            speech_list = _parse_jsonb(speech)
-            vote_list = _parse_jsonb(vote)
-            skill_list = _parse_jsonb(skill)
-            risk_list = _parse_jsonb(risk)
+            _parse_jsonb(speech)
+            _parse_jsonb(vote)
+            _parse_jsonb(skill)
+            _parse_jsonb(risk)
 
             # Build Profile from DB data
             base = PROFILES.get(role, PROFILES["Villager"])

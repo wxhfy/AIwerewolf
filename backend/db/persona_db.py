@@ -11,10 +11,10 @@ from __future__ import annotations
 from random import Random
 from typing import Any
 
-from backend.agents.characters import PERSONA_POOL, build_system_prompt, _hydrate_persona
+from backend.agents.characters import PERSONA_POOL
+from backend.agents.characters import _hydrate_persona
 from backend.db.database import SessionLocal
 from backend.db.models import Persona as PersonaRow
-
 
 _PERSONA_FIELDS: tuple[str, ...] = (
     "mbti",
@@ -160,10 +160,23 @@ def _apply_persona_fields(row: PersonaRow, data: dict[str, Any]) -> None:
     # Non-field extras
     if "name" in data and data["name"] != row.name:
         row.name = str(data["name"]).strip()
-    for scalar in ("mbti", "gender", "basic_info", "style_label", "vocabulary_style",
-                   "speech_length_habit", "reasoning_style", "social_habit",
-                   "humor_style", "pressure_style", "uncertainty_style",
-                   "mistake_pattern", "logic_style", "werewolf_experience", "system_prompt"):
+    for scalar in (
+        "mbti",
+        "gender",
+        "basic_info",
+        "style_label",
+        "vocabulary_style",
+        "speech_length_habit",
+        "reasoning_style",
+        "social_habit",
+        "humor_style",
+        "pressure_style",
+        "uncertainty_style",
+        "mistake_pattern",
+        "logic_style",
+        "werewolf_experience",
+        "system_prompt",
+    ):
         if scalar in data:
             setattr(row, scalar, str(data[scalar] or ""))
     if "age" in data:

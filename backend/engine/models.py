@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from dataclasses import field
 from enum import Enum
 from time import time
 from typing import Any
@@ -110,7 +111,9 @@ class Player:
             "persona": {
                 "style_label": self.persona.get("style_label"),
                 "mbti": self.persona.get("mbti"),
-            } if self.persona else None,
+            }
+            if self.persona
+            else None,
         }
 
     def private_dict(self) -> dict[str, Any]:

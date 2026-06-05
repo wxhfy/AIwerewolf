@@ -9,7 +9,13 @@ import socket
 from pathlib import Path
 
 import pytest
-from playwright.sync_api import sync_playwright
+
+try:
+    from playwright.sync_api import sync_playwright
+except ImportError:
+    sync_playwright = None  # type: ignore[assignment]
+
+pytestmark = pytest.mark.skipif(sync_playwright is None, reason="playwright not installed")
 
 
 def _port_open(host: str = "localhost", port: int = 3001, timeout: float = 1.0) -> bool:

@@ -12,13 +12,15 @@ Core principle: Not all review conclusions are correct.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, Literal
-
+from dataclasses import dataclass
+from dataclasses import field
+from typing import Any
+from typing import Literal
 
 # ================================================================
 # L0-L4 Knowledge Confidence
 # ================================================================
+
 
 @dataclass
 class KnowledgeConfidence:
@@ -34,10 +36,10 @@ class KnowledgeConfidence:
     tier: Literal["L0_fact", "L1_rule", "L2_statistical", "L3_strategic", "L4_speculative"]
 
     # Confidence metadata
-    confidence_score: float | None = None       # 0.0-1.0
-    judge_agreement: float | None = None        # inter-judge agreement (L3)
-    sample_size: int | None = None              # number of games (L2)
-    human_verdict: str | None = None            # "verified" | "rejected" | None
+    confidence_score: float | None = None  # 0.0-1.0
+    judge_agreement: float | None = None  # inter-judge agreement (L3)
+    sample_size: int | None = None  # number of games (L2)
+    human_verdict: str | None = None  # "verified" | "rejected" | None
     contradiction_count: int = 0
     times_upvoted: int = 0
     games_since_creation: int = 0
@@ -60,6 +62,7 @@ class KnowledgeConfidence:
 # Knowledge Access Control
 # ================================================================
 
+
 @dataclass
 class KnowledgeAccessControl:
     """Who can see this knowledge during gameplay.
@@ -69,17 +72,17 @@ class KnowledgeAccessControl:
     """
 
     visibility_scope: Literal[
-        "public",                  # Anyone can see
-        "self_private",            # Only the role owner
-        "wolf_team_private",       # Only wolf team
-        "postgame_only",           # Only after game ends
-        "global_deidentified",     # Anyone, with IDs removed
+        "public",  # Anyone can see
+        "self_private",  # Only the role owner
+        "wolf_team_private",  # Only wolf team
+        "postgame_only",  # Only after game ends
+        "global_deidentified",  # Anyone, with IDs removed
     ]
 
     source_game_ids: list[str] = field(default_factory=list)
-    allowed_roles: list[str] | None = None       # None = all roles
-    allowed_phases: list[str] | None = None      # None = all phases
-    deidentified: bool = False                    # Player IDs removed
+    allowed_roles: list[str] | None = None  # None = all roles
+    allowed_phases: list[str] | None = None  # None = all phases
+    deidentified: bool = False  # Player IDs removed
     contains_current_game_private_info: bool = False
 
     def allows_agent(self, agent_role: str, is_wolf: bool, is_postgame: bool) -> bool:
@@ -101,6 +104,7 @@ class KnowledgeAccessControl:
 # Knowledge Applicability
 # ================================================================
 
+
 @dataclass
 class KnowledgeApplicability:
     """When does this knowledge apply?
@@ -113,8 +117,8 @@ class KnowledgeApplicability:
       - Rules allow first-night self-save
     """
 
-    role: str | None = None                    # Required role, None = any
-    phase: str | None = None                   # Required phase, None = any
+    role: str | None = None  # Required role, None = any
+    phase: str | None = None  # Required phase, None = any
     rule_variant: str = "standard_competition_v1"
     min_players: int | None = None
     max_players: int | None = None
@@ -165,6 +169,7 @@ class KnowledgeApplicability:
 # ================================================================
 # Retrieval Filter Pipeline
 # ================================================================
+
 
 def confidence_allowed(doc: dict[str, Any]) -> bool:
     """Check if document's confidence tier allows retrieval for decision-making.
@@ -336,12 +341,13 @@ def retrieve_for_agent(
     if search_fn is not None:
         candidates = search_fn(query, top_k * 5)
     elif all_docs is not None:
-        candidates = all_docs[:top_k * 5]
+        candidates = all_docs[: top_k * 5]
     else:
         return []
 
     # Step 2: Apply 4-filter pipeline
     import logging as _kclog
+
     _kclogger = _kclog.getLogger(__name__)
     filter_counts = {"confidence": 0, "visibility": 0, "leak": 0, "applicability": 0, "status": 0, "pass": 0}
     filtered: list[dict[str, Any]] = []
@@ -356,14 +362,21 @@ def retrieve_for_agent(
             filter_counts["leak"] += 1
             continue
         if not applicability_matches(
-            doc, agent_role, current_phase, rule_variant,
-            player_count, public_facts, private_state,
+            doc,
+            agent_role,
+            current_phase,
+            rule_variant,
+            player_count,
+            public_facts,
+            private_state,
         ):
             if filter_counts["applicability"] < 2:
                 _kclogger.debug(
                     "applicability_matches rejected doc role=%s phase=%s agent_role=%s agent_phase=%s",
-                    doc.get("applicability_role"), doc.get("applicability_phase"),
-                    agent_role, current_phase,
+                    doc.get("applicability_role"),
+                    doc.get("applicability_phase"),
+                    agent_role,
+                    current_phase,
                 )
             filter_counts["applicability"] += 1
             continue
@@ -375,8 +388,12 @@ def retrieve_for_agent(
     if filter_counts["pass"] == 0:
         _kclogger.warning(
             "4-filter: all %d candidates rejected (confidence=%d visibility=%d leak=%d applicability=%d status=%d)",
-            len(candidates), filter_counts["confidence"], filter_counts["visibility"],
-            filter_counts["leak"], filter_counts["applicability"], filter_counts["status"],
+            len(candidates),
+            filter_counts["confidence"],
+            filter_counts["visibility"],
+            filter_counts["leak"],
+            filter_counts["applicability"],
+            filter_counts["status"],
         )
 
     # Step 3: Rerank by quality_score then return top_k

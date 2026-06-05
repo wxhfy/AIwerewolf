@@ -10,8 +10,17 @@ from typing import Any
 VALID_LABELS = {"A_BETTER", "B_BETTER", "TIE", "UNCERTAIN"}
 VALID_CONFIDENCE = {"high", "medium", "low"}
 VALID_ROLES = {"Werewolf", "WhiteWolfKing", "Seer", "Witch", "Guard", "Hunter", "Villager"}
-VALID_ACTION_TYPES = {"speech", "vote", "werewolf_kill", "seer_check", "seer_release",
-                      "witch_save", "witch_poison", "guard_protect", "hunter_shot"}
+VALID_ACTION_TYPES = {
+    "speech",
+    "vote",
+    "werewolf_kill",
+    "seer_check",
+    "seer_release",
+    "witch_save",
+    "witch_poison",
+    "guard_protect",
+    "hunter_shot",
+}
 
 
 def validate_human_pairwise_label(label: dict[str, Any]) -> list[str]:
@@ -19,9 +28,20 @@ def validate_human_pairwise_label(label: dict[str, Any]) -> list[str]:
     errors: list[str] = []
 
     # Required fields
-    required = ["label_id", "game_id", "source", "role", "action_type",
-                "label", "confidence", "reason",
-                "option_a", "option_b", "visible_public_context", "visible_private_context"]
+    required = [
+        "label_id",
+        "game_id",
+        "source",
+        "role",
+        "action_type",
+        "label",
+        "confidence",
+        "reason",
+        "option_a",
+        "option_b",
+        "visible_public_context",
+        "visible_private_context",
+    ]
     for field in required:
         if field not in label:
             errors.append(f"missing_required_field:{field}")
@@ -66,8 +86,16 @@ def validate_human_pairwise_label(label: dict[str, Any]) -> list[str]:
 
     # Future-info leak check (basic)
     reason = str(label.get("reason", "")).lower()
-    future_kw = ["after the game", "we know now", "turned out to be", "ended up being",
-                 "post-game", "with hindsight", "最終結果", "賽後"]
+    future_kw = [
+        "after the game",
+        "we know now",
+        "turned out to be",
+        "ended up being",
+        "post-game",
+        "with hindsight",
+        "最終結果",
+        "賽後",
+    ]
     for kw in future_kw:
         if kw in reason:
             errors.append(f"possible_future_info_leak:{kw}")

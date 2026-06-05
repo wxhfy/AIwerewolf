@@ -10,8 +10,6 @@ Adapters must:
   - Tag all labels with WeakLabelSource.
 """
 
-from backend.eval.open_data.adapters.werewolf_among_us_adapter import (
-    WerewolfAmongUsAdapter,
-)
+from backend.eval.open_data.adapters.werewolf_among_us_adapter import WerewolfAmongUsAdapter
 
 __all__ = ["WerewolfAmongUsAdapter"]

@@ -11,39 +11,23 @@ Validates that:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-import numpy as np
-import pytest
-
-from backend.engine.models import (
-    Alignment,
-    EventType,
-    GameEvent,
-    GameState,
-    Phase,
-    Player,
-    Role,
-)
-from backend.eval.types import (
-    ReviewReport,
-    EvidenceRef,
-    EvolutionCandidate,
-    SafetyFlags,
-    BadCaseReport,
-    CounterfactualCase,
-    PlayerScore,
-    ReviewBonus,
-)
-from backend.eval.review import (
-    MetricsCalculator,
-    ReviewReportBuilder,
-    is_safe_for_track_c_learning,
-)
-
+from backend.engine.models import Alignment
+from backend.engine.models import EventType
+from backend.engine.models import GameEvent
+from backend.engine.models import GameState
+from backend.engine.models import Phase
+from backend.engine.models import Player
+from backend.engine.models import Role
+from backend.eval.review import MetricsCalculator
+from backend.eval.review import ReviewReportBuilder
+from backend.eval.review import is_safe_for_track_c_learning
+from backend.eval.types import BadCaseReport
+from backend.eval.types import EvidenceRef
+from backend.eval.types import EvolutionCandidate
+from backend.eval.types import ReviewReport
 
 # ============================================================
 # Helpers
@@ -102,27 +86,48 @@ def _make_event(
 def _build_minimal_state(winner: Alignment = Alignment.VILLAGE) -> GameState:
     """Build a minimal 7-player game state for testing."""
     roles = [
-        Role.WEREWOLF, Role.WEREWOLF, Role.SEER, Role.WITCH,
-        Role.HUNTER, Role.GUARD, Role.VILLAGER,
+        Role.WEREWOLF,
+        Role.WEREWOLF,
+        Role.SEER,
+        Role.WITCH,
+        Role.HUNTER,
+        Role.GUARD,
+        Role.VILLAGER,
     ]
-    players = [
-        _make_player(f"P{i+1}", f"Player{i+1}", role)
-        for i, role in enumerate(roles)
-    ]
+    players = [_make_player(f"P{i + 1}", f"Player{i + 1}", role) for i, role in enumerate(roles)]
     players[0].alignment = Alignment.WOLF
     players[1].alignment = Alignment.WOLF
 
     events = [
         _make_event(EventType.GAME_START, 0, Phase.SETUP, {"player_count": 7}),
-        _make_event(EventType.CHAT_MESSAGE, 1, Phase.DAY_SPEECH, {
-            "actor_id": "P3", "speech": "我是预言家，昨晚查验P1是狼人。",
-        }),
-        _make_event(EventType.VOTE_CAST, 1, Phase.DAY_VOTE, {
-            "voter_id": "P3", "target_id": "P1",
-        }),
-        _make_event(EventType.PLAYER_DIED, 1, Phase.DAY_RESOLVE, {
-            "player_id": "P1", "reason": "vote", "role": "Werewolf",
-        }),
+        _make_event(
+            EventType.CHAT_MESSAGE,
+            1,
+            Phase.DAY_SPEECH,
+            {
+                "actor_id": "P3",
+                "speech": "我是预言家，昨晚查验P1是狼人。",
+            },
+        ),
+        _make_event(
+            EventType.VOTE_CAST,
+            1,
+            Phase.DAY_VOTE,
+            {
+                "voter_id": "P3",
+                "target_id": "P1",
+            },
+        ),
+        _make_event(
+            EventType.PLAYER_DIED,
+            1,
+            Phase.DAY_RESOLVE,
+            {
+                "player_id": "P1",
+                "reason": "vote",
+                "role": "Werewolf",
+            },
+        ),
     ]
 
     state = GameState(
@@ -141,6 +146,7 @@ def _build_minimal_state(winner: Alignment = Alignment.VILLAGE) -> GameState:
 # ============================================================
 # Test 1: ReviewReport schema
 # ============================================================
+
 
 def test_review_report_has_v2_fields() -> None:
     """ReviewReport must include all v2 structured fields."""
@@ -193,6 +199,7 @@ def test_review_report_to_dict_includes_v2_fields() -> None:
 # Test 2: EvidenceRef
 # ============================================================
 
+
 def test_evidence_ref_basics() -> None:
     """EvidenceRef should be constructable and serializable."""
     ref = EvidenceRef(
@@ -232,6 +239,7 @@ def test_evidence_ref_to_public_dict_redacts_private() -> None:
 # Test 3: Track C contract (evolution_candidates safety)
 # ============================================================
 
+
 def _make_evolution_candidate(**overrides: Any) -> EvolutionCandidate:
     defaults = {
         "source_type": "bad_case",
@@ -240,8 +248,7 @@ def _make_evolution_candidate(**overrides: Any) -> EvolutionCandidate:
         "phase": "DAY_SPEECH",
         "trigger_condition": "Seer checked wolf but did not reveal.",
         "lesson": "Reveal wolf check results in next speech.",
-        "evidence_refs": [EvidenceRef(phase="DAY_SPEECH", event_type="CHAT_MESSAGE",
-                                        summary="Seer speech analysis.")],
+        "evidence_refs": [EvidenceRef(phase="DAY_SPEECH", event_type="CHAT_MESSAGE", summary="Seer speech analysis.")],
         "quality_signals": {"evidence_strength": 0.8, "confidence": 0.7},
         "visibility_scope": "public",
         "safe_for_track_c_learning": True,
@@ -280,20 +287,18 @@ def test_evolution_candidate_no_absolute_strategy() -> None:
 def test_evolution_candidate_safe_lesson_ok() -> None:
     """Normal strategic lessons should be safe."""
     assert is_safe_for_track_c_learning(
-        "When you have a wolf check result, consider revealing it in your next speech "
-        "to build public vote pressure."
+        "When you have a wolf check result, consider revealing it in your next speech to build public vote pressure."
     )
     assert is_safe_for_track_c_learning(
         "As witch, hold your poison until you have stronger evidence about wolf identity."
     )
-    assert is_safe_for_track_c_learning(
-        "As guard, protect key information roles like Seer on night 1."
-    )
+    assert is_safe_for_track_c_learning("As guard, protect key information roles like Seer on night 1.")
 
 
 # ============================================================
 # Test 4: model fallback (scoring_models.py)
 # ============================================================
+
 
 def test_scoring_model_missing_uses_fallback(tmp_path) -> None:
     """Missing model files should use fallback, not crash."""
@@ -355,6 +360,7 @@ def test_load_track_b_models_return_info(tmp_path) -> None:
 # Test 5: Judge disagreement
 # ============================================================
 
+
 def test_judge_panel_defaults() -> None:
     """Default judge_panel should have valid structure."""
     report = ReviewReport(
@@ -397,6 +403,7 @@ def test_evolution_candidate_low_confidence_filtered() -> None:
 # ============================================================
 # Test 6: Safety scan
 # ============================================================
+
 
 def test_is_safe_for_track_c_learning_badcase() -> None:
     """is_safe_for_track_c_learning should work with BadCaseReport objects."""
@@ -470,6 +477,7 @@ def test_review_report_has_calibration_info() -> None:
 # Test 7: Evidence refs coverage
 # ============================================================
 
+
 def test_bad_case_has_evidence_refs() -> None:
     """Bad cases produced by MetricsCalculator should have evidence_refs."""
     state = _build_minimal_state()
@@ -477,8 +485,7 @@ def test_bad_case_has_evidence_refs() -> None:
     reports = calculator.detect_bad_cases(state)
 
     for report in reports:
-        assert hasattr(report, "evidence_refs"), \
-            f"Bad case {report.mistake_type} missing evidence_refs attribute"
+        assert hasattr(report, "evidence_refs"), f"Bad case {report.mistake_type} missing evidence_refs attribute"
 
 
 def test_evolution_candidate_requires_evidence_or_trigger() -> None:
@@ -494,6 +501,7 @@ def test_evolution_candidate_requires_evidence_or_trigger() -> None:
 # ============================================================
 # Test 8: PlayerScore v2 fields
 # ============================================================
+
 
 def test_player_score_has_v2_fields() -> None:
     """PlayerScore should have role_normalized_score, confidence, rule_based fields."""
@@ -515,5 +523,6 @@ def test_role_normalized_score_in_range() -> None:
     metrics = MetricsCalculator().compute(state)
 
     for score in metrics.player_scores:
-        assert 0.0 <= score.role_normalized_score <= 100.0, \
+        assert 0.0 <= score.role_normalized_score <= 100.0, (
             f"Player {score.player_name} role_normalized_score out of range: {score.role_normalized_score}"
+        )

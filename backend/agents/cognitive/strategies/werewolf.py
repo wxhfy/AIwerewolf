@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from dataclasses import field
 
-from backend.agents.cognitive.strategies.base import RoleStrategyCard, register_strategy
+from backend.agents.cognitive.strategies.base import RoleStrategyCard
+from backend.agents.cognitive.strategies.base import register_strategy
 
 
 @register_strategy("werewolf")
@@ -23,21 +25,23 @@ class WerewolfStrategyCard(RoleStrategyCard):
     information_seeking: float = 0.60
 
     # === Wolf-specific ===
-    bluff_timing_preference: str = "mid"       # Jump claim in mid-game
-    sacrifice_threshold: float = 0.70          # Bus teammate if they're >70% exposed
+    bluff_timing_preference: str = "mid"  # Jump claim in mid-game
+    sacrifice_threshold: float = 0.70  # Bus teammate if they're >70% exposed
 
     # Kill strategy
-    kill_priority: list[str] = field(default_factory=lambda: [
-        "claimed_seer",
-        "confirmed_good",
-        "leadership_player",
-        "silent_analyst",
-    ])
+    kill_priority: list[str] = field(
+        default_factory=lambda: [
+            "claimed_seer",
+            "confirmed_good",
+            "leadership_player",
+            "silent_analyst",
+        ]
+    )
 
     # Coordination tactics
-    primary_tactic: str = "deep_cover"         # deep_cover | lead_bluffer | vote_pusher
-    narrative_consistency: float = 0.80         # How strictly to follow team narrative
-    fake_claim_role: str = "Villager"           # Default fake claim
+    primary_tactic: str = "deep_cover"  # deep_cover | lead_bluffer | vote_pusher
+    narrative_consistency: float = 0.80  # How strictly to follow team narrative
+    fake_claim_role: str = "Villager"  # Default fake claim
 
     def format_for_prompt(self) -> str:
         base = super().format_for_prompt()

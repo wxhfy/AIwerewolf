@@ -10,7 +10,6 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -112,9 +111,7 @@ def main() -> int:
         assert room_snapshot["id"] == room_game_payload["id"]
 
         for seed in (3, 7, 11):
-            status, body = http_post(
-                f"http://127.0.0.1:{port}/api/games?seed={seed}&agent_type=llm&player_count=7"
-            )
+            status, body = http_post(f"http://127.0.0.1:{port}/api/games?seed={seed}&agent_type=llm&player_count=7")
             assert status == 200
             payload = json.loads(body)
             assert_match_payload(payload)

@@ -14,8 +14,10 @@ import os
 import random
 import sys
 import time
-from collections import Counter, defaultdict
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from collections import Counter
+from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import as_completed
 from pathlib import Path
 from typing import Any
 
@@ -24,14 +26,19 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from dotenv import load_dotenv
+
 load_dotenv()
 
 from backend.llm import create_client
 
 # ---- Sampling targets ----
 SAMPLE_TARGETS = {
-    "Witch": 100, "Guard": 100, "Hunter": 100,
-    "Seer": 70, "Werewolf": 70, "Villager": 60,
+    "Witch": 100,
+    "Guard": 100,
+    "Hunter": 100,
+    "Seer": 70,
+    "Werewolf": 70,
+    "Villager": 60,
 }
 TOTAL_TARGET = sum(SAMPLE_TARGETS.values())  # 500
 
@@ -146,21 +153,31 @@ def build_label_task(opp: dict) -> dict[str, Any]:
     # Determine task type (use .replace() to avoid str.format brace issues)
     if op_type == "speech":
         speech_text = str(opp.get("chosen_action", {}).get("speech") or public)[:1000]
-        prompt = (SPEECH_PROMPT
-            .replace("{role}", str(role)).replace("{day}", str(day))
-            .replace("{phase}", str(phase)).replace("{speech}", speech_text)
-            .replace("{public}", public))
+        prompt = (
+            SPEECH_PROMPT.replace("{role}", str(role))
+            .replace("{day}", str(day))
+            .replace("{phase}", str(phase))
+            .replace("{speech}", speech_text)
+            .replace("{public}", public)
+        )
         task_type = "speech_quality"
     elif op_type in ("witch_poison", "witch_skip", "hunter_shot") and "died" in outcome:
-        prompt = (MISTAKE_PROMPT
-            .replace("{role}", str(role)).replace("{day}", str(day))
-            .replace("{action}", action).replace("{outcome}", outcome))
+        prompt = (
+            MISTAKE_PROMPT.replace("{role}", str(role))
+            .replace("{day}", str(day))
+            .replace("{action}", action)
+            .replace("{outcome}", outcome)
+        )
         task_type = "mistake_severity"
     else:
-        prompt = (SINGLE_ACTION_PROMPT
-            .replace("{role}", str(role)).replace("{phase}", str(phase))
-            .replace("{day}", str(day)).replace("{public}", public)
-            .replace("{private}", private).replace("{action}", action))
+        prompt = (
+            SINGLE_ACTION_PROMPT.replace("{role}", str(role))
+            .replace("{phase}", str(phase))
+            .replace("{day}", str(day))
+            .replace("{public}", public)
+            .replace("{private}", private)
+            .replace("{action}", action)
+        )
         task_type = "single_action"
 
     return {
@@ -174,6 +191,7 @@ def build_label_task(opp: dict) -> dict[str, Any]:
 
 
 _SHARED_CLIENT = None
+
 
 def _get_client():
     global _SHARED_CLIENT
@@ -280,7 +298,7 @@ def main() -> int:
     # Build tasks
     tasks = [build_label_task(opp) for opp in sampled]
     if args.limit:
-        tasks = tasks[:args.limit]
+        tasks = tasks[: args.limit]
 
     if not tasks:
         print("All samples already labeled!")
@@ -312,7 +330,9 @@ def main() -> int:
 
     total = len(existing_ids) + completed
     elapsed = time.time() - start_time
-    print(f"\nDone: {completed} new + {len(existing_ids)} existing = {total} total in {elapsed:.0f}s ({completed/elapsed:.1f}/s)")
+    print(
+        f"\nDone: {completed} new + {len(existing_ids)} existing = {total} total in {elapsed:.0f}s ({completed / elapsed:.1f}/s)"
+    )
     print(f"Errors: {errors}")
     print(f"Output: {output_path}")
 
@@ -352,8 +372,8 @@ def _generate_report(output_path: Path, total: int, errors: int):
         "# Label Quality Report (Phase 2)",
         "",
         f"**Total labeled**: {total}",
-        f"**Parse errors**: {parse_errors} ({parse_errors/max(total,1)*100:.1f}%)",
-        f"**Success rate**: {(total-parse_errors)/max(total,1)*100:.1f}%",
+        f"**Parse errors**: {parse_errors} ({parse_errors / max(total, 1) * 100:.1f}%)",
+        f"**Success rate**: {(total - parse_errors) / max(total, 1) * 100:.1f}%",
         "",
         "## Per Role",
         "| Role | Count |",
@@ -373,6 +393,7 @@ def _generate_report(output_path: Path, total: int, errors: int):
 
     if quality_scores:
         import statistics
+
         lines += [
             "",
             "## Quality Score Distribution",
@@ -393,7 +414,9 @@ def _generate_report(output_path: Path, total: int, errors: int):
     for role in sorted(role_counts):
         role_scores = [item["label"].get("quality_score", 0) or 0 for item in labeled if item["role"] == role]
         if role_scores:
-            lines.append(f"| {role} | {len(role_scores)} | {statistics.mean(role_scores):.1f} | {statistics.median(role_scores):.1f} |")
+            lines.append(
+                f"| {role} | {len(role_scores)} | {statistics.mean(role_scores):.1f} | {statistics.median(role_scores):.1f} |"
+            )
 
     lines += [
         "",

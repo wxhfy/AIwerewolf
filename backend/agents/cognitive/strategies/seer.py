@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from dataclasses import field
 
-from backend.agents.cognitive.strategies.base import RoleStrategyCard, register_strategy
+from backend.agents.cognitive.strategies.base import RoleStrategyCard
+from backend.agents.cognitive.strategies.base import register_strategy
 
 
 @register_strategy("seer")
@@ -25,8 +27,8 @@ class SeerStrategyCard(RoleStrategyCard):
     # === Seer-specific rule-based ===
 
     # When to reveal check results
-    reveal_when_checked_wolf: bool = True         # Always reveal wolf checks
-    reveal_when_counter_claimed: bool = True       # Reveal if someone else claims Seer
+    reveal_when_checked_wolf: bool = True  # Always reveal wolf checks
+    reveal_when_counter_claimed: bool = True  # Reveal if someone else claims Seer
     reveal_when_self_at_risk_threshold: float = 0.65  # Reveal if likely to be voted
 
     # Check priority (ordered list of player types to check)
@@ -40,8 +42,8 @@ class SeerStrategyCard(RoleStrategyCard):
     )
 
     # Information management
-    keep_badge_flow_private_until_day: int = 2   # Don't reveal badge info early
-    reveal_flow_on_death: bool = True              # Share all results in last words
+    keep_badge_flow_private_until_day: int = 2  # Don't reveal badge info early
+    reveal_flow_on_death: bool = True  # Share all results in last words
 
     def format_for_prompt(self) -> str:
         base = super().format_for_prompt()
