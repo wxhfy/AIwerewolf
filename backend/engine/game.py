@@ -696,9 +696,13 @@ class WerewolfGame:
         self.state.night_actions.last_guard_target_id = decision.target_id
         self._log_decision(decision, "private", {"target_id": decision.target_id}, [guard.id])
         target = self.state.player(decision.target_id)
-        self._log(EventType.NIGHT_ACTION, "public", {
-            "action_type": "guard", "actor_name": guard.name, "target": target.public_dict(),
-        })
+        with self._shared_lock:
+            saved = self.state.phase
+            self.state.phase = Phase.NIGHT_GUARD_ACTION
+            self._log(EventType.NIGHT_ACTION, "public", {
+                "action_type": "guard", "actor_name": guard.name, "target": target.public_dict(),
+            })
+            self.state.phase = saved
         self._mark_phase_done(Phase.NIGHT_GUARD_ACTION)
 
     def _wolf_phase(self) -> None:
@@ -855,10 +859,14 @@ class WerewolfGame:
         self.state.night_actions.seer_result = result
         self._log_decision(decision, "private", {"target_id": target.id}, [seer.id])
         self._log(EventType.PRIVATE_INFO, "private", result, visible_to=[seer.id])
-        self._log(EventType.NIGHT_ACTION, "public", {
-            "action_type": "divine", "actor_name": seer.name, "target": target.public_dict(),
-            "is_wolf": target.alignment == Alignment.WOLF,
-        })
+        with self._shared_lock:
+            saved = self.state.phase
+            self.state.phase = Phase.NIGHT_SEER_ACTION
+            self._log(EventType.NIGHT_ACTION, "public", {
+                "action_type": "divine", "actor_name": seer.name, "target": target.public_dict(),
+                "is_wolf": target.alignment == Alignment.WOLF,
+            })
+            self.state.phase = saved
         self._mark_phase_done(Phase.NIGHT_SEER_ACTION)
 
     def _night_resolve(self) -> None:
