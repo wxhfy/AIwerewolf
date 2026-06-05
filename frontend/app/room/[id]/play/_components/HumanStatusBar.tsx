@@ -21,7 +21,7 @@ interface HumanStatusBarProps {
   players?: Array<{ id: string; seat: number; name: string }>;
 }
 
-export function HumanStatusBar({ display, displayPhase, language }: HumanStatusBarProps) {
+export function HumanStatusBar({ display, displayPhase, language, speakerState, players }: HumanStatusBarProps) {
   const visiblePhase = displayPhase || display.phase;
   const phaseLabel = PHASE_LABEL[visiblePhase] || visiblePhase;
   const lang = language as "zh" | "en";

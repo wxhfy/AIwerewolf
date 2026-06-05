@@ -17,6 +17,7 @@ import math
 import re
 from collections import Counter
 from random import Random
+from typing import Any
 
 from backend.agents.base import Agent
 from backend.agents.characters import Character
@@ -99,8 +100,6 @@ class HeuristicAgent(Agent):
     def initialize(self, view: PlayerView, game_setting: dict) -> None:
         self.view = view
         self._init_suspicion()
-        char_name = self.character.persona.name if self.character else "Player"
-        role = self.role.value
         # Wolves know their teammates
         if self.role in WOLF_FAMILY:
             for w in view.known_wolves:
@@ -360,7 +359,7 @@ class HeuristicAgent(Agent):
         # Only boom when wolves are losing badly: more village alive than wolves by a large margin
         # and the White Wolf King himself is under heavy suspicion (likely to be voted out anyway)
         target = self._highest_suspicion_alive()
-        my_suspicion_on_me = sum(1 for p in view.players if p["alive"] and p["id"] != self.player_id)
+        sum(1 for p in view.players if p["alive"] and p["id"] != self.player_id)
         wolf_alive = sum(1 for p in view.players if p["alive"] and p.get("alignment") == "wolf")
         village_alive = sum(1 for p in view.players if p["alive"] and p.get("alignment") != "wolf")
         # Boom only when: day >= 4 AND wolves are outnumbered AND I'm heavily suspected
@@ -1622,7 +1621,7 @@ class HeuristicAgent(Agent):
         if not fake_target:
             return None
         fake_tag = self._tag(fake_target)
-        fake_name = fake_target.get("name", "?")
+        fake_target.get("name", "?")
 
         # Pick strategy: 金水 (good) or 查杀 (wolf) for the target
         if seer_already_claimed:
