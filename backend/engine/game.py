@@ -4,6 +4,7 @@ import hashlib
 import json
 import logging
 import os
+import time
 from collections import Counter
 from random import Random
 from typing import Any
@@ -112,6 +113,7 @@ class WerewolfGame:
         strategy_bias: dict[str, list[str]] | None = None,
         strategy_bias_by_role: dict[str, dict[str, list[str]]] | None = None,
         sampled_personas: list[dict] | None = None,
+        phase_delay_ms: float = 0,
     ):
         self.rng = Random(seed)
         self.strategy_version = strategy_version
@@ -135,6 +137,7 @@ class WerewolfGame:
         self.pending_badge_transfer_from_id: str | None = None
         self.human_action_buffer: dict[str, list[Decision]] = {}
         self.interrupt_phase_cycle = False
+        self.phase_delay_ms = phase_delay_ms
         # `_play_started` flips True the moment someone calls play() so a
         # reconnecting WebSocket can tell "this game is already running, just
         # tail it" apart from "this game was prepared but never started — I
