@@ -16,6 +16,10 @@ interface UseRoomStreamOptions {
   setGameState: (state: GameState | null) => void;
   setIsPlaying: (playing: boolean) => void;
   setStatusTitle: (title: string) => void;
+  /** 眨眼转场期间返回 true，快照应缓冲而非直接更新 UI */
+  getIsBlinking?: () => boolean;
+  /** 眨眼转场期间缓冲快照（只保留最新一份） */
+  bufferSnapshot?: (state: GameState) => void;
 }
 
 export function useRoomStream({
@@ -29,6 +33,8 @@ export function useRoomStream({
   setGameState,
   setIsPlaying,
   setStatusTitle,
+  getIsBlinking,
+  bufferSnapshot,
 }: UseRoomStreamOptions) {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectAttemptRef = useRef(0);
@@ -83,9 +89,24 @@ export function useRoomStream({
       }
 
       if (msg.type === "room" && msg.room) setRoom(msg.room);
-      if (msg.type === "snapshot" && msg.state) setGameState(msg.state);
+      if (msg.type === "snapshot" && msg.state) {
+        // 眨眼转场期间：缓冲快照，不更新 UI
+        if (getIsBlinking?.() && bufferSnapshot) {
+          bufferSnapshot(msg.state);
+        } else {
+          setGameState(msg.state);
+        }
+      }
       if (msg.type === "complete") {
-        if (msg.state) setGameState(msg.state);
+        // 游戏结束：如果在眨眼期间，缓冲最终状态等 flush；
+        // 如果不在眨眼期间，直接更新
+        if (msg.state) {
+          if (getIsBlinking?.() && bufferSnapshot) {
+            bufferSnapshot(msg.state);
+          } else {
+            setGameState(msg.state);
+          }
+        }
         if (msg.room) setRoom(msg.room);
         setIsPlaying(false);
         setStatusTitle(t("statusLoaded", language));

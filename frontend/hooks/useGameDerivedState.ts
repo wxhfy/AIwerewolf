@@ -1,5 +1,16 @@
 import { useMemo } from "react";
-import { Alignment, EventType, GameEvent, GameState } from "@/types";
+import { Alignment, EventType, GameEvent, GameState, Phase } from "@/types";
+
+/**
+ * 夜间阶段 → 对应角色列表。
+ * NIGHT_WOLF_ACTION 包含 Werewolf 和 WhiteWolfKing（白狼王是狼变体）。
+ */
+const NIGHT_PHASE_ROLES: Partial<Record<string, string[]>> = {
+  [Phase.NIGHT_GUARD_ACTION]: ["Guard"],
+  [Phase.NIGHT_WOLF_ACTION]: ["Werewolf", "WhiteWolfKing"],
+  [Phase.NIGHT_WITCH_ACTION]: ["Witch"],
+  [Phase.NIGHT_SEER_ACTION]: ["Seer"],
+};
 
 export function useGameDerivedState(gameState: GameState | null, humanSeat: number, isHumanMode: boolean, completedIds?: Set<string>, completedTick?: number) {
   const dayBlocks = useMemo(() => {
@@ -70,47 +81,6 @@ export function useGameDerivedState(gameState: GameState | null, humanSeat: numb
     return spoken;
   }, [revealedEvents, gameState?.phase]);
 
-  // Tracks which players have voted (from revealed events only)
-  const votedSet = useMemo(() => {
-    const voted = new Set<string>();
-    for (const event of revealedEvents) {
-      if (event.type === EventType.VOTE_CAST) {
-        const voterId = (event.payload as any)?.voter_id;
-        if (voterId) voted.add(voterId);
-      }
-    }
-    return voted;
-  }, [revealedEvents]);
-
-  // Vote tally per player (from revealed events only)
-  const voteCount = useMemo(() => {
-    const tally = new Map<string, number>();
-    for (const event of revealedEvents) {
-      if (event.type === EventType.VOTE_CAST) {
-        const targetId = (event.payload as any)?.target_id;
-        if (targetId) tally.set(targetId, (tally.get(targetId) || 0) + 1);
-      }
-    }
-    return tally;
-  }, [revealedEvents]);
-
-  // Maps voterId → target player name (from revealed events only)
-  const voteTarget = useMemo(() => {
-    const map = new Map<string, string>();
-    if (!gameState?.players) return map;
-    for (const event of revealedEvents) {
-      if (event.type === EventType.VOTE_CAST) {
-        const p = event.payload as any;
-        const voterId = p.voter_id;
-        const targetId = p.target_id;
-        if (!voterId || !targetId) continue;
-        const target = gameState.players.find(pl => pl.id === targetId);
-        if (target) map.set(voterId, target.name);
-      }
-    }
-    return map;
-  }, [revealedEvents, gameState?.players]);
-
   // Dead player state machine: last_words | hunter_shoot | spectating | null
   const deadPlayerState = useMemo(() => {
     if (!gameState?.players || !isHumanMode) return null;
@@ -126,6 +96,56 @@ export function useGameDerivedState(gameState: GameState | null, humanSeat: numb
     return "spectating" as const;
   }, [gameState?.players, gameState?.phase, gameState?.pending_input, humanSeat, isHumanMode]);
 
+  // ── Night role highlighting ──────────────────────────────────────────
+  // When in a night action phase, derive which roles are active so
+  // PlayerCards can highlight the corresponding players.
+  const nightRoleInfo = useMemo(() => {
+    const phase = gameState?.phase || "";
+    const roles = NIGHT_PHASE_ROLES[phase];
+    if (!roles || roles.length === 0) return null;
+
+    // Specific actor from pending_input (e.g. the guard player currently deciding)
+    const pendingActorId = gameState?.pending_input?.player_id || null;
+
+    // Collect alive player IDs whose role matches the current night phase
+    const roleMatchedIds: string[] = [];
+    for (const p of gameState?.players || []) {
+      if (p.alive && p.role && roles.includes(p.role)) {
+        roleMatchedIds.push(p.id);
+      }
+    }
+
+    return { roles, pendingActorId, roleMatchedIds };
+  }, [gameState?.phase, gameState?.players, gameState?.pending_input?.player_id]);
+
+  // 统一发言阶段状态：thinking → speaking → finished（仅对发言类阶段生效）
+  const speakerState = useMemo(() => {
+    const phase = gameState?.phase || "";
+    // 仅发言类阶段启用状态
+    if (!phase.includes("SPEECH")) return { state: "finished" as const, speakerId: null };
+    
+    const pendingId = gameState?.pending_input?.player_id;
+    if (!pendingId) return { state: "finished" as const, speakerId: null };
+    
+    // 检查是否已经有该玩家的CHAT_MESSAGE事件
+    const hasChatEvent = gameState?.events?.some(e => 
+      e.type === "CHAT_MESSAGE" && e.payload.actor_id === pendingId
+    );
+    
+    // 检查事件是否已经完成
+    const isCompleted = completedIds ? gameState?.events?.some(e => 
+      e.type === "CHAT_MESSAGE" && e.payload.actor_id === pendingId && completedIds.has(e.id)
+    ) : false;
+    
+    if (!hasChatEvent) {
+      return { state: "thinking" as const, speakerId: pendingId };
+    } else if (!isCompleted) {
+      return { state: "speaking" as const, speakerId: pendingId };
+    } else {
+      return { state: "finished" as const, speakerId: pendingId };
+    }
+  }, [gameState?.phase, gameState?.pending_input?.player_id, gameState?.events, completedIds]);
+
   return {
     dayBlocks,
     splitPoint,
@@ -133,14 +153,41 @@ export function useGameDerivedState(gameState: GameState | null, humanSeat: numb
     rightPlayers,
     aliveCount: gameState?.alive_count ?? (gameState?.players?.filter((player) => player.alive).length ?? 0),
     pendingInput: gameState?.pending_input,
-    activeSpeakerId: gameState?.pending_input?.player_id || gameState?.current_speaker_id || null,
+    // activeSpeakerId: pending_input first, current_speaker_id during SPEECH phases,
+    // and during voting phases, the next unvoted player from VOTE_CAST events
+    activeSpeakerId: (() => {
+      const phase = gameState?.phase || "";
+      const pendingId = gameState?.pending_input?.player_id;
+      if (pendingId) return pendingId;
+      // Speech phases: fall back to current_speaker_id
+      if (phase.includes("SPEECH")) return gameState?.current_speaker_id || null;
+      // Vote/election phases: find next unvoted player from VOTE_CAST events
+      if (phase.includes("VOTE") || phase.includes("ELECTION")) {
+        const voted = new Set<string>();
+        for (const e of gameState?.events || []) {
+          if (e.type === "VOTE_CAST") {
+            const vid = (e.payload as any)?.voter_id;
+            if (vid) voted.add(vid);
+          }
+        }
+        // 警徽选举阶段：候选人没有投票权，排除候选人
+        const isBadgeElection = phase === "DAY_BADGE_ELECTION";
+        const next = (gameState?.players || []).find(p => 
+          p.alive && 
+          !voted.has(p.id) &&
+          // 警徽选举时排除候选人
+          !(isBadgeElection && badgeCandidateSet.has(p.id))
+        );
+        return next?.id || null;
+      }
+      return null;
+    })(),
+    speakerState,
     sheriffId: gameState?.badge?.holder_id || null,
     badgeCandidateSet,
     wolfTeammates,
     spokenInPhase,
-    votedSet,
-    voteCount,
-    voteTarget,
     deadPlayerState,
+    nightRoleInfo,
   };
 }

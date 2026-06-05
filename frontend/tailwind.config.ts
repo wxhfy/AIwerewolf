@@ -48,6 +48,17 @@ const config: Config = {
         display: ['"Noto Serif SC"', "serif"],
         body: ['"Noto Sans SC"', "-apple-system", "BlinkMacSystemFont", "sans-serif"],
       },
+      animation: {
+        "dot-1": "dotPulse 1.4s ease-in-out infinite",
+        "dot-2": "dotPulse 1.4s ease-in-out 0.2s infinite",
+        "dot-3": "dotPulse 1.4s ease-in-out 0.4s infinite",
+      },
+      keyframes: {
+        dotPulse: {
+          "0%, 80%, 100%": { opacity: "0.2" },
+          "40%": { opacity: "1" },
+        },
+      },
     },
   },
   plugins: [],
