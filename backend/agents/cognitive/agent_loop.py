@@ -42,7 +42,7 @@ from backend.agents.cognitive.tools import create_tools
 
 logger = logging.getLogger(__name__)
 
-MAX_ITERATIONS = 2
+MAX_ITERATIONS = 3
 import threading as _threading
 
 _STRATEGY_LOCK = _threading.Lock()
