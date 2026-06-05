@@ -225,9 +225,9 @@ class CognitiveAgent:
             vote_temperature=self._humanization.vote_temperature,
         )
         target_id = self._resolve_target(result["target"])
-        # Abstention: skip voting entirely, return empty target
+        # Abstention: return empty vote as Decision (not dict)
         if not target_id:
-            return {"target": "", "reasoning": result.get("reasoning", "弃票")}
+            return self._decision(ActionType.VOTE, target_id="", reasoning=result.get("reasoning", "弃票"))
         self.memory.add_action("vote", result["target"], f"投{result['target']}", result["reasoning"])
 
         # Feed 3: Detect speech-vote mismatch and update social model
