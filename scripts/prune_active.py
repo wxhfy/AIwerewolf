@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# DEPRECATED: Use scripts/promote.py --mode prune instead. Kept for reference.
 """Prune active strategies by (role, doc_type) per-class caps.
 
 Excess docs are demoted to 'candidate' (not deprecated) so the candidate

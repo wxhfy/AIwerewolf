@@ -96,6 +96,10 @@ for key, val in env_vars.items():
 
 # Set experiment metadata in env for cross-process tracking
 os.environ["EXPERIMENT_ID"] = experiment_id
+# H6: Per-tier experiment ID for isolating strategy knowledge between tiers.
+# Each tier tags its docs with a unique ID so the retrieval layer can filter
+# out Track C candidate docs from tiers where Track C is disabled.
+os.environ["TIER_EXPERIMENT_ID"] = "{experiment_id}_{tier}"
 os.environ["DB_POOL_SIZE"] = "1"
 os.environ["DB_MAX_OVERFLOW"] = "0"
 
@@ -110,9 +114,10 @@ if require_db:
         try:
             from sqlalchemy import func
             from backend.db.models import StrategyKnowledgeDoc
-            active_count = db.query(func.count(StrategyKnowledgeDoc.id)).filter(
+            q = db.query(func.count(StrategyKnowledgeDoc.id)).filter(
                 StrategyKnowledgeDoc.status == "active"
-            ).scalar()
+            )
+            active_count = q.scalar()
             strategy_snapshot = {{
                 "active_count": active_count or 0,
                 "timestamp": time.time(),

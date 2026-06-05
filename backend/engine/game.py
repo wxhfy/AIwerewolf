@@ -216,7 +216,8 @@ class WerewolfGame:
         clear specific completion flags and re-run the relevant handlers without
         interfering with the resume-after-human-pause skip logic.
         """
-        return phase.value in self.state.phase_done.get(self.state.day, [])
+        with self._shared_lock:
+            return phase.value in self.state.phase_done.get(self.state.day, [])
 
     def _mark_phase_done(self, phase: Phase) -> None:
         with self._shared_lock:
@@ -773,19 +774,28 @@ class WerewolfGame:
         decisions = self._ask(witch, "WITCH", lambda agent: agent.witch_act(victim_id), many=True)
         for decision in decisions:
             if decision.action_type == ActionType.WITCH_SAVE:
-                if self.state.abilities.witch_heal_used or decision.target_id != victim_id:
+                if self.state.abilities.witch_heal_used:
+                    logger.warning(f"Witch {witch.name} save rejected: heal already used")
+                    continue
+                if decision.target_id != victim_id:
+                    logger.warning(f"Witch {witch.name} save rejected: target {decision.target_id} != victim {victim_id}")
                     continue
                 if self.validator.validate(self.state, decision):
                     self.state.abilities.witch_heal_used = True
                     self.state.night_actions.witch_save = True
                     self._log_decision(decision, "private", {"target_id": decision.target_id}, [witch.id])
+                else:
+                    logger.warning(f"Witch {witch.name} save rejected: validator failed")
             elif decision.action_type == ActionType.WITCH_POISON:
                 if self.state.abilities.witch_poison_used:
+                    logger.warning(f"Witch {witch.name} poison rejected: poison already used")
                     continue
                 if self.validator.validate(self.state, decision):
                     self.state.abilities.witch_poison_used = True
                     self.state.night_actions.witch_poison_target_id = decision.target_id
                     self._log_decision(decision, "private", {"target_id": decision.target_id}, [witch.id])
+                else:
+                    logger.warning(f"Witch {witch.name} poison rejected: validator failed")
             elif decision.action_type == ActionType.SKIP:
                 self._log_decision(decision, "private", {"skipped": True}, [witch.id])
         self._mark_phase_done(Phase.NIGHT_WITCH_ACTION)
@@ -1000,6 +1010,10 @@ class WerewolfGame:
         self._kill(target_id, "vote")
         target = self.state.player(target_id)
         self._log(EventType.SYSTEM_MESSAGE, "public", {"message": f"{target.name} was voted out."})
+        # Check win immediately after death — skip hunter/badge on decided game
+        if self._check_win():
+            self._mark_phase_done(Phase.DAY_RESOLVE)
+            return
         # Defensive: when the recursive PK path runs with no usable ballots,
         # vote_history[day] may not have been written this round. Fall back to
         # the empty dict so the executed-summary still serializes.

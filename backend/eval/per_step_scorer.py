@@ -152,7 +152,7 @@ class PerStepScorer:
             panel = LLMJudgePanel(self._llm)
             result = panel.score_step(decision, context)
             if result:
-                score.light_llm_score = result.overall
+                score.light_llm_score = result.overall / 10.0  # normalize [0,10] → [0,1]
                 score.scoring_tier = "light_llm"
                 score.evidence.append(f"LLM: reasonability={result.reasonability:.1f} depth={result.reasoning_depth:.1f}")
         except Exception:
@@ -162,20 +162,22 @@ class PerStepScorer:
     # ---- Tier 3: Heavy LLM Scoring (high-impact only) ----
 
     def score_with_heavy_llm(self, score: DecisionScore, decision: dict, game_state: dict) -> DecisionScore:
-        """Upgrade a high-impact ambiguous score with 3-judge panel."""
+        """Upgrade a high-impact ambiguous score with 3-judge panel.
+
+        Uses per-step evaluation with the full 3-judge + Critic panel
+        for decisions that are both ambiguous and high-impact.
+        """
         if self._llm is None or not score.needs_heavy_llm:
             return score
         try:
             from backend.eval.llm_judge import LLMJudgePanel
             panel = LLMJudgePanel(self._llm)
-            pdata = {"players": [{"name": score.player_name, "role": score.role,
-                    "alignment": game_state.get("alignment","village")}]}
-            decs = {score.player_name: [decision]}
-            results = panel.score_game(pdata, decs)
-            if results:
-                score.heavy_llm_score = results[0].composite
+            # Use per-step rubric with 3-judge panel (not game-level score_game)
+            result = panel.score_step_with_panel(decision, game_state)
+            if result:
+                score.heavy_llm_score = result.overall / 10.0  # normalize [0,10] → [0,1]
                 score.scoring_tier = "heavy_llm"
-                score.metadata["judge_agreement"] = results[0].judge_agreement
+                score.metadata["judge_agreement"] = getattr(result, 'judge_agreement', None)
         except Exception:
             pass
         return score
@@ -283,4 +285,7 @@ def _night_correct(at,trole,talign):
     return 0.50,["Unknown"]
 def _night_impact(trole,talign): return 0.85 if trole in _KEY_VILLAGE else (0.70 if talign=="wolf" else 0.40)
 def _visible_context(state,score):
+    # NOTE: score.role is the TRUE role (ground truth).  This is intentional —
+    # the per-step scorer runs post-game with full knowledge of all roles.
+    # For mid-game evaluation, the caller should not pass true roles here.
     return f"Day {score.day}, Phase {score.phase}, Role {score.role}"

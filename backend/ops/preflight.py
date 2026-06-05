@@ -16,7 +16,7 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_DB = "postgresql://werewolf:wolf_secret_2026@127.0.0.1:5433/werewolf"
+from backend.db.database import DEFAULT_DB_URL as _DEFAULT_DB
 
 
 def run_preflight(db_url: str = "", strict: bool = True) -> dict[str, Any]:

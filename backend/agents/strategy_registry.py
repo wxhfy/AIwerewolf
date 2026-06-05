@@ -299,6 +299,73 @@ def _build_cards(raw: dict) -> list[StrategyCard]:
         )
     )
 
+    # -- BoardConfigs ---------------------------------------------------------
+    board_tips: list[str] = []
+    board_data = raw.get("BoardConfigs", {})
+    if isinstance(board_data, dict):
+        for board_name, board_info in board_data.items():
+            if isinstance(board_info, dict):
+                desc = board_info.get("desc", "")
+                config = board_info.get("config", "")
+                board_tips.append(f"{board_name}: {desc} — 配置: {config}")
+    if board_tips:
+        cards.append(
+            StrategyCard(
+                strategy_id="board_configs_v1",
+                strategy_name="板子配置参考",
+                strategy_type="board_config",
+                applicable_roles=(
+                    "Werewolf", "WhiteWolfKing", "Seer", "Witch",
+                    "Hunter", "Guard", "Villager", "Idiot",
+                ),
+                version="v1",
+                content=tuple(board_tips),
+                risk_notes=(),
+                summary="常见板子配置(6人/9人/12人/狼王/白狼王/狼美人/双王)的角色分布参考",
+            )
+        )
+
+    # -- VillageCoordination --------------------------------------------------
+    vc_tips = _collect_tips(
+        raw, "VillageCoordination",
+        "seer_witch_guard", "village_voting", "information_sharing", "anti_wolf_tactics",
+    )
+    if vc_tips:
+        cards.append(
+            StrategyCard(
+                strategy_id="village_coordination_v1",
+                strategy_name="村民阵营协作",
+                strategy_type="general",
+                applicable_roles=("Villager", "Seer", "Witch", "Hunter", "Guard", "Idiot"),
+                version="v1",
+                content=tuple(vc_tips),
+                risk_notes=(),
+                summary="好人阵营协作策略: 神职协作链条、统一投票、信息共享、反焊跳识别",
+            )
+        )
+
+    # -- ProPlay --------------------------------------------------------------
+    pp_tips = _collect_tips(
+        raw, "ProPlay",
+        "wolf_god_tactics", "mianren_reading", "control_tactics", "counter_strategies",
+    )
+    if pp_tips:
+        cards.append(
+            StrategyCard(
+                strategy_id="pro_play_advanced_v1",
+                strategy_name="职业赛事高级技巧",
+                strategy_type="pro_play",
+                applicable_roles=(
+                    "Werewolf", "WhiteWolfKing", "Seer", "Witch",
+                    "Hunter", "Guard", "Villager", "Idiot",
+                ),
+                version="v1",
+                content=tuple(pp_tips),
+                risk_notes=(),
+                summary="职业赛事高级策略: 狼神焊跳、状态抿人、控场技巧、反焊跳识别(面杀向)",
+            )
+        )
+
     return cards
 
 

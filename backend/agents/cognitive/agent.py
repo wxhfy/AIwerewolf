@@ -146,20 +146,6 @@ class CognitiveAgent:
                     if w.get("id", w.get("player_id", "")) != self.player_id
                 ]
                 alive_ids = [p["id"] for p in view.players if p.get("alive")]
-                try:
-                    from backend.agents.cognitive.wolf_team import assign_wolf_tactics
-                    self._wolf_tactics = assign_wolf_tactics(
-                        all_wolf_ids,
-                        {"alive_player_ids": alive_ids},
-                    )
-                except Exception:
-                    import logging
-                    _logger = logging.getLogger(__name__)
-                    _logger.warning(
-                        f"assign_wolf_tactics failed for {self.player_name}, "
-                        f"using empty tactics", exc_info=True
-                    )
-                    self._wolf_tactics = {}
 
     def update(self, view: Any, request: str) -> None:
         self._view = view

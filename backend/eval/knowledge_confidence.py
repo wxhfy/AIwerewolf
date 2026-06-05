@@ -363,6 +363,10 @@ def retrieve_for_agent(
     return filtered[:top_k]
 
 
+# NOTE: decay_confidence() is kept for future use but is NOT currently wired
+# into any pipeline (retrieval, evolution, or post-game).  When confidence
+# decay is re-enabled, callers should invoke it through a scheduled task or
+# as part of the post-game promotion pipeline.
 def decay_confidence(doc: dict[str, Any]) -> dict[str, Any]:
     """Apply confidence decay to a knowledge document.
 

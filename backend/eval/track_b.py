@@ -1510,6 +1510,154 @@ def _compute_per_step_scores(
     ]
 
 
+def _extract_and_store_knowledge(
+    state: GameState,
+    per_step_scores: list[dict[str, Any]],
+    decisions: list[dict[str, Any]],
+) -> int:
+    """Extract Track C knowledge from Track B enriched per-step scores.
+
+    Converts Track B's per-step score dicts into ScoredStep objects, groups by
+    player into PlayerReviewReports, calls KnowledgeAbstractor, and persists
+    lessons to PostgreSQL.
+
+    Returns number of lessons stored (0 if skipped or failed).
+    """
+    try:
+        from backend.eval.per_step_scorer import ScoredStep, PlayerReviewReport
+        from backend.eval.knowledge_abstractor import KnowledgeAbstractor, store_lessons_to_db
+        from backend.db.database import DEFAULT_DB_URL
+        from collections import defaultdict
+        import psycopg2
+
+        # 1. Check if Track B already extracted knowledge for this game
+        conn = psycopg2.connect(DEFAULT_DB_URL)
+        c = conn.cursor()
+        c.execute(
+            "SELECT COUNT(*) FROM strategy_knowledge_docs WHERE source_game_id = %s",
+            (state.id,),
+        )
+        existing = c.fetchone()[0]
+        c.close()
+        conn.close()
+        if existing > 0:
+            import logging
+            logging.getLogger(__name__).info(
+                f"Knowledge already extracted for game {state.id} ({existing} lessons), skipping"
+            )
+            return existing
+
+        # 2. Build lookup: decision_id → decision dict (for raw_text, player_id)
+        decision_lookup: dict[str, dict] = {}
+        for dec in decisions:
+            did = dec.get("decision_id", "")
+            if did:
+                decision_lookup[did] = dec
+
+        # 3. Build ScoredStep objects from per_step_scores + decision lookup
+        by_player: dict[str, list[ScoredStep]] = defaultdict(list)
+        players = {p.id: p for p in state.players}
+
+        for ps in per_step_scores:
+            did = ps.get("decision_id", "")
+            dec = decision_lookup.get(did, {})
+            pid = dec.get("player_id", "")
+            if not pid:
+                continue
+            phase = str(ps.get("phase", ""))
+            step_type = _phase_to_step_type(phase)
+            role = str(ps.get("role", ""))
+            score = float(ps.get("overall_score", 0.5))
+            correctness = float(ps.get("correctness", 0.5))
+
+            # Get action_summary from decision's selected_action
+            selected = dec.get("selected_action") or {}
+            raw_text = str(
+                selected.get("reasoning") or dec.get("public_reason") or ""
+            )[:200]
+            action_summary = raw_text[:200] if raw_text else f"{role} {step_type} on D{ps.get('day',0)}"
+
+            evidence = ps.get("evidence") or []
+            lesson_abstract = str(evidence[0]) if evidence else ""
+
+            # Infer mistake_type
+            mistake_type = ""
+            if score <= 0.30:
+                if correctness < 0.2 and "VOTE" in phase:
+                    mistake_type = "wrong_vote"
+                elif correctness < 0.3 and ("SPEECH" in phase or "TALK" in phase) and len(raw_text) < 30:
+                    mistake_type = "empty_speech"
+                elif correctness < 0.3 and "NIGHT" in phase:
+                    mistake_type = "bad_target"
+                elif correctness < 0.3:
+                    mistake_type = "bad_decision"
+
+            by_player[pid].append(ScoredStep(
+                step_id=did,
+                step_type=step_type,
+                day=int(ps.get("day", 0)),
+                phase=phase,
+                role=role,
+                step_score=score,
+                scoring_tier=str(ps.get("scoring_tier", "deterministic")),
+                action_summary=action_summary,
+                is_highlight=(score >= 0.75),
+                is_mistake=(score <= 0.30),
+                mistake_type=mistake_type,
+                lesson_abstract=lesson_abstract,
+                lesson_tags=[role, step_type],
+                evidence_event_ids=[did],
+            ))
+
+        # 4. Build PlayerReviewReports
+        reviews: list[PlayerReviewReport] = []
+        for pid, steps in by_player.items():
+            player = players.get(pid)
+            persona = (player.persona or {}) if player else {}
+            reviews.append(PlayerReviewReport(
+                game_id=state.id,
+                player_id=pid,
+                role=steps[0].role if steps else "",
+                persona_style=str(persona.get("style_label", "") or ""),
+                persona_mbti=str(persona.get("mbti", "") or ""),
+                scored_steps=steps,
+            ))
+
+        # 5. Run KnowledgeAbstractor
+        abstractor = KnowledgeAbstractor()
+        by_role_lessons = abstractor.abstract_from_game(reviews)
+        all_lessons = []
+        for lessons in by_role_lessons.values():
+            all_lessons.extend(lessons)
+
+        if not all_lessons:
+            return 0
+
+        # 6. Store lessons
+        stored = store_lessons_to_db(all_lessons)
+        import logging
+        logging.getLogger(__name__).info(
+            f"Track B→C: {stored} knowledge lessons extracted for game {state.id}"
+        )
+        return stored
+
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(
+            f"Knowledge extraction from Track B scores failed (non-fatal): {e}", exc_info=True
+        )
+        return 0
+
+
+def _phase_to_step_type(phase: str) -> str:
+    """Map phase string to step_type: speech | vote | night_action."""
+    if "SPEECH" in phase or "TALK" in phase or "LAST_WORDS" in phase:
+        return "speech"
+    if "VOTE" in phase or "BADGE" in phase:
+        return "vote"
+    return "night_action"
+
+
 def _compute_llm_game_scores(
     state: GameState,
     replay_bundle: ReplayBundle,
@@ -1642,6 +1790,11 @@ def generate_published_review_document(
         llm_client=llm_client, cascade=cascade,
     )
     review_report.setdefault("metadata", {})["per_step_scores"] = per_step_scores
+
+    # Track C: Extract knowledge from Track B enriched per-step scores
+    # (Critical fix C6: B→C data handoff was broken — Track B computed scores
+    # but never fed them to KnowledgeAbstractor).
+    _extract_and_store_knowledge(state, per_step_scores, replay_bundle.decisions or [])
 
     # C Track: LLM Judge Panel game-level scoring (optional, heavy)
     if cascade and llm_client is not None:

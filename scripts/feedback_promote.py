@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# DEPRECATED: Use scripts/promote.py --mode feedback instead. Kept for reference.
 """Feedback-driven strategy promotion/demotion.
 
 Uses knowledge_usage_feedback records to compute a per-strategy feedback score,
