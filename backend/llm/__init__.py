@@ -231,13 +231,7 @@ def create_client(provider: str | None = None, **kwargs) -> Any:
         return client
     elif provider == "dsv4flash":
         # DeepSeek V4 Flash via 火山引擎 Ark (dedicated endpoint)
-        api_key = (
-            kwargs.pop("api_key", None)
-            or os.getenv("DSV4FLASH_API_KEY", "")
-            or os.getenv("DOUBAO_API_KEY", "")
-            or os.getenv("ARK_API_KEY", "")
-            or os.getenv("ANTHROPIC_AUTH_TOKEN", "")
-        )
+        api_key = kwargs.pop("api_key", None) or os.getenv("DSV4FLASH_API_KEY", "")
         base_url = kwargs.pop("base_url", None) or os.getenv(
             "DSV4FLASH_BASE_URL", "https://ark.cn-beijing.volces.com/api/coding/v1"
         )
@@ -255,13 +249,7 @@ def create_client(provider: str | None = None, **kwargs) -> Any:
     elif provider == "ark":
         # Generic Ark API (火山引擎) — supports any model deployed on Ark
         # Uses DSV4FLASH_API_KEY + DSV4FLASH_BASE_URL as defaults
-        api_key = (
-            kwargs.pop("api_key", None)
-            or os.getenv("DSV4FLASH_API_KEY", "")
-            or os.getenv("ARK_API_KEY", "")
-            or os.getenv("DOUBAO_API_KEY", "")
-            or os.getenv("ANTHROPIC_AUTH_TOKEN", "")
-        )
+        api_key = kwargs.pop("api_key", None) or os.getenv("DSV4FLASH_API_KEY", "") or os.getenv("ARK_API_KEY", "")
         base_url = (
             kwargs.pop("base_url", None)
             or os.getenv("DSV4FLASH_BASE_URL", "")
