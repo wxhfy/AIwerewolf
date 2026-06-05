@@ -23,9 +23,6 @@ import json
 import os
 import re
 from typing import Any
-from typing import Dict
-from typing import List
-from typing import Optional
 
 from langchain_core.runnables import Runnable
 
@@ -64,8 +61,8 @@ class CognitiveAgent:
         llm: Runnable,
         player_name: str = "",
         player_seat: int = 0,
-        profile: Optional[Profile] = None,
-        strategy_bias: Optional[Dict[str, List[str]]] = None,
+        profile: Profile | None = None,
+        strategy_bias: dict[str, list[str]] | None = None,
         fallback_heuristic: Any = None,
         strict_no_fallback: bool = True,
         retrieval_policy: str = "",
@@ -118,7 +115,7 @@ class CognitiveAgent:
         self._view: Any = None
 
         # Role-specific tracking
-        self._guard_history: List[str] = []
+        self._guard_history: list[str] = []
         self._witch_save_used = False
         self._witch_poison_used = False
 
@@ -131,10 +128,10 @@ class CognitiveAgent:
 
         # Wolf team coordination (legal visible information, no fixed tactics)
         self._wolf_team_view: Any = None
-        self._wolf_tactics: Dict[str, str] = {}
+        self._wolf_tactics: dict[str, str] = {}
 
         # Speech targets for social model (speech-vote mismatch detection)
-        self._last_speech_targets: List[str] = []
+        self._last_speech_targets: list[str] = []
 
     # === Agent Protocol ===
 
@@ -295,7 +292,7 @@ class CognitiveAgent:
             self.memory.role_state.setdefault("protections", []).append(f"D{self.memory.day}: {result['target']}")
         return self._night_decision(result, ActionType.GUARD)
 
-    def witch_act(self, victim_id: Optional[str]) -> List[Decision]:
+    def witch_act(self, victim_id: str | None) -> list[Decision]:
         lines = []
         if self._witch_save_used:
             lines.append("解药已使用")
@@ -394,7 +391,7 @@ class CognitiveAgent:
             reasoning=parsed.get("reasoning", ""),
         )
 
-    def transfer_badge(self, candidates: List[str]) -> Decision:
+    def transfer_badge(self, candidates: list[str]) -> Decision:
         obs = self._observe()
         candidate_strs = []
         for cid in candidates:
@@ -415,7 +412,7 @@ class CognitiveAgent:
         target_id = target_id or (candidates[0] if candidates else None)
         return self._decision(ActionType.VOTE, target_id=target_id, reasoning=parsed["reasoning"])
 
-    def finish(self, winner: Optional[str]) -> None:
+    def finish(self, winner: str | None) -> None:
         self.memory.add_action("game_end", None, f"胜者: {winner}", "")
         # Trigger personal post-game reflection (opt-in via COGNITIVE_ENABLE_REFLECTION)
         self._reflect_on_game(winner)
@@ -540,10 +537,10 @@ class CognitiveAgent:
     def _decision(
         self,
         action_type: ActionType,
-        target_id: Optional[str] = None,
-        speech: Optional[str] = None,
+        target_id: str | None = None,
+        speech: str | None = None,
         reasoning: str = "",
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> Decision:
         """Create a Decision with standard metadata."""
         provider = str(getattr(self._llm, "provider", "") or "")
@@ -691,7 +688,7 @@ class CognitiveAgent:
         "None",
     }
 
-    def _night_decision(self, result: Dict[str, str], action_type: ActionType) -> Decision:
+    def _night_decision(self, result: dict[str, str], action_type: ActionType) -> Decision:
         """Create a Decision for a night action.
 
         Handles strategic skip keywords (空守, 不救, etc.) by mapping them
@@ -733,7 +730,7 @@ class CognitiveAgent:
 
         return self._decision(action_type, target_id=target_id, reasoning=result.get("reasoning", ""))
 
-    def _resolve_target(self, name: str) -> Optional[str]:
+    def _resolve_target(self, name: str) -> str | None:
         """Resolve player name to player id."""
         if not name:
             return None
@@ -747,17 +744,12 @@ class CognitiveAgent:
             seat = str(p.get("seat", "")).strip()
             seat_label = f"{seat}号" if seat else ""
             if (
-                candidate == player_name
-                or candidate == player_id
-                or candidate == seat
-                or candidate == seat_label
-                or (player_name and player_name in candidate)
-                or (seat_label and seat_label in candidate)
+                candidate in (player_name, player_id, seat, seat_label) or player_name and player_name in candidate or seat_label and seat_label in candidate
             ):
                 return p["id"]
         return None
 
-    def _find_player(self, player_id: str) -> Optional[dict]:
+    def _find_player(self, player_id: str) -> dict | None:
         """Find player dict by id."""
         for p in self._view.players:
             if p["id"] == player_id:
@@ -828,7 +820,7 @@ class CognitiveAgent:
         except Exception:
             pass  # best-effort, never block decision flow
 
-    def _reflect_on_game(self, winner: Optional[str]) -> None:
+    def _reflect_on_game(self, winner: str | None) -> None:
         """Trigger post-game personal reflection and persist to PostgreSQL.
 
         Controlled via COGNITIVE_ENABLE_REFLECTION (default: enabled).
@@ -893,7 +885,7 @@ class CognitiveAgent:
         except Exception as e:
             _log.error(f"Reflection failed for {self.player_name}: {e}")
 
-    def _collect_game_events(self) -> List[Dict[str, Any]]:
+    def _collect_game_events(self) -> list[dict[str, Any]]:
         """Collect game events visible to this agent for post-game reflection."""
         events = []
         if self._view is None:
@@ -963,7 +955,7 @@ class CognitiveAgent:
 
         return events
 
-    def _collect_decisions(self) -> List[Dict[str, Any]]:
+    def _collect_decisions(self) -> list[dict[str, Any]]:
         """Collect this agent's decisions for post-game reflection."""
         decisions = []
         for a in self.memory.get_recent_actions(30):

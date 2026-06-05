@@ -141,7 +141,7 @@ class WerewolfGame:
             or create_agents(
                 self.state.players,
                 {
-                    "type": "heuristic",
+                    "type": "llm",
                     "seed": seed or 0,
                     "temperature": 0.4,
                     "character_map": self.characters,
@@ -735,7 +735,11 @@ class WerewolfGame:
         self._set_phase(Phase.DAY_SPEECH)
 
         def handle(player: Player) -> None:
-            decision = self._ask(player, "TALK", lambda agent: agent.talk())
+            try:
+                decision = self._ask(player, "TALK", lambda agent: agent.talk())
+            except Exception:
+                logger.exception(f"Speech failed for {player.name} (seat={player.seat}), skipping")
+                return
             if not self.validator.validate(self.state, decision):
                 return
             self._emit_speech(player, decision, {})
@@ -755,7 +759,11 @@ class WerewolfGame:
         self._log(EventType.SYSTEM_MESSAGE, "public", {"message": f"Vote tie. PK speeches between {names}."})
 
         def handle(player: Player) -> None:
-            decision = self._ask(player, "TALK", lambda agent: agent.talk())
+            try:
+                decision = self._ask(player, "TALK", lambda agent: agent.talk())
+            except Exception:
+                logger.exception(f"PK speech failed for {player.name} (seat={player.seat}), skipping")
+                return
             if not self.validator.validate(self.state, decision):
                 return
             self._emit_speech(player, decision, {"pk_speech": True})
