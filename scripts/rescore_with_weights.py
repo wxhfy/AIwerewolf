@@ -33,10 +33,6 @@ if str(ROOT) not in sys.path:
 EXPERIMENT_DIR = ROOT / "data" / "experiment"
 SUMMARY_PATH = EXPERIMENT_DIR / "discrimination_summary.json"
 
-from scripts.analyze_score_distributions import cohens_d
-from scripts.analyze_score_distributions import stat_block
-from scripts.analyze_score_distributions import welch_t_p
-
 
 @dataclass
 class Weights:
@@ -129,6 +125,10 @@ def main() -> int:
     if not w.validate():
         print(f"ERROR: weights don't sum to 1.0: {w.label()}")
         return 1
+
+    from scripts.analyze_score_distributions import cohens_d
+    from scripts.analyze_score_distributions import stat_block
+    from scripts.analyze_score_distributions import welch_t_p
 
     data = collect_rescored(w)
 

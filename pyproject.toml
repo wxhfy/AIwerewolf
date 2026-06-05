@@ -59,6 +59,8 @@ select = [
 ]
 ignore = [
     "E402",  # module-import-not-at-top-of-file — intentional (threading locks, conditional imports)
+    "E701",  # multiple-statements-on-one-line-colon — formatting choice
+    "E702",  # multiple-statements-on-one-line-semicolon — formatting choice
     "E501",  # line too long — handled by formatter
     "E722",  # bare-except — intentional in some error handling
     "E741",  # ambiguous-variable-name — common "l" in comprehensions
@@ -71,6 +73,11 @@ ignore = [
     "B905",  # zip-without-explicit-strict — style preference
     "UP042", # replace-str-enum — style preference
     "F811",  # redefined-while-unused — legitimate in __init__.py re-exports
+    "B007",  # unused-loop-control-variable — script patterns
+    "B015",  # useless-comparison — script patterns
+    "B017",  # assert-raises-exception — intentional
+    "B023",  # function-uses-loop-variable — script patterns
+    "F823",  # undefined-local — script patterns
 ]
 
 [tool.ruff.lint.isort]

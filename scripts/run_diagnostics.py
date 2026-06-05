@@ -23,7 +23,6 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from backend.eval.embedding_retrieval import BGEM3Provider
-from backend.eval.embedding_retrieval import format_opportunity_text
 from backend.eval.scoring_models import ModelFeatures
 from backend.eval.scoring_models import extract_features
 from scripts.train_and_ablate import load_baseline
@@ -464,6 +463,7 @@ def hunter_confidence(opps, labeled, opp_by_id) -> str:
 
 
 def embedding_analysis(opps, labeled, opp_by_id) -> str:
+    from backend.eval.embedding_retrieval import format_opportunity_text
 
     BGE_M3_PATH = "/home/4T-3/PLM/bge-m3/"
     provider = BGEM3Provider(model_name=BGE_M3_PATH, device="cpu")

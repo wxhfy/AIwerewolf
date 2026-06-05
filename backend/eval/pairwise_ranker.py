@@ -277,7 +277,7 @@ class PerActionPairwiseRankers:
             return self.rankers["other"].compare_pair(better_features, worse_features)
         return 0.5
 
-    def predict_rank(self, features: dict[str, float], action_type: str = "other") -> RankResult:
+    def predict_rank(self, features: dict[str, float], action_type: str = "other") -> "RankResult":
         if action_type in self.rankers:
             return self.rankers[action_type].predict_rank(features)
         if "other" in self.rankers:

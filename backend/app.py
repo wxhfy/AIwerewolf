@@ -473,6 +473,39 @@ def list_personas_endpoint():
         return []
 
 
+@app.post("/api/personas")
+def create_persona(payload: Dict[str, Any]):
+    """Add a new persona to the library."""
+    try:
+        from backend.db.persona_db import create_persona as _create
+
+        return _create(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+
+
+@app.put("/api/personas/{name}")
+def update_persona(name: str, payload: Dict[str, Any]):
+    """Update an existing persona."""
+    try:
+        from backend.db.persona_db import update_persona as _update
+
+        return _update(name, payload)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"Persona '{name}' not found")
+
+
+@app.delete("/api/personas/{name}")
+def delete_persona(name: str):
+    """Soft-delete a persona."""
+    try:
+        from backend.db.persona_db import update_persona as _update
+
+        return _update(name, {"is_active": False})
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"Persona '{name}' not found")
+
+
 @app.post("/api/rooms")
 def create_room(
     name: str = "Demo Room",

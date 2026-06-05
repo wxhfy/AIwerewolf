@@ -254,7 +254,10 @@ def _build_linked_critical_decisions(
             src = cf.get("source_bad_case_id", "") or ""
             cf_orig = cf.get("original_decision", "")
             # Primary: source_bad_case_id match
-            if bc_player in src and f"-{bc_day}-" in src or bc_player in cf_orig and bc_type in cf_orig.lower():
+            if bc_player in src and f"-{bc_day}-" in src:
+                matched_cfs.append(cf)
+            # Secondary: original_decision text
+            elif bc_player in cf_orig and bc_type in cf_orig.lower():
                 matched_cfs.append(cf)
 
         if not matched_cfs:
