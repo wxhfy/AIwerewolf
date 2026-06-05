@@ -12,11 +12,11 @@ interface DayNightBlinkTransitionProps {
   onOpenComplete?: () => void;
 }
 
-const PAUSE_DURATION = 400; // 全黑停顿 400ms
+const PAUSE_DURATION = 150; // 全黑停顿 150ms
 
 const eyelidEase: [number, number, number, number] = [0.76, 0, 0.24, 1]; // easeInOutQuart
-const CLOSE_DURATION = 0.8; // 闭眼 800ms
-const OPEN_DURATION = 0.9; // 睁眼 900ms
+const CLOSE_DURATION = 0.35; // 闭眼 350ms
+const OPEN_DURATION = 0.45; // 睁眼 450ms
 
 /**
  * 昼夜眨眼转场组件 — 模拟真人"闭眼/睁眼"效果。

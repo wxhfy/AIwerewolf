@@ -99,6 +99,7 @@ export interface Player {
   is_ai: boolean;
   agent_type?: string;
   persona?: Persona | null;
+  portraitId?: number;
 }
 
 export interface EventPayload {

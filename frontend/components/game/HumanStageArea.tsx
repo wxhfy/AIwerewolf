@@ -15,6 +15,12 @@ const NIGHT_ICONS: Record<string, string> = {
   NIGHT_WITCH_ACTION: "🧪", NIGHT_SEER_ACTION: "🔮", NIGHT_RESOLVE: "🌅",
 };
 
+const StagePlaceholder = () => (
+  <div className="flex items-center justify-center py-20">
+    <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
+  </div>
+);
+
 export const HumanStageArea = React.memo(function HumanStageArea({ display, players, votes }: HumanStageAreaProps) {
   const d = display;
   if (!d.phase) return <StagePlaceholder />;
@@ -51,8 +57,4 @@ export const HumanStageArea = React.memo(function HumanStageArea({ display, play
       <p className="text-center text-xs text-text-sub/50 mt-4">存活 {d.aliveCount}/{d.totalCount} 人</p>
     </div>
   );
-}
-
-function StagePlaceholder() {
-  return <div className="flex items-center justify-center py-20"><div className="h-8 w-8 animate-spin rounded-full border-2 border-primary/30 border-t-primary" /></div>;
-}
+});

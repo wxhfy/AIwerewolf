@@ -4,6 +4,7 @@ import React from "react";
 import { GameState, Language } from "@/types";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
+import { isMergedChatSegment } from "@/lib/eventFilter";
 
 interface BadgePanelProps {
   gameState: GameState;
@@ -18,32 +19,28 @@ export function BadgePanel({ gameState, language, activeSpeakerId, displayPhase,
   const phase = displayPhase || gameState.phase;
   const isBadgeSpeech = phase === "DAY_BADGE_SPEECH" || phase === "DAY_BADGE_SIGNUP";
   const isBadgeElection = phase === "DAY_BADGE_ELECTION";
-  const isDayVote = phase === "DAY_VOTE";
-  const isPkVote = phase === "DAY_PK_SPEECH" || (phase === "DAY_VOTE" && (gameState.pk_targets?.length ?? 0) > 0);
+  // VotePanel 负责所有投票展示（放逐投票 + PK 投票），BadgePanel 只负责
+  // 警徽竞选发言和警徽投票（候选人视角的票数统计）
 
-  if (!isBadgeSpeech && !isBadgeElection && !isDayVote) return null;
+  if (!isBadgeSpeech && !isBadgeElection) return null;
 
   const badge = gameState.badge;
-  const candidates = badge?.candidates || [];
+  // 后端在选举开始后可能清空 badge.candidates，从投票数据反推候选人
+  const candidates = badge?.candidates?.length
+    ? badge.candidates
+    : [...new Set(Object.values(badge?.votes || {}))].filter(Boolean);
   const players = gameState.players || [];
   const pkTargets = new Set(gameState.pk_targets || []);
 
   // ── Compute reveal cutoff (match EventTimeline's mergeConsecutiveChats) ─
-  // EventTimeline merges consecutive same-player same-phase CHAT_MESSAGE
-  // into one bubble (first segment's id enters completedIds).  We must
-  // skip subsequent segments here too or they block the cutoff early.
   let revealCutoff = (gameState.events || []).length;
   let prevActor = "", prevPhase = "";
   for (let i = 0; i < (gameState.events || []).length; i++) {
     const e = gameState.events[i];
     if (e.type === "CHAT_MESSAGE") {
-      const actor = (e.payload as any)?.actor_id || "";
-      const ph = e.phase || "";
-      // Skip segments that mergeConsecutiveChats would collapse — they
-      // share the completed status of the first segment.
-      if (actor === prevActor && ph === prevPhase) continue;
-      prevActor = actor;
-      prevPhase = ph;
+      if (isMergedChatSegment(e, prevActor, prevPhase)) continue;
+      prevActor = (e.payload as any)?.actor_id || "";
+      prevPhase = e.phase || "";
       if (!completedIds.has(e.id)) {
         revealCutoff = i;
         break;
@@ -83,7 +80,10 @@ export function BadgePanel({ gameState, language, activeSpeakerId, displayPhase,
   }
 
   const aliveCount = players.filter(p => p.alive).length;
-  const totalVoters = aliveCount;
+  // 警徽竞选时，候选人只被投、不参与投票。分母排除候选人。
+  const totalVoters = isBadgeElection
+    ? players.filter(p => p.alive && !candidateSet.has(p.id)).length
+    : aliveCount;
   const voteProgress = totalVoters > 0 ? votedSet.size / totalVoters : 0;
   const allVoted = votedSet.size >= totalVoters;
 
@@ -97,29 +97,40 @@ export function BadgePanel({ gameState, language, activeSpeakerId, displayPhase,
   // ── Title ───────────────────────────────────────────────────────
   const titleText = isBadgeSpeech
     ? (language === "zh" ? "警徽竞选发言" : "Badge Speech")
-    : isBadgeElection
-    ? (language === "zh" ? "警徽投票" : "Badge Vote")
-    : isPkVote
-    ? (language === "zh" ? "PK 投票" : "PK Vote")
-    : (language === "zh" ? "投票放逐" : "Vote");
+    : (language === "zh" ? "警徽投票" : "Badge Vote");
 
   const subtitle = isBadgeSpeech
     ? (candidates.length > 0 ? `${spokenSet.size}/${candidates.length} ${language === "zh" ? "已发言" : "spoken"}` : "")
     : (totalVoters > 0 ? `${votedSet.size}/${totalVoters} ${language === "zh" ? "已投票" : "voted"}` : "");
 
   return (
-    <div className="border-b border-border bg-cardBackground/80 px-5 py-3">
-      <div className="flex items-center gap-2 mb-2">
-        <span className="text-sm font-semibold text-primary">{titleText}</span>
-        <span className="text-xs text-text-sub">{subtitle}</span>
+    <div className={cn(
+      isBadgeElection 
+        ? "mx-4 mt-3 rounded-xl border border-border/50 bg-cardBackground/60 backdrop-blur-sm overflow-hidden"
+        : "border-b border-border bg-gradient-to-b from-cardBackground/95 to-cardBackground/90 backdrop-blur-sm px-5 py-4 shadow-sm"
+    )}>
+      <div className={cn(
+        "flex items-center gap-2",
+        isBadgeElection ? "justify-between px-4 py-2.5 border-b border-border/30" : "mb-2.5"
+      )}>
+        <div className="flex items-center gap-2">
+          {isBadgeElection && <span className="text-base">🗳</span>}
+          <span className={cn("text-sm font-semibold", isBadgeElection ? "text-textPrimary" : "text-primary")}>{titleText}</span>
+        </div>
+        {isBadgeElection && (
+          <span className="text-xs text-text-sub tabular-nums">
+            {language === "zh" ? `已投 ${votedSet.size}/${totalVoters}` : `Voted ${votedSet.size}/${totalVoters}`}
+          </span>
+        )}
+        {!isBadgeElection && <span className="text-xs text-text-sub/80">{subtitle}</span>}
       </div>
 
       {/* Vote progress bar */}
       {!isBadgeSpeech && (
-        <div className="mb-3 h-1.5 rounded-full overflow-hidden bg-border">
+        <div className="h-1 bg-border/20">
           <div
             className={cn(
-              "h-full rounded-full transition-all duration-500",
+              "h-full transition-all duration-300 ease-out",
               allVoted ? "bg-success" : "bg-primary",
             )}
             style={{ width: `${voteProgress * 100}%` }}
@@ -128,26 +139,26 @@ export function BadgePanel({ gameState, language, activeSpeakerId, displayPhase,
       )}
 
       {/* Candidate / target list */}
-      <div className="flex flex-wrap gap-2">
+      <div className={cn("px-4 py-2.5 flex flex-wrap gap-2", !isBadgeSpeech && "border-b border-border/30")}>
         {isBadgeSpeech && candidates.map(cid => {
           const p = players.find(pl => pl.id === cid);
           const spoken = spokenSet.has(cid);
           const isSpeaking = activeSpeakerId === cid;
           return (
             <span key={cid} className={cn(
-              "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium border transition-all",
-              isSpeaking && "border-success bg-success/10 text-success ring-1 ring-success/30",
-              spoken && !isSpeaking && "border-primary/30 bg-primary/5 text-primary",
-              !spoken && !isSpeaking && "border-border text-text-sub",
+              "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium border transition-all shadow-sm",
+              isSpeaking && "border-success/40 bg-success/8 text-success ring-1 ring-success/20",
+              spoken && !isSpeaking && "border-primary/25 bg-primary/6 text-primary",
+              !spoken && !isSpeaking && "border-border/60 bg-cardBackground/50 text-text-sub/90",
             )}>
               {p ? `${p.seat}号 ${p.name}` : cid}
-              {spoken && <span className="text-[10px]">✓</span>}
+              {spoken && <span className="text-[10px] font-bold">✓</span>}
               {isSpeaking && <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />}
             </span>
           );
         })}
 
-        {(isBadgeElection || isDayVote) && voteTally.size > 0 && (
+        {(isBadgeElection) && voteTally.size > 0 && (
           Array.from(voteTally.entries())
             .sort(([, a], [, b]) => b.count - a.count)
             .map(([tid, { count }], idx) => {
@@ -155,15 +166,23 @@ export function BadgePanel({ gameState, language, activeSpeakerId, displayPhase,
               const isPk = pkTargets.has(tid);
               const isLeading = tid === leadingId && leadingCount > 0 && idx === 0;
               return (
-                <span key={tid} className={cn(
-                  "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium border transition-all",
-                  isLeading && "ring-2 ring-accent/40",
-                  isPk ? "border-warning/40 bg-warning/5 text-warning" : "border-accent/30 bg-accent/5 text-accent",
-                )}>
-                  {p ? `${p.seat}号 ${p.name}` : tid}
-                  <span className={cn("font-bold", isLeading && "text-accent")}>{count}{language === "zh" ? "票" : ""}</span>
-                  {isLeading && voteTally.size > 1 && <span className="text-[10px] text-accent">领先</span>}
-                </span>
+                <div
+                  key={tid}
+                  className="inline-flex items-center gap-1.5 min-h-[44px] px-3 py-1.5 rounded-lg border border-border/40 bg-background/50 text-xs"
+                >
+                  <span className="font-medium text-textPrimary">
+                    {p ? `${p.seat}号 ${p.name}` : tid}
+                  </span>
+                  <span className="text-text-sub/50">→</span>
+                  <span className={cn(
+                    "font-medium text-accent",
+                    isLeading && "font-bold",
+                    isPk && "text-warning"
+                  )}>
+                    {count}{language === "zh" ? "票" : ""}
+                    {isLeading && voteTally.size > 1 && <span className="ml-1 text-[10px] font-medium">领先</span>}
+                  </span>
+                </div>
               );
             })
         )}
@@ -171,18 +190,24 @@ export function BadgePanel({ gameState, language, activeSpeakerId, displayPhase,
 
       {/* Unvoted / next-step hint */}
       {isBadgeSpeech && candidates.length > 0 && spokenSet.size < candidates.length && (
-        <div className="mt-2 text-xs text-text-sub/60">
+        <div className="mt-2.5 text-xs text-text-sub/70">
           {language === "zh" ? "全部发言完成后进入投票环节" : "Voting begins after all speeches"}
         </div>
       )}
-      {(isBadgeElection || isDayVote) && !allVoted && (
-        <div className="mt-2 text-xs text-text-sub/60">
-          {language === "zh" ? "等待：" : "Waiting: "}
-          {players.filter(p => p.alive && !votedSet.has(p.id)).map(p => `${p.seat}号 ${p.name}`).join(" · ")}
+      
+      {/* 等待投票区域，和VotePanel统一 */}
+      {(isBadgeElection) && !allVoted && (
+        <div className="px-4 py-2 border-t border-border/20">
+          <span className="text-[11px] text-text-sub/50">
+            {language === "zh" ? "⏳ 等待投票: " : "⏳ Waiting: "}
+          </span>
+          <span className="text-[11px] text-text-sub/70">
+            {players.filter(p => p.alive && !candidateSet.has(p.id) && !votedSet.has(p.id)).map(p => `${p.seat}号 ${p.name}`).join(" · ")}
+          </span>
         </div>
       )}
-      {(isBadgeElection || isDayVote) && allVoted && leadingCount > 0 && (
-        <div className="mt-2 text-xs text-accent font-medium">
+      {(isBadgeElection) && allVoted && leadingCount > 0 && (
+        <div className="px-4 py-2 border-t border-border/20 text-xs text-accent font-medium">
           {isBadgeElection
             ? (language === "zh" ? "投票完成，即将公布警长结果" : "Vote complete — sheriff result incoming")
             : (language === "zh" ? "投票完成，即将公布放逐结果" : "Vote complete — exile result incoming")}

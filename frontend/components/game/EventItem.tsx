@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { GameEvent, EventType } from "@/types";
+import { GameEvent, EventType, Player } from "@/types";
 import { useAppContext } from "@/context/AppContext";
 import { t, tPhase, format } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 interface EventItemProps {
   event: GameEvent;
   index?: number;
+  players?: Player[];
 }
 
 const stripColor: Record<string, string> = {
@@ -41,7 +42,8 @@ function VoteReasoning({ text }: { text: string }) {
   );
 }
 
-export function EventItem({ event, index = 0 }: EventItemProps) {
+export function EventItem({ event, index = 0, players = [] }: EventItemProps) {
+  const playerById = (id: string) => players.find(p => p.id === id);
   const { language, viewMode } = useAppContext();
 
   const isPrivate = event.visibility === "private" && viewMode !== "moderator";
@@ -141,7 +143,10 @@ export function EventItem({ event, index = 0 }: EventItemProps) {
         skip: t("actionSkip", language),
       } as Record<string, string>;
       const action = actionLabels[p.action_type || ""] || p.action_type || "";
-      const target = (p.target && p.target.name) || p.target_id || "";
+      const rawTarget = (p.target && p.target.name) || p.target_id || "";
+      // Resolve player ID → seat+name, fallback to raw value
+      const pTarget = typeof rawTarget === "string" ? playerById(rawTarget) : undefined;
+      const target = pTarget ? `${pTarget.seat}号 ${pTarget.name}` : rawTarget;
       return (
         <span className="text-xs text-text-sub">
           {format(t("action", language), {

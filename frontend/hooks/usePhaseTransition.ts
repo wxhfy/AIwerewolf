@@ -13,15 +13,25 @@ export interface PhaseAnnouncementState {
   visible: boolean;
 }
 
+// ── 时序常量 ───────────────────────────────────────────────────────
+// 阶段公告显示时长（毫秒），闭眼/睁眼前用户阅读文字的时间
+const ANNOUNCE_DISPLAY_MS = 1200;
+// 公告淡出时长
+const ANNOUNCE_FADE_MS = 400;
+// 全黑停顿
+const PAUSE_DURATION_MS = 150;
+
 /**
- * 昼夜转场中央协调器。
+ * 昼夜转场中央协调器 — v2。
  *
- * 职责：
- * 1. 检测 day↔night 阶段变化
- * 2. 驱动眨眼动画状态机（BlinkPhase）
- * 3. 转场期间冻结前端可见事件流（displayGameState 不变）
- * 4. 缓冲转场期间到达的 WebSocket 快照
- * 5. 动画结束后对齐最新状态并恢复事件流
+ * 正确的动画时序：
+ *   Day→Night: 先显示"天黑请闭眼" → 闭眼动画 → 全黑停顿 → 切换夜晚
+ *   Night→Day: 先显示"天亮了" → 眨眼动画(闭→停→睁) → 切换白天
+ *
+ * 转场期间：
+ *  - transitioning=true 锁住 UI，防止组件抢状态
+ *  - displayGameState 返回冻结的旧状态
+ *  - WebSocket 快照缓冲到 pendingStateRef
  */
 export function usePhaseTransition(
   sessionKey: string,
@@ -36,13 +46,15 @@ export function usePhaseTransition(
   const [isBlinking, setIsBlinking] = useState(false);
   const [blinkPhase, setBlinkPhase] = useState<BlinkPhase>(null);
 
+  // ── Transitioning lock ──────────────────────────────────────────
+  // true = 转场进行中（从触发到 _finishBlink 完成），UI 组件可用此锁暂停更新
+  const [isTransitioning, setIsTransitioning] = useState(false);
+
   // ── Event flow freeze / buffer ──────────────────────────────────
-  // 眨眼开始时捕获的冻结状态（UI 在整个转场期间展示这个状态）
   const frozenStateRef = useRef<GameState | null>(null);
-  // 眨眼期间 WebSocket 推送的最新快照（只保留最新一份）
   const pendingStateRef = useRef<GameState | null>(null);
-  // 暴露给外部：isBlinking 的最新值（避免闭包过期）
   const isBlinkingRef = useRef(false);
+  const isTransitioningRef = useRef(false);
 
   // ── Internal refs ───────────────────────────────────────────────
   const lastPhaseGroupRef = useRef<PhaseGroup>("other");
@@ -56,6 +68,7 @@ export function usePhaseTransition(
 
   // 同步 ref
   useEffect(() => { isBlinkingRef.current = isBlinking; }, [isBlinking]);
+  useEffect(() => { isTransitioningRef.current = isTransitioning; }, [isTransitioning]);
 
   // ── Helpers ──────────────────────────────────────────────────────
 
@@ -67,109 +80,138 @@ export function usePhaseTransition(
     announceTimerRef.current = null;
   }
 
-  function clearAnnouncement() {
-    announceTimerRef.current = setTimeout(() => {
-      setPhaseAnnouncement((current) => current ? { ...current, visible: false } : null);
-      announceTimerRef.current = setTimeout(() => {
-        setPhaseAnnouncement(null);
-        announceTimerRef.current = null;
-      }, 400);
-    }, 1200);
+  /** 设置阶段公告并在 delay 后自动淡出 */
+  function showAnnouncement(
+    group: PhaseAnnouncementGroup,
+    displayMs: number,
+    token: number,
+  ): void {
+    setPhaseAnnouncement({ group, visible: true });
+    const fadeTimer = setTimeout(() => {
+      if (transitionTokenRef.current === token)
+        setPhaseAnnouncement((c) => (c ? { ...c, visible: false } : null));
+    }, displayMs);
+    const removeTimer = setTimeout(() => {
+      if (transitionTokenRef.current === token) setPhaseAnnouncement(null);
+    }, displayMs + ANNOUNCE_FADE_MS);
+    transitionTimersRef.current.push(fadeTimer, removeTimer);
   }
 
-  // ── Snapshot buffering (called by useRoomStream during blink) ────
+  // ── Snapshot buffering ───────────────────────────────────────────
 
-  /** 眨眼期间缓存 WebSocket 快照，只保留最新一份 */
   const bufferSnapshot = useCallback((state: GameState) => {
     pendingStateRef.current = state;
   }, []);
 
-  /** 检查是否正在眨眼（供 useRoomStream 使用，ref 避免闭包过期） */
   const getIsBlinking = useCallback(() => isBlinkingRef.current, []);
 
   // ── Blink 动画回调 ──────────────────────────────────────────────
 
-  /** 闭眼动画完成 → 切换底层背景 → 进入全黑停顿 */
+  /** 闭眼动画完成 → 切换底层视觉 → 进入全黑停顿 */
   const handleBlinkCloseComplete = useCallback(() => {
     const target = targetPhaseRef.current;
     setVisualPhaseGroup(target);
     setBlinkPhase("paused");
   }, []);
 
-  /** 全黑停顿完成 → 决定下一步动作 */
+  /** 全黑停顿完成 → 决定下一步 */
   const handleBlinkPauseComplete = useCallback(() => {
     const target = targetPhaseRef.current;
     if (target === "day") {
-      // night → day：打开眼皮露出白天
+      // night→day：停顿后睁眼
       setBlinkPhase("opening");
     } else {
-      // day → night：保持黑暗，显示 "天黑请闭眼"
+      // day→night：停顿后完成（保持黑暗）
       _finishBlink("night");
     }
   }, []);
 
-  /** 睁眼动画完成 → 恢复交互，对齐最新状态，显示 "天亮了" */
+  /** 睁眼动画完成 → 完成转场 */
   const handleBlinkOpenComplete = useCallback(() => {
     _finishBlink("day");
   }, []);
 
   /**
-   * 结束眨眼转场：刷新 buffer，对齐最新状态。
-   * 返回对齐后的最新 GameState（可能为 null）。
+   * 结束眨眼转场：blink 动画完成后进入 settling 期。
+   *
+   * settling 期（~1s）：
+   *  - isBlinking = false（眼皮已移开）
+   *  - isTransitioning = true（锁住 UI + 阻止事件 flush）
+   *
+   * ⚠️ 此阶段不再重复显示"天黑请闭眼"/"天亮了"公告 —
+   *   公告已在 startBlinkTransition / startFirstNightTransition 中先行显示，
+   *   眨眼动画本身（黑屏/亮屏）已充分传达昼夜切换信息。
+   *
+   * settling 结束后释放 transition 锁并 flush 缓冲事件，确保：
+   *  - 页面背景完全变黑后，"守卫请睁眼"才出现
+   *  - 玩家卡片高亮和角色日志同步
    */
-  function _finishBlink(announcementGroup: "day" | "night") {
+  function _finishBlink(_announcementGroup: "day" | "night") {
     setBlinkPhase(null);
     setIsBlinking(false);
+    // ⚠️ 保持 isTransitioning = true，由 settling timer 释放
 
-    // 释放冻结
     frozenStateRef.current = null;
 
-    // 取出缓冲的最新快照
+    // 检查缓冲状态中是否游戏已结束
     const pending = pendingStateRef.current;
-    pendingStateRef.current = null;
-
-    // 通过 ref 标记：useRoomStream 的下一个 snapshot 或 flush 来的 pending
-    // 需要通知 controller 应用最新状态
-    // 我们把 pending 通过一个公开的 ref 传出去，让 controller 在回调中读取
-    flushResultRef.current = pending;
-
-    // 只在非游戏结束时显示阶段公告
     if (pending && pending.winner) {
-      // 游戏在转场期间结束 → 不显示阶段公告，直接让 controller 展示结算
+      // 游戏结束 → 立即释放，不作 settling；enterEndPhase 负责公告
+      pendingStateRef.current = null;
+      flushResultRef.current = pending;
+      setIsTransitioning(false);
+      // 不在此设置 phaseAnnouncement — enterEndPhase 会在状态更新后统一处理
       return;
     }
 
-    setPhaseAnnouncement({ group: announcementGroup, visible: true });
-    clearAnnouncement();
+    // ── settling: 静默缓冲，眨眼动画本身已传达昼夜信息 ──
+    const SETTLE_MS = _announcementGroup === "night" ? 1000 : 500;
+
+    // settling 结束后：释放 transition 锁 → flush 事件
+    const releaseTimer = setTimeout(() => {
+      setIsTransitioning(false);
+      const p = pendingStateRef.current;
+      pendingStateRef.current = null;
+      flushResultRef.current = p;
+    }, SETTLE_MS + 100);
+
+    transitionTimersRef.current = [releaseTimer];
   }
 
-  // 暴露给 controller：flush 后待应用的最新 state
   const flushResultRef = useRef<GameState | null>(null);
 
-  // ── 简化版转场（prefers-reduced-motion） ──────────────────────
+  // ── prefers-reduced-motion 简化转场 ────────────────────────────
 
   function simpleTransition(next: "day" | "night") {
     cancelPhaseTransition();
     const token = ++transitionTokenRef.current;
 
-    setPhaseAnnouncement({ group: next, visible: true });
+    setIsTransitioning(true);
+    showAnnouncement(next, ANNOUNCE_DISPLAY_MS, token);
+
     const switchTimer = setTimeout(() => {
-      if (transitionTokenRef.current === token) setVisualPhaseGroup(next);
-    }, 400);
-    const fadeTimer = setTimeout(() => {
-      if (transitionTokenRef.current === token)
-        setPhaseAnnouncement((c) => (c ? { ...c, visible: false } : null));
-    }, 1200);
-    const removeTimer = setTimeout(() => {
-      if (transitionTokenRef.current === token) setPhaseAnnouncement(null);
-    }, 1600);
-    transitionTimersRef.current = [switchTimer, fadeTimer, removeTimer];
+      if (transitionTokenRef.current === token) {
+        setVisualPhaseGroup(next);
+        setIsTransitioning(false);
+      }
+    }, ANNOUNCE_DISPLAY_MS + ANNOUNCE_FADE_MS);
+    transitionTimersRef.current.push(switchTimer);
   }
 
-  // ── Framer Motion 眨眼转场（主流程） ─────────────────────────────
+  // ── Framer Motion 眨眼转场（主流程 v2）──────────────────────────
 
+  /**
+   * Day→Night 转场：
+   *   1. 显示"天黑请闭眼"公告
+   *   2. 公告淡出 → 闭眼动画 → 全黑停顿 → 完成
+   *
+   * Night→Day 转场：
+   *   1. 显示"天亮了"公告
+   *   2. 公告淡出 → 眨眼动画(闭→停→睁) → 完成
+   */
   function startBlinkTransition(next: "day" | "night") {
     cancelPhaseTransition();
+    const token = ++transitionTokenRef.current;
 
     const reduceMotion =
       typeof window !== "undefined" &&
@@ -179,67 +221,101 @@ export function usePhaseTransition(
       return;
     }
 
-    // 冻结当前状态：UI 在整个转场期间都展示这个状态
+    // ── 1. 冻结状态 + 锁 UI ──
     frozenStateRef.current = gameState;
-    // 清空 buffer，准备接收转场期间的新快照
     pendingStateRef.current = null;
     flushResultRef.current = null;
     targetPhaseRef.current = next;
+    setIsTransitioning(true);
 
-    setIsBlinking(true);
-    setBlinkPhase("closing");
-    // 后续由 handleBlinkCloseComplete → handleBlinkPauseComplete →
-    // handleBlinkOpenComplete / _finishBlink 链式驱动
+    // ── 2. 先显示阶段公告（文字先行） ──
+    const announceGroup: PhaseAnnouncementGroup = next;
+    setPhaseAnnouncement({ group: announceGroup, visible: true });
+
+    // 公告显示 ANNOUNCE_DISPLAY_MS 后淡出，然后开始眨眼动画
+    const announceFadeTimer = setTimeout(() => {
+      if (transitionTokenRef.current !== token) return;
+      setPhaseAnnouncement((c) => (c ? { ...c, visible: false } : null));
+    }, ANNOUNCE_DISPLAY_MS);
+
+    // 公告移除 + 开始眨眼动画
+    const startBlinkTimer = setTimeout(() => {
+      if (transitionTokenRef.current !== token) return;
+      setPhaseAnnouncement(null);
+      // ── 3. 开始眨眼动画 ──
+      setIsBlinking(true);
+      setBlinkPhase("closing");
+      // 后续链式驱动: handleBlinkCloseComplete → handleBlinkPauseComplete →
+      //   → (day: 睁眼 → handleBlinkOpenComplete → _finishBlink)
+      //   → (night: _finishBlink)
+    }, ANNOUNCE_DISPLAY_MS + ANNOUNCE_FADE_MS);
+
+    transitionTimersRef.current = [announceFadeTimer, startBlinkTimer];
   }
 
-  // ── 首次入场（游戏开始可能是夜晚） ──────────────────────────────
+  // ── 首次入场（游戏从准备→第一夜）────────────────────────────────
 
   function startFirstNightTransition() {
     cancelPhaseTransition();
+    const token = ++transitionTokenRef.current;
+
     const reduceMotion =
       typeof window !== "undefined" &&
       window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     if (reduceMotion) {
-      const token = ++transitionTokenRef.current;
-      setPhaseAnnouncement({ group: "ready", visible: true });
-      const readyFade = setTimeout(() => {
-        if (transitionTokenRef.current === token)
-          setPhaseAnnouncement((c) => (c ? { ...c, visible: false } : null));
-      }, 800);
-      const showNight = setTimeout(() => {
-        if (transitionTokenRef.current === token)
-          setPhaseAnnouncement({ group: "night", visible: true });
-      }, 1100);
-      const switchTheme = setTimeout(() => {
-        if (transitionTokenRef.current === token) setVisualPhaseGroup("night");
-      }, 1500);
-      const fade = setTimeout(() => {
-        if (transitionTokenRef.current === token)
-          setPhaseAnnouncement((c) => (c ? { ...c, visible: false } : null));
-      }, 2700);
-      const remove = setTimeout(() => {
-        if (transitionTokenRef.current === token) setPhaseAnnouncement(null);
-      }, 3100);
-      transitionTimersRef.current = [readyFade, showNight, switchTheme, fade, remove];
+      setIsTransitioning(true);
+      showAnnouncement("ready", 800, token);
+      const showNightTimer = setTimeout(() => {
+        if (transitionTokenRef.current === token) {
+          showAnnouncement("night", ANNOUNCE_DISPLAY_MS, token);
+        }
+      }, 1200);
+      const switchTimer = setTimeout(() => {
+        if (transitionTokenRef.current === token) {
+          setVisualPhaseGroup("night");
+          setIsTransitioning(false);
+        }
+      }, 1200 + ANNOUNCE_DISPLAY_MS + ANNOUNCE_FADE_MS);
+      transitionTimersRef.current.push(showNightTimer, switchTimer);
       return;
     }
 
-    // 短暂显示 "准备" → 闭眼 → 切换夜晚
-    setPhaseAnnouncement({ group: "ready", visible: true });
-    const readyFade = setTimeout(() => {
-      setPhaseAnnouncement((c) => (c ? { ...c, visible: false } : null));
-      announceTimerRef.current = setTimeout(() => {
+    // ── 完整流程：冻结状态 → 准备公告 → 天黑请闭眼公告 → 闭眼动画 → 夜晚 ──
+    // ⚠️ 必须第一时间冻结，否则 displayGameState 在公告期间返回实时 gameState，
+    // 后端推进到守卫阶段后"守卫请睁眼"会在天黑前就渲染出来。
+    frozenStateRef.current = gameState;
+    pendingStateRef.current = null;
+    flushResultRef.current = null;
+    targetPhaseRef.current = "night";
+    setIsTransitioning(true);
+
+    // 1. 显示"身份已分配，对局即将开始"
+    showAnnouncement("ready", 1000, token);
+
+    // 2. 之后显示"天黑请闭眼" → 闭眼动画
+    const nightAnnounceTimer = setTimeout(() => {
+      if (transitionTokenRef.current !== token) return;
+      // 显示天黑请闭眼
+      setPhaseAnnouncement({ group: "night", visible: true });
+
+      const fadeTimer = setTimeout(() => {
+        if (transitionTokenRef.current !== token) return;
+        setPhaseAnnouncement((c) => (c ? { ...c, visible: false } : null));
+      }, ANNOUNCE_DISPLAY_MS);
+
+      const blinkTimer = setTimeout(() => {
+        if (transitionTokenRef.current !== token) return;
         setPhaseAnnouncement(null);
-        // 开始闭眼
-        frozenStateRef.current = gameState;
-        pendingStateRef.current = null;
-        flushResultRef.current = null;
-        targetPhaseRef.current = "night";
+
+        // 3. 开始闭眼动画（状态已在函数开头冻结，此处不再重复）
         setIsBlinking(true);
         setBlinkPhase("closing");
-      }, 400);
-    }, 800);
-    transitionTimersRef.current = [readyFade];
+      }, ANNOUNCE_DISPLAY_MS + ANNOUNCE_FADE_MS);
+
+      transitionTimersRef.current.push(fadeTimer, blinkTimer);
+    }, 1400);
+
+    transitionTimersRef.current.push(nightAnnounceTimer);
   }
 
   // ── 游戏结束 ────────────────────────────────────────────────────
@@ -254,6 +330,7 @@ export function usePhaseTransition(
     cancelPhaseTransition();
     setBlinkPhase(null);
     setIsBlinking(false);
+    setIsTransitioning(false);
     frozenStateRef.current = null;
     pendingStateRef.current = null;
     setVisualPhaseGroup("end");
@@ -293,6 +370,7 @@ export function usePhaseTransition(
       setPhaseAnnouncement(null);
       setBlinkPhase(null);
       setIsBlinking(false);
+      setIsTransitioning(false);
       frozenStateRef.current = null;
       pendingStateRef.current = null;
       flushResultRef.current = null;
@@ -342,11 +420,12 @@ export function usePhaseTransition(
   }, [sessionKey, gameState?.phase, hasWinner]);
 
   // ── Effective display state ──────────────────────────────────────
-  // 眨眼期间返回冻结的旧状态，UI 不会看到新事件
-  // 眨眼结束后返回实际 gameState（已在 _finishBlink 中通过 flushResultRef 通知 controller 更新）
+  // 转场期间返回冻结状态，防止 UI 看到过渡期数据
 
   const displayGameState: GameState | null =
-    isBlinking && frozenStateRef.current ? frozenStateRef.current : gameState;
+    (isBlinking || isTransitioning) && frozenStateRef.current
+      ? frozenStateRef.current
+      : gameState;
 
   return {
     visualPhaseGroup,
@@ -355,12 +434,14 @@ export function usePhaseTransition(
     // Blink state
     isBlinking,
     blinkPhase,
+    // Transitioning lock
+    isTransitioning,
     // Event flow control
     displayGameState,
     bufferSnapshot,
     getIsBlinking,
     flushResultRef,
-    // Blink callbacks (for DayNightBlinkTransition)
+    // Blink callbacks
     onBlinkCloseComplete: handleBlinkCloseComplete,
     onBlinkPauseComplete: handleBlinkPauseComplete,
     onBlinkOpenComplete: handleBlinkOpenComplete,
