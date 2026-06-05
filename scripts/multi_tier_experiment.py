@@ -192,10 +192,15 @@ def _run_tier_subprocess(
         experiment_id=experiment_id,
         require_db=require_db,
     )
+    # Pass current env so subprocess inherits .env variables (API keys, etc.)
+    child_env = os.environ.copy()
+    # Ensure subprocess uses project root as cwd for .env resolution
     return subprocess.Popen(
         [sys.executable, "-c", script],
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         text=True, bufsize=1,
+        env=child_env,
+        cwd=str(ROOT),
     )
 
 
