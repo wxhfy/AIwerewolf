@@ -8,7 +8,7 @@ const PHASE_LABEL: Record<string, string> = {
   NIGHT_WOLF_ACTION: "狼人行动", NIGHT_WITCH_ACTION: "女巫行动", NIGHT_SEER_ACTION: "预言家行动",
   NIGHT_RESOLVE: "夜晚结算", DAY_START: "天亮了", DAY_BADGE_SIGNUP: "警徽报名",
   DAY_BADGE_SPEECH: "警徽竞选发言", DAY_BADGE_ELECTION: "警徽投票",
-  DAY_PK_SPEECH: "PK 发言", DAY_SPEECH: "自由发言", DAY_VOTE: "投票放逐",
+  DAY_PK_SPEECH: "PK 发言", DAY_SPEECH: "自由发言", DAY_SHERIFF_CLOSING: "警长归票", DAY_VOTE: "投票放逐",
   DAY_LAST_WORDS: "遗言", DAY_RESOLVE: "白天结算", HUNTER_SHOOT: "猎人开枪",
   BADGE_TRANSFER: "警徽移交", GAME_END: "游戏结束",
 };
