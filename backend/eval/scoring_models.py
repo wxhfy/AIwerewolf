@@ -717,7 +717,8 @@ class OpportunityValueModel:
             import warnings
 
             warnings.warn(
-                "OpportunityValueModel.predict() called on untrained model, returning 0.5. Run train_and_ablate.py first.", stacklevel=2
+                "OpportunityValueModel.predict() called on untrained model, returning 0.5. Run train_and_ablate.py first.",
+                stacklevel=2,
             )
             return np.full(len(X), 0.5)
         return self.model.predict_proba(X)[:, 1]
@@ -822,7 +823,8 @@ class DecisionQualityModel:
             import warnings
 
             warnings.warn(
-                "DecisionQualityModel.predict() called on untrained model, returning 0.5. Run train_and_ablate.py first.", stacklevel=2
+                "DecisionQualityModel.predict() called on untrained model, returning 0.5. Run train_and_ablate.py first.",
+                stacklevel=2,
             )
             return np.full(len(X), 0.5)
         return self.model.predict_proba(X)[:, 1]
@@ -861,7 +863,8 @@ class MistakeSeverityModel:
             import warnings
 
             warnings.warn(
-                "MistakeSeverityModel.predict() called on untrained model, returning 0.5. Run train_and_ablate.py first.", stacklevel=2
+                "MistakeSeverityModel.predict() called on untrained model, returning 0.5. Run train_and_ablate.py first.",
+                stacklevel=2,
             )
             return np.full(len(X), 0.5)
         return np.clip(self.model.predict(X), 0.0, 1.0)

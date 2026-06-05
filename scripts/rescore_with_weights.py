@@ -130,7 +130,6 @@ def main() -> int:
         print(f"ERROR: weights don't sum to 1.0: {w.label()}")
         return 1
 
-
     data = collect_rescored(w)
 
     # Read old summary for comparison

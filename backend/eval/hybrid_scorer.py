@@ -350,10 +350,9 @@ def build_rubric_from_spec(spec: Dict[str, Any]) -> List[ScoringCriterion]:
         if crit_type == "rule" and "check_expr" in spec_crit:
             # Compile rule from expression string
             check_expr = spec_crit["check_expr"]
+
             def rule_check(ctx, expr=check_expr):
-                return eval(
-                            expr, {"__builtins__": {}}, {"context": ctx, "len": len, "min": min, "max": max}
-                        )
+                return eval(expr, {"__builtins__": {}}, {"context": ctx, "len": len, "min": min, "max": max})
 
         criteria.append(
             ScoringCriterion(

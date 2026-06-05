@@ -1537,7 +1537,14 @@ class LLMAgent(Agent):
                         speeches.append(f"第{day}天{tag} {actor}：...（共{len(sentences)}句）")
             elif etype == "SYSTEM_MESSAGE":
                 msg = payload.get("message") or ""
-                if "sheriff" in msg or "警徽" in msg or "badge" in msg.lower() or "died" in msg.lower() or "出局" in msg or "deaths" in msg.lower():
+                if (
+                    "sheriff" in msg
+                    or "警徽" in msg
+                    or "badge" in msg.lower()
+                    or "died" in msg.lower()
+                    or "出局" in msg
+                    or "deaths" in msg.lower()
+                ):
                     sheriff_lines.append(f"第{day}天 系统：{msg}")
 
         lines: list[str] = []

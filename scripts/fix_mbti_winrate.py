@@ -582,7 +582,7 @@ tr:nth-child(even) {{ background: #faf8f2; }}
 <p style="font-size:0.85rem;color:#666;">Average of village-camp WR and wolf-camp WR. Reduces camp-assignment bias.</p>
 <table>
 <tr><th>MBTI</th><th>n</th><th>Raw WR</th><th>Camp-Balanced WR</th><th>Village WR (n)</th><th>Wolf WR (n)</th></tr>
-{"".join(f"<tr><td><b>{mbti}</b></td><td>{s["n"]}</td><td>{s["raw_win_rate"]:.3f}</td><td>{s["camp_balanced_win_rate"]:.3f}</td><td>{s["village_win_rate"]:.3f} ({s["n_village"]})</td><td>{s["wolf_win_rate"]:.3f} ({s["n_wolf"]})</td></tr>" for mbti, s in sorted_stats)}
+{"".join(f"<tr><td><b>{mbti}</b></td><td>{s['n']}</td><td>{s['raw_win_rate']:.3f}</td><td>{s['camp_balanced_win_rate']:.3f}</td><td>{s['village_win_rate']:.3f} ({s['n_village']})</td><td>{s['wolf_win_rate']:.3f} ({s['n_wolf']})</td></tr>" for mbti, s in sorted_stats)}
 </table>
 
 <h2>4. Role-Adjusted Win Lift</h2>
@@ -596,7 +596,7 @@ tr:nth-child(even) {{ background: #faf8f2; }}
 <p style="font-size:0.85rem;color:#666;">Mean pre-action decision quality (0 post-outcome contamination). Higher = better in-game decision-making.</p>
 <table>
 <tr><th>MBTI</th><th>n</th><th>PreAction</th><th>Process</th><th>Mistake%</th></tr>
-{"".join(f"<tr><td><b>{mbti}</b></td><td>{s["n"]}</td><td>{s["avg_pre_action_score"]:.3f}</td><td>{s["avg_process_score"]:.3f}</td><td>{s["mistake_rate"]:.3f}</td></tr>" for mbti, s in sorted_stats)}
+{"".join(f"<tr><td><b>{mbti}</b></td><td>{s['n']}</td><td>{s['avg_pre_action_score']:.3f}</td><td>{s['avg_process_score']:.3f}</td><td>{s['mistake_rate']:.3f}</td></tr>" for mbti, s in sorted_stats)}
 </table>
 
 <h2>6. MBTI × Role Matrix</h2>
@@ -610,14 +610,14 @@ tr:nth-child(even) {{ background: #faf8f2; }}
 <p style="font-size:0.85rem;color:#666;">Win rate by camp.</p>
 <table>
 <tr><th>MBTI</th><th>n</th><th>Village WR (n)</th><th>Wolf WR (n)</th><th>CampBalWR</th></tr>
-{"".join(f"<tr><td><b>{mbti}</b></td><td>{s["n"]}</td><td>{s["village_win_rate"]:.3f} ({s["n_village"]})</td><td>{s["wolf_win_rate"]:.3f} ({s["n_wolf"]})</td><td>{s["camp_balanced_win_rate"]:.3f}</td></tr>" for mbti, s in sorted_stats)}
+{"".join(f"<tr><td><b>{mbti}</b></td><td>{s['n']}</td><td>{s['village_win_rate']:.3f} ({s['n_village']})</td><td>{s['wolf_win_rate']:.3f} ({s['n_wolf']})</td><td>{s['camp_balanced_win_rate']:.3f}</td></tr>" for mbti, s in sorted_stats)}
 </table>
 
 <h2>8. Mistake Rate</h2>
 <p style="font-size:0.85rem;color:#666;">Fraction of opportunities with process_score &lt; 0.4.</p>
 <table>
 <tr><th>MBTI</th><th>n</th><th>Mistake Rate</th></tr>
-{"".join(f"<tr><td><b>{mbti}</b></td><td>{s["n"]}</td><td>{s["mistake_rate"]:.3f}</td></tr>" for mbti, s in sorted_stats)}
+{"".join(f"<tr><td><b>{mbti}</b></td><td>{s['n']}</td><td>{s['mistake_rate']:.3f}</td></tr>" for mbti, s in sorted_stats)}
 </table>
 
 <h2>9. Low Confidence</h2>

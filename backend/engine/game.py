@@ -1355,8 +1355,7 @@ class WerewolfGame:
                 raise
             except Exception:
                 logger.exception(
-                    f"Handler failed for {player.name} (seat={player.seat}) "
-                    f"in phase {phase.value}, skipping"
+                    f"Handler failed for {player.name} (seat={player.seat}) in phase {phase.value}, skipping"
                 )
         self.state.current_speaker_id = None
         self.state.phase_cursor.pop(cursor_key, None)

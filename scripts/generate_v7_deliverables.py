@@ -536,28 +536,28 @@ Total player-games: {all_n}</p>
 <p class="note" style="font-size:0.85rem;">Win rates include both village and wolf camp games. Not adjusted for role difficulty.</p>
 <table>
 <tr><th>MBTI</th><th>n</th><th>WinRate</th><th>CI Lo</th><th>CI Hi</th></tr>
-{"".join(f"<tr><td><b>{mbti}</b></td><td>{s["n"]}</td><td>{s["win_rate"]:.3f}</td><td>{s["win_rate_ci_lo"]:.3f}</td><td>{s["win_rate_ci_hi"]:.3f}</td></tr>" for mbti, s in sorted_mbti)}
+{"".join(f"<tr><td><b>{mbti}</b></td><td>{s['n']}</td><td>{s['win_rate']:.3f}</td><td>{s['win_rate_ci_lo']:.3f}</td><td>{s['win_rate_ci_hi']:.3f}</td></tr>" for mbti, s in sorted_mbti)}
 </table>
 
 <h2>3. Camp-Balanced Win Rate</h2>
 <p class="note" style="font-size:0.85rem;">Average of village-camp WR and wolf-camp WR. Reduces camp-assignment bias.</p>
 <table>
 <tr><th>MBTI</th><th>n</th><th>Raw WR</th><th>Camp-Balanced WR</th></tr>
-{"".join(f"<tr><td><b>{mbti}</b></td><td>{s["n"]}</td><td>{s["win_rate"]:.3f}</td><td>{s["camp_balanced_wr"]:.3f}</td></tr>" for mbti, s in sorted_mbti)}
+{"".join(f"<tr><td><b>{mbti}</b></td><td>{s['n']}</td><td>{s['win_rate']:.3f}</td><td>{s['camp_balanced_wr']:.3f}</td></tr>" for mbti, s in sorted_mbti)}
 </table>
 
 <h2>4. Role-Adjusted Win Lift</h2>
 <p class="note" style="font-size:0.85rem;">Comparison of individual win rate vs expected win rate for their role. Positive = above average for that role.</p>
 <table>
 <tr><th>MBTI</th><th>n</th><th>Avg PreAction</th></tr>
-{"".join(f"<tr><td><b>{mbti}</b></td><td>{s["n"]}</td><td>{s["pre_mean"]:.3f}</td></tr>" for mbti, s in sorted_mbti)}
+{"".join(f"<tr><td><b>{mbti}</b></td><td>{s['n']}</td><td>{s['pre_mean']:.3f}</td></tr>" for mbti, s in sorted_mbti)}
 </table>
 
 <h2>5. Avg PreActionScore</h2>
 <p class="note" style="font-size:0.85rem;">Pre-action decision quality (0 post-outcome contamination). Higher = better in-game decision-making.</p>
 <table>
 <tr><th>MBTI</th><th>n</th><th>PreAction</th><th>Process</th></tr>
-{"".join(f"<tr><td><b>{mbti}</b></td><td>{s["n"]}</td><td>{s["pre_mean"]:.3f}</td><td>{s["process_mean"]:.3f}</td></tr>" for mbti, s in sorted_mbti)}
+{"".join(f"<tr><td><b>{mbti}</b></td><td>{s['n']}</td><td>{s['pre_mean']:.3f}</td><td>{s['process_mean']:.3f}</td></tr>" for mbti, s in sorted_mbti)}
 </table>
 
 <h2>6. MBTI × Role Matrix</h2>
@@ -571,14 +571,14 @@ Total player-games: {all_n}</p>
 <p class="note" style="font-size:0.85rem;">Win rate by camp. Village WR vs Wolf WR.</p>
 <table>
 <tr><th>MBTI</th><th>n</th><th>Total WR</th></tr>
-{"".join(f"<tr><td><b>{mbti}</b></td><td>{s["n"]}</td><td>{s["win_rate"]:.3f}</td></tr>" for mbti, s in sorted_mbti)}
+{"".join(f"<tr><td><b>{mbti}</b></td><td>{s['n']}</td><td>{s['win_rate']:.3f}</td></tr>" for mbti, s in sorted_mbti)}
 </table>
 
 <h2>8. Mistake Rate</h2>
 <p class="note" style="font-size:0.85rem;">Fraction of opportunities with final_review_score &lt; 0.4.</p>
 <table>
 <tr><th>MBTI</th><th>n</th><th>Mistake Rate</th></tr>
-{"".join(f"<tr><td><b>{mbti}</b></td><td>{s["n"]}</td><td>{s["mistake_rate"]:.3f}</td></tr>" for mbti, s in sorted_mbti)}
+{"".join(f"<tr><td><b>{mbti}</b></td><td>{s['n']}</td><td>{s['mistake_rate']:.3f}</td></tr>" for mbti, s in sorted_mbti)}
 </table>
 
 <h2>9. Low Confidence Rate</h2>
@@ -797,7 +797,7 @@ summary {{ cursor: pointer; font-weight: bold; padding: 0.3rem 0; }}
 <h2>2. Players</h2>
 <table>
 <tr><th>Name</th><th>Role</th><th>Alive</th><th>MBTI</th></tr>
-{"".join(f"<tr><td>{p.get("name", "?")}</td><td>{p.get("role", "?")}</td><td>{"✓" if p.get("alive") else "✗"}</td><td>{(p.get("persona") or {{}}).get("mbti", "?")}</td></tr>" for p in players)}
+{"".join(f"<tr><td>{p.get('name', '?')}</td><td>{p.get('role', '?')}</td><td>{'✓' if p.get('alive') else '✗'}</td><td>{(p.get('persona') or {{}}).get('mbti', '?')}</td></tr>" for p in players)}
 </table>
 
 <h2>3. Scoreboard</h2>

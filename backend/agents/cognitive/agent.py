@@ -744,7 +744,11 @@ class CognitiveAgent:
             seat = str(p.get("seat", "")).strip()
             seat_label = f"{seat}号" if seat else ""
             if (
-                candidate in (player_name, player_id, seat, seat_label) or player_name and player_name in candidate or seat_label and seat_label in candidate
+                candidate in (player_name, player_id, seat, seat_label)
+                or player_name
+                and player_name in candidate
+                or seat_label
+                and seat_label in candidate
             ):
                 return p["id"]
         return None

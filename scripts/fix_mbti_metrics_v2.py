@@ -500,7 +500,7 @@ tr:nth-child(even) {{ background: #faf8f2; }}
 <h3>Per-Role PreAction Baselines</h3>
 <table>
 <tr><th>Role</th><th>n</th><th>Mean PreAction</th><th>Std</th></tr>
-{"".join(f"<tr><td>{r}</td><td>{len([s for s in load_jsonl(DATA / "player_scores_v7_fixed_win.jsonl") if s.get("role") == r])}</td><td>{role_mean[r]:.4f}</td><td>{role_std[r]:.4f}</td></tr>" for r in sorted(role_mean.keys()))}
+{"".join(f"<tr><td>{r}</td><td>{len([s for s in load_jsonl(DATA / 'player_scores_v7_fixed_win.jsonl') if s.get('role') == r])}</td><td>{role_mean[r]:.4f}</td><td>{role_std[r]:.4f}</td></tr>" for r in sorted(role_mean.keys()))}
 </table>
 
 <!-- 7. MBTI × ROLE MATRIX -->
@@ -515,7 +515,7 @@ tr:nth-child(even) {{ background: #faf8f2; }}
 <h2>8. MBTI × Camp Matrix</h2>
 <table>
 <tr><th>MBTI</th><th>n</th><th>Village WR (n)</th><th>Wolf WR (n)</th><th>CampBalWR</th></tr>
-{"".join(f"<tr><td><b>{mbti}</b></td><td>{s["n"]}</td><td>{s["village_win_rate"]:.3f} ({s["n_village"]})</td><td>{s["wolf_win_rate"]:.3f} ({s["n_wolf"]})</td><td>{s["camp_balanced_win_rate"]:.3f}</td></tr>" for mbti, s in main_sorted)}
+{"".join(f"<tr><td><b>{mbti}</b></td><td>{s['n']}</td><td>{s['village_win_rate']:.3f} ({s['n_village']})</td><td>{s['wolf_win_rate']:.3f} ({s['n_wolf']})</td><td>{s['camp_balanced_win_rate']:.3f}</td></tr>" for mbti, s in main_sorted)}
 </table>
 
 <!-- 9. LOW SAMPLE -->
@@ -598,7 +598,7 @@ role_adjusted_win_lift = is_win - expected_wr
 
 | Role | Camp | n | Expected WR | Status |
 |------|------|---|-------------|--------|
-{chr(10).join(f"| {role} | {camp} | {v["n"]} | {v["wr"]:.3f} | {"OK" if v["n"] >= 5 else "LOW_SAMPLE"}" for (role, camp), v in sorted(rc_baseline.items()))}
+{chr(10).join(f"| {role} | {camp} | {v['n']} | {v['wr']:.3f} | {'OK' if v['n'] >= 5 else 'LOW_SAMPLE'}" for (role, camp), v in sorted(rc_baseline.items()))}
 
 Camp-only fallback: village={camp_wr.get("village", 0):.3f}, wolf={camp_wr.get("wolf", 0):.3f}
 
@@ -606,7 +606,7 @@ Camp-only fallback: village={camp_wr.get("village", 0):.3f}, wolf={camp_wr.get("
 
 | MBTI | n | Actual WR | Mean Lift | n_fallback |
 |------|---|-----------|-----------|------------|
-{chr(10).join(f"| {m} | {v["n"]} | {sum(1 for ps in fixed_scores if ps.get("mbti") == m and ps.get("is_win")) / max(v["n"], 1):.3f} | {v["mean_lift"]:+.4f} | {v["n_fallback"]} |" for m, v in sorted(lift_data.items()))}
+{chr(10).join(f"| {m} | {v['n']} | {sum(1 for ps in fixed_scores if ps.get('mbti') == m and ps.get('is_win')) / max(v['n'], 1):.3f} | {v['mean_lift']:+.4f} | {v['n_fallback']} |" for m, v in sorted(lift_data.items()))}
 
 ## Verification
 

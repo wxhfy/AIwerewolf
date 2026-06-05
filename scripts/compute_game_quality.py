@@ -260,7 +260,12 @@ def score_behavior_reason(d: dict) -> tuple[float, list[str]]:
     critical_count = 0
     for ps in pss:
         for m in ps.get("mistakes", []):
-            if isinstance(m, str) and "critical" in m.lower() or isinstance(m, dict) and m.get("severity") == "critical":
+            if (
+                isinstance(m, str)
+                and "critical" in m.lower()
+                or isinstance(m, dict)
+                and m.get("severity") == "critical"
+            ):
                 critical_count += 1
 
     if critical_count >= 2:
