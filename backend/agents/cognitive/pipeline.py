@@ -13,6 +13,7 @@ Single Responsibility: orchestrate the LLM calls in the right order.
 from __future__ import annotations
 
 import json
+import os
 import re
 from typing import Any, Dict, List, Optional
 
@@ -58,13 +59,17 @@ class Pipeline:
         persona_mbti: str = "",
         persona_style: str = "",
         use_agent_loop: bool = True,
+        retrieval_policy: str = "",
+        player_id: str = "",
     ):
         self._llm = llm
         self._system_prompt = system_prompt
         self._strategy_bias = strategy_bias or {}
         self._persona_mbti = persona_mbti
         self._persona_style = persona_style
-        self._use_agent_loop = use_agent_loop
+        self._use_agent_loop = use_agent_loop and os.getenv("COGNITIVE_USE_AGENT_LOOP", "true").lower() != "false"
+        self._retrieval_policy = retrieval_policy
+        self._player_id = player_id
         self._cached_analysis: str = ""
 
     # ================================================================
@@ -121,7 +126,9 @@ class Pipeline:
         if is_last: extra_parts.append("这是你的遗言")
         extra = "; ".join(extra_parts) if extra_parts else ""
 
-        loop = AgentLoop(self._llm, self._system_prompt, "speech", self._strategy_bias)
+        loop = AgentLoop(self._llm, self._system_prompt, "speech", self._strategy_bias,
+                         mbti=self._persona_mbti, player_id=self._player_id,
+                         retrieval_policy=self._retrieval_policy)
         result = loop.run(obs, memory, extra_context=extra)
         speech = result.get("speech", "")
         self._cached_analysis = result.get("reasoning", "")
@@ -134,13 +141,17 @@ class Pipeline:
         loop = AgentLoop(
             self._llm, self._system_prompt, "vote", self._strategy_bias,
             temperature=vote_temperature,
+            mbti=self._persona_mbti, player_id=self._player_id,
+            retrieval_policy=self._retrieval_policy,
         )
         result = loop.run(obs, memory, cached_analysis=self._cached_analysis)
         self._cached_analysis = ""
         return {"target": result.get("target", ""), "reasoning": result.get("reasoning", "")}
 
     def _run_loop_night(self, obs: Observation, memory: Memory, extra: str) -> Dict[str, str]:
-        loop = AgentLoop(self._llm, self._system_prompt, "night", self._strategy_bias)
+        loop = AgentLoop(self._llm, self._system_prompt, "night", self._strategy_bias,
+                         mbti=self._persona_mbti, player_id=self._player_id,
+                         retrieval_policy=self._retrieval_policy)
         result = loop.run(obs, memory, extra_context=extra)
         return {"target": result.get("target", ""), "reasoning": result.get("reasoning", "")}
 
@@ -195,12 +206,12 @@ class Pipeline:
     def _legacy_act_vote(self, obs: Observation, think_result: str) -> Dict[str, str]:
         prompt = build_vote_prompt(obs, think_result)
         result = self._call_legacy(self._system_prompt, prompt, max_tokens=300)
-        return _parse_json_target(result)
+        return parse_json_target(result)
 
     def _legacy_act_night(self, obs: Observation, think_result: str, extra: str) -> Dict[str, str]:
         prompt = build_night_prompt(obs, think_result, extra)
         result = self._call_legacy(self._system_prompt, prompt, max_tokens=300)
-        return _parse_json_target(result)
+        return parse_json_target(result)
 
     def _call_legacy(
         self, system: str, user: str, max_tokens: int = 500, max_retries: int = 2,

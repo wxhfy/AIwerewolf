@@ -1479,6 +1479,9 @@ class WerewolfGame:
         return sorted(pool, key=lambda player: (player.seat, player.name))[0]
 
     def _requires_strict_llm_decision(self, player: Player) -> bool:
+        import os
+        if os.getenv("ALLOW_FALLBACK", "false").lower() == "true":
+            return False  # fallback mode: tolerate invalid targets, use heuristic fallback
         return player.is_ai and str(player.agent_type).strip().lower() in {"llm", "cognitive"}
 
     def _raise_invalid_llm_decision(

@@ -62,6 +62,7 @@ class CognitiveAgent:
         strategy_bias: Optional[Dict[str, List[str]]] = None,
         fallback_heuristic: Any = None,
         strict_no_fallback: bool = True,
+        retrieval_policy: str = "",
     ):
         self.player_id = player_id
         self.role = role
@@ -97,6 +98,8 @@ class CognitiveAgent:
             llm, self._system_prompt, self._strategy_bias,
             persona_mbti=(self._profile.persona.mbti if self._profile.persona else ""),
             persona_style=(self._profile.persona.style_label if self._profile.persona else ""),
+            retrieval_policy=retrieval_policy,
+            player_id=player_id,
         )
 
         # Memory (persists across rounds — includes humanization + playbook)
@@ -216,8 +219,9 @@ class CognitiveAgent:
             vote_temperature=self._humanization.vote_temperature,
         )
         target_id = self._resolve_target(result["target"])
-        if not target_id and self._strict_no_fallback:
-            raise RuntimeError(f"LLM returned unresolved vote target: {result['target']!r}")
+        # Abstention: skip voting entirely, return empty target
+        if not target_id:
+            return {"target": "", "reasoning": result.get("reasoning", "弃票")}
         self.memory.add_action("vote", result["target"], f"投{result['target']}", result["reasoning"])
 
         # Feed 3: Detect speech-vote mismatch and update social model
@@ -663,7 +667,7 @@ class CognitiveAgent:
         return method(**kwargs) if kwargs else method()
 
     # Night actions where "skip" is a valid strategic choice
-    _SKIP_NIGHT_KEYWORDS = {"空守", "不守", "跳过", "空过", "放弃", "不救", "不用", "不毒", "不验", "不刀"}
+    _SKIP_NIGHT_KEYWORDS = {"空守", "不守", "跳过", "空过", "放弃", "不救", "不用", "不毒", "不验", "不打", "不刀", "不查", "none", "null", "无", "空", "pass", "NONE", "None"}
 
     def _night_decision(self, result: Dict[str, str], action_type: ActionType) -> Decision:
         """Create a Decision for a night action.
@@ -691,22 +695,31 @@ class CognitiveAgent:
         else:
             target_id = self._resolve_target(raw_target)
 
-        if not target_id and self._strict_no_fallback:
-            raise RuntimeError(
-                f"LLM returned unresolved {action_type.value} target: {result['target']!r}"
-            )
         if not target_id:
+            # Agent chose no target or returned invalid target — pick a fallback alive player
+            no_action_terms = ("none", "null", "无", "空", "弃票", "弃权", "abstain", "pass", "跳过", "不行动")
+            is_explicit_no_action = result.get("target", "").strip().lower() in no_action_terms
+            if self._strict_no_fallback and not is_explicit_no_action:
+                raise RuntimeError(
+                    f"LLM returned unresolved {action_type.value} target: {result['target']!r}"
+                )
             for p in self._view.players:
-                if p.get("alive"):
+                if p.get("alive") and p.get("id") != self.player_id:
                     target_id = p.get("id", "")
                     break
+            if not target_id:
+                target_id = self.player_id  # last resort: self
+
         return self._decision(action_type, target_id=target_id, reasoning=result.get("reasoning", ""))
 
     def _resolve_target(self, name: str) -> Optional[str]:
         """Resolve player name to player id."""
         if not name:
             return None
-        candidate = str(name).strip().lstrip("@")
+        candidate = str(name).strip().lower().lstrip("@")
+        # No-action keywords: agent explicitly chooses not to act
+        if candidate in ("弃票", "弃权", "abstain", "pass", "none", "null", "无", "空", "不行动", "跳过"):
+            return None
         for p in self._view.players:
             player_name = str(p.get("name", "")).strip()
             player_id = str(p.get("id", "")).strip()

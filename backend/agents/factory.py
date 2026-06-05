@@ -177,6 +177,7 @@ def create_agents(players: list[Player], agent_config: dict[str, Any] | None = N
             player_seat=player.seat,
             character=character,
             strategy_bias=player_config.get("strategy_bias") or strategy_bias,
+            retrieval_policy=config.get("retrieval_policy", ""),
         )
 
     return agents
