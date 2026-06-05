@@ -70,24 +70,29 @@ class AbstractedLesson:
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
     def to_pg_dict(self) -> Dict[str, Any]:
-        """Convert to dict matching strategy_knowledge_docs table schema."""
+        """Convert to dict matching strategy_knowledge_docs table schema.
+
+        All list/dict fields are serialized to JSON strings so psycopg2
+        inserts them correctly into jsonb columns.
+        """
+        import json as _json
         return {
             "doc_type": "per_step_lesson",
             "role": self.target_role,
             "phase": self.phase,
             "persona_scope": self.target_persona_scope or None,
             "situation_pattern": self.situation_pattern,
-            "trigger_conditions": self.trigger_conditions,
+            "trigger_conditions": _json.dumps(self.trigger_conditions, ensure_ascii=False),
             "recommended_action": self.recommended_action,
             "avoid_action": self.avoid_action or None,
             "rationale": self.rationale,
             "quality_score": self.quality_score,
             "confidence": self.confidence,
-            "source_report_ids": [self.source_game_id],
-            "source_item_ids": [self.source_step_id],
-            "source_event_ids": self.source_event_ids,
+            "source_report_ids": _json.dumps([self.source_game_id], ensure_ascii=False),
+            "source_item_ids": _json.dumps([self.source_step_id], ensure_ascii=False),
+            "source_event_ids": _json.dumps(self.source_event_ids, ensure_ascii=False),
             "evidence_summary": self.evidence_summary,
-            "tags": self.tags,
+            "tags": _json.dumps(self.tags, ensure_ascii=False),
             "status": "candidate",
             "experiment_id": self.experiment_id or None,
             "game_id": self.source_game_id,
@@ -356,6 +361,7 @@ def store_lessons_to_db(
     import logging
     import os as _os
     import psycopg2
+    from uuid import uuid4
 
     logger = logging.getLogger(__name__)
     auto_promote = _os.getenv("AUTO_PROMOTE_LESSONS", "").lower() == "true"
@@ -366,6 +372,7 @@ def store_lessons_to_db(
     c = conn.cursor()
 
     stored = 0
+    errors = 0
     role_counts: dict[str, int] = {}
     for lesson in lessons:
         doc = lesson.to_pg_dict()
@@ -379,14 +386,16 @@ def store_lessons_to_db(
         # Pop extra keys not present in the INSERT column list
         doc.pop("experiment_id", None)
         doc.pop("game_id", None)
+        # Generate a primary key (raw psycopg2 bypasses SQLAlchemy default)
+        doc["id"] = str(uuid4())
         try:
             c.execute("""
                 INSERT INTO strategy_knowledge_docs
-                    (doc_type, role, phase, persona_scope, situation_pattern,
+                    (id, doc_type, role, phase, persona_scope, situation_pattern,
                      trigger_conditions, recommended_action, avoid_action, rationale,
                      quality_score, confidence, source_report_ids, source_item_ids,
                      source_event_ids, evidence_summary, tags, status)
-                VALUES (%(doc_type)s, %(role)s, %(phase)s, %(persona_scope)s,
+                VALUES (%(id)s, %(doc_type)s, %(role)s, %(phase)s, %(persona_scope)s,
                         %(situation_pattern)s, %(trigger_conditions)s,
                         %(recommended_action)s, %(avoid_action)s, %(rationale)s,
                         %(quality_score)s, %(confidence)s, %(source_report_ids)s,
@@ -397,7 +406,10 @@ def store_lessons_to_db(
             role_counts[lesson.target_role] = role_counts.get(lesson.target_role, 0) + 1
         except Exception:
             conn.rollback()
-            continue
+            errors += 1
+            if errors <= 3:
+                logger.warning("Failed to store lesson (role=%s, type=%s): %s",
+                               lesson.target_role, lesson.source_type, str(e)[:200])
 
     conn.commit()
     conn.close()
