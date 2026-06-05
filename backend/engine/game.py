@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 import time
 from collections import Counter
 from random import Random
@@ -1345,7 +1349,15 @@ class WerewolfGame:
             player = players[index]
             self.state.phase_cursor[cursor_key] = index
             self.state.current_speaker_id = player.id
-            handler(player)
+            try:
+                handler(player)
+            except GamePaused:
+                raise
+            except Exception:
+                logger.exception(
+                    f"Handler failed for {player.name} (seat={player.seat}) "
+                    f"in phase {phase.value}, skipping"
+                )
         self.state.current_speaker_id = None
         self.state.phase_cursor.pop(cursor_key, None)
 
