@@ -99,8 +99,8 @@ psql -h 127.0.0.1 -p 5433 -U werewolf -d werewolf
 | 后端 | Python 3.12 + FastAPI + WebSocket |
 | 前端 | Next.js 15 + React 19 + Tailwind CSS |
 | 数据库 | PostgreSQL 15 (Docker @ 5433) |
-| LLM | 火山方舟 doubao-seed-2.0-pro (ep-20260514115354-k4jz4) |
-| 检索 | BM25 + 关键词倒排索引 (GPU-free) |
+| LLM | 火山方舟 doubao-seed-2.0-pro |
+| 检索 | Agent 工具调用检索, BM25 + 倒排索引 (GPU-free) |
 | 评测 | scikit-learn + LLM Judge Panel (三法官 + Critic) |
 
 ---

@@ -130,7 +130,7 @@ Agent 通过 6 个工具函数主动获取信息:
 | Memory | `memory.py` | 短期记忆 (近 N 轮) + 长期记忆 |
 | WolfTeamView | `wolf_team.py` | 狼队安全协调 (只含合法可见信息) |
 | Humanization | `humanization.py` | 人格化发言 (语气词、情绪波动) |
-| StrategyRetriever | `retrieval_prod.py` | BM25 + 倒排索引检索 |
+| StrategyRetriever | `retrieval_prod.py` | Agent 工具调用检索 (BM25 + 倒排索引) |
 
 ---
 
@@ -140,8 +140,10 @@ Agent 通过 6 个工具函数主动获取信息:
 
 ### 检索架构
 
+Agent 通过 `search_strategies` 工具主动检索策略知识，底层使用 BM25 + 关键词倒排索引，经 4-filter 安全管线过滤后返回 top_k 结果。
+
 ```
-Agent query → BM25 + 关键词倒排索引 → 4-filter 安全管线 → top_k 结果
+Agent tool call (search_strategies) → BM25 + 倒排索引 → 4-filter 安全管线 → top_k
 ```
 
 ### 4-Filter 安全管线
@@ -287,7 +289,7 @@ candidate ──promote──→ active ──decay──→ deprecated
 ### LLM 降级链
 
 ```
-主模型 (doubao ep-20260514115354-k4jz4)
+主模型 (doubao-seed-2.0-pro)
   → 备用模型 (DOUBAO_FALLBACK_*)
   → HeuristicAgent (最终兜底)
 ```
@@ -309,8 +311,8 @@ candidate ──promote──→ active ──decay──→ deprecated
 | 后端 | Python 3.12 + FastAPI + WebSocket |
 | 前端 | Next.js 15 + React 19 + Tailwind CSS |
 | 数据库 | PostgreSQL 15 (Docker @ 5433) |
-| LLM | 火山方舟 doubao-seed-2.0-pro (ep-20260514115354-k4jz4) |
-| 检索 | BM25 + 关键词倒排索引 (GPU-free) |
+| LLM | 火山方舟 doubao-seed-2.0-pro |
+| 检索 | Agent 工具调用检索, BM25 + 倒排索引 (GPU-free) |
 | 评测 | scikit-learn + LLM Judge Panel |
 
 ---
@@ -324,7 +326,7 @@ backend/
 ├── agents/cognitive/agent.py        # CognitiveAgent
 ├── agents/cognitive/agent_loop.py   # Observe-Think-Act 主循环
 ├── agents/cognitive/observe.py      # Observation + BeliefTracker
-├── agents/cognitive/retrieval_prod.py # 策略检索 (BM25 + 4-filter)
+├── agents/cognitive/retrieval_prod.py # Agent 工具调用检索 + 4-filter
 ├── agents/cognitive/tools.py        # 6 个工具函数
 ├── agents/cognitive/wolf_team.py    # 狼队协调
 ├── eval/per_step_scorer.py          # 三级评分级联

@@ -122,7 +122,7 @@
 │ PHASE 6: 检索闭环                                                       │
 │                                                                      │
 │ StrategyRetriever (retrieval_prod.py)                                  │
-│   │  BM25 + 关键词倒排索引                                               │
+│   │  Agent 工具调用检索 (BM25 + 倒排索引)                                │
 │   │  4-filter 安全管线:                                                 │
 │   │    1. confidence_allowed (L0-L3 only, L4/rejected blocked)         │
 │   │    2. visibility_allowed (public/self/wolf/postgame)                │
@@ -216,11 +216,11 @@ STRICT MODE: PASSED
 | 模块 | 状态 | 关键指标 |
 |------|------|----------|
 | DB | ✅ | 21 表, FK 约束完整 |
-| LLM | ✅ | doubao ep-20260514115354-k4jz4 OK |
+| LLM | ✅ | doubao-seed-2.0-pro OK |
 | Game Engine | ✅ | 全流程跑通, 无跳过/死循环 |
 | Agent Decision | ✅ | 26/27 带完整工具追踪 |
 | Information Isolation | ✅ | 92/92 边界检查通过 |
-| Strategy Retrieval | ✅ | BM25 < 500ms, 4-filter 正确 |
+| Strategy Retrieval | ✅ | Agent search < 500ms, 4-filter 正确 |
 | Track B Scoring | ✅ | 100% 覆盖率, 三级级联正确 |
 | Track B Review | ✅ | PublishedReview approved |
 | Track C Knowledge | ✅ | 99 lessons, candidate 写入正确 |

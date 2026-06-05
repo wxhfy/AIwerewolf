@@ -68,8 +68,8 @@ Agent 相关维度合计 70%，工程相关维度合计 30%。
 - **后端**: Python 3.12 + FastAPI + WebSocket
 - **前端**: Next.js 15 + React 19 + Tailwind CSS
 - **数据库**: PostgreSQL 15 (Docker @ 127.0.0.1:5433, database: werewolf)
-- **LLM**: 火山方舟 doubao-seed-2.0-pro (ep-20260514115354-k4jz4) / MiniMax
-- **检索**: BM25 + 关键词倒排索引 (GPU-free)
+- **LLM**: 火山方舟 doubao-seed-2.0-pro / MiniMax
+- **检索**: Agent 文本模式工具调用, BM25 + 倒排索引 (GPU-free)
 - **配置**: YAML
 
 ## 项目结构
@@ -105,7 +105,7 @@ AIwerewolf/
 │   │   │   ├── profiles.py       # MBTI + Role Profile
 │   │   │   ├── prompts.py        # Prompt 构造 (3-layer)
 │   │   │   ├── humanization.py   # 人格化发言
-│   │   │   ├── retrieval_prod.py # BM25 + 倒排索引 + 4-filter 安全管线
+│   │   │   ├── retrieval_prod.py # Agent 工具调用检索 + 4-filter 安全管线
 │   │   │   ├── tools.py          # 6 个工具函数
 │   │   │   ├── reflect.py        # 赛后反思
 │   │   │   ├── wolf_team.py      # 狼队安全协调 (WolfTeamView)
