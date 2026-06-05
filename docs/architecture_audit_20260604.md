@@ -1,5 +1,9 @@
 # AI Werewolf 全系统架构审计报告
 
+> **STATUS: SUPERSEDED** — This audit was completed on 2026-06-04.
+> All 4 P0 items have been fixed. See the convergence report for current state.
+> Retained for historical reference and defense evidence.
+
 > 审计日期：2026-06-04
 > 审计范围：完整代码库（game engine, CognitiveAgent, AgentLoop, 策略检索, 赛后评分, 知识入库, 实验脚本, 数据库, 信息隔离, 前端）
 > 审计方法：6 并行 Explore Agent + 直接代码审查 + 数据库查询
