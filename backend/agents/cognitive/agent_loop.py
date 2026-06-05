@@ -145,11 +145,13 @@ class AgentLoop:
         system_prompt: str,
         action_type: str = "speech",
         strategy_bias: Optional[Dict[str, List[str]]] = None,
+        temperature: Optional[float] = None,
     ):
         self._llm = llm
         self._system_prompt = system_prompt
         self._action_type = action_type
         self._strategy_bias = strategy_bias or {}
+        self._temperature = temperature
         # Native function calling via bind_tools is supported by the LLM wrapper
         # but currently disabled by default. Direct API tests confirm tools work,
         # but AgentLoop's message construction triggers a provider-specific edge
@@ -533,7 +535,10 @@ class AgentLoop:
                     llm = self._llm.bind_tools(tool_schemas)
                 else:
                     llm = self._llm
-                resp = llm.invoke(messages)
+                if self._temperature is not None:
+                    resp = llm.invoke(messages, temperature=self._temperature)
+                else:
+                    resp = llm.invoke(messages)
                 # Accept if has tool_calls or reasonable content
                 has_tools = hasattr(resp, 'tool_calls') and resp.tool_calls
                 has_content = resp.content and len(resp.content.strip()) > 5

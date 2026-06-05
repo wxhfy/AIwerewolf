@@ -232,7 +232,10 @@ class CognitiveAgent:
 
     def vote(self) -> Decision:
         obs = self._observe()
-        result = self._pipeline.run_vote(obs, self.memory)
+        result = self._pipeline.run_vote(
+            obs, self.memory,
+            vote_temperature=self._humanization.vote_temperature,
+        )
         target_id = self._resolve_target(result["target"])
         if not target_id and self._strict_no_fallback:
             raise RuntimeError(f"LLM returned unresolved vote target: {result['target']!r}")
@@ -364,8 +367,44 @@ class CognitiveAgent:
         target_id = target_id or (self._view.players[0]["id"] if self._view.players else None)
         return self._decision(ActionType.SHOOT, target_id=target_id, reasoning=parsed["reasoning"])
 
-    def boom(self) -> Decision:
-        return self._decision(ActionType.SKIP, reasoning="不自爆")
+    def boom(self, targets: list[str] | None = None) -> Decision:
+        """White Wolf King self-detonate — kill self + one target during day.
+
+        The White Wolf King can choose to self-detonate, taking one other
+        player with them. This is a strategic choice — the agent evaluates
+        whether the situation warrants it via LLM reasoning.
+        """
+        obs = self._observe()
+        target_list = [f"{p.seat}号:{p.name}" for p in obs.alive]
+        extra_parts = [
+            "你是白狼王，可在白天自爆带走一名玩家。",
+            f"可带走的目标: {', '.join(target_list)}",
+            "如果认为当前局势自爆有利（比如能带走关键神职、扭转局势），"
+            "输出 {{\"reasoning\": \"自爆理由\", \"target\": \"目标玩家名字\"}}",
+            "如果认为不宜自爆，输出 {{\"reasoning\": \"不自爆的理由\", \"target\": \"不爆\"}}",
+        ]
+        prompt = format_observation(obs) + "\n\n" + "\n".join(extra_parts)
+
+        result = self._pipeline.direct_call(prompt)
+        parsed = parse_json_target(result)
+        raw_target = (parsed.get("target") or "").strip()
+
+        # White Wolf King may choose NOT to self-detonate
+        if not raw_target or raw_target in ("不爆", "不自爆", "放弃", "不炸", "跳过"):
+            return self._decision(
+                ActionType.SKIP,
+                reasoning=parsed.get("reasoning", "不自爆"),
+            )
+
+        target_id = self._resolve_target(raw_target)
+        if not target_id and self._strict_no_fallback:
+            raise RuntimeError(f"LLM returned unresolved boom target: {raw_target!r}")
+        target_id = target_id or (self._view.players[0]["id"] if self._view.players else None)
+        return self._decision(
+            ActionType.BOOM,
+            target_id=target_id,
+            reasoning=parsed.get("reasoning", ""),
+        )
 
     def transfer_badge(self, candidates: List[str]) -> Decision:
         obs = self._observe()

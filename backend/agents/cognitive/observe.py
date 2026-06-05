@@ -100,6 +100,7 @@ class BeliefTracker:
         self.contradictions: List[Contradiction] = []
         self._unique_roles = {"预言家", "女巫", "猎人", "守卫", "Seer", "Witch", "Hunter", "Guard"}
         self._processed_speech_ids: set = set()
+        self._seen_vote_keys: set = set()
 
     def update(self, view: Any) -> None:
         """Update tracker from current PlayerView."""
@@ -152,18 +153,29 @@ class BeliefTracker:
                     ))
 
     def _extract_votes(self, view: Any) -> None:
-        """Extract votes from public events."""
+        """Extract votes from public events.
+
+        Deduplicates: a (voter_id, target_id, day) key prevents the same
+        vote from being recorded twice when update() runs on every _observe() call.
+        """
         for e in view.public_events:
             if e.get("type") == "VOTE_CAST" and e.get("day") == view.day:
                 payload = e.get("payload", {}) or {}
-                voter = _find_player(view, e.get("actor_id", ""))
-                target = _find_player(view, payload.get("target_id", ""))
+                voter_id = e.get("actor_id", "")
+                target_id = payload.get("target_id", "")
+                day = e.get("day", view.day)
+                vote_key = (voter_id, target_id, day)
+                if vote_key in self._seen_vote_keys:
+                    continue
+                self._seen_vote_keys.add(vote_key)
+                voter = _find_player(view, voter_id)
+                target = _find_player(view, target_id)
                 self.votes.append(VoteInfo(
-                    voter_id=e.get("actor_id", ""),
+                    voter_id=voter_id,
                     voter_name=voter.get("name", ""),
-                    target_id=payload.get("target_id", ""),
+                    target_id=target_id,
                     target_name=target.get("name", ""),
-                    day=e.get("day", view.day),
+                    day=day,
                 ))
 
     def _extract_deaths(self, view: Any) -> None:

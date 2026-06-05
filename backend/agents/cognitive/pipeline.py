@@ -83,10 +83,19 @@ class Pipeline:
             return self._run_loop_speech(obs, memory, is_first_speaker, is_last_words)
         return self._run_legacy_speech(obs, memory, is_first_speaker, is_last_words)
 
-    def run_vote(self, obs: Observation, memory: Memory) -> Dict[str, str]:
-        """Generate vote via agent loop (or legacy chain)."""
+    def run_vote(
+        self, obs: Observation, memory: Memory,
+        vote_temperature: Optional[float] = None,
+    ) -> Dict[str, str]:
+        """Generate vote via agent loop (or legacy chain).
+
+        vote_temperature: LLM sampling temperature for vote decisions.
+            Derived from agent's MBTI-based courage level. Lower values
+            produce more decisive votes, higher values produce more
+            exploratory/uncertain votes.
+        """
         if self._use_agent_loop:
-            return self._run_loop_vote(obs, memory)
+            return self._run_loop_vote(obs, memory, vote_temperature=vote_temperature)
         return self._run_legacy_vote(obs, memory)
 
     def run_night(self, obs: Observation, memory: Memory, extra: str = "") -> Dict[str, str]:
@@ -118,8 +127,14 @@ class Pipeline:
         self._cached_analysis = result.get("reasoning", "")
         return speech
 
-    def _run_loop_vote(self, obs: Observation, memory: Memory) -> Dict[str, str]:
-        loop = AgentLoop(self._llm, self._system_prompt, "vote", self._strategy_bias)
+    def _run_loop_vote(
+        self, obs: Observation, memory: Memory,
+        vote_temperature: Optional[float] = None,
+    ) -> Dict[str, str]:
+        loop = AgentLoop(
+            self._llm, self._system_prompt, "vote", self._strategy_bias,
+            temperature=vote_temperature,
+        )
         result = loop.run(obs, memory, cached_analysis=self._cached_analysis)
         self._cached_analysis = ""
         return {"target": result.get("target", ""), "reasoning": result.get("reasoning", "")}
