@@ -244,7 +244,7 @@ export function DayEventBlock({
               break;
             }
           }
-          const showWolf = day > 0 && day === currentDay && !isTransitioning && wolfInsertAt > 0;
+          const showWolf = day > 0 && (day <= (currentDay ?? day)) && !isTransitioning && wolfInsertAt > 0;
           const wolfEntries = showWolf
             ? buildWolfDeliberation(day, nightActions, decisionRecords, players || [], language)
             : [];
