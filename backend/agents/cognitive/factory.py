@@ -137,9 +137,24 @@ class _ToolCallingRunnable(Runnable):
             # Tool messages must include tool_call_id
             if role == "tool" and hasattr(msg, 'tool_call_id'):
                 entry["tool_call_id"] = msg.tool_call_id
-            # AIMessage may carry tool_calls from previous turns
+            # AIMessage may carry tool_calls from previous turns.
+            # LangChain stores {id, name, args} — API expects
+            # {id, type, function: {name, arguments}}.
             if role == "assistant" and hasattr(msg, 'tool_calls') and msg.tool_calls:
-                entry["tool_calls"] = msg.tool_calls
+                api_tool_calls = []
+                for tc in msg.tool_calls:
+                    fn_args = tc.get("args", {})
+                    if not isinstance(fn_args, str):
+                        fn_args = json.dumps(fn_args, ensure_ascii=False)
+                    api_tool_calls.append({
+                        "id": tc.get("id", ""),
+                        "type": "function",
+                        "function": {
+                            "name": tc.get("name", ""),
+                            "arguments": fn_args,
+                        },
+                    })
+                entry["tool_calls"] = api_tool_calls
             api_messages.append(entry)
 
         # Build call parameters explicitly (avoid **payload issues with httpx serialization)
@@ -224,8 +239,9 @@ def create_cognitive_agent_with_character(
     llm: Runnable,
     player_name: str = "",
     player_seat: int = 0,
-    character: Any = None,  # Character from backend.agents.characters
+    character: Any = None,
     strategy_bias: Optional[Dict[str, List[str]]] = None,
+    retrieval_policy: str = "",
 ) -> CognitiveAgent:
     """Create a CognitiveAgent from a full Character object.
 
@@ -274,4 +290,5 @@ def create_cognitive_agent_with_character(
         player_id=player_id, role=role, llm=llm,
         player_name=player_name, player_seat=player_seat,
         profile=profile, strategy_bias=strategy_bias,
+        retrieval_policy=retrieval_policy,
     )

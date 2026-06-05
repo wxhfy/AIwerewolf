@@ -380,15 +380,24 @@ def _filter_hybrid_phase(
     return buckets
 
 
+# Quality floor for bucket filling — docs below this threshold are skipped
+_DEFAULT_QUALITY_THRESHOLD = 0.60
+
+
 def _fill_from_buckets(
     buckets: Dict[str, List[Dict]],
     k: int,
     ratios: Dict[str, int] | None = None,
+    quality_threshold: float = _DEFAULT_QUALITY_THRESHOLD,
 ) -> Tuple[List[Dict], Dict[str, Any]]:
-    """Fill k results from priority buckets, applying ratios.
+    """Fill k results from priority buckets, applying ratios + quality threshold.
 
-    Underfilled buckets are filled from the next lower-priority bucket.
-    Returns (results, trace_dict) where trace_dict has bucket_fill info.
+    Phase 1: Fill 1:1:1 from each bucket (only docs >= quality_threshold).
+    Phase 2: Underfilled slots → fill from same_role → global in priority order.
+    Phase 3: Still under → take best available regardless of threshold.
+    All phases apply doc_id dedup.
+
+    Returns (results, trace_dict).
     """
     if ratios is None:
         ratios = _DEFAULT_HYBRID_BUCKET_RATIOS
@@ -396,15 +405,15 @@ def _fill_from_buckets(
     bucket_names = list(buckets.keys())
     total_ratio = sum(ratios.get(bn, 0) for bn in bucket_names)
     if total_ratio == 0:
-        # All buckets get equal share
         ratios = {bn: 1 for bn in bucket_names}
         total_ratio = len(bucket_names)
 
     results: List[Dict] = []
+    seen_ids: set = set()
     used_from_bucket: Dict[str, int] = {}
     underfilled: List[str] = []
 
-    # Phase 1: fill from each bucket to its ratio allocation
+    # Phase 1: fill 1:1:1 with quality threshold
     for bucket_name in bucket_names:
         target = max(1, int(k * ratios.get(bucket_name, 1) / total_ratio))
         bucket_docs = buckets.get(bucket_name, [])
@@ -412,27 +421,38 @@ def _fill_from_buckets(
         for doc in bucket_docs:
             if taken >= target:
                 break
-            if doc not in results:
-                results.append(doc)
-                taken += 1
+            doc_id = str(doc.get("doc_id", ""))
+            if doc_id in seen_ids:
+                continue
+            if doc.get("quality", 0) < quality_threshold:
+                continue  # skip low-quality, don't count as taken
+            seen_ids.add(doc_id)
+            results.append(doc)
+            taken += 1
         used_from_bucket[bucket_name] = taken
         if taken < target:
             underfilled.append(bucket_name)
 
-    # Phase 2: if underfilled, fill from remaining docs in lower buckets
+    # Phase 2: underfilled → fill from same_role → global in priority order
     if len(results) < k and underfilled:
-        for bucket_name in bucket_names:
+        fill_order = bucket_names  # already in priority order
+        for bucket_name in fill_order:
             if len(results) >= k:
                 break
             bucket_docs = buckets.get(bucket_name, [])
             for doc in bucket_docs:
                 if len(results) >= k:
                     break
-                if doc not in results:
-                    results.append(doc)
-                    used_from_bucket[bucket_name] += 1
+                doc_id = str(doc.get("doc_id", ""))
+                if doc_id in seen_ids:
+                    continue
+                if doc.get("quality", 0) < quality_threshold:
+                    continue
+                seen_ids.add(doc_id)
+                results.append(doc)
+                used_from_bucket[bucket_name] += 1
 
-    # Phase 3: if still underfilled, take from original doc list
+    # Phase 3: still under k → take best available, drop quality threshold
     if len(results) < k:
         for bucket_name in bucket_names:
             if len(results) >= k:
@@ -441,12 +461,22 @@ def _fill_from_buckets(
             for doc in all_in_bucket:
                 if len(results) >= k:
                     break
-                if doc not in results:
-                    results.append(doc)
+                doc_id = str(doc.get("doc_id", ""))
+                if doc_id in seen_ids:
+                    continue
+                seen_ids.add(doc_id)
+                results.append(doc)
+                used_from_bucket[bucket_name] += 1
 
     trace = {
         "buckets_used": used_from_bucket,
         "bucket_underfilled": underfilled[:3] if underfilled else [],
+        "quality_threshold": quality_threshold,
+        "skipped_low_quality": sum(
+            1 for bn in bucket_names
+            for d in buckets.get(bn, [])
+            if d.get("quality", 0) < quality_threshold
+        ),
         "total_filled": len(results),
     }
     return results[:k], trace
@@ -631,7 +661,9 @@ class StrategyRetriever:
             agent_context = AgentContext(role=role, phase=phase, keywords=keywords)
 
         grep_indices = self._keyword_grep(keywords, role, phase, k=TOP_K_CANDIDATES * 2,
-                                          regex_mode=regex_mode)
+                                          regex_mode=regex_mode,
+                                          mbti=agent_context.mbti,
+                                          action_type=agent_context.action_type)
 
         if output_mode == "count":
             # Apply policy filter to count
@@ -833,15 +865,21 @@ class StrategyRetriever:
     def _keyword_grep(
         self, keywords: List[str], role: str, phase: str, k: int,
         regex_mode: bool = False,
+        mbti: str = "",
+        action_type: str = "",
     ) -> List[int]:
         """Grep inverted index with agent-chosen keywords or regex patterns.
 
-        Multi-field weighted scoring: situation ×1.0, strategy ×0.7, rationale ×0.4.
-        Inspired by Claude Code's layered grep — field hit quality matters.
+        Scoring:
+          base = situation×1.0 + strategy×0.7 + rationale×0.4
+          context = role+0.5 + phase+0.3 + mbti+0.15 + action+0.2
+          quality = quality_score×0.2
 
         Args:
             keywords: Search terms. With regex_mode, treated as re.compile patterns.
             regex_mode: If True, match keywords as regex against field text.
+            mbti: Agent's MBTI for score weighting (soft bonus, not hard filter).
+            action_type: Agent's current action for phase-action matching bonus.
         """
         import jieba
         import re as _re
@@ -896,10 +934,28 @@ class StrategyRetriever:
                                 scores[i] += weight * 0.8  # slightly lower than token match
 
         for i, d in enumerate(self._docs):
+            # Context bonuses
             if d["role"] == role:
                 scores[i] += 0.5
             if d["phase"] == phase:
                 scores[i] += 0.3
+            if mbti and _safe_str(d.get("mbti_scope", "")).upper().strip() == mbti:
+                scores[i] += 0.15
+            # Action bonus: doc phase matches agent's action_type
+            doc_phase = _safe_str(d.get("phase", "")).lower()
+            if action_type and (
+                action_type in doc_phase
+                or (action_type == "talk" and "speech" in doc_phase)
+                or (action_type == "attack" and "wolf" in doc_phase)
+                or (action_type == "save" and "witch" in doc_phase)
+                or (action_type == "check" and "seer" in doc_phase)
+                or (action_type == "guard" and "guard" in doc_phase)
+                or (action_type == "shoot" and "hunter" in doc_phase)
+                or (action_type == "vote" and "vote" in doc_phase)
+            ):
+                scores[i] += 0.2
+            # Quality weighting
+            scores[i] += d.get("quality", 0.8) * 0.2
 
         top = np.argsort(scores)[::-1][:k]
         return [int(i) for i in top if scores[i] > 0]
@@ -1097,7 +1153,7 @@ def _load_from_pg(conn_str: str) -> List[Dict]:
                    COALESCE(deidentified, false),
                    COALESCE(contains_current_game_private_info, false),
                    COALESCE(persona_scope, ''),
-                   COALESCE(tags, '[]'::json),
+                   COALESCE(tags, '[]'::jsonb),
                    source_report_ids,
                    source_item_ids
             FROM strategy_knowledge_docs
