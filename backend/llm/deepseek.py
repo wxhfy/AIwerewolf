@@ -22,6 +22,7 @@ from __future__ import annotations
 import logging
 import os
 import random
+import ssl
 import time
 from typing import Optional
 
@@ -43,7 +44,7 @@ logger = logging.getLogger(__name__)
 #  pool=5s      — connection pool acquisition timeout
 
 DEFAULT_TIMEOUT = httpx.Timeout(connect=5.0, read=600.0, write=60.0, pool=5.0)
-DEFAULT_MAX_RETRIES = 2
+DEFAULT_MAX_RETRIES = 5
 
 # HTTP status codes worth retrying (matches Anthropic SDK policy).
 # 408 Request Timeout, 409 Conflict, 429 Rate Limit — all transient.
@@ -54,7 +55,7 @@ _RETRYABLE_STATUSES: frozenset[int] = frozenset({408, 409, 429})
 # Backoff helpers
 # ---------------------------------------------------------------------------
 
-def _backoff(attempt: int, cap: float = 30.0, base: float = 2.0) -> float:
+def _backoff(attempt: int, cap: float = 60.0, base: float = 5.0) -> float:
     """Exponential backoff for *attempt* (1-indexed), capped at *cap* seconds."""
     return min(cap, base**attempt)
 
@@ -81,6 +82,8 @@ def _should_retry(status_code: int, exc: Exception | None = None) -> bool:
     if isinstance(exc, httpx.NetworkError):
         return True
     if isinstance(exc, httpx.RemoteProtocolError):
+        return True
+    if isinstance(exc, ssl.SSLError):
         return True
     if status_code in _RETRYABLE_STATUSES:
         return True
@@ -227,12 +230,12 @@ class DeepSeekClient:
                 else:
                     raise
 
-            except (httpx.NetworkError, httpx.RemoteProtocolError) as e:
+            except (httpx.NetworkError, httpx.RemoteProtocolError, ssl.SSLError) as e:
                 last_exc = e
                 if attempt <= self.max_retries + 1:
                     delay = _backoff(attempt) + _jitter(0, 1)
                     logger.warning(
-                        f"API network error (attempt {attempt}/{self.max_retries + 1}), "
+                        f"API network/SSL error (attempt {attempt}/{self.max_retries + 1}), "
                         f"retrying in {delay:.1f}s... ({e})"
                     )
                     time.sleep(delay)
