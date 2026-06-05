@@ -3482,7 +3482,7 @@ class CounterfactualAnalyzer:
             if exile is None:
                 continue
             exiled = state.player(str(exile.payload.get("player_id")))
-            if exiled.alignment != Alignment.VILLAGE:
+            if exiled.alignment not in (Alignment.VILLAGE, Alignment.WOLF):
                 continue
 
             counts: dict[str, int] = defaultdict(int)
@@ -3494,74 +3494,145 @@ class CounterfactualAnalyzer:
             if not counts:
                 continue
             exiled_votes = counts.get(exiled.id, 0)
-            wolf_targets = [
-                (target_id, count) for target_id, count in counts.items()
-                if state.player(target_id).alignment == Alignment.WOLF
-            ]
-            if not wolf_targets:
+
+            # Determine alternative faction based on who was exiled
+            if exiled.alignment == Alignment.VILLAGE:
+                # Village player eliminated → find closest wolf alternative
+                alt_targets = [
+                    (target_id, count) for target_id, count in counts.items()
+                    if state.player(target_id).alignment == Alignment.WOLF
+                ]
+                alt_faction = "wolf"
+            else:
+                # Wolf eliminated → find closest village alternative
+                alt_targets = [
+                    (target_id, count) for target_id, count in counts.items()
+                    if state.player(target_id).alignment == Alignment.VILLAGE
+                ]
+                alt_faction = "village"
+            if not alt_targets:
                 continue
-            wolf_target_id, wolf_votes = max(wolf_targets, key=lambda item: item[1])
-            if exiled_votes - wolf_votes > 1:
+            alt_target_id, alt_votes = max(alt_targets, key=lambda item: item[1])
+            if exiled_votes - alt_votes > 1:
                 continue
 
-            wolf_target = state.player(wolf_target_id)
-            pivot_vote = self._find_pivot_vote(ordered_votes, exiled.id, wolf_target_id)
+            alt_target = state.player(alt_target_id)
+            pivot_vote = self._find_pivot_vote(ordered_votes, exiled.id, alt_target_id)
             source_turning_point_id = self._find_turning_point_id(turning_points, day, exiled.name)
             source_bad_case_id = self._find_bad_case_id(bad_cases, day, exiled.name, "vote")
-            if pivot_vote is not None:
-                voter = state.player(str(pivot_vote.payload.get("voter_id")))
-                current_target = state.player(str(pivot_vote.payload.get("target_id")))
-                recomputed = self._recompute_vote_flip(ordered_votes, voter.id, wolf_target_id, exiled.id)
-                cases.append(
-                    CounterfactualCase(
-                        case_id=f"{state.id}-vote-{day}-{voter.id}",
-                        game_id=state.id,
-                        day=day,
-                        phase=pivot_vote.phase.value,
-                        counterfactual_type="vote",
-                        original_decision=f"{voter.name} voted {current_target.name} on day {day}.",
-                        alternative_decision=f"If {voter.name} had switched to {wolf_target.name}, the wagon likely avoids exiling {exiled.name}.",
-                        expected_effect=f"Village-side elimination pressure could move from {exiled.name} to wolf {wolf_target.name}.",
-                        affected_players=[voter.name, exiled.name, wolf_target.name],
-                        confidence=0.82,
-                        evidence=[
-                            f"{exiled.name} was exiled with {exiled_votes} vote(s).",
-                            f"{wolf_target.name} finished close behind with {wolf_votes} vote(s).",
-                        ],
-                        severity="major",
-                        source_bad_case_id=source_bad_case_id,
-                        source_turning_point_id=source_turning_point_id,
-                        effect_type="exact_recalculation",
-                        recomputed_outcome=recomputed,
-                        evidence_event_ids=[pivot_vote.id] + [vote.id for vote in ordered_votes if vote.day == day][:3],
+
+            if exiled.alignment == Alignment.VILLAGE:
+                # --- Village exile counterfactuals (original logic, refactored) ---
+                if pivot_vote is not None:
+                    voter = state.player(str(pivot_vote.payload.get("voter_id")))
+                    current_target = state.player(str(pivot_vote.payload.get("target_id")))
+                    recomputed = self._recompute_vote_flip(ordered_votes, voter.id, alt_target_id, exiled.id)
+                    cases.append(
+                        CounterfactualCase(
+                            case_id=f"{state.id}-vote-{day}-{voter.id}",
+                            game_id=state.id,
+                            day=day,
+                            phase=pivot_vote.phase.value,
+                            counterfactual_type="vote",
+                            original_decision=f"{voter.name} voted {current_target.name} on day {day}.",
+                            alternative_decision=f"If {voter.name} had switched to {alt_target.name}, the wagon likely avoids exiling {exiled.name}.",
+                            expected_effect=f"Village-side elimination pressure could move from {exiled.name} to wolf {alt_target.name}.",
+                            affected_players=[voter.name, exiled.name, alt_target.name],
+                            confidence=0.82,
+                            evidence=[
+                                f"{exiled.name} was exiled with {exiled_votes} vote(s).",
+                                f"{alt_target.name} finished close behind with {alt_votes} vote(s).",
+                            ],
+                            severity="major",
+                            source_bad_case_id=source_bad_case_id,
+                            source_turning_point_id=source_turning_point_id,
+                            effect_type="exact_recalculation",
+                            recomputed_outcome=recomputed,
+                            evidence_event_ids=[pivot_vote.id] + [vote.id for vote in ordered_votes if vote.day == day][:3],
+                        )
                     )
-                )
+                else:
+                    recomputed = {"tally_unchanged": True, "original_exile": exiled.id, "alternative_target": alt_target.id}
+                    cases.append(
+                        CounterfactualCase(
+                            case_id=f"{state.id}-vote-{day}-{exiled.id}",
+                            game_id=state.id,
+                            day=day,
+                            phase="DAY_VOTE",
+                            counterfactual_type="vote",
+                            original_decision=f"The table exiled villager-side player {exiled.name} on day {day}.",
+                            alternative_decision=f"If one additional vote had moved onto {alt_target.name}, the day could have resolved against a wolf instead.",
+                            expected_effect=f"The wrong exile on {exiled.name} may have been avoided by consolidating onto {alt_target.name}.",
+                            affected_players=[exiled.name, alt_target.name],
+                            confidence=0.72,
+                            evidence=[
+                                f"{alt_target.name} was the closest wolf wagon with {alt_votes} vote(s).",
+                                f"The margin to {exiled.name} was only {exiled_votes - alt_votes}.",
+                            ],
+                            severity="major",
+                            source_bad_case_id=source_bad_case_id,
+                            source_turning_point_id=source_turning_point_id,
+                            effect_type="exact_recalculation",
+                            recomputed_outcome=recomputed,
+                            evidence_event_ids=[vote.id for vote in ordered_votes if vote.day == day][:4],
+                        )
+                    )
             else:
-                recomputed = {"tally_unchanged": True, "original_exile": exiled.id, "alternative_target": wolf_target.id}
-                cases.append(
-                    CounterfactualCase(
-                        case_id=f"{state.id}-vote-{day}-{exiled.id}",
-                        game_id=state.id,
-                        day=day,
-                        phase="DAY_VOTE",
-                        counterfactual_type="vote",
-                        original_decision=f"The table exiled villager-side player {exiled.name} on day {day}.",
-                        alternative_decision=f"If one additional vote had moved onto {wolf_target.name}, the day could have resolved against a wolf instead.",
-                        expected_effect=f"The wrong exile on {exiled.name} may have been avoided by consolidating onto {wolf_target.name}.",
-                        affected_players=[exiled.name, wolf_target.name],
-                        confidence=0.72,
-                        evidence=[
-                            f"{wolf_target.name} was the closest wolf wagon with {wolf_votes} vote(s).",
-                            f"The margin to {exiled.name} was only {exiled_votes - wolf_votes}.",
-                        ],
-                        severity="major",
-                        source_bad_case_id=source_bad_case_id,
-                        source_turning_point_id=source_turning_point_id,
-                        effect_type="exact_recalculation",
-                        recomputed_outcome=recomputed,
-                        evidence_event_ids=[vote.id for vote in ordered_votes if vote.day == day][:4],
+                # --- Wolf exile counterfactuals (new) ---
+                if pivot_vote is not None:
+                    voter = state.player(str(pivot_vote.payload.get("voter_id")))
+                    current_target = state.player(str(pivot_vote.payload.get("target_id")))
+                    recomputed = self._recompute_vote_flip(ordered_votes, voter.id, alt_target_id, exiled.id)
+                    cases.append(
+                        CounterfactualCase(
+                            case_id=f"{state.id}-vote-wolf-{day}-{voter.id}",
+                            game_id=state.id,
+                            day=day,
+                            phase=pivot_vote.phase.value,
+                            counterfactual_type="vote",
+                            original_decision=f"{voter.name} voted to exile wolf {exiled.name} on day {day}.",
+                            alternative_decision=f"If {voter.name} had switched to {alt_target.name}, a village player would have been exiled instead of wolf {exiled.name}.",
+                            expected_effect=f"Wolf-hunting robustness test: was exiling {exiled.name} the best play, or should votes have consolidated toward {alt_target.name}?",
+                            affected_players=[voter.name, exiled.name, alt_target.name],
+                            confidence=0.82,
+                            evidence=[
+                                f"Wolf {exiled.name} was exiled with {exiled_votes} vote(s).",
+                                f"{alt_target.name} (village) finished close behind with {alt_votes} vote(s).",
+                            ],
+                            severity="major",
+                            source_bad_case_id=source_bad_case_id,
+                            source_turning_point_id=source_turning_point_id,
+                            effect_type="exact_recalculation",
+                            recomputed_outcome=recomputed,
+                            evidence_event_ids=[pivot_vote.id] + [vote.id for vote in ordered_votes if vote.day == day][:3],
+                        )
                     )
-                )
+                else:
+                    recomputed = {"tally_unchanged": True, "original_exile": exiled.id, "alternative_target": alt_target.id}
+                    cases.append(
+                        CounterfactualCase(
+                            case_id=f"{state.id}-vote-wolf-{day}-{exiled.id}",
+                            game_id=state.id,
+                            day=day,
+                            phase="DAY_VOTE",
+                            counterfactual_type="vote",
+                            original_decision=f"The table exiled wolf {exiled.name} on day {day}.",
+                            alternative_decision=f"If one additional vote had moved onto village player {alt_target.name}, the day could have resolved against the village instead of exiling wolf {exiled.name}.",
+                            expected_effect=f"Wolf-hunting robustness test: was the exile of {exiled.name} the correct call, or was there a better target?",
+                            affected_players=[exiled.name, alt_target.name],
+                            confidence=0.72,
+                            evidence=[
+                                f"{alt_target.name} (village) was closest behind with {alt_votes} vote(s).",
+                                f"The margin to {exiled.name} was only {exiled_votes - alt_votes}.",
+                            ],
+                            severity="major",
+                            source_bad_case_id=source_bad_case_id,
+                            source_turning_point_id=source_turning_point_id,
+                            effect_type="exact_recalculation",
+                            recomputed_outcome=recomputed,
+                            evidence_event_ids=[vote.id for vote in ordered_votes if vote.day == day][:4],
+                        )
+                    )
         return cases
 
     def _skill_cases(

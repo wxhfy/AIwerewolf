@@ -186,7 +186,7 @@ class StrategyRetriever:
 
         results = self._bm25_search_roled(query, role, phase, k=k)
         if output_mode == "overview":
-            return [{k: v for k, v in r.items() if k in ("situation", "quality", "doc_type")}
+            return [{k: v for k, v in r.items() if k in ("doc_id", "situation", "quality", "doc_type")}
                     for r in results]
         return results
 
@@ -238,17 +238,19 @@ class StrategyRetriever:
 
         if not use_bm25_rerank:
             if output_mode == "overview":
-                return [{"situation": self._docs[i]["situation"],
+                return [{"doc_id": self._docs[i].get("doc_id", ""),
+                         "situation": self._docs[i]["situation"],
                          "quality": self._docs[i]["quality"],
                          "doc_type": self._docs[i].get("doc_type", "")} for i in grep_indices[:k]]
-            return [{"situation": self._docs[i]["situation"],
+            return [{"doc_id": self._docs[i].get("doc_id", ""),
+                     "situation": self._docs[i]["situation"],
                      "strategy": self._docs[i]["strategy"],
                      "quality": self._docs[i]["quality"],
                      "doc_type": self._docs[i].get("doc_type", "")} for i in grep_indices[:k]]
 
         results = self._bm25_rerank_subset(" ".join(keywords), role, phase, grep_indices, k=k)
         if output_mode == "overview":
-            return [{k: v for k, v in r.items() if k in ("situation", "quality", "doc_type")}
+            return [{k: v for k, v in r.items() if k in ("doc_id", "situation", "quality", "doc_type")}
                     for r in results]
         return results
 
@@ -307,7 +309,8 @@ class StrategyRetriever:
         scores = np.array(scores, dtype=np.float64)
         scores += self._role_bonus(role) + self._phase_bonus(phase)
         idx = np.argsort(scores)[::-1][:k]
-        return [{"situation": self._docs[i]["situation"],
+        return [{"doc_id": self._docs[i].get("doc_id", ""),
+                 "situation": self._docs[i]["situation"],
                  "strategy": self._docs[i]["strategy"],
                  "quality": self._docs[i]["quality"],
                  "doc_type": self._docs[i].get("doc_type", "")} for i in idx]
@@ -363,7 +366,8 @@ class StrategyRetriever:
                     if len(results) >= k:
                         break
 
-        return [{"situation": self._docs[i]["situation"],
+        return [{"doc_id": self._docs[i].get("doc_id", ""),
+                 "situation": self._docs[i]["situation"],
                  "strategy": self._docs[i]["strategy"],
                  "quality": self._docs[i]["quality"],
                  "doc_type": self._docs[i].get("doc_type", "")} for i in results[:k]]
@@ -464,7 +468,8 @@ class StrategyRetriever:
             b_raw[i] = b_raw[i] * 0.7 + rb + pb
 
         top = sorted(candidate_indices, key=lambda i: b_raw[i], reverse=True)[:k]
-        return [{"situation": self._docs[i]["situation"],
+        return [{"doc_id": self._docs[i].get("doc_id", ""),
+                 "situation": self._docs[i]["situation"],
                  "strategy": self._docs[i]["strategy"],
                  "quality": self._docs[i]["quality"],
                  "doc_type": self._docs[i].get("doc_type", "")} for i in top]
@@ -622,7 +627,7 @@ def _load_from_pg(conn_str: str) -> List[Dict]:
     conn = psycopg2.connect(conn_str)
     c = conn.cursor()
     c.execute("""
-        SELECT COALESCE(situation_pattern, ''), COALESCE(recommended_action, ''),
+        SELECT id, COALESCE(situation_pattern, ''), COALESCE(recommended_action, ''),
                COALESCE(rationale, ''), role, phase, quality_score,
                COALESCE(doc_type, ''),
                COALESCE(confidence_tier, 'L3_strategic'),
@@ -634,8 +639,9 @@ def _load_from_pg(conn_str: str) -> List[Dict]:
           AND (doc_type != 'reflection' OR quality_score >= 0.85)
     """)
     docs = []
-    for sit, rec, rat, role, phase, q, dtype, ctier, vscope, deid, cgpi in c.fetchall():
+    for row_id, sit, rec, rat, role, phase, q, dtype, ctier, vscope, deid, cgpi in c.fetchall():
         docs.append({
+            "doc_id": row_id or "",
             "situation": sit or "", "strategy": rec or "", "rationale": rat or "",
             "role": role or "global", "phase": phase or "global",
             "quality": float(q) if q else 0.8,
@@ -739,6 +745,7 @@ def _load_docs_from_cold_start() -> list[dict]:
     docs = []
     for doc in store.all(include_deprecated=False):
         docs.append({
+            "doc_id": doc.doc_id or "",
             "situation": doc.situation_pattern or "",
             "strategy": doc.recommended_action or "",
             "rationale": doc.rationale or "",
@@ -886,7 +893,9 @@ def format_strategies_for_prompt(strategies: List[Dict[str, str]]) -> str:
             doc_type = s.get("doc_type", "")
             type_label = " [反思经验]" if (doc_type or "").startswith("reflection") else ""
             quality = s.get("quality", "?")
-            lines.append(f"{i}. [{quality:.0%}] {s.get('situation', '?')}{type_label}")
+            doc_id = s.get("doc_id", "")
+            score_str = f"{quality:.0%}" if isinstance(quality, (int, float)) else f"{quality}"
+            lines.append(f"{i}. [{doc_id} score={score_str}] {s.get('situation', '?')}{type_label}")
         return "\n".join(lines)
 
     # Content mode (full)
@@ -895,7 +904,10 @@ def format_strategies_for_prompt(strategies: List[Dict[str, str]]) -> str:
         doc_type = s.get("doc_type", "")
         is_reflection = (doc_type or "").startswith("reflection")
         type_label = " [反思经验]" if is_reflection else ""
-        lines.append(f"{i}. 场景：{s.get('situation', '')}{type_label}")
+        doc_id = s.get("doc_id", "")
+        quality = s.get("quality", "?")
+        score_str = f"{quality}" if isinstance(quality, (int, float)) else f"{quality}"
+        lines.append(f"{i}. [{doc_id} score={score_str}] 场景：{s.get('situation', '')}{type_label}")
         lines.append(f"   策略：{s.get('strategy', '')}")
         lines.append("")
     return "\n".join(lines)

@@ -227,13 +227,27 @@ class AgentLoop:
                 tool_keywords = self._extract_tool_keywords(response, is_native)
                 for idx, tr in enumerate(tool_results):
                     tname = tool_names[idx] if idx < len(tool_names) else "unknown"
+                    # Extract doc_ids from formatted strategy output
+                    doc_ids = re.findall(r'\[([\w\-]+)\s+score=', tr) if tname == 'search_strategies' else []
                     tool_trace.append({
                         "iteration": iteration,
                         "tool": tname,
                         "keywords": tool_keywords.get(tname, []),
+                        "doc_ids": doc_ids,
                         "timestamp": time.time(),
                         "result_summary": tr[:200],
                     })
+                    # Populate _LAST_RETRIEVED_STRATEGIES for search_strategies tool calls
+                    # so _record_strategy_usage() can track which docs were actually retrieved.
+                    # Merge with auto-injected entries (if any) rather than overwriting.
+                    if tname == 'search_strategies' and doc_ids:
+                        player_id = str(getattr(obs, "player_id", "") or "")
+                        existing = _LAST_RETRIEVED_STRATEGIES.get(player_id, [])
+                        existing_ids = {s.get("doc_id", "") for s in existing}
+                        for d in doc_ids:
+                            if d and d not in existing_ids:
+                                existing.append({"doc_id": d})
+                        _LAST_RETRIEVED_STRATEGIES[player_id] = existing
 
                 # Add assistant response + tool results to context
                 if is_native:
@@ -675,9 +689,20 @@ class AgentLoop:
         decision["_auto_injected_strategies"] = [
             s.get("doc_id", "") for s in auto_injected
         ]
+        # Extract tool-called strategy doc_ids from the tool trace and merge
+        tool_called_ids: list[str] = []
+        for entry in tool_trace:
+            if entry.get("tool") == "search_strategies":
+                for did in entry.get("doc_ids", []):
+                    if did and did not in tool_called_ids:
+                        tool_called_ids.append(did)
+        merged_ids = list(dict.fromkeys(
+            decision["_auto_injected_strategies"] + tool_called_ids
+        ))
         _LAST_LOOP_TRACE[player_id] = {
             "tool_trace": tool_trace,
             "auto_injected_strategies": decision["_auto_injected_strategies"],
+            "retrieved_knowledge_ids": merged_ids,
         }
 
     def _parse_decision(self, response: str) -> Optional[Dict[str, str]]:
