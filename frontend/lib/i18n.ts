@@ -198,28 +198,53 @@ const translations = {
       Knight: "骑士",
       Elder: "长老",
     },
+    // ── 聊天日志流程标签（叙述性） ──
     phases: {
       SETUP: "准备中",
-      NIGHT_START: "夜幕降临",
-      NIGHT_GUARD_ACTION: "守卫行动",
-      NIGHT_WOLF_ACTION: "狼人行动",
-      NIGHT_WITCH_ACTION: "女巫行动",
-      NIGHT_SEER_ACTION: "预言家行动",
+      NIGHT_START: "天黑请闭眼",
+      NIGHT_GUARD_ACTION: "守卫请睁眼",
+      NIGHT_WOLF_ACTION: "狼人请睁眼",
+      NIGHT_WITCH_ACTION: "女巫请睁眼",
+      NIGHT_SEER_ACTION: "预言家请睁眼",
       NIGHT_RESOLVE: "黑夜结算",
       DAY_START: "天亮了",
-      DAY_BADGE_SIGNUP: "警徽竞选报名",
+      DAY_BADGE_SIGNUP: "警徽报名",
       DAY_BADGE_SPEECH: "警徽竞选发言",
       DAY_BADGE_ELECTION: "警徽投票",
-      DAY_PK_SPEECH: "PK发言",
+      DAY_PK_SPEECH: "PK 发言",
       DAY_LAST_WORDS: "遗言",
       DAY_SPEECH: "自由发言",
       DAY_VOTE: "投票放逐",
-      DAY_RESOLVE: "投票结算",
+      DAY_RESOLVE: "白天结算",
       BADGE_TRANSFER: "警徽移交",
       HUNTER_SHOOT: "猎人开枪",
       WHITE_WOLF_KING_BOOM: "白狼王爆炸",
       GAME_END: "游戏结束",
     },
+    // ── 顶部状态栏实时标签（动作描述） ──
+    phaseStatus: {
+      NIGHT_GUARD_ACTION: "守卫行动中",
+      NIGHT_WOLF_ACTION: "狼人行动中",
+      NIGHT_WITCH_ACTION: "女巫行动中",
+      NIGHT_SEER_ACTION: "预言家行动中",
+      NIGHT_RESOLVE: "黑夜结算中",
+      BADGE_SPEECH: "警徽竞选发言中",
+      BADGE_ELECTION: "警徽投票中",
+      DAY_SPEECH: "自由发言中",
+      DAY_VOTE: "投票放逐中",
+      HUNTER_SHOOT: "猎人开枪中",
+      LAST_WORDS: "遗言中",
+    },
+    // ── 狼队商议 ──
+    wolfDiscussing: "狼人正在商议击杀目标",
+    wolfVoted: "{name} 选择击杀 {target} 号",
+    wolfFinalTarget: "狼队最终决定击杀 {target} 号 {name}",
+    wolfNoConsensus: "狼队意见不统一，随机选定击杀目标",
+    // ── 玩家动作状态模板 ──
+    playerThinkingStatus: "{seat}号 {name} 思考中",
+    playerSpeakingStatus: "{seat}号 {name} 发言中",
+    playerVotingStatus: "{seat}号 {name} 投票中",
+    playerActingStatus: "{seat}号 {name} 行动中",
   },
   [Language.EN]: {
     pageTitle: "AI Werewolf Spectator",
@@ -414,28 +439,53 @@ const translations = {
       Knight: "Knight",
       Elder: "Elder",
     },
+    // ── Chat log flow labels (narrative) ──
     phases: {
       SETUP: "Setup",
       NIGHT_START: "Night Falls",
-      NIGHT_GUARD_ACTION: "Guard Action",
-      NIGHT_WOLF_ACTION: "Wolf Action",
-      NIGHT_WITCH_ACTION: "Witch Action",
-      NIGHT_SEER_ACTION: "Seer Action",
+      NIGHT_GUARD_ACTION: "Guard Awakens",
+      NIGHT_WOLF_ACTION: "Wolves Awaken",
+      NIGHT_WITCH_ACTION: "Witch Awakens",
+      NIGHT_SEER_ACTION: "Seer Awakens",
       NIGHT_RESOLVE: "Night Resolve",
       DAY_START: "Day Breaks",
-      DAY_BADGE_SIGNUP: "Badge Campaign Signup",
-      DAY_BADGE_SPEECH: "Badge Campaign Speech",
+      DAY_BADGE_SIGNUP: "Badge Signup",
+      DAY_BADGE_SPEECH: "Badge Speech",
       DAY_BADGE_ELECTION: "Badge Vote",
       DAY_PK_SPEECH: "PK Speech",
       DAY_LAST_WORDS: "Last Words",
       DAY_SPEECH: "Free Speech",
-      DAY_VOTE: "Vote Exile",
+      DAY_VOTE: "Exile Vote",
       DAY_RESOLVE: "Vote Resolve",
       BADGE_TRANSFER: "Badge Transfer",
       HUNTER_SHOOT: "Hunter Shoots",
       WHITE_WOLF_KING_BOOM: "White Wolf King Boom",
-      GAME_END: "Game End",
+      GAME_END: "Game Over",
     },
+    // ── Status bar real-time labels (action description) ──
+    phaseStatus: {
+      NIGHT_GUARD_ACTION: "Guard Acting",
+      NIGHT_WOLF_ACTION: "Wolves Acting",
+      NIGHT_WITCH_ACTION: "Witch Acting",
+      NIGHT_SEER_ACTION: "Seer Acting",
+      NIGHT_RESOLVE: "Resolving Night",
+      BADGE_SPEECH: "Badge Speech",
+      BADGE_ELECTION: "Badge Voting",
+      DAY_SPEECH: "Free Speech",
+      DAY_VOTE: "Voting",
+      HUNTER_SHOOT: "Hunter Shooting",
+      LAST_WORDS: "Last Words",
+    },
+    // ── Wolf deliberation ──
+    wolfDiscussing: "Wolves are deliberating...",
+    wolfVoted: "{name} chose to kill #{target}",
+    wolfFinalTarget: "Wolves decided to kill #{target} {name}",
+    wolfNoConsensus: "Wolves disagree, randomly selected target",
+    // ── Player action status templates ──
+    playerThinkingStatus: "#{seat} {name} thinking",
+    playerSpeakingStatus: "#{seat} {name} speaking",
+    playerVotingStatus: "#{seat} {name} voting",
+    playerActingStatus: "#{seat} {name} acting",
   },
 };
 
@@ -474,9 +524,17 @@ export function tRole(role: string, lang: Language = Language.ZH): string {
 }
 
 /**
- * 获取阶段名称的翻译
+ * 获取阶段名称的翻译（聊天日志叙述性）
  */
 export function tPhase(phase: string, lang: Language = Language.ZH): string {
   const phases: Record<string, string> = translations[lang].phases;
   return phases[phase] || phase;
+}
+
+/**
+ * 获取阶段状态的翻译（顶部状态栏实时动作）
+ */
+export function tPhaseStatus(phase: string, lang: Language = Language.ZH): string {
+  const statuses: Record<string, string> = (translations[lang] as any).phaseStatus || {};
+  return statuses[phase] || phase;
 }
