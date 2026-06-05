@@ -228,6 +228,14 @@ class PerStepScorer:
                     d = next((x for x in decisions if x.get("id")==s.decision_id), {})
                     self.score_with_heavy_llm(s, d, state)
 
+        # Propagate LLM scores to overall_score so downstream consumers
+        # (KnowledgeAbstractor, track_b) use the higher-quality estimate.
+        for s in scores:
+            if s.scoring_tier == "heavy_llm" and s.heavy_llm_score is not None:
+                s.overall_score = s.heavy_llm_score
+            elif s.scoring_tier == "light_llm" and s.light_llm_score is not None:
+                s.overall_score = s.light_llm_score
+
         return scores
 
     def tally_tiers(self, scores: list[DecisionScore]) -> dict[str, int]:

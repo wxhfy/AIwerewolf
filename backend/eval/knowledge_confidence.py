@@ -253,7 +253,7 @@ def applicability_matches(
         return False
 
     doc_phase = doc.get("applicability_phase")
-    if doc_phase is not None and doc_phase and doc_phase.upper() != current_phase.upper():
+    if doc_phase and doc_phase.lower() not in (current_phase.lower(), "global"):
         return False
 
     doc_rule = doc.get("rule_variant", "standard_competition_v1")
