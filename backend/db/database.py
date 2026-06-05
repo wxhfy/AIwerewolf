@@ -37,6 +37,13 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
 def init_db() -> None:
+    if os.getenv("REQUIRE_DB", "").lower() == "true":
+        try:
+            import psycopg2
+            conn = psycopg2.connect(DATABASE_URL, connect_timeout=5)
+            conn.close()
+        except Exception as e:
+            raise RuntimeError(f"STRICT MODE: REQUIRE_DB=true but DB unavailable: {e}")
     from backend.db.models import Base
     Base.metadata.create_all(bind=engine)
     # Seed the persona library on first boot so games can sample from DB even

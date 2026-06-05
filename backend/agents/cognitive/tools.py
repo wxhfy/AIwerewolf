@@ -7,6 +7,7 @@ Observation and Memory at invocation time.
 
 from __future__ import annotations
 
+import os
 from typing import Any, Dict, List, Optional
 
 from backend.agents.cognitive.observe import Observation
@@ -57,6 +58,8 @@ def create_tools(
         except Exception:
             results = []
         if not results:
+            if os.getenv("ALLOW_FALLBACK", "true").lower() == "false":
+                raise RuntimeError("STRICT MODE: search_strategies retrieval_prod failed, fallback forbidden")
             # Fallback to TF-IDF (PostgreSQL-independent)
             results = retrieve_tfidf(
                 obs.player_role, obs.phase, situation=" ".join(keywords), limit=limit,
