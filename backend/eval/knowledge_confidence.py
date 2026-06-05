@@ -249,7 +249,7 @@ def applicability_matches(
 ) -> bool:
     """Check if knowledge applicability conditions match current situation."""
     doc_role = doc.get("applicability_role")
-    if doc_role is not None and doc_role.lower() not in (current_role.lower(), "global"):
+    if doc_role and doc_role.lower() not in (current_role.lower(), "global"):
         return False
 
     doc_phase = doc.get("applicability_phase")
@@ -341,22 +341,43 @@ def retrieve_for_agent(
         return []
 
     # Step 2: Apply 4-filter pipeline
+    import logging as _kclog
+    _kclogger = _kclog.getLogger(__name__)
+    filter_counts = {"confidence": 0, "visibility": 0, "leak": 0, "applicability": 0, "status": 0, "pass": 0}
     filtered: list[dict[str, Any]] = []
     for doc in candidates:
         if not confidence_allowed(doc):
+            filter_counts["confidence"] += 1
             continue
         if not visibility_allowed(doc, agent_role, is_wolf, is_postgame):
+            filter_counts["visibility"] += 1
             continue
         if leaks_current_game_private_info(doc, current_game_id):
+            filter_counts["leak"] += 1
             continue
         if not applicability_matches(
             doc, agent_role, current_phase, rule_variant,
             player_count, public_facts, private_state,
         ):
+            if filter_counts["applicability"] < 2:
+                _kclogger.debug(
+                    "applicability_matches rejected doc role=%s phase=%s agent_role=%s agent_phase=%s",
+                    doc.get("applicability_role"), doc.get("applicability_phase"),
+                    agent_role, current_phase,
+                )
+            filter_counts["applicability"] += 1
             continue
         if doc.get("status") in ("disputed", "deprecated"):
+            filter_counts["status"] += 1
             continue
+        filter_counts["pass"] += 1
         filtered.append(doc)
+    if filter_counts["pass"] == 0:
+        _kclogger.warning(
+            "4-filter: all %d candidates rejected (confidence=%d visibility=%d leak=%d applicability=%d status=%d)",
+            len(candidates), filter_counts["confidence"], filter_counts["visibility"],
+            filter_counts["leak"], filter_counts["applicability"], filter_counts["status"],
+        )
 
     # Step 3: Rerank by quality_score then return top_k
     filtered.sort(key=lambda d: d.get("quality_score", 0.0), reverse=True)
