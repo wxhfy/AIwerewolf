@@ -21,14 +21,12 @@ from typing import Any
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from backend.eval.v3_report import (
-    analyze_speech_acts_from_dict,
-    build_suspicion_matrix_from_dict,
-    build_player_radar,
-    compute_camp_advantage_curve,
-    compute_drama_score,
-    compute_pivot_votes,
-)
+from backend.eval.v3_report import analyze_speech_acts_from_dict
+from backend.eval.v3_report import build_player_radar
+from backend.eval.v3_report import build_suspicion_matrix_from_dict
+from backend.eval.v3_report import compute_camp_advantage_curve
+from backend.eval.v3_report import compute_drama_score
+from backend.eval.v3_report import compute_pivot_votes
 
 
 def load_json(path: str) -> Any:
@@ -65,9 +63,7 @@ def build_game_data(game_id: str, data_sources: dict) -> dict | None:
 
     # Compute derived data
     speech_acts = analyze_speech_acts_from_dict(events, players)
-    suspicion_snapshots = build_suspicion_matrix_from_dict(
-        events, speech_acts, players
-    )
+    suspicion_snapshots = build_suspicion_matrix_from_dict(events, speech_acts, players)
     # Fill game_id into suspicion snapshots
     for s in suspicion_snapshots:
         s["game_id"] = game_id
@@ -80,9 +76,7 @@ def build_game_data(game_id: str, data_sources: dict) -> dict | None:
     game_opps = opps_by_game.get(game_id, [])
 
     # Drama score
-    drama = compute_drama_score(
-        camp_advantage, suspicion_snapshots, votes_raw, game_cfs, events
-    )
+    drama = compute_drama_score(camp_advantage, suspicion_snapshots, votes_raw, game_cfs, events)
 
     # Pivot votes
     pivot_votes = compute_pivot_votes(votes_raw, players)
@@ -115,9 +109,7 @@ def build_game_data(game_id: str, data_sources: dict) -> dict | None:
     scoreboard = []
     for r in game_reviews:
         # Merge speech detail
-        speech_data = speech_by_game.get(
-            r["player_id"], {}
-        )  # player_id is "P1-xxxxx" format
+        speech_data = speech_by_game.get(r["player_id"], {})  # player_id is "P1-xxxxx" format
         # speech_by_game is keyed by player_id from speech_scores.json which uses
         # "P1-xxxxx" format. review_v2 uses "P1-xxxxx" format too.
         speech_detail = {
@@ -203,9 +195,7 @@ def build_game_data(game_id: str, data_sources: dict) -> dict | None:
         sp_data = speech_by_game.get(pid, {})
 
         # Player's opportunities (by scanning opps for matching player)
-        player_opps = [
-            o for o in game_opps if _opp_player_id(o, pid)
-        ]
+        player_opps = [o for o in game_opps if _opp_player_id(o, pid)]
 
         player_cards.append(
             {
@@ -279,11 +269,8 @@ def build_game_data(game_id: str, data_sources: dict) -> dict | None:
             )
 
     per_game_validation = {
-        "passed": len(issues) == 0
-        or all(i["type"] == "hunter_low_confidence" for i in issues),
-        "grade": "A"
-        if len(issues) <= 1
-        else "B",
+        "passed": len(issues) == 0 or all(i["type"] == "hunter_low_confidence" for i in issues),
+        "grade": "A" if len(issues) <= 1 else "B",
         "issues": issues,
         "publish_allowed": True,
     }
@@ -315,9 +302,7 @@ def build_game_data(game_id: str, data_sources: dict) -> dict | None:
         ],
         "suspicion_snapshots": suspicion_snapshots,
         "vote_flows": {str(k): v for k, v in vote_flows.items()},
-        "pivot_votes": {
-            str(k): v for k, v in pivot_votes.items()
-        },
+        "pivot_votes": {str(k): v for k, v in pivot_votes.items()},
         "top_good_opportunities": all_good[:5],
         "top_bad_opportunities": all_bad[:5],
         "counterfactuals": game_cfs,
@@ -353,15 +338,14 @@ def _build_lookups() -> dict:
     print("Loading data sources...")
 
     # 1. replay_bundle from DB
-    from backend.db.database import SessionLocal, init_db
-    from backend.db.models import PublishedReview
     from sqlalchemy import text
+
+    from backend.db.database import SessionLocal
+    from backend.db.database import init_db
 
     init_db()
     db = SessionLocal()
-    clean_ids = set(
-        json.loads(Path("/tmp/clean_llm_game_ids.json").read_text())
-    )
+    clean_ids = set(json.loads(Path("/tmp/clean_llm_game_ids.json").read_text()))
     rows = db.execute(
         text(
             "SELECT game_id, replay_bundle FROM published_reviews WHERE game_id IN :ids AND replay_bundle IS NOT NULL"
@@ -447,9 +431,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--game-id", default=None, help="Single game ID")
     ap.add_argument("--all", action="store_true", help="All 56 clean games")
-    ap.add_argument(
-        "--sample", type=int, default=None, help="First N clean games"
-    )
+    ap.add_argument("--sample", type=int, default=None, help="First N clean games")
     ap.add_argument(
         "--output-dir",
         default="data/health/reports",
@@ -478,7 +460,7 @@ def main() -> int:
     print(f"\nBuilding report data for {len(game_ids)} game(s)...")
 
     for i, gid in enumerate(game_ids):
-        print(f"  [{i+1}/{len(game_ids)}] {gid[:16]}...", end=" ", flush=True)
+        print(f"  [{i + 1}/{len(game_ids)}] {gid[:16]}...", end=" ", flush=True)
         game_data = build_game_data(gid, data)
         if game_data is None:
             print("SKIP")

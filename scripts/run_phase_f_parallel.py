@@ -39,7 +39,8 @@ import shlex
 import subprocess
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime
+from datetime import timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -57,15 +58,22 @@ def utc_label() -> str:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--roles", nargs="+", default=DEFAULT_ROLES,
-                    help=f"Roles to parallelize (default: {DEFAULT_ROLES})")
-    ap.add_argument("--seeds", nargs="+", type=int, default=list(range(1, 11)),
-                    help="Seeds per (role, variant) — default 1..10")
+    ap.add_argument(
+        "--roles", nargs="+", default=DEFAULT_ROLES, help=f"Roles to parallelize (default: {DEFAULT_ROLES})"
+    )
+    ap.add_argument(
+        "--seeds", nargs="+", type=int, default=list(range(1, 11)), help="Seeds per (role, variant) — default 1..10"
+    )
     ap.add_argument("--variants", nargs="+", default=["good", "bad"])
-    ap.add_argument("--catalog-file", default=None,
-                    help="Path to strategy YAML; defaults to configs/discrimination_strategies.yaml")
-    ap.add_argument("--bias-placement", choices=["user", "system"], default="user",
-                    help="Pass-through to STRATEGY_BIAS_PLACEMENT env var (iter3 = system)")
+    ap.add_argument(
+        "--catalog-file", default=None, help="Path to strategy YAML; defaults to configs/discrimination_strategies.yaml"
+    )
+    ap.add_argument(
+        "--bias-placement",
+        choices=["user", "system"],
+        default="user",
+        help="Pass-through to STRATEGY_BIAS_PLACEMENT env var (iter3 = system)",
+    )
     ap.add_argument("--strict-fallback", default="true")
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--no-analyze", action="store_true", help="Skip analyze_score_distributions on completion")
@@ -85,11 +93,16 @@ def main() -> int:
     for role in args.roles:
         log_path = LOG_DIR / f"phase_f_{role}_{label}.log"
         cmd = [
-            sys.executable, str(HARNESS),
-            "--roles", role,
-            "--variants", *args.variants,
-            "--seeds", *(str(s) for s in args.seeds),
-            "--strict-fallback", args.strict_fallback,
+            sys.executable,
+            str(HARNESS),
+            "--roles",
+            role,
+            "--variants",
+            *args.variants,
+            "--seeds",
+            *(str(s) for s in args.seeds),
+            "--strict-fallback",
+            args.strict_fallback,
         ]
         if args.force:
             cmd.append("--force")

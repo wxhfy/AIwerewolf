@@ -11,16 +11,15 @@ that can be injected into Agent prompts and tracked in logs.
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass, field
-from functools import lru_cache
+from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
 
-
 # ---------------------------------------------------------------------------
 # Dataclass
 # ---------------------------------------------------------------------------
+
 
 @dataclass(frozen=True)
 class StrategyCard:
@@ -74,6 +73,7 @@ STRATEGY_TYPES = {
 # Card builder
 # ---------------------------------------------------------------------------
 
+
 def _stable_id(prefix: str, name: str) -> str:
     """Generate a stable, human-readable strategy_id.
 
@@ -88,7 +88,7 @@ def _load_yaml(path: str = "configs/strategy_library.yaml") -> dict:
     resolved = Path(path)
     if not resolved.exists():
         resolved = Path(__file__).parent.parent.parent / path
-    with open(resolved, "r", encoding="utf-8") as fh:
+    with open(resolved, encoding="utf-8") as fh:
         return yaml.safe_load(fh)
 
 
@@ -107,13 +107,12 @@ def _collect_tips(raw: dict, role: str, *keys: str) -> list[str]:
 # Card definitions — explicit grouping from strategy_library.yaml
 # ---------------------------------------------------------------------------
 
+
 def _build_cards(raw: dict) -> list[StrategyCard]:
     cards: list[StrategyCard] = []
 
     # -- Seer -----------------------------------------------------------------
-    seer_aggressive = _collect_tips(
-        raw, "Seer", "core_strategy", "vote_strategy", "skill_strategy"
-    )
+    seer_aggressive = _collect_tips(raw, "Seer", "core_strategy", "vote_strategy", "skill_strategy")
     seer_aggressive_risk = _collect_tips(raw, "Seer", "risk_rules")
     cards.append(
         StrategyCard(
@@ -173,9 +172,7 @@ def _build_cards(raw: dict) -> list[StrategyCard]:
     )
 
     # -- Hunter ---------------------------------------------------------------
-    hunter_tips = _collect_tips(
-        raw, "Hunter", "core_strategy", "skill_strategy", "vote_strategy"
-    )
+    hunter_tips = _collect_tips(raw, "Hunter", "core_strategy", "skill_strategy", "vote_strategy")
     hunter_risk = _collect_tips(raw, "Hunter", "risk_rules")
     cards.append(
         StrategyCard(
@@ -191,9 +188,7 @@ def _build_cards(raw: dict) -> list[StrategyCard]:
     )
 
     # -- Guard ----------------------------------------------------------------
-    guard_tips = _collect_tips(
-        raw, "Guard", "core_strategy", "skill_strategy", "vote_strategy"
-    )
+    guard_tips = _collect_tips(raw, "Guard", "core_strategy", "skill_strategy", "vote_strategy")
     guard_risk = _collect_tips(raw, "Guard", "risk_rules")
     cards.append(
         StrategyCard(
@@ -210,9 +205,7 @@ def _build_cards(raw: dict) -> list[StrategyCard]:
 
     # -- Werewolf -------------------------------------------------------------
     # Low-profile deception
-    wolf_disguise = _collect_tips(
-        raw, "Werewolf", "disguise", "read_players", "risk_rules"
-    )
+    wolf_disguise = _collect_tips(raw, "Werewolf", "disguise", "read_players", "risk_rules")
     wolf_roles_deep = _collect_tips(raw, "Werewolf", "roles")
     cards.append(
         StrategyCard(
@@ -270,8 +263,14 @@ def _build_cards(raw: dict) -> list[StrategyCard]:
             strategy_name="通用基础逻辑",
             strategy_type="general",
             applicable_roles=(
-                "Werewolf", "WhiteWolfKing", "Seer", "Witch",
-                "Hunter", "Guard", "Villager", "Idiot",
+                "Werewolf",
+                "WhiteWolfKing",
+                "Seer",
+                "Witch",
+                "Hunter",
+                "Guard",
+                "Villager",
+                "Idiot",
             ),
             version="v1",
             content=tuple(gen_logic + gen_speech + gen_vote + gen_psych),
@@ -288,8 +287,14 @@ def _build_cards(raw: dict) -> list[StrategyCard]:
             strategy_name="博弈论视角",
             strategy_type="game_theory",
             applicable_roles=(
-                "Werewolf", "WhiteWolfKing", "Seer", "Witch",
-                "Hunter", "Guard", "Villager", "Idiot",
+                "Werewolf",
+                "WhiteWolfKing",
+                "Seer",
+                "Witch",
+                "Hunter",
+                "Guard",
+                "Villager",
+                "Idiot",
             ),
             version="v1",
             content=tuple(gt_all),
@@ -314,8 +319,14 @@ def _build_cards(raw: dict) -> list[StrategyCard]:
                 strategy_name="板子配置参考",
                 strategy_type="board_config",
                 applicable_roles=(
-                    "Werewolf", "WhiteWolfKing", "Seer", "Witch",
-                    "Hunter", "Guard", "Villager", "Idiot",
+                    "Werewolf",
+                    "WhiteWolfKing",
+                    "Seer",
+                    "Witch",
+                    "Hunter",
+                    "Guard",
+                    "Villager",
+                    "Idiot",
                 ),
                 version="v1",
                 content=tuple(board_tips),
@@ -326,8 +337,12 @@ def _build_cards(raw: dict) -> list[StrategyCard]:
 
     # -- VillageCoordination --------------------------------------------------
     vc_tips = _collect_tips(
-        raw, "VillageCoordination",
-        "seer_witch_guard", "village_voting", "information_sharing", "anti_wolf_tactics",
+        raw,
+        "VillageCoordination",
+        "seer_witch_guard",
+        "village_voting",
+        "information_sharing",
+        "anti_wolf_tactics",
     )
     if vc_tips:
         cards.append(
@@ -345,8 +360,12 @@ def _build_cards(raw: dict) -> list[StrategyCard]:
 
     # -- ProPlay --------------------------------------------------------------
     pp_tips = _collect_tips(
-        raw, "ProPlay",
-        "wolf_god_tactics", "mianren_reading", "control_tactics", "counter_strategies",
+        raw,
+        "ProPlay",
+        "wolf_god_tactics",
+        "mianren_reading",
+        "control_tactics",
+        "counter_strategies",
     )
     if pp_tips:
         cards.append(
@@ -355,8 +374,14 @@ def _build_cards(raw: dict) -> list[StrategyCard]:
                 strategy_name="职业赛事高级技巧",
                 strategy_type="pro_play",
                 applicable_roles=(
-                    "Werewolf", "WhiteWolfKing", "Seer", "Witch",
-                    "Hunter", "Guard", "Villager", "Idiot",
+                    "Werewolf",
+                    "WhiteWolfKing",
+                    "Seer",
+                    "Witch",
+                    "Hunter",
+                    "Guard",
+                    "Villager",
+                    "Idiot",
                 ),
                 version="v1",
                 content=tuple(pp_tips),
@@ -371,6 +396,7 @@ def _build_cards(raw: dict) -> list[StrategyCard]:
 # ---------------------------------------------------------------------------
 # Registry
 # ---------------------------------------------------------------------------
+
 
 class StrategyRegistry:
     """Queryable registry of all strategy cards.
@@ -395,10 +421,7 @@ class StrategyRegistry:
     def get(self, strategy_id: str) -> StrategyCard:
         """Return a strategy card by id. Raises KeyError if not found."""
         if strategy_id not in self._cards:
-            raise KeyError(
-                f"Unknown strategy_id: {strategy_id!r}. "
-                f"Available: {sorted(self._cards.keys())}"
-            )
+            raise KeyError(f"Unknown strategy_id: {strategy_id!r}. Available: {sorted(self._cards.keys())}")
         return self._cards[strategy_id]
 
     def list_by_role(self, role: str) -> list[StrategyCard]:
@@ -452,6 +475,7 @@ def get_strategy_registry() -> StrategyRegistry:
 # ---------------------------------------------------------------------------
 # Audit / report helpers
 # ---------------------------------------------------------------------------
+
 
 def build_audit_report() -> str:
     """Build a markdown audit report of the strategy registry."""
@@ -511,8 +535,10 @@ if __name__ == "__main__":
     registry = get_strategy_registry()
     print(f"StrategyRegistry loaded: {len(registry)} cards")
     for card in sorted(registry.list_all(), key=lambda c: c.strategy_id):
-        print(f"  {card.strategy_id:45s} {card.strategy_name:20s} "
-              f"type={card.strategy_type:22s} roles={','.join(card.applicable_roles)}")
+        print(
+            f"  {card.strategy_id:45s} {card.strategy_name:20s} "
+            f"type={card.strategy_type:22s} roles={','.join(card.applicable_roles)}"
+        )
     print()
 
     # Write audit

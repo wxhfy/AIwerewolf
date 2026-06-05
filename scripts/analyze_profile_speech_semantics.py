@@ -16,18 +16,17 @@ import json
 import sys
 from collections import defaultdict
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from backend.eval.heads.speech_semantic import SpeechSemanticScorer, AUDIT_FEATURE_MAP
+from backend.eval.heads.speech_semantic import AUDIT_FEATURE_MAP
+from backend.eval.heads.speech_semantic import SpeechSemanticScorer
 
 AUDIT_FEATURES = list(AUDIT_FEATURE_MAP.values())
-SPEECH_ACTS = ["accusation", "interrogation", "defense",
-               "evidence_use", "identity_declaration", "call_for_action"]
+SPEECH_ACTS = ["accusation", "interrogation", "defense", "evidence_use", "identity_declaration", "call_for_action"]
 
 
 def _load_jsonl(path: Path) -> list[dict]:
@@ -105,21 +104,23 @@ def analyze_profiles(
 
         top_pattern = _top_speech_pattern(avg_features)
 
-        results.append({
-            "profile_id": str(profile_id),
-            "profile_field": profile_field,
-            "samples": n_samples,
-            "avg_evidence_grounding_signal": avg_features.get("evidence_grounding_signal", 0),
-            "avg_actionability_signal": avg_features.get("actionability_signal", 0),
-            "avg_identity_claim_signal": avg_features.get("identity_claim_signal", 0),
-            "avg_pressure_signal": avg_features.get("pressure_signal", 0),
-            "avg_information_seeking_signal": avg_features.get("information_seeking_signal", 0),
-            "avg_defensive_posture_signal": avg_features.get("defensive_posture_signal", 0),
-            "avg_speech_act_probs": avg_acts,
-            "top_speech_pattern": top_pattern,
-            "audit_only": True,
-            "source_model": "speech_act_classifier_v0",
-        })
+        results.append(
+            {
+                "profile_id": str(profile_id),
+                "profile_field": profile_field,
+                "samples": n_samples,
+                "avg_evidence_grounding_signal": avg_features.get("evidence_grounding_signal", 0),
+                "avg_actionability_signal": avg_features.get("actionability_signal", 0),
+                "avg_identity_claim_signal": avg_features.get("identity_claim_signal", 0),
+                "avg_pressure_signal": avg_features.get("pressure_signal", 0),
+                "avg_information_seeking_signal": avg_features.get("information_seeking_signal", 0),
+                "avg_defensive_posture_signal": avg_features.get("defensive_posture_signal", 0),
+                "avg_speech_act_probs": avg_acts,
+                "top_speech_pattern": top_pattern,
+                "audit_only": True,
+                "source_model": "speech_act_classifier_v0",
+            }
+        )
 
     return results
 
@@ -128,8 +129,7 @@ def main():
     parser = argparse.ArgumentParser(description="Profile-level speech semantic analysis")
     parser.add_argument("--input", required=True, help="Input speech samples or audit examples JSONL")
     parser.add_argument("--output", help="Output profile analysis JSONL")
-    parser.add_argument("--profile-field", default="role",
-                       help="Field to group by (role, player_id, source)")
+    parser.add_argument("--profile-field", default="role", help="Field to group by (role, player_id, source)")
     parser.add_argument("--limit", type=int, default=0, help="Limit samples")
     args = parser.parse_args()
 
@@ -139,7 +139,7 @@ def main():
 
     samples = _load_jsonl(Path(args.input))
     if args.limit > 0:
-        samples = samples[:args.limit]
+        samples = samples[: args.limit]
     print(f"  Loaded {len(samples)} samples")
     print(f"  Profile field: {args.profile_field}")
 
@@ -150,18 +150,22 @@ def main():
     print(f"  Profiles: {len(results)}")
 
     # Print summary
-    print(f"\n{'Profile':<20} {'Samples':>8} {'Evidence':>8} {'Action':>8} "
-          f"{'Identity':>8} {'Pressure':>8} {'InfoSeek':>8} {'Defense':>8} {'TopPattern':<25}")
+    print(
+        f"\n{'Profile':<20} {'Samples':>8} {'Evidence':>8} {'Action':>8} "
+        f"{'Identity':>8} {'Pressure':>8} {'InfoSeek':>8} {'Defense':>8} {'TopPattern':<25}"
+    )
     print("-" * 120)
     for r in sorted(results, key=lambda x: -x["samples"]):
-        print(f"{r['profile_id']:<20} {r['samples']:>8} "
-              f"{r['avg_evidence_grounding_signal']:>8.3f} "
-              f"{r['avg_actionability_signal']:>8.3f} "
-              f"{r['avg_identity_claim_signal']:>8.3f} "
-              f"{r['avg_pressure_signal']:>8.3f} "
-              f"{r['avg_information_seeking_signal']:>8.3f} "
-              f"{r['avg_defensive_posture_signal']:>8.3f} "
-              f"{r['top_speech_pattern']:<25}")
+        print(
+            f"{r['profile_id']:<20} {r['samples']:>8} "
+            f"{r['avg_evidence_grounding_signal']:>8.3f} "
+            f"{r['avg_actionability_signal']:>8.3f} "
+            f"{r['avg_identity_claim_signal']:>8.3f} "
+            f"{r['avg_pressure_signal']:>8.3f} "
+            f"{r['avg_information_seeking_signal']:>8.3f} "
+            f"{r['avg_defensive_posture_signal']:>8.3f} "
+            f"{r['top_speech_pattern']:<25}"
+        )
 
     if args.output:
         out_path = Path(args.output)

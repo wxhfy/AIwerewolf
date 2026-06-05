@@ -70,9 +70,9 @@ def analyze(jsonl_path: str) -> dict:
     print(f"Loaded {len(results)} completed games")
 
     # Stats containers
-    role_stats = defaultdict(lambda: {"wins": 0, "games": 0})           # role
-    mbti_stats = defaultdict(lambda: {"wins": 0, "games": 0})           # mbti
-    combo_stats = defaultdict(lambda: {"wins": 0, "games": 0})          # mbti+role
+    role_stats = defaultdict(lambda: {"wins": 0, "games": 0})  # role
+    mbti_stats = defaultdict(lambda: {"wins": 0, "games": 0})  # mbti
+    combo_stats = defaultdict(lambda: {"wins": 0, "games": 0})  # mbti+role
 
     # Process each game
     with_mbti = 0
@@ -136,12 +136,14 @@ def analyze(jsonl_path: str) -> dict:
             n = s["games"]
             if n < min_games:
                 continue
-            out.append({
-                "key": key,
-                "games": n,
-                "wins": s["wins"],
-                "win_rate": round(s["wins"] / n, 4),
-            })
+            out.append(
+                {
+                    "key": key,
+                    "games": n,
+                    "wins": s["wins"],
+                    "win_rate": round(s["wins"] / n, 4),
+                }
+            )
         out.sort(key=lambda x: -x["win_rate"])
         return out
 
@@ -155,33 +157,33 @@ def analyze(jsonl_path: str) -> dict:
 
 def print_report(analysis: dict) -> None:
     """Pretty-print the MBTI analysis."""
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Total games analyzed: {analysis['total_games']}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     # By Role
-    print(f"\n--- Win Rate by Role ---")
+    print("\n--- Win Rate by Role ---")
     print(f"{'Role':<14s} {'Win Rate':>9s} {'Wins':>6s} {'Games':>6s}")
-    print(f"{'-'*40}")
+    print(f"{'-' * 40}")
     for item in analysis["by_role"]:
         print(f"{item['key']:<14s} {item['win_rate']:>8.1%} {item['wins']:>5d} {item['games']:>5d}")
 
     # By MBTI
-    print(f"\n--- Win Rate by MBTI ---")
+    print("\n--- Win Rate by MBTI ---")
     print(f"{'MBTI':<8s} {'Win Rate':>9s} {'Wins':>6s} {'Games':>6s}")
-    print(f"{'-'*35}")
+    print(f"{'-' * 35}")
     for item in analysis["by_mbti"]:
         print(f"{item['key']:<8s} {item['win_rate']:>8.1%} {item['wins']:>5d} {item['games']:>5d}")
 
     # By MBTI+Role (top 20)
-    print(f"\n--- Win Rate by MBTI + Role (top 20, min 2 games) ---")
+    print("\n--- Win Rate by MBTI + Role (top 20, min 2 games) ---")
     print(f"{'MBTI+Role':<22s} {'Win Rate':>9s} {'Wins':>6s} {'Games':>6s}")
-    print(f"{'-'*50}")
+    print(f"{'-' * 50}")
     for item in analysis["by_mbti_role"][:20]:
         print(f"{item['key']:<22s} {item['win_rate']:>8.1%} {item['wins']:>5d} {item['games']:>5d}")
 
     # Best MBTI per role
-    print(f"\n--- Best MBTI per Role ---")
+    print("\n--- Best MBTI per Role ---")
     best_per_role = {}
     for item in analysis["by_mbti_role"]:
         mbti_role = item["key"]
@@ -197,6 +199,7 @@ def print_report(analysis: dict) -> None:
 
 if __name__ == "__main__":
     import argparse
+
     p = argparse.ArgumentParser()
     p.add_argument("--jsonl", default="data/experiment/batch_results.jsonl")
     p.add_argument("--output", default="")

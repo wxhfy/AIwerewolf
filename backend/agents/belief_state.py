@@ -9,14 +9,14 @@ Updated each turn by LLMAgent.update() → belief_state.update(view).
 
 from __future__ import annotations
 
-import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 
 @dataclass
 class Claim:
     """A role claim made by a player."""
+
     player_id: str
     player_name: str
     seat: int
@@ -30,6 +30,7 @@ class Claim:
 @dataclass
 class DeathRecord:
     """Record of a player's death."""
+
     player_id: str
     player_name: str
     seat: int
@@ -42,6 +43,7 @@ class DeathRecord:
 @dataclass
 class VoteRecord:
     """Record of a vote."""
+
     day: int
     voter_id: str
     voter_name: str
@@ -150,12 +152,14 @@ class BeliefState:
                 target_name = payload.get("target_name", "?")
                 is_wolf = payload.get("is_wolf", False)
                 day = event.get("day", 0)
-                self.seer_checks.append({
-                    "day": day,
-                    "target_id": target_id,
-                    "target_name": target_name,
-                    "is_wolf": is_wolf,
-                })
+                self.seer_checks.append(
+                    {
+                        "day": day,
+                        "target_id": target_id,
+                        "target_name": target_name,
+                        "is_wolf": is_wolf,
+                    }
+                )
 
             elif kind == "witch_save":
                 self.witch_state["save_used"] = True
@@ -264,8 +268,9 @@ class BeliefState:
         # Extract role claims from speech
         self._extract_claims(actor_id, actor_name, seat, speech, day, is_badge, is_last_words)
 
-    def _extract_claims(self, player_id: str, player_name: str, seat: int,
-                        speech: str, day: int, is_badge: bool, is_last_words: bool) -> None:
+    def _extract_claims(
+        self, player_id: str, player_name: str, seat: int, speech: str, day: int, is_badge: bool, is_last_words: bool
+    ) -> None:
         """Extract role claims from a speech."""
         speech_lower = speech.lower()
 
@@ -375,9 +380,7 @@ class BeliefState:
             claimants = role_claimants.get(role, [])
             if len(claimants) > 1:
                 names = [f"{c.seat}号{c.player_name}" for c in claimants]
-                self.observations.append(
-                    f"⚠️ 多人声称{role}：{'、'.join(names)}，存在矛盾"
-                )
+                self.observations.append(f"⚠️ 多人声称{role}：{'、'.join(names)}，存在矛盾")
                 # Mark contradictions
                 for i, c1 in enumerate(claimants):
                     for j, c2 in enumerate(claimants):
@@ -394,8 +397,7 @@ class BeliefState:
                 for other_claim in seer_claims:
                     if other_claim.player_id != self.player_id:
                         self.observations.append(
-                            f"⚠️ {other_claim.seat}号{other_claim.player_name}声称预言家，"
-                            f"但我是真预言家，这是假跳"
+                            f"⚠️ {other_claim.seat}号{other_claim.player_name}声称预言家，但我是真预言家，这是假跳"
                         )
 
     def get_summary(self) -> str:
@@ -445,9 +447,7 @@ class BeliefState:
         if recent_votes:
             lines.append("【近期投票】")
             for vote in recent_votes:
-                lines.append(
-                    f"  第{vote.day}天 {vote.voter_name} → {vote.target_name}"
-                )
+                lines.append(f"  第{vote.day}天 {vote.voter_name} → {vote.target_name}")
             lines.append("")
 
         # Seer checks (private)
@@ -504,10 +504,7 @@ class BeliefState:
         if dead_with_words:
             lines.append("【遗言信息——不要忽略！】")
             for death in dead_with_words:
-                lines.append(
-                    f"  {death.seat}号{death.player_name}（{death.reason}）遗言："
-                    f"「{death.last_words[:100]}」"
-                )
+                lines.append(f"  {death.seat}号{death.player_name}（{death.reason}）遗言：「{death.last_words[:100]}」")
             lines.append("")
 
         # Voting pattern analysis

@@ -13,9 +13,10 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 from pathlib import Path
-from statistics import mean, median, stdev
+from statistics import mean
+from statistics import median
+from statistics import stdev
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -26,18 +27,18 @@ EXP_DIR = ROOT / "data" / "experiment"
 # ---------------------------------------------------------------------------
 DIMENSIONS = {
     "structural_integrity": {"max": 20, "label": "结构完整性"},
-    "process_validity":    {"max": 20, "label": "流程合法性"},
-    "real_llm":            {"max": 15, "label": "真实 LLM 运行"},
-    "gameplay_richness":   {"max": 20, "label": "博弈丰富度"},
-    "behavior_reason":     {"max": 15, "label": "行为合理性"},
-    "evaluability":        {"max": 10, "label": "可评估性"},
+    "process_validity": {"max": 20, "label": "流程合法性"},
+    "real_llm": {"max": 15, "label": "真实 LLM 运行"},
+    "gameplay_richness": {"max": 20, "label": "博弈丰富度"},
+    "behavior_reason": {"max": 15, "label": "行为合理性"},
+    "evaluability": {"max": 10, "label": "可评估性"},
 }
 
 QUALITY_TIERS = [
     (90, "S", "高质量，可直接用于评估"),
     (75, "A", "可用，建议抽查"),
     (60, "B", "边缘可用，需注意"),
-    (0,  "C", "不建议进入统计"),
+    (0, "C", "不建议进入统计"),
 ]
 
 
@@ -47,15 +48,32 @@ def score_structural_integrity(d: dict) -> tuple[float, list[str]]:
     notes: list[str] = []
 
     required_top = [
-        "game_id", "winner", "days", "total_events", "total_decisions",
-        "fallback_decision_count", "publish_allowed", "validation_score",
-        "target_role_player_scores", "target_role_avg_adjusted_final_score",
+        "game_id",
+        "winner",
+        "days",
+        "total_events",
+        "total_decisions",
+        "fallback_decision_count",
+        "publish_allowed",
+        "validation_score",
+        "target_role_player_scores",
+        "target_role_avg_adjusted_final_score",
     ]
     required_meta = ["role", "variant", "seed", "duration_s", "strict_no_fallback"]
     required_ps = [
-        "player_id", "role", "alignment", "final_score", "adjusted_final_score",
-        "camp_result_score", "role_task_score", "vote_score", "speech_score",
-        "skill_score", "survival_score", "mistake_penalty", "mistakes",
+        "player_id",
+        "role",
+        "alignment",
+        "final_score",
+        "adjusted_final_score",
+        "camp_result_score",
+        "role_task_score",
+        "vote_score",
+        "speech_score",
+        "skill_score",
+        "survival_score",
+        "mistake_penalty",
+        "mistakes",
     ]
 
     meta = d.get("experiment_meta", {})
@@ -242,9 +260,7 @@ def score_behavior_reason(d: dict) -> tuple[float, list[str]]:
     critical_count = 0
     for ps in pss:
         for m in ps.get("mistakes", []):
-            if isinstance(m, str) and "critical" in m.lower():
-                critical_count += 1
-            elif isinstance(m, dict) and m.get("severity") == "critical":
+            if isinstance(m, str) and "critical" in m.lower() or isinstance(m, dict) and m.get("severity") == "critical":
                 critical_count += 1
 
     if critical_count >= 2:
@@ -431,6 +447,7 @@ def main() -> None:
 
     # Per-role per-variant breakdown
     from collections import defaultdict
+
     role_variant_scores = defaultdict(list)
     for r in results:
         key = (r["role"], r["variant"])
@@ -442,7 +459,7 @@ def main() -> None:
         for r in results:
             if r["role"] == role and r["variant"] == variant:
                 tier_count[r["tier"]] += 1
-        tier_str = " ".join(f"{t}={tier_count.get(t,0)}" for t in ["S","A","B","C"])
+        tier_str = " ".join(f"{t}={tier_count.get(t, 0)}" for t in ["S", "A", "B", "C"])
         print(f"    {role:10s} {variant:6s}:  mean={mean(scs):.1f}  sd={stdev(scs):.1f}  [{tier_str}]")
     print()
 
@@ -460,18 +477,19 @@ def main() -> None:
             continue
 
         dim_str = " | ".join(
-            f"{DIMENSIONS[k]['label']}={r['dimensions'][k]['score']:.0f}/{DIMENSIONS[k]['max']}"
-            for k in DIMENSIONS
+            f"{DIMENSIONS[k]['label']}={r['dimensions'][k]['score']:.0f}/{DIMENSIONS[k]['max']}" for k in DIMENSIONS
         )
         print(f"\n  [{tier}] {r['file']}")
-        print(f"       role={r['role']} variant={r['variant']} seed={r['seed']}  winner={r['winner']}  days={r['days']}")
+        print(
+            f"       role={r['role']} variant={r['variant']} seed={r['seed']}  winner={r['winner']}  days={r['days']}"
+        )
         print(f"       TOTAL={r['total_score']:.1f}  |  {dim_str}")
         notes = r.get("notes", [])
         if notes:
             for note in notes[:5]:
                 print(f"         ⚠ {note}")
             if len(notes) > 5:
-                print(f"         ... +{len(notes)-5} more")
+                print(f"         ... +{len(notes) - 5} more")
 
     # -------------------------------------------------------------------
     # Summary
@@ -481,9 +499,9 @@ def main() -> None:
     print(f"总结: S={tier_counts['S']} A={tier_counts['A']} B={tier_counts['B']} C={tier_counts['C']}")
     s_plus_a = tier_counts["S"] + tier_counts["A"]
     usable = s_plus_a + tier_counts["B"]
-    print(f"  高质量 (S+A): {s_plus_a}/{len(results)} ({s_plus_a/len(results)*100:.0f}%)")
-    print(f"  可用   (S+A+B): {usable}/{len(results)} ({usable/len(results)*100:.0f}%)")
-    print(f"  不可用 (C): {tier_counts['C']}/{len(results)} ({tier_counts['C']/len(results)*100:.0f}%)")
+    print(f"  高质量 (S+A): {s_plus_a}/{len(results)} ({s_plus_a / len(results) * 100:.0f}%)")
+    print(f"  可用   (S+A+B): {usable}/{len(results)} ({usable / len(results) * 100:.0f}%)")
+    print(f"  不可用 (C): {tier_counts['C']}/{len(results)} ({tier_counts['C'] / len(results) * 100:.0f}%)")
     print("=" * 80)
 
     # -------------------------------------------------------------------

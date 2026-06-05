@@ -22,24 +22,29 @@ import logging
 import os
 import re
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
 
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.messages import HumanMessage
+from langchain_core.messages import SystemMessage
+from langchain_core.messages import ToolMessage
 from langchain_core.runnables import Runnable
 
 from backend.agents.cognitive.memory import Memory
-from backend.agents.cognitive.observe import Observation, format_observation
-from backend.agents.cognitive.prompts import (
-    build_game_context,
-    build_strategy_bias_block,
-    get_role_anti_patterns,
-)
+from backend.agents.cognitive.observe import Observation
+from backend.agents.cognitive.observe import format_observation
+from backend.agents.cognitive.prompts import build_game_context
+from backend.agents.cognitive.prompts import build_strategy_bias_block
+from backend.agents.cognitive.prompts import get_role_anti_patterns
 from backend.agents.cognitive.tools import create_tools
 
 logger = logging.getLogger(__name__)
 
 MAX_ITERATIONS = 3
 import threading as _threading
+
 _STRATEGY_LOCK = _threading.Lock()
 _TRACK_C_RETRIEVAL_CACHE: dict[tuple[str, str, str], tuple[float, list[dict[str, Any]]]] = {}
 _LAST_RETRIEVED_STRATEGIES: dict = {}
@@ -57,6 +62,7 @@ def _feature_enabled(env_var: str, default: bool = True) -> bool:
     if not val:
         return default
     return val in ("1", "true", "yes", "on")
+
 
 # JSON Schema parameter definitions for each tool (used by bind_tools)
 _TOOL_PARAM_SCHEMAS: Dict[str, Dict] = {
@@ -174,12 +180,10 @@ class AgentLoop:
         # DeepSeek models (dsv4flash provider) support OpenAI-compatible tool calling.
         # Set AGENT_USE_NATIVE_FC=0 to disable and fall back to text-mode parsing.
         import os as _os
+
         _native_fc_env = _os.getenv("AGENT_USE_NATIVE_FC", "").strip()
         _native_fc_disabled = _native_fc_env == "0" or _native_fc_env.lower() == "false"
-        self._supports_bind_tools = (
-            hasattr(llm, 'bind_tools')
-            and not _native_fc_disabled
-        )
+        self._supports_bind_tools = hasattr(llm, "bind_tools") and not _native_fc_disabled
 
     # ================================================================
     # Run
@@ -206,10 +210,9 @@ class AgentLoop:
               vote:   {"target": str, "reasoning": str}
               night:  {"target": str, "reasoning": str}
         """
-        tools = create_tools(obs, memory,
-                                mbti=self._mbti,
-                                alignment=_derive_alignment(obs.player_role),
-                                player_id=self._player_id)
+        tools = create_tools(
+            obs, memory, mbti=self._mbti, alignment=_derive_alignment(obs.player_role), player_id=self._player_id
+        )
         tool_schemas = self._tools_to_bind_schemas(tools) if self._supports_bind_tools else None
         context = []  # list of messages for the conversation
         tool_trace: list[dict] = []  # track tool calls for auditing
@@ -228,10 +231,10 @@ class AgentLoop:
             iteration += 1
 
             response = self._call_llm(context, tool_schemas)
-            response_text = response.content if hasattr(response, 'content') else str(response)
+            response_text = response.content if hasattr(response, "content") else str(response)
 
             # Detect native tool calls for proper ToolMessage handling
-            is_native = hasattr(response, 'tool_calls') and response.tool_calls
+            is_native = hasattr(response, "tool_calls") and response.tool_calls
 
             # Try to parse tool calls (native → text fallback)
             tool_results = self._parse_tool_calls(response, tools)
@@ -248,22 +251,24 @@ class AgentLoop:
                 for idx, tr in enumerate(tool_results):
                     tname = tool_names[idx] if idx < len(tool_names) else "unknown"
                     # Extract doc_ids from formatted strategy output
-                    doc_ids = re.findall(r'\[([\w\-]+)\s+score=', tr) if tname == 'search_strategies' else []
-                    tool_trace.append({
-                        "iteration": iteration,
-                        "tool": tname,
-                        "keywords": tool_keywords.get(tname, []),
-                        "doc_ids": doc_ids,
-                        "timestamp": time.time(),
-                        "result_summary": tr[:200],
-                        "policy": self._retrieval_policy,
-                        "mbti": self._mbti,
-                        "role": obs.player_role,
-                    })
+                    doc_ids = re.findall(r"\[([\w\-]+)\s+score=", tr) if tname == "search_strategies" else []
+                    tool_trace.append(
+                        {
+                            "iteration": iteration,
+                            "tool": tname,
+                            "keywords": tool_keywords.get(tname, []),
+                            "doc_ids": doc_ids,
+                            "timestamp": time.time(),
+                            "result_summary": tr[:200],
+                            "policy": self._retrieval_policy,
+                            "mbti": self._mbti,
+                            "role": obs.player_role,
+                        }
+                    )
                     # Populate _LAST_RETRIEVED_STRATEGIES for search_strategies tool calls
                     # so _record_strategy_usage() can track which docs were actually retrieved.
                     # Merge with auto-injected entries (if any) rather than overwriting.
-                    if tname == 'search_strategies' and doc_ids:
+                    if tname == "search_strategies" and doc_ids:
                         player_id = str(getattr(obs, "player_id", "") or "")
                         with _STRATEGY_LOCK:
                             existing = _LAST_RETRIEVED_STRATEGIES.get(player_id, [])
@@ -285,16 +290,18 @@ class AgentLoop:
                         context.append(HumanMessage(content=f"[工具结果]\n{tr}"))
 
                 if iteration >= MAX_ITERATIONS:
-                    context.append(HumanMessage(
-                        content="(已是最后一轮工具调用，信息已足够，请直接输出 DECISION 做最终决策。)"
-                    ))
+                    context.append(
+                        HumanMessage(content="(已是最后一轮工具调用，信息已足够，请直接输出 DECISION 做最终决策。)")
+                    )
                     last_tool_results = True
                 else:
                     remaining = MAX_ITERATIONS - iteration
-                    context.append(HumanMessage(
-                        content=f"(工具结果已返回。还剩 {remaining} 轮工具调用额度。"
-                        "你可以继续调用其他工具获取更多信息，或直接输出 DECISION 做决策。)"
-                    ))
+                    context.append(
+                        HumanMessage(
+                            content=f"(工具结果已返回。还剩 {remaining} 轮工具调用额度。"
+                            "你可以继续调用其他工具获取更多信息，或直接输出 DECISION 做决策。)"
+                        )
+                    )
                 continue
 
             # No tool calls — try to parse decision
@@ -306,34 +313,32 @@ class AgentLoop:
                 return decision
 
             # Neither tool call nor valid decision — ask LLM to be clearer
-            preview = response_text[:150].replace('\n', '\\n')
-            logger.info(
-                f"Iter {iteration}/{MAX_ITERATIONS}: no TOOL or DECISION found. "
-                f"Response preview: {preview}..."
-            )
+            preview = response_text[:150].replace("\n", "\\n")
+            logger.info(f"Iter {iteration}/{MAX_ITERATIONS}: no TOOL or DECISION found. Response preview: {preview}...")
             context.append(HumanMessage(content=response_text))
-            context.append(HumanMessage(content=(
-                "你的回复格式不正确。请严格按以下格式之一回复：\n"
-                "1. TOOL: <工具名>\\nARGUMENTS: <JSON>\\n"
-                "2. DECISION: <JSON>\\n"
-                "不要输出其他内容。"
-            )))
+            context.append(
+                HumanMessage(
+                    content=(
+                        "你的回复格式不正确。请严格按以下格式之一回复：\n"
+                        "1. TOOL: <工具名>\\nARGUMENTS: <JSON>\\n"
+                        "2. DECISION: <JSON>\\n"
+                        "不要输出其他内容。"
+                    )
+                )
+            )
 
         # Tool results were added in the last iteration — give LLM one more
         # chance to see the results and produce a DECISION.
         if last_tool_results:
             response = self._call_llm(context, tool_schemas)
-            decision = self._parse_decision(
-                response.content if hasattr(response, 'content') else str(response)
-            )
+            decision = self._parse_decision(response.content if hasattr(response, "content") else str(response))
             if decision:
                 logger.info(f"Final call: DECISION found ({list(decision.keys())})")
                 self._inject_tool_trace(decision, tool_trace, obs)
                 return decision
 
         raise RuntimeError(
-            f"AgentLoop failed to produce a DECISION after {MAX_ITERATIONS} "
-            f"iterations for action={self._action_type}"
+            f"AgentLoop failed to produce a DECISION after {MAX_ITERATIONS} iterations for action={self._action_type}"
         )
 
     # ================================================================
@@ -420,10 +425,7 @@ class AgentLoop:
     def _build_initial_user(self, obs: Observation, cached_analysis: str) -> str:
         """Build the first user message that kicks off the thinking loop."""
         if cached_analysis:
-            return (
-                f"当前阶段: {obs.phase}。你已有上轮分析结果。"
-                "直接输出 DECISION。"
-            )
+            return f"当前阶段: {obs.phase}。你已有上轮分析结果。直接输出 DECISION。"
         return (
             f"当前阶段: {obs.phase}。"
             "你可以通过多轮 TOOL 调用收集信息后再做决策。"
@@ -492,7 +494,7 @@ class AgentLoop:
                 "【输出格式】\n"
                 "调用工具时:\n"
                 "  TOOL: search_strategies\n"
-                "  ARGUMENTS: {{\"keywords\": [\"被查杀\", \"表水\"], \"limit\": 3}}\n"
+                '  ARGUMENTS: {{"keywords": ["被查杀", "表水"], "limit": 3}}\n'
                 "\n"
                 "给出最终决策时:\n"
                 "  DECISION: <JSON>\n"
@@ -531,41 +533,40 @@ class AgentLoop:
         schemas = []
         for name, cfg in tools.items():
             # Extract clean description (skip function signature line)
-            desc_lines = cfg["description"].strip().split('\n')
+            desc_lines = cfg["description"].strip().split("\n")
             human_lines = []
             for line in desc_lines[1:]:
                 stripped = line.strip()
-                if not stripped or stripped.startswith('例'):
+                if not stripped or stripped.startswith("例"):
                     break
                 human_lines.append(stripped)
-            clean_desc = ' '.join(human_lines) if human_lines else desc_lines[0][:200]
+            clean_desc = " ".join(human_lines) if human_lines else desc_lines[0][:200]
 
-            param_schema = _TOOL_PARAM_SCHEMAS.get(
-                name, {"type": "object", "properties": {}}
+            param_schema = _TOOL_PARAM_SCHEMAS.get(name, {"type": "object", "properties": {}})
+            schemas.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": name,
+                        "description": clean_desc,
+                        "parameters": param_schema,
+                    },
+                }
             )
-            schemas.append({
-                "type": "function",
-                "function": {
-                    "name": name,
-                    "description": clean_desc,
-                    "parameters": param_schema,
-                },
-            })
         return schemas
 
     # ================================================================
     # LLM Call
     # ================================================================
 
-    def _call_llm(
-        self, messages: list, tool_schemas: Optional[List[Dict]] = None
-    ):
+    def _call_llm(self, messages: list, tool_schemas: Optional[List[Dict]] = None):
         """Call the LLM with the message list. Returns AIMessage for full response access.
 
         When tool_schemas is provided and the LLM supports bind_tools,
         uses native function calling. Otherwise falls back to plain invoke.
         """
         import time as _time
+
         last_error: Exception | None = None
         for attempt in range(3):
             try:
@@ -578,16 +579,16 @@ class AgentLoop:
                 else:
                     resp = llm.invoke(messages)
                 # Accept if has tool_calls or reasonable content
-                has_tools = hasattr(resp, 'tool_calls') and resp.tool_calls
+                has_tools = hasattr(resp, "tool_calls") and resp.tool_calls
                 has_content = resp.content and len(resp.content.strip()) > 5
                 if has_tools or has_content:
                     return resp
                 # Empty response — wait and retry
-                logger.warning(f"LLM returned empty/short response (attempt {attempt+1}), retrying...")
+                logger.warning(f"LLM returned empty/short response (attempt {attempt + 1}), retrying...")
                 _time.sleep(1)
             except Exception as e:
                 last_error = e
-                logger.warning(f"LLM call failed (attempt {attempt+1}): {e}")
+                logger.warning(f"LLM call failed (attempt {attempt + 1}): {e}")
                 _time.sleep(1)
         if last_error is not None:
             raise RuntimeError("LLM call failed after 3 attempts") from last_error
@@ -605,7 +606,7 @@ class AgentLoop:
         Returns list of tool result strings, or empty list if no tool calls found.
         """
         # 1. Native tool_calls (from bind_tools / function calling)
-        if hasattr(response, 'tool_calls') and response.tool_calls:
+        if hasattr(response, "tool_calls") and response.tool_calls:
             results = []
             for tc in response.tool_calls:
                 name = tc.get("name", "")
@@ -622,12 +623,10 @@ class AgentLoop:
             return results
 
         # 2. Text regex fallback
-        text = response.content if hasattr(response, 'content') else str(response)
+        text = response.content if hasattr(response, "content") else str(response)
         return self._parse_text_tool_calls(text, tools)
 
-    def _parse_text_tool_calls(
-        self, response: str, tools: Dict[str, Any]
-    ) -> List[str]:
+    def _parse_text_tool_calls(self, response: str, tools: Dict[str, Any]) -> List[str]:
         """Parse text-based tool calls from LLM response (fallback).
 
         Expected format:
@@ -636,7 +635,7 @@ class AgentLoop:
 
         Returns list of tool result strings, or empty list if no tool calls found.
         """
-        pattern = r'TOOL:\s*(\w+)[\s\n]*ARGUMENTS:\s*(\{[^}]*\})'
+        pattern = r"TOOL:\s*(\w+)[\s\n]*ARGUMENTS:\s*(\{[^}]*\})"
         matches = re.findall(pattern, response, re.IGNORECASE)
 
         if not matches:
@@ -654,9 +653,7 @@ class AgentLoop:
 
         return results
 
-    def _execute_single_tool(
-        self, name: str, args: Dict[str, Any], tools: Dict[str, Any]
-    ) -> str:
+    def _execute_single_tool(self, name: str, args: Dict[str, Any], tools: Dict[str, Any]) -> str:
         """Execute a single tool by name and return the result string."""
         if name not in tools:
             return f"未知工具: {name}。可用工具: {', '.join(tools.keys())}"
@@ -669,15 +666,15 @@ class AgentLoop:
 
     def _extract_tool_names(self, response, is_native: bool) -> list[str]:
         """Extract tool names from an LLM response (native or text)."""
-        if is_native and hasattr(response, 'tool_calls') and response.tool_calls:
+        if is_native and hasattr(response, "tool_calls") and response.tool_calls:
             return [tc.get("name", "unknown") for tc in response.tool_calls]
-        text = response.content if hasattr(response, 'content') else str(response)
-        return [m.group(1) for m in re.finditer(r'TOOL:\s*(\w+)', text, re.IGNORECASE)]
+        text = response.content if hasattr(response, "content") else str(response)
+        return [m.group(1) for m in re.finditer(r"TOOL:\s*(\w+)", text, re.IGNORECASE)]
 
     def _extract_tool_keywords(self, response, is_native: bool) -> dict[str, list[str]]:
         """Extract keywords per tool name from an LLM response."""
         result: dict[str, list[str]] = {}
-        if is_native and hasattr(response, 'tool_calls') and response.tool_calls:
+        if is_native and hasattr(response, "tool_calls") and response.tool_calls:
             for tc in response.tool_calls:
                 name = tc.get("name", "unknown")
                 args = tc.get("args", {})
@@ -688,11 +685,11 @@ class AgentLoop:
                 else:
                     result[name] = []
             return result
-        text = response.content if hasattr(response, 'content') else str(response)
-        for m in re.finditer(r'TOOL:\s*(\w+)', text, re.IGNORECASE):
+        text = response.content if hasattr(response, "content") else str(response)
+        for m in re.finditer(r"TOOL:\s*(\w+)", text, re.IGNORECASE):
             name = m.group(1)
             result[name] = []
-        for m in re.finditer(r'ARGUMENTS:\s*(\{[^}]*\})', text, re.IGNORECASE):
+        for m in re.finditer(r"ARGUMENTS:\s*(\{[^}]*\})", text, re.IGNORECASE):
             try:
                 args = json.loads(m.group(1))
                 kw = args.get("keywords", [])
@@ -711,9 +708,7 @@ class AgentLoop:
         player_id = str(getattr(obs, "player_id", "") or "")
         with _STRATEGY_LOCK:
             auto_injected = _LAST_RETRIEVED_STRATEGIES.pop(player_id, [])
-        decision["_auto_injected_strategies"] = [
-            s.get("doc_id", "") for s in auto_injected
-        ]
+        decision["_auto_injected_strategies"] = [s.get("doc_id", "") for s in auto_injected]
         # Extract tool-called strategy doc_ids from the tool trace and merge
         tool_called_ids: list[str] = []
         for entry in tool_trace:
@@ -721,9 +716,7 @@ class AgentLoop:
                 for did in entry.get("doc_ids", []):
                     if did and did not in tool_called_ids:
                         tool_called_ids.append(did)
-        merged_ids = list(dict.fromkeys(
-            decision["_auto_injected_strategies"] + tool_called_ids
-        ))
+        merged_ids = list(dict.fromkeys(decision["_auto_injected_strategies"] + tool_called_ids))
         with _STRATEGY_LOCK:
             _LAST_LOOP_TRACE[player_id] = {
                 "tool_trace": tool_trace,
@@ -742,14 +735,14 @@ class AgentLoop:
         Falls back to salvaging partial text when JSON is truncated by token limits.
         """
         # Find DECISION: marker
-        marker_match = re.search(r'DECISION:\s*', response, re.IGNORECASE)
+        marker_match = re.search(r"DECISION:\s*", response, re.IGNORECASE)
         if not marker_match:
             return None
 
         start = marker_match.end()
-        while start < len(response) and response[start] in ' \t\n\r':
+        while start < len(response) and response[start] in " \t\n\r":
             start += 1
-        if start >= len(response) or response[start] != '{':
+        if start >= len(response) or response[start] != "{":
             return None
 
         # Balanced brace extraction
@@ -762,7 +755,7 @@ class AgentLoop:
             if escape:
                 escape = False
                 continue
-            if ch == '\\':
+            if ch == "\\":
                 escape = True
                 continue
             if ch == '"':
@@ -770,9 +763,9 @@ class AgentLoop:
                 continue
             if in_string:
                 continue
-            if ch == '{':
+            if ch == "{":
                 depth += 1
-            elif ch == '}':
+            elif ch == "}":
                 depth -= 1
                 if depth == 0:
                     end = i + 1
@@ -800,7 +793,7 @@ class AgentLoop:
             result["speech"] = data.get("speech", data.get("content", ""))
             result["reasoning"] = data.get("reasoning", "")
             if not result["speech"]:
-                text = response[:marker_match.start()].strip()
+                text = response[: marker_match.start()].strip()
                 if len(text) > 10:
                     result["speech"] = text[:500]
         else:
@@ -824,13 +817,13 @@ class AgentLoop:
             if m:
                 val = m.group(1)
                 # Unescape common escape sequences
-                val = val.replace('\\"', '"').replace('\\n', '\n').replace('\\t', '\t')
+                val = val.replace('\\"', '"').replace("\\n", "\n").replace("\\t", "\t")
                 result[key] = val
         # If we couldn't extract speech but the JSON has content after "speech":
         if not result and '"speech"' in json_str:
             m = re.search(r'"speech"\s*:\s*"(.*)', json_str, re.DOTALL)
             if m:
-                raw = m.group(1).rstrip('"').rstrip('\\')
+                raw = m.group(1).rstrip('"').rstrip("\\")
                 if len(raw) > 5:
                     result["speech"] = raw[:500]
         return result if result else None
@@ -854,16 +847,10 @@ def _build_track_c_strategy_block(obs: Observation, action_type: str) -> str:
     for index, item in enumerate(lessons[:3], start=1):
         doc_id = str(item.get("doc_id") or item.get("id") or f"lesson-{index}")
         trigger = str(
-            item.get("trigger")
-            or item.get("situation_pattern")
-            or item.get("trigger_conditions")
-            or ""
+            item.get("trigger") or item.get("situation_pattern") or item.get("trigger_conditions") or ""
         ).strip()
         recommendation = str(
-            item.get("recommendation")
-            or item.get("recommended_action")
-            or item.get("strategy")
-            or ""
+            item.get("recommendation") or item.get("recommended_action") or item.get("strategy") or ""
         ).strip()
         avoid = str(item.get("avoid_action") or "").strip()
         rationale = str(item.get("rationale") or item.get("evidence_summary") or "").strip()
@@ -917,7 +904,9 @@ def _retrieve_track_c_strategy_lessons(obs: Observation, action_type: str) -> li
                     seen.add(row_id)
                 if len(rows) >= 3:
                     break
-        lessons = [_normalize_strategy_row(row, index) for index, row in enumerate(rows, start=1) if isinstance(row, dict)]
+        lessons = [
+            _normalize_strategy_row(row, index) for index, row in enumerate(rows, start=1) if isinstance(row, dict)
+        ]
         if cache_ttl > 0:
             _TRACK_C_RETRIEVAL_CACHE[cache_key] = (time.monotonic(), lessons)
         if lessons:

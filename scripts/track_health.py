@@ -21,7 +21,8 @@ import argparse
 import json
 import sys
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import datetime
+from datetime import timezone
 from pathlib import Path
 from typing import Any
 
@@ -49,15 +50,14 @@ def _db_snapshot() -> dict[str, Any]:
         "usage_feedback": [],
     }
     try:
-        from backend.db.database import SessionLocal, init_db
-        from backend.db.models import (
-            PublishedReview,
-            StrategyKnowledgeDoc,
-            StrategyPatch,
-            EvolutionTournament,
-            EvolutionRound,
-            KnowledgeUsageFeedback,
-        )
+        from backend.db.database import SessionLocal
+        from backend.db.database import init_db
+        from backend.db.models import EvolutionRound
+        from backend.db.models import EvolutionTournament
+        from backend.db.models import KnowledgeUsageFeedback
+        from backend.db.models import PublishedReview
+        from backend.db.models import StrategyKnowledgeDoc
+        from backend.db.models import StrategyPatch
     except Exception as exc:
         snapshot["error"] = f"could not import DB layer: {exc}"
         return snapshot
@@ -140,7 +140,10 @@ def _db_snapshot() -> dict[str, Any]:
                 "helpful": bool(row.helpful),
                 "decision_outcome": row.decision_outcome,
             }
-            for row in db.query(KnowledgeUsageFeedback).order_by(KnowledgeUsageFeedback.created_at.desc()).limit(200).all()
+            for row in db.query(KnowledgeUsageFeedback)
+            .order_by(KnowledgeUsageFeedback.created_at.desc())
+            .limit(200)
+            .all()
         ]
     finally:
         db.close()
@@ -149,8 +152,8 @@ def _db_snapshot() -> dict[str, Any]:
 
 def _render(runs: list[dict[str, Any]], db: dict[str, Any]) -> str:
     lines: list[str] = []
-    lines.append(f"# Track B + Track C Operational Health Report")
-    lines.append(f"")
+    lines.append("# Track B + Track C Operational Health Report")
+    lines.append("")
     lines.append(f"_generated: {datetime.now(timezone.utc).isoformat()}_")
     lines.append("")
 
@@ -166,7 +169,9 @@ def _render(runs: list[dict[str, Any]], db: dict[str, Any]) -> str:
         lines.append(f"| 累计对局尝试 | {total_attempted} |")
         lines.append(f"| 累计对局完成 | {total_completed} |")
         lines.append(f"| 累计 fallback abort | {total_aborted} |")
-        lines.append(f"| strict_no_fallback 启用 | {sum(1 for r in runs if r.get('strict_no_fallback'))} / {len(runs)} 批次 |")
+        lines.append(
+            f"| strict_no_fallback 启用 | {sum(1 for r in runs if r.get('strict_no_fallback'))} / {len(runs)} 批次 |"
+        )
         lines.append("")
 
         # Aggregate across all runs
@@ -176,17 +181,23 @@ def _render(runs: list[dict[str, Any]], db: dict[str, Any]) -> str:
         lines.append("| 维度 | 累计 / 占比 | 说明 |")
         lines.append("|---|---|---|")
         lines.append(f"| LLM 决策数 | {agg['total_llm_decisions']} | 由真实 LLM 产生的 Agent 决策 |")
-        lines.append(f"| Fallback 决策数 | {agg['total_fallback_decisions']} | 走入 heuristic 兜底的决策（**严格模式下应为 0**）|")
+        lines.append(
+            f"| Fallback 决策数 | {agg['total_fallback_decisions']} | 走入 heuristic 兜底的决策（**严格模式下应为 0**）|"
+        )
         lines.append(f"| 决策非法数 | {agg['total_invalid_decisions']} | parser 失败或 action 非法 |")
-        lines.append(f"| Fallback 比率 | {agg['fallback_rate']*100:.2f}% | Track C §19 接受条件要求 ≈ 0% |")
-        lines.append(f"| 检索使用率 | {agg['retrieval_used_rate']*100:.2f}% | Track C §13: 每步都应触发知识检索 |")
-        lines.append(f"| Track B 通过率 | {agg['publish_allowed_rate']*100:.2f}% | ValidAgent.publish_allowed=true 的比例 |")
+        lines.append(f"| Fallback 比率 | {agg['fallback_rate'] * 100:.2f}% | Track C §19 接受条件要求 ≈ 0% |")
+        lines.append(f"| 检索使用率 | {agg['retrieval_used_rate'] * 100:.2f}% | Track C §13: 每步都应触发知识检索 |")
+        lines.append(
+            f"| Track B 通过率 | {agg['publish_allowed_rate'] * 100:.2f}% | ValidAgent.publish_allowed=true 的比例 |"
+        )
         lines.append(f"| 平均 ValidAgent 分 | {agg['avg_validation_score']:.3f} | 0-1 区间, 1=完美无 issue |")
         lines.append("")
 
         lines.append("### 1.2 每局明细")
         lines.append("")
-        lines.append("| seed | 胜方 | 天数 | 决策 (LLM/总) | Fallback | 复盘状态 | ValidAgent 分 | Gate 失败 | 高光/失误/反事实 | 发言/怀疑度 | 知识反馈 (有效/总) |")
+        lines.append(
+            "| seed | 胜方 | 天数 | 决策 (LLM/总) | Fallback | 复盘状态 | ValidAgent 分 | Gate 失败 | 高光/失误/反事实 | 发言/怀疑度 | 知识反馈 (有效/总) |"
+        )
         lines.append("|---|---|---|---|---|---|---|---|---|---|---|")
         for run in runs:
             for g in run.get("per_game", []):
@@ -278,11 +289,15 @@ def _render(runs: list[dict[str, Any]], db: dict[str, Any]) -> str:
                 lines.append("## 3. A/B 锦标赛（Track C §19，真跑 20 seed × 双版本 = 40 局）")
                 lines.append("")
                 ab_section_emitted = True
-            lines.append(f"### 批次 {run['started_at']}: {ab['baseline_version']} vs {ab['candidate_version']} (角色: {ab['target_role']})")
+            lines.append(
+                f"### 批次 {run['started_at']}: {ab['baseline_version']} vs {ab['candidate_version']} (角色: {ab['target_role']})"
+            )
             lines.append("")
             lines.append("| 指标 | baseline | candidate | Δ |")
             lines.append("|---|---|---|---|")
-            lines.append(f"| 平均最终分 | {ab['baseline_avg_score']:.4f} | {ab['candidate_avg_score']:.4f} | {ab['candidate_avg_score']-ab['baseline_avg_score']:+.4f} |")
+            lines.append(
+                f"| 平均最终分 | {ab['baseline_avg_score']:.4f} | {ab['candidate_avg_score']:.4f} | {ab['candidate_avg_score'] - ab['baseline_avg_score']:+.4f} |"
+            )
             lines.append(f"| 胜场 | {ab['baseline_wins']}/20 | {ab['candidate_wins']}/20 | — |")
             lines.append("")
             lines.append("**Acceptance 判定:**")
@@ -338,7 +353,7 @@ def _render(runs: list[dict[str, Any]], db: dict[str, Any]) -> str:
             for s, c in status_dist.most_common():
                 lines.append(f"| {s} | {c} |")
             lines.append("")
-            lines.append(f"publish_allowed=True 比例：{approved}/{len(pr)} ({approved/len(pr)*100:.1f}%)")
+            lines.append(f"publish_allowed=True 比例：{approved}/{len(pr)} ({approved / len(pr) * 100:.1f}%)")
             lines.append("")
 
         # Knowledge doc breakdown
@@ -377,9 +392,9 @@ def _render(runs: list[dict[str, Any]], db: dict[str, Any]) -> str:
             lines.append("")
             lines.append("| 指标 | 数值 |")
             lines.append("|---|---|")
-            lines.append(f"| 平均 quality_score | {sum(qualities)/len(qualities):.4f} |")
+            lines.append(f"| 平均 quality_score | {sum(qualities) / len(qualities):.4f} |")
             lines.append(f"| min/max quality | {min(qualities):.4f} / {max(qualities):.4f} |")
-            lines.append(f"| 平均 usage_count | {sum(usages)/len(usages):.2f} |")
+            lines.append(f"| 平均 usage_count | {sum(usages) / len(usages):.2f} |")
             lines.append(f"| 总 success_count | {success} |")
             lines.append(f"| 总 failure_count | {failure} |")
             lines.append("")
@@ -415,8 +430,10 @@ def _render(runs: list[dict[str, Any]], db: dict[str, Any]) -> str:
             lines.append("")
             helpful_count = sum(1 for u in uf if u["helpful"])
             lines.append(f"- 反馈样本：{len(uf)}")
-            lines.append(f"- 标记 helpful：{helpful_count} ({helpful_count/len(uf)*100:.1f}%)")
-            lines.append(f"- 标记 unhelpful：{len(uf)-helpful_count} ({(len(uf)-helpful_count)/len(uf)*100:.1f}%)")
+            lines.append(f"- 标记 helpful：{helpful_count} ({helpful_count / len(uf) * 100:.1f}%)")
+            lines.append(
+                f"- 标记 unhelpful：{len(uf) - helpful_count} ({(len(uf) - helpful_count) / len(uf) * 100:.1f}%)"
+            )
             lines.append("")
 
     lines.append("## 5. 验收门 (Gate) 真实拦截能力检查")
@@ -444,9 +461,16 @@ def _aggregate_runs(runs: list[dict[str, Any]]) -> dict[str, Any]:
     totals = Counter()
     for r in runs:
         for g in r.get("per_game", []):
-            for key in ("total_decisions", "llm_decision_count", "fallback_decision_count",
-                        "invalid_decision_count", "retrieval_used_count",
-                        "bad_case_count", "highlight_count", "counterfactual_count"):
+            for key in (
+                "total_decisions",
+                "llm_decision_count",
+                "fallback_decision_count",
+                "invalid_decision_count",
+                "retrieval_used_count",
+                "bad_case_count",
+                "highlight_count",
+                "counterfactual_count",
+            ):
                 totals[key] += int(g.get(key) or 0)
     n = sum(len(r.get("per_game", [])) for r in runs) or 1
     publish_allowed = sum(1 for r in runs for g in r.get("per_game", []) if g.get("publish_allowed"))
@@ -464,8 +488,7 @@ def _aggregate_runs(runs: list[dict[str, Any]]) -> dict[str, Any]:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--runs", nargs="*", default=None,
-                        help="run_*.json paths (defaults to data/health/run_*.json)")
+    parser.add_argument("--runs", nargs="*", default=None, help="run_*.json paths (defaults to data/health/run_*.json)")
     parser.add_argument("--output", default=str(DEFAULT_OUTPUT))
     parser.add_argument("--skip-db", action="store_true")
     args = parser.parse_args()

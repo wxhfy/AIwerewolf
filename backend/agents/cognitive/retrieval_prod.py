@@ -28,9 +28,14 @@ from __future__ import annotations
 import logging
 import os
 import re as _stdlib_re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from dataclasses import field
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
+from typing import Tuple
 
 import numpy as np
 
@@ -53,10 +58,10 @@ class RetrievalPolicy(str, Enum):
     recommended default as it balances personalization with coverage.
     """
 
-    GLOBAL_ONLY = "global_only"                    # Only role="global" or role=any docs
-    SELF_MBTI_ONLY = "self_mbti_only"              # Only docs matching agent's MBTI
-    SAME_ROLE_ALL_MBTI = "same_role_all_mbti"      # Docs for agent's role, any MBTI
-    SAME_ROLE_SAME_MBTI = "same_role_same_mbti"    # Docs for agent's role + agent's MBTI
+    GLOBAL_ONLY = "global_only"  # Only role="global" or role=any docs
+    SELF_MBTI_ONLY = "self_mbti_only"  # Only docs matching agent's MBTI
+    SAME_ROLE_ALL_MBTI = "same_role_all_mbti"  # Docs for agent's role, any MBTI
+    SAME_ROLE_SAME_MBTI = "same_role_same_mbti"  # Docs for agent's role + agent's MBTI
     HYBRID_ROLE_MBTI_GLOBAL = "hybrid_role_mbti_global"  # Layered: same_role_same_mbti → same_role_all_mbti → global
     HYBRID_ROLE_ALIGNMENT_PHASE = "hybrid_role_alignment_phase"  # Same as E + phase constraint
 
@@ -92,11 +97,11 @@ class AgentContext:
     """
 
     player_id: str = ""
-    role: str = ""              # "Seer", "Werewolf", "Witch", etc.
-    alignment: str = ""         # "village" or "wolf"
-    mbti: str = ""              # "INTJ", "ENFP", "ISTJ", "ESFP", etc.
-    phase: str = ""             # "DAY_SPEECH", "NIGHT_WOLF_ACTION", etc.
-    action_type: str = ""       # "talk", "vote", "attack", "save", "check", etc.
+    role: str = ""  # "Seer", "Werewolf", "Witch", etc.
+    alignment: str = ""  # "village" or "wolf"
+    mbti: str = ""  # "INTJ", "ENFP", "ISTJ", "ESFP", etc.
+    phase: str = ""  # "DAY_SPEECH", "NIGHT_WOLF_ACTION", etc.
+    action_type: str = ""  # "talk", "vote", "attack", "save", "check", etc.
     day: int = 0
     alive_status: bool = True
     keywords: List[str] = field(default_factory=list)
@@ -170,26 +175,56 @@ _DEFAULT_CONN = "postgresql://werewolf:wolf_secret_2026@127.0.0.1:5433/werewolf"
 # ================================================================
 _WEREWOLF_TERMS = [
     # Core actions
-    "悍跳", "查杀", "表水", "归票", "自爆", "刀人",
-    "银水", "金水", "铜水", "警徽流", "警徽",
+    "悍跳",
+    "查杀",
+    "表水",
+    "归票",
+    "自爆",
+    "刀人",
+    "银水",
+    "金水",
+    "铜水",
+    "警徽流",
+    "警徽",
     # Role compounds
-    "悍跳狼", "冲锋狼", "倒钩狼", "深水狼", "自刀狼",
-    "预言家", "真预言家", "悍跳预言家",
+    "悍跳狼",
+    "冲锋狼",
+    "倒钩狼",
+    "深水狼",
+    "自刀狼",
+    "预言家",
+    "真预言家",
+    "悍跳预言家",
     # Strategy terms
-    "扛推", "抗推", "穿衣服", "反水", "退水",
-    "站边", "撕警徽", "爆刀", "自刀",
+    "扛推",
+    "抗推",
+    "穿衣服",
+    "反水",
+    "退水",
+    "站边",
+    "撕警徽",
+    "爆刀",
+    "自刀",
     # Phase terms
-    "上警", "警上", "警下", "放逐", "归底",
+    "上警",
+    "警上",
+    "警下",
+    "放逐",
+    "归底",
     # Quality markers
-    "心路历程", "发言漏洞", "视角", "轮次",
+    "心路历程",
+    "发言漏洞",
+    "视角",
+    "轮次",
 ]
 _WEREWOLF_TERMS.sort(key=lambda x: -len(x))  # longest first for greedy matching
 
 # Register with jieba on import
 try:
     import jieba
+
     for term in _WEREWOLF_TERMS:
-        jieba.add_word(term, freq=100, tag='nz')
+        jieba.add_word(term, freq=100, tag="nz")
     logger.info(f"Registered {len(_WEREWOLF_TERMS)} werewolf domain terms in jieba")
 except Exception:
     pass
@@ -275,6 +310,7 @@ def filter_by_policy(
 
 # ---- Individual policy filters ----
 
+
 def _filter_global(docs: List[Dict]) -> Dict[str, List[Dict]]:
     bucket: List[Dict] = []
     for d in docs:
@@ -348,8 +384,11 @@ def _filter_hybrid(docs: List[Dict], role_key: str, mbti_key: str) -> Dict[str, 
 
 
 def _filter_hybrid_phase(
-    docs: List[Dict], role_key: str, mbti_key: str,
-    align_key: str, phase_key: str,
+    docs: List[Dict],
+    role_key: str,
+    mbti_key: str,
+    align_key: str,
+    phase_key: str,
 ) -> Dict[str, List[Dict]]:
     """Layered: same_role_same_mbti_same_phase → same_role_all_mbti → same_alignment → global."""
     buckets: Dict[str, List[Dict]] = {
@@ -364,9 +403,14 @@ def _filter_hybrid_phase(
         doc_phase = _safe_str(d.get("phase_scope", d.get("phase", ""))).lower().strip()
         doc_align = _safe_str(d.get("alignment_scope", "")).lower().strip()
 
-        if (role_key and doc_role == role_key
-                and mbti_key and doc_mbti == mbti_key
-                and phase_key and (doc_phase == phase_key or not doc_phase)):
+        if (
+            role_key
+            and doc_role == role_key
+            and mbti_key
+            and doc_mbti == mbti_key
+            and phase_key
+            and (doc_phase == phase_key or not doc_phase)
+        ):
             buckets["same_role_same_mbti_same_phase"].append(d)
         elif role_key and (doc_role == role_key or doc_role in ("global", "any", "")):
             buckets["same_role_all_mbti"].append(d)
@@ -405,7 +449,7 @@ def _fill_from_buckets(
     bucket_names = list(buckets.keys())
     total_ratio = sum(ratios.get(bn, 0) for bn in bucket_names)
     if total_ratio == 0:
-        ratios = {bn: 1 for bn in bucket_names}
+        ratios = dict.fromkeys(bucket_names, 1)
         total_ratio = len(bucket_names)
 
     results: List[Dict] = []
@@ -473,9 +517,7 @@ def _fill_from_buckets(
         "bucket_underfilled": underfilled[:3] if underfilled else [],
         "quality_threshold": quality_threshold,
         "skipped_low_quality": sum(
-            1 for bn in bucket_names
-            for d in buckets.get(bn, [])
-            if d.get("quality", 0) < quality_threshold
+            1 for bn in bucket_names for d in buckets.get(bn, []) if d.get("quality", 0) < quality_threshold
         ),
         "total_filled": len(results),
     }
@@ -500,6 +542,7 @@ _DEFAULT_ALIGNMENT_PHASE_BUCKET_RATIOS = {
 # ================================================================
 # Production Retriever
 # ================================================================
+
 
 class StrategyRetriever:
     """BM25 + Keyword Grep retriever for AI Werewolf. GPU-free.
@@ -541,8 +584,9 @@ class StrategyRetriever:
     def _build_indexes(self) -> int:
         """Build BM25 + keyword inverted index from self._docs."""
         import time
-        from rank_bm25 import BM25Okapi
+
         import jieba
+        from rank_bm25 import BM25Okapi
 
         t0 = time.perf_counter()
 
@@ -554,8 +598,10 @@ class StrategyRetriever:
                     self._inverted_index.setdefault(w, set()).add(i)
 
         # 2. Build BM25 index
-        corpus = [" ".join(jieba.cut(f"{d.get('situation', '')} {d.get('strategy', '')} {d.get('rationale', '')}"))
-                  for d in self._docs]
+        corpus = [
+            " ".join(jieba.cut(f"{d.get('situation', '')} {d.get('strategy', '')} {d.get('rationale', '')}"))
+            for d in self._docs
+        ]
         self._bm25 = BM25Okapi([t.split() for t in corpus])
 
         self._built = True
@@ -598,10 +644,17 @@ class StrategyRetriever:
 
         if output_mode == "count":
             import jieba
+
             tokens = " ".join(jieba.cut(query)).split()
-            candidates = [d for d in self._docs
-                         if any(t in self._inverted_index and self._docs.index(d) in self._inverted_index[t]
-                               for t in tokens if len(t) >= 2)]
+            candidates = [
+                d
+                for d in self._docs
+                if any(
+                    t in self._inverted_index and self._docs.index(d) in self._inverted_index[t]
+                    for t in tokens
+                    if len(t) >= 2
+                )
+            ]
             buckets = filter_by_policy(candidates, retrieval_policy, agent_context)
             n = sum(len(b) for b in buckets.values())
             return [{"match_count": n, "total_docs": len(self._docs)}]
@@ -615,8 +668,9 @@ class StrategyRetriever:
                 results = filled
 
         if output_mode == "overview":
-            return [{k: v for k, v in r.items() if k in ("doc_id", "situation", "quality", "doc_type")}
-                    for r in results]
+            return [
+                {k: v for k, v in r.items() if k in ("doc_id", "situation", "quality", "doc_type")} for r in results
+            ]
         return results
 
     # ================================================================
@@ -660,10 +714,15 @@ class StrategyRetriever:
         if agent_context is None:
             agent_context = AgentContext(role=role, phase=phase, keywords=keywords)
 
-        grep_indices = self._keyword_grep(keywords, role, phase, k=TOP_K_CANDIDATES * 2,
-                                          regex_mode=regex_mode,
-                                          mbti=agent_context.mbti,
-                                          action_type=agent_context.action_type)
+        grep_indices = self._keyword_grep(
+            keywords,
+            role,
+            phase,
+            k=TOP_K_CANDIDATES * 2,
+            regex_mode=regex_mode,
+            mbti=agent_context.mbti,
+            action_type=agent_context.action_type,
+        )
 
         if output_mode == "count":
             # Apply policy filter to count
@@ -673,10 +732,15 @@ class StrategyRetriever:
             return [{"match_count": total, "total_docs": len(self._docs)}]
 
         if len(grep_indices) < 3:
-            return self.search(" ".join(keywords), role, phase, k=k,
-                               output_mode=output_mode,
-                               retrieval_policy=retrieval_policy,
-                               agent_context=agent_context)
+            return self.search(
+                " ".join(keywords),
+                role,
+                phase,
+                k=k,
+                output_mode=output_mode,
+                retrieval_policy=retrieval_policy,
+                agent_context=agent_context,
+            )
 
         # Reorder grep results by role priority: same-role > global > other
         grep_indices = self._reorder_by_role_priority(grep_indices, role)
@@ -727,11 +791,25 @@ class StrategyRetriever:
                     break
             result = _build_result(doc, rank, bucket_name)
             if output_mode == "overview":
-                result = {k: v for k, v in result.items()
-                         if k in ("doc_id", "situation", "quality", "doc_type",
-                                  "rank", "bucket", "retrieval_policy",
-                                  "role_scope", "mbti_scope", "phase_scope",
-                                  "source_game_id", "status")}
+                result = {
+                    k: v
+                    for k, v in result.items()
+                    if k
+                    in (
+                        "doc_id",
+                        "situation",
+                        "quality",
+                        "doc_type",
+                        "rank",
+                        "bucket",
+                        "retrieval_policy",
+                        "role_scope",
+                        "mbti_scope",
+                        "phase_scope",
+                        "source_game_id",
+                        "status",
+                    )
+                }
             results.append(result)
 
         if use_bm25_rerank and len(results) >= 3:
@@ -753,8 +831,9 @@ class StrategyRetriever:
         Use when keywords are too imprecise and you need pattern matching,
         e.g. ["验.*查杀", "刀(民|神)$"].
         """
-        return self.search_with_keywords(patterns, role=role, phase=phase, k=k,
-                                         output_mode=output_mode, regex_mode=True)
+        return self.search_with_keywords(
+            patterns, role=role, phase=phase, k=k, output_mode=output_mode, regex_mode=True
+        )
 
     def count(self, keywords: List[str], role: str = "", phase: str = "") -> Dict[str, int]:
         """Quick count: how many docs match these keywords? No content loading.
@@ -779,6 +858,7 @@ class StrategyRetriever:
             return []
 
         import jieba
+
         keywords = list(set([w for w in jieba.cut(query) if len(w) >= 2]))
         return self.search_with_keywords(keywords, role, phase, k=k, use_bm25_rerank=False)
 
@@ -788,6 +868,7 @@ class StrategyRetriever:
 
     def _bm25_search(self, query: str, role: str, phase: str, k: int) -> List[Dict]:
         import jieba
+
         tokens = " ".join(jieba.cut(query)).split()
         scores = self._bm25.get_scores(tokens)
         if np.max(scores) > 0:
@@ -795,11 +876,16 @@ class StrategyRetriever:
         scores = np.array(scores, dtype=np.float64)
         scores += self._role_bonus(role) + self._phase_bonus(phase)
         idx = np.argsort(scores)[::-1][:k]
-        return [{"doc_id": self._docs[i].get("doc_id", ""),
-                 "situation": self._docs[i]["situation"],
-                 "strategy": self._docs[i]["strategy"],
-                 "quality": self._docs[i]["quality"],
-                 "doc_type": self._docs[i].get("doc_type", "")} for i in idx]
+        return [
+            {
+                "doc_id": self._docs[i].get("doc_id", ""),
+                "situation": self._docs[i]["situation"],
+                "strategy": self._docs[i]["strategy"],
+                "quality": self._docs[i]["quality"],
+                "doc_type": self._docs[i].get("doc_type", ""),
+            }
+            for i in idx
+        ]
 
     def _bm25_search_roled(self, query: str, role: str, phase: str, k: int) -> List[Dict]:
         """BM25 search with role-priority filtering.
@@ -808,17 +894,17 @@ class StrategyRetriever:
         If same-role + global results < k, fills with other-role docs.
         """
         # Split docs by role priority
-        same_role = [i for i, d in enumerate(self._docs)
-                     if d.get("role", "").lower() == role.lower()]
-        global_docs = [i for i, d in enumerate(self._docs)
-                       if d.get("role", "").lower() == "global" and i not in same_role]
-        other_docs = [i for i, d in enumerate(self._docs)
-                      if i not in same_role and i not in global_docs]
+        same_role = [i for i, d in enumerate(self._docs) if d.get("role", "").lower() == role.lower()]
+        global_docs = [
+            i for i, d in enumerate(self._docs) if d.get("role", "").lower() == "global" and i not in same_role
+        ]
+        other_docs = [i for i, d in enumerate(self._docs) if i not in same_role and i not in global_docs]
 
         # Priority groups
         groups = [same_role, global_docs, other_docs]
 
         import jieba
+
         tokens = " ".join(jieba.cut(query)).split()
         bm25_scores = np.array(self._bm25.get_scores(tokens), dtype=np.float64)
         if bm25_scores.max() > 0:
@@ -834,7 +920,7 @@ class StrategyRetriever:
             # Score only docs in this group
             group_scores = [(i, bm25_scores[i]) for i in group if i not in seen]
             group_scores.sort(key=lambda x: -x[1])
-            group_take = group_scores[:k] if group_idx == 0 else group_scores[:k - len(results)]
+            group_take = group_scores[:k] if group_idx == 0 else group_scores[: k - len(results)]
             for idx, _ in group_take:
                 if idx not in seen:
                     results.append(idx)
@@ -852,18 +938,27 @@ class StrategyRetriever:
                     if len(results) >= k:
                         break
 
-        return [{"doc_id": self._docs[i].get("doc_id", ""),
-                 "situation": self._docs[i]["situation"],
-                 "strategy": self._docs[i]["strategy"],
-                 "quality": self._docs[i]["quality"],
-                 "doc_type": self._docs[i].get("doc_type", "")} for i in results[:k]]
+        return [
+            {
+                "doc_id": self._docs[i].get("doc_id", ""),
+                "situation": self._docs[i]["situation"],
+                "strategy": self._docs[i]["strategy"],
+                "quality": self._docs[i]["quality"],
+                "doc_type": self._docs[i].get("doc_type", ""),
+            }
+            for i in results[:k]
+        ]
 
     # ================================================================
     # Internal: Keyword Grep + BM25 Rerank
     # ================================================================
 
     def _keyword_grep(
-        self, keywords: List[str], role: str, phase: str, k: int,
+        self,
+        keywords: List[str],
+        role: str,
+        phase: str,
+        k: int,
         regex_mode: bool = False,
         mbti: str = "",
         action_type: str = "",
@@ -881,8 +976,9 @@ class StrategyRetriever:
             mbti: Agent's MBTI for score weighting (soft bonus, not hard filter).
             action_type: Agent's current action for phase-action matching bonus.
         """
-        import jieba
         import re as _re
+
+        import jieba
 
         scores = np.zeros(len(self._docs))
 
@@ -961,8 +1057,12 @@ class StrategyRetriever:
         return [int(i) for i in top if scores[i] > 0]
 
     def _bm25_rerank_subset(
-        self, query: str, role: str, phase: str,
-        candidate_indices: List[int], k: int,
+        self,
+        query: str,
+        role: str,
+        phase: str,
+        candidate_indices: List[int],
+        k: int,
     ) -> List[Dict[str, str]]:
         """BM25 score restricted to candidate subset + role/phase bonus. ~0.5ms."""
         import jieba
@@ -978,11 +1078,16 @@ class StrategyRetriever:
             b_raw[i] = b_raw[i] * 0.7 + rb + pb
 
         top = sorted(candidate_indices, key=lambda i: b_raw[i], reverse=True)[:k]
-        return [{"doc_id": self._docs[i].get("doc_id", ""),
-                 "situation": self._docs[i]["situation"],
-                 "strategy": self._docs[i]["strategy"],
-                 "quality": self._docs[i]["quality"],
-                 "doc_type": self._docs[i].get("doc_type", "")} for i in top]
+        return [
+            {
+                "doc_id": self._docs[i].get("doc_id", ""),
+                "situation": self._docs[i]["situation"],
+                "strategy": self._docs[i]["strategy"],
+                "quality": self._docs[i]["quality"],
+                "doc_type": self._docs[i].get("doc_type", ""),
+            }
+            for i in top
+        ]
 
     def _reorder_by_role_priority(self, indices: List[int], role: str) -> List[int]:
         """Reorder doc indices by role priority: same-role > global > other."""
@@ -990,8 +1095,7 @@ class StrategyRetriever:
             return indices
         rl = role.lower()
         same = [i for i in indices if self._docs[i].get("role", "").lower() == rl]
-        glbl = [i for i in indices if self._docs[i].get("role", "").lower() == "global"
-                and i not in same]
+        glbl = [i for i in indices if self._docs[i].get("role", "").lower() == "global" and i not in same]
         other = [i for i in indices if i not in same and i not in glbl]
         return same + glbl + other
 
@@ -1002,16 +1106,18 @@ class StrategyRetriever:
     def _role_bonus(self, role: str) -> np.ndarray:
         if not role:
             return np.zeros(len(self._docs), dtype=np.float32)
-        return np.array([0.12 if d["role"] == role else
-                        (0.03 if d["role"] == "global" else 0)
-                        for d in self._docs], dtype=np.float32)
+        return np.array(
+            [0.12 if d["role"] == role else (0.03 if d["role"] == "global" else 0) for d in self._docs],
+            dtype=np.float32,
+        )
 
     def _phase_bonus(self, phase: str) -> np.ndarray:
         if not phase:
             return np.zeros(len(self._docs), dtype=np.float32)
-        return np.array([0.06 if d["phase"] == phase else
-                        (0.02 if d["phase"] == "global" else 0)
-                        for d in self._docs], dtype=np.float32)
+        return np.array(
+            [0.06 if d["phase"] == phase else (0.02 if d["phase"] == "global" else 0) for d in self._docs],
+            dtype=np.float32,
+        )
 
     # ================================================================
     # Properties
@@ -1034,6 +1140,7 @@ class StrategyRetriever:
 # Fine-tuning Pipeline (experimental — requires BGE-M3 GPU)
 # ================================================================
 
+
 def generate_finetune_data(
     docs: List[Dict],
     output_path: str = "data/finetune_triplets.jsonl",
@@ -1043,9 +1150,11 @@ def generate_finetune_data(
 
     Uses BM25 for hard negative mining. Requires SentenceTransformer at fine-tune time.
     """
-    import json, random
-    from rank_bm25 import BM25Okapi
+    import json
+    import random
+
     import jieba
+    from rank_bm25 import BM25Okapi
 
     corpus = [" ".join(jieba.cut(f"{d['situation']} {d['strategy']}")) for d in docs]
     bm25 = BM25Okapi([t.split() for t in corpus])
@@ -1067,14 +1176,16 @@ def generate_finetune_data(
         scores[i] = -999
         neg_idx = int(np.argmax(scores))
 
-        triplets.append({
-            "anchor": anchor["strategy"],
-            "positive": docs[pos_idx]["strategy"],
-            "hard_negative": docs[neg_idx]["strategy"],
-            "anchor_role": anchor["role"],
-            "positive_role": docs[pos_idx]["role"],
-            "negative_role": docs[neg_idx]["role"],
-        })
+        triplets.append(
+            {
+                "anchor": anchor["strategy"],
+                "positive": docs[pos_idx]["strategy"],
+                "hard_negative": docs[neg_idx]["strategy"],
+                "anchor_role": anchor["role"],
+                "positive_role": docs[pos_idx]["role"],
+                "negative_role": docs[neg_idx]["role"],
+            }
+        )
 
     with open(output_path, "w") as f:
         for t in triplets:
@@ -1098,8 +1209,11 @@ def finetune_retriever(
     Not required for production — BM25 alone is sufficient for 941 docs.
     """
     import json
+
+    from sentence_transformers import InputExample
+    from sentence_transformers import SentenceTransformer
+    from sentence_transformers import losses
     from torch.utils.data import DataLoader
-    from sentence_transformers import InputExample, SentenceTransformer, losses
 
     examples = []
     with open(data_path) as f:
@@ -1132,8 +1246,10 @@ def finetune_retriever(
 # Helpers
 # ================================================================
 
+
 def _load_from_pg(conn_str: str) -> List[Dict]:
     import psycopg2
+
     conn = psycopg2.connect(conn_str)
     c = conn.cursor()
 
@@ -1180,42 +1296,128 @@ def _load_from_pg(conn_str: str) -> List[Dict]:
     docs = []
     if tier_exp_id:
         import json
-        for row_id, sit, rec, rat, role, phase, q, dtype, ctier, vscope, deid, cgpi, \
-                persona_scope, raw_tags, raw_src_reports, raw_src_items in c.fetchall():
+
+        for (
+            row_id,
+            sit,
+            rec,
+            rat,
+            role,
+            phase,
+            q,
+            dtype,
+            ctier,
+            vscope,
+            deid,
+            cgpi,
+            persona_scope,
+            raw_tags,
+            raw_src_reports,
+            raw_src_items,
+        ) in c.fetchall():
             # H6: If a doc has experiment tags but NOT our tier's tag, skip it.
             tags = json.loads(raw_tags) if isinstance(raw_tags, str) else (raw_tags or [])
             if any(t.startswith("exp-") for t in tags) and tier_exp_id not in tags:
                 continue
             # JSONB columns arrive as Python lists; handle both str and list cases
-            src_reports = list(raw_src_reports or []) if isinstance(raw_src_reports, (list, tuple)) else (
-                json.loads(raw_src_reports) if isinstance(raw_src_reports, str) else [])
-            src_items = list(raw_src_items or []) if isinstance(raw_src_items, (list, tuple)) else (
-                json.loads(raw_src_items) if isinstance(raw_src_items, str) else [])
-            docs.append(_build_doc_dict(
-                row_id, sit, rec, rat, role, phase, q, dtype, ctier, vscope, deid, cgpi,
-                persona_scope, src_reports, src_items,
-            ))
+            src_reports = (
+                list(raw_src_reports or [])
+                if isinstance(raw_src_reports, (list, tuple))
+                else (json.loads(raw_src_reports) if isinstance(raw_src_reports, str) else [])
+            )
+            src_items = (
+                list(raw_src_items or [])
+                if isinstance(raw_src_items, (list, tuple))
+                else (json.loads(raw_src_items) if isinstance(raw_src_items, str) else [])
+            )
+            docs.append(
+                _build_doc_dict(
+                    row_id,
+                    sit,
+                    rec,
+                    rat,
+                    role,
+                    phase,
+                    q,
+                    dtype,
+                    ctier,
+                    vscope,
+                    deid,
+                    cgpi,
+                    persona_scope,
+                    src_reports,
+                    src_items,
+                )
+            )
     else:
-        for row_id, sit, rec, rat, role, phase, q, dtype, ctier, vscope, deid, cgpi, \
-                persona_scope, raw_src_reports, raw_src_items in c.fetchall():
+        for (
+            row_id,
+            sit,
+            rec,
+            rat,
+            role,
+            phase,
+            q,
+            dtype,
+            ctier,
+            vscope,
+            deid,
+            cgpi,
+            persona_scope,
+            raw_src_reports,
+            raw_src_items,
+        ) in c.fetchall():
             import json
-            src_reports = list(raw_src_reports or []) if isinstance(raw_src_reports, (list, tuple)) else (
-                json.loads(raw_src_reports) if isinstance(raw_src_reports, str) else [])
-            src_items = list(raw_src_items or []) if isinstance(raw_src_items, (list, tuple)) else (
-                json.loads(raw_src_items) if isinstance(raw_src_items, str) else [])
-            docs.append(_build_doc_dict(
-                row_id, sit, rec, rat, role, phase, q, dtype, ctier, vscope, deid, cgpi,
-                persona_scope, src_reports, src_items,
-            ))
+
+            src_reports = (
+                list(raw_src_reports or [])
+                if isinstance(raw_src_reports, (list, tuple))
+                else (json.loads(raw_src_reports) if isinstance(raw_src_reports, str) else [])
+            )
+            src_items = (
+                list(raw_src_items or [])
+                if isinstance(raw_src_items, (list, tuple))
+                else (json.loads(raw_src_items) if isinstance(raw_src_items, str) else [])
+            )
+            docs.append(
+                _build_doc_dict(
+                    row_id,
+                    sit,
+                    rec,
+                    rat,
+                    role,
+                    phase,
+                    q,
+                    dtype,
+                    ctier,
+                    vscope,
+                    deid,
+                    cgpi,
+                    persona_scope,
+                    src_reports,
+                    src_items,
+                )
+            )
     conn.close()
     return docs
 
 
 def _build_doc_dict(
-    row_id: str, sit: str, rec: str, rat: str,
-    role: str, phase: str, q: Any, dtype: str,
-    ctier: str, vscope: str, deid: Any, cgpi: Any,
-    persona_scope: str, src_reports: list, src_items: list,
+    row_id: str,
+    sit: str,
+    rec: str,
+    rat: str,
+    role: str,
+    phase: str,
+    q: Any,
+    dtype: str,
+    ctier: str,
+    vscope: str,
+    deid: Any,
+    cgpi: Any,
+    persona_scope: str,
+    src_reports: list,
+    src_items: list,
 ) -> Dict[str, Any]:
     """Build a normalized doc dict with derived scope fields.
 
@@ -1302,8 +1504,8 @@ def _load_docs_from_cold_start() -> list[dict]:
     Converts StrategyKnowledgeDoc → retriever dict format.
     No PostgreSQL required.
     """
-    from backend.eval.evolution import StrategyKnowledgeStore
     from backend.agents.strategy_registry import get_strategy_registry
+    from backend.eval.evolution import StrategyKnowledgeStore
 
     store = StrategyKnowledgeStore()
 
@@ -1314,6 +1516,7 @@ def _load_docs_from_cold_start() -> list[dict]:
             doc_id = f"cold-{card.strategy_id}"
             if doc_id not in store.docs:
                 from backend.eval.evolution import StrategyKnowledgeDoc
+
                 roles = card.applicable_roles
                 role = "global" if len(roles) > 2 else (roles[0] if roles else "global")
                 doc = StrategyKnowledgeDoc(
@@ -1345,16 +1548,18 @@ def _load_docs_from_cold_start() -> list[dict]:
     # Convert to retriever dict format
     docs = []
     for doc in store.all(include_deprecated=False):
-        docs.append({
-            "doc_id": doc.doc_id or "",
-            "situation": doc.situation_pattern or "",
-            "strategy": doc.recommended_action or "",
-            "rationale": doc.rationale or "",
-            "role": doc.role or "global",
-            "phase": doc.phase or "global",
-            "quality": doc.quality_score,
-            "doc_type": doc.doc_type or "",
-        })
+        docs.append(
+            {
+                "doc_id": doc.doc_id or "",
+                "situation": doc.situation_pattern or "",
+                "strategy": doc.recommended_action or "",
+                "rationale": doc.rationale or "",
+                "role": doc.role or "global",
+                "phase": doc.phase or "global",
+                "quality": doc.quality_score,
+                "doc_type": doc.doc_type or "",
+            }
+        )
     return docs
 
 
@@ -1420,15 +1625,22 @@ def retrieve_strategies_prod(
 
     if keywords and len(keywords) >= 1:
         results = retriever.search_with_keywords(
-            keywords, role=role, phase=phase, k=limit,
-            output_mode=output_mode, regex_mode=regex_mode,
+            keywords,
+            role=role,
+            phase=phase,
+            k=limit,
+            output_mode=output_mode,
+            regex_mode=regex_mode,
             retrieval_policy=retrieval_policy,
             agent_context=agent_context,
         )
     else:
         query = situation or _default_query_text(role, phase)
         results = retriever.search(
-            query, role=role, phase=phase, k=limit,
+            query,
+            role=role,
+            phase=phase,
+            k=limit,
             output_mode=output_mode,
             retrieval_policy=retrieval_policy,
             agent_context=agent_context,

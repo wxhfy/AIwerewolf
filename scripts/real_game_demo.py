@@ -5,19 +5,18 @@ AI Werewolf 真实调用过程演示
 """
 
 import json
-import sys
 import os
+import sys
 import time
 import traceback
 from datetime import datetime
-from io import StringIO
 
 # 确保项目路径在 sys.path 中
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from backend.engine.game import WerewolfGame
-from backend.engine.models import Phase, EventType
 from backend.agents.factory import create_agents
+from backend.engine.game import WerewolfGame
+from backend.engine.models import EventType
 
 
 class LLMCallLogger:
@@ -47,25 +46,25 @@ class LLMCallLogger:
             }
 
             # 打印调用信息
-            print(f"\n{'='*80}")
+            print(f"\n{'=' * 80}")
             print(f"🤖 [{player_name}] ({role}) 发起 LLM 调用")
             print(f"   模型: {client.model}")
             print(f"   温度: {kwargs.get('temperature', 0.7)}")
             print(f"   最大 tokens: {kwargs.get('max_tokens', 2048)}")
-            print(f"{'='*80}")
+            print(f"{'=' * 80}")
 
             # 打印 system prompt
             for msg in messages:
                 if msg["role"] == "system":
-                    print(f"\n📋 System Prompt:")
+                    print("\n📋 System Prompt:")
                     print(f"   {msg['content'][:500]}...")
                 elif msg["role"] == "user":
-                    print(f"\n💬 User Prompt:")
+                    print("\n💬 User Prompt:")
                     # 只显示前1000字符，避免太长
-                    content = msg['content']
+                    content = msg["content"]
                     if len(content) > 1000:
                         print(f"   {content[:1000]}...")
-                        print(f"   [省略 {len(content)-1000} 字符]")
+                        print(f"   [省略 {len(content) - 1000} 字符]")
                     else:
                         print(f"   {content}")
 
@@ -86,13 +85,13 @@ class LLMCallLogger:
                 # 打印响应
                 print(f"\n✅ 响应 (耗时 {latency:.2f}s):")
                 if reasoning:
-                    print(f"   💭 推理过程:")
+                    print("   💭 推理过程:")
                     # 只显示前500字符
                     if len(reasoning) > 500:
                         print(f"      {reasoning[:500]}...")
                     else:
                         print(f"      {reasoning}")
-                print(f"   💬 输出内容:")
+                print("   💬 输出内容:")
                 if len(text) > 800:
                     print(f"      {text[:800]}...")
                 else:
@@ -176,7 +175,7 @@ def run_demo_with_logging():
     # 创建游戏
     print("🎲 创建游戏...")
     game = WerewolfGame(seed=42, max_days=3, player_count=7)
-    
+
     # 强制使用 LLM agent（而不是 heuristic）
     llm_agents = create_agents(
         game.state.players,
@@ -197,7 +196,7 @@ def run_demo_with_logging():
     # 给每个 AI agent 的 LLM client 打上日志补丁
     print("\n🔧 设置 LLM 调用日志...")
     for player_id, agent in game.agents.items():
-        if hasattr(agent, 'client'):
+        if hasattr(agent, "client"):
             # 找到对应的玩家
             player = game.state.player(player_id)
             if player:
@@ -223,7 +222,9 @@ def run_demo_with_logging():
             EventType.SYSTEM_MESSAGE,
             EventType.GAME_END,
         ]:
-            print_game_event(event_type.value if hasattr(event_type, 'value') else str(event_type), payload, player_name)
+            print_game_event(
+                event_type.value if hasattr(event_type, "value") else str(event_type), payload, player_name
+            )
 
     game._log = logged_log
 
@@ -261,7 +262,7 @@ def run_demo_with_logging():
     if logger.calls:
         total_latency = sum(c.get("latency", 0) for c in logger.calls)
         print(f"   总耗时: {total_latency:.2f}s")
-        print(f"   平均耗时: {total_latency/len(logger.calls):.2f}s")
+        print(f"   平均耗时: {total_latency / len(logger.calls):.2f}s")
 
         # 按玩家统计
         player_calls = {}
@@ -274,7 +275,7 @@ def run_demo_with_logging():
 
         print("\n   按玩家统计:")
         for player, stats in player_calls.items():
-            print(f"      {player}: {stats['count']}次, 平均{stats['total_latency']/stats['count']:.2f}s")
+            print(f"      {player}: {stats['count']}次, 平均{stats['total_latency'] / stats['count']:.2f}s")
 
     # 保存详细日志
     log_file = os.path.join(os.path.dirname(__file__), "llm_calls_log.json")

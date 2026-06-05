@@ -11,7 +11,8 @@ from __future__ import annotations
 
 import math
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from dataclasses import field
 from typing import Any
 
 import numpy as np
@@ -128,30 +129,30 @@ def compute_process_score_v3(
         cdr = float(np.mean(calibration_deps)) if calibration_deps else 0.0
 
         # V3 formula
-        ps = (
-            0.45 * wq + 0.20 * rnq + 0.15 * sq + 0.10 * rob
-            + 0.10 * hip - 0.20 * crr
-        )
+        ps = 0.45 * wq + 0.20 * rnq + 0.15 * sq + 0.10 * rob + 0.10 * hip - 0.20 * crr
         ps = max(0.0, min(1.0, ps))
 
         # Confidence interval (simple: SEM * 1.96)
         se = np.std(qualities) / math.sqrt(max(n, 1)) if n >= 3 else 0.25
         ci = 1.96 * se
 
-        results.append(ProcessScoreV3Result(
-            player_id=pid, role=role,
-            weighted_quality=round(wq, 4),
-            role_normalized_quality=round(rnq, 4),
-            speech_quality=round(sq, 4),
-            robustness=round(rob, 4),
-            high_impact_positive_rate=round(hip, 4),
-            critical_regret_rate=round(crr, 4),
-            process_score_v3=round(ps, 4),
-            n_opportunities=n,
-            confidence_interval=round(ci, 4),
-            low_sample_warning=n < 3,
-            calibration_dependency_rate=round(cdr, 4),
-        ))
+        results.append(
+            ProcessScoreV3Result(
+                player_id=pid,
+                role=role,
+                weighted_quality=round(wq, 4),
+                role_normalized_quality=round(rnq, 4),
+                speech_quality=round(sq, 4),
+                robustness=round(rob, 4),
+                high_impact_positive_rate=round(hip, 4),
+                critical_regret_rate=round(crr, 4),
+                process_score_v3=round(ps, 4),
+                n_opportunities=n,
+                confidence_interval=round(ci, 4),
+                low_sample_warning=n < 3,
+                calibration_dependency_rate=round(cdr, 4),
+            )
+        )
 
     return results
 
@@ -182,11 +183,16 @@ def compute_game_value(
 
     # Recommendations
     uses = []
-    if badcase_value > 0.3: uses.append("badcase_training")
-    if clean_case_value > 0.4: uses.append("clean_case_benchmark")
-    if training_value > 0.5: uses.append("pairwise_training")
-    if reviewability > 0.5: uses.append("strategy_replay")
-    if decision_signal > 0.2: uses.append("model_capability_leaderboard")
+    if badcase_value > 0.3:
+        uses.append("badcase_training")
+    if clean_case_value > 0.4:
+        uses.append("clean_case_benchmark")
+    if training_value > 0.5:
+        uses.append("pairwise_training")
+    if reviewability > 0.5:
+        uses.append("strategy_replay")
+    if decision_signal > 0.2:
+        uses.append("model_capability_leaderboard")
 
     return GameEvaluationValue(
         game_id=game_id,

@@ -8,10 +8,12 @@ Observation and Memory at invocation time.
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any
+from typing import Dict
+from typing import List
 
-from backend.agents.cognitive.observe import Observation
 from backend.agents.cognitive.memory import Memory
+from backend.agents.cognitive.observe import Observation
 from backend.agents.cognitive.retrieval import retrieve_strategies as retrieve_tfidf
 from backend.agents.cognitive.retrieval_prod import format_strategies_for_prompt
 
@@ -72,9 +74,9 @@ def create_tools(
         Set include_reflections=False to exclude post-game reflections.
         """
         try:
-            from backend.agents.cognitive.retrieval_prod import (
-                retrieve_strategies_prod, RetrievalPolicy,
-            )
+            from backend.agents.cognitive.retrieval_prod import RetrievalPolicy
+            from backend.agents.cognitive.retrieval_prod import retrieve_strategies_prod
+
             # Parse policy from string if provided
             policy = RetrievalPolicy.GLOBAL_ONLY
             if retrieval_policy:
@@ -84,16 +86,23 @@ def create_tools(
                     policy = RetrievalPolicy.GLOBAL_ONLY
 
             results = retrieve_strategies_prod(
-                obs.player_role, obs.phase, keywords=keywords, limit=limit,
-                output_mode=mode, regex_mode=use_regex,
+                obs.player_role,
+                obs.phase,
+                keywords=keywords,
+                limit=limit,
+                output_mode=mode,
+                regex_mode=use_regex,
                 retrieval_policy=policy,
-                mbti=mbti, alignment=alignment, player_id=player_id,
+                mbti=mbti,
+                alignment=alignment,
+                player_id=player_id,
                 action_type=_infer_action_type(obs.phase),
             )
         except Exception as e:
             results = []
             if os.getenv("ALLOW_FALLBACK", "true").lower() == "false":
                 import logging
+
                 _tlog = logging.getLogger(__name__)
                 _tlog.warning("STRICT MODE: search_strategies retrieval_prod error: %s", e)
         if not results:
@@ -101,13 +110,15 @@ def create_tools(
                 return "(未找到匹配的策略 — 尝试调整搜索关键词)"
             # Fallback to TF-IDF (PostgreSQL-independent)
             results = retrieve_tfidf(
-                obs.player_role, obs.phase, situation=" ".join(keywords), limit=limit,
+                obs.player_role,
+                obs.phase,
+                situation=" ".join(keywords),
+                limit=limit,
             )
         if not results:
             return "(未找到相关策略)"
         if not include_reflections and mode != "count":
-            results = [r for r in results
-                       if not r.get("doc_type", "").startswith("reflection")]
+            results = [r for r in results if not r.get("doc_type", "").startswith("reflection")]
             if not results:
                 return "(未找到相关策略)"
         return format_strategies_for_prompt(results)
@@ -140,16 +151,14 @@ def create_tools(
                 for j in judgments:
                     if target_player and j.target != target_player:
                         continue
-                    lines.append(f"  {j.target}: {j.label}({j.confidence:.0%}) "
-                                 f"[Day{j.day}] - {j.reasoning[:80]}")
+                    lines.append(f"  {j.target}: {j.label}({j.confidence:.0%}) [Day{j.day}] - {j.reasoning[:80]}")
 
         if filter in ("recent_actions", "all"):
             actions = memory.get_recent_actions(5)
             if actions:
                 lines.append("=== 最近行动 ===")
                 for a in actions:
-                    lines.append(f"  D{a.day} [{a.phase}] {a.action_type}: "
-                                 f"{a.content[:80]}")
+                    lines.append(f"  D{a.day} [{a.phase}] {a.action_type}: {a.content[:80]}")
 
         if filter in ("role_state", "all"):
             rs = memory.role_state
@@ -259,18 +268,18 @@ def create_tools(
             "fn": search_strategies,
             "description": (
                 'search_strategies(keywords: list[str], limit: int = 3, include_reflections: bool = False, mode: str = "content", use_regex: bool = False, retrieval_policy: str = "")\n'
-                '  用关键词或正则搜索狼人杀策略库。三层模式：\n'
+                "  用关键词或正则搜索狼人杀策略库。三层模式：\n"
                 '  mode="count" — 仅返回匹配数量（先测试关键词好坏）\n'
                 '  mode="overview" — 仅返回场景标题和评分（快速扫描）\n'
                 '  mode="content" — 返回完整策略（默认，确认关键词后使用）\n'
-                '  retrieval_policy — 控制检索范围：\n'
+                "  retrieval_policy — 控制检索范围：\n"
                 '    "global_only" 只看全局通用策略\n'
                 '    "self_mbti_only" 只看自己MBTI的策略\n'
                 '    "same_role_all_mbti" 同角色所有MBTI\n'
                 '    "same_role_same_mbti" 同角色同MBTI\n'
                 '    "hybrid_role_mbti_global" 分层混合（默认推荐）\n'
-                '  推荐流程: count → overview → content，逐步缩小范围。\n'
-                '  use_regex=True 时关键词被视为 Python 正则。\n'
+                "  推荐流程: count → overview → content，逐步缩小范围。\n"
+                "  use_regex=True 时关键词被视为 Python 正则。\n"
                 '  例: search_strategies(keywords=["被查杀"], mode="count")\n'
                 '  例: search_strategies(keywords=["悍跳"], retrieval_policy="same_role_all_mbti")'
             ),
@@ -281,15 +290,15 @@ def create_tools(
                 'recall_memory(filter: str, target_player: str = "")\n'
                 '  查询记忆。filter可选: "judgments", "suspicious", "trusted", '
                 '"recent_actions", "role_state", "all"。\n'
-                '  target_player可选: 指定玩家名只查对该玩家的判断。\n'
+                "  target_player可选: 指定玩家名只查对该玩家的判断。\n"
                 '  例: recall_memory(filter="suspicious")'
             ),
         },
         "check_rules": {
             "fn": check_rules,
             "description": (
-                'check_rules(question: str)\n'
-                '  查询游戏规则。当你对某个机制不确定时使用。\n'
+                "check_rules(question: str)\n"
+                "  查询游戏规则。当你对某个机制不确定时使用。\n"
                 '  例: check_rules(question="守卫可以连续守护同一人吗")'
             ),
         },
@@ -305,21 +314,18 @@ def create_tools(
             "fn": set_strategic_intent,
             "description": (
                 'set_strategic_intent(objective: str, target_phase: str, conditions: str = "", fallback: str = "")\n'
-                '  设定跨回合策略意图。告诉系统你的多步计划，后续回合会自动提醒你。\n'
+                "  设定跨回合策略意图。告诉系统你的多步计划，后续回合会自动提醒你。\n"
                 '  objective: 计划目标（如 "bluff_seer_day2"）\n'
                 '  target_phase: 执行阶段（"DAY_SPEECH", "DAY_VOTE", "NIGHT_WOLF_ACTION"）\n'
-                '  conditions: 分号分隔的前置条件\n'
-                '  fallback: 条件不满足时的备选方案\n'
+                "  conditions: 分号分隔的前置条件\n"
+                "  fallback: 条件不满足时的备选方案\n"
                 '  例: set_strategic_intent(objective="fake_claim_seer", target_phase="DAY_SPEECH", '
                 'conditions="no_other_seer_claim", fallback="continue_deep_cover")'
             ),
         },
         "analyze_votes": {
             "fn": analyze_votes,
-            "description": (
-                "analyze_votes()\n"
-                "  分析当前投票模式。自动统计票型分布。"
-            ),
+            "description": ("analyze_votes()\n  分析当前投票模式。自动统计票型分布。"),
         },
     }
 

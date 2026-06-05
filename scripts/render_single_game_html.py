@@ -14,7 +14,6 @@ import io
 import json
 import sys
 from pathlib import Path
-from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -35,7 +34,7 @@ class V3SingleGameHTMLRenderer:
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>AI Werewolf Review · {self._esc(self.d['game_id'][:8])}</title>
+  <title>AI Werewolf Review · {self._esc(self.d["game_id"][:8])}</title>
   {self._render_css()}
 </head>
 <body>
@@ -72,7 +71,7 @@ class V3SingleGameHTMLRenderer:
     <header class="report-header">
       <div class="header-top">
         <h1>AI 狼人杀复盘报告</h1>
-        <span class="game-id">Game: {self._esc(d['game_id'][:12])}</span>
+        <span class="game-id">Game: {self._esc(d["game_id"][:12])}</span>
       </div>
       <div class="metric-cards">
         <div class="mcard {winner_class}">
@@ -81,20 +80,20 @@ class V3SingleGameHTMLRenderer:
         </div>
         <div class="mcard">
           <div class="mcard-label">MVP</div>
-          <div class="mcard-value">{self._esc(d['mvp']['player_id']) if d.get('mvp') else '—'} / {self._esc(d['mvp']['role']) if d.get('mvp') else '—'}</div>
-          <div class="mcard-sub">{d['mvp']['final_score']:.1f}分</div>
+          <div class="mcard-value">{self._esc(d["mvp"]["player_id"]) if d.get("mvp") else "—"} / {self._esc(d["mvp"]["role"]) if d.get("mvp") else "—"}</div>
+          <div class="mcard-sub">{d["mvp"]["final_score"]:.1f}分</div>
         </div>
         <div class="mcard">
           <div class="mcard-label">精彩指数</div>
-          <div class="mcard-value">{drama.get('score', '—')} / 100</div>
+          <div class="mcard-value">{drama.get("score", "—")} / 100</div>
         </div>
         <div class="mcard">
           <div class="mcard-label">总天数</div>
-          <div class="mcard-value">{d.get('total_days', '—')} 天</div>
+          <div class="mcard-value">{d.get("total_days", "—")} 天</div>
         </div>
         <div class="mcard">
           <div class="mcard-label">Valid Agent</div>
-          <div class="mcard-value grade grade-{d.get('valid_grade', 'B').lower()}">Grade {d.get('valid_grade', '—')}</div>
+          <div class="mcard-value grade grade-{d.get("valid_grade", "B").lower()}">Grade {d.get("valid_grade", "—")}</div>
         </div>
       </div>
       {self._render_drama_moments(drama)}
@@ -125,9 +124,9 @@ class V3SingleGameHTMLRenderer:
 
         try:
             import matplotlib
+
             matplotlib.use("Agg")
             import matplotlib.pyplot as plt
-            import matplotlib.font_manager as fm
 
             # Try to use Chinese font
             # Use Noto Sans CJK SC for Chinese glyph support
@@ -144,17 +143,25 @@ class V3SingleGameHTMLRenderer:
 
             ax.plot(x, y, color="#9c5d2c", linewidth=2, zorder=2)
             ax.fill_between(
-                x, y, 0, alpha=0.08, color="#9c5d2c", where=[v >= 0 for v in y],
+                x,
+                y,
+                0,
+                alpha=0.08,
+                color="#9c5d2c",
+                where=[v >= 0 for v in y],
             )
             ax.fill_between(
-                x, y, 0, alpha=0.05, color="#9f3f3f", where=[v < 0 for v in y],
+                x,
+                y,
+                0,
+                alpha=0.05,
+                color="#9f3f3f",
+                where=[v < 0 for v in y],
             )
             ax.axhline(0, color="#e5d3bd", linewidth=1, zorder=1)
 
             # Annotate key events (top 5 by |delta|)
-            key = sorted(
-                points, key=lambda p: abs(p["delta"]), reverse=True
-            )[:5]
+            key = sorted(points, key=lambda p: abs(p["delta"]), reverse=True)[:5]
             for p in key:
                 ax.annotate(
                     f"D{p['day']} {p['label']}",
@@ -185,16 +192,12 @@ class V3SingleGameHTMLRenderer:
             ax.spines["right"].set_visible(False)
 
             buf = io.BytesIO()
-            fig.savefig(
-                buf, format="svg", bbox_inches="tight", transparent=True
-            )
+            fig.savefig(buf, format="svg", bbox_inches="tight", transparent=True)
             plt.close(fig)
             buf.seek(0)
             svg = buf.read().decode("utf-8")
             # Strip XML declaration
-            svg = "\n".join(
-                l for l in svg.splitlines() if not l.startswith("<?xml")
-            )
+            svg = "\n".join(l for l in svg.splitlines() if not l.startswith("<?xml"))
             return f'<section class="module"><h2>阵营走势</h2><div class="chart-container">{svg}</div></section>'
         except Exception as e:
             return f'<section class="module"><h2>阵营走势</h2><p>Chart render error: {self._esc(str(e))}</p></section>'
@@ -268,13 +271,9 @@ class V3SingleGameHTMLRenderer:
                 if target:
                     detail_parts.append(f"→ {self._esc(str(target))}")
                 if speech:
-                    detail_parts.append(
-                        f'<span class="tl-speech">{self._esc(str(speech)[:120])}</span>'
-                    )
+                    detail_parts.append(f'<span class="tl-speech">{self._esc(str(speech)[:120])}</span>')
                 if reason:
-                    detail_parts.append(
-                        f'<span class="tl-reason">{self._esc(str(reason)[:100])}</span>'
-                    )
+                    detail_parts.append(f'<span class="tl-reason">{self._esc(str(reason)[:100])}</span>')
                 detail = " · ".join(detail_parts) or self._esc(etype)
 
                 cards += f"""
@@ -314,16 +313,16 @@ class V3SingleGameHTMLRenderer:
                 conf_warn = " (medium)"
 
             rows += f"""
-            <tr class="{'sb-won' if p.get('won') else 'sb-lost'}">
+            <tr class="{"sb-won" if p.get("won") else "sb-lost"}">
               <td class="sb-rank">#{rank}</td>
-              <td class="sb-player">{self._esc(p.get('player_id', '?'))}</td>
-              <td class="sb-role">{self._esc(p.get('role', '?'))}</td>
-              <td class="sb-score sb-final">{p['final_score']:.1f}</td>
-              <td class="sb-score">{p['process_score']:.1f}</td>
-              <td class="sb-score">{p['role_process_score']:.1f}</td>
-              <td class="sb-score">{p['speech_score']:.1f}</td>
-              <td class="sb-score">{p['counterfactual_impact']:+.3f}</td>
-              <td class="sb-score">{p['mistake_penalty']:.3f}</td>
+              <td class="sb-player">{self._esc(p.get("player_id", "?"))}</td>
+              <td class="sb-role">{self._esc(p.get("role", "?"))}</td>
+              <td class="sb-score sb-final">{p["final_score"]:.1f}</td>
+              <td class="sb-score">{p["process_score"]:.1f}</td>
+              <td class="sb-score">{p["role_process_score"]:.1f}</td>
+              <td class="sb-score">{p["speech_score"]:.1f}</td>
+              <td class="sb-score">{p["counterfactual_impact"]:+.3f}</td>
+              <td class="sb-score">{p["mistake_penalty"]:.3f}</td>
               <td class="sb-conf">{conf:.2f}{conf_warn}</td>
             </tr>"""
 
@@ -361,8 +360,7 @@ class V3SingleGameHTMLRenderer:
             sampled = sampled[:30]
 
         header = "".join(
-            f'<th>{self._esc(str(s.get("day",0)))}/{self._esc(str(s.get("phase",""))[:4])}</th>'
-            for s in sampled
+            f"<th>{self._esc(str(s.get('day', 0)))}/{self._esc(str(s.get('phase', ''))[:4])}</th>" for s in sampled
         )
 
         rows = ""
@@ -409,9 +407,9 @@ class V3SingleGameHTMLRenderer:
                 impact_mark = f" (impact: {impact:.1f})" if impact > 0.3 else ""
                 rows += f"""
                 <tr>
-                  <td>{self._esc(v.get('voter_name', v.get('voter_id', '?')))}</td>
+                  <td>{self._esc(v.get("voter_name", v.get("voter_id", "?")))}</td>
                   <td>→</td>
-                  <td class="{'pivot' if v.get('is_pivot') else ''}">{self._esc(v.get('target_name', v.get('target_id', '?')))}{pivot_mark}{impact_mark}</td>
+                  <td class="{"pivot" if v.get("is_pivot") else ""}">{self._esc(v.get("target_name", v.get("target_id", "?")))}{pivot_mark}{impact_mark}</td>
                 </tr>"""
 
             panels += f"""
@@ -440,15 +438,15 @@ class V3SingleGameHTMLRenderer:
         for i, o in enumerate(opps):
             cards += f"""
             <div class="opp-card good">
-              <div class="opp-rank">#{i+1}</div>
+              <div class="opp-rank">#{i + 1}</div>
               <div class="opp-body">
                 <div class="opp-header">
-                  <strong>{self._esc(o['player_id'])}</strong>
-                  <span class="role-tag">{self._esc(o['role'])}</span>
-                  <span class="type-tag">{self._esc(o['type'])}</span>
-                  <span class="day-tag">Day {o.get('day', '?')}</span>
+                  <strong>{self._esc(o["player_id"])}</strong>
+                  <span class="role-tag">{self._esc(o["role"])}</span>
+                  <span class="type-tag">{self._esc(o["type"])}</span>
+                  <span class="day-tag">Day {o.get("day", "?")}</span>
                 </div>
-                <div class="opp-score">Score: {o['score']:.3f}</div>
+                <div class="opp-score">Score: {o["score"]:.3f}</div>
               </div>
             </div>"""
 
@@ -470,15 +468,15 @@ class V3SingleGameHTMLRenderer:
         for i, o in enumerate(opps):
             cards += f"""
             <div class="opp-card bad">
-              <div class="opp-rank">#{i+1}</div>
+              <div class="opp-rank">#{i + 1}</div>
               <div class="opp-body">
                 <div class="opp-header">
-                  <strong>{self._esc(o['player_id'])}</strong>
-                  <span class="role-tag">{self._esc(o['role'])}</span>
-                  <span class="type-tag">{self._esc(o['type'])}</span>
-                  <span class="day-tag">Day {o.get('day', '?')}</span>
+                  <strong>{self._esc(o["player_id"])}</strong>
+                  <span class="role-tag">{self._esc(o["role"])}</span>
+                  <span class="type-tag">{self._esc(o["type"])}</span>
+                  <span class="day-tag">Day {o.get("day", "?")}</span>
                 </div>
-                <div class="opp-score">Score: {o['score']:.3f}</div>
+                <div class="opp-score">Score: {o["score"]:.3f}</div>
               </div>
             </div>"""
 
@@ -504,12 +502,12 @@ class V3SingleGameHTMLRenderer:
                 return f"<h3>{title}</h3><p>暂无</p>"
             rows = "\n".join(
                 f"""<tr>
-                  <td>{self._esc(c.get('player_id','?'))}</td>
-                  <td>{self._esc(c.get('role','?'))}</td>
-                  <td>{self._esc(str(c.get('original_target','?')))}</td>
-                  <td>→ {self._esc(str(c.get('alternative_target','?')))}</td>
-                  <td>{c.get('impact_value',0):+.3f}</td>
-                  <td>{c.get('confidence',0):.2f}</td>
+                  <td>{self._esc(c.get("player_id", "?"))}</td>
+                  <td>{self._esc(c.get("role", "?"))}</td>
+                  <td>{self._esc(str(c.get("original_target", "?")))}</td>
+                  <td>→ {self._esc(str(c.get("alternative_target", "?")))}</td>
+                  <td>{c.get("impact_value", 0):+.3f}</td>
+                  <td>{c.get("confidence", 0):.2f}</td>
                 </tr>"""
                 for c in items[:10]
             )
@@ -517,8 +515,8 @@ class V3SingleGameHTMLRenderer:
 
         return f"""<section class="module">
     <h2>反事实推演</h2>
-    {render_cf_group('Vote Flip', vote_flips)}
-    {render_cf_group('Skill Swap', skill_swaps)}
+    {render_cf_group("Vote Flip", vote_flips)}
+    {render_cf_group("Skill Swap", skill_swaps)}
     </section>"""
 
     # ------------------------------------------------------------------
@@ -536,16 +534,14 @@ class V3SingleGameHTMLRenderer:
             radar_svg = self._render_radar_svg(radar)
 
             good_actions = "\n".join(
-                f'<li class="pa-good">{self._esc(a["type"])} D{a.get("day","?")} — {a["score"]:.3f}</li>'
+                f'<li class="pa-good">{self._esc(a["type"])} D{a.get("day", "?")} — {a["score"]:.3f}</li>'
                 for a in pc.get("top3_good", [])[:3]
             )
             bad_actions = "\n".join(
-                f'<li class="pa-bad">{self._esc(a["type"])} D{a.get("day","?")} — {a["score"]:.3f}</li>'
+                f'<li class="pa-bad">{self._esc(a["type"])} D{a.get("day", "?")} — {a["score"]:.3f}</li>'
                 for a in pc.get("top3_bad", [])[:3]
             )
-            advice = "\n".join(
-                f"<li>{self._esc(a)}</li>" for a in pc.get("advice", [])[:3]
-            )
+            advice = "\n".join(f"<li>{self._esc(a)}</li>" for a in pc.get("advice", [])[:3])
 
             conf = pc.get("model_confidence", 0.5)
             conf_class = "conf-low" if conf <= 0.5 else "conf-mid" if conf <= 0.65 else "conf-high"
@@ -553,17 +549,17 @@ class V3SingleGameHTMLRenderer:
             html += f"""
             <div class="player-card">
               <div class="pc-header">
-                <h3>{self._esc(pc.get('name', pc.get('player_id', '?')))}</h3>
-                <span class="pc-role">{self._esc(pc.get('role', '?'))}</span>
-                <span class="pc-alignment {'align-good' if pc.get('alignment')=='village' else 'align-wolf'}">{self._esc(pc.get('alignment', '?'))}</span>
+                <h3>{self._esc(pc.get("name", pc.get("player_id", "?")))}</h3>
+                <span class="pc-role">{self._esc(pc.get("role", "?"))}</span>
+                <span class="pc-alignment {"align-good" if pc.get("alignment") == "village" else "align-wolf"}">{self._esc(pc.get("alignment", "?"))}</span>
               </div>
               <div class="pc-body">
                 <div class="pc-radar">{radar_svg}</div>
                 <div class="pc-stats">
-                  <div class="pc-score"><span>Final</span><strong>{pc.get('final_score', 0):.1f}</strong></div>
-                  <div class="pc-score"><span>Process</span><strong>{pc.get('process_score', 0):.1f}</strong></div>
-                  <div class="pc-score"><span>Speech</span><strong>{pc.get('speech_score', 0):.1f}</strong></div>
-                  <div class="pc-score"><span>CF Impact</span><strong>{pc.get('counterfactual_impact', 0):+.3f}</strong></div>
+                  <div class="pc-score"><span>Final</span><strong>{pc.get("final_score", 0):.1f}</strong></div>
+                  <div class="pc-score"><span>Process</span><strong>{pc.get("process_score", 0):.1f}</strong></div>
+                  <div class="pc-score"><span>Speech</span><strong>{pc.get("speech_score", 0):.1f}</strong></div>
+                  <div class="pc-score"><span>CF Impact</span><strong>{pc.get("counterfactual_impact", 0):+.3f}</strong></div>
                   <div class="pc-score"><span>Confidence</span><strong class="{conf_class}">{conf:.2f}</strong></div>
                 </div>
               </div>
@@ -571,7 +567,7 @@ class V3SingleGameHTMLRenderer:
                 <div class="pc-good"><strong>Top Good:</strong><ul>{good_actions}</ul></div>
                 <div class="pc-bad"><strong>Top Bad:</strong><ul>{bad_actions}</ul></div>
               </div>
-              {f'<div class="pc-advice"><strong>建议：</strong><ul>{advice}</ul></div>' if pc.get('advice') else ''}
+              {f'<div class="pc-advice"><strong>建议：</strong><ul>{advice}</ul></div>' if pc.get("advice") else ""}
             </div>"""
 
         return f"""<section class="module">
@@ -586,6 +582,7 @@ class V3SingleGameHTMLRenderer:
 
         try:
             import matplotlib
+
             matplotlib.use("Agg")
             import matplotlib.pyplot as plt
             import numpy as np
@@ -595,9 +592,7 @@ class V3SingleGameHTMLRenderer:
             values_plot = values + [values[0]]
             angles_plot = angles + [angles[0]]
 
-            fig, ax = plt.subplots(
-                figsize=(2.5, 2.5), subplot_kw=dict(polar=True)
-            )
+            fig, ax = plt.subplots(figsize=(2.5, 2.5), subplot_kw=dict(polar=True))
             ax.set_theta_offset(np.pi / 2)
             ax.set_theta_direction(-1)
 
@@ -611,14 +606,12 @@ class V3SingleGameHTMLRenderer:
             ax.spines["polar"].set_visible(False)
 
             buf = io.BytesIO()
-            fig.savefig(
-                buf, format="svg", bbox_inches="tight", transparent=True, dpi=72
-            )
+            fig.savefig(buf, format="svg", bbox_inches="tight", transparent=True, dpi=72)
             plt.close(fig)
             buf.seek(0)
             return buf.read().decode("utf-8")
         except Exception:
-            return f"<svg width='200' height='200'><text x='10' y='100'>Radar unavailable</text></svg>"
+            return "<svg width='200' height='200'><text x='10' y='100'>Radar unavailable</text></svg>"
 
     # ------------------------------------------------------------------
     # Module 11: Valid Agent Panel
@@ -634,9 +627,9 @@ class V3SingleGameHTMLRenderer:
         for iss in issues:
             issue_rows += f"""
             <tr>
-              <td>{self._esc(iss.get('type', '?'))}</td>
-              <td>{self._esc(iss.get('player_id', '—'))}</td>
-              <td>{self._esc(iss.get('detail', ''))}</td>
+              <td>{self._esc(iss.get("type", "?"))}</td>
+              <td>{self._esc(iss.get("player_id", "—"))}</td>
+              <td>{self._esc(iss.get("detail", ""))}</td>
             </tr>"""
 
         status_icon = "✓" if passed else "✗"
@@ -648,9 +641,9 @@ class V3SingleGameHTMLRenderer:
       <div class="va-summary {status_class}">
         <span class="va-icon">{status_icon}</span>
         <span class="va-grade">Grade: {grade}</span>
-        <span class="va-status">publish_allowed: {str(v.get('publish_allowed', passed)).lower()}</span>
+        <span class="va-status">publish_allowed: {str(v.get("publish_allowed", passed)).lower()}</span>
       </div>
-      {f'<h3>Issues ({len(issues)})</h3><table class="va-table"><thead><tr><th>Type</th><th>Player</th><th>Detail</th></tr></thead><tbody>{issue_rows}</tbody></table>' if issues else '<p>No issues found.</p>'}
+      {f'<h3>Issues ({len(issues)})</h3><table class="va-table"><thead><tr><th>Type</th><th>Player</th><th>Detail</th></tr></thead><tbody>{issue_rows}</tbody></table>' if issues else "<p>No issues found.</p>"}
     </div>
     </section>"""
 
@@ -668,7 +661,7 @@ class V3SingleGameHTMLRenderer:
             payload_str = json.dumps(event.get("payload", {}), ensure_ascii=False)
             items += f"""
             <div class="ev-item" id="ev-{self._esc(eid)}">
-              <h4>{self._esc(event.get('event_type', '?'))} — D{event.get('day','?')} {self._esc(str(event.get('phase','')))}</h4>
+              <h4>{self._esc(event.get("event_type", "?"))} — D{event.get("day", "?")} {self._esc(str(event.get("phase", "")))}</h4>
               <pre>{self._esc(payload_str[:500])}</pre>
             </div>"""
 
@@ -946,9 +939,7 @@ def main() -> int:
         renderer = V3SingleGameHTMLRenderer(data)
         html = renderer.render()
 
-        out_path = (
-            data_dir / f"review_game_{data['game_id']}.html"
-        )
+        out_path = data_dir / f"review_game_{data['game_id']}.html"
         out_path.write_text(html, encoding="utf-8")
         print(f"→ {out_path.name} ({len(html):,} bytes)")
 

@@ -33,7 +33,8 @@ import os
 import sys
 import time
 import traceback
-from datetime import datetime, timezone
+from datetime import datetime
+from datetime import timezone
 from pathlib import Path
 from typing import Any
 
@@ -44,12 +45,12 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from backend.agents.factory import create_agents
-from backend.agents.llm_agent import LLMAgent, LLMFallbackForbidden
+from backend.agents.llm_agent import LLMAgent
+from backend.agents.llm_agent import LLMFallbackForbidden
 from backend.engine.game import WerewolfGame
 from backend.engine.rules import build_players
 from backend.eval.review import MetricsCalculator
 from backend.eval.track_b import generate_published_review_document
-
 
 STRATEGY_FILE = ROOT / "configs" / "discrimination_strategies.yaml"
 OUTPUT_DIR = ROOT / "data" / "experiment"
@@ -131,39 +132,43 @@ def run_one_game(role: str, variant: str, seed: int, catalog: dict, strict: bool
     for score in game_metrics.player_scores:
         if score.role != role:
             continue
-        role_player_scores.append({
-            "player_id": score.player_id,
-            "player_name": score.player_name,
-            "persona_name": score.persona_name,
-            "role": score.role,
-            "alignment": score.alignment,
-            "camp_result_score": score.camp_result_score,
-            "role_task_score": score.role_task_score,
-            "vote_score": score.vote_score,
-            "speech_score": score.speech_score,
-            "skill_score": score.skill_score,
-            "survival_score": score.survival_score,
-            "mistake_penalty": score.mistake_penalty,
-            "final_score": score.final_score,
-            "adjusted_final_score": score.adjusted_final_score if score.adjusted_final_score is not None else score.final_score,
-            "impact_bonus": score.impact_bonus,
-            "review_penalty": score.review_penalty,
-            "mistakes": list(score.mistakes),
-            "mistakes_count": len(score.mistakes),
-            "highlights": list(score.highlights),
-        })
+        role_player_scores.append(
+            {
+                "player_id": score.player_id,
+                "player_name": score.player_name,
+                "persona_name": score.persona_name,
+                "role": score.role,
+                "alignment": score.alignment,
+                "camp_result_score": score.camp_result_score,
+                "role_task_score": score.role_task_score,
+                "vote_score": score.vote_score,
+                "speech_score": score.speech_score,
+                "skill_score": score.skill_score,
+                "survival_score": score.survival_score,
+                "mistake_penalty": score.mistake_penalty,
+                "final_score": score.final_score,
+                "adjusted_final_score": score.adjusted_final_score
+                if score.adjusted_final_score is not None
+                else score.final_score,
+                "impact_bonus": score.impact_bonus,
+                "review_penalty": score.review_penalty,
+                "mistakes": list(score.mistakes),
+                "mistakes_count": len(score.mistakes),
+                "highlights": list(score.highlights),
+            }
+        )
 
     # Decision audit (count LLM vs fallback)
     decisions = state.decision_records
     fallback_count = sum(
-        1 for rec in decisions
+        1
+        for rec in decisions
         if bool((rec.parsed_action or {}).get("metadata", {}).get("fallback"))
         or bool((rec.parsed_action or {}).get("agent_fallback"))
         or str((rec.parsed_action or {}).get("metadata", {}).get("source", "")) == "fallback"
     )
     llm_count = sum(
-        1 for rec in decisions
-        if str((rec.parsed_action or {}).get("metadata", {}).get("source", "")) == "llm"
+        1 for rec in decisions if str((rec.parsed_action or {}).get("metadata", {}).get("source", "")) == "llm"
     )
 
     return {
@@ -192,12 +197,14 @@ def run_one_game(role: str, variant: str, seed: int, catalog: dict, strict: bool
         "target_role_avg_adjusted_final_score": (
             sum(p["adjusted_final_score"] for p in role_player_scores if p["adjusted_final_score"] is not None)
             / max(len(role_player_scores), 1)
-            if role_player_scores else None
+            if role_player_scores
+            else None
         ),
         "target_role_avg_role_task_score": (
             sum(p["role_task_score"] for p in role_player_scores if p["role_task_score"] is not None)
             / max(len(role_player_scores), 1)
-            if role_player_scores else None
+            if role_player_scores
+            else None
         ),
         "target_role_total_mistakes": sum(p["mistakes_count"] for p in role_player_scores),
         "bad_case_count": len(review_report.get("bad_cases", [])),
@@ -218,25 +225,26 @@ def append_error(role: str, variant: str, seed: int, err: BaseException) -> None
         f.write(json.dumps(payload, ensure_ascii=False) + "\n")
 
 
-def run_batch(roles: list[str], variants: list[str], seeds: list[int], strict: bool, force: bool,
-              catalog_file: Path | None = None) -> dict[str, Any]:
+def run_batch(
+    roles: list[str], variants: list[str], seeds: list[int], strict: bool, force: bool, catalog_file: Path | None = None
+) -> dict[str, Any]:
     catalog = load_strategy_catalog(catalog_file)
     missing = [r for r in roles if r not in catalog]
     if missing:
         raise SystemExit(f"Strategy catalog missing entries for: {missing!r}")
 
     plan: list[tuple[str, str, int]] = [
-        (role, variant, seed)
-        for role in roles
-        for variant in variants
-        for seed in seeds
+        (role, variant, seed) for role in roles for variant in variants for seed in seeds
     ]
     total = len(plan)
     catalog_label = (catalog_file or STRATEGY_FILE).name
-    print(f"[{utc_iso()}] Experiment plan: {total} games "
-          f"({len(roles)} roles × {len(variants)} variants × {len(seeds)} seeds) "
-          f"strict_no_fallback={strict} catalog={catalog_label} "
-          f"placement={os.getenv('STRATEGY_BIAS_PLACEMENT', 'user')}", flush=True)
+    print(
+        f"[{utc_iso()}] Experiment plan: {total} games "
+        f"({len(roles)} roles × {len(variants)} variants × {len(seeds)} seeds) "
+        f"strict_no_fallback={strict} catalog={catalog_label} "
+        f"placement={os.getenv('STRATEGY_BIAS_PLACEMENT', 'user')}",
+        flush=True,
+    )
 
     completed: list[str] = []
     skipped: list[str] = []
@@ -301,9 +309,12 @@ def main() -> int:
     ap.add_argument("--seeds", nargs="+", type=int, default=[1, 2, 3, 4, 5], help="Seeds")
     ap.add_argument("--strict-fallback", default="true", help="If true, any LLM fallback aborts the game")
     ap.add_argument("--force", action="store_true", help="Re-run even if output JSON already exists")
-    ap.add_argument("--catalog-file", default=None,
-                    help="Path to strategy catalog YAML (default: configs/discrimination_strategies.yaml). "
-                         "Use configs/discrimination_strategies_iter3.yaml for iter3 example-rich variant.")
+    ap.add_argument(
+        "--catalog-file",
+        default=None,
+        help="Path to strategy catalog YAML (default: configs/discrimination_strategies.yaml). "
+        "Use configs/discrimination_strategies_iter3.yaml for iter3 example-rich variant.",
+    )
     args = ap.parse_args()
 
     strict = args.strict_fallback.lower() not in {"false", "0", "no", "off"}

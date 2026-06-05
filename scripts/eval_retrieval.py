@@ -28,7 +28,8 @@ from backend.eval.evolution import StrategyRetrievalQuery
 GROUND_TRUTH = [
     # === Seer ===
     {
-        "role": "Seer", "phase": "night_1",
+        "role": "Seer",
+        "phase": "night_1",
         "summary": "首夜，需要选择查验目标",
         "tags": ["night_action", "first_night", "divine"],
         "expected_keywords": ["查验", "后置位", "警上", "选人", "验人"],
@@ -36,7 +37,8 @@ GROUND_TRUTH = [
         "description": "Seer N1: who to check",
     },
     {
-        "role": "Seer", "phase": "day_1",
+        "role": "Seer",
+        "phase": "day_1",
         "summary": "第一天警上发言，需要报查验抢警徽",
         "tags": ["speech", "badge_election", "claim"],
         "expected_keywords": ["警徽流", "查验", "金水", "查杀", "心路历程"],
@@ -44,17 +46,18 @@ GROUND_TRUTH = [
         "description": "Seer D1: badge election speech",
     },
     {
-        "role": "Seer", "phase": "mid_game",
+        "role": "Seer",
+        "phase": "mid_game",
         "summary": "面对悍跳狼对跳预言家，需要辨别真伪",
         "tags": ["vote", "fake_seer", "debate"],
         "expected_keywords": ["悍跳", "对跳", "辨别", "逻辑", "票型"],
         "forbidden_keywords": [],
         "description": "Seer mid: counter fake seer",
     },
-
     # === Witch ===
     {
-        "role": "Witch", "phase": "night_1",
+        "role": "Witch",
+        "phase": "night_1",
         "summary": "首夜，收到刀口信息，决定是否使用解药",
         "tags": ["night_action", "first_night", "save"],
         "expected_keywords": ["解药", "救人", "首夜", "救"],
@@ -62,7 +65,8 @@ GROUND_TRUTH = [
         "description": "Witch N1: use antidote or not",
     },
     {
-        "role": "Witch", "phase": "mid_game",
+        "role": "Witch",
+        "phase": "mid_game",
         "summary": "持毒药，需要决定毒人时机和目标",
         "tags": ["night_action", "poison", "decision"],
         "expected_keywords": ["毒药", "时机", "确定", "狼", "窗口"],
@@ -70,17 +74,18 @@ GROUND_TRUTH = [
         "description": "Witch mid: when to poison",
     },
     {
-        "role": "Witch", "phase": "day_1",
+        "role": "Witch",
+        "phase": "day_1",
         "summary": "双药在手，需要隐藏身份参与白天发言",
         "tags": ["speech", "hide_role", "day_1"],
         "expected_keywords": ["隐藏", "身份", "平民", "视角", "发言"],
         "forbidden_keywords": ["跳", "报银水"],
         "description": "Witch D1: hide identity in speech",
     },
-
     # === Guard ===
     {
-        "role": "Guard", "phase": "night_1",
+        "role": "Guard",
+        "phase": "night_1",
         "summary": "首夜，需要决定守护目标（有女巫时）",
         "tags": ["night_action", "first_night", "protect"],
         "expected_keywords": ["空守", "奶穿", "首夜", "女巫", "解药"],
@@ -88,17 +93,18 @@ GROUND_TRUTH = [
         "description": "Guard N1: empty guard or protect",
     },
     {
-        "role": "Guard", "phase": "mid_game",
+        "role": "Guard",
+        "phase": "mid_game",
         "summary": "预言家已明身份，需要持续保护",
         "tags": ["night_action", "protect", "priority"],
         "expected_keywords": ["预言家", "守护", "女巫", "优先级", "心理"],
         "forbidden_keywords": [],
         "description": "Guard mid: protect priority",
     },
-
     # === Hunter ===
     {
-        "role": "Hunter", "phase": "day_1",
+        "role": "Hunter",
+        "phase": "day_1",
         "summary": "前期身份未暴露，需要隐藏",
         "tags": ["speech", "hide_role", "early_game"],
         "expected_keywords": ["隐藏", "平民", "伪装", "威慑", "跳"],
@@ -106,17 +112,18 @@ GROUND_TRUTH = [
         "description": "Hunter early: hide identity",
     },
     {
-        "role": "Hunter", "phase": "late_game",
+        "role": "Hunter",
+        "phase": "late_game",
         "summary": "出局时，需要选择开枪目标",
         "tags": ["night_action", "shoot", "eliminated"],
         "expected_keywords": ["开枪", "带走", "狼", "优先级", "神职"],
         "forbidden_keywords": [],
         "description": "Hunter late: shoot target priority",
     },
-
     # === Werewolf ===
     {
-        "role": "Werewolf", "phase": "day_1",
+        "role": "Werewolf",
+        "phase": "day_1",
         "summary": "第一天，需要决定是否悍跳预言家",
         "tags": ["speech", "fake_claim", "badge"],
         "expected_keywords": ["悍跳", "预言家", "抢警徽", "不悍跳"],
@@ -124,7 +131,8 @@ GROUND_TRUTH = [
         "description": "Wolf D1: fake seer or not",
     },
     {
-        "role": "Werewolf", "phase": "night_1",
+        "role": "Werewolf",
+        "phase": "night_1",
         "summary": "首夜，需要决定刀人目标和团队分工",
         "tags": ["night_action", "kill", "teamwork"],
         "expected_keywords": ["刀", "分工", "悍跳狼", "冲锋狼", "倒钩狼"],
@@ -132,17 +140,18 @@ GROUND_TRUTH = [
         "description": "Wolf N1: kill target + team roles",
     },
     {
-        "role": "Werewolf", "phase": "mid_game",
+        "role": "Werewolf",
+        "phase": "mid_game",
         "summary": "需要隐藏身份，建立对立面",
         "tags": ["speech", "deception", "deep_cover"],
         "expected_keywords": ["隐藏", "对立面", "自刀", "倒钩", "投票"],
         "forbidden_keywords": [],
         "description": "Wolf mid: deception and deep cover",
     },
-
     # === Villager ===
     {
-        "role": "Villager", "phase": "day_1",
+        "role": "Villager",
+        "phase": "day_1",
         "summary": "第一天白天，需要站边和投票",
         "tags": ["speech", "vote", "stand_point"],
         "expected_keywords": ["站边", "投票", "发言", "理由", "划水"],
@@ -150,7 +159,8 @@ GROUND_TRUTH = [
         "description": "Villager D1: stand and vote",
     },
     {
-        "role": "Villager", "phase": "mid_game",
+        "role": "Villager",
+        "phase": "mid_game",
         "summary": "需要找狼人，分析票型",
         "tags": ["analyze", "find_wolf", "vote_pattern"],
         "expected_keywords": ["找狼", "票型", "冲锋狼", "倒钩狼", "团队"],
@@ -167,9 +177,9 @@ def compute_precision_at_k(retrieved: list[dict], expected: list[str], k: int) -
     top_k = retrieved[:k]
     hits = 0
     for item in top_k:
-        text = (item.get("recommendation", "") + " " +
-                item.get("situation_pattern", "") +
-                item.get("rationale", "")).lower()
+        text = (
+            item.get("recommendation", "") + " " + item.get("situation_pattern", "") + item.get("rationale", "")
+        ).lower()
         if any(kw.lower() in text for kw in expected):
             hits += 1
     return hits / min(k, len(top_k))
@@ -180,10 +190,7 @@ def compute_recall_at_k(retrieved: list[dict], expected: list[str], k: int) -> f
     if not retrieved or not expected or k <= 0:
         return 0.0
     top_k = retrieved[:k]
-    all_text = " ".join(
-        item.get("recommendation", "") + item.get("rationale", "")
-        for item in top_k
-    ).lower()
+    all_text = " ".join(item.get("recommendation", "") + item.get("rationale", "") for item in top_k).lower()
     matched = sum(1 for kw in expected if kw.lower() in all_text)
     return matched / len(expected)
 
@@ -280,7 +287,9 @@ def run_evaluation(verbose: bool = False) -> dict[str, Any]:
 
         if verbose:
             status = "✓" if p1 > 0 else "✗"
-            print(f"  {status} {test['description']}: P@1={p1:.0%} P@3={p3:.0%} R@3={r3:.0%} MRR={mrr:.2f} NDCG={ndcg:.2f}")
+            print(
+                f"  {status} {test['description']}: P@1={p1:.0%} P@3={p3:.0%} R@3={r3:.0%} MRR={mrr:.2f} NDCG={ndcg:.2f}"
+            )
             if forbidden_hits:
                 print(f"    ⚠ Forbidden keywords found: {forbidden_hits}")
             if verbose and p1 == 0:
@@ -328,12 +337,13 @@ def _compute_summary(results, per_role):
 
 def main() -> int:
     import argparse
+
     ap = argparse.ArgumentParser()
     ap.add_argument("--verbose", "-v", action="store_true")
     ap.add_argument("--output", default=None, help="Save JSON report")
     args = ap.parse_args()
 
-    print(f"=== Strategy Retrieval Precision Evaluation ===\n")
+    print("=== Strategy Retrieval Precision Evaluation ===\n")
     print(f"Test queries: {len(GROUND_TRUTH)}")
     print(f"Roles: {sorted(set(t['role'] for t in GROUND_TRUTH))}")
     print()
@@ -342,18 +352,18 @@ def main() -> int:
 
     # Print summary
     s = report["summary"]
-    print(f"\n=== Overall Metrics ===")
+    print("\n=== Overall Metrics ===")
     print(f"{'Metric':<16s} {'Mean':>8s} {'Median':>8s} {'Min':>8s} {'Max':>8s}")
     for m, vals in s["overall"].items():
         print(f"{m:<16s} {vals['mean']:>8.3f} {vals['median']:>8.3f} {vals['min']:>8.3f} {vals['max']:>8.3f}")
 
-    print(f"\n=== Per-Role Precision@1 ===")
+    print("\n=== Per-Role Precision@1 ===")
     for role in sorted(s["per_role"]):
         p1 = s["per_role"][role].get("precision@1", 0)
         bar = "█" * int(p1 * 20)
         print(f"  {role:<10s}: {p1:.0%} {bar}")
 
-    print(f"\n=== Per-Role MRR ===")
+    print("\n=== Per-Role MRR ===")
     for role in sorted(s["per_role"]):
         mrr = s["per_role"][role].get("mrr", 0)
         bar = "█" * int(mrr * 20)

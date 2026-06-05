@@ -46,7 +46,9 @@ def test_create_game_with_wolfcha_10p_pack() -> None:
     response = client.post("/api/games?seed=13&agent_type=llm&player_count=10")
     assert response.status_code == 200
     data = response.json()
-    roles = {player.get("role") for player in client.get(f"/api/games/{data['id']}?show_private=true").json()["players"]}
+    roles = {
+        player.get("role") for player in client.get(f"/api/games/{data['id']}?show_private=true").json()["players"]
+    }
     assert len(data["players"]) == 10
     assert "WhiteWolfKing" in roles
     assert "Guard" in roles
@@ -151,9 +153,16 @@ def test_runtime_metrics_and_aggregate_endpoints() -> None:
     assert body["status"] == "finished"
     # Stable contract: local fake LLM still exposes the same runtime fields.
     for key in (
-        "decision_count", "valid_decision_count", "invalid_decision_count",
-        "validity_rate", "llm_call_count", "latency_ms", "tokens",
-        "speech", "by_role", "by_player",
+        "decision_count",
+        "valid_decision_count",
+        "invalid_decision_count",
+        "validity_rate",
+        "llm_call_count",
+        "latency_ms",
+        "tokens",
+        "speech",
+        "by_role",
+        "by_player",
     ):
         assert key in body, key
     for stat_key in ("count", "min", "max", "avg", "p50", "p95", "sum"):
@@ -173,8 +182,14 @@ def test_runtime_metrics_and_aggregate_endpoints() -> None:
     assert isinstance(games["winners"], dict)
     runtime_block = payload["runtime"]
     for key in (
-        "decision_count", "llm_call_count", "fallback_count", "fallback_ratio",
-        "retrieval_used_count", "retrieval_used_rate", "latency_ms", "tokens",
+        "decision_count",
+        "llm_call_count",
+        "fallback_count",
+        "fallback_ratio",
+        "retrieval_used_count",
+        "retrieval_used_rate",
+        "latency_ms",
+        "tokens",
         "speech_char_len",
     ):
         assert key in runtime_block, key

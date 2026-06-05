@@ -16,13 +16,20 @@ from __future__ import annotations
 import json
 import logging
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
 
-from langchain_core.messages import AIMessage, BaseMessage
-from langchain_core.runnables import Runnable, RunnableLambda
+from langchain_core.messages import AIMessage
+from langchain_core.messages import BaseMessage
+from langchain_core.runnables import Runnable
 
 from backend.agents.cognitive.agent import CognitiveAgent
-from backend.agents.cognitive.profiles import Profile, get_profile, PersonaTraits, MindTraits
+from backend.agents.cognitive.profiles import MindTraits
+from backend.agents.cognitive.profiles import PersonaTraits
+from backend.agents.cognitive.profiles import Profile
+from backend.agents.cognitive.profiles import get_profile
 
 logger = logging.getLogger(__name__)
 
@@ -65,19 +72,18 @@ def create_cognitive_agent(
     if llm is None:
         if llm_provider:
             from backend.llm import create_client
+
             client = create_client(provider=llm_provider, model=llm_model or None)
             client.timeout = float(os.getenv("LLM_TIMEOUT_SECONDS", "12"))
             llm = create_llm_from_client(client)
         else:
-            raise ValueError(
-                "create_cognitive_agent: must provide either llm (Runnable) "
-                "or llm_provider (string)"
-            )
+            raise ValueError("create_cognitive_agent: must provide either llm (Runnable) or llm_provider (string)")
 
     # Load profile from DB if not provided
     if profile is None:
         try:
             from backend.agents.cognitive.repository import load_profile_from_db
+
             profile = load_profile_from_db(role, db_conn_str)
         except Exception:
             profile = get_profile(role)
@@ -119,7 +125,7 @@ class _ToolCallingRunnable(Runnable):
     def model(self) -> str:
         return str(getattr(self._client, "model", "") or "")
 
-    def bind_tools(self, tool_schemas: List[Dict]) -> "_ToolCallingRunnable":
+    def bind_tools(self, tool_schemas: List[Dict]) -> _ToolCallingRunnable:
         """Return a new Runnable with the given tools bound for function calling."""
         return _ToolCallingRunnable(self._client, tool_schemas)
 
@@ -135,25 +141,27 @@ class _ToolCallingRunnable(Runnable):
             role = _msg_role(msg)
             entry: Dict[str, Any] = {"role": role, "content": _msg_content(msg)}
             # Tool messages must include tool_call_id
-            if role == "tool" and hasattr(msg, 'tool_call_id'):
+            if role == "tool" and hasattr(msg, "tool_call_id"):
                 entry["tool_call_id"] = msg.tool_call_id
             # AIMessage may carry tool_calls from previous turns.
             # LangChain stores {id, name, args} — API expects
             # {id, type, function: {name, arguments}}.
-            if role == "assistant" and hasattr(msg, 'tool_calls') and msg.tool_calls:
+            if role == "assistant" and hasattr(msg, "tool_calls") and msg.tool_calls:
                 api_tool_calls = []
                 for tc in msg.tool_calls:
                     fn_args = tc.get("args", {})
                     if not isinstance(fn_args, str):
                         fn_args = json.dumps(fn_args, ensure_ascii=False)
-                    api_tool_calls.append({
-                        "id": tc.get("id", ""),
-                        "type": "function",
-                        "function": {
-                            "name": tc.get("name", ""),
-                            "arguments": fn_args,
-                        },
-                    })
+                    api_tool_calls.append(
+                        {
+                            "id": tc.get("id", ""),
+                            "type": "function",
+                            "function": {
+                                "name": tc.get("name", ""),
+                                "arguments": fn_args,
+                            },
+                        }
+                    )
                 entry["tool_calls"] = api_tool_calls
             api_messages.append(entry)
 
@@ -192,11 +200,13 @@ class _ToolCallingRunnable(Runnable):
                         fn_args = json.loads(fn_args)
                     except json.JSONDecodeError:
                         fn_args = {}
-                tool_calls.append({
-                    "id": tc_id,
-                    "name": fn_name,
-                    "args": fn_args,
-                })
+                tool_calls.append(
+                    {
+                        "id": tc_id,
+                        "name": fn_name,
+                        "args": fn_args,
+                    }
+                )
             if tool_calls:
                 logger.debug(
                     f"Native function calling: {len(tool_calls)} tool call(s) — "
@@ -216,7 +226,7 @@ def _msg_role(msg: BaseMessage) -> str:
 
 def _msg_content(msg: BaseMessage) -> str:
     """Extract content from a LangChain message, including tool_call_id for ToolMessages."""
-    content = msg.content if hasattr(msg, 'content') else str(msg)
+    content = msg.content if hasattr(msg, "content") else str(msg)
     if isinstance(content, list):
         # Handle multimodal content lists
         text_parts = [p.get("text", "") for p in content if isinstance(p, dict) and p.get("type") == "text"]
@@ -266,12 +276,17 @@ def create_cognitive_agent_with_character(
         p = character.persona
         m = character.mind
         profile.persona = PersonaTraits(
-            name=p.name, mbti=p.mbti, gender=p.gender, age=p.age,
-            basic_info=p.basic_info, style_label=p.style_label,
+            name=p.name,
+            mbti=p.mbti,
+            gender=p.gender,
+            age=p.age,
+            basic_info=p.basic_info,
+            style_label=p.style_label,
             vocabulary_style=p.vocabulary_style,
             speech_length_habit=p.speech_length_habit,
             reasoning_style=p.reasoning_style,
-            social_habit=p.social_habit, humor_style=p.humor_style,
+            social_habit=p.social_habit,
+            humor_style=p.humor_style,
             pressure_style=p.pressure_style,
             uncertainty_style=p.uncertainty_style,
             wolf_deception_style="",
@@ -280,15 +295,21 @@ def create_cognitive_agent_with_character(
             trigger_topics=list(p.trigger_topics),
         )
         profile.mind = MindTraits(
-            courage=m.courage, memory_bias=m.memory_bias,
+            courage=m.courage,
+            memory_bias=m.memory_bias,
             suspicion_threshold=m.suspicion_threshold,
             self_protection=m.self_protection,
-            logic_depth=m.logic_depth, table_presence=m.table_presence,
+            logic_depth=m.logic_depth,
+            table_presence=m.table_presence,
         )
 
     return CognitiveAgent(
-        player_id=player_id, role=role, llm=llm,
-        player_name=player_name, player_seat=player_seat,
-        profile=profile, strategy_bias=strategy_bias,
+        player_id=player_id,
+        role=role,
+        llm=llm,
+        player_name=player_name,
+        player_seat=player_seat,
+        profile=profile,
+        strategy_bias=strategy_bias,
         retrieval_policy=retrieval_policy,
     )

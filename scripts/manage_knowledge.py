@@ -24,7 +24,9 @@ from __future__ import annotations
 import argparse
 import os
 import sys
-from datetime import datetime, timezone, timedelta
+from datetime import datetime
+from datetime import timedelta
+from datetime import timezone
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
@@ -32,31 +34,32 @@ sys.path.insert(0, ROOT)
 
 def _get_db():
     """Get database session."""
-    from backend.db.database import SessionLocal, init_db
+    from backend.db.database import SessionLocal
+    from backend.db.database import init_db
+
     init_db()
     return SessionLocal()
 
 
 def cmd_dream_job(args):
     """Run Dream Job on published reviews, optionally filtered by persona_scope."""
-    from backend.db.persist import run_dream_job
     from backend.db.models import PublishedReview
+    from backend.db.persist import run_dream_job
 
     db = _get_db()
     try:
-        query = db.query(PublishedReview).filter(
-            PublishedReview.publish_allowed.is_(True)
-        )
+        query = db.query(PublishedReview).filter(PublishedReview.publish_allowed.is_(True))
         if args.persona:
             # Filter reviews where at least one player has matching persona
             # For simplicity, run on all approved reviews and let the
             # persona-aware scoring handle prioritization
             pass
 
-        rows = query.order_by(
-            PublishedReview.published_at.desc().nullslast(),
-            PublishedReview.created_at.desc()
-        ).limit(args.limit).all()
+        rows = (
+            query.order_by(PublishedReview.published_at.desc().nullslast(), PublishedReview.created_at.desc())
+            .limit(args.limit)
+            .all()
+        )
 
         report_ids = [row.id for row in rows]
         if not report_ids:
@@ -69,7 +72,7 @@ def cmd_dream_job(args):
 
         result = run_dream_job(report_ids)
         summary = result.get("summary", {})
-        print(f"\nDream Job complete:")
+        print("\nDream Job complete:")
         print(f"  Knowledge docs: {summary.get('knowledge_docs', 0)}")
         print(f"  Validated patches: {summary.get('validated_patches', 0)}")
         print(f"  Promoted: {summary.get('promoted', 0)}")
@@ -83,17 +86,16 @@ def cmd_dream_job(args):
 
 def cmd_stats(args):
     """Show knowledge base statistics."""
-    from backend.db.models import StrategyKnowledgeDoc
     from sqlalchemy import func as sa_func
+
+    from backend.db.models import StrategyKnowledgeDoc
 
     db = _get_db()
     try:
         query = db.query(StrategyKnowledgeDoc)
 
         if args.persona:
-            query = query.filter(
-                StrategyKnowledgeDoc.persona_scope.like(f"%{args.persona}%")
-            )
+            query = query.filter(StrategyKnowledgeDoc.persona_scope.like(f"%{args.persona}%"))
         if args.role:
             query = query.filter(StrategyKnowledgeDoc.role == args.role)
 
@@ -101,10 +103,7 @@ def cmd_stats(args):
 
         # By status
         status_counts = dict(
-            db.query(
-                StrategyKnowledgeDoc.status,
-                sa_func.count(StrategyKnowledgeDoc.id)
-            )
+            db.query(StrategyKnowledgeDoc.status, sa_func.count(StrategyKnowledgeDoc.id))
             .filter(StrategyKnowledgeDoc.persona_scope.like(f"%{args.persona}%") if args.persona else True)
             .filter(StrategyKnowledgeDoc.role == args.role if args.role else True)
             .group_by(StrategyKnowledgeDoc.status)
@@ -113,10 +112,7 @@ def cmd_stats(args):
 
         # By doc_type
         type_counts = dict(
-            db.query(
-                StrategyKnowledgeDoc.doc_type,
-                sa_func.count(StrategyKnowledgeDoc.id)
-            )
+            db.query(StrategyKnowledgeDoc.doc_type, sa_func.count(StrategyKnowledgeDoc.id))
             .filter(StrategyKnowledgeDoc.persona_scope.like(f"%{args.persona}%") if args.persona else True)
             .filter(StrategyKnowledgeDoc.role == args.role if args.role else True)
             .group_by(StrategyKnowledgeDoc.doc_type)
@@ -124,37 +120,38 @@ def cmd_stats(args):
         )
 
         # Top persona_scopes
-        persona_scopes = db.query(
-            StrategyKnowledgeDoc.persona_scope,
-            sa_func.count(StrategyKnowledgeDoc.id)
-        ).filter(
-            StrategyKnowledgeDoc.persona_scope.isnot(None),
-            StrategyKnowledgeDoc.persona_scope != ""
-        ).group_by(
-            StrategyKnowledgeDoc.persona_scope
-        ).order_by(
-            sa_func.count(StrategyKnowledgeDoc.id).desc()
-        ).limit(10).all()
+        persona_scopes = (
+            db.query(StrategyKnowledgeDoc.persona_scope, sa_func.count(StrategyKnowledgeDoc.id))
+            .filter(StrategyKnowledgeDoc.persona_scope.isnot(None), StrategyKnowledgeDoc.persona_scope != "")
+            .group_by(StrategyKnowledgeDoc.persona_scope)
+            .order_by(sa_func.count(StrategyKnowledgeDoc.id).desc())
+            .limit(10)
+            .all()
+        )
 
         # Quality distribution
-        quality_rows = db.query(StrategyKnowledgeDoc.quality_score).filter(
-            StrategyKnowledgeDoc.status.in_(['active', 'candidate'])
-        ).all()
+        quality_rows = (
+            db.query(StrategyKnowledgeDoc.quality_score)
+            .filter(StrategyKnowledgeDoc.status.in_(["active", "candidate"]))
+            .all()
+        )
         qualities = [q for (q,) in quality_rows if q is not None]
 
-        print(f"\n{'='*60}")
-        print(f"Knowledge Base Stats")
+        print(f"\n{'=' * 60}")
+        print("Knowledge Base Stats")
         if args.persona:
             print(f"  Persona: {args.persona}")
         if args.role:
             print(f"  Role: {args.role}")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
         print(f"  Total docs: {total}")
         print(f"  By status: {status_counts}")
         print(f"  By type: {type_counts}")
         if qualities:
-            print(f"  Quality: min={min(qualities):.2f} avg={sum(qualities)/len(qualities):.2f} max={max(qualities):.2f}")
-        print(f"\n  Top persona scopes:")
+            print(
+                f"  Quality: min={min(qualities):.2f} avg={sum(qualities) / len(qualities):.2f} max={max(qualities):.2f}"
+            )
+        print("\n  Top persona scopes:")
         for scope, count in persona_scopes:
             print(f"    {scope}: {count} docs")
         print()
@@ -172,26 +169,32 @@ def cmd_prune(args):
     db = _get_db()
     try:
         # Find deprecated docs
-        deprecated = db.query(StrategyKnowledgeDoc).filter(
-            StrategyKnowledgeDoc.status == "deprecated"
-        ).all()
+        deprecated = db.query(StrategyKnowledgeDoc).filter(StrategyKnowledgeDoc.status == "deprecated").all()
 
         # Find stale candidate docs (never used, old)
         cutoff = datetime.now(timezone.utc) - timedelta(days=30)
-        stale = db.query(StrategyKnowledgeDoc).filter(
-            StrategyKnowledgeDoc.status == "candidate",
-            StrategyKnowledgeDoc.usage_count == 0,
-            StrategyKnowledgeDoc.updated_at < cutoff,
-        ).all()
+        stale = (
+            db.query(StrategyKnowledgeDoc)
+            .filter(
+                StrategyKnowledgeDoc.status == "candidate",
+                StrategyKnowledgeDoc.usage_count == 0,
+                StrategyKnowledgeDoc.updated_at < cutoff,
+            )
+            .all()
+        )
 
         # Find failed docs (high failure rate, no success)
-        failed = db.query(StrategyKnowledgeDoc).filter(
-            StrategyKnowledgeDoc.status == "candidate",
-            StrategyKnowledgeDoc.failure_count >= 5,
-            StrategyKnowledgeDoc.success_count == 0,
-        ).all()
+        failed = (
+            db.query(StrategyKnowledgeDoc)
+            .filter(
+                StrategyKnowledgeDoc.status == "candidate",
+                StrategyKnowledgeDoc.failure_count >= 5,
+                StrategyKnowledgeDoc.success_count == 0,
+            )
+            .all()
+        )
 
-        print(f"\nPrune candidates:")
+        print("\nPrune candidates:")
         print(f"  Deprecated: {len(deprecated)}")
         print(f"  Stale (>30d unused candidate): {len(stale)}")
         print(f"  Failed (>=5 failures, 0 successes): {len(failed)}")
@@ -228,16 +231,22 @@ def cmd_promote(args):
 
     db = _get_db()
     try:
-        candidates = db.query(StrategyKnowledgeDoc).filter(
-            StrategyKnowledgeDoc.status == "candidate",
-            StrategyKnowledgeDoc.quality_score >= args.min_quality,
-            StrategyKnowledgeDoc.usage_count >= args.min_usage,
-        ).all()
+        candidates = (
+            db.query(StrategyKnowledgeDoc)
+            .filter(
+                StrategyKnowledgeDoc.status == "candidate",
+                StrategyKnowledgeDoc.quality_score >= args.min_quality,
+                StrategyKnowledgeDoc.usage_count >= args.min_usage,
+            )
+            .all()
+        )
 
         if args.dry_run:
             print(f"\n[Dry run] Would promote {len(candidates)} docs:")
             for doc in candidates[:10]:
-                print(f"  - {doc.id}: q={doc.quality_score:.2f} usage={doc.usage_count} {doc.situation_pattern[:60]}...")
+                print(
+                    f"  - {doc.id}: q={doc.quality_score:.2f} usage={doc.usage_count} {doc.situation_pattern[:60]}..."
+                )
             return
 
         for doc in candidates:
@@ -252,12 +261,16 @@ def _print_persona_knowledge(db, persona_filter: str):
     """Print persona-scoped knowledge after dream job."""
     from backend.db.models import StrategyKnowledgeDoc
 
-    docs = db.query(StrategyKnowledgeDoc).filter(
-        StrategyKnowledgeDoc.persona_scope.like(f"%{persona_filter}%"),
-        StrategyKnowledgeDoc.status.in_(["active", "candidate"])
-    ).order_by(
-        StrategyKnowledgeDoc.quality_score.desc()
-    ).limit(10).all()
+    docs = (
+        db.query(StrategyKnowledgeDoc)
+        .filter(
+            StrategyKnowledgeDoc.persona_scope.like(f"%{persona_filter}%"),
+            StrategyKnowledgeDoc.status.in_(["active", "candidate"]),
+        )
+        .order_by(StrategyKnowledgeDoc.quality_score.desc())
+        .limit(10)
+        .all()
+    )
 
     if docs:
         print(f"\n  Recent persona knowledge ({persona_filter}):")
@@ -269,20 +282,18 @@ def _print_recent_docs(db, args):
     """Print recent knowledge docs."""
     from backend.db.models import StrategyKnowledgeDoc
 
-    docs = db.query(StrategyKnowledgeDoc).order_by(
-        StrategyKnowledgeDoc.updated_at.desc()
-    ).limit(20).all()
+    docs = db.query(StrategyKnowledgeDoc).order_by(StrategyKnowledgeDoc.updated_at.desc()).limit(20).all()
 
-    print(f"\n  Recent docs:")
+    print("\n  Recent docs:")
     for doc in docs:
         persona = doc.persona_scope or "global"
-        print(f"    [{doc.status}][{doc.doc_type}][{doc.role}][{persona}] q={doc.quality_score:.2f} u={doc.usage_count} {doc.situation_pattern[:80]}")
+        print(
+            f"    [{doc.status}][{doc.doc_type}][{doc.role}][{persona}] q={doc.quality_score:.2f} u={doc.usage_count} {doc.situation_pattern[:80]}"
+        )
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Personal knowledge base management (MBTI-scoped strategy knowledge)"
-    )
+    parser = argparse.ArgumentParser(description="Personal knowledge base management (MBTI-scoped strategy knowledge)")
     sub = parser.add_subparsers(dest="command", help="Command")
 
     # dream-job

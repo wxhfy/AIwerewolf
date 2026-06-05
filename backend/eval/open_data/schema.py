@@ -11,14 +11,15 @@ All schemas enforce:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from dataclasses import field
 from enum import Enum
 from typing import Any
-
 
 # ---------------------------------------------------------------------------
 # Enums
 # ---------------------------------------------------------------------------
+
 
 class WeakLabelSource(str, Enum):
     OPEN_DATASET_ANNOTATION = "open_dataset_annotation"
@@ -43,9 +44,11 @@ class OpenDataLicense(str, Enum):
 # Weak Label
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class WeakLabel:
     """A single weak label with full provenance."""
+
     label_name: str
     label_value: float | str | None
     source: WeakLabelSource
@@ -58,9 +61,11 @@ class WeakLabel:
 # Canonical Game Event
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class CanonicalGameEvent:
     """A single game event normalized from an open dataset."""
+
     event_id: str
     source: str
     game_id: str
@@ -78,9 +83,11 @@ class CanonicalGameEvent:
 # Visibility State
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class VisibilityState:
     """What was visible to a player at decision time."""
+
     visible_public_context: dict[str, Any] = field(default_factory=dict)
     visible_private_context: dict[str, Any] = field(default_factory=dict)
     unavailable_future_context: dict[str, Any] = field(default_factory=dict)
@@ -91,9 +98,11 @@ class VisibilityState:
 # Open Game Log
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class OpenGameLog:
     """A complete game reconstructed from an open dataset."""
+
     source: str
     license: OpenDataLicense = OpenDataLicense.VERIFY_BEFORE_USE
     rule_variant: str = "unknown"
@@ -109,9 +118,11 @@ class OpenGameLog:
 # Speech Quality Sample
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class SpeechQualitySample:
     """Canonical speech quality sample (§3.1)."""
+
     sample_id: str
     source: str
     license: OpenDataLicense = OpenDataLicense.VERIFY_BEFORE_USE
@@ -162,9 +173,11 @@ class SpeechQualitySample:
 # Vote Decision Sample
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class VoteDecisionSample:
     """Canonical vote decision sample (§3.2)."""
+
     sample_id: str
     source: str
     license: OpenDataLicense = OpenDataLicense.VERIFY_BEFORE_USE
@@ -213,9 +226,11 @@ class VoteDecisionSample:
 # Counterfactual Pairwise Sample
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class CounterfactualPairwiseSample:
     """Canonical pairwise preference sample (§3.3)."""
+
     pair_id: str
     source: str
     license: OpenDataLicense = OpenDataLicense.VERIFY_BEFORE_USE
@@ -256,9 +271,11 @@ class CounterfactualPairwiseSample:
 # Value Impact Sample
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class ValueImpactSample:
     """Canonical value impact sample (§3.4)."""
+
     sample_id: str
     source: str
     license: OpenDataLicense = OpenDataLicense.VERIFY_BEFORE_USE
@@ -286,8 +303,12 @@ class ValueImpactSample:
             "candidate_action": self.candidate_action,
             "future_outcome": self.future_outcome,
             "weak_labels": {
-                k: {"label_name": v.label_name, "label_value": v.label_value,
-                    "source": v.source.value, "confidence": v.confidence}
+                k: {
+                    "label_name": v.label_name,
+                    "label_value": v.label_value,
+                    "source": v.source.value,
+                    "confidence": v.confidence,
+                }
                 for k, v in self.weak_labels.items()
             },
             "weak_label_source": self.weak_label_source,
@@ -299,9 +320,11 @@ class ValueImpactSample:
 # Role Action Sample
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class RoleActionSample:
     """Canonical role/action sample (§3.5)."""
+
     sample_id: str
     source: str
     role: str = "Unknown"
@@ -324,8 +347,12 @@ class RoleActionSample:
             "candidate_actions": self.candidate_actions,
             "features": self.features,
             "weak_labels": {
-                k: {"label_name": v.label_name, "label_value": v.label_value,
-                    "source": v.source.value, "confidence": v.confidence}
+                k: {
+                    "label_name": v.label_name,
+                    "label_value": v.label_value,
+                    "source": v.source.value,
+                    "confidence": v.confidence,
+                }
                 for k, v in self.weak_labels.items()
             },
             "human_label": self.human_label,

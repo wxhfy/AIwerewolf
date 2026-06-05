@@ -31,9 +31,11 @@ if str(ROOT) not in sys.path:
 DB_URL = "postgresql://werewolf:wolf_secret_2026@127.0.0.1:5433/werewolf"
 os.environ.setdefault("DATABASE_URL", DB_URL)
 
-from backend.llm import create_client, load_env_file                     # noqa: E402
-from backend.db.database import SessionLocal, init_db                    # noqa: E402
-from backend.db.models import StrategyKnowledgeDoc                      # noqa: E402
+from backend.db.database import SessionLocal  # noqa: E402
+from backend.db.database import init_db  # noqa: E402
+from backend.db.models import StrategyKnowledgeDoc  # noqa: E402
+from backend.llm import create_client  # noqa: E402
+from backend.llm import load_env_file  # noqa: E402
 
 load_env_file()
 
@@ -45,8 +47,12 @@ logging.basicConfig(
 logger = logging.getLogger("tieba_crawl")
 
 ROLE_CN: dict[str, str] = {
-    "Seer": "预言家", "Witch": "女巫", "Hunter": "猎人",
-    "Guard": "守卫", "Villager": "村民", "Werewolf": "狼人",
+    "Seer": "预言家",
+    "Witch": "女巫",
+    "Hunter": "猎人",
+    "Guard": "守卫",
+    "Villager": "村民",
+    "Werewolf": "狼人",
     "WhiteWolfKing": "白狼王",
 }
 
@@ -108,7 +114,7 @@ def parse_response(raw: str) -> list[dict[str, Any]]:
         text = text[start:]
         text += "]" * (text.count("[") - text.count("]"))
     else:
-        text = text[start:end + 1]
+        text = text[start : end + 1]
     text = re.sub(r",\s*([}\]])", r"\1", text)
     try:
         parsed = json.loads(text)
@@ -142,17 +148,33 @@ def validate_strategy(item: dict, role: str) -> dict | None:
     phase = str(item.get("phase", "DAY_SPEECH"))
     valid = {"NIGHT_ACTION", "DAY_SPEECH", "DAY_VOTE"}
     if phase not in valid:
-        pm = {"night": "NIGHT_ACTION", "night_action": "NIGHT_ACTION",
-              "day": "DAY_SPEECH", "speech": "DAY_SPEECH",
-              "vote": "DAY_VOTE", "day_vote": "DAY_VOTE"}
+        pm = {
+            "night": "NIGHT_ACTION",
+            "night_action": "NIGHT_ACTION",
+            "day": "DAY_SPEECH",
+            "speech": "DAY_SPEECH",
+            "vote": "DAY_VOTE",
+            "day_vote": "DAY_VOTE",
+        }
         phase = pm.get(phase.lower(), "DAY_SPEECH")
 
     nr = str(item.get("role", role)).strip()
-    c2e = {"预言家": "Seer", "女巫": "Witch", "猎人": "Hunter",
-           "守卫": "Guard", "村民": "Villager", "狼人": "Werewolf",
-           "白狼王": "WhiteWolfKing", "seer": "Seer", "witch": "Witch",
-           "hunter": "Hunter", "guard": "Guard", "villager": "Villager",
-           "werewolf": "Werewolf", "whitewolfking": "WhiteWolfKing"}
+    c2e = {
+        "预言家": "Seer",
+        "女巫": "Witch",
+        "猎人": "Hunter",
+        "守卫": "Guard",
+        "村民": "Villager",
+        "狼人": "Werewolf",
+        "白狼王": "WhiteWolfKing",
+        "seer": "Seer",
+        "witch": "Witch",
+        "hunter": "Hunter",
+        "guard": "Guard",
+        "villager": "Villager",
+        "werewolf": "Werewolf",
+        "whitewolfking": "WhiteWolfKing",
+    }
     nr = c2e.get(nr.lower(), nr)
 
     trigger = item.get("trigger_conditions", [])
@@ -182,8 +204,7 @@ def validate_strategy(item: dict, role: str) -> dict | None:
 
 def generate_for_role(client, role: str, count: int, db, dry_run: bool) -> int:
     role_cn = ROLE_CN.get(role, role)
-    strategy_types = ["opening", "mid_game", "endgame",
-                      "identity_concealment", "info_analysis", "voting_strategy"]
+    strategy_types = ["opening", "mid_game", "endgame", "identity_concealment", "info_analysis", "voting_strategy"]
 
     total = 0
     batches = max(1, count // BATCH_SIZE)
@@ -192,20 +213,24 @@ def generate_for_role(client, role: str, count: int, db, dry_run: bool) -> int:
         ts = [strategy_types[(bi + i) % len(strategy_types)] for i in range(3)]
 
         prompt = TIEBA_PROMPT.format(
-            role=role, role_cn=role_cn, count=bc, focus=", ".join(ts),
+            role=role,
+            role_cn=role_cn,
+            count=bc,
+            focus=", ".join(ts),
         )
 
         for attempt in range(3):
             try:
                 resp = client.chat_sync(
                     messages=[{"role": "user", "content": prompt}],
-                    max_tokens=4096, temperature=0.75,
+                    max_tokens=4096,
+                    temperature=0.75,
                 )
                 raw = client.parse_response(resp).strip()
                 items = parse_response(raw)
                 if not items:
                     if attempt < 2:
-                        time.sleep(2 ** attempt * 2)
+                        time.sleep(2**attempt * 2)
                         continue
                     break
 
@@ -216,34 +241,38 @@ def generate_for_role(client, role: str, count: int, db, dry_run: bool) -> int:
                         continue
                     valid_count += 1
                     if db and not dry_run:
-                        db.add(StrategyKnowledgeDoc(
-                            id=v["id"], doc_type=v["doc_type"], role=v["role"],
-                            phase=v["phase"],
-                            situation_pattern=v["situation_pattern"],
-                            trigger_conditions=v["trigger_conditions"],
-                            recommended_action=v["recommended_action"],
-                            avoid_action=v["avoid_action"],
-                            rationale=v["rationale"],
-                            evidence_summary=v["evidence_summary"],
-                            quality_score=v["quality_score"],
-                            confidence=v["confidence"],
-                            status=v["status"], tags=v["tags"],
-                            confidence_tier="L3_strategic",
-                            visibility_scope="public",
-                        ))
+                        db.add(
+                            StrategyKnowledgeDoc(
+                                id=v["id"],
+                                doc_type=v["doc_type"],
+                                role=v["role"],
+                                phase=v["phase"],
+                                situation_pattern=v["situation_pattern"],
+                                trigger_conditions=v["trigger_conditions"],
+                                recommended_action=v["recommended_action"],
+                                avoid_action=v["avoid_action"],
+                                rationale=v["rationale"],
+                                evidence_summary=v["evidence_summary"],
+                                quality_score=v["quality_score"],
+                                confidence=v["confidence"],
+                                status=v["status"],
+                                tags=v["tags"],
+                                confidence_tier="L3_strategic",
+                                visibility_scope="public",
+                            )
+                        )
                 if db and not dry_run and valid_count > 0:
                     try:
                         db.commit()
                     except Exception:
                         db.rollback()
                 total += valid_count
-                logger.info("  [batch %d/%d] %d valid, total=%d",
-                            bi + 1, batches, valid_count, total)
+                logger.info("  [batch %d/%d] %d valid, total=%d", bi + 1, batches, valid_count, total)
                 break
             except Exception as e:
                 logger.warning("  LLM error: %s", e)
                 if attempt < 2:
-                    time.sleep(2 ** attempt * 3)
+                    time.sleep(2**attempt * 3)
         if total < count and bi < batches - 1:
             time.sleep(random.uniform(1.0, 2.0))
     return total
@@ -268,14 +297,14 @@ def main() -> int:
         return 0
 
     client = create_client()
-    logger.info("LLM client: provider=%s model=%s",
-                getattr(client, "provider", "?"), getattr(client, "model", "?"))
+    logger.info("LLM client: provider=%s model=%s", getattr(client, "provider", "?"), getattr(client, "model", "?"))
 
     init_db()
     db = SessionLocal()
 
     try:
         from sqlalchemy import text
+
         db.execute(text("SELECT 1"))
 
         grand_total = 0

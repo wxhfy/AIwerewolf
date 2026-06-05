@@ -9,19 +9,15 @@ Validates:
 
 from __future__ import annotations
 
-import pytest
-
 from backend.agents.cognitive.memory import Memory
-from backend.agents.cognitive.planner import Planner, StrategicIntent
-from backend.agents.cognitive.social_model import (
-    SocialModel, TrustEdge, DeceptionSignal,
-)
-from backend.agents.cognitive.humanization import HumanizationProfile
-
+from backend.agents.cognitive.planner import Planner
+from backend.agents.cognitive.social_model import DeceptionSignal
+from backend.agents.cognitive.social_model import SocialModel
 
 # ============================================================
 # SocialModel Tests
 # ============================================================
+
 
 class TestSocialModel:
     """Test trust networks and deception detection."""
@@ -54,24 +50,38 @@ class TestSocialModel:
 
     def test_deception_signal_basic(self):
         sm = SocialModel()
-        sm.add_deception_signal(DeceptionSignal(
-            player_id="Bob", signal_type="contradiction",
-            description="冲突声称",
-            severity=0.6, day=1,
-        ))
+        sm.add_deception_signal(
+            DeceptionSignal(
+                player_id="Bob",
+                signal_type="contradiction",
+                description="冲突声称",
+                severity=0.6,
+                day=1,
+            )
+        )
         assert sm.get_deception_score("Bob") == 0.6
         assert sm.get_deception_score("Alice") == 0.0
 
     def test_deception_signal_aggregation(self):
         sm = SocialModel()
-        sm.add_deception_signal(DeceptionSignal(
-            player_id="Bob", signal_type="contradiction",
-            description="a", severity=0.6, day=1,
-        ))
-        sm.add_deception_signal(DeceptionSignal(
-            player_id="Bob", signal_type="speech_vote_mismatch",
-            description="b", severity=0.8, day=2,
-        ))
+        sm.add_deception_signal(
+            DeceptionSignal(
+                player_id="Bob",
+                signal_type="contradiction",
+                description="a",
+                severity=0.6,
+                day=1,
+            )
+        )
+        sm.add_deception_signal(
+            DeceptionSignal(
+                player_id="Bob",
+                signal_type="speech_vote_mismatch",
+                description="b",
+                severity=0.8,
+                day=2,
+            )
+        )
         # Average severity, capped at 1.0
         score = sm.get_deception_score("Bob")
         assert 0.6 < score < 0.8  # (0.6 + 0.8) / 2 = 0.7
@@ -99,10 +109,15 @@ class TestSocialModel:
         sm = SocialModel()
         sm.update_trust("Alice", "Bob", 0.5, "reason", day=1)
         sm.update_trust("Alice", "Charlie", -0.5, "reason", day=1)
-        sm.add_deception_signal(DeceptionSignal(
-            player_id="David", signal_type="contradiction",
-            description="冲突", severity=0.5, day=1,
-        ))
+        sm.add_deception_signal(
+            DeceptionSignal(
+                player_id="David",
+                signal_type="contradiction",
+                description="冲突",
+                severity=0.5,
+                day=1,
+            )
+        )
         result = sm.format_for_prompt("Alice")
         assert "Bob" in result or "信任" in result or "怀疑" in result
 
@@ -121,6 +136,7 @@ class TestSocialModel:
 # Planner Tests
 # ============================================================
 
+
 class TestPlanner:
     """Test strategic intent lifecycle."""
 
@@ -129,7 +145,8 @@ class TestPlanner:
         intent = p.set_intent(
             objective="bluff_claim_seer",
             target_phase="DAY_SPEECH",
-            day=1, phase="NIGHT_WOLF_ACTION",
+            day=1,
+            phase="NIGHT_WOLF_ACTION",
             conditions=["no_other_seer_claim"],
             fallback="continue_deep_cover",
         )
@@ -187,7 +204,8 @@ class TestPlanner:
         p.set_intent(
             objective="bluff_seer",
             target_phase="DAY_SPEECH",
-            day=1, phase="NIGHT_START",
+            day=1,
+            phase="NIGHT_START",
             conditions=["alive"],
             fallback="play_normally",
         )
@@ -208,8 +226,7 @@ class TestPlanner:
 
     def test_check_and_resolve_conditions_failed(self):
         p = Planner()
-        p.set_intent("fake_claim", "DAY_SPEECH", day=1, phase="NIGHT_START",
-                      conditions=["no_other_seer"])
+        p.set_intent("fake_claim", "DAY_SPEECH", day=1, phase="NIGHT_START", conditions=["no_other_seer"])
         result = p.check_and_resolve(2, "DAY_SPEECH", conditions_met=False)
         assert result is None
 
@@ -227,29 +244,39 @@ class TestPlanner:
 # End-to-End Integration Test (simulated game)
 # ============================================================
 
+
 class TestSocialPlannerIntegration:
     """Simulate a multi-turn game and verify social model + planner state."""
 
     def _simulate_social_feed_cycle(
-        self, sm: SocialModel, pl: Planner,
-        day: int, phase: str,
+        self,
+        sm: SocialModel,
+        pl: Planner,
+        day: int,
+        phase: str,
     ) -> None:
         """Simulate one observation→decision cycle with social feeds."""
         # Feed 1: contradictions from belief tracker
         if day == 2 and phase == "DAY_SPEECH":
             # Simulate: two players both claiming Seer
-            sm.add_deception_signal(DeceptionSignal(
-                player_id="Player3",
-                signal_type="role_contradiction",
-                description="与Player5冲突声称是Seer",
-                severity=0.6, day=day,
-            ))
-            sm.add_deception_signal(DeceptionSignal(
-                player_id="Player5",
-                signal_type="role_contradiction",
-                description="与Player3冲突声称是Seer",
-                severity=0.6, day=day,
-            ))
+            sm.add_deception_signal(
+                DeceptionSignal(
+                    player_id="Player3",
+                    signal_type="role_contradiction",
+                    description="与Player5冲突声称是Seer",
+                    severity=0.6,
+                    day=day,
+                )
+            )
+            sm.add_deception_signal(
+                DeceptionSignal(
+                    player_id="Player5",
+                    signal_type="role_contradiction",
+                    description="与Player3冲突声称是Seer",
+                    severity=0.6,
+                    day=day,
+                )
+            )
 
         # Feed 2: vote alignment
         if phase == "DAY_VOTE":
@@ -268,7 +295,8 @@ class TestSocialPlannerIntegration:
         pl.set_intent(
             objective="fake_claim_seer_day2",
             target_phase="DAY_SPEECH",
-            day=1, phase="NIGHT_WOLF_ACTION",
+            day=1,
+            phase="NIGHT_WOLF_ACTION",
             conditions=["no_other_seer_claim"],
             fallback="play_as_villager",
         )

@@ -7,7 +7,8 @@ reasoning, and decision-making style across all game phases.
 from __future__ import annotations
 
 import random
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from dataclasses import field
 
 from backend.engine.models import Role
 
@@ -981,20 +982,76 @@ def build_system_prompt(persona: Persona) -> str:
     if persona.werewolf_experience:
         bullets.append(f"狼人杀经验：{persona.werewolf_experience}。")
     bullets.append(
-        "本局规则：严格保持该角色的语气与说话方式。你是玩家，不是主持人或解说。"
-        "从不暴露非己方角色的隐藏信息。"
+        "本局规则：严格保持该角色的语气与说话方式。你是玩家，不是主持人或解说。从不暴露非己方角色的隐藏信息。"
     )
     return "\n".join(f"- {line}" for line in bullets)
 
+
 MIND_POOL: list[dict] = [
-    {"courage": "bold", "memory_bias": "first_impression", "suspicion_threshold": "low", "self_protection": "aggressive", "logic_depth": "shallow", "table_presence": "dominant"},
-    {"courage": "calculated", "memory_bias": "comprehensive", "suspicion_threshold": "medium", "self_protection": "passive", "logic_depth": "deep", "table_presence": "balanced"},
-    {"courage": "cautious", "memory_bias": "recent", "suspicion_threshold": "high", "self_protection": "sacrificial", "logic_depth": "moderate", "table_presence": "quiet"},
-    {"courage": "calculated", "memory_bias": "selective", "suspicion_threshold": "medium", "self_protection": "aggressive", "logic_depth": "deep", "table_presence": "balanced"},
-    {"courage": "bold", "memory_bias": "recent", "suspicion_threshold": "low", "self_protection": "passive", "logic_depth": "moderate", "table_presence": "dominant"},
-    {"courage": "cautious", "memory_bias": "selective", "suspicion_threshold": "medium", "self_protection": "aggressive", "logic_depth": "deep", "table_presence": "quiet"},
-    {"courage": "calculated", "memory_bias": "first_impression", "suspicion_threshold": "low", "self_protection": "sacrificial", "logic_depth": "moderate", "table_presence": "balanced"},
-    {"courage": "bold", "memory_bias": "comprehensive", "suspicion_threshold": "medium", "self_protection": "passive", "logic_depth": "deep", "table_presence": "quiet"},
+    {
+        "courage": "bold",
+        "memory_bias": "first_impression",
+        "suspicion_threshold": "low",
+        "self_protection": "aggressive",
+        "logic_depth": "shallow",
+        "table_presence": "dominant",
+    },
+    {
+        "courage": "calculated",
+        "memory_bias": "comprehensive",
+        "suspicion_threshold": "medium",
+        "self_protection": "passive",
+        "logic_depth": "deep",
+        "table_presence": "balanced",
+    },
+    {
+        "courage": "cautious",
+        "memory_bias": "recent",
+        "suspicion_threshold": "high",
+        "self_protection": "sacrificial",
+        "logic_depth": "moderate",
+        "table_presence": "quiet",
+    },
+    {
+        "courage": "calculated",
+        "memory_bias": "selective",
+        "suspicion_threshold": "medium",
+        "self_protection": "aggressive",
+        "logic_depth": "deep",
+        "table_presence": "balanced",
+    },
+    {
+        "courage": "bold",
+        "memory_bias": "recent",
+        "suspicion_threshold": "low",
+        "self_protection": "passive",
+        "logic_depth": "moderate",
+        "table_presence": "dominant",
+    },
+    {
+        "courage": "cautious",
+        "memory_bias": "selective",
+        "suspicion_threshold": "medium",
+        "self_protection": "aggressive",
+        "logic_depth": "deep",
+        "table_presence": "quiet",
+    },
+    {
+        "courage": "calculated",
+        "memory_bias": "first_impression",
+        "suspicion_threshold": "low",
+        "self_protection": "sacrificial",
+        "logic_depth": "moderate",
+        "table_presence": "balanced",
+    },
+    {
+        "courage": "bold",
+        "memory_bias": "comprehensive",
+        "suspicion_threshold": "medium",
+        "self_protection": "passive",
+        "logic_depth": "deep",
+        "table_presence": "quiet",
+    },
 ]
 
 

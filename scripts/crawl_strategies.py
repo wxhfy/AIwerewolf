@@ -96,8 +96,6 @@ EXTRACTION_PROMPT = """你是一位狼人杀策略分析师。以下是从狼人
 def crawl_articles() -> list[dict[str, Any]]:
     """Crawl werewolf strategy articles using web search results.
     Saves raw HTML/text to data/strategies/raw/ and returns parsed articles."""
-    import urllib.request
-    import urllib.error
 
     raw_dir = DATA_DIR / "raw"
     raw_dir.mkdir(parents=True, exist_ok=True)
@@ -116,15 +114,17 @@ def crawl_articles() -> list[dict[str, Any]]:
                     try:
                         text = _fetch_article(url)
                         if text and len(text) > 200:
-                            articles.append({
-                                "url": url,
-                                "query": query,
-                                "player_count": player_count,
-                                "text": text,
-                                "fetched_at": time.strftime("%Y-%m-%dT%H:%M:%SZ"),
-                            })
+                            articles.append(
+                                {
+                                    "url": url,
+                                    "query": query,
+                                    "player_count": player_count,
+                                    "text": text,
+                                    "fetched_at": time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                                }
+                            )
                             # Save raw
-                            fname = re.sub(r'[^a-zA-Z0-9]', '_', url[:80]) + ".txt"
+                            fname = re.sub(r"[^a-zA-Z0-9]", "_", url[:80]) + ".txt"
                             (raw_dir / fname).write_text(text, encoding="utf-8")
                             print(f"    ✓ {url[:80]}... ({len(text)} chars)")
                     except Exception as e:
@@ -135,9 +135,8 @@ def crawl_articles() -> list[dict[str, Any]]:
     # Save index
     index_path = DATA_DIR / "crawled_articles.json"
     index_path.write_text(
-        json.dumps([{k: v for k, v in a.items() if k != "text"} for a in articles],
-                   ensure_ascii=False, indent=2),
-        encoding="utf-8"
+        json.dumps([{k: v for k, v in a.items() if k != "text"} for a in articles], ensure_ascii=False, indent=2),
+        encoding="utf-8",
     )
     print(f"\n  Total articles: {len(articles)}")
     return articles
@@ -146,15 +145,15 @@ def crawl_articles() -> list[dict[str, Any]]:
 def _search_werewolf_urls(query: str) -> list[str]:
     """Search for werewolf strategy URLs. Tries multiple sources."""
     urls: list[str] = []
-    import urllib.request
     import urllib.parse
+    import urllib.request
 
     # Source 1: DuckDuckGo HTML search (no API key needed)
     try:
         encoded = urllib.parse.quote(query)
         req = urllib.request.Request(
             f"https://html.duckduckgo.com/html/?q={encoded}",
-            headers={"User-Agent": "Mozilla/5.0 (compatible; AIwerewolf-research/1.0)"}
+            headers={"User-Agent": "Mozilla/5.0 (compatible; AIwerewolf-research/1.0)"},
         )
         with urllib.request.urlopen(req, timeout=15) as resp:
             html = resp.read().decode("utf-8", errors="replace")
@@ -162,13 +161,16 @@ def _search_werewolf_urls(query: str) -> list[str]:
             for match in re.finditer(r'class="result__url"[^>]*>([^<]+)<', html):
                 domain = match.group(1).strip()
                 # Prioritize werewolf-specific sites
-                if any(kw in domain for kw in ['langrensha', 'werewolf', '狼人杀', '9game', 'gamersky', 'zhihu', 'tieba', 'baidu']):
+                if any(
+                    kw in domain
+                    for kw in ["langrensha", "werewolf", "狼人杀", "9game", "gamersky", "zhihu", "tieba", "baidu"]
+                ):
                     continue  # These come from result__a tags
             for match in re.finditer(r'class="result__a"[^>]*href="([^"]+)"', html):
                 url = match.group(1)
                 if url.startswith("//"):
                     url = "https:" + url
-                if any(kw in url for kw in ['langrensha.net', 'langrensha', 'werewolf', '狼人杀']):
+                if any(kw in url for kw in ["langrensha.net", "langrensha", "werewolf", "狼人杀"]):
                     if url not in urls:
                         urls.append(url)
     except Exception:
@@ -193,36 +195,34 @@ def _fetch_article(url: str) -> str:
     """Fetch and extract text from a URL."""
     import urllib.request
 
-    req = urllib.request.Request(
-        url,
-        headers={"User-Agent": "Mozilla/5.0 (compatible; AIwerewolf-research/1.0)"}
-    )
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (compatible; AIwerewolf-research/1.0)"})
     with urllib.request.urlopen(req, timeout=20) as resp:
         html = resp.read().decode("utf-8", errors="replace")
 
     # Simple HTML-to-text extraction
     # Remove scripts, styles, nav elements
-    html = re.sub(r'<script[^>]*>.*?</script>', '', html, flags=re.DOTALL | re.IGNORECASE)
-    html = re.sub(r'<style[^>]*>.*?</style>', '', html, flags=re.DOTALL | re.IGNORECASE)
-    html = re.sub(r'<nav[^>]*>.*?</nav>', '', html, flags=re.DOTALL | re.IGNORECASE)
-    html = re.sub(r'<header[^>]*>.*?</header>', '', html, flags=re.DOTALL | re.IGNORECASE)
-    html = re.sub(r'<footer[^>]*>.*?</footer>', '', html, flags=re.DOTALL | re.IGNORECASE)
+    html = re.sub(r"<script[^>]*>.*?</script>", "", html, flags=re.DOTALL | re.IGNORECASE)
+    html = re.sub(r"<style[^>]*>.*?</style>", "", html, flags=re.DOTALL | re.IGNORECASE)
+    html = re.sub(r"<nav[^>]*>.*?</nav>", "", html, flags=re.DOTALL | re.IGNORECASE)
+    html = re.sub(r"<header[^>]*>.*?</header>", "", html, flags=re.DOTALL | re.IGNORECASE)
+    html = re.sub(r"<footer[^>]*>.*?</footer>", "", html, flags=re.DOTALL | re.IGNORECASE)
 
     # Strip HTML tags
-    text = re.sub(r'<[^>]+>', ' ', html)
+    text = re.sub(r"<[^>]+>", " ", html)
     # Decode HTML entities
-    text = text.replace('&nbsp;', ' ').replace('&lt;', '<').replace('&gt;', '>')
-    text = text.replace('&amp;', '&').replace('&quot;', '"').replace('&#39;', "'")
+    text = text.replace("&nbsp;", " ").replace("&lt;", "<").replace("&gt;", ">")
+    text = text.replace("&amp;", "&").replace("&quot;", '"').replace("&#39;", "'")
     # Collapse whitespace
-    text = re.sub(r'\s+', ' ', text).strip()
+    text = re.sub(r"\s+", " ", text).strip()
     # Remove very short lines
-    lines = [l.strip() for l in text.split('\n') if len(l.strip()) > 20]
-    return '\n'.join(lines)
+    lines = [l.strip() for l in text.split("\n") if len(l.strip()) > 20]
+    return "\n".join(lines)
 
 
 def extract_with_doubao(articles: list[dict], player_count: int | None = None) -> list[dict]:
     """Use Doubao LLM to extract strategies from crawled articles."""
     from dotenv import load_dotenv
+
     load_dotenv()
 
     from backend.llm import create_client
@@ -275,9 +275,9 @@ def extract_with_doubao(articles: list[dict], player_count: int | None = None) -
                     print(f"    ✓ {len(parsed)} role blocks extracted")
                 elif isinstance(parsed, dict) and "strategies" in parsed:
                     all_strategies.append(parsed)
-                    print(f"    ✓ 1 role block extracted")
+                    print("    ✓ 1 role block extracted")
             else:
-                print(f"    ⚠ No JSON found in response")
+                print("    ⚠ No JSON found in response")
 
         except Exception as e:
             print(f"    ✗ Extraction failed: {e}")
@@ -288,7 +288,8 @@ def extract_with_doubao(articles: list[dict], player_count: int | None = None) -
 
 def ingest_to_db(strategies: list[dict], player_counts: set[int]) -> int:
     """Insert extracted strategies into strategy_knowledge_docs table."""
-    from backend.db.database import SessionLocal, init_db
+    from backend.db.database import SessionLocal
+    from backend.db.database import init_db
     from backend.db.models import StrategyKnowledgeDoc as SKDModel
 
     init_db()
@@ -322,8 +323,7 @@ def ingest_to_db(strategies: list[dict], player_counts: set[int]) -> int:
                     quality_score=0.85,
                     confidence=0.75,
                     status="active",
-                    tags=["crawled", f"player_count:{pc}", f"role:{role}",
-                          f"priority:{s.get('priority', 'medium')}"],
+                    tags=["crawled", f"player_count:{pc}", f"role:{role}", f"priority:{s.get('priority', 'medium')}"],
                 )
                 db.add(row)
                 count += 1
@@ -337,13 +337,15 @@ def ingest_to_db(strategies: list[dict], player_counts: set[int]) -> int:
 
 def setup_role_cards() -> None:
     """Create RoleStrategyCard records with GOALS ONLY (no tactics)."""
-    from backend.db.database import SessionLocal, init_db
+    from backend.db.database import SessionLocal
+    from backend.db.database import init_db
     from backend.db.models import RoleStrategyCard
 
     init_db()
     db = SessionLocal()
     try:
         from sqlalchemy import func
+
         existing = db.query(func.count(RoleStrategyCard.id)).scalar()
         if existing:
             print(f"  {existing} role cards already exist, updating...")
@@ -405,7 +407,7 @@ def main() -> int:
         if index_path.exists():
             articles = []
             for info in json.loads(index_path.read_text(encoding="utf-8")):
-                fname = re.sub(r'[^a-zA-Z0-9]', '_', info["url"][:80]) + ".txt"
+                fname = re.sub(r"[^a-zA-Z0-9]", "_", info["url"][:80]) + ".txt"
                 raw_path = DATA_DIR / "raw" / fname
                 if raw_path.exists():
                     info["text"] = raw_path.read_text(encoding="utf-8")

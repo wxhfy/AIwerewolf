@@ -10,10 +10,16 @@ Hybrid scoring: 35% rules (checkable) + 65% LLM with mechanical evidence validat
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional
+from dataclasses import dataclass
+from typing import Any
+from typing import Callable
+from typing import Dict
+from typing import List
+from typing import Optional
 
-from backend.eval.hybrid_scorer import HybridScorer, ScoringCriterion, DimensionScore, CriterionResult
+from backend.eval.hybrid_scorer import DimensionScore
+from backend.eval.hybrid_scorer import HybridScorer
+from backend.eval.hybrid_scorer import ScoringCriterion
 
 
 @dataclass
@@ -55,21 +61,28 @@ class PersonaScoreResult:
 PERSONA_CONSISTENCY_RUBRIC: List[ScoringCriterion] = [
     # --- Rule-checkable criteria (35%) ---
     ScoringCriterion(
-        id="PC1", desc="发言长度符合声称习惯 (speech_length_habit)",
-        criterion_type="rule", weight=0.15,
+        id="PC1",
+        desc="发言长度符合声称习惯 (speech_length_habit)",
+        criterion_type="rule",
+        weight=0.15,
         rule_check=lambda ctx: _check_speech_length(ctx),
         reference="VCU (2025) personality diversity",
     ),
     ScoringCriterion(
-        id="PC2", desc="社交行为符合声称习惯 (social_habit)",
-        criterion_type="rule", weight=0.20,
+        id="PC2",
+        desc="社交行为符合声称习惯 (social_habit)",
+        criterion_type="rule",
+        weight=0.20,
         rule_check=lambda ctx: _check_social_habit(ctx),
         reference="VCU (2025) personality diversity",
     ),
     # --- LLM semantic criteria (65%) ---
     ScoringCriterion(
-        id="PC3", desc="推理方式一致性 (reasoning_style)",
-        criterion_type="llm", weight=0.30, evidence_required=True,
+        id="PC3",
+        desc="推理方式一致性 (reasoning_style)",
+        criterion_type="llm",
+        weight=0.30,
+        evidence_required=True,
         llm_prompt="""判断该发言的推理方式：
 - logical_chain: 有清晰的"因为...所以..."逻辑链
 - gut_feeling: 凭直觉/感觉判断，缺少严密的逻辑推导
@@ -82,8 +95,11 @@ PERSONA_CONSISTENCY_RUBRIC: List[ScoringCriterion] = [
         reference="Beyond Survival (2025) RI/SJ dimensions",
     ),
     ScoringCriterion(
-        id="PC4", desc="不确定性反应 (uncertainty_style)",
-        criterion_type="llm", weight=0.20, evidence_required=True,
+        id="PC4",
+        desc="不确定性反应 (uncertainty_style)",
+        criterion_type="llm",
+        weight=0.20,
+        evidence_required=True,
         llm_prompt="""判断发言者在面对不确定信息时的反应：
 - admit_ignorance: 承认自己不确定，表示需要更多信息
 - overcompensate: 过度补偿，即使不确定也假装很肯定
@@ -96,8 +112,11 @@ PERSONA_CONSISTENCY_RUBRIC: List[ScoringCriterion] = [
         reference="Beyond Survival (2025) CT dimension",
     ),
     ScoringCriterion(
-        id="PC5", desc="压力反应一致性 (pressure_style)",
-        criterion_type="llm", weight=0.15, evidence_required=True,
+        id="PC5",
+        desc="压力反应一致性 (pressure_style)",
+        criterion_type="llm",
+        weight=0.15,
+        evidence_required=True,
         llm_prompt="""该发言者是否在被质疑/被点名的压力下？
 如果有，判断其反应方式：
 - defensive: 自辩为主，解释自己的行为
@@ -120,20 +139,26 @@ PERSONA_CONSISTENCY_RUBRIC: List[ScoringCriterion] = [
 
 DECEPTION_RUBRIC: List[ScoringCriterion] = [
     ScoringCriterion(
-        id="DS1", desc="操控成功 — 发言是否导致好人被放逐",
-        criterion_type="rule", weight=0.40,
+        id="DS1",
+        desc="操控成功 — 发言是否导致好人被放逐",
+        criterion_type="rule",
+        weight=0.40,
         rule_check=lambda ctx: _check_manipulation_success(ctx),
         reference="WOLF (NeurIPS 2025) manipulation success rate",
     ),
     ScoringCriterion(
-        id="DS2", desc="怀疑度管理 — 公共怀疑度是否被你压低",
-        criterion_type="rule", weight=0.30,
+        id="DS2",
+        desc="怀疑度管理 — 公共怀疑度是否被你压低",
+        criterion_type="rule",
+        weight=0.30,
         rule_check=lambda ctx: _check_suspicion_management(ctx),
         reference="WOLF (NeurIPS 2025) suspicion dynamics",
     ),
     ScoringCriterion(
-        id="DS3", desc="身份保护 — 是否避免了暴露狼队友",
-        criterion_type="rule", weight=0.30,
+        id="DS3",
+        desc="身份保护 — 是否避免了暴露狼队友",
+        criterion_type="rule",
+        weight=0.30,
         rule_check=lambda ctx: _check_identity_protection(ctx),
         reference="WOLF (NeurIPS 2025) coordination detection",
     ),
@@ -146,20 +171,26 @@ DECEPTION_RUBRIC: List[ScoringCriterion] = [
 
 DETECTION_RUBRIC: List[ScoringCriterion] = [
     ScoringCriterion(
-        id="DT1", desc="狼人识别 — 是否正确识别了狼人发言中的欺骗",
-        criterion_type="rule", weight=0.40,
+        id="DT1",
+        desc="狼人识别 — 是否正确识别了狼人发言中的欺骗",
+        criterion_type="rule",
+        weight=0.40,
         rule_check=lambda ctx: _check_wolf_identification(ctx),
         reference="WOLF (NeurIPS 2025) detection precision (71-73%)",
     ),
     ScoringCriterion(
-        id="DT2", desc="投票命中 — 关键轮次是否投了狼",
-        criterion_type="rule", weight=0.30,
+        id="DT2",
+        desc="投票命中 — 关键轮次是否投了狼",
+        criterion_type="rule",
+        weight=0.30,
         rule_check=lambda ctx: _check_vote_on_wolves(ctx),
         reference="Beyond Survival (2025) VA dimension",
     ),
     ScoringCriterion(
-        id="DT3", desc="抗欺骗能力 — 是否被狼人的伪装发言误导",
-        criterion_type="rule", weight=0.30,
+        id="DT3",
+        desc="抗欺骗能力 — 是否被狼人的伪装发言误导",
+        criterion_type="rule",
+        weight=0.30,
         rule_check=lambda ctx: _check_deception_resistance(ctx),
         reference="WOLF (NeurIPS 2025) detection recall (48-61%)",
     ),
@@ -169,6 +200,7 @@ DETECTION_RUBRIC: List[ScoringCriterion] = [
 # ============================================================
 # Rule Check Functions
 # ============================================================
+
 
 def _check_speech_length(ctx: Dict[str, Any]) -> bool:
     """PC1: Check if speech length matches claimed habit."""
@@ -266,6 +298,7 @@ def _check_deception_resistance(ctx: Dict[str, Any]) -> bool:
 # ============================================================
 # Persona Scorer
 # ============================================================
+
 
 class PersonaScorer:
     """Scores persona consistency + deception/detection skill.

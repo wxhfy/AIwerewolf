@@ -21,9 +21,7 @@ import random
 import re
 import sys
 import time
-import traceback
 from pathlib import Path
-from typing import Any
 from uuid import uuid4
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -66,6 +64,7 @@ SYSTEM_PROMPT = """你是一个狼人杀策略分析师。分析以下策略条�
 def fetch_docs(limit: int = 600) -> list[dict]:
     """Fetch active strategy docs from PostgreSQL."""
     import psycopg2
+
     conn = psycopg2.connect(DB_URL)
     cur = conn.cursor()
     cur.execute(
@@ -79,12 +78,19 @@ def fetch_docs(limit: int = 600) -> list[dict]:
     )
     rows = []
     for row in cur.fetchall():
-        rows.append({
-            "id": row[0], "role": row[1], "phase": row[2],
-            "situation": str(row[3] or ""), "action": str(row[4] or ""),
-            "rationale": str(row[5] or ""), "doc_type": str(row[6] or ""),
-            "quality": float(row[7] or 0.8), "triggers": row[8] or [],
-        })
+        rows.append(
+            {
+                "id": row[0],
+                "role": row[1],
+                "phase": row[2],
+                "situation": str(row[3] or ""),
+                "action": str(row[4] or ""),
+                "rationale": str(row[5] or ""),
+                "doc_type": str(row[6] or ""),
+                "quality": float(row[7] or 0.8),
+                "triggers": row[8] or [],
+            }
+        )
     cur.close()
     conn.close()
     logger.info("Fetched %d active docs", len(rows))
@@ -127,9 +133,9 @@ def insert_links(conn, links: list[dict]) -> int:
             )
             count += cur.rowcount
         except Exception as e:
-            logger.warning("Failed insert %s->%s: %s",
-                           link.get("source_id", "?")[:12],
-                           link.get("target_id", "?")[:12], e)
+            logger.warning(
+                "Failed insert %s->%s: %s", link.get("source_id", "?")[:12], link.get("target_id", "?")[:12], e
+            )
     conn.commit()
     cur.close()
     return count
@@ -166,11 +172,11 @@ def call_llm(client, prompt: str, max_retries: int = 3) -> str | None:
         except Exception as e:
             err = str(e)
             if "429" in err:
-                wait = min(30, (2 ** attempt) * 5 + random.uniform(1, 3))
+                wait = min(30, (2**attempt) * 5 + random.uniform(1, 3))
                 logger.warning("Rate limited, waiting %.1fs...", wait)
                 time.sleep(wait)
             elif attempt < max_retries - 1:
-                time.sleep(2 ** attempt)
+                time.sleep(2**attempt)
             else:
                 logger.error("LLM call failed: %s", err[:200])
     return None
@@ -181,7 +187,7 @@ def parse_links(raw: str, docs_in_batch: list[dict], existing_pairs: set) -> lis
     text = raw.strip()
 
     # Strip code fences
-    m = re.search(r'```(?:json)?\s*\n?(.*?)\n?```', text, re.DOTALL)
+    m = re.search(r"```(?:json)?\s*\n?(.*?)\n?```", text, re.DOTALL)
     if m:
         text = m.group(1).strip()
 
@@ -189,13 +195,13 @@ def parse_links(raw: str, docs_in_batch: list[dict], existing_pairs: set) -> lis
     start = text.find("[")
     end = text.rfind("]")
     if start >= 0 and end > start:
-        text = text[start:end + 1]
+        text = text[start : end + 1]
 
     try:
         suggestions = json.loads(text)
     except json.JSONDecodeError:
         # Try to extract individual objects
-        objs = re.findall(r'\{[^{}]*\}', text)
+        objs = re.findall(r"\{[^{}]*\}", text)
         suggestions = []
         for o in objs:
             try:
@@ -236,22 +242,28 @@ def parse_links(raw: str, docs_in_batch: list[dict], existing_pairs: set) -> lis
         if not rationale or len(rationale) < 5:
             continue
 
-        links.append({
-            "source_id": src_id,
-            "target_id": tgt_id,
-            "source_type": "strategy_knowledge_doc",
-            "target_type": "strategy_knowledge_doc",
-            "edge_type": edge_type,
-            "weight": weight,
-            "metadata": {"rationale": rationale, "confidence": weight},
-        })
+        links.append(
+            {
+                "source_id": src_id,
+                "target_id": tgt_id,
+                "source_type": "strategy_knowledge_doc",
+                "target_type": "strategy_knowledge_doc",
+                "edge_type": edge_type,
+                "weight": weight,
+                "metadata": {"rationale": rationale, "confidence": weight},
+            }
+        )
         existing_pairs.add((src_id, tgt_id))
 
     return links
 
 
 def process_role_batch(
-    client, conn, docs: list[dict], role_name: str, existing_pairs: set,
+    client,
+    conn,
+    docs: list[dict],
+    role_name: str,
+    existing_pairs: set,
     batch_size: int = 25,
 ) -> int:
     """Process docs for one role in batches. Returns total new links."""
@@ -259,7 +271,7 @@ def process_role_batch(
     num_batches = math.ceil(len(docs) / batch_size)
 
     for batch_idx in range(num_batches):
-        batch_docs = docs[batch_idx * batch_size:(batch_idx + 1) * batch_size]
+        batch_docs = docs[batch_idx * batch_size : (batch_idx + 1) * batch_size]
         if len(batch_docs) < 3:
             continue
 
@@ -268,7 +280,7 @@ def process_role_batch(
         prompt = (
             f"{SYSTEM_PROMPT}\n\n"
             f"以下是{role_name}角色的{len(batch_docs)}条策略：\n\n{doc_str}\n\n"
-            f"请分析这些策略之间的关系。至少找出{max(2, len(batch_docs)//4)}条有效关系。\n"
+            f"请分析这些策略之间的关系。至少找出{max(2, len(batch_docs) // 4)}条有效关系。\n"
             f"直接输出JSON数组：\n["
         )
 
@@ -281,8 +293,9 @@ def process_role_batch(
         if links:
             inserted = insert_links(conn, links)
             total_links += inserted
-            logger.info("  %s batch %d/%d: %d links (total=%d)",
-                        role_name, batch_idx + 1, num_batches, inserted, total_links)
+            logger.info(
+                "  %s batch %d/%d: %d links (total=%d)", role_name, batch_idx + 1, num_batches, inserted, total_links
+            )
         else:
             logger.info("  %s batch %d/%d: 0 valid links parsed", role_name, batch_idx + 1, num_batches)
 
@@ -293,7 +306,10 @@ def process_role_batch(
 
 
 def process_cross_role_batches(
-    client, conn, role_groups: dict[str, list[dict]], existing_pairs: set,
+    client,
+    conn,
+    role_groups: dict[str, list[dict]],
+    existing_pairs: set,
     samples_per_role: int = 20,
 ) -> int:
     """Create cross-role batches mixing docs from different roles."""
@@ -302,7 +318,7 @@ def process_cross_role_batches(
     # Create mixed batches of 2-3 roles each
     cross_batches = []
     for i in range(0, len(roles), 3):
-        batch_roles = roles[i:i + 3]
+        batch_roles = roles[i : i + 3]
         batch_docs = []
         for r in batch_roles:
             docs = role_groups[r][:samples_per_role]
@@ -317,7 +333,7 @@ def process_cross_role_batches(
             f"{SYSTEM_PROMPT}\n\n"
             f"以下是{role_label}等角色的{len(batch_docs)}条交叉策略：\n\n{doc_str}\n\n"
             f"重点寻找跨角色的关系：冲突（狼人策略vs好人策略）、互补（好人之间配合）、依赖关系。\n"
-            f"至少找出{max(3, len(batch_docs)//5)}条有效关系。\n"
+            f"至少找出{max(3, len(batch_docs) // 5)}条有效关系。\n"
             f"直接输出JSON数组：\n["
         )
 
@@ -329,8 +345,14 @@ def process_cross_role_batches(
         if links:
             inserted = insert_links(conn, links)
             total_links += inserted
-            logger.info("  cross-role %d/%d (%s): %d links (total=%d)",
-                        batch_idx + 1, len(cross_batches), role_label, inserted, total_links)
+            logger.info(
+                "  cross-role %d/%d (%s): %d links (total=%d)",
+                batch_idx + 1,
+                len(cross_batches),
+                role_label,
+                inserted,
+                total_links,
+            )
 
         time.sleep(random.uniform(2.0, 4.0))
 
@@ -351,7 +373,7 @@ def main():
         roles = group_by_role(docs)
         print(f"Loaded {len(docs)} docs across {len(roles)} roles")
         for r, dlist in sorted(roles.items(), key=lambda x: -len(x[1])):
-            print(f"  {r}: {len(dlist)} docs, ~{math.ceil(len(dlist)/args.batch_size)} batches")
+            print(f"  {r}: {len(dlist)} docs, ~{math.ceil(len(dlist) / args.batch_size)} batches")
         return 0
 
     # Group by role
@@ -360,11 +382,11 @@ def main():
 
     # Create LLM client
     client = create_client()
-    logger.info("LLM: provider=%s model=%s",
-                getattr(client, "provider", "?"), getattr(client, "model", "?"))
+    logger.info("LLM: provider=%s model=%s", getattr(client, "provider", "?"), getattr(client, "model", "?"))
 
     # Connect to DB
     import psycopg2
+
     conn = psycopg2.connect(DB_URL)
     existing_pairs = get_existing_pairs(conn)
     logger.info("Existing graph links: %d", len(existing_pairs))
@@ -388,7 +410,11 @@ def main():
             continue
         logger.info("\n--- %s (%d docs) ---", role, len(role_docs))
         added = process_role_batch(
-            client, conn, role_docs, role, existing_pairs,
+            client,
+            conn,
+            role_docs,
+            role,
+            existing_pairs,
             batch_size=args.batch_size,
         )
         total_links += added
@@ -398,7 +424,10 @@ def main():
     if not args.limit or total_links < args.limit:
         logger.info("\n=== Phase 2: Cross-role analysis ===")
         added = process_cross_role_batches(
-            client, conn, role_groups, existing_pairs,
+            client,
+            conn,
+            role_groups,
+            existing_pairs,
             samples_per_role=min(20, args.batch_size),
         )
         total_links += added
@@ -411,7 +440,7 @@ def main():
     conn.close()
 
     print("\n" + "=" * 50)
-    print(f"  Strategy Graph Build Complete")
+    print("  Strategy Graph Build Complete")
     print(f"  Total links created: {total_links}")
     print(f"  Existing links: {sum(by_type.values())}")
     for et in EDGE_TYPES:

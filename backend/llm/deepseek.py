@@ -14,13 +14,12 @@ Usage:
 """
 
 import os
-import json
 import time
-import httpx
 from typing import Optional
 
-from backend.llm.env import load_env_file
+import httpx
 
+from backend.llm.env import load_env_file
 
 load_env_file()
 
@@ -121,6 +120,7 @@ class DeepSeekClient:
             if response.status_code >= 400:
                 # Log error details for debugging
                 import logging
+
                 _log = logging.getLogger(__name__)
                 try:
                     err = response.json()

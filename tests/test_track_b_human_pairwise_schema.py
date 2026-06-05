@@ -3,27 +3,31 @@
 from __future__ import annotations
 
 import json
-import pytest
 from pathlib import Path
 
-from backend.eval.human_label_validator import (
-    validate_human_pairwise_label, validate_human_pairwise_labels,
-)
+from backend.eval.human_label_validator import validate_human_pairwise_label
+from backend.eval.human_label_validator import validate_human_pairwise_labels
 
 
 def _valid_template():
     return {
-        "label_id": "label_000001", "game_id": "game_xxx",
-        "source": "real_replay", "role": "Werewolf", "action_type": "vote",
-        "day": 2, "phase": "DAY_VOTE",
+        "label_id": "label_000001",
+        "game_id": "game_xxx",
+        "source": "real_replay",
+        "role": "Werewolf",
+        "action_type": "vote",
+        "day": 2,
+        "phase": "DAY_VOTE",
         "context_summary": "Only information visible at decision time.",
         "visible_public_context": {"events": []},
         "visible_private_context": {"info": "private"},
         "option_a": {"opportunity_id": "opp_a", "action": {"type": "vote", "target": "P3"}, "evidence_event_ids": []},
         "option_b": {"opportunity_id": "opp_b", "action": {"type": "vote", "target": "P5"}, "evidence_event_ids": []},
-        "label": "A_BETTER", "confidence": "high",
+        "label": "A_BETTER",
+        "confidence": "high",
         "reason": "Option A better matches the role objective under the visible context.",
-        "annotator_id": "annotator_001", "created_at": "2026-05-29T00:00:00Z",
+        "annotator_id": "annotator_001",
+        "created_at": "2026-05-29T00:00:00Z",
     }
 
 

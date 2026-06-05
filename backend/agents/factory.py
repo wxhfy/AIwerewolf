@@ -6,11 +6,9 @@ from copy import deepcopy
 from typing import Any
 
 from backend.agents.base import Agent
+from backend.agents.cognitive.factory import create_cognitive_agent_with_character
+from backend.agents.cognitive.factory import create_llm_from_client
 from backend.agents.human_agent import HumanAgent
-from backend.agents.cognitive.factory import (
-    create_cognitive_agent_with_character,
-    create_llm_from_client,
-)
 from backend.engine.models import Player
 
 

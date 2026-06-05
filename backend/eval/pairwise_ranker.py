@@ -14,7 +14,8 @@ from __future__ import annotations
 
 import json
 import pickle
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from dataclasses import field
 from pathlib import Path
 from typing import Any
 
@@ -91,9 +92,12 @@ class PairwiseLogisticRanker:
             except Exception:
                 pass
             return {
-                "n_pairs": len(pairs), "n_features": len(all_names_sorted),
-                "train_accuracy": 0.5, "feature_count": len(all_names_sorted),
-                "warning": "all_pairs_degenerate", "valid_pairs": 0,
+                "n_pairs": len(pairs),
+                "n_features": len(all_names_sorted),
+                "train_accuracy": 0.5,
+                "feature_count": len(all_names_sorted),
+                "warning": "all_pairs_degenerate",
+                "valid_pairs": 0,
             }
 
         X_raw = np.array(X_diff_raw, dtype=np.float32)
@@ -109,8 +113,7 @@ class PairwiseLogisticRanker:
             nonzero_var_mask = np.ones(len(all_names_sorted), dtype=bool)
             n_zero_var = 0
 
-        self.feature_names = [all_names_sorted[i] for i in range(len(all_names_sorted))
-                              if nonzero_var_mask[i]]
+        self.feature_names = [all_names_sorted[i] for i in range(len(all_names_sorted)) if nonzero_var_mask[i]]
         X = X_raw[:, nonzero_var_mask]
 
         # Standardize
@@ -166,7 +169,7 @@ class PairwiseLogisticRanker:
         rank_q = float(proba[1])  # Probability of being the "better" action
 
         # Margin: how far from decision boundary
-        if hasattr(self.model, 'decision_function'):
+        if hasattr(self.model, "decision_function"):
             margin = float(self.model.decision_function(X_in)[0])
         else:
             margin = float(proba[1] - proba[0])
@@ -179,8 +182,7 @@ class PairwiseLogisticRanker:
             rank_confidence=round(confidence, 4),
         )
 
-    def compare_pair(self, better_features: dict[str, float],
-                     worse_features: dict[str, float]) -> float:
+    def compare_pair(self, better_features: dict[str, float], worse_features: dict[str, float]) -> float:
         """Probability that 'better' ranks above 'worse'."""
         if self.model is None or not self.feature_names:
             return 0.5
@@ -195,12 +197,15 @@ class PairwiseLogisticRanker:
 
     def save(self, path: str | Path) -> None:
         with open(path, "wb") as f:
-            pickle.dump({
-                "model": self.model,
-                "feature_names": self.feature_names,
-                "scaler_mean": self._scaler_mean,
-                "scaler_std": self._scaler_std,
-            }, f)
+            pickle.dump(
+                {
+                    "model": self.model,
+                    "feature_names": self.feature_names,
+                    "scaler_mean": self._scaler_mean,
+                    "scaler_std": self._scaler_std,
+                },
+                f,
+            )
 
     def load(self, path: str | Path) -> None:
         with open(path, "rb") as f:
@@ -226,6 +231,7 @@ class PerActionPairwiseRankers:
     def fit(self, all_pairs: list[PairwiseExample]) -> dict[str, Any]:
         """Train one ranker per action type group."""
         from collections import defaultdict
+
         by_action: dict[str, list[PairwiseExample]] = defaultdict(list)
         for p in all_pairs:
             # Map pair_type to action group
@@ -233,7 +239,16 @@ class PerActionPairwiseRankers:
                 by_action["speech"].append(p)
             elif "vote" in p.action_type or "vote" in p.pair_id:
                 by_action["vote"].append(p)
-            elif "kill" in p.action_type or "night" in p.action_type or "seer" in p.action_type or "witch" in p.action_type or "guard" in p.action_type or "narrative" in p.action_type or "endgame" in p.action_type or "low_info" in p.action_type:
+            elif (
+                "kill" in p.action_type
+                or "night" in p.action_type
+                or "seer" in p.action_type
+                or "witch" in p.action_type
+                or "guard" in p.action_type
+                or "narrative" in p.action_type
+                or "endgame" in p.action_type
+                or "low_info" in p.action_type
+            ):
                 by_action["night_action"].append(p)
             else:
                 by_action["other"].append(p)
@@ -252,9 +267,9 @@ class PerActionPairwiseRankers:
 
         return info
 
-    def compare_pair(self, better_features: dict[str, float],
-                     worse_features: dict[str, float],
-                     action_type: str = "other") -> float:
+    def compare_pair(
+        self, better_features: dict[str, float], worse_features: dict[str, float], action_type: str = "other"
+    ) -> float:
         """Use per-action ranker if available, else fall back to other."""
         if action_type in self.rankers:
             return self.rankers[action_type].compare_pair(better_features, worse_features)
@@ -262,8 +277,7 @@ class PerActionPairwiseRankers:
             return self.rankers["other"].compare_pair(better_features, worse_features)
         return 0.5
 
-    def predict_rank(self, features: dict[str, float],
-                     action_type: str = "other") -> "RankResult":
+    def predict_rank(self, features: dict[str, float], action_type: str = "other") -> RankResult:
         if action_type in self.rankers:
             return self.rankers[action_type].predict_rank(features)
         if "other" in self.rankers:
@@ -282,6 +296,7 @@ class PerActionPairwiseRankers:
 def pairwise_examples_from_jsonl(path: str | Path) -> list[PairwiseExample]:
     """Load pairwise examples from JSONL file, extracting features via registry if needed."""
     from backend.eval.features import register_default_extractors
+
     registry = register_default_extractors()
 
     examples: list[PairwiseExample] = []
@@ -311,16 +326,18 @@ def pairwise_examples_from_jsonl(path: str | Path) -> list[PairwiseExample]:
                     wf = worse.get("features", {}) if isinstance(worse, dict) else {}
 
                 if bf and wf:
-                    examples.append(PairwiseExample(
-                        pair_id=d.get("pair_id", ""),
-                        source=d.get("source", ""),
-                        role=d.get("role", better.get("role", b_opp.get("role", ""))),
-                        action_type=d.get("action_type", d.get("pair_type", b_opp.get("opportunity_type", ""))),
-                        better_features=bf,
-                        worse_features=wf,
-                        better_label=float(better.get("label_quality", 0.85)),
-                        worse_label=float(worse.get("label_quality", 0.15)),
-                    ))
+                    examples.append(
+                        PairwiseExample(
+                            pair_id=d.get("pair_id", ""),
+                            source=d.get("source", ""),
+                            role=d.get("role", better.get("role", b_opp.get("role", ""))),
+                            action_type=d.get("action_type", d.get("pair_type", b_opp.get("opportunity_type", ""))),
+                            better_features=bf,
+                            worse_features=wf,
+                            better_label=float(better.get("label_quality", 0.85)),
+                            worse_label=float(worse.get("label_quality", 0.15)),
+                        )
+                    )
             except (json.JSONDecodeError, KeyError, TypeError):
                 pass
     return examples
@@ -329,6 +346,7 @@ def pairwise_examples_from_jsonl(path: str | Path) -> list[PairwiseExample]:
 # ===================================================================
 # RankerConfidenceGate
 # ===================================================================
+
 
 @dataclass
 class RankerGateResult:
@@ -367,13 +385,11 @@ def compute_ranker_gate(
         return RankerGateResult(False, 0.0, "debug_only", ["hard_caps_detected"])
 
     # High confidence gate
-    if (effective_pair_count >= 50 and degenerate_pair_rate <= 0.20
-            and validation_acc >= 0.70 and heldout_acc >= 0.65):
+    if effective_pair_count >= 50 and degenerate_pair_rate <= 0.20 and validation_acc >= 0.70 and heldout_acc >= 0.65:
         return RankerGateResult(True, 0.15, "high", ["all_high_gates_passed"])
 
     # Medium confidence gate
-    if (effective_pair_count >= 30 and degenerate_pair_rate <= 0.30
-            and validation_acc >= 0.65 and heldout_acc >= 0.60):
+    if effective_pair_count >= 30 and degenerate_pair_rate <= 0.30 and validation_acc >= 0.65 and heldout_acc >= 0.60:
         return RankerGateResult(True, 0.10, "medium", ["medium_confidence_gate_passed"])
 
     # Low confidence gate
@@ -404,8 +420,10 @@ def compute_ranker_contribution(
     """
     if not gate_result.eligible:
         return RankerContribution(
-            used=False, action_ranker=action_type,
-            eligible=False, weight=0.0,
+            used=False,
+            action_ranker=action_type,
+            eligible=False,
+            weight=0.0,
             confidence=gate_result.confidence,
             final_delta=0.0,
             reasons=gate_result.reasons,
@@ -421,8 +439,10 @@ def compute_ranker_contribution(
         gate_result.reasons.append("delta_clamped_at_bound")
 
     return RankerContribution(
-        used=True, action_ranker=action_type,
-        eligible=True, weight=w,
+        used=True,
+        action_ranker=action_type,
+        eligible=True,
+        weight=w,
         confidence=gate_result.confidence,
         final_delta=round(delta, 4),
         reasons=gate_result.reasons,

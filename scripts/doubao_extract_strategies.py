@@ -20,12 +20,14 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from dotenv import load_dotenv
+
 load_dotenv()
 
-from backend.db.database import SessionLocal
-from backend.llm import create_client
-from backend.eval.track_b import reconstruct_review_report
 from sqlalchemy import text
+
+from backend.db.database import SessionLocal
+from backend.eval.track_b import reconstruct_review_report
+from backend.llm import create_client
 
 ROLE_ORDER = ["Seer", "Witch", "Guard", "Hunter", "Werewolf", "Villager"]
 
@@ -65,7 +67,9 @@ def load_game_ids(label: str | None) -> list[str]:
     if label:
         path = ROOT / "data" / "health" / f"llm_batch_{label}.jsonl"
         if path.exists():
-            return [json.loads(line)["game_id"] for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+            return [
+                json.loads(line)["game_id"] for line in path.read_text(encoding="utf-8").splitlines() if line.strip()
+            ]
     # Load from clean file
     clean_path = Path("/tmp/clean_llm_game_ids.json")
     if clean_path.exists():
@@ -75,16 +79,18 @@ def load_game_ids(label: str | None) -> list[str]:
 
 def collect_role_data(game_ids: list[str]) -> dict[str, list[dict[str, Any]]]:
     """Group review data by role, extracting player reviews + suggestions + bad cases."""
-    from dataclasses import asdict
 
     db = SessionLocal()
     try:
-        rows = db.execute(text("""
+        rows = db.execute(
+            text("""
             SELECT pr.game_id, g.winner, pr.report_json
             FROM published_reviews pr
             JOIN games g ON g.id = pr.game_id
             WHERE pr.game_id IN :gids AND pr.publish_allowed = true
-        """), {"gids": tuple(game_ids)}).fetchall()
+        """),
+            {"gids": tuple(game_ids)},
+        ).fetchall()
 
         role_data: dict[str, list[dict[str, Any]]] = {r: [] for r in ROLE_ORDER}
         for game_id, winner, report_json in rows:
@@ -100,28 +106,31 @@ def collect_role_data(game_ids: list[str]) -> dict[str, list[dict[str, Any]]]:
                 if role not in role_data:
                     continue
                 alignment = getattr(pr, "alignment", "village")
-                won = (winner == "wolf" and alignment == "wolf") or \
-                      (winner == "village" and alignment == "village")
-                role_data[role].append({
-                    "game_id": game_id[:8],
-                    "won": won,
-                    "process_score": getattr(pr, "process_score", 0) or 0,
-                    "adjusted_final_score": getattr(pr, "adjusted_final_score", 0) or 0,
-                    "strengths": list(getattr(pr, "strengths", []) or [])[:3],
-                    "weaknesses": list(getattr(pr, "weaknesses", []) or [])[:3],
-                    "summary": getattr(pr, "overall_summary", "") or "",
-                })
+                won = (winner == "wolf" and alignment == "wolf") or (winner == "village" and alignment == "village")
+                role_data[role].append(
+                    {
+                        "game_id": game_id[:8],
+                        "won": won,
+                        "process_score": getattr(pr, "process_score", 0) or 0,
+                        "adjusted_final_score": getattr(pr, "adjusted_final_score", 0) or 0,
+                        "strengths": list(getattr(pr, "strengths", []) or [])[:3],
+                        "weaknesses": list(getattr(pr, "weaknesses", []) or [])[:3],
+                        "summary": getattr(pr, "overall_summary", "") or "",
+                    }
+                )
 
             # Also collect global strategy suggestions
             for s in getattr(report, "strategy_suggestions", []) or []:
                 target = getattr(s, "target", "global") if getattr(s, "target_type", "") == "role" else "global"
                 if target in role_data:
-                    role_data[target].append({
-                        "suggestion_type": getattr(s, "suggestion_type", ""),
-                        "suggestion": getattr(s, "suggestion", ""),
-                        "priority": getattr(s, "priority", "medium"),
-                        "source": getattr(s, "source", ""),
-                    })
+                    role_data[target].append(
+                        {
+                            "suggestion_type": getattr(s, "suggestion_type", ""),
+                            "suggestion": getattr(s, "suggestion", ""),
+                            "priority": getattr(s, "priority", "medium"),
+                            "source": getattr(s, "source", ""),
+                        }
+                    )
 
         return role_data
     finally:
@@ -169,6 +178,7 @@ def build_role_prompt(role: str, data: list[dict[str, Any]], max_games: int = 15
 def extract_with_doubao(prompt: str, model: str | None = None) -> dict[str, Any]:
     """Call Doubao to extract strategies."""
     import os
+
     client = create_client(
         provider="doubao",
         model=model or os.environ.get("DOUBAO_MODEL", "ep-20260514115354-k4jz4"),
@@ -232,7 +242,7 @@ def main() -> int:
             print(prompt[:500] + "...")
             continue
 
-        print(f"  Calling Doubao...")
+        print("  Calling Doubao...")
         try:
             result = extract_with_doubao(prompt)
             all_results[role] = result

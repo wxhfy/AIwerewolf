@@ -19,21 +19,21 @@ import sys
 import time
 from collections import defaultdict
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from backend.agents.characters import _hydrate_persona
 from backend.agents.factory import create_agents
-from backend.agents.characters import Character, Persona, PlayerMind, _hydrate_persona, _hydrate_mind, build_character_roster
 from backend.engine.game import WerewolfGame
-from backend.engine.models import Role
-from backend.engine.rules import build_players, get_role_configuration
-from backend.eval.track_b import generate_published_review_document, ReplayBundleBuilder
-from backend.eval.opportunity import OpportunityExtractor
+from backend.engine.rules import build_players
+from backend.engine.rules import get_role_configuration
 from backend.eval.heads.speech_semantic import SpeechSemanticScorer
+from backend.eval.opportunity import OpportunityExtractor
+from backend.eval.track_b import ReplayBundleBuilder
+from backend.eval.track_b import generate_published_review_document
 
 # ===========================================================================
 # MBTI Profile Definitions
@@ -117,6 +117,7 @@ MBTI_PROFILES = {
 # Shared model config
 BASE_MODEL = "deepseek-v4-pro[1m]"
 
+
 def _make_persona_dict(profile_name: str, profile: dict, player_name: str) -> dict:
     """Build a PERSONA_POOL-compatible dict for a profile."""
     return {
@@ -147,6 +148,7 @@ def _make_persona_dict(profile_name: str, profile: dict, player_name: str) -> di
 # Game Runner
 # ===========================================================================
 
+
 async def run_profile_game(profile_name: str, seed: int, player_count: int = 7) -> dict:
     """Run one game where all players share the same MBTI profile."""
     profile = MBTI_PROFILES[profile_name]
@@ -170,12 +172,15 @@ async def run_profile_game(profile_name: str, seed: int, player_count: int = 7) 
     # Inject custom personas into agents BEFORE initialize
     persona_objs = [_hydrate_persona(pd) for pd in sampled_personas]
     for i, (pid, agent) in enumerate(agents.items()):
-        if hasattr(agent, 'character') and agent.character:
+        if hasattr(agent, "character") and agent.character:
             agent.character.persona = persona_objs[i]
 
     game = WerewolfGame(
-        players=players, agents=agents, seed=seed,
-        max_days=5, strategy_version=f"mbti-{profile_name}",
+        players=players,
+        agents=agents,
+        seed=seed,
+        max_days=5,
+        strategy_version=f"mbti-{profile_name}",
     )
 
     t0 = time.perf_counter()
@@ -204,18 +209,20 @@ async def run_profile_game(profile_name: str, seed: int, player_count: int = 7) 
     survival_scores = []
 
     for ps in player_scores_list:
-        player_scores.append({
-            "player_id": ps.get("player_id", ""),
-            "player_name": ps.get("player_name", ""),
-            "role": ps.get("role", ""),
-            "alignment": ps.get("alignment", ""),
-            "final_score": ps.get("final_score", 0),
-            "process_score": ps.get("process_score", 0),
-            "speech_score": ps.get("speech_score", 0) or 0,
-            "vote_score": ps.get("vote_score", 0) or 0,
-            "skill_score": ps.get("skill_score", 0) or 0,
-            "survival_score": ps.get("survival_score", 0) or 0,
-        })
+        player_scores.append(
+            {
+                "player_id": ps.get("player_id", ""),
+                "player_name": ps.get("player_name", ""),
+                "role": ps.get("role", ""),
+                "alignment": ps.get("alignment", ""),
+                "final_score": ps.get("final_score", 0),
+                "process_score": ps.get("process_score", 0),
+                "speech_score": ps.get("speech_score", 0) or 0,
+                "vote_score": ps.get("vote_score", 0) or 0,
+                "skill_score": ps.get("skill_score", 0) or 0,
+                "survival_score": ps.get("survival_score", 0) or 0,
+            }
+        )
         process_scores.append(ps.get("process_score", 0) or 0)
         speech_scores.append(ps.get("speech_score", 0) or 0)
         vote_scores.append(ps.get("vote_score", 0) or 0)
@@ -229,7 +236,7 @@ async def run_profile_game(profile_name: str, seed: int, player_count: int = 7) 
 
     for event in state.events:
         speech_text = ""
-        if hasattr(event, 'payload') and isinstance(event.payload, dict):
+        if hasattr(event, "payload") and isinstance(event.payload, dict):
             speech_text = str(event.payload.get("speech", ""))
         if speech_text:
             result = scorer.score(speech_text)
@@ -244,8 +251,10 @@ async def run_profile_game(profile_name: str, seed: int, player_count: int = 7) 
     for r in role_setup.values():
         role_dist[r] = role_dist.get(r, 0) + 1
 
-    print(f"  [{profile_name}] seed={seed} winner={winner} days={state.day} "
-          f"events={len(state.events)} badcases={len(bad_cases)} time={elapsed:.0f}s")
+    print(
+        f"  [{profile_name}] seed={seed} winner={winner} days={state.day} "
+        f"events={len(state.events)} badcases={len(bad_cases)} time={elapsed:.0f}s"
+    )
 
     return {
         "game_id": state.id,
@@ -260,10 +269,17 @@ async def run_profile_game(profile_name: str, seed: int, player_count: int = 7) 
         "role_setup": role_setup,
         "role_distribution": role_dist,
         "player_scores": player_scores,
-        "bad_cases": [{"player_name": bc.get("player_name", ""), "role": bc.get("role", ""),
-                       "day": bc.get("day", 0), "severity": bc.get("severity", ""),
-                       "description": bc.get("description", ""),
-                       "suggested_fix": bc.get("suggested_fix", "")} for bc in bad_cases],
+        "bad_cases": [
+            {
+                "player_name": bc.get("player_name", ""),
+                "role": bc.get("role", ""),
+                "day": bc.get("day", 0),
+                "severity": bc.get("severity", ""),
+                "description": bc.get("description", ""),
+                "suggested_fix": bc.get("suggested_fix", ""),
+            }
+            for bc in bad_cases
+        ],
         "counterfactual_count": len(counterfactuals),
         "critical_mistake_count": len(bad_cases),
         "avg_process_score": round(float(np.mean(process_scores)), 2),
@@ -272,12 +288,10 @@ async def run_profile_game(profile_name: str, seed: int, player_count: int = 7) 
         "avg_skill_score": round(float(np.mean(skill_scores)), 2),
         "avg_survival_score": round(float(np.mean(survival_scores)), 2),
         "speech_audit": {
-            feat: round(float(np.mean(vals)), 4) if vals else 0.0
-            for feat, vals in speech_audit_features.items()
+            feat: round(float(np.mean(vals)), 4) if vals else 0.0 for feat, vals in speech_audit_features.items()
         },
         "speech_act_distribution": {
-            act: round(float(np.mean(vals)), 4) if vals else 0.0
-            for act, vals in speech_act_probs.items()
+            act: round(float(np.mean(vals)), 4) if vals else 0.0 for act, vals in speech_act_probs.items()
         },
     }
 
@@ -285,9 +299,9 @@ async def run_profile_game(profile_name: str, seed: int, player_count: int = 7) 
 async def run_all(profiles: list[str], seeds: list[int]) -> list[dict]:
     results = []
     for profile_name in profiles:
-        print(f"\n{'='*50}")
+        print(f"\n{'=' * 50}")
         print(f"Profile: {profile_name}")
-        print(f"{'='*50}")
+        print(f"{'=' * 50}")
         for seed in seeds:
             result = await run_profile_game(profile_name, seed)
             results.append(result)
@@ -298,6 +312,7 @@ async def run_all(profiles: list[str], seeds: list[int]) -> list[dict]:
 # Aggregation & Report
 # ===========================================================================
 
+
 def build_leaderboard(games: list[dict]) -> dict:
     by_profile: dict[str, list[dict]] = defaultdict(list)
     for g in games:
@@ -307,8 +322,12 @@ def build_leaderboard(games: list[dict]) -> dict:
     for profile_name, game_list in sorted(by_profile.items()):
         n = len(game_list)
         all_process = []
-        all_speech = []; all_vote = []; all_skill = []; all_survival = []
-        total_mistakes = 0; total_cf = 0
+        all_speech = []
+        all_vote = []
+        all_skill = []
+        all_survival = []
+        total_mistakes = 0
+        total_cf = 0
         wins = 0
         all_audit: dict[str, list[float]] = defaultdict(list)
         all_acts: dict[str, list[float]] = defaultdict(list)
@@ -335,25 +354,30 @@ def build_leaderboard(games: list[dict]) -> dict:
         avg_process = round(float(np.mean(all_process)), 2)
         sem = float(np.std(all_process)) / max(np.sqrt(len(all_process)), 1)
 
-        entries.append({
-            "profile": profile_name,
-            "mbti": MBTI_PROFILES[profile_name]["mbti"],
-            "description": MBTI_PROFILES[profile_name]["description"],
-            "games_played": n,
-            "avg_process_score": avg_process,
-            "avg_speech_score": round(float(np.mean(all_speech)), 2),
-            "avg_vote_score": round(float(np.mean(all_vote)), 2),
-            "avg_skill_score": round(float(np.mean(all_skill)), 2),
-            "avg_survival_score": round(float(np.mean(all_survival)), 2),
-            "critical_mistake_rate": round(total_mistakes / max(n * 7, 1), 2),
-            "counterfactual_coverage": round(total_cf / max(total_mistakes, 1), 2) if total_mistakes > 0 else 1.0,
-            "win_rate": round(wins / max(n, 1), 2),
-            "confidence_interval": [round(max(0, avg_process - 1.96 * sem), 2), round(min(100, avg_process + 1.96 * sem), 2)],
-            "low_sample_warning": n < 10,
-            "speech_audit": {feat: round(float(np.mean(vals)), 4) for feat, vals in all_audit.items()},
-            "speech_act_distribution": {act: round(float(np.mean(vals)), 4) for act, vals in all_acts.items()},
-            "role_distribution": dict(role_games),
-        })
+        entries.append(
+            {
+                "profile": profile_name,
+                "mbti": MBTI_PROFILES[profile_name]["mbti"],
+                "description": MBTI_PROFILES[profile_name]["description"],
+                "games_played": n,
+                "avg_process_score": avg_process,
+                "avg_speech_score": round(float(np.mean(all_speech)), 2),
+                "avg_vote_score": round(float(np.mean(all_vote)), 2),
+                "avg_skill_score": round(float(np.mean(all_skill)), 2),
+                "avg_survival_score": round(float(np.mean(all_survival)), 2),
+                "critical_mistake_rate": round(total_mistakes / max(n * 7, 1), 2),
+                "counterfactual_coverage": round(total_cf / max(total_mistakes, 1), 2) if total_mistakes > 0 else 1.0,
+                "win_rate": round(wins / max(n, 1), 2),
+                "confidence_interval": [
+                    round(max(0, avg_process - 1.96 * sem), 2),
+                    round(min(100, avg_process + 1.96 * sem), 2),
+                ],
+                "low_sample_warning": n < 10,
+                "speech_audit": {feat: round(float(np.mean(vals)), 4) for feat, vals in all_audit.items()},
+                "speech_act_distribution": {act: round(float(np.mean(vals)), 4) for act, vals in all_acts.items()},
+                "role_distribution": dict(role_games),
+            }
+        )
 
     entries.sort(key=lambda e: e["avg_process_score"], reverse=True)
     return {"entries": entries, "total_games": len(games), "base_model": BASE_MODEL}
@@ -373,7 +397,7 @@ def build_report(games: list[dict], leaderboard: dict) -> str:
         "",
         f"> Base model: {BASE_MODEL}",
         f"> Total games: {leaderboard['total_games']}",
-        f"> Source: real_llm_game (same-profile mode)",
+        "> Source: real_llm_game (same-profile mode)",
         f"> Generated: {time.strftime('%Y-%m-%dT%H:%M:%S')}",
         "",
         "---",
@@ -383,83 +407,100 @@ def build_report(games: list[dict], leaderboard: dict) -> str:
     ]
 
     if len(E) >= 2:
-        first = E[0]; last = E[-1]
-        lines.extend([
-            f"- **最高 process score**: **{first['profile']}** ({first['mbti']}) — {first['avg_process_score']}",
-            f"- **最低 process score**: {last['profile']} ({last['mbti']}) — {last['avg_process_score']}",
-            f"- **分差**: {round(first['avg_process_score'] - last['avg_process_score'], 2)}",
-        ])
+        first = E[0]
+        last = E[-1]
+        lines.extend(
+            [
+                f"- **最高 process score**: **{first['profile']}** ({first['mbti']}) — {first['avg_process_score']}",
+                f"- **最低 process score**: {last['profile']} ({last['mbti']}) — {last['avg_process_score']}",
+                f"- **分差**: {round(first['avg_process_score'] - last['avg_process_score'], 2)}",
+            ]
+        )
 
     # Find biggest dimension differences
-    for dim, label in [("avg_speech_score", "发言"), ("avg_vote_score", "投票"),
-                       ("avg_skill_score", "技能"), ("avg_survival_score", "存活")]:
+    for dim, label in [
+        ("avg_speech_score", "发言"),
+        ("avg_vote_score", "投票"),
+        ("avg_skill_score", "技能"),
+        ("avg_survival_score", "存活"),
+    ]:
         vals = [e[dim] for e in E]
         rng = round(max(vals) - min(vals), 2)
         top_e = max(E, key=lambda e: e[dim])
         lines.append(f"- **{label}最高**: {top_e['profile']} ({top_e[dim]})")
 
-    lines.extend([
-        "",
-        "> ⚠️ **重要提示**: MBTI 标签是 strategy profiles（策略画像），不是心理学真实性验证。",
-        f"> 每个 profile 仅 {E[0]['games_played']} 局，属于低样本 smoke test。",
-        "",
-    ])
+    lines.extend(
+        [
+            "",
+            "> ⚠️ **重要提示**: MBTI 标签是 strategy profiles（策略画像），不是心理学真实性验证。",
+            f"> 每个 profile 仅 {E[0]['games_played']} 局，属于低样本 smoke test。",
+            "",
+        ]
+    )
 
     # --- Experiment Setup ---
-    lines.extend([
-        "---",
-        "",
-        "## 2. Experiment Setup",
-        "",
-        "| 参数 | 值 |",
-        "| --- | --- |",
-        f"| **底座模型** | {BASE_MODEL} |",
-        f"| **Profiles** | {len(E)} 个 MBTI-style strategy profiles |",
-        f"| **每 profile 局数** | {E[0]['games_played']} |",
-        f"| **模式** | same-profile（同局所有玩家使用相同 profile） |",
-        f"| **单局玩家数** | 7 |",
-        f"| **来源** | real_llm_game |",
-        f"| **评分来源** | review.py MetricsCalculator process_score |",
-        "",
-        "### Profiles",
-        "",
-        "| Profile | MBTI | Style | Description |",
-        "| --- | --- | --- | --- |",
-    ])
+    lines.extend(
+        [
+            "---",
+            "",
+            "## 2. Experiment Setup",
+            "",
+            "| 参数 | 值 |",
+            "| --- | --- |",
+            f"| **底座模型** | {BASE_MODEL} |",
+            f"| **Profiles** | {len(E)} 个 MBTI-style strategy profiles |",
+            f"| **每 profile 局数** | {E[0]['games_played']} |",
+            "| **模式** | same-profile（同局所有玩家使用相同 profile） |",
+            "| **单局玩家数** | 7 |",
+            "| **来源** | real_llm_game |",
+            "| **评分来源** | review.py MetricsCalculator process_score |",
+            "",
+            "### Profiles",
+            "",
+            "| Profile | MBTI | Style | Description |",
+            "| --- | --- | --- | --- |",
+        ]
+    )
     for e in E:
-        lines.append(f"| {e['profile']} | {e['mbti']} | {MBTI_PROFILES[e['profile']]['style_label']} | {e['description']} |")
+        lines.append(
+            f"| {e['profile']} | {e['mbti']} | {MBTI_PROFILES[e['profile']]['style_label']} | {e['description']} |"
+        )
 
     # --- Leaderboard ---
-    lines.extend([
-        "",
-        "---",
-        "",
-        "## 3. Profile Leaderboard",
-        "",
-        "| Rank | Profile | Games | Process | Speech | Vote | Skill | Survival | Critical Rate | Win Rate | CI (95%) | Warning |",
-        "| ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
-    ])
+    lines.extend(
+        [
+            "",
+            "---",
+            "",
+            "## 3. Profile Leaderboard",
+            "",
+            "| Rank | Profile | Games | Process | Speech | Vote | Skill | Survival | Critical Rate | Win Rate | CI (95%) | Warning |",
+            "| ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
+        ]
+    )
     for i, e in enumerate(E):
         ci = f"[{e['confidence_interval'][0]}, {e['confidence_interval'][1]}]"
         warning = "LOW_SAMPLE" if e["low_sample_warning"] else ""
         lines.append(
-            f"| {i+1} | {e['profile']} | {e['games_played']} | {e['avg_process_score']} | "
+            f"| {i + 1} | {e['profile']} | {e['games_played']} | {e['avg_process_score']} | "
             f"{e['avg_speech_score']} | {e['avg_vote_score']} | {e['avg_skill_score']} | "
             f"{e['avg_survival_score']} | {e['critical_mistake_rate']} | {e['win_rate']} | {ci} | {warning} |"
         )
 
     # --- Speech Act Distribution ---
-    lines.extend([
-        "",
-        "---",
-        "",
-        "## 4. Speech Act Distribution",
-        "",
-        "> 来自 SpeechSemanticScorer v0 (audit-only, 不影响主分)",
-        "",
-        "| Profile | Evidence Grounding | Actionability | Identity Claim | Pressure | Info Seeking | Defensive |",
-        "| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
-    ])
+    lines.extend(
+        [
+            "",
+            "---",
+            "",
+            "## 4. Speech Act Distribution",
+            "",
+            "> 来自 SpeechSemanticScorer v0 (audit-only, 不影响主分)",
+            "",
+            "| Profile | Evidence Grounding | Actionability | Identity Claim | Pressure | Info Seeking | Defensive |",
+            "| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+        ]
+    )
     for e in E:
         sa = e.get("speech_audit", {})
         lines.append(
@@ -470,72 +511,99 @@ def build_report(games: list[dict], leaderboard: dict) -> str:
         )
 
     # --- Expected vs Observed ---
-    lines.extend([
-        "",
-        "---",
-        "",
-        "## 5. Expected vs Observed",
-        "",
-        "| Profile | Expected Behavior | Observed Pattern | Match? |",
-        "| --- | --- | --- | --- |",
-    ])
+    lines.extend(
+        [
+            "",
+            "---",
+            "",
+            "## 5. Expected vs Observed",
+            "",
+            "| Profile | Expected Behavior | Observed Pattern | Match? |",
+            "| --- | --- | --- | --- |",
+        ]
+    )
     expectations = {
-        "INTJ-strategist": ("高 evidence_grounding, 低 defensive_posture, 低 critical mistake rate",
-                            lambda e: e.get("speech_audit", {}).get("evidence_grounding_signal", 0) > 0.3 and e["critical_mistake_rate"] < 0.3),
-        "ENTJ-shotcaller": ("高 actionability, 高 pressure, 高 vote_score",
-                            lambda e: e.get("speech_audit", {}).get("actionability_signal", 0) > 0.15 and e["avg_vote_score"] > 0.5),
-        "ENFP-social-chaotic": ("高 information_seeking, 高 defensive_posture, speech 波动大",
-                               lambda e: e.get("speech_audit", {}).get("information_seeking_signal", 0) > 0.35),
-        "ISTJ-conservative": ("低 critical mistake rate, 低 identity_claim",
-                              lambda e: e["critical_mistake_rate"] < 0.3 and e.get("speech_audit", {}).get("identity_claim_signal", 0) < 0.25),
+        "INTJ-strategist": (
+            "高 evidence_grounding, 低 defensive_posture, 低 critical mistake rate",
+            lambda e: (
+                e.get("speech_audit", {}).get("evidence_grounding_signal", 0) > 0.3 and e["critical_mistake_rate"] < 0.3
+            ),
+        ),
+        "ENTJ-shotcaller": (
+            "高 actionability, 高 pressure, 高 vote_score",
+            lambda e: e.get("speech_audit", {}).get("actionability_signal", 0) > 0.15 and e["avg_vote_score"] > 0.5,
+        ),
+        "ENFP-social-chaotic": (
+            "高 information_seeking, 高 defensive_posture, speech 波动大",
+            lambda e: e.get("speech_audit", {}).get("information_seeking_signal", 0) > 0.35,
+        ),
+        "ISTJ-conservative": (
+            "低 critical mistake rate, 低 identity_claim",
+            lambda e: (
+                e["critical_mistake_rate"] < 0.3 and e.get("speech_audit", {}).get("identity_claim_signal", 0) < 0.25
+            ),
+        ),
     }
     for e in E:
         exp_text, check_fn = expectations.get(e["profile"], ("", lambda _: False))
         match_status = "partial" if check_fn(e) else "weak"
         sa = e.get("speech_audit", {})
-        obs = f"evidence={sa.get('evidence_grounding_signal',0):.2f}, action={sa.get('actionability_signal',0):.2f}, critical_rate={e['critical_mistake_rate']}"
+        obs = f"evidence={sa.get('evidence_grounding_signal', 0):.2f}, action={sa.get('actionability_signal', 0):.2f}, critical_rate={e['critical_mistake_rate']}"
         lines.append(f"| {e['profile']} | {exp_text} | {obs} | {match_status} |")
 
     # --- Dimension Breakdown ---
-    lines.extend([
-        "",
-        "---",
-        "",
-        "## 6. Dimension Breakdown",
-        "",
-        "| Profile | Main Strength | Main Weakness | Evidence |",
-        "| --- | --- | --- | --- |",
-    ])
+    lines.extend(
+        [
+            "",
+            "---",
+            "",
+            "## 6. Dimension Breakdown",
+            "",
+            "| Profile | Main Strength | Main Weakness | Evidence |",
+            "| --- | --- | --- | --- |",
+        ]
+    )
     for e in E:
         dims = {k: e.get(k, 0) for k in ["avg_speech_score", "avg_vote_score", "avg_skill_score", "avg_survival_score"]}
         best_dim = max(dims, key=dims.get)
         worst_dim = min(dims, key=dims.get)
-        dim_labels = {"avg_speech_score": "发言", "avg_vote_score": "投票", "avg_skill_score": "技能", "avg_survival_score": "存活"}
-        lines.append(f"| {e['profile']} | {dim_labels[best_dim]} ({dims[best_dim]}) | {dim_labels[worst_dim]} ({dims[worst_dim]}) | {best_dim}={dims[best_dim]}, {worst_dim}={dims[worst_dim]} |")
+        dim_labels = {
+            "avg_speech_score": "发言",
+            "avg_vote_score": "投票",
+            "avg_skill_score": "技能",
+            "avg_survival_score": "存活",
+        }
+        lines.append(
+            f"| {e['profile']} | {dim_labels[best_dim]} ({dims[best_dim]}) | {dim_labels[worst_dim]} ({dims[worst_dim]}) | {best_dim}={dims[best_dim]}, {worst_dim}={dims[worst_dim]} |"
+        )
 
     # --- Role Breakdown ---
-    lines.extend([
-        "",
-        "---",
-        "",
-        "## 7. Role Breakdown",
-        "",
-        "| Profile | Role | Samples | Low Sample |",
-        "| --- | --- | ---: | --- |",
-    ])
+    lines.extend(
+        [
+            "",
+            "---",
+            "",
+            "## 7. Role Breakdown",
+            "",
+            "| Profile | Role | Samples | Low Sample |",
+            "| --- | --- | ---: | --- |",
+        ]
+    )
     for e in E:
         for role, count in sorted(e.get("role_distribution", {}).items()):
             low = "YES" if count < 3 else ""
             lines.append(f"| {e['profile']} | {role} | {count} | {low} |")
 
     # --- Representative Reviews ---
-    lines.extend([
-        "",
-        "---",
-        "",
-        "## 8. Representative Reviews",
-        "",
-    ])
+    lines.extend(
+        [
+            "",
+            "---",
+            "",
+            "## 8. Representative Reviews",
+            "",
+        ]
+    )
     for e in E:
         profile_games = [g for g in games if g["profile"] == e["profile"]]
         lines.append(f"### {e['profile']} ({e['mbti']})")
@@ -545,12 +613,14 @@ def build_report(games: list[dict], leaderboard: dict) -> str:
             for bc in g.get("bad_cases", [])[:1]:
                 if shown >= 2:
                     break
-                lines.extend([
-                    f"- **{bc['player_name']}** ({bc['role']}) Day {bc['day']} — {bc['severity']}",
-                    f"  - 描述: {bc['description']}",
-                    f"  - 建议: {bc['suggested_fix']}",
-                    "",
-                ])
+                lines.extend(
+                    [
+                        f"- **{bc['player_name']}** ({bc['role']}) Day {bc['day']} — {bc['severity']}",
+                        f"  - 描述: {bc['description']}",
+                        f"  - 建议: {bc['suggested_fix']}",
+                        "",
+                    ]
+                )
                 shown += 1
             if shown >= 2:
                 break
@@ -559,73 +629,84 @@ def build_report(games: list[dict], leaderboard: dict) -> str:
             lines.append("")
 
     # --- Validity Evidence ---
-    lines.extend([
-        "---",
-        "",
-        "## 9. Validity Evidence",
-        "",
-        "### 9.1 Sensitivity",
-        "",
-        "不同 profile 是否产生可见的维度差异？",
-        "",
-    ])
+    lines.extend(
+        [
+            "---",
+            "",
+            "## 9. Validity Evidence",
+            "",
+            "### 9.1 Sensitivity",
+            "",
+            "不同 profile 是否产生可见的维度差异？",
+            "",
+        ]
+    )
     # Check process score range
     process_range = round(max(e["avg_process_score"] for e in E) - min(e["avg_process_score"] for e in E), 2)
-    speech_audit_range = round(max(e.get("speech_audit", {}).get("evidence_grounding_signal", 0) for e in E) -
-                               min(e.get("speech_audit", {}).get("evidence_grounding_signal", 0) for e in E), 3)
-    lines.extend([
-        f"- Process score 跨 profile 范围: **{process_range}** 分",
-        f"- Speech audit evidence_grounding 范围: **{speech_audit_range}**",
-        f"- 存在维度级差异: {'是' if process_range > 2 else '有限'}",
-        "",
-        "### 9.2 Specificity",
-        "",
-        "差异是否落在预期维度？",
-        "",
-        "见 §5 Expected vs Observed 表。",
-        "",
-        "### 9.3 Reviewability",
-        "",
-        "见 §8 Representative Reviews。",
-        "",
-        "### 9.4 Robustness",
-        "",
-        f"- 每个 profile 仅 {E[0]['games_played']} 局，趋势不可靠",
-        "- 同一 profile 内各 seed 间存在随机波动",
-        "- 需要 ≥10 局/profile 才能做稳健性判断",
-        "- 当前仅提供方向性信号",
-        "",
-    ])
+    speech_audit_range = round(
+        max(e.get("speech_audit", {}).get("evidence_grounding_signal", 0) for e in E)
+        - min(e.get("speech_audit", {}).get("evidence_grounding_signal", 0) for e in E),
+        3,
+    )
+    lines.extend(
+        [
+            f"- Process score 跨 profile 范围: **{process_range}** 分",
+            f"- Speech audit evidence_grounding 范围: **{speech_audit_range}**",
+            f"- 存在维度级差异: {'是' if process_range > 2 else '有限'}",
+            "",
+            "### 9.2 Specificity",
+            "",
+            "差异是否落在预期维度？",
+            "",
+            "见 §5 Expected vs Observed 表。",
+            "",
+            "### 9.3 Reviewability",
+            "",
+            "见 §8 Representative Reviews。",
+            "",
+            "### 9.4 Robustness",
+            "",
+            f"- 每个 profile 仅 {E[0]['games_played']} 局，趋势不可靠",
+            "- 同一 profile 内各 seed 间存在随机波动",
+            "- 需要 ≥10 局/profile 才能做稳健性判断",
+            "- 当前仅提供方向性信号",
+            "",
+        ]
+    )
 
     # --- Limitations ---
-    lines.extend([
-        "---",
-        "",
-        "## 10. Limitations",
-        "",
-        "- **MBTI 标签是 strategy profiles**，不是心理学真实性验证",
-        f"- **低样本**: 每个 profile 仅 {E[0]['games_played']} 局，不构成统计显著结论",
-        "- **SpeechSemanticScorer 是 audit-only**，不影响 process score",
-        "- **speech act ≠ speech quality**：发言行为分类不等于发言质量",
-        "- **无人工验证**: 没有 human pairwise labels 或 speech quality labels",
-        "- **same-profile 模式**: 同局内所有玩家使用相同 profile，未测试 mixed-profile 对抗",
-        "- **PairwiseRanker 保持 audit/debug only**",
-        "",
-    ])
+    lines.extend(
+        [
+            "---",
+            "",
+            "## 10. Limitations",
+            "",
+            "- **MBTI 标签是 strategy profiles**，不是心理学真实性验证",
+            f"- **低样本**: 每个 profile 仅 {E[0]['games_played']} 局，不构成统计显著结论",
+            "- **SpeechSemanticScorer 是 audit-only**，不影响 process score",
+            "- **speech act ≠ speech quality**：发言行为分类不等于发言质量",
+            "- **无人工验证**: 没有 human pairwise labels 或 speech quality labels",
+            "- **same-profile 模式**: 同局内所有玩家使用相同 profile，未测试 mixed-profile 对抗",
+            "- **PairwiseRanker 保持 audit/debug only**",
+            "",
+        ]
+    )
 
     # --- Next Steps ---
-    lines.extend([
-        "---",
-        "",
-        "## 11. Next Steps",
-        "",
-        "1. **扩样本**: 每个 profile 至少 10 局",
-        "2. **Mixed-profile rotation**: 同局内混合不同 profile 对抗",
-        "3. **人工复核**: 30 个 critical decisions 的 human review",
-        "4. **Speech semantic human validation**: ≥50 speech samples with human quality labels",
-        "5. **Cross-model**: 在固定 profile 下比较不同底座模型",
-        "",
-    ])
+    lines.extend(
+        [
+            "---",
+            "",
+            "## 11. Next Steps",
+            "",
+            "1. **扩样本**: 每个 profile 至少 10 局",
+            "2. **Mixed-profile rotation**: 同局内混合不同 profile 对抗",
+            "3. **人工复核**: 30 个 critical decisions 的 human review",
+            "4. **Speech semantic human validation**: ≥50 speech samples with human quality labels",
+            "5. **Cross-model**: 在固定 profile 下比较不同底座模型",
+            "",
+        ]
+    )
 
     return "\n".join(lines)
 
@@ -633,6 +714,7 @@ def build_report(games: list[dict], leaderboard: dict) -> str:
 # ===========================================================================
 # Main
 # ===========================================================================
+
 
 async def main_async(seeds: list[int], games_per_profile: int):
     profiles = list(MBTI_PROFILES.keys())
@@ -673,13 +755,16 @@ async def main_async(seeds: list[int], games_per_profile: int):
     print("MBTI Profile Evaluation Complete")
     print("=" * 60)
     for e in leaderboard["entries"]:
-        print(f"  {e['profile']} ({e['mbti']}): process={e['avg_process_score']}, "
-              f"speech={e['avg_speech_score']}, vote={e['avg_vote_score']}, "
-              f"skill={e['avg_skill_score']}, mistakes={e['critical_mistake_rate']}")
+        print(
+            f"  {e['profile']} ({e['mbti']}): process={e['avg_process_score']}, "
+            f"speech={e['avg_speech_score']}, vote={e['avg_vote_score']}, "
+            f"skill={e['avg_skill_score']}, mistakes={e['critical_mistake_rate']}"
+        )
 
 
 def main():
     import argparse
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--seeds", default="100,200,300", help="Comma-separated seeds")
     parser.add_argument("--games-per-profile", type=int, default=3)

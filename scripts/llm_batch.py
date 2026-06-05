@@ -17,7 +17,8 @@ import json
 import sys
 import time
 import traceback
-from datetime import datetime, timezone
+from datetime import datetime
+from datetime import timezone
 from pathlib import Path
 from typing import Any
 
@@ -29,7 +30,6 @@ from backend.agents.factory import create_agents
 from backend.agents.llm_agent import LLMAgent
 from backend.engine.game import WerewolfGame
 from backend.engine.rules import build_players
-
 
 HEALTH_DIR = ROOT / "data" / "health"
 HEALTH_DIR.mkdir(parents=True, exist_ok=True)
@@ -52,14 +52,14 @@ def play_one_game(seed: int) -> dict[str, Any]:
 
     decisions = state.decision_records
     fallback_decisions = [
-        rec for rec in decisions
+        rec
+        for rec in decisions
         if bool((rec.parsed_action or {}).get("metadata", {}).get("fallback"))
         or bool((rec.parsed_action or {}).get("agent_fallback"))
         or str((rec.parsed_action or {}).get("metadata", {}).get("source", "")) == "fallback"
     ]
     llm_decisions = [
-        rec for rec in decisions
-        if str((rec.parsed_action or {}).get("metadata", {}).get("source", "")) == "llm"
+        rec for rec in decisions if str((rec.parsed_action or {}).get("metadata", {}).get("source", "")) == "llm"
     ]
 
     return {
@@ -128,17 +128,18 @@ def run_batch(seeds: list[int], strict: bool, batch_label: str) -> Path:
         "games_failed": len(failed),
         "winner_breakdown": _winner_breakdown(succeeded),
         "model_usage": _model_usage(succeeded),
-        "avg_duration_s": round(
-            sum(g["duration_s"] for g in succeeded) / max(len(succeeded), 1), 2
-        ),
+        "avg_duration_s": round(sum(g["duration_s"] for g in succeeded) / max(len(succeeded), 1), 2),
         "fallback_decision_total": sum(g["fallback_decisions"] for g in succeeded),
         "llm_decision_total": sum(g["llm_decisions"] for g in succeeded),
         "errors": [{"seed": e["seed"], "error_type": e["error_type"]} for e in failed[:20]],
         "log_path": str(log_path),
     }
     summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"\n[{finished_at}] Batch done — {len(succeeded)}/{len(seeds)} ok, "
-          f"{len(failed)} failed. Summary: {summary_path}", flush=True)
+    print(
+        f"\n[{finished_at}] Batch done — {len(succeeded)}/{len(seeds)} ok, "
+        f"{len(failed)} failed. Summary: {summary_path}",
+        flush=True,
+    )
     return summary_path
 
 
@@ -164,8 +165,7 @@ def main() -> int:
     ap.add_argument("--seeds", type=int, nargs="*", help="Explicit seeds list")
     ap.add_argument("--seed-start", type=int, default=1)
     ap.add_argument("--seed-count", type=int, default=10)
-    ap.add_argument("--strict-fallback", default="false",
-                    help="If true, any LLM fallback aborts the game")
+    ap.add_argument("--strict-fallback", default="false", help="If true, any LLM fallback aborts the game")
     ap.add_argument("--label", default=None, help="Batch label (default UTC timestamp)")
     args = ap.parse_args()
 

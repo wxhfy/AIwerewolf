@@ -6,7 +6,8 @@ Only uses PreAction-available information (public context, private context, targ
 
 from __future__ import annotations
 
-import json, re
+import json
+import re
 from typing import Any
 
 
@@ -17,7 +18,9 @@ class VoteQualityFeatures:
     def supports(self, opportunity: dict[str, Any]) -> bool:
         return opportunity.get("opportunity_type") == "vote"
 
-    def extract(self, opportunity: dict[str, Any], context: dict[str, Any] | None = None) -> dict[str, float | int | str]:
+    def extract(
+        self, opportunity: dict[str, Any], context: dict[str, Any] | None = None
+    ) -> dict[str, float | int | str]:
         role = opportunity.get("role", "")
         target_feat = opportunity.get("target_features", {}) or {}
         game_feat = opportunity.get("game_features", {}) or {}
@@ -47,9 +50,9 @@ class VoteQualityFeatures:
 
         # Parse known wolves from private context
         known_wolf_ids: set[str] = set()
-        for match in re.finditer(r'P\d+', private_ctx):
+        for match in re.finditer(r"P\d+", private_ctx):
             wid = match.group(0).strip().upper()
-            ctx_around = private_ctx[max(0, match.start()-20):min(len(private_ctx), match.end()+30)]
+            ctx_around = private_ctx[max(0, match.start() - 20) : min(len(private_ctx), match.end() + 30)]
             if any(kw in ctx_around for kw in ["狼", "wolf", "查杀", "队友"]):
                 known_wolf_ids.add(wid)
         if role in ("Werewolf", "WhiteWolfKing"):
@@ -78,9 +81,15 @@ class VoteQualityFeatures:
                 feats["vote_target_alignment_score"] = 0.5
 
         # 2. vote_target_role_value: how valuable is this target to eliminate
-        role_value = {"Seer": 0.95, "Witch": 0.90, "Guard": 0.80,
-                       "Hunter": 0.70, "Villager": 0.30, "Werewolf": 0.10,
-                       "WhiteWolfKing": 0.10}
+        role_value = {
+            "Seer": 0.95,
+            "Witch": 0.90,
+            "Guard": 0.80,
+            "Hunter": 0.70,
+            "Villager": 0.30,
+            "Werewolf": 0.10,
+            "WhiteWolfKing": 0.10,
+        }
         tv = role_value.get(target_role, 0.40)
         if target_feat.get("target_is_exposed") and target_align == "village":
             tv = min(1.0, tv + 0.10)
@@ -92,12 +101,10 @@ class VoteQualityFeatures:
         if target_id and target_id in public_ctx:
             if any(kw in public_ctx for kw in ["查杀", "查验", "狼人", "预言家"]):
                 # Target is publicly implicated
-                if is_village and target_align == "wolf":
-                    public_evidence_match = 0.85
-                elif is_wolf and target_align == "village":
+                if is_village and target_align == "wolf" or is_wolf and target_align == "village":
                     public_evidence_match = 0.85
         # Check if public context mentions wolf check that this voter is ignoring
-        seer_check_match = re.search(r'(?:查验|查杀)\s*(P\d+)\s*(?:是|为)?\s*(?:狼|wolf)', public_ctx)
+        seer_check_match = re.search(r"(?:查验|查杀)\s*(P\d+)\s*(?:是|为)?\s*(?:狼|wolf)", public_ctx)
         if seer_check_match:
             checked_wolf = seer_check_match.group(1)
             if checked_wolf != target_id and is_village:
@@ -111,9 +118,7 @@ class VoteQualityFeatures:
         if known_wolf_ids and is_village:
             if target_id in known_wolf_ids:
                 private_info_match = 0.95  # Voting known wolf — correct
-            elif target_align == "village" and any(
-                wid not in public_ctx for wid in known_wolf_ids
-            ):
+            elif target_align == "village" and any(wid not in public_ctx for wid in known_wolf_ids):
                 private_info_match = 0.15  # Ignoring known wolf info
         feats["vote_matches_private_info"] = round(private_info_match, 4)
 
@@ -168,7 +173,7 @@ class VoteQualityFeatures:
         # 9. vote_is_stance_consistent: matches prior speech
         stance_consistent = 0.5
         # Check if this player had a prior speech that mentioned the target
-        speech_texts = re.findall(rf'{player_id}[^]]*?(?:speech|发言)', public_ctx)
+        speech_texts = re.findall(rf"{player_id}[^]]*?(?:speech|发言)", public_ctx)
         if target_id and target_id in public_ctx:
             # Simple heuristic: if target_id appears in nearby context of voter's speeches
             stance_consistent = 0.6
@@ -203,20 +208,22 @@ class VoteQualityFeatures:
         if target_role in ("Seer", "Witch", "Guard", "Hunter"):
             claimed_role = 0.5
             if target_id and target_id in public_ctx:
-                if any(kw in public_ctx for kw in [f"我是{target_role}", f"我是预言家", "我是女巫", "我是守卫", "我是猎人"]):
+                if any(
+                    kw in public_ctx for kw in [f"我是{target_role}", "我是预言家", "我是女巫", "我是守卫", "我是猎人"]
+                ):
                     claimed_role = 0.9
         feats["vote_target_public_claimed_role"] = round(claimed_role, 4)
 
         # 13. vote_public_checked_wolf_target: target is publicly checked wolf
         pub_checked_wolf = 0
         if target_id and target_id in public_ctx:
-            if re.search(rf'{target_id}.*?(?:查杀|查验.*?狼|是狼)', public_ctx):
+            if re.search(rf"{target_id}.*?(?:查杀|查验.*?狼|是狼)", public_ctx):
                 pub_checked_wolf = 1
         feats["vote_public_checked_wolf_target"] = pub_checked_wolf
 
         # 14. vote_away_from_public_checked_wolf: public wolf exists but vote elsewhere
         away_from_pub_wolf = 0
-        pub_wolf_match = re.search(r'(?:查杀|查验)\s*(P\d+)\s*(?:是|为)?\s*(?:狼|wolf)', public_ctx)
+        pub_wolf_match = re.search(r"(?:查杀|查验)\s*(P\d+)\s*(?:是|为)?\s*(?:狼|wolf)", public_ctx)
         if pub_wolf_match and is_village:
             pub_wolf = pub_wolf_match.group(1)
             if target_id != pub_wolf:
@@ -246,7 +253,11 @@ class VoteQualityFeatures:
 
         # 18. vote_prior_speech_target_conflict: vote contradicts speech stance
         speech_conflict = 0
-        if player_id and target_id and target_id not in public_ctx.split(player_id)[-1][:200] if player_id in public_ctx else False:
+        if (
+            player_id and target_id and target_id not in public_ctx.split(player_id)[-1][:200]
+            if player_id in public_ctx
+            else False
+        ):
             pass  # Will be set below
         if player_id and target_id and is_wolf:
             # Wolf who spoke about saving X but votes Y = conflict

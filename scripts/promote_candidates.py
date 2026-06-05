@@ -19,9 +19,6 @@ import logging
 import os
 import sys
 from collections import defaultdict
-from typing import Any
-
-import numpy as np
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -39,13 +36,12 @@ os.environ["DATABASE_URL"] = DB_URL
 # ---------------------------------------------------------------------------
 # Imports (after env is configured)
 # ---------------------------------------------------------------------------
-from backend.db.database import SessionLocal, init_db                     # noqa: E402
-from backend.db.models import StrategyKnowledgeDoc                       # noqa: E402
-from backend.eval.evolution import (                                     # noqa: E402
-    StrategyKnowledgeStore,
-    get_promotion_report,
-    promote_candidates,
-)
+from backend.db.database import SessionLocal  # noqa: E402
+from backend.db.database import init_db  # noqa: E402
+from backend.db.models import StrategyKnowledgeDoc  # noqa: E402
+from backend.eval.evolution import StrategyKnowledgeStore  # noqa: E402
+from backend.eval.evolution import get_promotion_report  # noqa: E402
+from backend.eval.evolution import promote_candidates  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -94,7 +90,7 @@ def _count_by_status(store: StrategyKnowledgeStore) -> dict[str, int]:
 
 def _count_active_by_role(store: StrategyKnowledgeStore) -> dict[str, int]:
     """Count active docs per role."""
-    counts: dict[str, int] = {role: 0 for role in ALL_ROLES}
+    counts: dict[str, int] = dict.fromkeys(ALL_ROLES, 0)
     for doc in store.docs.values():
         if doc.status == "active":
             role = doc.role if doc.role in counts else "global"
@@ -139,11 +135,7 @@ def deduplicate_candidates(
     from sklearn.feature_extraction.text import TfidfVectorizer
     from sklearn.metrics.pairwise import cosine_similarity
 
-    candidates = (
-        db.query(StrategyKnowledgeDoc)
-        .filter(StrategyKnowledgeDoc.status == "candidate")
-        .all()
-    )
+    candidates = db.query(StrategyKnowledgeDoc).filter(StrategyKnowledgeDoc.status == "candidate").all()
     logger.info("Dedup: loaded %d candidates for similarity check", len(candidates))
 
     if len(candidates) < 2:
@@ -216,7 +208,10 @@ def deduplicate_candidates(
         if len(deprecated_ids) > 0:
             logger.info(
                 "  Dedup: %s/%s merged %d duplicates from %d docs",
-                role, doc_type, len(deprecated_ids), n,
+                role,
+                doc_type,
+                len(deprecated_ids),
+                n,
             )
 
     if total_merged > 0 and not dry_run:
@@ -249,15 +244,15 @@ def prune_candidate_pool(
 
     excess = len(candidates) - max_candidates
     if excess <= 0:
-        logger.info("Candidate pool size %d within limit %d, no pruning needed.",
-                    len(candidates), max_candidates)
+        logger.info("Candidate pool size %d within limit %d, no pruning needed.", len(candidates), max_candidates)
         return 0
 
     to_deprecate = candidates[:excess]
     logger.info(
-        "Candidate pool %d exceeds limit %d. Pruning %d lowest-quality candidates "
-        "(quality range: %.2f - %.2f).",
-        len(candidates), max_candidates, len(to_deprecate),
+        "Candidate pool %d exceeds limit %d. Pruning %d lowest-quality candidates (quality range: %.2f - %.2f).",
+        len(candidates),
+        max_candidates,
+        len(to_deprecate),
         to_deprecate[0].quality_score if to_deprecate else 0,
         to_deprecate[-1].quality_score if to_deprecate else 0,
     )
@@ -330,9 +325,7 @@ def print_report(
 # Main
 # ---------------------------------------------------------------------------
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Promote / deprecate / clean strategy knowledge candidates"
-    )
+    parser = argparse.ArgumentParser(description="Promote / deprecate / clean strategy knowledge candidates")
     parser.add_argument(
         "--dry-run",
         action="store_true",
@@ -381,6 +374,7 @@ def main() -> None:
         db = SessionLocal()
         try:
             from sqlalchemy import text
+
             db.execute(text("SELECT 1"))
 
             if enable_dedup:
@@ -393,11 +387,7 @@ def main() -> None:
                 logger.info("Dedup: merged %d duplicates", cleaning["merged"])
 
             # Prune if candidate pool exceeds limit
-            candidate_count = (
-                db.query(StrategyKnowledgeDoc)
-                .filter(StrategyKnowledgeDoc.status == "candidate")
-                .count()
-            )
+            candidate_count = db.query(StrategyKnowledgeDoc).filter(StrategyKnowledgeDoc.status == "candidate").count()
             if candidate_count > max_candidates:
                 cleaning["pruned"] = prune_candidate_pool(
                     db,
@@ -520,8 +510,10 @@ def main() -> None:
     # Cleaning summary
     total_cleaned = cleaning.get("merged", 0) + cleaning.get("pruned", 0)
     if total_cleaned > 0:
-        print(f"Cleaning summary: merged {cleaning['merged']} duplicates, "
-              f"pruned {cleaning['pruned']} from candidate pool cap.\n")
+        print(
+            f"Cleaning summary: merged {cleaning['merged']} duplicates, "
+            f"pruned {cleaning['pruned']} from candidate pool cap.\n"
+        )
 
     logger.info("Done.")
 

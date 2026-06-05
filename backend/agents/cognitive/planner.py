@@ -11,8 +11,10 @@ Pattern:  Declare → Remember → Remind → Execute (or adapt/abandon)
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import List, Optional
+from dataclasses import dataclass
+from dataclasses import field
+from typing import List
+from typing import Optional
 
 
 @dataclass
@@ -31,15 +33,15 @@ class StrategicIntent:
         )
     """
 
-    objective: str              # e.g. "bluff_claim_seer", "frame_player_3"
-    target_phase: str           # When to execute (DAY_SPEECH, NIGHT_WOLF_ACTION, etc.)
+    objective: str  # e.g. "bluff_claim_seer", "frame_player_3"
+    target_phase: str  # When to execute (DAY_SPEECH, NIGHT_WOLF_ACTION, etc.)
     declared_day: int = 0
     declared_phase: str = ""
     conditions: List[str] = field(default_factory=list)  # What must hold true
     condition_check_results: List[str] = field(default_factory=list)
-    fallback: str = ""          # What to do if conditions fail
+    fallback: str = ""  # What to do if conditions fail
     resolved: bool = False
-    resolution_note: str = ""   # "executed", "conditions_failed", "phase_passed", "abandoned"
+    resolution_note: str = ""  # "executed", "conditions_failed", "phase_passed", "abandoned"
 
     def is_active(self, current_day: int, current_phase: str) -> bool:
         """Check if this intent should be active in the current context."""
@@ -113,7 +115,10 @@ class Planner:
         return None
 
     def check_and_resolve(
-        self, current_day: int, current_phase: str, conditions_met: bool,
+        self,
+        current_day: int,
+        current_phase: str,
+        conditions_met: bool,
     ) -> Optional[StrategicIntent]:
         """Check active intent conditions and resolve if appropriate.
 
@@ -169,5 +174,5 @@ class Planner:
         resolved = [i for i in self.intents if i.resolved]
         active = [i for i in self.intents if not i.resolved]
         if len(resolved) > self._max_history:
-            resolved = resolved[-self._max_history:]
+            resolved = resolved[-self._max_history :]
         self.intents = active + resolved

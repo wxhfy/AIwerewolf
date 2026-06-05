@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from dataclasses import field
 
-from backend.agents.cognitive.strategies.base import RoleStrategyCard, register_strategy
+from backend.agents.cognitive.strategies.base import RoleStrategyCard
+from backend.agents.cognitive.strategies.base import register_strategy
 
 
 @register_strategy("villager")
@@ -22,18 +24,20 @@ class VillagerStrategyCard(RoleStrategyCard):
     information_seeking: float = 0.65
 
     # Villager-specific
-    analysis_depth: str = "moderate"            # shallow | moderate | deep
-    contradiction_sensitivity: float = 0.70     # How sensitive to contradictions
-    follow_leadership: float = 0.50             # Tendency to follow trusted leaders
-    independent_vote: float = 0.60              # Tendency to vote independently
+    analysis_depth: str = "moderate"  # shallow | moderate | deep
+    contradiction_sensitivity: float = 0.70  # How sensitive to contradictions
+    follow_leadership: float = 0.50  # Tendency to follow trusted leaders
+    independent_vote: float = 0.60  # Tendency to vote independently
 
     # Analysis focus
-    analysis_priorities: list[str] = field(default_factory=lambda: [
-        "claim_contradictions",     # Multiple claims of same role
-        "vote_patterns",            # Who votes with whom
-        "speech_consistency",       # Stance changes across days
-        "information_hiding",       # Who avoids sharing info
-    ])
+    analysis_priorities: list[str] = field(
+        default_factory=lambda: [
+            "claim_contradictions",  # Multiple claims of same role
+            "vote_patterns",  # Who votes with whom
+            "speech_consistency",  # Stance changes across days
+            "information_hiding",  # Who avoids sharing info
+        ]
+    )
 
     def format_for_prompt(self) -> str:
         base = super().format_for_prompt()

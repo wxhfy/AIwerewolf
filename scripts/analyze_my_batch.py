@@ -24,8 +24,9 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from backend.db.database import SessionLocal
 from sqlalchemy import text
+
+from backend.db.database import SessionLocal
 
 
 def load_my_game_ids(label: str | None) -> list[str]:
@@ -52,7 +53,8 @@ def load_my_game_ids(label: str | None) -> list[str]:
     # Fallback: query all-LLM games from today.
     db = SessionLocal()
     try:
-        rows = db.execute(text("""
+        rows = db.execute(
+            text("""
             SELECT g.id
             FROM games g
             WHERE g.status = 'finished'
@@ -60,7 +62,8 @@ def load_my_game_ids(label: str | None) -> list[str]:
               AND EXISTS (SELECT 1 FROM players p WHERE p.game_id=g.id AND p.agent_type='llm')
               AND NOT EXISTS (SELECT 1 FROM players p WHERE p.game_id=g.id AND p.agent_type!='llm')
             ORDER BY g.created_at
-        """)).fetchall()
+        """)
+        ).fetchall()
         return [r[0] for r in rows]
     finally:
         db.close()
@@ -72,12 +75,15 @@ def collect_player_reviews(game_ids: list[str]) -> list[dict[str, Any]]:
         return []
     db = SessionLocal()
     try:
-        rows = db.execute(text("""
+        rows = db.execute(
+            text("""
             SELECT pr.game_id, g.winner, pr.report_json, pr.score, pr.grade, pr.status
             FROM published_reviews pr
             JOIN games g ON g.id = pr.game_id
             WHERE pr.game_id IN :gids
-        """), {"gids": tuple(game_ids)}).fetchall()
+        """),
+            {"gids": tuple(game_ids)},
+        ).fetchall()
 
         all_reviews: list[dict[str, Any]] = []
         for game_id, winner, report_json, validation_score, grade, status in rows:
@@ -87,8 +93,9 @@ def collect_player_reviews(game_ids: list[str]) -> list[dict[str, Any]]:
             for pr in player_reviews:
                 pr["_game_id"] = game_id
                 pr["_winner"] = winner
-                pr["_won"] = (winner == "wolf" and pr.get("alignment") == "wolf") or \
-                             (winner == "village" and pr.get("alignment") == "village")
+                pr["_won"] = (winner == "wolf" and pr.get("alignment") == "wolf") or (
+                    winner == "village" and pr.get("alignment") == "village"
+                )
                 pr["_validation_score"] = float(validation_score or 0)
                 pr["_validation_grade"] = grade
                 pr["_validation_status"] = status
@@ -123,8 +130,9 @@ def quantify_outcome_bias(player_reviews: list[dict[str, Any]]) -> dict[str, Any
     for pr in player_reviews:
         role = pr.get("role") or "Unknown"
         won = pr.get("_won")
-        bucket = by_role.setdefault(role, {"win_process": [], "lose_process": [],
-                                            "win_adjusted": [], "lose_adjusted": []})
+        bucket = by_role.setdefault(
+            role, {"win_process": [], "lose_process": [], "win_adjusted": [], "lose_adjusted": []}
+        )
         bucket["win_process" if won else "lose_process"].append(float(pr.get("process_score") or 0))
         bucket["win_adjusted" if won else "lose_adjusted"].append(
             float(pr.get("adjusted_final_score") or pr.get("rule_score") or 0)
@@ -139,15 +147,19 @@ def quantify_outcome_bias(player_reviews: list[dict[str, Any]]) -> dict[str, Any
         result[role] = {
             "n_win": win_p["n"],
             "n_lose": lose_p["n"],
-            "process_score": {"win": win_p, "lose": lose_p,
-                              "gap_mean": round(win_p["mean"] - lose_p["mean"], 2)},
-            "adjusted_final_score": {"win": win_a, "lose": lose_a,
-                                      "gap_mean": round(win_a["mean"] - lose_a["mean"], 2)},
+            "process_score": {"win": win_p, "lose": lose_p, "gap_mean": round(win_p["mean"] - lose_p["mean"], 2)},
+            "adjusted_final_score": {
+                "win": win_a,
+                "lose": lose_a,
+                "gap_mean": round(win_a["mean"] - lose_a["mean"], 2),
+            },
             "bias_removed_pct": (
                 round(
                     100 * (1 - abs(win_p["mean"] - lose_p["mean"]) / max(abs(win_a["mean"] - lose_a["mean"]), 0.01)),
                     1,
-                ) if (win_p["n"] and lose_p["n"]) else None
+                )
+                if (win_p["n"] and lose_p["n"])
+                else None
             ),
         }
     return result
@@ -195,9 +207,11 @@ def main() -> int:
     print("\n=== Outcome bias per role (win vs lose distributions) ===")
     print("  process_score gap should drop toward 0 if the split worked,")
     print("  adjusted_final_score gap may still be large (camp_result is in there).\n")
-    print(f"{'role':<12s} {'n_w':>4s} {'n_l':>4s} | "
-          f"{'proc_w':>7s} {'proc_l':>7s} {'gap':>6s} | "
-          f"{'adj_w':>7s} {'adj_l':>7s} {'gap':>6s} | bias_removed_%")
+    print(
+        f"{'role':<12s} {'n_w':>4s} {'n_l':>4s} | "
+        f"{'proc_w':>7s} {'proc_l':>7s} {'gap':>6s} | "
+        f"{'adj_w':>7s} {'adj_l':>7s} {'gap':>6s} | bias_removed_%"
+    )
     for role in sorted(bias):
         b = bias[role]
         pw = b["process_score"]["win"]["mean"]
@@ -208,9 +222,11 @@ def main() -> int:
         ag = b["adjusted_final_score"]["gap_mean"]
         rem = b.get("bias_removed_pct")
         rem_s = f"{rem}%" if rem is not None else "n/a"
-        print(f"{role:<12s} {b['n_win']:>4d} {b['n_lose']:>4d} | "
-              f"{pw:>7.2f} {pl:>7.2f} {pg:>+6.2f} | "
-              f"{aw:>7.2f} {al_:>7.2f} {ag:>+6.2f} | {rem_s}")
+        print(
+            f"{role:<12s} {b['n_win']:>4d} {b['n_lose']:>4d} | "
+            f"{pw:>7.2f} {pl:>7.2f} {pg:>+6.2f} | "
+            f"{aw:>7.2f} {al_:>7.2f} {ag:>+6.2f} | {rem_s}"
+        )
 
     # 3. Validation result distribution
     grades: dict[str, int] = {}

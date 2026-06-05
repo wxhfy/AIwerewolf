@@ -15,10 +15,7 @@ from backend.engine.visibility import Visibility
 
 def main() -> int:
     players = build_players(seed=7)
-    agents = {
-        player.id: LLMAgent(player.id, seed=7 + player.seat, provider="fake")
-        for player in players
-    }
+    agents = {player.id: LLMAgent(player.id, seed=7 + player.seat, provider="fake") for player in players}
     agent = agents[players[0].id]
     game = WerewolfGame(players=players, agents=agents, seed=7)
     game.initialize()

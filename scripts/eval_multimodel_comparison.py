@@ -12,7 +12,6 @@ Usage:
 """
 
 import argparse
-import os
 import sys
 from pathlib import Path
 
@@ -20,11 +19,14 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from backend.llm.env import load_env_file
+
 load_env_file()
 
-from backend.agents.factory import create_agents, _resolve_pool_specs
+from backend.agents.factory import _resolve_pool_specs
+from backend.agents.factory import create_agents
 from backend.engine.game import WerewolfGame
-from backend.engine.rules import build_players, get_role_configuration
+from backend.engine.rules import build_players
+from backend.engine.rules import get_role_configuration
 
 
 def check_pool():
@@ -66,8 +68,6 @@ def run_comparison_games(num_games: int = 3, player_count: int = 7):
     Each game randomly assigns different models from the pool to different
     players, creating natural head-to-head comparison data.
     """
-    from backend.db.persist import save_game_start, save_game_end
-    from backend.db.database import SessionLocal
 
     specs = _resolve_pool_specs({})
     if not specs:
@@ -85,11 +85,14 @@ def run_comparison_games(num_games: int = 3, player_count: int = 7):
         players = build_players(roles, seed=seed)
 
         # Build agent config with model pool
-        agents = create_agents(players, {
-            "type": "llm",
-            "seed": seed,
-            "model_pool": [f"{s['provider']}:{s['model']}" for s in specs],
-        })
+        agents = create_agents(
+            players,
+            {
+                "type": "llm",
+                "seed": seed,
+                "model_pool": [f"{s['provider']}:{s['model']}" for s in specs],
+            },
+        )
 
         # Show assignments
         model_labels = []
@@ -121,9 +124,8 @@ def run_comparison_games(num_games: int = 3, player_count: int = 7):
                 for s in specs:
                     if s["model"] in (p.model_name or ""):
                         model_key = f"{s['provider']}:{s['model']}"
-                        won = (
-                            (winner and "wolf" in str(winner).lower() and "wolf" in p.role.value.lower())
-                            or (winner and "village" in str(winner).lower() and "wolf" not in p.role.value.lower())
+                        won = (winner and "wolf" in str(winner).lower() and "wolf" in p.role.value.lower()) or (
+                            winner and "village" in str(winner).lower() and "wolf" not in p.role.value.lower()
                         )
                         if won:
                             model_stats[model_key]["wins"] += 1
@@ -133,13 +135,14 @@ def run_comparison_games(num_games: int = 3, player_count: int = 7):
         except Exception as e:
             print(f"  ERROR: {e}")
             import traceback
+
             traceback.print_exc()
             continue
 
     # Print comparison
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("MODEL COMPARISON RESULTS")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     print(f"{'Model':<40} {'Games':>6} {'Wins':>6} {'Win%':>7} {'Surv%':>7}")
     print("-" * 60)
     for label, stats in sorted(model_stats.items()):
@@ -151,9 +154,9 @@ def run_comparison_games(num_games: int = 3, player_count: int = 7):
         print(f"{label:<40} {games:>6} {stats['wins']:>6} {win_rate:>6.1f}% {surv_rate:>6.1f}%")
 
     # Leaderboard integration
-    print(f"\n=== Leaderboard Ready ===")
-    print(f"  Run: python scripts/manage_knowledge.py stats")
-    print(f"  Or check DB: SELECT * FROM leaderboard_entries ORDER BY win_rate DESC;")
+    print("\n=== Leaderboard Ready ===")
+    print("  Run: python scripts/manage_knowledge.py stats")
+    print("  Or check DB: SELECT * FROM leaderboard_entries ORDER BY win_rate DESC;")
 
 
 if __name__ == "__main__":

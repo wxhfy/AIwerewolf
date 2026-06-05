@@ -82,13 +82,12 @@ def demote_docs(conn, doc_ids: list[str]) -> int:
 
 def main():
     ap = argparse.ArgumentParser(description="Prune active strategies by (role,doc_type) caps")
-    ap.add_argument("--dry-run", action="store_true", default=True,
-                    help="Preview changes without executing (default)")
-    ap.add_argument("--apply", action="store_true",
-                    help="Actually execute the pruning")
+    ap.add_argument("--dry-run", action="store_true", default=True, help="Preview changes without executing (default)")
+    ap.add_argument("--apply", action="store_true", help="Actually execute the pruning")
     args = ap.parse_args()
 
     import psycopg2
+
     conn = psycopg2.connect(DB_URL)
 
     # Current state
@@ -130,11 +129,11 @@ def main():
             to_demote.extend([d[0] for d in demote])
 
     # Print summary
-    print(f"\n{'='*70}")
-    print(f"  Active Pruning Summary")
-    print(f"{'='*70}")
+    print(f"\n{'=' * 70}")
+    print("  Active Pruning Summary")
+    print(f"{'=' * 70}")
     print(f"  {'Bucket':<30} {'Total':>6} {'Keep':>6} {'Demote':>6} {'Cap':>6}")
-    print(f"  {'-'*54}")
+    print(f"  {'-' * 54}")
 
     # Sort by demote count desc
     for key, s in sorted(stats.items(), key=lambda x: -x[1]["demote"]):
@@ -143,9 +142,9 @@ def main():
         if s["demote"] > 0:
             print(f"  {key:<30} {s['total']:>6} {s['keep']:>6} {s['demote']:>6} {cap_str:>6}")
 
-    print(f"  {'-'*54}")
+    print(f"  {'-' * 54}")
     print(f"  {'TOTAL':<30} {total_active_before:>6} {total_keep:>6} {total_demote:>6}")
-    print(f"{'='*70}")
+    print(f"{'=' * 70}")
 
     # Role-level check: each role should have at least 50 active
     role_keep: dict[str, int] = defaultdict(int)
@@ -153,7 +152,7 @@ def main():
         role = key.rsplit("/", 1)[0]  # "Werewolf/reflection" → "Werewolf"
         role_keep[role] += s["keep"]
 
-    print(f"\n  Active per role after pruning:")
+    print("\n  Active per role after pruning:")
     for role, cnt in sorted(role_keep.items(), key=lambda x: -x[1]):
         flag = " ⚠️ <50" if cnt < 50 else ""
         print(f"    {role:<20} {cnt:>5}{flag}")

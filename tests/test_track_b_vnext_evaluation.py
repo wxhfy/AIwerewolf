@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 import json
-import pytest
 from pathlib import Path
 
 
 def _run_suite(suite: str):
-    import subprocess, sys
+    import subprocess
+    import sys
+
     r = subprocess.run(
         [sys.executable, "scripts/evaluate_track_b_vnext.py", "--suite", suite],
-        capture_output=True, text=True, timeout=300,
+        capture_output=True,
+        text=True,
+        timeout=300,
     )
     return r.returncode, r.stdout, r.stderr
 
@@ -56,9 +59,10 @@ def test_evaluate_track_b_vnext_ablation_suite_runs():
 def test_vnext_eval_summary_schema():
     p = Path("data/health/track_b_vnext_eval_summary.json")
     if not p.exists():
-        import subprocess, sys
-        subprocess.run([sys.executable, "scripts/evaluate_track_b_vnext.py", "--all"],
-                       capture_output=True, timeout=300)
+        import subprocess
+        import sys
+
+        subprocess.run([sys.executable, "scripts/evaluate_track_b_vnext.py", "--all"], capture_output=True, timeout=300)
     if p.exists():
         data = json.loads(p.read_text())
         assert "suites" in data
@@ -72,9 +76,10 @@ def test_vnext_eval_summary_schema():
 def test_vnext_eval_report_created():
     p = Path("docs/track_b_vnext_eval_report.md")
     if not p.exists():
-        import subprocess, sys
-        subprocess.run([sys.executable, "scripts/evaluate_track_b_vnext.py", "--all"],
-                       capture_output=True, timeout=300)
+        import subprocess
+        import sys
+
+        subprocess.run([sys.executable, "scripts/evaluate_track_b_vnext.py", "--all"], capture_output=True, timeout=300)
     assert p.exists(), "Report not generated"
     content = p.read_text()
     assert "Executive Summary" in content

@@ -44,9 +44,11 @@ DB_URL = "postgresql://werewolf:wolf_secret_2026@127.0.0.1:5433/werewolf"
 os.environ.setdefault("DATABASE_URL", DB_URL)
 
 # Now safe to import project internals.
-from backend.llm import create_client, load_env_file                     # noqa: E402
-from backend.db.database import SessionLocal, init_db                    # noqa: E402
-from backend.db.models import StrategyKnowledgeDoc                      # noqa: E402
+from backend.db.database import SessionLocal  # noqa: E402
+from backend.db.database import init_db  # noqa: E402
+from backend.db.models import StrategyKnowledgeDoc  # noqa: E402
+from backend.llm import create_client  # noqa: E402
+from backend.llm import load_env_file  # noqa: E402
 
 load_env_file()
 
@@ -61,46 +63,46 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 # and which strategy types to cover.
 # ──────────────────────────────────────────────────────────────────────
 ROLE_TARGETS: dict[str, int] = {
-    "Seer":          70,   # 预言家
-    "Witch":         70,   # 女巫
-    "Hunter":        70,   # 猎人
-    "Guard":         70,   # 守卫
-    "Villager":      70,   # 村民
-    "Werewolf":      70,   # 狼人
-    "WhiteWolfKing": 40,   # 白狼王
-    "global":        40,   # 全局策略
+    "Seer": 70,  # 预言家
+    "Witch": 70,  # 女巫
+    "Hunter": 70,  # 猎人
+    "Guard": 70,  # 守卫
+    "Villager": 70,  # 村民
+    "Werewolf": 70,  # 狼人
+    "WhiteWolfKing": 40,  # 白狼王
+    "global": 40,  # 全局策略
 }
 
 # Chinese display names for logging.
 ROLE_CN: dict[str, str] = {
-    "Seer":          "预言家",
-    "Witch":         "女巫",
-    "Hunter":        "猎人",
-    "Guard":         "守卫",
-    "Villager":      "村民",
-    "Werewolf":      "狼人",
+    "Seer": "预言家",
+    "Witch": "女巫",
+    "Hunter": "猎人",
+    "Guard": "守卫",
+    "Villager": "村民",
+    "Werewolf": "狼人",
     "WhiteWolfKing": "白狼王",
-    "global":        "全局",
+    "global": "全局",
 }
 
 # Strategy types — each batch prompt will ask for a subset of these.
 STRATEGY_TYPES: dict[str, str] = {
-    "opening":              "开局策略 — 首夜/首日的信息获取、身份隐藏、初步布局",
-    "mid_game":             "中期博弈 — 对跳站边、身份碰撞、狼队战术配合",
-    "endgame":              "后期残局 — 残局人数计算、关键轮次决策、绝境翻盘",
+    "opening": "开局策略 — 首夜/首日的信息获取、身份隐藏、初步布局",
+    "mid_game": "中期博弈 — 对跳站边、身份碰撞、狼队战术配合",
+    "endgame": "后期残局 — 残局人数计算、关键轮次决策、绝境翻盘",
     "identity_concealment": "身份伪装 — 穿衣服脱衣服、悍跳倒钩、假身分管理",
-    "info_analysis":        "信息分析 — 票型分析、发言逻辑链、夜信息推理",
-    "voting_strategy":      "投票策略 — 归票分票、冲票绑票、压手战术",
+    "info_analysis": "信息分析 — 票型分析、发言逻辑链、夜信息推理",
+    "voting_strategy": "投票策略 — 归票分票、冲票绑票、压手战术",
 }
 
 # Maps strategy type -> typical phases where those strategies apply.
 STRATEGY_TYPE_PHASES: dict[str, list[str]] = {
-    "opening":              ["NIGHT_ACTION", "DAY_SPEECH"],
-    "mid_game":             ["DAY_SPEECH", "DAY_VOTE"],
-    "endgame":              ["DAY_VOTE", "DAY_SPEECH"],
+    "opening": ["NIGHT_ACTION", "DAY_SPEECH"],
+    "mid_game": ["DAY_SPEECH", "DAY_VOTE"],
+    "endgame": ["DAY_VOTE", "DAY_SPEECH"],
     "identity_concealment": ["DAY_SPEECH", "NIGHT_ACTION"],
-    "info_analysis":        ["DAY_SPEECH", "DAY_VOTE"],
-    "voting_strategy":      ["DAY_VOTE", "DAY_SPEECH"],
+    "info_analysis": ["DAY_SPEECH", "DAY_VOTE"],
+    "voting_strategy": ["DAY_VOTE", "DAY_SPEECH"],
 }
 
 # Batch size — how many strategies per LLM call.
@@ -110,6 +112,7 @@ BATCH_SIZE = 15
 # ══════════════════════════════════════════════════════════════════════
 # Prompt templates
 # ══════════════════════════════════════════════════════════════════════
+
 
 def _role_context(role: str) -> str:
     """Return role-specific context for the prompt."""
@@ -123,7 +126,6 @@ def _role_context(role: str) -> str:
 - 如何处理对跳预言家（如何辩论、如何拉票）
 - 查验金水/查杀后如何调整发言策略
 - 中后期是否需要隐藏身份（暗预言家玩法）""",
-
         "Witch": """角色背景：女巫是好人阵营的强神。拥有一瓶解药（救人）和一瓶毒药（杀人），各只能用一次。
 关键策略维度：
 - 第一天是否救人（解药使用时机与利弊）
@@ -132,7 +134,6 @@ def _role_context(role: str) -> str:
 - 如何隐藏身份同时传递夜信息
 - 对跳女巫时的辩论策略
 - 残局是否跳明女巫身份带队""",
-
         "Hunter": """角色背景：猎人是好人阵营的强神。被投票放逐或狼杀时可以开枪带走一名玩家（被毒则不能开枪）。
 关键策略维度：
 - 是否第一天跳猎人身份（明猎人的利弊）
@@ -141,7 +142,6 @@ def _role_context(role: str) -> str:
 - 残局时枪口的价值最大化（带谁）
 - 如何避免被女巫误毒
 - 伪装村民身份的时机""",
-
         "Guard": """角色背景：守卫是好人阵营的守护神。每晚可以守护一名玩家免于狼刀（但不能连续两晚守护同一人）。
 关键策略维度：
 - 首夜守护策略（守自己/守预言家/随机守人）
@@ -150,7 +150,6 @@ def _role_context(role: str) -> str:
 - 何时跳明守卫身份（自证与保护）
 - 残局守人优先级（预言家>女巫>自己>村民）
 - 是否故意空守来制造平安夜假象""",
-
         "Villager": """角色背景：村民是好人阵营的基础角色，没有夜间技能。村民的战斗力来自分析能力和投票。
 关键策略维度：
 - 如何通过发言逻辑找出狼人
@@ -159,7 +158,6 @@ def _role_context(role: str) -> str:
 - 如何表水（证明自己是好人村民）
 - 是否穿神职衣服挡刀
 - 站边后如何调整判断（灵活 vs 固执）""",
-
         "Werewolf": """角色背景：狼人是狼人阵营的基础角色。狼人知道所有狼队友身份，每晚可商议杀害一名玩家。
 狼人的核心目标是：伪装成好人、误导投票、保护队友、减员好人直到狼人数量>=好人数量。
 关键策略维度：
@@ -170,7 +168,6 @@ def _role_context(role: str) -> str:
 - 自刀战术（狼自杀来骗取女巫解药和信任）
 - 如何防查验、如何在警上竞争
 - 残局绑票战术""",
-
         "WhiteWolfKing": """角色背景：白狼王是狼人阵营的特殊角色。白狼王可以在白天自爆带走一名玩家（同归于尽）。
 白狼王拥有极强的战术威慑力——可以定点清除关键好人神职。
 关键策略维度：
@@ -180,7 +177,6 @@ def _role_context(role: str) -> str:
 - 是否上警悍跳（利用自爆威慑抢警徽）
 - 与普通狼队友的配合（自爆掩护队友）
 - 残局白狼王的威慑力最大化""",
-
         "global": """角色背景：全局策略不针对特定角色，而是适用于所有玩家的通用狼人杀博弈技巧。
 关键策略维度：
 - 位置学与概率学（如何从座位分布推断身份）
@@ -210,9 +206,7 @@ def build_prompt(
         existing_highlights: Already-generated strategy snippets to avoid repeats.
     """
     role_cn = ROLE_CN.get(role, role)
-    type_descriptions = "\n".join(
-        f"  - {key}: {STRATEGY_TYPES[key]}" for key in strategy_types
-    )
+    type_descriptions = "\n".join(f"  - {key}: {STRATEGY_TYPES[key]}" for key in strategy_types)
 
     avoid_section = ""
     if existing_highlights:
@@ -309,6 +303,7 @@ def build_global_prompt(batch_count: int, batch_index: int) -> str:
 # Response parsing
 # ══════════════════════════════════════════════════════════════════════
 
+
 def parse_llm_response(raw: str) -> list[dict[str, Any]]:
     """Extract a JSON array from an LLM response string.
 
@@ -343,7 +338,7 @@ def parse_llm_response(raw: str) -> list[dict[str, Any]]:
         obj_start = text.find("{")
         obj_end = text.rfind("}")
         if obj_start != -1 and obj_end > obj_start:
-            text = "[" + text[obj_start:obj_end + 1] + "]"
+            text = "[" + text[obj_start : obj_end + 1] + "]"
             start, end = 0, len(text) - 1
         else:
             return []
@@ -354,7 +349,7 @@ def parse_llm_response(raw: str) -> list[dict[str, Any]]:
         text = text[start:] + "]" * bracket_count
         start, end = 0, len(text) - 1
     else:
-        text = text[start:end + 1]
+        text = text[start : end + 1]
 
     # Remove trailing commas before ] or }.
     text = re.sub(r",\s*([}\]])", r"\1", text)
@@ -411,6 +406,7 @@ def _repair_and_parse(text: str) -> list[dict[str, Any]]:
 # Strategy validation & DB insertion
 # ══════════════════════════════════════════════════════════════════════
 
+
 def validate_strategy(item: dict[str, Any], role: str) -> dict[str, Any] | None:
     """Validate and normalise a single strategy dict. Returns None if invalid."""
     recommended = str(item.get("recommended_action", "")).strip()
@@ -427,9 +423,13 @@ def validate_strategy(item: dict[str, Any], role: str) -> dict[str, Any] | None:
     if phase not in valid_phases:
         # Try to map common alternatives.
         phase_map = {
-            "night": "NIGHT_ACTION", "night_action": "NIGHT_ACTION",
-            "day": "DAY_SPEECH", "day_speech": "DAY_SPEECH",
-            "speech": "DAY_SPEECH", "vote": "DAY_VOTE", "day_vote": "DAY_VOTE",
+            "night": "NIGHT_ACTION",
+            "night_action": "NIGHT_ACTION",
+            "day": "DAY_SPEECH",
+            "day_speech": "DAY_SPEECH",
+            "speech": "DAY_SPEECH",
+            "vote": "DAY_VOTE",
+            "day_vote": "DAY_VOTE",
         }
         phase = phase_map.get(phase.lower(), "DAY_SPEECH")
 
@@ -437,13 +437,23 @@ def validate_strategy(item: dict[str, Any], role: str) -> dict[str, Any] | None:
     normalised_role = str(item.get("role", role)).strip()
     # Map Chinese role names back to English.
     cn_to_en = {
-        "预言家": "Seer", "女巫": "Witch", "猎人": "Hunter",
-        "守卫": "Guard", "村民": "Villager", "狼人": "Werewolf",
+        "预言家": "Seer",
+        "女巫": "Witch",
+        "猎人": "Hunter",
+        "守卫": "Guard",
+        "村民": "Villager",
+        "狼人": "Werewolf",
         "白狼王": "WhiteWolfKing",
-        "seer": "Seer", "witch": "Witch", "hunter": "Hunter",
-        "guard": "Guard", "villager": "Villager", "werewolf": "Werewolf",
-        "whitewolfking": "WhiteWolfKing", "白狼王": "WhiteWolfKing",
-        "全局": "global", "global": "global",
+        "seer": "Seer",
+        "witch": "Witch",
+        "hunter": "Hunter",
+        "guard": "Guard",
+        "villager": "Villager",
+        "werewolf": "Werewolf",
+        "whitewolfking": "WhiteWolfKing",
+        "白狼王": "WhiteWolfKing",
+        "全局": "global",
+        "global": "global",
     }
     if normalised_role.lower() in cn_to_en:
         normalised_role = cn_to_en[normalised_role.lower()]
@@ -533,6 +543,7 @@ def insert_strategies(
 # LLM batch generation
 # ══════════════════════════════════════════════════════════════════════
 
+
 def generate_batch(
     client: Any,
     role: str,
@@ -552,13 +563,11 @@ def generate_batch(
     if role == "global":
         prompt = build_global_prompt(batch_count, batch_index)
     else:
-        prompt = build_prompt(role, batch_count, strategy_types, batch_index,
-                              existing_highlights)
+        prompt = build_prompt(role, batch_count, strategy_types, batch_index, existing_highlights)
 
     for attempt in range(max_retries):
         try:
-            print(f"    [batch {batch_index + 1}] Calling LLM "
-                  f"(attempt {attempt + 1}/{max_retries})...")
+            print(f"    [batch {batch_index + 1}] Calling LLM (attempt {attempt + 1}/{max_retries})...")
 
             response = client.chat_sync(
                 messages=[{"role": "user", "content": prompt}],
@@ -570,29 +579,30 @@ def generate_batch(
             parsed = parse_llm_response(raw)
 
             if parsed:
-                print(f"    [batch {batch_index + 1}] Got {len(parsed)} strategies "
-                      f"({response.get('_latency_ms', 0)} ms)")
+                print(
+                    f"    [batch {batch_index + 1}] Got {len(parsed)} strategies ({response.get('_latency_ms', 0)} ms)"
+                )
                 return parsed
             else:
-                print(f"    [batch {batch_index + 1}] No valid JSON found in "
-                      f"response ({len(raw)} chars). Preview: {raw[:200]}...")
+                print(
+                    f"    [batch {batch_index + 1}] No valid JSON found in "
+                    f"response ({len(raw)} chars). Preview: {raw[:200]}..."
+                )
                 if attempt < max_retries - 1:
-                    sleep_s = (2 ** attempt) * 2
+                    sleep_s = (2**attempt) * 2
                     print(f"    Retrying in {sleep_s}s...")
                     time.sleep(sleep_s)
                     continue
                 return []
 
         except Exception as exc:
-            print(f"    [batch {batch_index + 1}] LLM call failed "
-                  f"(attempt {attempt + 1}): {exc}")
+            print(f"    [batch {batch_index + 1}] LLM call failed (attempt {attempt + 1}): {exc}")
             if attempt < max_retries - 1:
-                sleep_s = min((2 ** attempt) * 3, 30)
+                sleep_s = min((2**attempt) * 3, 30)
                 print(f"    Retrying in {sleep_s}s...")
                 time.sleep(sleep_s)
             else:
-                print(f"    [batch {batch_index + 1}] All retries exhausted, "
-                      f"skipping batch.")
+                print(f"    [batch {batch_index + 1}] All retries exhausted, skipping batch.")
                 traceback.print_exc()
                 return []
 
@@ -619,6 +629,7 @@ def collect_existing_highlights(
 # Main generation loop for a single role
 # ══════════════════════════════════════════════════════════════════════
 
+
 def generate_for_role(
     client: Any,
     role: str,
@@ -630,8 +641,10 @@ def generate_for_role(
     """Generate all strategies for one role, saving to DB and/or JSON."""
 
     if dry_run:
-        print(f"\n  [{ROLE_CN.get(role, role)}] Would generate {target_count} "
-              f"strategies in {max(1, target_count // BATCH_SIZE)} batches.")
+        print(
+            f"\n  [{ROLE_CN.get(role, role)}] Would generate {target_count} "
+            f"strategies in {max(1, target_count // BATCH_SIZE)} batches."
+        )
         return []
 
     all_validated: list[dict[str, Any]] = []
@@ -667,8 +680,10 @@ def generate_for_role(
                 all_validated.append(validated)
                 valid_in_batch += 1
 
-        print(f"    [batch {batch_index + 1}] {valid_in_batch}/{len(raw_items)} "
-              f"validated OK (running total: {len(all_validated)})")
+        print(
+            f"    [batch {batch_index + 1}] {valid_in_batch}/{len(raw_items)} "
+            f"validated OK (running total: {len(all_validated)})"
+        )
 
         # Insert to DB in micro-batches.
         if not skip_db and db is not None and valid_in_batch > 0:
@@ -694,6 +709,7 @@ def generate_for_role(
 # CLI entry point
 # ══════════════════════════════════════════════════════════════════════
 
+
 def main() -> int:
     ap = argparse.ArgumentParser(
         description="Generate 500+ Chinese werewolf strategies via LLM",
@@ -713,15 +729,13 @@ def main() -> int:
         "--role",
         type=str,
         default=None,
-        help="Generate strategies for a single role only "
-             "(e.g. Seer, Witch, Werewolf, global).",
+        help="Generate strategies for a single role only (e.g. Seer, Witch, Werewolf, global).",
     )
     ap.add_argument(
         "--provider",
         type=str,
         default=None,
-        help="Explicit LLM provider override "
-             "(doubao, deepseek, dsv4flash, ark, mimo).",
+        help="Explicit LLM provider override (doubao, deepseek, dsv4flash, ark, mimo).",
     )
     ap.add_argument(
         "--model",
@@ -753,18 +767,16 @@ def main() -> int:
                 resolved = key
                 break
         if resolved is None:
-            print(f"Unknown role '{args.role}'. Valid roles: "
-                  f"{', '.join(ROLE_CN.keys())} "
-                  f"({', '.join(ROLE_CN.values())})")
+            print(
+                f"Unknown role '{args.role}'. Valid roles: {', '.join(ROLE_CN.keys())} ({', '.join(ROLE_CN.values())})"
+            )
             return 1
         targets = {resolved: ROLE_TARGETS[resolved]}
     else:
         targets = dict(ROLE_TARGETS)
 
     total_target = sum(targets.values())
-    total_batches = sum(
-        math.ceil(count / args.batch_size) for count in targets.values()
-    )
+    total_batches = sum(math.ceil(count / args.batch_size) for count in targets.values())
 
     print("=" * 60)
     print("  Werewolf Strategy Generator (LLM-based)")
@@ -780,9 +792,7 @@ def main() -> int:
     if args.dry_run:
         for role, count in targets.items():
             batches = math.ceil(count / args.batch_size)
-            print(f"  {ROLE_CN.get(role, role):12s}  "
-                  f"{count:>3d} strategies  "
-                  f"~{batches:>2d} batches")
+            print(f"  {ROLE_CN.get(role, role):12s}  {count:>3d} strategies  ~{batches:>2d} batches")
         print(f"\n  TOTAL: {total_target} strategies, ~{total_batches} batches")
         return 0
 
@@ -793,12 +803,13 @@ def main() -> int:
         if args.model:
             kwargs["model"] = args.model
         client = create_client(provider=args.provider, **kwargs)
-        print(f"  Client: provider={getattr(client, 'provider', '?')} "
-              f"model={getattr(client, 'model', '?')}")
+        print(f"  Client: provider={getattr(client, 'provider', '?')} model={getattr(client, 'model', '?')}")
         if not getattr(client, "available", True):
-            print(f"  WARNING: LLM client unavailable! "
-                  f"({getattr(client, 'provider', '?')} "
-                  f"model={getattr(client, 'model', '?')})")
+            print(
+                f"  WARNING: LLM client unavailable! "
+                f"({getattr(client, 'provider', '?')} "
+                f"model={getattr(client, 'model', '?')})"
+            )
             print("  Set the appropriate API key env var and retry.")
             return 1
     except Exception as exc:
@@ -814,12 +825,12 @@ def main() -> int:
             db = SessionLocal()
             # Quick connectivity check.
             from sqlalchemy import text
+
             db.execute(text("SELECT 1"))
             print(f"  Database OK: {DB_URL}")
         except Exception as exc:
             print(f"  WARNING: Database unavailable ({exc})")
-            print("  Continuing with --skip-db mode "
-                  "(JSON files will still be written).")
+            print("  Continuing with --skip-db mode (JSON files will still be written).")
             args.skip_db = True
             if db:
                 db.close()
@@ -839,7 +850,7 @@ def main() -> int:
 
         strategies = generate_for_role(
             client=client,
-           role=role,
+            role=role,
             target_count=target_count,
             dry_run=args.dry_run,
             db=db,
@@ -867,8 +878,7 @@ def main() -> int:
         json.dumps(all_strategies, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
-    print(f"\n  Combined JSON saved to {combined_file} "
-          f"({len(all_strategies)} total)")
+    print(f"\n  Combined JSON saved to {combined_file} ({len(all_strategies)} total)")
 
     # ── Summary ─────────────────────────────────────────────────────
     print("\n[4/4] " + "=" * 56)
@@ -879,14 +889,13 @@ def main() -> int:
         count = per_role_counts.get(role, 0)
         cn = ROLE_CN.get(role, role)
         marker = "✓" if count >= ROLE_TARGETS[role] else "⚠"
-        print(f"  {marker} {cn:12s} ({role:16s})  "
-              f"generated: {count:>3d}  /  target: {ROLE_TARGETS[role]:>3d}")
+        print(f"  {marker} {cn:12s} ({role:16s})  generated: {count:>3d}  /  target: {ROLE_TARGETS[role]:>3d}")
         grand_total += count
     print("  " + "-" * 54)
     print(f"  TOTAL generated: {grand_total}")
     print(f"  TOTAL target:   {total_target}")
     if grand_total >= 500:
-        print(f"  STATUS: TARGET MET (>= 500)")
+        print("  STATUS: TARGET MET (>= 500)")
     else:
         shortfall = 500 - grand_total
         print(f"  STATUS: SHORTFALL of {shortfall} strategies (< 500 minimum)")

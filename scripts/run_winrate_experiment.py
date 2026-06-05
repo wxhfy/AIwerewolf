@@ -14,7 +14,8 @@ import time
 import traceback
 import warnings
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime
+from datetime import timezone
 from pathlib import Path
 from typing import Any
 
@@ -25,8 +26,8 @@ os.chdir(str(ROOT))  # Ensure .env is found by load_env_file()
 warnings.filterwarnings("ignore")
 
 import psycopg2
+
 from backend.engine.game import WerewolfGame
-from backend.engine.models import Phase, Role
 
 DB_URL = "postgresql://werewolf:wolf_secret_2026@127.0.0.1:5433/werewolf"
 OUTPUT_DIR = ROOT / "outputs"
@@ -49,8 +50,7 @@ def _phase_observer_factory(seed: int):
         current_speaker = getattr(state, "current_speaker_id", None)
         speaker_str = f" speaker={current_speaker[-6:]}" if current_speaker else ""
         print(
-            f"  [seed={seed}] PHASE: {phase} | day={state.day} | "
-            f"alive={alive} | elapsed={elapsed:.0f}s{speaker_str}",
+            f"  [seed={seed}] PHASE: {phase} | day={state.day} | alive={alive} | elapsed={elapsed:.0f}s{speaker_str}",
             flush=True,
         )
 
@@ -67,9 +67,9 @@ def _run_one_game(seed: int) -> dict[str, Any]:
     os.chdir(str(ROOT))
 
     t0 = time.perf_counter()
-    print(f"\n{'='*50}", flush=True)
+    print(f"\n{'=' * 50}", flush=True)
     print(f"Game seed={seed} START at {datetime.now().isoformat()}", flush=True)
-    print(f"{'='*50}", flush=True)
+    print(f"{'=' * 50}", flush=True)
 
     try:
         game = WerewolfGame(seed=seed, player_count=7)
@@ -101,17 +101,19 @@ def _run_one_game(seed: int) -> dict[str, Any]:
 
             role_side[role] = team
 
-            players_info.append({
-                "name": p.name,
-                "role": role,
-                "seat": p.seat,
-                "alive": p.alive,
-                "death_day": p.death_day,
-                "mbti": mbti,
-                "model": getattr(p, "model_name", "unknown"),
-                "won": won,
-                "team": team,
-            })
+            players_info.append(
+                {
+                    "name": p.name,
+                    "role": role,
+                    "seat": p.seat,
+                    "alive": p.alive,
+                    "death_day": p.death_day,
+                    "mbti": mbti,
+                    "model": getattr(p, "model_name", "unknown"),
+                    "won": won,
+                    "team": team,
+                }
+            )
 
         # Strategy retrieval count
         retrieval_count = _count_strategy_retrievals(game_id)
@@ -220,9 +222,9 @@ def run_experiment(
 
     for i in range(n_games):
         seed = start_seed + i
-        print(f"\n{'#'*60}", flush=True)
-        print(f"# Game {i+1}/{n_games}: seed={seed} — starting subprocess", flush=True)
-        print(f"{'#'*60}", flush=True)
+        print(f"\n{'#' * 60}", flush=True)
+        print(f"# Game {i + 1}/{n_games}: seed={seed} — starting subprocess", flush=True)
+        print(f"{'#' * 60}", flush=True)
 
         t0 = time.perf_counter()
 
@@ -316,30 +318,20 @@ def run_experiment(
             "alive_endgame_rate": round(sum(alive) / max(n, 1), 4),
         }
 
-    village_wins = sum(
-        d["win_rate"] * d["games"] for _, d in stats.items() if d["team"] == "village"
-    )
+    village_wins = sum(d["win_rate"] * d["games"] for _, d in stats.items() if d["team"] == "village")
     village_games = sum(d["games"] for _, d in stats.items() if d["team"] == "village")
-    wolf_wins = sum(
-        d["win_rate"] * d["games"] for _, d in stats.items() if d["team"] == "wolf"
-    )
+    wolf_wins = sum(d["win_rate"] * d["games"] for _, d in stats.items() if d["team"] == "wolf")
     wolf_games = sum(d["games"] for _, d in stats.items() if d["team"] == "wolf")
 
     successful_games = [r for r in results if "error" not in r]
-    avg_days = (
-        sum(r["days"] for r in successful_games) / len(successful_games)
-        if successful_games
-        else 0
-    )
-    avg_retrievals = (
-        total_retrievals / total_retrieval_games if total_retrieval_games > 0 else 0
-    )
+    avg_days = sum(r["days"] for r in successful_games) / len(successful_games) if successful_games else 0
+    avg_retrievals = total_retrievals / total_retrieval_games if total_retrieval_games > 0 else 0
 
     # LLM-only win rate (exclude high-fallback games)
     llm_games = [
-        r for r in successful_games
-        if r.get("total_decisions", 0) > 0
-        and r.get("fallback_decisions", 0) / r["total_decisions"] <= 0.3
+        r
+        for r in successful_games
+        if r.get("total_decisions", 0) > 0 and r.get("fallback_decisions", 0) / r["total_decisions"] <= 0.3
     ]
     llm_village_wins = sum(1 for r in llm_games if r["winner"] == "village")
     llm_wolf_wins = sum(1 for r in llm_games if r["winner"] == "wolf")
@@ -410,7 +402,9 @@ def print_report(summary: dict[str, Any]):
     print(f"  平均天数: {summary['avg_days']}")
     print(f"  平均策略检索: {summary['avg_strategy_retrievals_per_game']} 次/局")
     fb = summary["fallback_stats"]
-    print(f"  LLM 决策: {fb['total_llm_decisions']} | Fallback 决策: {fb['total_fallback_decisions']} | Fallback率: {fb['fallback_rate']:.1%}")
+    print(
+        f"  LLM 决策: {fb['total_llm_decisions']} | Fallback 决策: {fb['total_fallback_decisions']} | Fallback率: {fb['fallback_rate']:.1%}"
+    )
     print(f"  高Fallback局(>30%): {fb['high_fallback_games']} | LLM-only局: {fb['llm_only_games']}")
     print(f"  LLM-only 胜率: 好人 {fb['llm_only_village_win_rate']:.1%} | 狼人 {fb['llm_only_wolf_win_rate']:.1%}")
     print()
@@ -436,12 +430,12 @@ def generate_markdown(summary: dict[str, Any], results: list[dict], elapsed_s: f
         "# 20局胜率实验报告",
         "",
         f"**生成时间**: {datetime.now(timezone.utc).isoformat()}",
-        f"**总耗时**: {elapsed_s:.0f}s ({elapsed_s/60:.1f} min)",
+        f"**总耗时**: {elapsed_s:.0f}s ({elapsed_s / 60:.1f} min)",
         "",
         "## 总体统计",
         "",
-        f"| 指标 | 值 |",
-        f"|------|-----|",
+        "| 指标 | 值 |",
+        "|------|-----|",
         f"| 总局数 | {summary['total_games']} |",
         f"| 成功 | {successful} |",
         f"| 失败 | {summary['failed_games']} |",
@@ -488,10 +482,10 @@ def generate_markdown(summary: dict[str, Any], results: list[dict], elapsed_s: f
     for i, r in enumerate(results):
         if "error" in r:
             err_msg = r["error"]
-            lines.append(f"| {i+1} | {r['seed']} | ❌ {err_msg} | - | - | - | - | - |")
+            lines.append(f"| {i + 1} | {r['seed']} | ❌ {err_msg} | - | - | - | - | - |")
         else:
             lines.append(
-                f"| {i+1} | {r['seed']} | {r['winner']} | {r['days']} | "
+                f"| {i + 1} | {r['seed']} | {r['winner']} | {r['days']} | "
                 f"{r.get('llm_decisions', 'N/A')} | {r.get('fallback_decisions', 'N/A')} | "
                 f"{r['strategy_retrievals']} | {r['duration_s']}s |"
             )
@@ -514,8 +508,7 @@ def generate_markdown(summary: dict[str, Any], results: list[dict], elapsed_s: f
             death_str = str(p["death_day"]) if p["death_day"] else "-"
             won_str = "✅" if p["won"] else "❌"
             lines.append(
-                f"| {p['seat']} | {p['name']} | {p['role']} | {p['mbti']} | "
-                f"{alive_str} | {death_str} | {won_str} |"
+                f"| {p['seat']} | {p['name']} | {p['role']} | {p['mbti']} | {alive_str} | {death_str} | {won_str} |"
             )
         lines.append("")
 
@@ -541,7 +534,7 @@ def main():
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
     print(f"Running {args.games} games with seeds {args.start_seed}-{args.start_seed + args.games - 1}...", flush=True)
-    print(f"Per-game timeout: {PER_GAME_TIMEOUT_SECONDS}s ({PER_GAME_TIMEOUT_SECONDS/60:.0f} min)", flush=True)
+    print(f"Per-game timeout: {PER_GAME_TIMEOUT_SECONDS}s ({PER_GAME_TIMEOUT_SECONDS / 60:.0f} min)", flush=True)
     print(f"Output dir: {OUTPUT_DIR}", flush=True)
     t0 = time.perf_counter()
 
@@ -567,7 +560,7 @@ def main():
     md_path.write_text(md_content)
     print(f"Markdown report: {md_path}", flush=True)
 
-    print(f"\nTotal time: {elapsed:.0f}s ({elapsed/60:.1f} min)", flush=True)
+    print(f"\nTotal time: {elapsed:.0f}s ({elapsed / 60:.1f} min)", flush=True)
 
 
 if __name__ == "__main__":

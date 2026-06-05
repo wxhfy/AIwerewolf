@@ -7,7 +7,7 @@ No player_id shortcuts. PreAction-safe.
 
 from __future__ import annotations
 
-import json, re
+import json
 from typing import Any
 
 
@@ -17,10 +17,14 @@ class KillTargetValueFeatures:
 
     def supports(self, opportunity: dict[str, Any]) -> bool:
         return opportunity.get("opportunity_type") in (
-            "werewolf_kill", "attack", "night_kill",
+            "werewolf_kill",
+            "attack",
+            "night_kill",
         )
 
-    def extract(self, opportunity: dict[str, Any], context: dict[str, Any] | None = None) -> dict[str, float | int | str]:
+    def extract(
+        self, opportunity: dict[str, Any], context: dict[str, Any] | None = None
+    ) -> dict[str, float | int | str]:
         target_feat = opportunity.get("target_features", {}) or {}
         game_feat = opportunity.get("game_features", {}) or {}
         chosen = opportunity.get("chosen_action", {}) or {}
@@ -49,9 +53,15 @@ class KillTargetValueFeatures:
         feats: dict[str, float | int | str] = {}
 
         # 1. kill_target_role_value: base value by role
-        role_value = {"Seer": 0.95, "Witch": 0.90, "Guard": 0.80,
-                       "Hunter": 0.70, "Villager": 0.25,
-                       "Werewolf": 0.05, "WhiteWolfKing": 0.05}
+        role_value = {
+            "Seer": 0.95,
+            "Witch": 0.90,
+            "Guard": 0.80,
+            "Hunter": 0.70,
+            "Villager": 0.25,
+            "Werewolf": 0.05,
+            "WhiteWolfKing": 0.05,
+        }
         tv = role_value.get(target_role, 0.35)
         feats["kill_target_role_value"] = round(tv, 4)
 
@@ -60,8 +70,18 @@ class KillTargetValueFeatures:
         if target_id and target_id in public_ctx:
             if any(f"{target_id}.*?预言家" in public_ctx for _ in [1]):
                 pass
-            claim_kw = ["我是预言家", "我是女巫", "我是守卫", "我是猎人", "查验", "查杀",
-                        "预言家", "女巫", "守卫", "猎人"]
+            claim_kw = [
+                "我是预言家",
+                "我是女巫",
+                "我是守卫",
+                "我是猎人",
+                "查验",
+                "查杀",
+                "预言家",
+                "女巫",
+                "守卫",
+                "猎人",
+            ]
             matches = sum(1 for kw in claim_kw if kw in public_ctx and target_id in public_ctx)
             claim_strength = min(1.0, 0.3 + 0.2 * matches)
         feats["kill_target_public_claim_strength"] = round(claim_strength, 4)
@@ -82,9 +102,7 @@ class KillTargetValueFeatures:
         feats["kill_removes_confirmed_info"] = round(removes_info, 4)
 
         # 5. kill_is_high_value: composite
-        high_value = 1.0 if (
-            tv >= 0.70 and target_align == "village"
-        ) else 0.2 if tv <= 0.30 else 0.5
+        high_value = 1.0 if (tv >= 0.70 and target_align == "village") else 0.2 if tv <= 0.30 else 0.5
         feats["kill_is_high_value"] = round(high_value, 4)
 
         # 6. kill_counterfactual_best_target_value: best available target value

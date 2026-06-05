@@ -25,7 +25,8 @@ import argparse
 import logging
 import sys
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime
+from datetime import timezone
 from pathlib import Path
 from typing import Any
 
@@ -139,20 +140,22 @@ def compute_feedback_scores(feedback_data: dict, doc_statuses: dict) -> list[dic
         )
 
         doc_info = doc_statuses.get(doc_id, {})
-        scores.append({
-            "doc_id": doc_id,
-            "current_status": doc_info.get("status", "unknown"),
-            "doc_type": doc_info.get("doc_type", ""),
-            "role": doc_info.get("role", "global"),
-            "quality_score": doc_info.get("quality_score", 0.8),
-            "feedback_score": round(feedback_score, 4),
-            "usage_count": total,
-            "usage_rate": round(usage_rate, 3),
-            "success_rate": round(success_rate, 3),
-            "avg_score_delta": round(fb["avg_score_delta"], 2),
-            "recency": round(recency, 3),
-            "days_since_use": days_since,
-        })
+        scores.append(
+            {
+                "doc_id": doc_id,
+                "current_status": doc_info.get("status", "unknown"),
+                "doc_type": doc_info.get("doc_type", ""),
+                "role": doc_info.get("role", "global"),
+                "quality_score": doc_info.get("quality_score", 0.8),
+                "feedback_score": round(feedback_score, 4),
+                "usage_count": total,
+                "usage_rate": round(usage_rate, 3),
+                "success_rate": round(success_rate, 3),
+                "avg_score_delta": round(fb["avg_score_delta"], 2),
+                "recency": round(recency, 3),
+                "days_since_use": days_since,
+            }
+        )
 
     scores.sort(key=lambda x: -x["feedback_score"])
     return scores
@@ -194,6 +197,7 @@ def main():
     args = ap.parse_args()
 
     import psycopg2
+
     conn = psycopg2.connect(DB_URL)
 
     # Fetch data
@@ -220,33 +224,41 @@ def main():
                 demote_ids.append(s["doc_id"])
 
     # Print report
-    print(f"\n{'='*70}")
-    print(f"  Feedback-Driven Promotion Report")
-    print(f"{'='*70}")
+    print(f"\n{'=' * 70}")
+    print("  Feedback-Driven Promotion Report")
+    print(f"{'=' * 70}")
     print(f"  Docs with feedback data: {len(scores)}")
     print(f"  Docs to promote (score >= {args.promote_score}, usage >= {args.min_usage_promote}): {len(promote_ids)}")
     print(f"  Docs to demote  (score <  {args.demote_score}, usage >= {args.min_usage_demote}): {len(demote_ids)}")
-    print(f"")
+    print("")
 
     # Top performers
-    print(f"  Top 15 by feedback_score:")
-    print(f"  {'Score':>7} {'Usage':>6} {'Use%':>6} {'Succ%':>6} {'Delta':>6} {'Days':>5} {'Status':>8} {'Role':>12} {'Type'}")
-    print(f"  {'-'*70}")
+    print("  Top 15 by feedback_score:")
+    print(
+        f"  {'Score':>7} {'Usage':>6} {'Use%':>6} {'Succ%':>6} {'Delta':>6} {'Days':>5} {'Status':>8} {'Role':>12} {'Type'}"
+    )
+    print(f"  {'-' * 70}")
     for s in scores[:15]:
-        print(f"  {s['feedback_score']:>7.3f} {s['usage_count']:>6} {s['usage_rate']:>6.0%} "
-              f"{s['success_rate']:>6.0%} {s['avg_score_delta']:>6.1f} {s['days_since_use']:>5} "
-              f"{s['current_status']:>8} {s['role']:>12} {s['doc_type']}")
+        print(
+            f"  {s['feedback_score']:>7.3f} {s['usage_count']:>6} {s['usage_rate']:>6.0%} "
+            f"{s['success_rate']:>6.0%} {s['avg_score_delta']:>6.1f} {s['days_since_use']:>5} "
+            f"{s['current_status']:>8} {s['role']:>12} {s['doc_type']}"
+        )
 
     # Bottom performers (candidates for demotion)
     worst = [s for s in scores if s["feedback_score"] < args.demote_score and s["usage_count"] >= args.min_usage_demote]
     if worst:
-        print(f"\n  Bottom performers (demotion candidates):")
-        print(f"  {'Score':>7} {'Usage':>6} {'Use%':>6} {'Succ%':>6} {'Delta':>6} {'Days':>5} {'Status':>8} {'Role':>12} {'Type'}")
-        print(f"  {'-'*70}")
+        print("\n  Bottom performers (demotion candidates):")
+        print(
+            f"  {'Score':>7} {'Usage':>6} {'Use%':>6} {'Succ%':>6} {'Delta':>6} {'Days':>5} {'Status':>8} {'Role':>12} {'Type'}"
+        )
+        print(f"  {'-' * 70}")
         for s in sorted(worst, key=lambda x: x["feedback_score"])[:15]:
-            print(f"  {s['feedback_score']:>7.3f} {s['usage_count']:>6} {s['usage_rate']:>6.0%} "
-                  f"{s['success_rate']:>6.0%} {s['avg_score_delta']:>6.1f} {s['days_since_use']:>5} "
-                  f"{s['current_status']:>8} {s['role']:>12} {s['doc_type']}")
+            print(
+                f"  {s['feedback_score']:>7.3f} {s['usage_count']:>6} {s['usage_rate']:>6.0%} "
+                f"{s['success_rate']:>6.0%} {s['avg_score_delta']:>6.1f} {s['days_since_use']:>5} "
+                f"{s['current_status']:>8} {s['role']:>12} {s['doc_type']}"
+            )
 
     # Score distribution
     buckets = [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
@@ -257,7 +269,7 @@ def main():
             if score >= b:
                 dist[b] += 1
                 break
-    print(f"\n  Score distribution:")
+    print("\n  Score distribution:")
     for b in sorted(dist.keys()):
         bar = "█" * (dist[b] // max(1, max(dist.values()) // 30))
         print(f"    >= {b:.1f}: {dist[b]:>5} {bar}")
@@ -272,7 +284,7 @@ def main():
         for s, cnt in sorted(statuses.items()):
             logger.info("  %s: %d", s, cnt)
     else:
-        print(f"\n  [DRY RUN] Add --apply to execute.")
+        print("\n  [DRY RUN] Add --apply to execute.")
 
     conn.close()
     return 0

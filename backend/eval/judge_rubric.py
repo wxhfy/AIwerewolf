@@ -13,18 +13,18 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass, field
-from typing import Any
+from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
 class RubricItem:
     """One scoring dimension with locked anchors and evidence requirements."""
+
     id: str
-    dimension: str          # "strategy" | "logic" | "social"
-    question: str           # What the judge is asked to evaluate
+    dimension: str  # "strategy" | "logic" | "social"
+    question: str  # What the judge is asked to evaluate
     scale: tuple[int, ...]  # (0, 2, 4, 6, 8, 10)
-    anchors: dict[int, str] # score → description
+    anchors: dict[int, str]  # score → description
     evidence_required: bool = True
     evidence_type: str = "event_id"  # "event_id" | "vote_ids" | "chat_ids"
 
@@ -35,7 +35,8 @@ class RubricItem:
 
 STRATEGIST_RUBRIC = [
     RubricItem(
-        id="S1", dimension="strategy",
+        id="S1",
+        dimension="strategy",
         question="该玩家是否在每个夜晚/白天阶段做出了最优或接近最优的决策？考虑技能使用时机、投票目标和整体战略方向。",
         scale=(0, 2, 4, 6, 8, 10),
         anchors={
@@ -46,10 +47,12 @@ STRATEGIST_RUBRIC = [
             8: "绝大部分决策都是正确的，战略清晰，失误极少",
             10: "近乎完美的战略执行——每个技能/投票都在最佳时机指向最优目标",
         },
-        evidence_required=True, evidence_type="event_id",
+        evidence_required=True,
+        evidence_type="event_id",
     ),
     RubricItem(
-        id="S2", dimension="strategy",
+        id="S2",
+        dimension="strategy",
         question="该玩家的投票策略是否有效推进了阵营目标？是否在关键轮次做出了正确的投票选择？",
         scale=(0, 2, 4, 6, 8, 10),
         anchors={
@@ -60,13 +63,15 @@ STRATEGIST_RUBRIC = [
             8: "投票几乎全对，关键轮次精准击中敌方",
             10: "每次投票都是最优选择，且通过发言引导了他人投票",
         },
-        evidence_required=True, evidence_type="vote_ids",
+        evidence_required=True,
+        evidence_type="vote_ids",
     ),
 ]
 
 LOGICIAN_RUBRIC = [
     RubricItem(
-        id="L1", dimension="logic",
+        id="L1",
+        dimension="logic",
         question="该玩家的发言内容与投票/行动之间逻辑自洽吗？是否存在发言表达A但行动做B的矛盾？",
         scale=(0, 2, 4, 6, 8, 10),
         anchors={
@@ -77,10 +82,12 @@ LOGICIAN_RUBRIC = [
             8: "逻辑链条清晰，发言准确预示了后续行动",
             10: "完美的逻辑一致性——每句话都能对应后续行动，推演环环相扣",
         },
-        evidence_required=True, evidence_type="chat_ids + vote_ids",
+        evidence_required=True,
+        evidence_type="chat_ids + vote_ids",
     ),
     RubricItem(
-        id="L2", dimension="logic",
+        id="L2",
+        dimension="logic",
         question="该玩家的推理是否基于游戏中的真实信息（而非凭空编造）？是否引用了具体事件或发言？",
         scale=(0, 2, 4, 6, 8, 10),
         anchors={
@@ -91,13 +98,15 @@ LOGICIAN_RUBRIC = [
             8: "几乎每条推理都有具体事件/发言作为证据",
             10: "所有推理都精确锚定于真实游戏事件，引用准确无误",
         },
-        evidence_required=True, evidence_type="chat_ids + event_ids",
+        evidence_required=True,
+        evidence_type="chat_ids + event_ids",
     ),
 ]
 
 PSYCHOLOGIST_RUBRIC = [
     RubricItem(
-        id="P1", dimension="social",
+        id="P1",
+        dimension="social",
         question="该玩家的发言对桌面产生了多大影响？后续玩家的投票和发言是否参考了该玩家的观点？",
         scale=(0, 2, 4, 6, 8, 10),
         anchors={
@@ -108,10 +117,12 @@ PSYCHOLOGIST_RUBRIC = [
             8: "成为桌面核心声音之一，多人跟随其判断",
             10: "完全主导了桌面走向——发言后票型和站边显著变化",
         },
-        evidence_required=True, evidence_type="chat_ids + subsequent_vote_ids",
+        evidence_required=True,
+        evidence_type="chat_ids + subsequent_vote_ids",
     ),
     RubricItem(
-        id="P2", dimension="social",
+        id="P2",
+        dimension="social",
         question="如果该玩家是狼人——欺骗是否成功？如果该玩家是好人——是否成功获得信任并引导了正确判断？",
         scale=(0, 2, 4, 6, 8, 10),
         anchors={
@@ -122,7 +133,8 @@ PSYCHOLOGIST_RUBRIC = [
             8: "高度被信任——狼成功隐藏到最后/好人成为信息中枢",
             10: "完美表现——狼全程未被怀疑/好人的每个判断都被跟随",
         },
-        evidence_required=True, evidence_type="chat_ids + vote_ids",
+        evidence_required=True,
+        evidence_type="chat_ids + vote_ids",
     ),
 ]
 
@@ -132,7 +144,8 @@ PSYCHOLOGIST_RUBRIC = [
 
 PER_STEP_RUBRIC = [
     RubricItem(
-        id="T1", dimension="per_step",
+        id="T1",
+        dimension="per_step",
         question="在当时的可见信息下，这个决策是否合理？考虑该玩家已知的信息（非全局信息）。",
         scale=(0, 2, 4, 6, 8, 10),
         anchors={
@@ -143,10 +156,12 @@ PER_STEP_RUBRIC = [
             8: "基于当时信息做出了很好的判断",
             10: "在当时信息下几乎是最优解",
         },
-        evidence_required=True, evidence_type="event_id",
+        evidence_required=True,
+        evidence_type="event_id",
     ),
     RubricItem(
-        id="T2", dimension="per_step",
+        id="T2",
+        dimension="per_step",
         question="该决策的推理是否充分？是否考虑了关键因素并给出了清晰的逻辑？",
         scale=(0, 2, 4, 6, 8, 10),
         anchors={
@@ -157,7 +172,8 @@ PER_STEP_RUBRIC = [
             8: "推理深入，考虑了多方面因素",
             10: "推理极其充分，展现了对局势的深刻理解",
         },
-        evidence_required=True, evidence_type="event_id",
+        evidence_required=True,
+        evidence_type="event_id",
     ),
 ]
 
@@ -177,13 +193,11 @@ def compute_rubric_hash() -> str:
     """Compute a sha256 hash of all rubric definitions for version locking."""
     raw = json.dumps(
         {
-            name: [
-                {"id": r.id, "question": r.question, "anchors": r.anchors}
-                for r in rubric
-            ]
+            name: [{"id": r.id, "question": r.question, "anchors": r.anchors} for r in rubric]
             for name, rubric in ALL_RUBRICS.items()
         },
-        ensure_ascii=False, sort_keys=True,
+        ensure_ascii=False,
+        sort_keys=True,
     )
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
 

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any, Dict, List
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -24,11 +24,16 @@ def run_post_game_scoring(game_state: Any, game_id: str) -> int:
     Returns number of knowledge lessons stored.
     """
     try:
-        from backend.eval.per_step_scorer import PerStepScorer, ScoredStep, PlayerReviewReport
-        from backend.eval.knowledge_abstractor import KnowledgeAbstractor, store_lessons_to_db
-        from backend.llm import create_client
         from collections import defaultdict
+
         import psycopg2
+
+        from backend.eval.knowledge_abstractor import KnowledgeAbstractor
+        from backend.eval.knowledge_abstractor import store_lessons_to_db
+        from backend.eval.per_step_scorer import PerStepScorer
+        from backend.eval.per_step_scorer import PlayerReviewReport
+        from backend.eval.per_step_scorer import ScoredStep
+        from backend.llm import create_client
     except ImportError as e:
         logger.warning(f"Post-game scoring skipped (import error): {e}")
         return 0
@@ -57,6 +62,7 @@ def run_post_game_scoring(game_state: Any, game_id: str) -> int:
 
     # 2.5. Check if this game already has per_step lessons (Track B may have scored it)
     import json as _check_json
+
     try:
         check_conn = psycopg2.connect(_DEFAULT_CONN)
         check_conn.set_isolation_level(0)
@@ -70,8 +76,7 @@ def run_post_game_scoring(game_state: Any, game_id: str) -> int:
         check_conn.close()
         if existing > 0:
             logger.info(
-                f"Game {game_id} already has {existing} per_step lessons "
-                f"(from Track B), skipping post_game scoring"
+                f"Game {game_id} already has {existing} per_step lessons (from Track B), skipping post_game scoring"
             )
             return 0
     except Exception:
@@ -82,18 +87,20 @@ def run_post_game_scoring(game_state: Any, game_id: str) -> int:
     for row in rows:
         pa = row[4] or {}
         player_id = str(row[1] or "")
-        decision_dicts.append({
-            "id": str(row[0] or ""),
-            "player_id": player_id,
-            "player_name": _player_name(state_dict, player_id),
-            "player_role": _player_role(state_dict, player_id),
-            "day": int(row[2] or 0),
-            "phase": str(row[3] or ""),
-            "target_id": str(pa.get("target_id", "") or ""),
-            "action_type": str(pa.get("action_type", "") or ""),
-            "raw_text": str(row[5] or pa.get("speech", "") or ""),
-            "vote_weight": float(pa.get("vote_weight", 1.0) or 1.0),
-        })
+        decision_dicts.append(
+            {
+                "id": str(row[0] or ""),
+                "player_id": player_id,
+                "player_name": _player_name(state_dict, player_id),
+                "player_role": _player_role(state_dict, player_id),
+                "day": int(row[2] or 0),
+                "phase": str(row[3] or ""),
+                "target_id": str(pa.get("target_id", "") or ""),
+                "action_type": str(pa.get("action_type", "") or ""),
+                "raw_text": str(row[5] or pa.get("speech", "") or ""),
+                "vote_weight": float(pa.get("vote_weight", 1.0) or 1.0),
+            }
+        )
 
     # 4. Build speech_acts from decisions (rule-based, no LLM)
     speech_acts = build_speech_acts_from_decisions(decision_dicts)
@@ -109,25 +116,24 @@ def run_post_game_scoring(game_state: Any, game_id: str) -> int:
             light_llm = True
             heavy_llm = True
             logger.info(
-                f"Post-game scoring tiers: Tier1=deterministic, "
-                f"Tier2=light_llm (enabled), Tier3=heavy_llm (enabled)"
+                "Post-game scoring tiers: Tier1=deterministic, Tier2=light_llm (enabled), Tier3=heavy_llm (enabled)"
             )
         else:
             logger.warning("Tier 2/3 disabled: LLM client unavailable: %s", getattr(llm_client, "provider", "unknown"))
             logger.warning(
-                f"Post-game scoring tiers: Tier1=deterministic, "
-                f"Tier2=light_llm (disabled), Tier3=heavy_llm (disabled)"
+                "Post-game scoring tiers: Tier1=deterministic, Tier2=light_llm (disabled), Tier3=heavy_llm (disabled)"
             )
     except Exception as e:
         logger.warning(f"Tier 2/3 disabled: LLM client unavailable: {e}")
-        logger.warning("Post-game scoring tiers: Tier1=deterministic, Tier2=light_llm (disabled), Tier3=heavy_llm (disabled)")
+        logger.warning(
+            "Post-game scoring tiers: Tier1=deterministic, Tier2=light_llm (disabled), Tier3=heavy_llm (disabled)"
+        )
 
     # 6. Run PerStepScorer
     scorer = PerStepScorer(llm_client=llm_client)
     if not light_llm:
         scorer._tiers_disabled = True  # signal for downstream consumers
-    scores = scorer.score_all(decision_dicts, state_dict, speech_acts,
-                              light_llm=light_llm, heavy_llm=heavy_llm)
+    scores = scorer.score_all(decision_dicts, state_dict, speech_acts, light_llm=light_llm, heavy_llm=heavy_llm)
 
     tier_counts = scorer.tally_tiers(scores)
     logger.info(f"Post-game scoring for {game_id}: {tier_counts}, {len(scores)} decisions")
@@ -137,34 +143,38 @@ def run_post_game_scoring(game_state: Any, game_id: str) -> int:
     for s in scores:
         d = next((x for x in decision_dicts if x["id"] == s.decision_id), {})
         step_type = _phase_to_step_type(s.phase)
-        by_player[s.player_id].append(ScoredStep(
-            step_id=s.decision_id,
-            step_type=step_type,
-            day=s.day,
-            phase=s.phase,
-            role=s.role,
-            step_score=s.overall_score,
-            scoring_tier=s.scoring_tier,
-            action_summary=str(d.get("raw_text", ""))[:200],
-            is_highlight=s.overall_score >= 0.75,
-            is_mistake=s.overall_score <= 0.30,
-            mistake_type=_infer_mistake_type(s, d),
-            lesson_abstract=s.evidence[0] if s.evidence else "",
-            lesson_tags=[s.role, step_type],
-            evidence_event_ids=[s.decision_id],
-        ))
+        by_player[s.player_id].append(
+            ScoredStep(
+                step_id=s.decision_id,
+                step_type=step_type,
+                day=s.day,
+                phase=s.phase,
+                role=s.role,
+                step_score=s.overall_score,
+                scoring_tier=s.scoring_tier,
+                action_summary=str(d.get("raw_text", ""))[:200],
+                is_highlight=s.overall_score >= 0.75,
+                is_mistake=s.overall_score <= 0.30,
+                mistake_type=_infer_mistake_type(s, d),
+                lesson_abstract=s.evidence[0] if s.evidence else "",
+                lesson_tags=[s.role, step_type],
+                evidence_event_ids=[s.decision_id],
+            )
+        )
 
     # 8. Run KnowledgeAbstractor
     abstractor = KnowledgeAbstractor()
     reviews: list[PlayerReviewReport] = []
     for player_id, steps in by_player.items():
         role = _player_role(state_dict, player_id)
-        reviews.append(PlayerReviewReport(
-            game_id=game_id,
-            player_id=player_id,
-            role=role,
-            scored_steps=steps,
-        ))
+        reviews.append(
+            PlayerReviewReport(
+                game_id=game_id,
+                player_id=player_id,
+                role=role,
+                scored_steps=steps,
+            )
+        )
 
     by_role_lessons = abstractor.abstract_from_game(reviews)
     all_lessons = []
@@ -266,10 +276,12 @@ def build_speech_acts_from_decisions(decision_dicts: list[dict]) -> list[dict]:
                 suspected_players.append(vt)
 
         # 5. Detect self-defense
-        has_self_defense = bool(re.search(
-            r"表水|我是好人|我不是狼|自证|解释|听我说",
-            raw_text,
-        ))
+        has_self_defense = bool(
+            re.search(
+                r"表水|我是好人|我不是狼|自证|解释|听我说",
+                raw_text,
+            )
+        )
 
         # Determine stance
         if claimed_role:
@@ -292,36 +304,41 @@ def build_speech_acts_from_decisions(decision_dicts: list[dict]) -> list[dict]:
         if has_self_defense and claimed_role is None:
             risk_flags.append("self_defense")
 
-        speech_acts.append({
-            "player_id": player_id,
-            "day": day,
-            "phase": phase,
-            "stance": stance,
-            "suspected_players": suspected_players,
-            "defended_players": defended_players,
-            "claimed_role": claimed_role,
-            "risk_flags": risk_flags,
-            "grounded_event_ids": [],
-            "raw_text_snippet": raw_text[:100],
-        })
+        speech_acts.append(
+            {
+                "player_id": player_id,
+                "day": day,
+                "phase": phase,
+                "stance": stance,
+                "suspected_players": suspected_players,
+                "defended_players": defended_players,
+                "claimed_role": claimed_role,
+                "risk_flags": risk_flags,
+                "grounded_event_ids": [],
+                "raw_text_snippet": raw_text[:100],
+            }
+        )
 
     return speech_acts
 
 
 # ---- helpers ----
 
+
 def _build_state_dict(game_state: Any) -> dict:
     players = []
     for p in getattr(game_state, "players", []):
         role = getattr(p, "role", None)
         alignment = getattr(p, "alignment", None)
-        players.append({
-            "id": getattr(p, "id", ""),
-            "name": getattr(p, "name", ""),
-            "role": role.value if hasattr(role, "value") else str(role or ""),
-            "alignment": alignment.value if hasattr(alignment, "value") else str(alignment or ""),
-            "alive": getattr(p, "alive", True),
-        })
+        players.append(
+            {
+                "id": getattr(p, "id", ""),
+                "name": getattr(p, "name", ""),
+                "role": role.value if hasattr(role, "value") else str(role or ""),
+                "alignment": alignment.value if hasattr(alignment, "value") else str(alignment or ""),
+                "alive": getattr(p, "alive", True),
+            }
+        )
     return {"players": players}
 
 

@@ -15,7 +15,8 @@ import os
 import sys
 import time
 import traceback
-from datetime import datetime, timezone
+from datetime import datetime
+from datetime import timezone
 from pathlib import Path
 
 # ── Bootstrap ──────────────────────────────────────────────────
@@ -76,19 +77,23 @@ report: dict = {
     "warnings": [],
 }
 
+
 def fail(reason: str, fatal: bool = True):
     report["failures"].append(reason)
     logger.error(f"STRICT FAIL: {reason}")
     if fatal:
         raise SystemExit(f"STRICT MODE FAILURE: {reason}")
 
+
 def warn(msg: str):
     report["warnings"].append(msg)
     logger.warning(f"STRICT WARN: {msg}")
 
+
 # ═══════════════════════════════════════════════════════════════
 # Phase 0: Preflight
 # ═══════════════════════════════════════════════════════════════
+
 
 def preflight():
     logger.info("=" * 60)
@@ -128,6 +133,7 @@ def preflight():
     logger.info("0b. DB connection...")
     try:
         import psycopg2
+
         conn = psycopg2.connect(_DB_URL, connect_timeout=5)
         cur = conn.cursor()
         cur.execute("SELECT 1")
@@ -141,12 +147,21 @@ def preflight():
     # 0c. DB tables
     logger.info("0c. DB table check...")
     required_tables = [
-        "games", "players", "agent_decisions", "game_events", "votes",
-        "strategy_knowledge_docs", "evaluations", "leaderboard_entries",
+        "games",
+        "players",
+        "agent_decisions",
+        "game_events",
+        "votes",
+        "strategy_knowledge_docs",
+        "evaluations",
+        "leaderboard_entries",
     ]
     optional_tables = [
-        "knowledge_usage_feedback", "published_reviews", "game_snapshots",
-        "strategy_patches", "strategy_graph_links",
+        "knowledge_usage_feedback",
+        "published_reviews",
+        "game_snapshots",
+        "strategy_patches",
+        "strategy_graph_links",
     ]
     try:
         conn = psycopg2.connect(_DB_URL)
@@ -170,13 +185,12 @@ def preflight():
     logger.info("0d. LLM client health check...")
     try:
         from backend.llm import create_client
+
         client = create_client()
         available = getattr(client, "available", True)
         if not available:
             fail(f"LLM client unavailable: provider={client.provider}")
-        resp = client.chat_sync([
-            {"role": "user", "content": 'Return ONLY valid JSON: {"ok":true}'}
-        ])
+        resp = client.chat_sync([{"role": "user", "content": 'Return ONLY valid JSON: {"ok":true}'}])
         content = resp.get("choices", [{}])[0].get("message", {}).get("content", "")
         data = json.loads(content)
         if data.get("ok") is not True:
@@ -234,7 +248,7 @@ def preflight():
             if kw in text.lower():
                 found_keywords.setdefault(kw, []).append(fpath_rel)
     if found_keywords:
-        logger.info(f"  Fallback keywords found in core files (informational):")
+        logger.info("  Fallback keywords found in core files (informational):")
         for kw, files in sorted(found_keywords.items()):
             logger.info(f"    '{kw}': {files}")
     report["checks"]["fallback_keyword_scan"] = found_keywords
@@ -246,6 +260,7 @@ def preflight():
 # ═══════════════════════════════════════════════════════════════
 # Phase 1: Run one complete game
 # ═══════════════════════════════════════════════════════════════
+
 
 def run_game():
     logger.info("=" * 60)
@@ -289,10 +304,15 @@ def run_game():
         }
 
         for p in state.players:
-            report["game"].setdefault("players", []).append({
-                "name": p.name, "role": p.role.value, "seat": p.seat,
-                "alive": p.alive, "death_day": getattr(p, "death_day", None),
-            })
+            report["game"].setdefault("players", []).append(
+                {
+                    "name": p.name,
+                    "role": p.role.value,
+                    "seat": p.seat,
+                    "alive": p.alive,
+                    "death_day": getattr(p, "death_day", None),
+                }
+            )
 
         return game_id
 
@@ -304,12 +324,14 @@ def run_game():
 # Phase 2: DB verification
 # ═══════════════════════════════════════════════════════════════
 
+
 def verify_db(game_id: str, active_before: int, candidate_before: int):
     logger.info("=" * 60)
     logger.info("PHASE 2: DB VERIFICATION")
     logger.info("=" * 60)
 
     import psycopg2
+
     conn = psycopg2.connect(_DB_URL)
     cur = conn.cursor()
 
@@ -328,9 +350,7 @@ def verify_db(game_id: str, active_before: int, candidate_before: int):
         logger.info(f"  {name}: {results[name]}")
 
     # Strategy usage trace
-    cur.execute(
-        "SELECT COUNT(*) FROM agent_decisions WHERE game_id = %s AND parsed_action IS NOT NULL",
-        (game_id,))
+    cur.execute("SELECT COUNT(*) FROM agent_decisions WHERE game_id = %s AND parsed_action IS NOT NULL", (game_id,))
     decisions_with_action = cur.fetchone()[0]
     logger.info(f"  decisions_with_parsed_action: {decisions_with_action}")
 
@@ -339,7 +359,8 @@ def verify_db(game_id: str, active_before: int, candidate_before: int):
         "SELECT id FROM agent_decisions WHERE game_id = %s "
         "AND (parsed_action::text LIKE '%%_tool_trace%%' "
         "OR parsed_action::text LIKE '%%_auto_injected_strategies%%')",
-        (game_id,))
+        (game_id,),
+    )
     trace_ids = [r[0] for r in cur.fetchall()]
     logger.info(f"  decisions_with_tool_trace: {len(trace_ids)}")
 
@@ -351,20 +372,23 @@ def verify_db(game_id: str, active_before: int, candidate_before: int):
 
     # New lessons from this game
     cur.execute(
-        "SELECT COUNT(*) FROM strategy_knowledge_docs WHERE source_report_ids @> %s::jsonb",
-        (json.dumps([game_id]),))
+        "SELECT COUNT(*) FROM strategy_knowledge_docs WHERE source_report_ids @> %s::jsonb", (json.dumps([game_id]),)
+    )
     new_lessons = cur.fetchone()[0]
 
     cur.execute(
         "SELECT status, doc_type, COUNT(*) FROM strategy_knowledge_docs "
         "WHERE source_report_ids @> %s::jsonb GROUP BY status, doc_type",
-        (json.dumps([game_id]),))
+        (json.dumps([game_id]),),
+    )
     lesson_breakdown = [(r[0], r[1], r[2]) for r in cur.fetchall()]
 
     logger.info(f"  new_lessons_from_game: {new_lessons}")
     logger.info(f"  lesson_breakdown: {lesson_breakdown}")
     logger.info(f"  active_before={active_before}, active_after={active_after} (delta={active_after - active_before})")
-    logger.info(f"  candidate_before={candidate_before}, candidate_after={candidate_after} (delta={candidate_after - candidate_before})")
+    logger.info(
+        f"  candidate_before={candidate_before}, candidate_after={candidate_after} (delta={candidate_after - candidate_before})"
+    )
 
     # Check knowledge_usage_feedback
     cur.execute("SELECT COUNT(*) FROM knowledge_usage_feedback WHERE game_id = %s", (game_id,))
@@ -394,12 +418,18 @@ def verify_db(game_id: str, active_before: int, candidate_before: int):
 
     active_delta = active_after - active_before
     if active_delta < -20 or active_delta > 50:
-        fail(f"Active docs changed excessively: {active_before} → {active_after} (delta={active_delta}). "
-             f"Expected delta in [-20, +50].", fatal=True)
+        fail(
+            f"Active docs changed excessively: {active_before} → {active_after} (delta={active_delta}). "
+            f"Expected delta in [-20, +50].",
+            fatal=True,
+        )
 
     if candidate_after <= candidate_before:
-        fail(f"Candidate docs did not grow: {candidate_before} → {candidate_after} (delta={candidate_after - candidate_before}). "
-             f"Knowledge extraction should produce new candidate docs.", fatal=False)
+        fail(
+            f"Candidate docs did not grow: {candidate_before} → {candidate_after} (delta={candidate_after - candidate_before}). "
+            f"Knowledge extraction should produce new candidate docs.",
+            fatal=False,
+        )
 
     # Log results
     return results
@@ -409,12 +439,14 @@ def verify_db(game_id: str, active_before: int, candidate_before: int):
 # Phase 3: Post-game artifact check
 # ═══════════════════════════════════════════════════════════════
 
+
 def verify_artifacts(game_id: str):
     logger.info("=" * 60)
     logger.info("PHASE 3: POST-GAME ARTIFACT VERIFICATION")
     logger.info("=" * 60)
 
     import psycopg2
+
     conn = psycopg2.connect(_DB_URL)
     cur = conn.cursor()
 
@@ -422,7 +454,8 @@ def verify_artifacts(game_id: str):
     cur.execute(
         "SELECT id, phase, raw_output FROM agent_decisions WHERE game_id = %s "
         "AND (phase LIKE '%%SPEECH%%' OR phase LIKE '%%TALK%%')",
-        (game_id,))
+        (game_id,),
+    )
     speech_rows = cur.fetchall()
     logger.info(f"  speech/talk decisions: {len(speech_rows)}")
 
@@ -430,15 +463,13 @@ def verify_artifacts(game_id: str):
     # We can't directly query scores from DB (they're not persisted), but we check logs
     # Check scored steps from knowledge_abstractor output
     cur.execute(
-        "SELECT COUNT(*) FROM strategy_knowledge_docs WHERE source_report_ids @> %s::jsonb",
-        (json.dumps([game_id]),))
+        "SELECT COUNT(*) FROM strategy_knowledge_docs WHERE source_report_ids @> %s::jsonb", (json.dumps([game_id]),)
+    )
     scored_lessons = cur.fetchone()[0]
     logger.info(f"  lessons_from_scoring: {scored_lessons}")
 
     # Check for review / published_review
-    cur.execute(
-        "SELECT id, status, score, publish_allowed FROM published_reviews WHERE game_id = %s",
-        (game_id,))
+    cur.execute("SELECT id, status, score, publish_allowed FROM published_reviews WHERE game_id = %s", (game_id,))
     reviews = cur.fetchall()
     logger.info(f"  published_reviews: {len(reviews)}")
     for r in reviews:
@@ -450,7 +481,9 @@ def verify_artifacts(game_id: str):
     logger.info(f"  evaluations: {eval_count}")
 
     # Check leaderboard entries
-    cur.execute("SELECT COUNT(*) FROM leaderboard_entries",)
+    cur.execute(
+        "SELECT COUNT(*) FROM leaderboard_entries",
+    )
     lb_count = cur.fetchone()[0]
     logger.info(f"  leaderboard_entries total: {lb_count}")
 
@@ -476,6 +509,7 @@ def verify_artifacts(game_id: str):
 # Phase 4: Log scan for forbidden keywords
 # ═══════════════════════════════════════════════════════════════
 
+
 def scan_log():
     logger.info("=" * 60)
     logger.info("PHASE 4: LOG SCAN FOR DEGRADATION KEYWORDS")
@@ -486,8 +520,14 @@ def scan_log():
         return
 
     forbidden = [
-        "fallback", "degraded", "degrade", "best-effort", "best effort",
-        "disabled", "skip", "unavailable",
+        "fallback",
+        "degraded",
+        "degrade",
+        "best-effort",
+        "best effort",
+        "disabled",
+        "skip",
+        "unavailable",
     ]
 
     log_text = log_file.read_text()
@@ -519,6 +559,7 @@ def scan_log():
 # Phase 5: Evidence chain demo
 # ═══════════════════════════════════════════════════════════════
 
+
 def build_evidence_chain(game_id: str):
     """Extract a sample evidence chain from the completed game."""
     logger.info("=" * 60)
@@ -526,6 +567,7 @@ def build_evidence_chain(game_id: str):
     logger.info("=" * 60)
 
     import psycopg2
+
     conn = psycopg2.connect(_DB_URL)
     cur = conn.cursor()
 
@@ -536,7 +578,8 @@ def build_evidence_chain(game_id: str):
         "AND (parsed_action::text LIKE '%%_tool_trace%%' "
         "OR parsed_action::text LIKE '%%retrieval_used%%') "
         "LIMIT 1",
-        (game_id,))
+        (game_id,),
+    )
     trace_decision = cur.fetchone()
 
     if trace_decision:
@@ -568,7 +611,8 @@ def build_evidence_chain(game_id: str):
             "FROM agent_decisions WHERE game_id = %s "
             "AND parsed_action::text LIKE '%%_auto_injected_strategies%%' "
             "LIMIT 1",
-            (game_id,))
+            (game_id,),
+        )
         injected_only = cur.fetchone()
         if injected_only:
             dec_id, player_id, day, phase, pa, raw = injected_only
@@ -593,7 +637,8 @@ def build_evidence_chain(game_id: str):
     cur.execute(
         "SELECT id, doc_type, role, status, quality_score, recommended_action "
         "FROM strategy_knowledge_docs WHERE source_report_ids @> %s::jsonb LIMIT 3",
-        (json.dumps([game_id]),))
+        (json.dumps([game_id]),),
+    )
     lessons = cur.fetchall()
     logger.info(f"  Sample lessons ({len(lessons)}):")
     for l in lessons:
@@ -607,6 +652,7 @@ def build_evidence_chain(game_id: str):
 # ═══════════════════════════════════════════════════════════════
 # Phase 6: Generate reports
 # ═══════════════════════════════════════════════════════════════
+
 
 def generate_reports():
     logger.info("=" * 60)
@@ -693,8 +739,10 @@ def generate_reports():
 # Main
 # ═══════════════════════════════════════════════════════════════
 
+
 def main():
     import argparse
+
     p = argparse.ArgumentParser()
     p.add_argument("--skip-game", action="store_true", help="Skip the game run (verify env only)")
     p.add_argument("--skip-docs", action="store_true", help="Skip documentation generation")
@@ -732,16 +780,16 @@ def main():
 
     # Final verdict
     if report["failures"]:
-        logger.error(f"\n{'='*60}")
+        logger.error(f"\n{'=' * 60}")
         logger.error(f"STRICT MODE: FAILED ({len(report['failures'])} failures)")
-        logger.error(f"{'='*60}")
+        logger.error(f"{'=' * 60}")
         for f in report["failures"]:
             logger.error(f"  ❌ {f}")
         sys.exit(1)
     else:
-        logger.info(f"\n{'='*60}")
-        logger.info(f"STRICT MODE: PASSED")
-        logger.info(f"{'='*60}")
+        logger.info(f"\n{'=' * 60}")
+        logger.info("STRICT MODE: PASSED")
+        logger.info(f"{'=' * 60}")
 
 
 if __name__ == "__main__":

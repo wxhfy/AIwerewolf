@@ -5,6 +5,7 @@ Usage:
 
 Default: heuristic mode, 20 games.
 """
+
 from __future__ import annotations
 
 import json
@@ -21,7 +22,6 @@ sys.path.insert(0, str(ROOT))
 warnings.filterwarnings("ignore")
 
 from backend.engine.game import WerewolfGame
-from backend.engine.models import Role
 
 
 def run_experiment(
@@ -51,24 +51,25 @@ def run_experiment(
                 team = "wolf" if role in ("Werewolf", "WhiteWolfKing") else "village"
 
                 # Win: 1 if team matches winner
-                won = (team == winner)
+                won = team == winner
                 role_stats[role]["wins"].append(1.0 if won else 0.0)
                 role_stats[role]["survival_days"].append(float(state.day if p.alive else p.death_day or 0))
                 role_stats[role]["alive_endgame"].append(1.0 if p.alive else 0.0)
                 role_stats[role]["team"] = team
 
-            results.append({
-                "seed": seed,
-                "winner": winner,
-                "days": max_days,
-                "duration_s": round(elapsed, 1),
-            })
+            results.append(
+                {
+                    "seed": seed,
+                    "winner": winner,
+                    "days": max_days,
+                    "duration_s": round(elapsed, 1),
+                }
+            )
 
-            print(f"  Game {i+1}/{n_games}: seed={seed}, winner={winner}, days={max_days}, "
-                  f"time={elapsed:.0f}s")
+            print(f"  Game {i + 1}/{n_games}: seed={seed}, winner={winner}, days={max_days}, time={elapsed:.0f}s")
 
         except Exception as e:
-            print(f"  Game {i+1}/{n_games}: seed={seed}, FAILED: {e}")
+            print(f"  Game {i + 1}/{n_games}: seed={seed}, FAILED: {e}")
             results.append({"seed": seed, "error": str(e)})
 
     # Compile statistics
@@ -114,9 +115,9 @@ def print_report(stats: dict, total_games: int):
     wolf_games = sum(d["games"] for _, d in stats.items() if d["team"] == "wolf")
 
     if village_games > 0:
-        print(f"\nVillage overall win rate: {village_wins/village_games:.1%}")
+        print(f"\nVillage overall win rate: {village_wins / village_games:.1%}")
     if wolf_games > 0:
-        print(f"Wolf overall win rate: {wolf_wins/wolf_games:.1%}")
+        print(f"Wolf overall win rate: {wolf_wins / wolf_games:.1%}")
 
     print("=" * 65)
 
@@ -125,6 +126,7 @@ def print_report(stats: dict, total_games: int):
 
 def main():
     import argparse
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", default="heuristic", choices=["heuristic", "llm"])
     parser.add_argument("--games", type=int, default=20)
@@ -138,7 +140,7 @@ def main():
     print_report(stats, len([r for r in results if "error" not in r]))
 
     total_elapsed = time.perf_counter() - t0
-    print(f"\nTotal time: {total_elapsed:.0f}s ({total_elapsed/60:.1f} min)")
+    print(f"\nTotal time: {total_elapsed:.0f}s ({total_elapsed / 60:.1f} min)")
 
     if args.output:
         output_path = Path(args.output)

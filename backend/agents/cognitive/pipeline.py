@@ -15,27 +15,25 @@ from __future__ import annotations
 import json
 import os
 import re
-from typing import Any, Dict, List, Optional
+from typing import Dict
+from typing import List
+from typing import Optional
 
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage
+from langchain_core.messages import SystemMessage
 from langchain_core.runnables import Runnable
 
 from backend.agents.cognitive.agent_loop import AgentLoop
 from backend.agents.cognitive.memory import Memory
-from backend.agents.cognitive.observe import Observation, observe, format_observation
-from backend.agents.cognitive.prompts import (
-    build_observe_prompt,
-    build_think_prompt,
-    build_speech_prompt,
-    build_vote_prompt,
-    build_night_prompt,
-    build_system_prompt,
-    build_game_context,
-    build_strategy_bias_block,
-    format_playbook_for_prompt,
-)
-from backend.agents.cognitive.retrieval import retrieve_strategies as retrieve_strategies_tfidf
+from backend.agents.cognitive.observe import Observation
+from backend.agents.cognitive.prompts import build_night_prompt
+from backend.agents.cognitive.prompts import build_observe_prompt
+from backend.agents.cognitive.prompts import build_speech_prompt
+from backend.agents.cognitive.prompts import build_strategy_bias_block
+from backend.agents.cognitive.prompts import build_think_prompt
+from backend.agents.cognitive.prompts import build_vote_prompt
 from backend.agents.cognitive.retrieval import format_strategies_for_prompt
+from backend.agents.cognitive.retrieval import retrieve_strategies as retrieve_strategies_tfidf
 from backend.agents.cognitive.retrieval_prod import retrieve_strategies_prod
 
 
@@ -89,7 +87,9 @@ class Pipeline:
         return self._run_legacy_speech(obs, memory, is_first_speaker, is_last_words)
 
     def run_vote(
-        self, obs: Observation, memory: Memory,
+        self,
+        obs: Observation,
+        memory: Memory,
         vote_temperature: Optional[float] = None,
     ) -> Dict[str, str]:
         """Generate vote via agent loop (or legacy chain).
@@ -118,30 +118,47 @@ class Pipeline:
     # ================================================================
 
     def _run_loop_speech(
-        self, obs: Observation, memory: Memory,
-        is_first: bool, is_last: bool,
+        self,
+        obs: Observation,
+        memory: Memory,
+        is_first: bool,
+        is_last: bool,
     ) -> str:
         extra_parts = []
-        if is_first: extra_parts.append("你是本阶段第一个发言的人")
-        if is_last: extra_parts.append("这是你的遗言")
+        if is_first:
+            extra_parts.append("你是本阶段第一个发言的人")
+        if is_last:
+            extra_parts.append("这是你的遗言")
         extra = "; ".join(extra_parts) if extra_parts else ""
 
-        loop = AgentLoop(self._llm, self._system_prompt, "speech", self._strategy_bias,
-                         mbti=self._persona_mbti, player_id=self._player_id,
-                         retrieval_policy=self._retrieval_policy)
+        loop = AgentLoop(
+            self._llm,
+            self._system_prompt,
+            "speech",
+            self._strategy_bias,
+            mbti=self._persona_mbti,
+            player_id=self._player_id,
+            retrieval_policy=self._retrieval_policy,
+        )
         result = loop.run(obs, memory, extra_context=extra)
         speech = result.get("speech", "")
         self._cached_analysis = result.get("reasoning", "")
         return speech
 
     def _run_loop_vote(
-        self, obs: Observation, memory: Memory,
+        self,
+        obs: Observation,
+        memory: Memory,
         vote_temperature: Optional[float] = None,
     ) -> Dict[str, str]:
         loop = AgentLoop(
-            self._llm, self._system_prompt, "vote", self._strategy_bias,
+            self._llm,
+            self._system_prompt,
+            "vote",
+            self._strategy_bias,
             temperature=vote_temperature,
-            mbti=self._persona_mbti, player_id=self._player_id,
+            mbti=self._persona_mbti,
+            player_id=self._player_id,
             retrieval_policy=self._retrieval_policy,
         )
         result = loop.run(obs, memory, cached_analysis=self._cached_analysis)
@@ -149,9 +166,15 @@ class Pipeline:
         return {"target": result.get("target", ""), "reasoning": result.get("reasoning", "")}
 
     def _run_loop_night(self, obs: Observation, memory: Memory, extra: str) -> Dict[str, str]:
-        loop = AgentLoop(self._llm, self._system_prompt, "night", self._strategy_bias,
-                         mbti=self._persona_mbti, player_id=self._player_id,
-                         retrieval_policy=self._retrieval_policy)
+        loop = AgentLoop(
+            self._llm,
+            self._system_prompt,
+            "night",
+            self._strategy_bias,
+            mbti=self._persona_mbti,
+            player_id=self._player_id,
+            retrieval_policy=self._retrieval_policy,
+        )
         result = loop.run(obs, memory, extra_context=extra)
         return {"target": result.get("target", ""), "reasoning": result.get("reasoning", "")}
 
@@ -160,8 +183,11 @@ class Pipeline:
     # ================================================================
 
     def _run_legacy_speech(
-        self, obs: Observation, memory: Memory,
-        is_first: bool, is_last: bool,
+        self,
+        obs: Observation,
+        memory: Memory,
+        is_first: bool,
+        is_last: bool,
     ) -> str:
         obs_result = self._legacy_observe(obs)
         think_result = self._legacy_think(obs, memory, obs_result)
@@ -181,15 +207,19 @@ class Pipeline:
         prompt = build_observe_prompt(obs)
         return self._call_legacy(
             "你是狼人杀观察者。提取关键信号和事实，不做最终判断。用中文。",
-            prompt, max_tokens=400,
+            prompt,
+            max_tokens=400,
         )
 
     def _legacy_think(self, obs: Observation, memory: Memory, obs_result: str) -> str:
         strategies = retrieve_strategies_prod(obs.player_role, obs.phase, situation=obs_result, limit=3)
         if not strategies:
             strategies = retrieve_strategies_tfidf(
-                obs.player_role, obs.phase, situation=obs_result,
-                persona_mbti=self._persona_mbti, persona_style=self._persona_style,
+                obs.player_role,
+                obs.phase,
+                situation=obs_result,
+                persona_mbti=self._persona_mbti,
+                persona_style=self._persona_style,
             )
         strategy_text = format_strategies_for_prompt(strategies)
         bias_text = build_strategy_bias_block(self._strategy_bias, "talk")
@@ -197,8 +227,12 @@ class Pipeline:
         return self._call_legacy(self._system_prompt, prompt, max_tokens=600)
 
     def _legacy_act_speech(
-        self, obs: Observation, think_result: str, memory: Memory,
-        is_first: bool, is_last: bool,
+        self,
+        obs: Observation,
+        think_result: str,
+        memory: Memory,
+        is_first: bool,
+        is_last: bool,
     ) -> str:
         prompt = build_speech_prompt(obs, think_result, memory, is_first, is_last)
         return self._call_legacy(self._system_prompt, prompt, max_tokens=800)
@@ -214,15 +248,21 @@ class Pipeline:
         return parse_json_target(result)
 
     def _call_legacy(
-        self, system: str, user: str, max_tokens: int = 500, max_retries: int = 2,
+        self,
+        system: str,
+        user: str,
+        max_tokens: int = 500,
+        max_retries: int = 2,
     ) -> str:
         last_error: Exception | None = None
         for attempt in range(max_retries + 1):
             try:
-                resp = self._llm.invoke([
-                    SystemMessage(content=system),
-                    HumanMessage(content=user),
-                ])
+                resp = self._llm.invoke(
+                    [
+                        SystemMessage(content=system),
+                        HumanMessage(content=user),
+                    ]
+                )
                 content = resp.content.strip()
                 if content and len(content) > 10:
                     return content
@@ -237,9 +277,10 @@ class Pipeline:
 # Helpers
 # ============================================================
 
+
 def parse_json_target(text: str) -> Dict[str, str]:
     try:
-        m = re.search(r'\{[^}]+\}', text)
+        m = re.search(r"\{[^}]+\}", text)
         if m:
             data = json.loads(m.group())
             return {"target": data.get("target", ""), "reasoning": data.get("reasoning", "")}
@@ -250,7 +291,7 @@ def parse_json_target(text: str) -> Dict[str, str]:
 
 def parse_json_array(text: str) -> List[str]:
     try:
-        m = re.search(r'\[.*?\]', text, re.DOTALL)
+        m = re.search(r"\[.*?\]", text, re.DOTALL)
         if m:
             data = json.loads(m.group())
             if isinstance(data, list):

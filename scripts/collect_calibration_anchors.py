@@ -18,22 +18,27 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from dataclasses import field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
 
 
 @dataclass
 class CalibrationAnchor:
     """A single calibration anchor point."""
+
     source: str  # dataset name
     game_id: str
     player_id: str
-    role: str        # Seer / Werewolf / Witch / ...
+    role: str  # Seer / Werewolf / Witch / ...
     speech_text: str
     # Annotation dimensions
     persuasion_score: Optional[float] = None  # From Werewolf Among Us
-    deception_label: Optional[str] = None     # WOLF 5-class
+    deception_label: Optional[str] = None  # WOLF 5-class
     reasoning_quality: Optional[float] = None  # AIWolfDial
     naturalness_score: Optional[float] = None  # AIWolfDial (A)
     consistency_score: Optional[float] = None  # AIWolfDial (C)
@@ -54,7 +59,7 @@ def parse_werewolf_bench(path: str) -> List[CalibrationAnchor]:
     for game_block in games[1:]:  # Skip preamble
         game_id = game_block[:20].strip()
         # Extract speeches and reasoning
-        speeches = re.findall(r'(\w+)\s*:\s*(.+?)(?=\n\w+\s*:|\n\[|\Z)', game_block, re.DOTALL)
+        speeches = re.findall(r"(\w+)\s*:\s*(.+?)(?=\n\w+\s*:|\n\[|\Z)", game_block, re.DOTALL)
         reasonings = re.findall(r"\[REASONING\]\s*(.+?)(?=\n\n|\Z)", game_block, re.DOTALL)
         for i, (speaker, speech) in enumerate(speeches):
             anchor = CalibrationAnchor(
@@ -74,6 +79,7 @@ def parse_llmafia(path: str) -> List[CalibrationAnchor]:
     Format: JSON files with chat logs, voting records, role assignments.
     """
     import json as json_mod
+
     anchors = []
     data_dir = Path(path)
     for game_file in data_dir.glob("*.json"):
@@ -102,6 +108,7 @@ def parse_werewolf_among_us(path: str) -> List[CalibrationAnchor]:
     Identity Declaration, Accusation, Interrogation, Call for Action, Defense, Evidence
     """
     import json as json_mod
+
     anchors = []
     data_dir = Path(path)
     for game_file in data_dir.glob("*.json"):
@@ -112,7 +119,7 @@ def parse_werewolf_among_us(path: str) -> List[CalibrationAnchor]:
             # Convert strategy annotations to scores
             has_evidence = strategies.get("Evidence", 0) > 0
             is_accusation = strategies.get("Accusation", 0) > 0
-            persuasion = (has_evidence * 0.5 + is_accusation * 0.3 + 0.2)
+            persuasion = has_evidence * 0.5 + is_accusation * 0.3 + 0.2
             anchor = CalibrationAnchor(
                 source="werewolf_among_us",
                 game_id=game_id,
@@ -145,6 +152,7 @@ def _infer_role(text: str) -> str:
 def summarize_anchors(anchors: List[CalibrationAnchor]) -> Dict[str, Any]:
     """Generate per-dimension calibration summary."""
     from collections import Counter
+
     by_role = Counter(a.role for a in anchors)
     by_source = Counter(a.source for a in anchors)
     has_persuasion = sum(1 for a in anchors if a.persuasion_score is not None)
@@ -158,7 +166,7 @@ def summarize_anchors(anchors: List[CalibrationAnchor]) -> Dict[str, Any]:
         "ready_dimensions": {
             "persuasive": has_persuasion,
             "persona_consistency": 0,  # Needs manual labeling
-            "strategy_impact": 0,       # Needs manual labeling
+            "strategy_impact": 0,  # Needs manual labeling
         },
         "min_anchors_required": 50,
     }
@@ -166,6 +174,7 @@ def summarize_anchors(anchors: List[CalibrationAnchor]) -> Dict[str, Any]:
 
 def main():
     import argparse
+
     parser = argparse.ArgumentParser(description="Collect calibration anchors from open datasets")
     parser.add_argument("--source", default="all", choices=["werewolf_bench", "llmafia", "werewolf_among_us", "all"])
     parser.add_argument("--data-dir", default="data/raw_datasets/")
@@ -201,10 +210,23 @@ def main():
     with open(out_dir / "calibration_summary.json", "w") as f:
         json.dump(summary, f, indent=2, ensure_ascii=False)
     with open(out_dir / "all_anchors.json", "w") as f:
-        json.dump([{"source": a.source, "game_id": a.game_id, "player_id": a.player_id,
-                     "role": a.role, "speech": a.speech_text[:200],
-                     "persuasion": a.persuasion_score, "human_label": a.human_label}
-                   for a in all_anchors], f, indent=2, ensure_ascii=False)
+        json.dump(
+            [
+                {
+                    "source": a.source,
+                    "game_id": a.game_id,
+                    "player_id": a.player_id,
+                    "role": a.role,
+                    "speech": a.speech_text[:200],
+                    "persuasion": a.persuasion_score,
+                    "human_label": a.human_label,
+                }
+                for a in all_anchors
+            ],
+            f,
+            indent=2,
+            ensure_ascii=False,
+        )
 
     print(f"\nTotal: {summary['total_anchors']} anchors collected")
     print(f"Ready for calibration: {summary['ready_dimensions']}")

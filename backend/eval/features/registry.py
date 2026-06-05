@@ -6,22 +6,28 @@ The registry returns unified feature dicts for any opportunity.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, Protocol
+from dataclasses import dataclass
+from dataclasses import field
+from typing import Any
+from typing import Protocol
 
 
 class FeatureExtractor(Protocol):
     """Protocol for feature extractors."""
+
     name: str
     version: str
 
     def supports(self, opportunity: dict[str, Any]) -> bool: ...
-    def extract(self, opportunity: dict[str, Any], context: dict[str, Any] | None = None) -> dict[str, float | int | str]: ...
+    def extract(
+        self, opportunity: dict[str, Any], context: dict[str, Any] | None = None
+    ) -> dict[str, float | int | str]: ...
 
 
 @dataclass
 class FeatureResult:
     """Unified feature extraction result with provenance."""
+
     features: dict[str, float | int | str] = field(default_factory=dict)
     feature_sources: dict[str, str] = field(default_factory=dict)
     extractors_used: list[str] = field(default_factory=list)
@@ -68,10 +74,7 @@ class FeatureRegistry:
         return result
 
     def list_extractors(self) -> list[dict[str, str]]:
-        return [
-            {"name": ext.name, "version": ext.version}
-            for ext in self._extractors.values()
-        ]
+        return [{"name": ext.name, "version": ext.version} for ext in self._extractors.values()]
 
 
 # Global singleton

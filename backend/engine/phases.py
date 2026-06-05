@@ -9,8 +9,7 @@ from backend.engine.models import Phase
 class PhaseHandler(Protocol):
     phase: Phase
 
-    def run(self, game: "WerewolfGame") -> None:
-        ...
+    def run(self, game: WerewolfGame) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -18,7 +17,7 @@ class AtomicPhase:
     phase: Phase
     runner_name: str
 
-    def run(self, game: "WerewolfGame") -> None:
+    def run(self, game: WerewolfGame) -> None:
         getattr(game, self.runner_name)()
 
 
@@ -27,8 +26,9 @@ class CompositePhase:
     phase: Phase
     steps: tuple[PhaseHandler, ...]
 
-    def run(self, game: "WerewolfGame") -> None:
+    def run(self, game: WerewolfGame) -> None:
         import time as _time
+
         micro_delay = getattr(game, "phase_delay_ms", 0) / 4000  # ~25% of phase delay, min floor 0.05s
         for idx, step in enumerate(self.steps):
             step.run(game)

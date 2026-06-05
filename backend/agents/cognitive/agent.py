@@ -22,23 +22,29 @@ from __future__ import annotations
 import json
 import os
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
 
-from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import Runnable
 
-from backend.agents.cognitive.humanization import HumanizationProfile, build_humanization_profile
-from backend.agents.cognitive.memory import Memory
 from backend.agents.cognitive.agent_loop import get_last_loop_trace
-from backend.agents.cognitive.observe import (
-    Observation, BeliefTracker, observe, format_observation,
-)
-from backend.agents.cognitive.pipeline import Pipeline, parse_json_target, parse_json_array
-from backend.agents.cognitive.planner import StrategicIntent
-from backend.agents.cognitive.profiles import Profile, get_profile
+from backend.agents.cognitive.humanization import build_humanization_profile
+from backend.agents.cognitive.memory import Memory
+from backend.agents.cognitive.observe import BeliefTracker
+from backend.agents.cognitive.observe import Observation
+from backend.agents.cognitive.observe import format_observation
+from backend.agents.cognitive.observe import observe
+from backend.agents.cognitive.pipeline import Pipeline
+from backend.agents.cognitive.pipeline import parse_json_array
+from backend.agents.cognitive.pipeline import parse_json_target
+from backend.agents.cognitive.profiles import Profile
+from backend.agents.cognitive.profiles import get_profile
 from backend.agents.cognitive.prompts import build_system_prompt
 from backend.agents.cognitive.social_model import DeceptionSignal
-from backend.engine.models import Decision, ActionType
+from backend.engine.models import ActionType
+from backend.engine.models import Decision
 
 
 class CognitiveAgent:
@@ -74,9 +80,7 @@ class CognitiveAgent:
         self._profile = profile or get_profile(role)
 
         # Humanization (behavioral parameters derived from persona + mind)
-        self._humanization = build_humanization_profile(
-            self._profile.persona, self._profile.mind
-        )
+        self._humanization = build_humanization_profile(self._profile.persona, self._profile.mind)
 
         # System prompt (built once from Profile.to_system_intro())
         self._system_prompt = build_system_prompt(role, self._profile)
@@ -95,7 +99,9 @@ class CognitiveAgent:
 
         # Pipeline (stateless cognitive engine — now persona-aware)
         self._pipeline = Pipeline(
-            llm, self._system_prompt, self._strategy_bias,
+            llm,
+            self._system_prompt,
+            self._strategy_bias,
             persona_mbti=(self._profile.persona.mbti if self._profile.persona else ""),
             persona_style=(self._profile.persona.style_label if self._profile.persona else ""),
             retrieval_policy=retrieval_policy,
@@ -170,10 +176,9 @@ class CognitiveAgent:
     def talk(self) -> Decision:
         obs = self._observe()
         today_chat_count = sum(
-            1 for e in self._view.public_events
-            if e.get("day") == self._view.day
-            and e.get("type") == "CHAT_MESSAGE"
-            and e.get("phase") == self._view.phase
+            1
+            for e in self._view.public_events
+            if e.get("day") == self._view.day and e.get("type") == "CHAT_MESSAGE" and e.get("phase") == self._view.phase
         )
         is_first = today_chat_count == 0
         is_last_words = self._view.phase == "DAY_LAST_WORDS"
@@ -184,6 +189,7 @@ class CognitiveAgent:
         segments = parse_json_array(raw)
         if not segments or (len(segments) == 1 and len(segments[0]) < 3):
             import logging
+
             _logger = logging.getLogger(__name__)
             _logger.warning(
                 f"Speech parse fallback for {self.player_name}({self._profile.role}): "
@@ -215,7 +221,8 @@ class CognitiveAgent:
     def vote(self) -> Decision:
         obs = self._observe()
         result = self._pipeline.run_vote(
-            obs, self.memory,
+            obs,
+            self.memory,
             vote_temperature=self._humanization.vote_temperature,
         )
         target_id = self._resolve_target(result["target"])
@@ -239,13 +246,12 @@ class CognitiveAgent:
     def attack(self) -> Decision:
         # Build WolfTeamView each night for coordinated wolf play
         if "wolf" in self.role.lower():
-            known = getattr(self._view, 'known_wolves', [])
+            known = getattr(self._view, "known_wolves", [])
             if known:
                 try:
                     from backend.agents.cognitive.wolf_team import build_wolf_team_view
-                    all_wolf_ids = [self.player_id] + [
-                        w.get("id", w.get("player_id", "")) for w in known
-                    ]
+
+                    all_wolf_ids = [self.player_id] + [w.get("id", w.get("player_id", "")) for w in known]
                     all_alive = [p["id"] for p in self._view.players if p.get("alive")]
                     self._wolf_team_view = build_wolf_team_view(
                         wolf_ids=all_wolf_ids,
@@ -255,11 +261,9 @@ class CognitiveAgent:
                     )
                 except Exception:
                     import logging
+
                     _logger = logging.getLogger(__name__)
-                    _logger.warning(
-                        f"build_wolf_team_view failed for {self.player_name}, "
-                        f"using None", exc_info=True
-                    )
+                    _logger.warning(f"build_wolf_team_view failed for {self.player_name}, using None", exc_info=True)
                     self._wolf_team_view = None
 
         obs = self._observe()
@@ -288,9 +292,7 @@ class CognitiveAgent:
         result = self._pipeline.run_night(obs, self.memory, extra)
         if result["target"]:
             self._guard_history.append(result["target"])
-            self.memory.role_state.setdefault("protections", []).append(
-                f"D{self.memory.day}: {result['target']}"
-            )
+            self.memory.role_state.setdefault("protections", []).append(f"D{self.memory.day}: {result['target']}")
         return self._night_decision(result, ActionType.GUARD)
 
     def witch_act(self, victim_id: Optional[str]) -> List[Decision]:
@@ -306,14 +308,14 @@ class CognitiveAgent:
         if victim_id:
             victim = self._find_player(victim_id)
             if victim:
-                lines.append(f"今晚被刀的是: {victim.get('seat','?')}号:{victim.get('name','')}")
+                lines.append(f"今晚被刀的是: {victim.get('seat', '?')}号:{victim.get('name', '')}")
 
         obs = self._observe()
         result = self._pipeline.run_night(obs, self.memory, "\n".join(lines))
 
         decisions = []
         try:
-            m = re.search(r'\{[^}]+\}', result.get("reasoning", ""))
+            m = re.search(r"\{[^}]+\}", result.get("reasoning", ""))
             if m:
                 data = json.loads(m.group())
                 save = data.get("save", False)
@@ -340,7 +342,10 @@ class CognitiveAgent:
     def shoot(self) -> Decision:
         obs = self._observe()
         targets = [f"{p.seat}号:{p.name}" for p in obs.alive]
-        prompt = format_observation(obs) + f"\n\n你已死亡，可开枪带走一人。\n可选: {', '.join(targets)}\n输出 JSON: {{\"reasoning\": \"理由\", \"target\": \"玩家名字\"}}"
+        prompt = (
+            format_observation(obs)
+            + f'\n\n你已死亡，可开枪带走一人。\n可选: {", ".join(targets)}\n输出 JSON: {{"reasoning": "理由", "target": "玩家名字"}}'
+        )
 
         result = self._pipeline.direct_call(prompt)
         parsed = parse_json_target(result)
@@ -363,8 +368,8 @@ class CognitiveAgent:
             "你是白狼王，可在白天自爆带走一名玩家。",
             f"可带走的目标: {', '.join(target_list)}",
             "如果认为当前局势自爆有利（比如能带走关键神职、扭转局势），"
-            "输出 {{\"reasoning\": \"自爆理由\", \"target\": \"目标玩家名字\"}}",
-            "如果认为不宜自爆，输出 {{\"reasoning\": \"不自爆的理由\", \"target\": \"不爆\"}}",
+            '输出 {{"reasoning": "自爆理由", "target": "目标玩家名字"}}',
+            '如果认为不宜自爆，输出 {{"reasoning": "不自爆的理由", "target": "不爆"}}',
         ]
         prompt = format_observation(obs) + "\n\n" + "\n".join(extra_parts)
 
@@ -395,9 +400,12 @@ class CognitiveAgent:
         for cid in candidates:
             p = self._find_player(cid)
             if p:
-                candidate_strs.append(f"{p.get('seat','?')}号:{p.get('name','')}")
+                candidate_strs.append(f"{p.get('seat', '?')}号:{p.get('name', '')}")
 
-        prompt = format_observation(obs) + f"\n\n你已死亡，需将警徽移交给一名存活玩家。\n候选人: {', '.join(candidate_strs)}\n输出 JSON: {{\"reasoning\": \"理由\", \"target\": \"玩家名字\"}}"
+        prompt = (
+            format_observation(obs)
+            + f'\n\n你已死亡，需将警徽移交给一名存活玩家。\n候选人: {", ".join(candidate_strs)}\n输出 JSON: {{"reasoning": "理由", "target": "玩家名字"}}'
+        )
 
         result = self._pipeline.direct_call(prompt)
         parsed = parse_json_target(result)
@@ -456,8 +464,7 @@ class CognitiveAgent:
         # Vote alignment: same target → slight trust
         today_votes = [v for v in obs.votes if v.day == obs.day]
         my_vote = next(
-            (v for v in today_votes if v.voter_name == self.player_name
-             or v.voter_id == self.player_id),
+            (v for v in today_votes if v.voter_name == self.player_name or v.voter_id == self.player_id),
             None,
         )
         if my_vote and my_vote.target_name:
@@ -468,14 +475,18 @@ class CognitiveAgent:
                     continue
                 if v.target_name == my_target:
                     self.memory.social_model.update_trust(
-                        self.player_name, voter_name, +0.08,
+                        self.player_name,
+                        voter_name,
+                        +0.08,
                         f"D{obs.day}: 投票一致投{my_target}",
                         day=obs.day,
                     )
                 elif my_target and v.target_name:
                     # Voted differently — slight distrust
                     self.memory.social_model.update_trust(
-                        self.player_name, voter_name, -0.03,
+                        self.player_name,
+                        voter_name,
+                        -0.03,
                         f"D{obs.day}: 投票分歧",
                         day=obs.day,
                     )
@@ -484,11 +495,12 @@ class CognitiveAgent:
         for speech in obs.speeches:
             if self.player_name in speech.content and speech.player_name != self.player_name:
                 # Check for accusatory language
-                accusatory = any(w in speech.content for w in
-                    ["狼", "坏人", "可疑", "票", "出", "查杀", "铁狼"])
+                accusatory = any(w in speech.content for w in ["狼", "坏人", "可疑", "票", "出", "查杀", "铁狼"])
                 if accusatory:
                     self.memory.social_model.update_trust(
-                        self.player_name, speech.player_name, -0.10,
+                        self.player_name,
+                        speech.player_name,
+                        -0.10,
                         f"D{obs.day}: {speech.player_name}在发言中指控你",
                         day=obs.day,
                     )
@@ -497,10 +509,8 @@ class CognitiveAgent:
         """Feed 3: Check if the agent's own speech accused someone different
         from who they voted for, and record the mismatch for social tracking."""
         # Get recent speech and vote actions
-        speech_actions = [a for a in self.memory.actions
-                          if a.action_type == "speech" and a.day == self.memory.day]
-        vote_actions = [a for a in self.memory.actions
-                        if a.action_type == "vote" and a.day == self.memory.day]
+        speech_actions = [a for a in self.memory.actions if a.action_type == "speech" and a.day == self.memory.day]
+        vote_actions = [a for a in self.memory.actions if a.action_type == "vote" and a.day == self.memory.day]
 
         for speech_a in speech_actions:
             speech_text = speech_a.content
@@ -510,8 +520,7 @@ class CognitiveAgent:
                 name = p.get("name", "")
                 if name and name in speech_text:
                     # Check if mentioned in accusatory context
-                    for phrase in [f"投{name}", f"出{name}", f"{name}是狼",
-                                   f"怀疑{name}", f"查杀{name}"]:
+                    for phrase in [f"投{name}", f"出{name}", f"{name}是狼", f"怀疑{name}", f"查杀{name}"]:
                         if phrase in speech_text:
                             speech_targets.add(name)
                             break
@@ -587,6 +596,7 @@ class CognitiveAgent:
         degrade to heuristic or pass-through decisions.
         """
         import logging
+
         _log = logging.getLogger(__name__)
 
         # Primary: CognitiveAgent
@@ -595,9 +605,7 @@ class CognitiveAgent:
             return await self._decide_cognitive(action_type, player_view, **kwargs)
         except Exception as e:
             last_error = e
-            _log.warning(
-                f"CognitiveAgent.{action_type} failed for {self.player_name}: {e}"
-            )
+            _log.warning(f"CognitiveAgent.{action_type} failed for {self.player_name}: {e}")
             self._fallback_count += 1
             self._fallback_reasons.append(f"{action_type}: {type(e).__name__}")
             if self._strict_no_fallback:
@@ -607,9 +615,7 @@ class CognitiveAgent:
 
         if self._fallback_heuristic is not None:
             try:
-                _log.info(
-                    f"Falling back to HeuristicAgent for {self.player_name}.{action_type}"
-                )
+                _log.info(f"Falling back to HeuristicAgent for {self.player_name}.{action_type}")
                 decision = getattr(self._fallback_heuristic, action_type, lambda: None)()
                 if decision is not None:
                     decision.metadata["fallback_used"] = True
@@ -618,16 +624,12 @@ class CognitiveAgent:
                     decision.metadata["fallback_reason"] = str(last_error)[:200]
                     return decision
             except Exception as e2:
-                _log.error(
-                    f"HeuristicAgent fallback also failed for {self.player_name}: {e2}"
-                )
+                _log.error(f"HeuristicAgent fallback also failed for {self.player_name}: {e2}")
                 self._validation_error_count += 1
 
         # Absolute last resort: provide a pass/skip action
         if self._strict_no_fallback:
-            raise RuntimeError(
-                f"All fallbacks exhausted for {self.player_name}.{action_type}"
-            )
+            raise RuntimeError(f"All fallbacks exhausted for {self.player_name}.{action_type}")
 
         _log.critical(f"Returning pass for {self.player_name}.{action_type}")
         return Decision(
@@ -667,7 +669,27 @@ class CognitiveAgent:
         return method(**kwargs) if kwargs else method()
 
     # Night actions where "skip" is a valid strategic choice
-    _SKIP_NIGHT_KEYWORDS = {"空守", "不守", "跳过", "空过", "放弃", "不救", "不用", "不毒", "不验", "不打", "不刀", "不查", "none", "null", "无", "空", "pass", "NONE", "None"}
+    _SKIP_NIGHT_KEYWORDS = {
+        "空守",
+        "不守",
+        "跳过",
+        "空过",
+        "放弃",
+        "不救",
+        "不用",
+        "不毒",
+        "不验",
+        "不打",
+        "不刀",
+        "不查",
+        "none",
+        "null",
+        "无",
+        "空",
+        "pass",
+        "NONE",
+        "None",
+    }
 
     def _night_decision(self, result: Dict[str, str], action_type: ActionType) -> Decision:
         """Create a Decision for a night action.
@@ -678,6 +700,7 @@ class CognitiveAgent:
         raw_target = (result.get("target") or "").strip()
         if raw_target in self._SKIP_NIGHT_KEYWORDS:
             import logging
+
             _logger = logging.getLogger(__name__)
             _logger.info(
                 f"Night skip keyword '{raw_target}' from {self.player_name}({self._profile.role}) "
@@ -700,9 +723,7 @@ class CognitiveAgent:
             no_action_terms = ("none", "null", "无", "空", "弃票", "弃权", "abstain", "pass", "跳过", "不行动")
             is_explicit_no_action = result.get("target", "").strip().lower() in no_action_terms
             if self._strict_no_fallback and not is_explicit_no_action:
-                raise RuntimeError(
-                    f"LLM returned unresolved {action_type.value} target: {result['target']!r}"
-                )
+                raise RuntimeError(f"LLM returned unresolved {action_type.value} target: {result['target']!r}")
             for p in self._view.players:
                 if p.get("alive") and p.get("id") != self.player_id:
                     target_id = p.get("id", "")
@@ -757,7 +778,7 @@ class CognitiveAgent:
         """
         parts = []
         # Use known_wolves from view (only populated for wolf-aligned players)
-        known_wolves = getattr(self._view, 'known_wolves', [])
+        known_wolves = getattr(self._view, "known_wolves", [])
         if known_wolves:
             wolf_names = [w.get("name", w.get("id", "?")) for w in known_wolves]
             parts.append(f"狼队友: {', '.join(wolf_names)}")
@@ -772,9 +793,8 @@ class CognitiveAgent:
         # Include legal wolf-team context if available
         if self._wolf_team_view is not None:
             from backend.agents.cognitive.wolf_team import build_wolf_coordination_context
-            coord_ctx = build_wolf_coordination_context(
-                self.player_id, self._wolf_team_view
-            )
+
+            coord_ctx = build_wolf_coordination_context(self.player_id, self._wolf_team_view)
             parts.append(coord_ctx)
 
         parts.append("作为狼人阵营的一员，选择击杀目标。")
@@ -787,21 +807,24 @@ class CognitiveAgent:
             return
         try:
             from backend.db.persist import record_knowledge_usage
+
             for doc_id in doc_ids:
                 if not doc_id:
                     continue
-                record_knowledge_usage({
-                    "game_id": self._game_id,
-                    "player_id": self.player_id,
-                    "knowledge_doc_id": doc_id,
-                    "retrieved": True,
-                    "used": False,
-                    "metadata": {
-                        "phase": self._view.phase if self._view else "",
-                        "role": self.role,
-                        "action_type": "auto_injected",
-                    },
-                })
+                record_knowledge_usage(
+                    {
+                        "game_id": self._game_id,
+                        "player_id": self.player_id,
+                        "knowledge_doc_id": doc_id,
+                        "retrieved": True,
+                        "used": False,
+                        "metadata": {
+                            "phase": self._view.phase if self._view else "",
+                            "role": self.role,
+                            "action_type": "auto_injected",
+                        },
+                    }
+                )
         except Exception:
             pass  # best-effort, never block decision flow
 
@@ -817,17 +840,17 @@ class CognitiveAgent:
         Failures are logged but never raised — reflection is best-effort
         and must not block game completion.
         """
-        import os
+
         val = os.getenv("COGNITIVE_ENABLE_REFLECTION", "").strip().lower()
         if val in ("0", "false", "no", "off"):
             return
         import logging
+
         _log = logging.getLogger(__name__)
 
         try:
-            from backend.agents.cognitive.reflect import (
-                Reflector, save_reflections_to_db,
-            )
+            from backend.agents.cognitive.reflect import Reflector
+            from backend.agents.cognitive.reflect import save_reflections_to_db
 
             # Determine win/loss
             won = False
@@ -864,9 +887,7 @@ class CognitiveAgent:
                         f"reflection: {saved} knowledge docs saved to PostgreSQL"
                     )
                 else:
-                    _log.warning(
-                        f"Agent {self.player_name}: reflection produced no new docs"
-                    )
+                    _log.warning(f"Agent {self.player_name}: reflection produced no new docs")
                     if os.getenv("REQUIRE_KNOWLEDGE_WRITE", "").lower() == "true":
                         _log.error("STRICT FAIL: Reflection produced 0 knowledge docs")
         except Exception as e:
@@ -897,12 +918,14 @@ class CognitiveAgent:
                 desc = f"{name} 死亡({cause})"
             else:
                 desc = str(payload)[:120]
-            events.append({
-                "type": etype,
-                "day": e.get("day", 0),
-                "phase": e.get("phase", ""),
-                "description": desc,
-            })
+            events.append(
+                {
+                    "type": etype,
+                    "day": e.get("day", 0),
+                    "phase": e.get("phase", ""),
+                    "description": desc,
+                }
+            )
 
         # Private events (what only this agent knows)
         for e in self._view.private_events[-10:]:
@@ -911,26 +934,32 @@ class CognitiveAgent:
             if kind == "seer_result":
                 target = payload.get("target_name", "?")
                 is_wolf = payload.get("is_wolf", False)
-                events.append({
-                    "type": "PRIVATE_SEER",
-                    "day": e.get("day", 0),
-                    "description": f"查验 {target}: {'狼人' if is_wolf else '好人'}",
-                })
+                events.append(
+                    {
+                        "type": "PRIVATE_SEER",
+                        "day": e.get("day", 0),
+                        "description": f"查验 {target}: {'狼人' if is_wolf else '好人'}",
+                    }
+                )
             elif kind == "witch_save":
-                events.append({
-                    "type": "PRIVATE_WITCH",
-                    "day": e.get("day", 0),
-                    "description": f"解药救人: {payload.get('target_name', '?')}",
-                })
+                events.append(
+                    {
+                        "type": "PRIVATE_WITCH",
+                        "day": e.get("day", 0),
+                        "description": f"解药救人: {payload.get('target_name', '?')}",
+                    }
+                )
 
         # Belief tracker findings
         if self._tracker.contradictions:
             for c in self._tracker.contradictions:
-                events.append({
-                    "type": "CONTRADICTION",
-                    "day": self._view.day if self._view else 0,
-                    "description": c.description,
-                })
+                events.append(
+                    {
+                        "type": "CONTRADICTION",
+                        "day": self._view.day if self._view else 0,
+                        "description": c.description,
+                    }
+                )
 
         return events
 
@@ -938,11 +967,13 @@ class CognitiveAgent:
         """Collect this agent's decisions for post-game reflection."""
         decisions = []
         for a in self.memory.get_recent_actions(30):
-            decisions.append({
-                "action_type": a.action_type,
-                "target": a.target or "",
-                "speech": a.content,
-                "day": a.day,
-                "phase": a.phase,
-            })
+            decisions.append(
+                {
+                    "action_type": a.action_type,
+                    "target": a.target or "",
+                    "speech": a.content,
+                    "day": a.day,
+                    "phase": a.phase,
+                }
+            )
         return decisions

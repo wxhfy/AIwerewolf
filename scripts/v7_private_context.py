@@ -11,13 +11,9 @@ import json
 import math
 import random
 import warnings
-from collections import Counter, defaultdict
 from pathlib import Path
 
 import numpy as np
-from sklearn.linear_model import LogisticRegression
-from sklearn.model_selection import GroupKFold
-from sklearn.preprocessing import StandardScaler
 
 warnings.filterwarnings("ignore")
 
@@ -65,6 +61,7 @@ def compute_paw(good, bad):
 # V7-1: VISIBILITY-AWARE CONTEXT SNAPSHOT
 # ============================================================
 
+
 def build_visibility_snapshot(opp, review, speech_acts, sm_snapshots):
     """Build visibility-aware context snapshot for an opportunity.
 
@@ -106,11 +103,13 @@ def build_visibility_snapshot(opp, review, speech_acts, sm_snapshots):
         claims = sa.get("claims", []) or []
         for c in claims:
             if c in ("role_claim", "seer_claim", "seer_result"):
-                public_ctx["public_role_claims"].append({
-                    "player_id": sa.get("player_id", ""),
-                    "claim_type": c,
-                    "day": sa_day,
-                })
+                public_ctx["public_role_claims"].append(
+                    {
+                        "player_id": sa.get("player_id", ""),
+                        "claim_type": c,
+                        "day": sa_day,
+                    }
+                )
 
     # PRIVATE CONTEXT (role-specific, visibility-safe)
     private_ctx = {}
@@ -146,11 +145,25 @@ def build_visibility_snapshot(opp, review, speech_acts, sm_snapshots):
 
 
 def _phase_order(phase):
-    order = {"SETUP": 0, "NIGHT_START": 1, "NIGHT_GUARD_ACTION": 2, "NIGHT_WOLF_ACTION": 3,
-             "NIGHT_WITCH_ACTION": 4, "NIGHT_SEER_ACTION": 5, "NIGHT_RESOLVE": 6,
-             "DAY_START": 7, "DAY_BADGE_SIGNUP": 8, "DAY_BADGE_SPEECH": 9,
-             "DAY_BADGE_ELECTION": 10, "DAY_SPEECH": 11, "DAY_VOTE": 12,
-             "DAY_RESOLVE": 13, "HUNTER_SHOOT": 14, "DAY_LAST_WORDS": 15, "GAME_END": 16}
+    order = {
+        "SETUP": 0,
+        "NIGHT_START": 1,
+        "NIGHT_GUARD_ACTION": 2,
+        "NIGHT_WOLF_ACTION": 3,
+        "NIGHT_WITCH_ACTION": 4,
+        "NIGHT_SEER_ACTION": 5,
+        "NIGHT_RESOLVE": 6,
+        "DAY_START": 7,
+        "DAY_BADGE_SIGNUP": 8,
+        "DAY_BADGE_SPEECH": 9,
+        "DAY_BADGE_ELECTION": 10,
+        "DAY_SPEECH": 11,
+        "DAY_VOTE": 12,
+        "DAY_RESOLVE": 13,
+        "HUNTER_SHOOT": 14,
+        "DAY_LAST_WORDS": 15,
+        "GAME_END": 16,
+    }
     return order.get(phase, 0)
 
 
@@ -243,8 +256,7 @@ def _extract_seer_private(events, decisions, player_id, day, phase):
             ctx["has_unreleased_wolf_check"] = True
         else:
             ctx["has_unreleased_good_check"] = True
-        ctx["unreleased_checks"] = [c for c in ctx["checks_history"]
-                                     if c["day"] == day or c["day"] == day - 1]
+        ctx["unreleased_checks"] = [c for c in ctx["checks_history"] if c["day"] == day or c["day"] == day - 1]
 
     return ctx
 
@@ -299,6 +311,7 @@ def _extract_guard_private(decisions, player_id, day, phase):
 # V7-3: WITCH SAVE SCORER v7
 # ============================================================
 
+
 def score_witch_save_v7(opp, private_ctx, sm_snapshots, speech_acts):
     """WitchSavePreQuality using private context."""
     gf = opp.get("game_features", {}) or {}
@@ -349,7 +362,11 @@ def score_witch_save_v7(opp, private_ctx, sm_snapshots, speech_acts):
 
     # Camp pressure
     camp_bal = gf.get("camp_balance", {}) or {}
-    v_alive = camp_bal.get("village_alive", alive // 2) if isinstance(camp_bal.get("village_alive"), (int, float)) else alive // 2
+    v_alive = (
+        camp_bal.get("village_alive", alive // 2)
+        if isinstance(camp_bal.get("village_alive"), (int, float))
+        else alive // 2
+    )
     w_alive = camp_bal.get("wolf_alive", 1) if isinstance(camp_bal.get("wolf_alive"), (int, float)) else 1
     camp_pressure = 1.0 if v_alive <= w_alive + 1 else (0.6 if v_alive <= w_alive + 2 else 0.3)
 
@@ -387,6 +404,7 @@ def score_witch_save_v7(opp, private_ctx, sm_snapshots, speech_acts):
 # ============================================================
 # V7-4: SEER RELEASE SCORER v7
 # ============================================================
+
 
 def score_seer_release_v7(opp, private_ctx, sm_snapshots, speech_acts):
     """SeerReleasePreQuality using private context."""
@@ -460,6 +478,7 @@ def score_seer_release_v7(opp, private_ctx, sm_snapshots, speech_acts):
 # MAIN V7 PIPELINE
 # ============================================================
 
+
 def main():
     print("=" * 60)
     print("V7 Private-Context-Aware Scoring Pipeline")
@@ -483,9 +502,7 @@ def main():
         eval_index[item["opportunity_id"]] = item
 
     session = SessionLocal()
-    reviews = session.query(PublishedReview).filter(
-        PublishedReview.replay_bundle != None
-    ).all()
+    reviews = session.query(PublishedReview).filter(PublishedReview.replay_bundle != None).all()
     review_index = {r.game_id: r for r in reviews}
     print(f"  {len(opportunities)} opportunities, {len(review_index)} games with replay data")
 
@@ -496,8 +513,16 @@ def main():
     print("V7-1: Building visibility-aware context snapshots...")
 
     snapshots = []
-    snapshot_stats = {"total": 0, "witch": 0, "seer": 0, "werewolf": 0, "hunter": 0, "guard": 0,
-                      "private_ctx_available": 0, "visibility_violations": 0}
+    snapshot_stats = {
+        "total": 0,
+        "witch": 0,
+        "seer": 0,
+        "werewolf": 0,
+        "hunter": 0,
+        "guard": 0,
+        "private_ctx_available": 0,
+        "visibility_violations": 0,
+    }
 
     for opp in opportunities:
         game_id = opp.get("game_id", "")
@@ -507,15 +532,16 @@ def main():
             continue
 
         # Build speech_acts and suspicion from events (reuse V3 logic)
-        from build_v3_features import build_speech_acts_from_events, build_suspicion_matrix_from_speech_acts
+        from build_v3_features import build_speech_acts_from_events
+        from build_v3_features import build_suspicion_matrix_from_speech_acts
+
         bundle = review.replay_bundle or {}
         events = bundle.get("events", [])
         players = bundle.get("players", [])
         speech_acts = build_speech_acts_from_events(events, players)
         sm = build_suspicion_matrix_from_speech_acts(speech_acts, players, events)
 
-        public_ctx, private_ctx, safe, violations = build_visibility_snapshot(
-            opp, review, speech_acts, sm)
+        public_ctx, private_ctx, safe, violations = build_visibility_snapshot(opp, review, speech_acts, sm)
 
         snapshot = {
             "opportunity_id": opp["opportunity_id"],
@@ -559,7 +585,7 @@ def main():
     snap_report = []
     snap_report.append("# Visibility Context Report V7")
     snap_report.append("")
-    snap_report.append(f"**Date**: 2026-05-28")
+    snap_report.append("**Date**: 2026-05-28")
     snap_report.append(f"**Total snapshots**: {snapshot_stats['total']}")
     snap_report.append(f"**Private context available**: {snapshot_stats['private_ctx_available']}")
     snap_report.append(f"**Visibility violations**: {snapshot_stats['visibility_violations']}")
@@ -588,13 +614,13 @@ def main():
     audit_lines = []
     audit_lines.append("# Visibility Safety Audit V7")
     audit_lines.append("")
-    audit_lines.append(f"**Date**: 2026-05-28")
+    audit_lines.append("**Date**: 2026-05-28")
     audit_lines.append(f"**Violations**: {len(violations_list)}")
     audit_lines.append("")
     if violations_list:
         audit_lines.append("## Violations Found")
         for v in violations_list[:10]:
-            audit_lines.append(f"- {v.get('opportunity_id','')[:50]}: {v.get('visibility_violations')}")
+            audit_lines.append(f"- {v.get('opportunity_id', '')[:50]}: {v.get('visibility_violations')}")
     else:
         audit_lines.append("**PASS: 0 visibility violations.**")
         audit_lines.append("Private context is visibility-safe for all roles.")
@@ -669,8 +695,9 @@ def main():
 
     ws_d = cohens_d(ws_good_scores, ws_bad_scores) if ws_good_scores and ws_bad_scores else None
     ws_paw = compute_paw(ws_good_scores, ws_bad_scores) if ws_good_scores and ws_bad_scores else None
-    ws_status = "PASS" if (ws_d is not None and ws_d > 0.3) else (
-        "PARTIAL" if (ws_d is not None and ws_d > 0) else "LOW_CONF")
+    ws_status = (
+        "PASS" if (ws_d is not None and ws_d > 0.3) else ("PARTIAL" if (ws_d is not None and ws_d > 0) else "LOW_CONF")
+    )
 
     # Evaluate Seer release vs labels
     sr_good_scores = []
@@ -687,17 +714,18 @@ def main():
 
     sr_d = cohens_d(sr_good_scores, sr_bad_scores) if sr_good_scores and sr_bad_scores else None
     sr_paw = compute_paw(sr_good_scores, sr_bad_scores) if sr_good_scores and sr_bad_scores else None
-    sr_status = "PASS" if (sr_d is not None and sr_d > 0.3) else (
-        "PARTIAL" if (sr_d is not None and sr_d > 0) else "LOW_CONF")
+    sr_status = (
+        "PASS" if (sr_d is not None and sr_d > 0.3) else ("PARTIAL" if (sr_d is not None and sr_d > 0) else "LOW_CONF")
+    )
 
     # Witch save audit
     ws_lines = []
     ws_lines.append("# Witch Save V7 Audit")
     ws_lines.append("")
-    ws_lines.append(f"**Date**: 2026-05-28")
-    ws_lines.append(f"**Scorer**: WitchSaveScorer v7 (private-context-aware)")
+    ws_lines.append("**Date**: 2026-05-28")
+    ws_lines.append("**Scorer**: WitchSaveScorer v7 (private-context-aware)")
     ws_lines.append("")
-    ws_lines.append(f"## Results")
+    ws_lines.append("## Results")
     ws_lines.append(f"- Samples: {len(witch_save_results)}")
     ws_lines.append(f"- Good: {len(ws_good_scores)}, Bad: {len(ws_bad_scores)}")
     ws_lines.append(f"- Cohen's d: {ws_d:.3f}" if ws_d else "- d: N/A")
@@ -722,10 +750,10 @@ def main():
     sr_lines = []
     sr_lines.append("# Seer Release V7 Audit")
     sr_lines.append("")
-    sr_lines.append(f"**Date**: 2026-05-28")
-    sr_lines.append(f"**Scorer**: SeerReleaseScorer v7 (private-context-aware)")
+    sr_lines.append("**Date**: 2026-05-28")
+    sr_lines.append("**Scorer**: SeerReleaseScorer v7 (private-context-aware)")
     sr_lines.append("")
-    sr_lines.append(f"## Results")
+    sr_lines.append("## Results")
     sr_lines.append(f"- Samples: {len(seer_release_results)}")
     sr_lines.append(f"- Good: {len(sr_good_scores)}, Bad: {len(sr_bad_scores)}")
     sr_lines.append(f"- Cohen's d: {sr_d:.3f}" if sr_d else "- d: N/A")
@@ -783,18 +811,23 @@ def main():
     # Gate checks
     gate_checks_v7 = {
         "post_outcome_contamination": ("PASS", "0 violations"),
-        "visibility_violations": ("PASS" if snapshot_stats['visibility_violations'] == 0 else "FAIL",
-                                   f"{snapshot_stats['visibility_violations']} violations"),
+        "visibility_violations": (
+            "PASS" if snapshot_stats["visibility_violations"] == 0 else "FAIL",
+            f"{snapshot_stats['visibility_violations']} violations",
+        ),
         "test_paw_85": ("PASS", "0.877 (from V6)"),
         "train_test_gap_10": ("PASS", "0.053 (from V6)"),
         "human_reviewed_50": ("PASS", "57.4% (from V6)"),
         "easy_negative_ratio_60": ("PASS", "0.067 (from V6)"),
-        "role_actions_8": ("PASS" if passing_ra >= 8 else "WEAK",
-                          f"{passing_ra} (from V6 + V7 improvements)"),
-        f"witch_save_status_{ws_status}": ("PASS" if ws_status in ("PASS", "PARTIAL") else "WEAK",
-                                            f"Witch save d={ws_d:.3f}" if ws_d else "Witch save N/A"),
-        f"seer_release_status_{sr_status}": ("PASS" if sr_status in ("PASS", "PARTIAL") else "WEAK",
-                                              f"Seer release d={sr_d:.3f}" if sr_d else "Seer release N/A"),
+        "role_actions_8": ("PASS" if passing_ra >= 8 else "WEAK", f"{passing_ra} (from V6 + V7 improvements)"),
+        f"witch_save_status_{ws_status}": (
+            "PASS" if ws_status in ("PASS", "PARTIAL") else "WEAK",
+            f"Witch save d={ws_d:.3f}" if ws_d else "Witch save N/A",
+        ),
+        f"seer_release_status_{sr_status}": (
+            "PASS" if sr_status in ("PASS", "PARTIAL") else "WEAK",
+            f"Seer release d={sr_d:.3f}" if sr_d else "Seer release N/A",
+        ),
         "counterfactual": ("PASS", "100%"),
         "valid_agent": ("PASS", "0 critical"),
         "confidence_model": ("PASS", "6-factor, V6"),
@@ -820,9 +853,9 @@ def main():
     gate_lines = []
     gate_lines.append("# Scoring Validity Gate V7")
     gate_lines.append("")
-    gate_lines.append(f"**Date**: 2026-05-28")
+    gate_lines.append("**Date**: 2026-05-28")
     gate_lines.append(f"**Gate**: **{gate}**")
-    gate_lines.append(f"**Key change**: Private-context-aware scoring for Witch/Seer")
+    gate_lines.append("**Key change**: Private-context-aware scoring for Witch/Seer")
     gate_lines.append("")
     gate_lines.append("| # | Criterion | Status | Detail |")
     gate_lines.append("|---|---|---|---|")
@@ -837,10 +870,18 @@ def main():
     gate_lines.append("|---|---|---|---|")
     ws_d_str = f"{ws_d:.3f}" if ws_d is not None else "N/A"
     sr_d_str = f"{sr_d:.3f}" if sr_d is not None else "N/A"
-    gate_lines.append(f"| Witch save d | -0.187 | {ws_d_str} | {'IMPROVED' if (ws_d is not None and ws_d > -0.187) else 'same/LOW_CONF'} |")
-    gate_lines.append(f"| Witch save status | LOW_CONF | {ws_status} | {'UPGRADED' if ws_status != 'LOW_CONF' else 'same'} |")
-    gate_lines.append(f"| Seer release d | -0.581 | {sr_d_str} | {'IMPROVED' if (sr_d is not None and sr_d > -0.581) else 'same/LOW_CONF'} |")
-    gate_lines.append(f"| Seer release status | LOW_CONF | {sr_status} | {'UPGRADED' if sr_status != 'LOW_CONF' else 'same'} |")
+    gate_lines.append(
+        f"| Witch save d | -0.187 | {ws_d_str} | {'IMPROVED' if (ws_d is not None and ws_d > -0.187) else 'same/LOW_CONF'} |"
+    )
+    gate_lines.append(
+        f"| Witch save status | LOW_CONF | {ws_status} | {'UPGRADED' if ws_status != 'LOW_CONF' else 'same'} |"
+    )
+    gate_lines.append(
+        f"| Seer release d | -0.581 | {sr_d_str} | {'IMPROVED' if (sr_d is not None and sr_d > -0.581) else 'same/LOW_CONF'} |"
+    )
+    gate_lines.append(
+        f"| Seer release status | LOW_CONF | {sr_status} | {'UPGRADED' if sr_status != 'LOW_CONF' else 'same'} |"
+    )
     gate_lines.append("")
     if gate == "BENCHMARK_READY":
         gate_lines.append("**BENCHMARK_READY. Can proceed to MBTI Dashboard and single-game HTML review.**")
@@ -859,9 +900,13 @@ def main():
         f.write("\n".join(gate_lines))
 
     gate_json = {
-        "gate": gate, "date": "2026-05-28", "version": "v7",
+        "gate": gate,
+        "date": "2026-05-28",
+        "version": "v7",
         "checks": {k: {"status": v[0], "detail": v[1]} for k, v in gate_checks_v7.items()},
-        "n_pass": n_pass, "n_weak": n_weak, "n_fail": n_fail,
+        "n_pass": n_pass,
+        "n_weak": n_weak,
+        "n_fail": n_fail,
         "witch_save_v7": {"d": ws_d, "paw": ws_paw, "status": ws_status},
         "seer_release_v7": {"d": sr_d, "paw": sr_paw, "status": sr_status},
         "visibility_violations": snapshot_stats["visibility_violations"],
@@ -875,15 +920,19 @@ def main():
     pc_lines = []
     pc_lines.append("# Private Context Gate V7")
     pc_lines.append("")
-    pc_lines.append(f"**Date**: 2026-05-28")
+    pc_lines.append("**Date**: 2026-05-28")
     pc_lines.append(f"**Visibility violations**: {snapshot_stats['visibility_violations']}")
-    pc_lines.append(f"**Private context available**: {snapshot_stats['private_ctx_available']}/{snapshot_stats['total']}")
+    pc_lines.append(
+        f"**Private context available**: {snapshot_stats['private_ctx_available']}/{snapshot_stats['total']}"
+    )
     pc_lines.append("")
     pc_lines.append("## Coverage by Role")
     pc_lines.append(f"- Witch save: {len(witch_save_results)} scored with private context")
     pc_lines.append(f"- Seer release: {len(seer_release_results)} scored with private context")
     pc_lines.append("")
-    pc_lines.append("**Recommendation**: Private context extraction is visibility-safe and improves Witch/Seer scoring.")
+    pc_lines.append(
+        "**Recommendation**: Private context extraction is visibility-safe and improves Witch/Seer scoring."
+    )
     with open(DATA / "private_context_gate_v7.md", "w") as f:
         f.write("\n".join(pc_lines))
 
@@ -893,7 +942,7 @@ def main():
     tech_lines = []
     tech_lines.append("# Werewolf Scoring Benchmark V7")
     tech_lines.append("")
-    tech_lines.append(f"**Date**: 2026-05-28")
+    tech_lines.append("**Date**: 2026-05-28")
     tech_lines.append(f"**Gate**: {gate}")
     tech_lines.append("")
     tech_lines.append("## V1→V7 Evolution")
@@ -938,7 +987,7 @@ def main():
     print("  -> scoring_benchmark_v7_summary.md")
 
     # Final
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"V7 Gate: {gate}")
     print(f"Pass={n_pass}, Weak={n_weak}, Fail={n_fail}")
     ws_d_str = f"{ws_d:.3f}" if ws_d is not None else "N/A"
@@ -947,9 +996,10 @@ def main():
     print(f"Seer release V7: d={sr_d_str} [{sr_status}]")
     print(f"Visibility violations: {snapshot_stats['visibility_violations']}")
     print(f"Private context coverage: {snapshot_stats['private_ctx_available']}/{snapshot_stats['total']}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
 
 if __name__ == "__main__":
     import sys
+
     main()

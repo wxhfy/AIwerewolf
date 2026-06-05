@@ -13,11 +13,13 @@ Promote any of these by flipping `playable=True` once the engine routes the
 new night/day phase, then add them to `WOLFCHA_ROLE_CONFIGS` if you want them
 in default seat configs.
 """
+
 from __future__ import annotations
 
-from backend.engine.models import Alignment, Role
-from backend.engine.roles.registry import RoleSpec, register_role
-
+from backend.engine.models import Alignment
+from backend.engine.models import Role
+from backend.engine.roles.registry import RoleSpec
+from backend.engine.roles.registry import register_role
 
 register_role(
     RoleSpec(

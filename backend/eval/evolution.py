@@ -21,20 +21,27 @@ import os
 import random as _random
 import re
 from collections import defaultdict
-from dataclasses import asdict, dataclass, field, is_dataclass, replace
-from datetime import datetime, timezone
+from dataclasses import asdict
+from dataclasses import dataclass
+from dataclasses import field
+from dataclasses import is_dataclass
+from dataclasses import replace
+from datetime import datetime
+from datetime import timezone
 from pathlib import Path
-from typing import Any, Callable, Literal, Protocol, Sequence
+from typing import Any
+from typing import Callable
+from typing import Literal
+from typing import Protocol
+from typing import Sequence
 from uuid import uuid4
 
-from backend.eval.review import (
-    GameMetrics,
-    LeaderboardAggregator,
-    MetricsCalculator,
-    ReviewReport,
-    StrategyKnowledge,
-    StrategyKnowledgeExtractor,
-)
+from backend.eval.review import GameMetrics
+from backend.eval.review import LeaderboardAggregator
+from backend.eval.review import MetricsCalculator
+from backend.eval.review import ReviewReport
+from backend.eval.review import StrategyKnowledge
+from backend.eval.review import StrategyKnowledgeExtractor
 from backend.llm.env import load_env_file
 
 logger = logging.getLogger(__name__)
@@ -48,10 +55,15 @@ logger = logging.getLogger(__name__)
 @dataclass
 class FallbackEvent:
     """Attributed fallback event for A/B comparison diagnostics."""
-    seed: int; game_id: str = ""; agent_id: str = ""
-    role: str = ""; phase: str = ""
+
+    seed: int
+    game_id: str = ""
+    agent_id: str = ""
+    role: str = ""
+    phase: str = ""
     fallback_type: Literal["patch_caused", "llm_output_format", "llm_timeout", "infra_error", "unknown"] = "unknown"
-    message: str = ""; related_patch_id: str | None = None
+    message: str = ""
+    related_patch_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -60,6 +72,7 @@ class FallbackEvent:
 @dataclass
 class PairedSeedResult:
     """Per-seed paired comparison between baseline and candidate."""
+
     seed: int
     baseline_metrics: dict[str, Any] = field(default_factory=dict)
     candidate_metrics: dict[str, Any] = field(default_factory=dict)
@@ -76,6 +89,7 @@ class PairedSeedResult:
 @dataclass
 class EvolutionComparison:
     """Structured A/B comparison with paired-seed deltas and bootstrap CIs."""
+
     num_seeds: int = 0
     paired_results: list[PairedSeedResult] = field(default_factory=list)
     mean_deltas: dict[str, float] = field(default_factory=dict)
@@ -97,6 +111,7 @@ class EvolutionComparison:
 @dataclass
 class AcceptanceDecision:
     """Structured acceptance decision with hard gates + improvement conditions."""
+
     status: Literal["promoted", "rolled_back", "needs_more_trials"] = "rolled_back"
     passed_hard_gates: bool = False
     passed_improvement_conditions: bool = False
@@ -115,6 +130,7 @@ class AcceptanceDecision:
 @dataclass
 class SanitizedKnowledgeDoc:
     """Knowledge doc after safety-sanitized public-pattern rewrite."""
+
     doc: Any = None  # StrategyKnowledgeDoc
     sanitized: bool = False
     redactions: list[str] = field(default_factory=list)
@@ -168,7 +184,7 @@ class StrategyKnowledgeDoc:
     usage_count: int = 0
     success_count: int = 0
     failure_count: int = 0
-    retrieval_count: int = 0   # times retrieved (≠ used)
+    retrieval_count: int = 0  # times retrieved (≠ used)
     neutral_count: int = 0
     status: str = "candidate"
     tags: list[str] = field(default_factory=list)
@@ -291,7 +307,7 @@ class StrategyPatch:
     # v2: experimental gating for single-doc patches
     experimental: bool = False
     generation_reason: str = ""
-    trust_level: str = "candidate"   # "experimental" | "candidate"
+    trust_level: str = "candidate"  # "experimental" | "candidate"
     validated_on: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -339,7 +355,7 @@ class DreamResult:
         return {
             "knowledge_docs": [d.to_dict() for d in self.knowledge_docs],
             "candidate_patches": [p.to_dict() for p in self.candidate_patches],
-            "summary": self.summary.to_dict() if hasattr(self.summary, 'to_dict') else asdict(self.summary),
+            "summary": self.summary.to_dict() if hasattr(self.summary, "to_dict") else asdict(self.summary),
             "rejected_items": self.rejected_items,
             "safety_summary": self.safety_summary,
         }
@@ -496,10 +512,7 @@ def build_acceptance_step_metric(
 
 def build_bc_acceptance_audit(metrics: Sequence[AcceptanceStepMetric]) -> BCAcceptanceAudit:
     metric_list = list(metrics)
-    overall = (
-        sum(metric.success_rate for metric in metric_list) / len(metric_list)
-        if metric_list else 0.0
-    )
+    overall = sum(metric.success_rate for metric in metric_list) / len(metric_list) if metric_list else 0.0
     return BCAcceptanceAudit(
         generated_at=datetime.now(timezone.utc).isoformat(),
         metrics=metric_list,
@@ -532,18 +545,21 @@ class KnowledgeDocValidator:
 
     def validate(self, doc: StrategyKnowledgeDoc) -> list[str]:
         issues: list[str] = []
+
         def _text(value: Any) -> str:
             return "" if value is None else str(value)
 
         trigger_conditions = doc.trigger_conditions or []
-        blob = " ".join([
-            _text(doc.situation_pattern),
-            " ".join(_text(item) for item in trigger_conditions),
-            _text(doc.recommended_action),
-            _text(doc.avoid_action),
-            _text(doc.rationale),
-            _text(doc.evidence_summary),
-        ])
+        blob = " ".join(
+            [
+                _text(doc.situation_pattern),
+                " ".join(_text(item) for item in trigger_conditions),
+                _text(doc.recommended_action),
+                _text(doc.avoid_action),
+                _text(doc.rationale),
+                _text(doc.evidence_summary),
+            ]
+        )
         if not doc.source_report_ids:
             issues.append("missing_source_report")
         if not trigger_conditions:
@@ -569,7 +585,12 @@ class StrategyKnowledgeAbstractor:
         cleaned = re.sub(r"\bP\d+\b", "a player", cleaned)
         cleaned = re.sub(r"\bDay\s+\d+\b", "a day phase", cleaned, flags=re.IGNORECASE)
         cleaned = re.sub(r"\bNight\s+\d+\b", "a night phase", cleaned, flags=re.IGNORECASE)
-        cleaned = re.sub(r"\bthe player is (a|an)?\s*(wolf|seer|witch|hunter|guard|villager)\b", "a role signal appeared", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(
+            r"\bthe player is (a|an)?\s*(wolf|seer|witch|hunter|guard|villager)\b",
+            "a role signal appeared",
+            cleaned,
+            flags=re.IGNORECASE,
+        )
         return re.sub(r"\s+", " ", cleaned).strip()
 
     def quality_score(
@@ -679,6 +700,7 @@ class StrategyKnowledgeAbstractor:
             then = then.replace(tzinfo=timezone.utc)
         delta_days = max(0.0, (datetime.now(timezone.utc) - then).total_seconds() / 86400.0)
         from math import exp
+
         return round(exp(-delta_days / 14.0), 4)
 
 
@@ -846,12 +868,12 @@ class HashingVectorEmbeddingProvider:
             terms.append(f"{left}_{right}")
         for token in word_tokens:
             if len(token) >= 5:
-                terms.extend(token[i:i + 3] for i in range(0, len(token) - 2))
+                terms.extend(token[i : i + 3] for i in range(0, len(token) - 2))
         terms.extend(single_cjk)
         for run in cjk_runs:
-            terms.extend(run[i:i + 2] for i in range(0, len(run) - 1))
+            terms.extend(run[i : i + 2] for i in range(0, len(run) - 1))
             if len(run) >= 3:
-                terms.extend(run[i:i + 3] for i in range(0, len(run) - 2))
+                terms.extend(run[i : i + 3] for i in range(0, len(run) - 2))
         return terms
 
 
@@ -893,9 +915,8 @@ class DoubaoEmbeddingProvider:
             or os.getenv("ARK_BASE_URL")
             or "https://ark.cn-beijing.volces.com/api/v3"
         ).rstrip("/")
-        self.path = (
-            os.getenv("DOUBAO_EMBEDDING_PATH")
-            or ("/embeddings/multimodal" if "vision" in self.model.lower() else "/embeddings")
+        self.path = os.getenv("DOUBAO_EMBEDDING_PATH") or (
+            "/embeddings/multimodal" if "vision" in self.model.lower() else "/embeddings"
         )
         self.api_key = (
             api_key
@@ -912,7 +933,7 @@ class DoubaoEmbeddingProvider:
         content = (text or "").strip()
         if not content:
             return []
-        key = hashlib.sha256(f"{self.model}\n{content}".encode("utf-8")).hexdigest()
+        key = hashlib.sha256(f"{self.model}\n{content}".encode()).hexdigest()
         if key in self._cache:
             return list(self._cache[key])
         if not self.api_key:
@@ -969,7 +990,7 @@ class DoubaoEmbeddingProvider:
 
     def _raise_for_embedding_error(self, response: Any) -> None:
         try:
-            error = (response.json().get("error") or {})
+            error = response.json().get("error") or {}
         except Exception:
             error = {}
         code = str(error.get("code") or "")
@@ -1051,7 +1072,8 @@ class StrategyKnowledgeStore:
 
     def retrieve(self, query: StrategyRetrievalQuery) -> list[RetrievedStrategyLesson]:
         candidates = [
-            doc for doc in self.docs.values()
+            doc
+            for doc in self.docs.values()
             if doc.status in {"active", "candidate"}
             and self._role_matches(doc, query)
             and self._phase_matches(doc, query)
@@ -1059,10 +1081,7 @@ class StrategyKnowledgeStore:
         ]
         query_embedding = self.embedding_provider.embed(self._query_embedding_text(query))
         bm25_stats = self._bm25_stats(candidates, query)
-        scored = [
-            (self._score_components(doc, query, query_embedding, bm25_stats), doc)
-            for doc in candidates
-        ]
+        scored = [(self._score_components(doc, query, query_embedding, bm25_stats), doc) for doc in candidates]
         scored.sort(key=lambda item: item[0]["score"], reverse=True)
         if query.enable_rerank and self.rerank_provider is not None and scored:
             scored = self._rerank(scored, query)
@@ -1106,7 +1125,9 @@ class StrategyKnowledgeStore:
     def mark_used(self, doc_id: str) -> None:
         doc = self.docs.get(doc_id)
         if doc:
-            self.docs[doc_id] = replace(doc, usage_count=doc.usage_count + 1, updated_at=datetime.now(timezone.utc).isoformat())
+            self.docs[doc_id] = replace(
+                doc, usage_count=doc.usage_count + 1, updated_at=datetime.now(timezone.utc).isoformat()
+            )
 
     def update_usage(self, doc_id: str, *, helpful: bool) -> None:
         doc = self.docs.get(doc_id)
@@ -1216,7 +1237,7 @@ class StrategyKnowledgeStore:
         return saved
 
     @classmethod
-    def load_from_pg(cls, conn_str: str = "", *, embedding_provider=None) -> "StrategyKnowledgeStore | None":
+    def load_from_pg(cls, conn_str: str = "", *, embedding_provider=None) -> StrategyKnowledgeStore | None:
         """Load strategy knowledge docs from PostgreSQL into the in-memory store.
 
         Reverse bridge: reads what cognitive agents / previous evolution cycles
@@ -1224,6 +1245,7 @@ class StrategyKnowledgeStore:
         """
         try:
             from backend.db.persist import list_strategy_knowledge
+
             rows = list_strategy_knowledge(limit=10000)
         except ImportError:
             return None
@@ -1231,49 +1253,51 @@ class StrategyKnowledgeStore:
             return None
         docs = []
         for row in rows:
-            docs.append(StrategyKnowledgeDoc(
-                doc_id=row.get("doc_id", ""),
-                doc_type=row.get("doc_type", "review_extracted"),
-                role=row.get("role", "global"),
-                phase=row.get("phase", "global"),
-                persona_scope=row.get("persona_scope"),
-                situation_pattern=row.get("situation_pattern", ""),
-                trigger_conditions=list(row.get("trigger_conditions") or []),
-                recommended_action=row.get("recommended_action", ""),
-                avoid_action=row.get("avoid_action"),
-                rationale=row.get("rationale", ""),
-                evidence_summary=row.get("evidence_summary", ""),
-                source_report_ids=list(row.get("source_report_ids") or []),
-                source_item_ids=list(row.get("source_item_ids") or []),
-                source_event_ids=list(row.get("source_event_ids") or []),
-                counterfactual_ids=list(row.get("counterfactual_ids") or []),
-                expected_metric_effects=list(row.get("expected_metric_effects") or []),
-                quality_score=float(row.get("quality_score", 0.8)),
-                confidence=float(row.get("confidence", 0.7)),
-                confidence_tier=row.get("confidence_tier", "L3_strategic"),
-                judge_agreement=row.get("judge_agreement"),
-                times_upvoted=int(row.get("times_upvoted", 0) or 0),
-                contradiction_count=int(row.get("contradiction_count", 0) or 0),
-                games_since_creation=int(row.get("games_since_creation", 0) or 0),
-                human_verdict=row.get("human_verdict"),
-                visibility_scope=row.get("visibility_scope", "public"),
-                allowed_roles=list(row.get("allowed_roles") or []) or None,
-                deidentified=bool(row.get("deidentified", False)),
-                contains_current_game_private_info=bool(row.get("contains_current_game_private_info", False)),
-                applicability_role=row.get("applicability_role"),
-                applicability_phase=row.get("applicability_phase"),
-                min_players=row.get("min_players"),
-                max_players=row.get("max_players"),
-                required_public_facts=list(row.get("required_public_facts") or []),
-                forbidden_public_facts=list(row.get("forbidden_public_facts") or []),
-                required_private_state=list(row.get("required_private_state") or []),
-                usage_count=int(row.get("usage_count", 0)),
-                success_count=int(row.get("success_count", 0)),
-                failure_count=int(row.get("failure_count", 0)),
-                status=row.get("status", "active"),
-                tags=list(row.get("tags") or []),
-                embedding=list(row.get("embedding") or []),
-            ))
+            docs.append(
+                StrategyKnowledgeDoc(
+                    doc_id=row.get("doc_id", ""),
+                    doc_type=row.get("doc_type", "review_extracted"),
+                    role=row.get("role", "global"),
+                    phase=row.get("phase", "global"),
+                    persona_scope=row.get("persona_scope"),
+                    situation_pattern=row.get("situation_pattern", ""),
+                    trigger_conditions=list(row.get("trigger_conditions") or []),
+                    recommended_action=row.get("recommended_action", ""),
+                    avoid_action=row.get("avoid_action"),
+                    rationale=row.get("rationale", ""),
+                    evidence_summary=row.get("evidence_summary", ""),
+                    source_report_ids=list(row.get("source_report_ids") or []),
+                    source_item_ids=list(row.get("source_item_ids") or []),
+                    source_event_ids=list(row.get("source_event_ids") or []),
+                    counterfactual_ids=list(row.get("counterfactual_ids") or []),
+                    expected_metric_effects=list(row.get("expected_metric_effects") or []),
+                    quality_score=float(row.get("quality_score", 0.8)),
+                    confidence=float(row.get("confidence", 0.7)),
+                    confidence_tier=row.get("confidence_tier", "L3_strategic"),
+                    judge_agreement=row.get("judge_agreement"),
+                    times_upvoted=int(row.get("times_upvoted", 0) or 0),
+                    contradiction_count=int(row.get("contradiction_count", 0) or 0),
+                    games_since_creation=int(row.get("games_since_creation", 0) or 0),
+                    human_verdict=row.get("human_verdict"),
+                    visibility_scope=row.get("visibility_scope", "public"),
+                    allowed_roles=list(row.get("allowed_roles") or []) or None,
+                    deidentified=bool(row.get("deidentified", False)),
+                    contains_current_game_private_info=bool(row.get("contains_current_game_private_info", False)),
+                    applicability_role=row.get("applicability_role"),
+                    applicability_phase=row.get("applicability_phase"),
+                    min_players=row.get("min_players"),
+                    max_players=row.get("max_players"),
+                    required_public_facts=list(row.get("required_public_facts") or []),
+                    forbidden_public_facts=list(row.get("forbidden_public_facts") or []),
+                    required_private_state=list(row.get("required_private_state") or []),
+                    usage_count=int(row.get("usage_count", 0)),
+                    success_count=int(row.get("success_count", 0)),
+                    failure_count=int(row.get("failure_count", 0)),
+                    status=row.get("status", "active"),
+                    tags=list(row.get("tags") or []),
+                    embedding=list(row.get("embedding") or []),
+                )
+            )
         return cls(docs, embedding_provider=embedding_provider)
 
     def _index(self, doc: StrategyKnowledgeDoc) -> None:
@@ -1359,9 +1383,13 @@ class StrategyKnowledgeStore:
         lexical = self._text_overlap(doc_text, query_text, query.situation_tags)
         bm25 = self._bm25_score(doc, bm25_stats)
         fts = self._fts_score(doc_text, query_text, query.situation_tags)
-        vector = self._cosine(doc.embedding or self.embedding_provider.embed(self._doc_embedding_text(doc)), query_embedding)
+        vector = self._cosine(
+            doc.embedding or self.embedding_provider.embed(self._doc_embedding_text(doc)), query_embedding
+        )
         situation = min(1.0, 0.45 * vector + 0.35 * bm25 + 0.20 * fts)
-        persona = 1.0 if not doc.persona_scope or doc.persona_scope in {query.persona_mbti, query.persona_style} else 0.0
+        persona = (
+            1.0 if not doc.persona_scope or doc.persona_scope in {query.persona_mbti, query.persona_style} else 0.0
+        )
         usage_rate = smoothed_usage_success_rate(doc)
         recency = StrategyKnowledgeAbstractor._recency_factor(doc.updated_at or doc.created_at)
         # Track C §12.5 retrieval formula:
@@ -1437,7 +1465,7 @@ class StrategyKnowledgeStore:
         cjk = re.findall(r"[\u4e00-\u9fff]{2,}", lowered)
         tokens = list(words)
         for run in cjk:
-            tokens.extend(run[i:i + 2] for i in range(0, len(run) - 1))
+            tokens.extend(run[i : i + 2] for i in range(0, len(run) - 1))
         return tokens
 
     def _bm25_stats(self, docs: Sequence[StrategyKnowledgeDoc], query: StrategyRetrievalQuery) -> dict[str, Any]:
@@ -1630,10 +1658,7 @@ def sanitize_knowledge_doc(raw_doc: StrategyKnowledgeDoc) -> SanitizedKnowledgeD
 
     # Determine visibility and safety
     has_forbidden = bool(redactions)
-    has_absolute = any(
-        p.search(raw_doc.recommended_action) or p.search(raw_doc.rationale)
-        for p in _SAFETY_ABSOLUTE
-    )
+    has_absolute = any(p.search(raw_doc.recommended_action) or p.search(raw_doc.rationale) for p in _SAFETY_ABSOLUTE)
 
     safe_for_learning = not has_forbidden and not has_absolute
     safe_for_retrieval = not has_forbidden
@@ -1686,20 +1711,27 @@ def compute_accepted_patch_confidence(
     safety_bonus = 0.05 if comparison.total_info_leak_count == 0 and comparison.total_invalid_action_count == 0 else 0
     experimental_penalty = -0.05 if getattr(patch, "experimental", False) else 0.0
 
-    quality = max(0.70, min(0.95,
-        base_quality + effect_bonus + stability_bonus + seed_win_bonus + safety_bonus + experimental_penalty
-    ))
+    quality = max(
+        0.70,
+        min(0.95, base_quality + effect_bonus + stability_bonus + seed_win_bonus + safety_bonus + experimental_penalty),
+    )
 
     consistency = non_degraded / max(num_seeds, 1)
-    confidence = max(0.55, min(0.95,
-        0.60 + 0.15 * stability + 0.10 * min(num_seeds / 40.0, 1.0) + 0.10 * consistency + experimental_penalty
-    ))
+    confidence = max(
+        0.55,
+        min(
+            0.95,
+            0.60 + 0.15 * stability + 0.10 * min(num_seeds / 40.0, 1.0) + 0.10 * consistency + experimental_penalty,
+        ),
+    )
 
     validated_on = {
         "rule_variant": "standard_competition_v1",
         "num_seeds": num_seeds,
         "target_role": getattr(patch, "target_role", ""),
-        "phase": getattr(patch, "safety_checks", {}).get("clusters", [{}])[0].get("phase", "") if getattr(patch, "safety_checks", {}).get("clusters") else "",
+        "phase": getattr(patch, "safety_checks", {}).get("clusters", [{}])[0].get("phase", "")
+        if getattr(patch, "safety_checks", {}).get("clusters")
+        else "",
         "baseline_version": getattr(patch, "from_version", ""),
         "candidate_version": getattr(patch, "to_version", ""),
         "comparison_summary": {
@@ -1771,8 +1803,7 @@ class StrategyPatchGenerator:
             operations = [self._operation_from_doc(doc, card) for doc in selected]
             # Determine experimental status: true if ANY contributing cluster is single-doc
             is_experimental = any(
-                cluster_experimental.get((role, c["phase"]), False)
-                for c in cluster_stats[role]["clusters"]
+                cluster_experimental.get((role, c["phase"]), False) for c in cluster_stats[role]["clusters"]
             )
             patches.append(
                 StrategyPatch(
@@ -1808,29 +1839,37 @@ class StrategyPatchGenerator:
         joined = f"{doc.phase} {' '.join(doc.tags)} {text}".lower()
         if "avoid" in joined or "risk" in joined:
             section = "risk_rules"
-        elif "public" in joined or "release" in joined or "announc" in joined or "公开" in joined or "归票压力" in joined:
+        elif (
+            "public" in joined or "release" in joined or "announc" in joined or "公开" in joined or "归票压力" in joined
+        ):
             section = "speech_policy"
         elif "vote" in joined:
             section = "vote_policy"
         elif "night" in joined or "ability" in joined or "poison" in joined or "guard" in joined or "check" in joined:
             section = "skill_policy"
         existing = getattr(card, section, [])
-        return PatchOperation(
-            op="add",
-            section=section,
-            old_value=None,
-            new_value=text,
-            rationale=doc.rationale or doc.evidence_summary,
-        ) if text not in existing else PatchOperation(
-            op="update",
-            section=section,
-            old_value=text,
-            new_value=text,
-            rationale="Reinforce an already active rule with new evidence.",
+        return (
+            PatchOperation(
+                op="add",
+                section=section,
+                old_value=None,
+                new_value=text,
+                rationale=doc.rationale or doc.evidence_summary,
+            )
+            if text not in existing
+            else PatchOperation(
+                op="update",
+                section=section,
+                old_value=text,
+                new_value=text,
+                rationale="Reinforce an already active rule with new evidence.",
+            )
         )
 
     def _default_card(self, role: str) -> RoleStrategyCard:
-        return RoleStrategyCard(role=role, version=f"{role.lower()}_v1", goal=f"Play the {role} role toward its camp win condition.")
+        return RoleStrategyCard(
+            role=role, version=f"{role.lower()}_v1", goal=f"Play the {role} role toward its camp win condition."
+        )
 
     def _next_version_suffix(self, version: str) -> str:
         match = re.search(r"v(\d+)", version)
@@ -1842,25 +1881,59 @@ class StrategyPatchGenerator:
 class PatchValidator:
     # v2: extended forbidden list (Chinese + English)
     forbidden = [
-        "read hidden role", "ignore visibility", "change game rule",
-        "private_reason", "hidden identity", "true role",
-        "真实身份", "隐藏身份", "偷看", "绕过可见性",
-        "狼队队友", "夜间真实刀口", "真实验人结果", "真实救人目标",
-        "P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8", "P9",
-        "player_1", "player_2", "player_3",
+        "read hidden role",
+        "ignore visibility",
+        "change game rule",
+        "private_reason",
+        "hidden identity",
+        "true role",
+        "真实身份",
+        "隐藏身份",
+        "偷看",
+        "绕过可见性",
+        "狼队队友",
+        "夜间真实刀口",
+        "真实验人结果",
+        "真实救人目标",
+        "P1",
+        "P2",
+        "P3",
+        "P4",
+        "P5",
+        "P6",
+        "P7",
+        "P8",
+        "P9",
+        "player_1",
+        "player_2",
+        "player_3",
     ]
     absolute_terms = [
-        "always ", "never ", "must ", "guaranteed",
-        "永远", "绝不", "必须", "一定", "无论如何",
+        "always ",
+        "never ",
+        "must ",
+        "guaranteed",
+        "永远",
+        "绝不",
+        "必须",
+        "一定",
+        "无论如何",
     ]
     allowed_sections = {
-        "speech_policy", "vote_policy", "skill_policy",
-        "risk_rules", "compensation_rules", "retrieval_policy",
-        "compensation", "retrieval",
+        "speech_policy",
+        "vote_policy",
+        "skill_policy",
+        "risk_rules",
+        "compensation_rules",
+        "retrieval_policy",
+        "compensation",
+        "retrieval",
     }
     allowed_patch_types = {
-        "role_strategy", "persona_role_adapter",
-        "retrieval_policy", "knowledge_status",
+        "role_strategy",
+        "persona_role_adapter",
+        "retrieval_policy",
+        "knowledge_status",
     }
 
     def validate(self, patch: StrategyPatch) -> PatchValidationResult:
@@ -1870,15 +1943,19 @@ class PatchValidator:
         if patch.patch_type not in self.allowed_patch_types:
             issues.append(PatchValidationIssue("critical", "unsupported patch type", "patch_type"))
         if not patch.source_knowledge_doc_ids:
-            issues.append(PatchValidationIssue("critical", "patch missing knowledge source", "source_knowledge_doc_ids"))
+            issues.append(
+                PatchValidationIssue("critical", "patch missing knowledge source", "source_knowledge_doc_ids")
+            )
 
         max_ops = 3
         if len(patch.operations) > max_ops:
-            issues.append(PatchValidationIssue(
-                "critical" if is_experimental else "major",
-                f"single patch changes too many rules ({len(patch.operations)} > {max_ops})",
-                "operations",
-            ))
+            issues.append(
+                PatchValidationIssue(
+                    "critical" if is_experimental else "major",
+                    f"single patch changes too many rules ({len(patch.operations)} > {max_ops})",
+                    "operations",
+                )
+            )
 
         for operation in patch.operations:
             if operation.section not in self.allowed_sections:
@@ -1890,9 +1967,13 @@ class PatchValidator:
             hit_forbidden = False
             for forbidden_word in self.forbidden:
                 if forbidden_word.lower() in blob:
-                    issues.append(PatchValidationIssue(
-                        "critical", f"patch contains unsafe instruction: {forbidden_word}", operation.section,
-                    ))
+                    issues.append(
+                        PatchValidationIssue(
+                            "critical",
+                            f"patch contains unsafe instruction: {forbidden_word}",
+                            operation.section,
+                        )
+                    )
                     hit_forbidden = True
                     break
 
@@ -1902,18 +1983,22 @@ class PatchValidator:
                     if abs_term.lower() in blob:
                         if is_experimental:
                             # experimental patches reject absolute terms outright
-                            issues.append(PatchValidationIssue(
-                                "critical",
-                                f"experimental patch cannot use absolute term: {abs_term}",
-                                operation.section,
-                            ))
+                            issues.append(
+                                PatchValidationIssue(
+                                    "critical",
+                                    f"experimental patch cannot use absolute term: {abs_term}",
+                                    operation.section,
+                                )
+                            )
                         else:
                             # regular patches downgrade to major (soft suggestion)
-                            issues.append(PatchValidationIssue(
-                                "major",
-                                f"patch uses absolute strategy term: {abs_term} (consider soft suggestion)",
-                                operation.section,
-                            ))
+                            issues.append(
+                                PatchValidationIssue(
+                                    "major",
+                                    f"patch uses absolute strategy term: {abs_term} (consider soft suggestion)",
+                                    operation.section,
+                                )
+                            )
                         break
 
         passed = not any(issue.severity == "critical" for issue in issues)
@@ -1977,7 +2062,12 @@ def promote_candidates(
             deprecated_count += 1
         else:
             skipped += 1
-    return {"promoted": promoted, "deprecated": deprecated_count, "skipped": skipped, "total_candidates": promoted + deprecated_count + skipped}
+    return {
+        "promoted": promoted,
+        "deprecated": deprecated_count,
+        "skipped": skipped,
+        "total_candidates": promoted + deprecated_count + skipped,
+    }
 
 
 def get_promotion_report(store: StrategyKnowledgeStore) -> dict[str, Any]:
@@ -1998,7 +2088,7 @@ class VersionManager:
         self,
         active_cards: Sequence[RoleStrategyCard] | None = None,
         *,
-        knowledge_store: "StrategyKnowledgeStore | None" = None,
+        knowledge_store: StrategyKnowledgeStore | None = None,
     ) -> None:
         self.versions: dict[str, StrategyVersion] = {}
         self.active_by_role: dict[str, str] = {}
@@ -2017,7 +2107,9 @@ class VersionManager:
         version = self.active_by_role.get(role)
         if version and version in self.versions:
             return self.versions[version].card
-        card = RoleStrategyCard(role=role, version=f"{role.lower()}_v1", goal=f"Play the {role} role toward its camp win condition.")
+        card = RoleStrategyCard(
+            role=role, version=f"{role.lower()}_v1", goal=f"Play the {role} role toward its camp win condition."
+        )
         self.versions[card.version] = StrategyVersion(version=card.version, role=role, card=card)
         self.active_by_role[role] = card.version
         return card
@@ -2078,8 +2170,10 @@ class VersionManager:
             if validated_on:
                 patch.validated_on = validated_on
             self._emit_accepted_patch_doc(
-                patch, promoted,
-                quality=quality, confidence=confidence,
+                patch,
+                promoted,
+                quality=quality,
+                confidence=confidence,
                 validated_on=validated_on,
             )
         return promoted
@@ -2087,7 +2181,8 @@ class VersionManager:
     def rollback(self, version_name: str, reason: str = "") -> StrategyVersion:
         version = self.versions[version_name]
         rolled = replace(
-            version, status="rolled_back",
+            version,
+            status="rolled_back",
             card=replace(version.card, status="deprecated"),
         )
         self.versions[version_name] = rolled
@@ -2117,17 +2212,15 @@ class VersionManager:
         rationale = "; ".join(op.rationale or op.new_value for op in patch.operations) or "patch promoted via A/B"
         recommendation = "; ".join(op.new_value for op in patch.operations) or "follow accepted patch"
         # Use provided quality/confidence, or compute defaults
-        q = quality if quality is not None else (
-            0.85 if getattr(patch, "experimental", False) else 0.90
-        )
-        c = confidence if confidence is not None else (
-            0.80 if getattr(patch, "experimental", False) else 0.88
-        )
+        q = quality if quality is not None else (0.85 if getattr(patch, "experimental", False) else 0.90)
+        c = confidence if confidence is not None else (0.80 if getattr(patch, "experimental", False) else 0.88)
         doc = StrategyKnowledgeDoc(
             doc_id=f"accepted-{patch.patch_id}",
             doc_type="accepted_patch",
             role=patch.target_role or promoted.role,
-            phase=patch.safety_checks.get("clusters", [{}])[0].get("phase", "DAY_SPEECH") if patch.safety_checks.get("clusters") else "DAY_SPEECH",
+            phase=patch.safety_checks.get("clusters", [{}])[0].get("phase", "DAY_SPEECH")
+            if patch.safety_checks.get("clusters")
+            else "DAY_SPEECH",
             persona_scope=patch.target_persona_scope,
             situation_pattern=f"After {patch.from_version} → {patch.to_version} promotion via A/B win.",
             trigger_conditions=[f"strategy_version={promoted.version}", f"role={promoted.role}"],
@@ -2237,18 +2330,28 @@ class AcceptancePolicy:
         if evolution_comparison is not None:
             ec = evolution_comparison
             md = ec.mean_deltas
-            imp_results["target_role_avg_score_delta >= 0.03"] = md.get("target_role_avg_score_delta", 0.0) >= self.IMPROVEMENT_MIN_DELTA
-            imp_results["role_task_score_delta >= 0.03"] = md.get("role_task_score_delta", 0.0) >= self.IMPROVEMENT_MIN_DELTA
-            imp_results["critical_mistakes_delta <= -0.10"] = md.get("critical_mistakes_delta", 0.0) <= self.MISTAKE_MIN_DELTA
+            imp_results["target_role_avg_score_delta >= 0.03"] = (
+                md.get("target_role_avg_score_delta", 0.0) >= self.IMPROVEMENT_MIN_DELTA
+            )
+            imp_results["role_task_score_delta >= 0.03"] = (
+                md.get("role_task_score_delta", 0.0) >= self.IMPROVEMENT_MIN_DELTA
+            )
+            imp_results["critical_mistakes_delta <= -0.10"] = (
+                md.get("critical_mistakes_delta", 0.0) <= self.MISTAKE_MIN_DELTA
+            )
             min_non_degraded = max(1, int(ec.num_seeds * self.NON_DEGRADED_RATIO))
-            imp_results[f"non_degraded_seeds >= {min_non_degraded}"] = ec.candidate_non_degraded_seed_count >= min_non_degraded
+            imp_results[f"non_degraded_seeds >= {min_non_degraded}"] = (
+                ec.candidate_non_degraded_seed_count >= min_non_degraded
+            )
         else:
             md = {
                 "target_role_avg_score_delta": comparison.target_role_avg_score_delta / 100.0 if comparison else 0.0,
                 "role_task_score_delta": comparison.role_task_score_delta / 100.0 if comparison else 0.0,
                 "critical_mistakes_delta": comparison.critical_mistakes_delta if comparison else 0.0,
             }
-            imp_results["target_role_avg_score_delta >= 0.03"] = md["target_role_avg_score_delta"] >= self.IMPROVEMENT_MIN_DELTA
+            imp_results["target_role_avg_score_delta >= 0.03"] = (
+                md["target_role_avg_score_delta"] >= self.IMPROVEMENT_MIN_DELTA
+            )
             imp_results["role_task_score_delta >= 0.03"] = md["role_task_score_delta"] >= self.IMPROVEMENT_MIN_DELTA
             imp_results["critical_mistakes_delta <= -0.10"] = md["critical_mistakes_delta"] <= self.MISTAKE_MIN_DELTA
             imp_results["non_degraded_seeds >= 60%"] = True  # unknown → assume OK
@@ -2265,7 +2368,9 @@ class AcceptancePolicy:
                 ci_lower = ci[0] if ci else 0.0
 
             if ci_lower >= self.BOOTSTRAP_CI_LOWER_FLOOR:
-                reason_parts.append(f"All hard gates pass, {improvement_count}/4 improvements, CI lower={ci_lower:.3f} >= {self.BOOTSTRAP_CI_LOWER_FLOOR}")
+                reason_parts.append(
+                    f"All hard gates pass, {improvement_count}/4 improvements, CI lower={ci_lower:.3f} >= {self.BOOTSTRAP_CI_LOWER_FLOOR}"
+                )
                 return AcceptanceDecision(
                     status="promoted",
                     passed_hard_gates=True,
@@ -2279,8 +2384,12 @@ class AcceptancePolicy:
                     failed_conditions=failed,
                 )
             else:
-                reason_parts.append(f"Improvements pass but CI lower={ci_lower:.3f} < {self.BOOTSTRAP_CI_LOWER_FLOOR} → needs more trials")
-                return AcceptanceDecision(satisfied_conditions=satisfied, failed_conditions=failed, 
+                reason_parts.append(
+                    f"Improvements pass but CI lower={ci_lower:.3f} < {self.BOOTSTRAP_CI_LOWER_FLOOR} → needs more trials"
+                )
+                return AcceptanceDecision(
+                    satisfied_conditions=satisfied,
+                    failed_conditions=failed,
                     status="needs_more_trials",
                     passed_hard_gates=True,
                     passed_improvement_conditions=True,
@@ -2291,7 +2400,9 @@ class AcceptancePolicy:
                 )
         elif passed_hard and not passed_improvement:
             reason_parts.append(f"Hard gates pass but only {improvement_count}/4 improvements met")
-            return AcceptanceDecision(satisfied_conditions=satisfied, failed_conditions=failed, 
+            return AcceptanceDecision(
+                satisfied_conditions=satisfied,
+                failed_conditions=failed,
                 status="needs_more_trials",
                 passed_hard_gates=True,
                 passed_improvement_conditions=False,
@@ -2302,7 +2413,9 @@ class AcceptancePolicy:
             )
 
         reason_parts.append("Hard gates failed")
-        return AcceptanceDecision(satisfied_conditions=satisfied, failed_conditions=failed, 
+        return AcceptanceDecision(
+            satisfied_conditions=satisfied,
+            failed_conditions=failed,
             status="rolled_back",
             passed_hard_gates=False,
             passed_improvement_conditions=False,
@@ -2364,7 +2477,9 @@ class TournamentRunner:
 
             b_mistakes = self._critical_count(b_records)
             c_mistakes = self._critical_count(c_records)
-            mistake_delta = (c_mistakes - b_mistakes) / max(1, b_mistakes + c_mistakes) if (b_mistakes + c_mistakes) > 0 else 0.0
+            mistake_delta = (
+                (c_mistakes - b_mistakes) / max(1, b_mistakes + c_mistakes) if (b_mistakes + c_mistakes) > 0 else 0.0
+            )
 
             b_win = 1 if bm.winner == "village" else 0
             c_win = 1 if cm.winner == "village" else 0
@@ -2388,23 +2503,25 @@ class TournamentRunner:
             if non_degraded:
                 non_degraded_count += 1
 
-            paired.append(PairedSeedResult(
-                seed=i + 1,
-                baseline_metrics={"game_id": bm.game_id},
-                candidate_metrics={"game_id": cm.game_id},
-                deltas={
-                    "target_role_avg_score_delta": score_delta,
-                    "role_task_score_delta": role_delta,
-                    "critical_mistakes_delta": mistake_delta,
-                    "camp_win_rate_delta": win_delta,
-                    "info_leak_delta": 0,
-                    "invalid_action_delta": 0,
-                    "fallback_delta": c_fb - b_fb,
-                },
-                candidate_better_or_equal=candidate_better,
-                patch_caused_fallback_count=patch_caused_fb,
-                infra_fallback_count=infra_fb,
-            ))
+            paired.append(
+                PairedSeedResult(
+                    seed=i + 1,
+                    baseline_metrics={"game_id": bm.game_id},
+                    candidate_metrics={"game_id": cm.game_id},
+                    deltas={
+                        "target_role_avg_score_delta": score_delta,
+                        "role_task_score_delta": role_delta,
+                        "critical_mistakes_delta": mistake_delta,
+                        "camp_win_rate_delta": win_delta,
+                        "info_leak_delta": 0,
+                        "invalid_action_delta": 0,
+                        "fallback_delta": c_fb - b_fb,
+                    },
+                    candidate_better_or_equal=candidate_better,
+                    patch_caused_fallback_count=patch_caused_fb,
+                    infra_fallback_count=infra_fb,
+                )
+            )
 
         # Bootstrap CI for target_role_avg_score_delta
         ci = self._bootstrap_ci(target_deltas, n_bootstrap=num_bootstrap)
@@ -2433,7 +2550,9 @@ class TournamentRunner:
             candidate_non_degraded_seed_count=non_degraded_count,
             bootstrap_ci={"target_role_avg_score_delta": [ci[0], ci[1]]},
             stability_score=stability,
-            total_info_leak_count=sum(int(self._metadata_int(cm, "info_leak_count")) for cm in candidate_results[:num_seeds]),
+            total_info_leak_count=sum(
+                int(self._metadata_int(cm, "info_leak_count")) for cm in candidate_results[:num_seeds]
+            ),
             total_invalid_action_count=0,
             total_patch_caused_fallback_count=0,
             total_infra_fallback_count=0,
@@ -2510,7 +2629,13 @@ class TournamentRunner:
         )
         decision = self.acceptance_policy.decide(comparison)
         comparison.accepted = decision.accepted
-        comparison.winner = "candidate" if comparison.candidate_avg_score > comparison.baseline_avg_score else "baseline" if comparison.baseline_avg_score > comparison.candidate_avg_score else None
+        comparison.winner = (
+            "candidate"
+            if comparison.candidate_avg_score > comparison.baseline_avg_score
+            else "baseline"
+            if comparison.baseline_avg_score > comparison.candidate_avg_score
+            else None
+        )
         return comparison
 
     def run_ab_tournament(
@@ -2536,10 +2661,7 @@ class TournamentRunner:
         if len(seed_list) != 20:
             raise ValueError("Track C A/B tournament requires exactly 20 fixed seeds")
 
-        baseline_metrics = [
-            self._run_seed(seed, baseline_version, target_role)
-            for seed in seed_list
-        ]
+        baseline_metrics = [self._run_seed(seed, baseline_version, target_role) for seed in seed_list]
         candidate_metrics = [
             self._run_seed(seed, candidate_version, target_role, strategy_patch_ops=candidate_patch_ops)
             for seed in seed_list
@@ -2601,24 +2723,24 @@ class TournamentRunner:
             invalid_count = sum(1 for record in game.state.decision_records if not record.is_valid)
             decision_count = max(len(game.state.decision_records), 1)
             retrieved_count = sum(
-                1
-                for record in game.state.decision_records
-                if bool((record.parsed_action or {}).get("retrieval_used"))
+                1 for record in game.state.decision_records if bool((record.parsed_action or {}).get("retrieval_used"))
             )
-            metric.metadata.update({
-                "strategy_version": strategy_version,
-                "tournament_seed": seed,
-                "target_role": target_role,
-                "runner_mode": "llm_engine",
-                "agent_type": "llm",
-                "llm_decision_count": llm_count,
-                "llm_source_rate": llm_count / decision_count,
-                "fallback_count": fallback_count,
-                "invalid_action_rate": invalid_count / decision_count,
-                "retrieval_used_rate": retrieved_count / decision_count,
-                "knowledge_hit_rate": retrieved_count / decision_count,
-                "info_leak_count": int(metric.metadata.get("info_leak_count", 0) or 0),
-            })
+            metric.metadata.update(
+                {
+                    "strategy_version": strategy_version,
+                    "tournament_seed": seed,
+                    "target_role": target_role,
+                    "runner_mode": "llm_engine",
+                    "agent_type": "llm",
+                    "llm_decision_count": llm_count,
+                    "llm_source_rate": llm_count / decision_count,
+                    "fallback_count": fallback_count,
+                    "invalid_action_rate": invalid_count / decision_count,
+                    "retrieval_used_rate": retrieved_count / decision_count,
+                    "knowledge_hit_rate": retrieved_count / decision_count,
+                    "info_leak_count": int(metric.metadata.get("info_leak_count", 0) or 0),
+                }
+            )
         metric.metadata["strategy_version"] = strategy_version
         metric.metadata["tournament_seed"] = seed
         metric.metadata["target_role"] = target_role
@@ -2678,14 +2800,16 @@ class TournamentRunner:
             }
             for score in metric.player_scores
         ]
-        return self._json_safe({
-            "game_id": metric.game_id,
-            "winner": metric.winner,
-            "total_days": metric.total_days,
-            "total_events": metric.total_events,
-            "metadata": dict(metric.metadata),
-            "player_scores": records,
-        })
+        return self._json_safe(
+            {
+                "game_id": metric.game_id,
+                "winner": metric.winner,
+                "total_days": metric.total_days,
+                "total_events": metric.total_events,
+                "metadata": dict(metric.metadata),
+                "player_scores": records,
+            }
+        )
 
     def _json_safe(self, value: Any) -> Any:
         if is_dataclass(value):
@@ -2701,14 +2825,26 @@ class TournamentRunner:
         records: list[dict[str, Any]] = []
         for metric in metrics:
             for score in metric.player_scores:
-                records.append({
-                    "adjusted_final_score": score.adjusted_final_score if score.adjusted_final_score is not None else score.final_score,
-                    "role_task_score": score.role_task_score,
-                    "mistakes": score.mistakes,
-                    "role": score.role,
-                })
+                records.append(
+                    {
+                        "adjusted_final_score": score.adjusted_final_score
+                        if score.adjusted_final_score is not None
+                        else score.final_score,
+                        "role_task_score": score.role_task_score,
+                        "mistakes": score.mistakes,
+                        "role": score.role,
+                    }
+                )
         if not records and result.entries:
-            records.extend({"adjusted_final_score": entry.avg_adjusted_final_score, "role_task_score": 0.0, "mistakes": [], "role": entry.display_name} for entry in result.entries)
+            records.extend(
+                {
+                    "adjusted_final_score": entry.avg_adjusted_final_score,
+                    "role_task_score": 0.0,
+                    "mistakes": [],
+                    "role": entry.display_name,
+                }
+                for entry in result.entries
+            )
         return records
 
     @staticmethod
@@ -2737,7 +2873,9 @@ class TournamentRunner:
         return round(((candidate - baseline) / baseline) * 100.0, 4)
 
     def _critical_count(self, records: Sequence[dict[str, Any]]) -> int:
-        return sum(1 for record in records for mistake in record.get("mistakes", []) if str(mistake).startswith("[critical]"))
+        return sum(
+            1 for record in records for mistake in record.get("mistakes", []) if str(mistake).startswith("[critical]")
+        )
 
     def _rate_delta(self, baseline_count: int, candidate_count: int, games: int) -> float:
         baseline_rate = baseline_count / games
@@ -2770,13 +2908,15 @@ def extract_from_review_reports(
             if not getattr(ev, "safe_for_track_c_learning", True):
                 continue
             # Required fields
-            if not all([
-                getattr(ev, "evidence_refs", None),
-                getattr(ev, "role", None),
-                getattr(ev, "phase", None),
-                getattr(ev, "trigger_condition", None),
-                getattr(ev, "lesson", None),
-            ]):
+            if not all(
+                [
+                    getattr(ev, "evidence_refs", None),
+                    getattr(ev, "role", None),
+                    getattr(ev, "phase", None),
+                    getattr(ev, "trigger_condition", None),
+                    getattr(ev, "lesson", None),
+                ]
+            ):
                 continue
             # Build quality_signals from the evolution candidate
             qs = getattr(ev, "quality_signals", {}) or {}
@@ -2833,7 +2973,12 @@ class DreamJob:
 
     def run(self, reports: Sequence[ReviewReport]) -> DreamResult:
         rejected_items: list[dict[str, Any]] = []
-        safety_summary: dict[str, Any] = {"sanitized": 0, "rejected_leak": 0, "rejected_no_evidence": 0, "rejected_missing_fields": 0}
+        safety_summary: dict[str, Any] = {
+            "sanitized": 0,
+            "rejected_leak": 0,
+            "rejected_no_evidence": 0,
+            "rejected_missing_fields": 0,
+        }
 
         # ---- Step 1: Extract from Track B evolution_candidates first ----
         report_candidates = extract_from_review_reports(reports)
@@ -2848,11 +2993,13 @@ class DreamJob:
         for doc in report_candidates:
             result = sanitize_knowledge_doc(doc)
             if not result.safe_for_track_c_learning:
-                rejected_items.append({
-                    "doc_id": doc.doc_id,
-                    "reason": result.unsafe_reason or "unsafe for Track C",
-                    "redactions": result.redactions,
-                })
+                rejected_items.append(
+                    {
+                        "doc_id": doc.doc_id,
+                        "reason": result.unsafe_reason or "unsafe for Track C",
+                        "redactions": result.redactions,
+                    }
+                )
                 safety_summary["rejected_leak"] += 1
                 continue
             if result.rewrite_applied:
@@ -2864,18 +3011,22 @@ class DreamJob:
         for doc in sanitized_docs:
             # Must have at least one source report
             if not doc.source_report_ids:
-                rejected_items.append({
-                    "doc_id": doc.doc_id,
-                    "reason": "missing evidence_refs / source_report_ids",
-                })
+                rejected_items.append(
+                    {
+                        "doc_id": doc.doc_id,
+                        "reason": "missing evidence_refs / source_report_ids",
+                    }
+                )
                 safety_summary["rejected_no_evidence"] += 1
                 continue
             # Must have at minimum role, recommendation, and some situation pattern
             if not doc.role or (not doc.situation_pattern and not doc.trigger_conditions):
-                rejected_items.append({
-                    "doc_id": doc.doc_id,
-                    "reason": f"missing required fields: role={doc.role!r} phase={doc.phase!r} pattern={doc.situation_pattern!r}",
-                })
+                rejected_items.append(
+                    {
+                        "doc_id": doc.doc_id,
+                        "reason": f"missing required fields: role={doc.role!r} phase={doc.phase!r} pattern={doc.situation_pattern!r}",
+                    }
+                )
                 safety_summary["rejected_missing_fields"] += 1
                 continue
             # phase defaults to "global" if empty
@@ -2888,7 +3039,10 @@ class DreamJob:
             try:
                 fake_report = ReviewReport(
                     game_id=(doc.source_report_ids or ["unknown"])[0],
-                    winner=None, total_days=0, total_events=0, game_summary="",
+                    winner=None,
+                    total_days=0,
+                    total_events=0,
+                    game_summary="",
                 )
                 quality, conf, _ = self.extractor.abstractor.quality_score(
                     StrategyKnowledge(
@@ -2920,7 +3074,9 @@ class DreamJob:
             saved_docs = self.store.upsert_many(valid_docs)
 
         # ---- Step 5: Generate patches ----
-        active_cards = {doc.role: self.version_manager.active_card(doc.role) for doc in saved_docs if doc.role != "global"}
+        active_cards = {
+            doc.role: self.version_manager.active_card(doc.role) for doc in saved_docs if doc.role != "global"
+        }
         raw_patches = self.patch_generator.generate(saved_docs, active_cards)
         candidate_patches, rejected_patches = self.patch_validator.validate_many(raw_patches)
         for rp in rejected_patches:
@@ -2948,10 +3104,11 @@ class DreamJob:
             sanitized_count=safety_summary["sanitized"],
             safety_issues_count=safety_summary["rejected_leak"],
             summary=f"Extracted {saved_count} knowledge docs ({safety_summary['sanitized']} sanitized), "
-                    f"proposed {len(candidate_patches)} patches, rejected {len(rejected_items)} items.",
+            f"proposed {len(candidate_patches)} patches, rejected {len(rejected_items)} items.",
         )
-        return DreamResult(saved_docs, candidate_patches, summary,
-                           rejected_items=rejected_items, safety_summary=safety_summary)
+        return DreamResult(
+            saved_docs, candidate_patches, summary, rejected_items=rejected_items, safety_summary=safety_summary
+        )
 
 
 class HermesEvolutionHook:
@@ -3026,7 +3183,9 @@ class SimpleEvolutionLoop:
         comparison = self.tournament_runner.compare_metrics(baseline_version, candidate_version, baseline, candidate)
         # v2: also compute paired comparison for richer decision
         evolution_comp = self.tournament_runner.compare_paired_seed_results(
-            list(baseline), list(candidate), target_role=target_role,
+            list(baseline),
+            list(candidate),
+            target_role=target_role,
         )
         decision = self.tournament_runner.acceptance_policy.decide(
             comparison=comparison,
@@ -3039,7 +3198,9 @@ class SimpleEvolutionLoop:
                 # Compute dynamic quality/confidence
                 if patch:
                     quality, confidence, validated_on = compute_accepted_patch_confidence(
-                        evolution_comp, decision, patch,
+                        evolution_comp,
+                        decision,
+                        patch,
                     )
                 else:
                     quality, confidence, validated_on = None, None, None
@@ -3053,9 +3214,7 @@ class SimpleEvolutionLoop:
             if candidate_version in self.version_manager.versions:
                 self.version_manager.rollback(candidate_version, reason=decision.reason)
         # needs_more_trials: leave as candidate, don't promote or rollback
-        logger.info(
-            f"AB compare result: {decision.status} — {decision.reason}"
-        )
+        logger.info(f"AB compare result: {decision.status} — {decision.reason}")
         return comparison
 
 
@@ -3098,7 +3257,11 @@ class EvolutionPipeline:
                 pass
         leaderboard = None
         if baseline_metrics or candidate_metrics:
-            leaderboard = LeaderboardAggregator().aggregate_version([*(baseline_metrics or []), *(candidate_metrics or [])]).to_dict()
+            leaderboard = (
+                LeaderboardAggregator()
+                .aggregate_version([*(baseline_metrics or []), *(candidate_metrics or [])])
+                .to_dict()
+            )
         summary = EvolutionSummary(
             approved_report_count=len(approved_reports),
             knowledge_doc_count=len(dream_result.knowledge_docs),

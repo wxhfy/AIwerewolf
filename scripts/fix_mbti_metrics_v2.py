@@ -11,9 +11,11 @@ Fixes:
 6. Rebuilt HTML
 """
 
-import json, math
+import json
+import math
 from collections import defaultdict
 from pathlib import Path
+
 import numpy as np
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -38,6 +40,7 @@ def load_json(path):
 # FIX 1: REAL ROLE-ADJUSTED WIN LIFT
 # ============================================================
 
+
 def compute_role_camp_baselines(fixed_scores):
     """Compute expected WR for each (role, camp) combination."""
     rc_groups = defaultdict(list)
@@ -58,7 +61,7 @@ def compute_role_camp_baselines(fixed_scores):
     for ps in fixed_scores:
         camp = ps.get("camp", "?")
         camp_baseline[camp].append(ps.get("is_win", False))
-    camp_wr = {c: sum(w)/max(len(w),1) for c, w in camp_baseline.items()}
+    camp_wr = {c: sum(w) / max(len(w), 1) for c, w in camp_baseline.items()}
 
     return baseline, camp_wr
 
@@ -87,16 +90,24 @@ def compute_real_lift(fixed_scores, rc_baseline, camp_wr):
         if mbti:
             mbti_lifts[mbti].append(ps["role_adjusted_win_lift"])
 
-    return {m: {"mean_lift": round(np.mean(vals), 4),
+    return (
+        {
+            m: {
+                "mean_lift": round(np.mean(vals), 4),
                 "n": len(vals),
-                "n_fallback": sum(1 for ps in fixed_scores
-                                  if ps.get("mbti") == m and ps.get("expected_wr_fallback"))}
-            for m, vals in mbti_lifts.items()}, rc_baseline, camp_wr
+                "n_fallback": sum(1 for ps in fixed_scores if ps.get("mbti") == m and ps.get("expected_wr_fallback")),
+            }
+            for m, vals in mbti_lifts.items()
+        },
+        rc_baseline,
+        camp_wr,
+    )
 
 
 # ============================================================
 # FIX 2: ROLE-NORMALIZED PRE-ACTION SCORE
 # ============================================================
+
 
 def compute_role_normalized_pre(fixed_scores):
     """Compute role-normalized pre-action scores."""
@@ -143,6 +154,7 @@ def compute_role_normalized_pre(fixed_scores):
 # FIX 3-6: COMPOSITE + FILTER + CARDS + HTML
 # ============================================================
 
+
 def norm(x, all_vals):
     """Normalize to [0,1] given all values."""
     lo, hi = min(all_vals), max(all_vals)
@@ -175,9 +187,10 @@ def build_full_mbti_stats(fixed_scores, mbti_role_norm, lift_data):
         raw_wr = sum(wins) / n
 
         # Wilson CI
-        z = 1.96; p = raw_wr
-        wlo = (p + z**2/(2*n) - z*math.sqrt(p*(1-p)/n + z**2/(4*n**2))) / (1 + z**2/n)
-        whi = (p + z**2/(2*n) + z*math.sqrt(p*(1-p)/n + z**2/(4*n**2))) / (1 + z**2/n)
+        z = 1.96
+        p = raw_wr
+        wlo = (p + z**2 / (2 * n) - z * math.sqrt(p * (1 - p) / n + z**2 / (4 * n**2))) / (1 + z**2 / n)
+        whi = (p + z**2 / (2 * n) + z * math.sqrt(p * (1 - p) / n + z**2 / (4 * n**2))) / (1 + z**2 / n)
 
         # Camp WR
         v_records = [r for r in records if r.get("camp") == "village"]
@@ -204,13 +217,7 @@ def build_full_mbti_stats(fixed_scores, mbti_role_norm, lift_data):
         lift_norm = norm(lift, [lift_data.get(m, {}).get("mean_lift", 0) for m in mbti_groups])
         proc_norm = norm(avg_process, all_process) if all_process else 0.5
 
-        composite = (
-            0.35 * rn_norm
-            + 0.25 * max(0, lift_norm)
-            + 0.15 * cbwr
-            + 0.15 * proc_norm
-            - 0.10 * mistake_rate
-        )
+        composite = 0.35 * rn_norm + 0.25 * max(0, lift_norm) + 0.15 * cbwr + 0.15 * proc_norm - 0.10 * mistake_rate
         composite = max(0.01, min(0.99, composite))
 
         # Role distribution for explanation
@@ -237,10 +244,13 @@ def build_full_mbti_stats(fixed_scores, mbti_role_norm, lift_data):
         weaknesses.sort(key=lambda x: x[1])
 
         stats[mbti] = {
-            "mbti": mbti, "n": n,
+            "mbti": mbti,
+            "n": n,
             "raw_win_rate": round(raw_wr, 4),
-            "wilson_ci_lo": round(wlo, 4), "wilson_ci_hi": round(whi, 4),
-            "village_win_rate": round(v_wr, 4), "wolf_win_rate": round(w_wr, 4),
+            "wilson_ci_lo": round(wlo, 4),
+            "wilson_ci_hi": round(whi, 4),
+            "village_win_rate": round(v_wr, 4),
+            "wolf_win_rate": round(w_wr, 4),
             "camp_balanced_win_rate": round(cbwr, 4),
             "role_adjusted_win_lift": round(lift, 4),
             "n_fallback_expected_wr": n_fallback,
@@ -249,7 +259,8 @@ def build_full_mbti_stats(fixed_scores, mbti_role_norm, lift_data):
             "avg_process_score": round(avg_process, 4),
             "mistake_rate": round(mistake_rate, 4),
             "composite": round(composite, 4),
-            "n_village": len(v_records), "n_wolf": len(w_records),
+            "n_village": len(v_records),
+            "n_wolf": len(w_records),
             "role_distribution": dict(role_dist),
             "strengths": strengths[:3],
             "weaknesses": weaknesses[:3],
@@ -280,7 +291,10 @@ def build_html(stats, role_mean, role_std, camp_wr, rc_baseline):
         ("Main Leaderboard (n≥10)", str(len(main))),
         ("Low Sample (n<10)", str(len(low_sample))),
         ("Scoring Gate", "PASS_WITH_LIMITATIONS"),
-        ("Composite Range", f"{min(s['composite'] for s in main.values()):.3f} – {max(s['composite'] for s in main.values()):.3f}"),
+        (
+            "Composite Range",
+            f"{min(s['composite'] for s in main.values()):.3f} – {max(s['composite'] for s in main.values()):.3f}",
+        ),
     ]:
         exec_cards += f'<div class="stat"><div class="val">{value}</div><div class="lbl">{label}</div></div>'
 
@@ -290,15 +304,15 @@ def build_html(stats, role_mean, role_std, camp_wr, rc_baseline):
         strengths_str = ", ".join(f"{r}({v:+.2f})" for r, v in s["strengths"][:2])
         weaknesses_str = ", ".join(f"{r}({v:+.2f})" for r, v in s["weaknesses"][:2])
         lb_rows += f"""<tr>
-<td>{i+1}</td><td><b>{mbti}</b></td><td>{s['n']}</td>
-<td class="composite">{s['composite']:.3f}</td>
-<td>{s['avg_role_norm_pre']:+.3f}</td>
-<td>{s['avg_pre_action_score']:.3f}</td>
-<td>{s['avg_process_score']:.3f}</td>
-<td>{s['raw_win_rate']:.3f}<br><small>[{s['wilson_ci_lo']:.3f}, {s['wilson_ci_hi']:.3f}]</small></td>
-<td>{s['camp_balanced_win_rate']:.3f}</td>
-<td>{s['role_adjusted_win_lift']:+.3f}</td>
-<td>{s['mistake_rate']:.3f}</td>
+<td>{i + 1}</td><td><b>{mbti}</b></td><td>{s["n"]}</td>
+<td class="composite">{s["composite"]:.3f}</td>
+<td>{s["avg_role_norm_pre"]:+.3f}</td>
+<td>{s["avg_pre_action_score"]:.3f}</td>
+<td>{s["avg_process_score"]:.3f}</td>
+<td>{s["raw_win_rate"]:.3f}<br><small>[{s["wilson_ci_lo"]:.3f}, {s["wilson_ci_hi"]:.3f}]</small></td>
+<td>{s["camp_balanced_win_rate"]:.3f}</td>
+<td>{s["role_adjusted_win_lift"]:+.3f}</td>
+<td>{s["mistake_rate"]:.3f}</td>
 <td style="font-size:0.75rem">↑{strengths_str}<br>↓{weaknesses_str}</td>
 </tr>"""
 
@@ -320,15 +334,15 @@ def build_html(stats, role_mean, role_std, camp_wr, rc_baseline):
         why_str = "; ".join(why) if why else "mixed signals across metrics"
 
         cards += f"""<div class="explain-card">
-<h3>#{i+1} {mbti} · Composite {s['composite']:.3f} · n={s['n']}</h3>
+<h3>#{i + 1} {mbti} · Composite {s["composite"]:.3f} · n={s["n"]}</h3>
 <div class="explain-grid">
 <div><strong>Strengths</strong><br>{strengths}</div>
 <div><strong>Weak roles</strong><br>{weaknesses}</div>
 <div><strong>Role distribution</strong><br>{role_dist}</div>
-<div><strong>Camp</strong><br>V:{s['village_win_rate']:.3f} (n={s['n_village']}) W:{s['wolf_win_rate']:.3f} (n={s['n_wolf']})</div>
+<div><strong>Camp</strong><br>V:{s["village_win_rate"]:.3f} (n={s["n_village"]}) W:{s["wolf_win_rate"]:.3f} (n={s["n_wolf"]})</div>
 </div>
 <div class="explain-why"><strong>Why ranked here:</strong> {why_str}</div>
-<div class="explain-caveat"><strong>Not definitive because:</strong> n={s['n']} games; scoring system is PASS_WITH_LIMITATIONS; cross-role comparison has structural limits; role-adjusted lift uses internal baseline.</div>
+<div class="explain-caveat"><strong>Not definitive because:</strong> n={s["n"]} games; scoring system is PASS_WITH_LIMITATIONS; cross-role comparison has structural limits; role-adjusted lift uses internal baseline.</div>
 </div>"""
 
     # === 5. LIFT TABLE ===
@@ -347,8 +361,10 @@ def build_html(stats, role_mean, role_std, camp_wr, rc_baseline):
         n = v["n"]
         wr = v["wr"]
         status = "OK" if n >= 5 else "LOW_SAMPLE"
-        cls = 'low-conf' if n < 5 else ''
-        base_rows += f'<tr class="{cls}"><td>{role}</td><td>{camp}</td><td>{n}</td><td>{wr:.3f}</td><td>{status}</td></tr>'
+        cls = "low-conf" if n < 5 else ""
+        base_rows += (
+            f'<tr class="{cls}"><td>{role}</td><td>{camp}</td><td>{n}</td><td>{wr:.3f}</td><td>{status}</td></tr>'
+        )
 
     # === 8. MBTI × ROLE MATRIX ===
     mbti_role = defaultdict(lambda: defaultdict(list))
@@ -471,7 +487,7 @@ tr:nth-child(even) {{ background: #faf8f2; }}
 <tr><th>Role</th><th>Camp</th><th>n</th><th>Expected WR</th><th>Status</th></tr>
 {base_rows}
 </table>
-<p style="font-size:0.8rem;color:#666;">Camp-only fallback: village={camp_wr.get('village',0.5):.3f}, wolf={camp_wr.get('wolf',0.5):.3f}</p>
+<p style="font-size:0.8rem;color:#666;">Camp-only fallback: village={camp_wr.get("village", 0.5):.3f}, wolf={camp_wr.get("wolf", 0.5):.3f}</p>
 
 <!-- 6. ROLE-NORMALIZED PRE-ACTION -->
 <h2>6. Role-Normalized PreAction</h2>
@@ -484,14 +500,14 @@ tr:nth-child(even) {{ background: #faf8f2; }}
 <h3>Per-Role PreAction Baselines</h3>
 <table>
 <tr><th>Role</th><th>n</th><th>Mean PreAction</th><th>Std</th></tr>
-{''.join(f'<tr><td>{r}</td><td>{len([s for s in load_jsonl(DATA/"player_scores_v7_fixed_win.jsonl") if s.get("role")==r])}</td><td>{role_mean[r]:.4f}</td><td>{role_std[r]:.4f}</td></tr>' for r in sorted(role_mean.keys()))}
+{"".join(f"<tr><td>{r}</td><td>{len([s for s in load_jsonl(DATA / "player_scores_v7_fixed_win.jsonl") if s.get("role") == r])}</td><td>{role_mean[r]:.4f}</td><td>{role_std[r]:.4f}</td></tr>" for r in sorted(role_mean.keys()))}
 </table>
 
 <!-- 7. MBTI × ROLE MATRIX -->
 <h2>7. MBTI × Role Matrix (Role-Normalized PreAction)</h2>
 <p style="font-size:0.85rem;color:#666;">n≥5 normal, n=3-4 LOW_SAMPLE, n&lt;3 —. Values are role-normalized (cross-role comparable).</p>
 <table>
-<tr><th>MBTI</th><th>n</th>{''.join(f'<th>{r}</th>' for r in roles)}</tr>
+<tr><th>MBTI</th><th>n</th>{"".join(f"<th>{r}</th>" for r in roles)}</tr>
 {matrix_rows}
 </table>
 
@@ -499,7 +515,7 @@ tr:nth-child(even) {{ background: #faf8f2; }}
 <h2>8. MBTI × Camp Matrix</h2>
 <table>
 <tr><th>MBTI</th><th>n</th><th>Village WR (n)</th><th>Wolf WR (n)</th><th>CampBalWR</th></tr>
-{''.join(f'<tr><td><b>{mbti}</b></td><td>{s["n"]}</td><td>{s["village_win_rate"]:.3f} ({s["n_village"]})</td><td>{s["wolf_win_rate"]:.3f} ({s["n_wolf"]})</td><td>{s["camp_balanced_win_rate"]:.3f}</td></tr>' for mbti, s in main_sorted)}
+{"".join(f"<tr><td><b>{mbti}</b></td><td>{s["n"]}</td><td>{s["village_win_rate"]:.3f} ({s["n_village"]})</td><td>{s["wolf_win_rate"]:.3f} ({s["n_wolf"]})</td><td>{s["camp_balanced_win_rate"]:.3f}</td></tr>" for mbti, s in main_sorted)}
 </table>
 
 <!-- 9. LOW SAMPLE -->
@@ -542,6 +558,7 @@ Generated 2026-05-28 · AI Werewolf Scoring V7 · Track B · PASS_WITH_LIMITATIO
 # MAIN
 # ============================================================
 
+
 def main():
     print("=" * 60)
     print("MBTI Metrics Fix V2")
@@ -560,8 +577,10 @@ def main():
     lift_zeros = sum(1 for m, v in lift_data.items() if abs(v["mean_lift"]) < 0.001)
     all_zero = lift_zeros == len(lift_data)
     print(f"  Role×Camp groups: {len(rc_baseline)}")
-    print(f"  Camp WR: village={camp_wr.get('village',0):.3f}, wolf={camp_wr.get('wolf',0):.3f}")
-    print(f"  Lift range: {min(v['mean_lift'] for v in lift_data.values()):.4f} – {max(v['mean_lift'] for v in lift_data.values()):.4f}")
+    print(f"  Camp WR: village={camp_wr.get('village', 0):.3f}, wolf={camp_wr.get('wolf', 0):.3f}")
+    print(
+        f"  Lift range: {min(v['mean_lift'] for v in lift_data.values()):.4f} – {max(v['mean_lift'] for v in lift_data.values()):.4f}"
+    )
     print(f"  Lift zeros: {lift_zeros}/{len(lift_data)} (all_zero={all_zero})")
 
     with open(DATA / "role_adjusted_win_lift_audit_v7.md", "w") as f:
@@ -579,20 +598,20 @@ role_adjusted_win_lift = is_win - expected_wr
 
 | Role | Camp | n | Expected WR | Status |
 |------|------|---|-------------|--------|
-{chr(10).join(f'| {role} | {camp} | {v["n"]} | {v["wr"]:.3f} | {"OK" if v["n"]>=5 else "LOW_SAMPLE"}' for (role,camp), v in sorted(rc_baseline.items()))}
+{chr(10).join(f"| {role} | {camp} | {v["n"]} | {v["wr"]:.3f} | {"OK" if v["n"] >= 5 else "LOW_SAMPLE"}" for (role, camp), v in sorted(rc_baseline.items()))}
 
-Camp-only fallback: village={camp_wr.get('village',0):.3f}, wolf={camp_wr.get('wolf',0):.3f}
+Camp-only fallback: village={camp_wr.get("village", 0):.3f}, wolf={camp_wr.get("wolf", 0):.3f}
 
 ## Per-MBTI Lift
 
 | MBTI | n | Actual WR | Mean Lift | n_fallback |
 |------|---|-----------|-----------|------------|
-{chr(10).join(f'| {m} | {v["n"]} | {sum(1 for ps in fixed_scores if ps.get("mbti")==m and ps.get("is_win"))/max(v["n"],1):.3f} | {v["mean_lift"]:+.4f} | {v["n_fallback"]} |' for m, v in sorted(lift_data.items()))}
+{chr(10).join(f"| {m} | {v["n"]} | {sum(1 for ps in fixed_scores if ps.get("mbti") == m and ps.get("is_win")) / max(v["n"], 1):.3f} | {v["mean_lift"]:+.4f} | {v["n_fallback"]} |" for m, v in sorted(lift_data.items()))}
 
 ## Verification
 
-- All zeros: {'FAIL' if all_zero else 'PASS'} (should be PASS)
-- Range: {min(v['mean_lift'] for v in lift_data.values()):.4f} – {max(v['mean_lift'] for v in lift_data.values()):.4f}
+- All zeros: {"FAIL" if all_zero else "PASS"} (should be PASS)
+- Range: {min(v["mean_lift"] for v in lift_data.values()):.4f} – {max(v["mean_lift"] for v in lift_data.values()):.4f}
 """)
     print("  -> role_adjusted_win_lift_audit_v7.md")
 
@@ -622,7 +641,7 @@ Camp-only fallback: village={camp_wr.get('village',0):.3f}, wolf={camp_wr.get('w
     print("  -> mbti_performance_dashboard_v7_metrics_fixed.html")
 
     # Verification
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("VERIFICATION")
     print("=" * 60)
 
@@ -634,12 +653,16 @@ Camp-only fallback: village={camp_wr.get('village',0):.3f}, wolf={camp_wr.get('w
     # 2. RoleAdjLift not all 0
     lifts = [v["mean_lift"] for v in lift_data.values()]
     all_z = all(abs(l) < 0.0001 for l in lifts)
-    print(f"2. RoleAdjLift not all zero: {'PASS' if not all_z else 'FAIL'} (range: {min(lifts):.4f} to {max(lifts):.4f})")
+    print(
+        f"2. RoleAdjLift not all zero: {'PASS' if not all_z else 'FAIL'} (range: {min(lifts):.4f} to {max(lifts):.4f})"
+    )
 
     # 3. Composite uses role-norm pre not raw pre
     for mbti, s in list(stats.items())[:3]:
         diff = abs(s["avg_role_norm_pre"] - s["avg_pre_action_score"])
-        print(f"3. {mbti}: RoleNormPre={s['avg_role_norm_pre']:+.3f} vs RawPre={s['avg_pre_action_score']:.3f} (diff={diff:.3f})")
+        print(
+            f"3. {mbti}: RoleNormPre={s['avg_role_norm_pre']:+.3f} vs RawPre={s['avg_pre_action_score']:.3f} (diff={diff:.3f})"
+        )
 
     # 4. n<10 not in main
     print(f"4. Main leaderboard: n≥10, {main_n} types. Low sample: {low_n} types")
@@ -649,9 +672,11 @@ Camp-only fallback: village={camp_wr.get('village',0):.3f}, wolf={camp_wr.get('w
         top = main_sorted[0]
         has_strengths = len(top[1].get("strengths", [])) > 0
         has_weaknesses = len(top[1].get("weaknesses", [])) > 0
-        print(f"5. Top MBTI #{top[0]}: strengths={len(top[1].get('strengths',[]))}, weaknesses={len(top[1].get('weaknesses',[]))}")
+        print(
+            f"5. Top MBTI #{top[0]}: strengths={len(top[1].get('strengths', []))}, weaknesses={len(top[1].get('weaknesses', []))}"
+        )
 
-    print(f"\nDone. Open: data/health/mbti_performance_dashboard_v7_metrics_fixed.html")
+    print("\nDone. Open: data/health/mbti_performance_dashboard_v7_metrics_fixed.html")
 
 
 if __name__ == "__main__":

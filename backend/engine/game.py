@@ -3,29 +3,29 @@ from __future__ import annotations
 import time
 from collections import Counter
 from random import Random
-from typing import Any, Callable
+from typing import Any
+from typing import Callable
 from uuid import uuid4
 
 from backend.agents.base import Agent
-from backend.agents.characters import Character, build_character_roster
+from backend.agents.characters import build_character_roster
 from backend.agents.factory import create_agents
 from backend.engine.actions import ActionValidator
-from backend.engine.models import (
-    ActionType,
-    Alignment,
-    Decision,
-    DecisionAudit,
-    EventType,
-    GameEvent,
-    GameState,
-    NightActions,
-    PendingInput,
-    Phase,
-    Player,
-    Role,
-)
+from backend.engine.models import ActionType
+from backend.engine.models import Alignment
+from backend.engine.models import Decision
+from backend.engine.models import DecisionAudit
+from backend.engine.models import EventType
+from backend.engine.models import GameEvent
+from backend.engine.models import GameState
+from backend.engine.models import NightActions
+from backend.engine.models import PendingInput
+from backend.engine.models import Phase
+from backend.engine.models import Player
+from backend.engine.models import Role
 from backend.engine.phase_manager import PhaseManager
-from backend.engine.rules import DEFAULT_ROLE_SET, build_players, get_role_configuration
+from backend.engine.rules import build_players
+from backend.engine.rules import get_role_configuration
 from backend.engine.summary import build_day_summary
 from backend.engine.visibility import Visibility
 

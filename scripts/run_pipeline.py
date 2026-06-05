@@ -57,15 +57,17 @@ STAGES = [
 # Stage 1: Extract opportunities from game replays
 # ============================================================================
 
+
 def stage_extract(limit: int = 0) -> int:
     """Extract DecisionOpportunities from all published game reviews."""
     print("=" * 60)
     print("Stage 1/9: Extract Opportunities")
     print("=" * 60)
 
-    from backend.db.database import SessionLocal, init_db
+    from backend.db.database import SessionLocal
+    from backend.db.database import init_db
     from backend.eval.opportunity import OpportunityExtractor
-    from backend.eval.track_b import ReplayBundleBuilder, reconstruct_review_report
+    from backend.eval.track_b import reconstruct_review_report
 
     init_db()
     db = SessionLocal()
@@ -73,11 +75,13 @@ def stage_extract(limit: int = 0) -> int:
         from sqlalchemy import text
 
         rows = db.execute(
-            text("SELECT pr.game_id, pr.report_json, g.winner "
-                 "FROM published_reviews pr "
-                 "JOIN games g ON g.id = pr.game_id "
-                 "WHERE pr.publish_allowed = true "
-                 "ORDER BY g.finished_at DESC")
+            text(
+                "SELECT pr.game_id, pr.report_json, g.winner "
+                "FROM published_reviews pr "
+                "JOIN games g ON g.id = pr.game_id "
+                "WHERE pr.publish_allowed = true "
+                "ORDER BY g.finished_at DESC"
+            )
         ).fetchall()
 
         if limit:
@@ -97,7 +101,7 @@ def stage_extract(limit: int = 0) -> int:
                 continue
 
             # The report itself may contain decisions in its replay_bundle
-            if hasattr(report, 'metadata') and report.metadata:
+            if hasattr(report, "metadata") and report.metadata:
                 bundle_dict = report.metadata.get("replay_bundle")
                 if bundle_dict:
                     opps = extractor.extract(bundle_dict)
@@ -124,6 +128,7 @@ def stage_extract(limit: int = 0) -> int:
 # Stage 2: Build V3 features
 # ============================================================================
 
+
 def stage_features(limit: int = 0) -> int:
     """Build V3 enriched features from opportunities."""
     print("=" * 60)
@@ -140,10 +145,7 @@ def stage_features(limit: int = 0) -> int:
     enriched = []
     for i, op in enumerate(opps):
         feats = extract_features(op)
-        op["v3_features"] = {
-            name: float(getattr(feats, name))
-            for name in feats.FEATURE_NAMES
-        }
+        op["v3_features"] = {name: float(getattr(feats, name)) for name in feats.FEATURE_NAMES}
         op["v3_feature_array"] = feats.to_array().tolist()
         enriched.append(op)
         if (i + 1) % 500 == 0:
@@ -161,6 +163,7 @@ def stage_features(limit: int = 0) -> int:
 # ============================================================================
 # Stage 3: Hard negative mining + pairwise labels (V4)
 # ============================================================================
+
 
 def stage_labels(limit: int = 0) -> tuple[int, int]:
     """Mine hard negatives and generate pairwise counterfactual candidates."""
@@ -203,6 +206,7 @@ def stage_labels(limit: int = 0) -> tuple[int, int]:
 # Stage 4: Build benchmark dataset (V5)
 # ============================================================================
 
+
 def stage_benchmark(limit: int = 0) -> int:
     """Build unified benchmark dataset with standardized schema."""
     print("=" * 60)
@@ -212,8 +216,14 @@ def stage_benchmark(limit: int = 0) -> int:
     opps = _load_jsonl(DATA / "opportunities_v3_features.jsonl")
     eval_gold = _load_jsonl(DATA / "eval_gold_set.jsonl") if (DATA / "eval_gold_set.jsonl").exists() else []
     eval_silver = _load_jsonl(DATA / "eval_silver_set.jsonl") if (DATA / "eval_silver_set.jsonl").exists() else []
-    hard_negatives = _load_jsonl(DATA / "hard_negative_candidates_v4.jsonl") if (DATA / "hard_negative_candidates_v4.jsonl").exists() else []
-    pairwise = _load_jsonl(DATA / "pairwise_candidates_v4.jsonl") if (DATA / "pairwise_candidates_v4.jsonl").exists() else []
+    hard_negatives = (
+        _load_jsonl(DATA / "hard_negative_candidates_v4.jsonl")
+        if (DATA / "hard_negative_candidates_v4.jsonl").exists()
+        else []
+    )
+    pairwise = (
+        _load_jsonl(DATA / "pairwise_candidates_v4.jsonl") if (DATA / "pairwise_candidates_v4.jsonl").exists() else []
+    )
 
     if limit:
         opps = opps[:limit]
@@ -261,14 +271,16 @@ def stage_benchmark(limit: int = 0) -> int:
     out_path = DATA / "benchmark_dataset_v5.jsonl"
     _save_jsonl(samples, out_path)
     print(f"  Benchmark samples: {len(samples)} → {out_path}")
-    print(f"    gold={len(gold_ids)}, silver={len(silver_ids)}, "
-          f"hard_neg={len(hard_negatives)}, pairwise={len(pairwise)}")
+    print(
+        f"    gold={len(gold_ids)}, silver={len(silver_ids)}, hard_neg={len(hard_negatives)}, pairwise={len(pairwise)}"
+    )
     return len(samples)
 
 
 # ============================================================================
 # Stage 5: Generate human review queue (V6)
 # ============================================================================
+
 
 def stage_review(limit: int = 0) -> int:
     """Generate prioritized human review queue."""
@@ -289,17 +301,19 @@ def stage_review(limit: int = 0) -> int:
     for s in samples:
         label = s.get("label", {}) if isinstance(s.get("label"), dict) else {}
         priority = _review_priority(s)
-        queue.append({
-            "sample_id": s.get("sample_id", ""),
-            "opportunity_id": s.get("opportunity_id", ""),
-            "role": s.get("role", ""),
-            "opportunity_type": s.get("opportunity_type", ""),
-            "quality": s.get("quality", "unknown"),
-            "priority_score": priority,
-            "needs_review": priority >= 0.6,
-            "review_reason": _review_reason(s, priority),
-            "labeled_at": s.get("labeled_at", ""),
-        })
+        queue.append(
+            {
+                "sample_id": s.get("sample_id", ""),
+                "opportunity_id": s.get("opportunity_id", ""),
+                "role": s.get("role", ""),
+                "opportunity_type": s.get("opportunity_type", ""),
+                "quality": s.get("quality", "unknown"),
+                "priority_score": priority,
+                "needs_review": priority >= 0.6,
+                "review_reason": _review_reason(s, priority),
+                "labeled_at": s.get("labeled_at", ""),
+            }
+        )
 
     queue.sort(key=lambda x: -x["priority_score"])
 
@@ -314,6 +328,7 @@ def stage_review(limit: int = 0) -> int:
 # ============================================================================
 # Stage 6: V7 private-context-aware scoring
 # ============================================================================
+
 
 def stage_private_ctx(limit: int = 0) -> int:
     """Run V7 private-context-aware scoring for witch_save, seer_release, etc."""
@@ -360,17 +375,16 @@ def stage_private_ctx(limit: int = 0) -> int:
 # Stage 7: Train sklearn models
 # ============================================================================
 
+
 def stage_train(limit: int = 0) -> tuple[Any, Any]:
     """Train OpportunityValueModel + DecisionQualityModel."""
     print("=" * 60)
     print("Stage 7/9: Train Scoring Models")
     print("=" * 60)
 
-    from backend.eval.scoring_models import (
-        DecisionQualityModel,
-        OpportunityValueModel,
-        extract_features,
-    )
+    from backend.eval.scoring_models import DecisionQualityModel
+    from backend.eval.scoring_models import OpportunityValueModel
+    from backend.eval.scoring_models import extract_features
 
     labeled = _load_jsonl(DATA / "labeled_opportunities.jsonl")
     opps = _load_jsonl(DATA / "opportunities.jsonl")
@@ -400,9 +414,9 @@ def stage_train(limit: int = 0) -> tuple[Any, Any]:
     # Generate pairwise training examples from BadCase-002 fixture
     pairwise_count = 0
     try:
-        from tests.test_track_b_badcase_wolf_regression import build_badcase_002_fixture
         from backend.eval.opportunity import OpportunityExtractor as OE
         from backend.eval.track_b import ReplayBundleBuilder as RBB
+        from tests.test_track_b_badcase_wolf_regression import build_badcase_002_fixture
 
         fixture_state = build_badcase_002_fixture()
         fixture_bundle = RBB().build(fixture_state)
@@ -450,6 +464,7 @@ def stage_train(limit: int = 0) -> tuple[Any, Any]:
 
         # --- Good counterexamples from CleanCase-001 ---
         from tests.test_track_b_cleancase_wolf_regression import build_cleancase_001_fixture
+
         cc_state = build_cleancase_001_fixture()
         cc_bundle = RBB().build(cc_state)
         cc_opps = OE().extract(cc_bundle)
@@ -504,8 +519,7 @@ def stage_train(limit: int = 0) -> tuple[Any, Any]:
     y_binary = np.array([int(y >= 0.5) for y in y_list])
 
     base_count = len(labeled)
-    print(f"  Training DecisionQualityModel on {len(X)} samples "
-          f"(base={base_count}, pairwise={pairwise_count})...")
+    print(f"  Training DecisionQualityModel on {len(X)} samples (base={base_count}, pairwise={pairwise_count})...")
     q_model = DecisionQualityModel()
     if len(set(y_binary)) >= 2:
         q_model.fit(X, y_binary)
@@ -553,19 +567,18 @@ def stage_train(limit: int = 0) -> tuple[Any, Any]:
 # Stage 8: Score all opportunities with trained models
 # ============================================================================
 
+
 def stage_score(limit: int = 0) -> int:
     """Score all opportunities using trained sklearn models."""
     print("=" * 60)
     print("Stage 8/9: Score with Trained Models")
     print("=" * 60)
 
-    from backend.eval.scoring_models import (
-        load_track_b_models,
-        extract_features,
-        calibrate_decision_quality,
-        compute_speech_scores,
-        calculate_process_score_v2,
-    )
+    from backend.eval.scoring_models import calculate_process_score_v2
+    from backend.eval.scoring_models import calibrate_decision_quality
+    from backend.eval.scoring_models import compute_speech_scores
+    from backend.eval.scoring_models import extract_features
+    from backend.eval.scoring_models import load_track_b_models
 
     w_model, q_model = load_track_b_models(DATA)
     print(f"  OVM: {type(w_model.model).__name__}")
@@ -609,7 +622,10 @@ def stage_score(limit: int = 0) -> int:
 
     # Process scores (legacy + calibrated)
     legacy_results, calibrated_results = calculate_process_score_v2(
-        opps, w_model, q_model, speech_scores,
+        opps,
+        w_model,
+        q_model,
+        speech_scores,
     )
 
     # Player-level aggregation
@@ -627,20 +643,24 @@ def stage_score(limit: int = 0) -> int:
         scores = by_player[pid]
         leg = next((r for r in legacy_results if r.player_id == pid), None)
         cal = next((r for r in calibrated_results if r.player_id == pid), None)
-        player_scores.append({
-            "player_id": pid,
-            "role": by_player_role.get(pid, "?"),
-            "n_opportunities": len(scores),
-            "avg_calibrated_q": round(float(np.mean(
-                [op.get("calibrated_q", 0.5) for op in opps if op["player_id"] == pid]
-            )), 4) if opps else 0.5,
-            "min_score": round(float(min(scores)), 4),
-            "max_score": round(float(max(scores)), 4),
-            "std_score": round(float(np.std(scores)), 4),
-            "speech_score": speech_scores.get(pid, 0.5),
-            "legacy_process_score": leg.process_score if leg else 0.5,
-            "calibrated_process_score": cal.process_score if cal else 0.5,
-        })
+        player_scores.append(
+            {
+                "player_id": pid,
+                "role": by_player_role.get(pid, "?"),
+                "n_opportunities": len(scores),
+                "avg_calibrated_q": round(
+                    float(np.mean([op.get("calibrated_q", 0.5) for op in opps if op["player_id"] == pid])), 4
+                )
+                if opps
+                else 0.5,
+                "min_score": round(float(min(scores)), 4),
+                "max_score": round(float(max(scores)), 4),
+                "std_score": round(float(np.std(scores)), 4),
+                "speech_score": speech_scores.get(pid, 0.5),
+                "legacy_process_score": leg.process_score if leg else 0.5,
+                "calibrated_process_score": cal.process_score if cal else 0.5,
+            }
+        )
 
     ps_path = DATA / "player_scores_trained.jsonl"
     _save_jsonl(player_scores, ps_path)
@@ -673,7 +693,8 @@ def stage_score(limit: int = 0) -> int:
             op["role_action_std_q"] = stats["std"]
             op["role_action_z"] = round((cq - stats["mean"]) / stats["std"], 4)
             op["role_action_percentile"] = round(
-                float(sum(1 for v in ra_groups[key] if v <= cq) / max(len(ra_groups[key]), 1)), 4)
+                float(sum(1 for v in ra_groups[key] if v <= cq) / max(len(ra_groups[key]), 1)), 4
+            )
             op["role_action_low_sample"] = stats["n"] < 5
         else:
             op["role_action_mean_q"] = None
@@ -702,6 +723,7 @@ def stage_score(limit: int = 0) -> int:
 # ============================================================================
 # Stage 9: Generate deliverables
 # ============================================================================
+
 
 def stage_deliverables(limit: int = 0) -> int:
     """Generate final reports and summary."""
@@ -735,8 +757,17 @@ def stage_deliverables(limit: int = 0) -> int:
     # Generate summary
     summary = {
         "pipeline_version": "unified-v1",
-        "stages_completed": ["extract", "features", "labels", "benchmark",
-                              "review", "private_ctx", "train", "score", "deliverables"],
+        "stages_completed": [
+            "extract",
+            "features",
+            "labels",
+            "benchmark",
+            "review",
+            "private_ctx",
+            "train",
+            "score",
+            "deliverables",
+        ],
         "models": {
             "opportunity_value_model": str(DATA / "opportunity_value_model.pkl"),
             "decision_quality_model": str(DATA / "decision_quality_model.pkl"),
@@ -764,6 +795,7 @@ def stage_deliverables(limit: int = 0) -> int:
 # ============================================================================
 # Orchestrator
 # ============================================================================
+
 
 def run_pipeline(
     *,
@@ -811,6 +843,7 @@ def run_pipeline(
         except Exception as e:
             print(f"  Stage '{stage}' FAILED: {e}")
             import traceback
+
             traceback.print_exc()
             results[stage] = {"error": str(e)}
 
@@ -818,7 +851,7 @@ def run_pipeline(
         print(f"  Stage '{stage}' completed in {elapsed:.1f}s\n")
 
     total = time.perf_counter() - t0
-    print(f"Pipeline complete in {total:.1f}s ({total/60:.1f}m)")
+    print(f"Pipeline complete in {total:.1f}s ({total / 60:.1f}m)")
     return results
 
 
@@ -826,15 +859,21 @@ def run_pipeline(
 # Rule-based scoring helpers (inline for self-contained pipeline)
 # ============================================================================
 
+
 def _rule_opportunity_value(opp: dict) -> float:
     """Rule-based opportunity importance."""
     op_type = opp.get("opportunity_type", "")
     game_feat = opp.get("game_features", {})
     alive = game_feat.get("alive_count", 6)
     base = {
-        "werewolf_kill": 1.0, "guard_protect": 0.8, "seer_check": 0.9,
-        "witch_save": 0.9, "witch_poison": 0.95, "hunter_shot": 0.95,
-        "vote": 0.5, "speech": 0.4,
+        "werewolf_kill": 1.0,
+        "guard_protect": 0.8,
+        "seer_check": 0.9,
+        "witch_save": 0.9,
+        "witch_poison": 0.95,
+        "hunter_shot": 0.95,
+        "vote": 0.5,
+        "speech": 0.4,
     }.get(op_type, 0.5)
     if game_feat.get("is_endgame"):
         base = min(1.0, base * 1.3)
@@ -903,18 +942,33 @@ def _mine_hard_negative(opp: dict, feats: dict) -> dict | None:
     # Vote for village when player is village
     if otype == "vote" and role in ("Seer", "Witch", "Hunter", "Guard", "Villager"):
         if target.get("target_alignment") == "village":
-            return {"opportunity_id": opp["opportunity_id"], "candidate_type": "village_voted_village",
-                    "role": role, "opportunity_type": otype, "confidence": 0.7}
+            return {
+                "opportunity_id": opp["opportunity_id"],
+                "candidate_type": "village_voted_village",
+                "role": role,
+                "opportunity_type": otype,
+                "confidence": 0.7,
+            }
 
     # Witch poison good
     if otype == "witch_poison" and target.get("target_alignment") == "village":
-        return {"opportunity_id": opp["opportunity_id"], "candidate_type": "witch_poisoned_good",
-                "role": role, "opportunity_type": otype, "confidence": 0.9}
+        return {
+            "opportunity_id": opp["opportunity_id"],
+            "candidate_type": "witch_poisoned_good",
+            "role": role,
+            "opportunity_type": otype,
+            "confidence": 0.9,
+        }
 
     # Hunter shot good
     if otype == "hunter_shot" and target.get("target_alignment") == "village":
-        return {"opportunity_id": opp["opportunity_id"], "candidate_type": "hunter_shot_good",
-                "role": role, "opportunity_type": otype, "confidence": 0.95}
+        return {
+            "opportunity_id": opp["opportunity_id"],
+            "candidate_type": "hunter_shot_good",
+            "role": role,
+            "opportunity_type": otype,
+            "confidence": 0.95,
+        }
 
     return None
 
@@ -983,6 +1037,7 @@ def _get_feature_dict(opp: dict) -> dict:
     feats = opp.get("v3_features", {})
     if not feats:
         from backend.eval.scoring_models import extract_features
+
         f = extract_features(opp)
         feats = {name: float(getattr(f, name)) for name in f.FEATURE_NAMES}
     return feats
@@ -991,6 +1046,7 @@ def _get_feature_dict(opp: dict) -> dict:
 # ============================================================================
 # JSONL helpers
 # ============================================================================
+
 
 def _load_jsonl(path: Path) -> list[dict]:
     if not path.exists():
@@ -1017,6 +1073,7 @@ def _save_jsonl(items: list[dict], path: Path) -> None:
 # ============================================================================
 # CLI
 # ============================================================================
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(

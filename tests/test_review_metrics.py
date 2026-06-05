@@ -1,33 +1,38 @@
 from __future__ import annotations
 
 import json
+
 import pytest
 
-from backend.engine.models import Alignment, EventType, GameEvent, GameState, Phase, Player, Role
-from backend.eval.report_graph import LANGGRAPH_AVAILABLE, create_report_optimizer
+from backend.engine.models import Alignment
+from backend.engine.models import EventType
+from backend.engine.models import GameEvent
+from backend.engine.models import GameState
+from backend.engine.models import Phase
+from backend.engine.models import Player
+from backend.engine.models import Role
+from backend.eval.report_graph import LANGGRAPH_AVAILABLE
 from backend.eval.report_graph import LangGraphReportOptimizer
-from backend.eval.review import (
-    CounterfactualAnalyzer,
-    FinalScoreCalculator,
-    GameMetrics,
-    LeaderboardAggregator,
-    MarkdownReportRenderer,
-    MockReviewLLM,
-    MVPSelector,
-    MetricsCalculator,
-    PlayerScore,
-    ReportEvaluator,
-    ReportGenerator,
-    ReportOptimizer,
-    ReviewBonus,
-    ReviewQualityChecker,
-    ReviewReportBuilder,
-    StrategyKnowledgeExtractor,
-    export_leaderboard,
-    export_review_report,
-    export_strategy_knowledge,
-)
-
+from backend.eval.report_graph import create_report_optimizer
+from backend.eval.review import CounterfactualAnalyzer
+from backend.eval.review import FinalScoreCalculator
+from backend.eval.review import GameMetrics
+from backend.eval.review import LeaderboardAggregator
+from backend.eval.review import MarkdownReportRenderer
+from backend.eval.review import MetricsCalculator
+from backend.eval.review import MockReviewLLM
+from backend.eval.review import MVPSelector
+from backend.eval.review import PlayerScore
+from backend.eval.review import ReportEvaluator
+from backend.eval.review import ReportGenerator
+from backend.eval.review import ReportOptimizer
+from backend.eval.review import ReviewBonus
+from backend.eval.review import ReviewQualityChecker
+from backend.eval.review import ReviewReportBuilder
+from backend.eval.review import StrategyKnowledgeExtractor
+from backend.eval.review import export_leaderboard
+from backend.eval.review import export_review_report
+from backend.eval.review import export_strategy_knowledge
 
 ALIGNMENT_BY_ROLE = {
     Role.WEREWOLF: Alignment.WOLF,
@@ -80,7 +85,9 @@ def make_speech(day: int, actor: Player, speech: str, *, last_words: bool = Fals
     )
 
 
-def make_night_action(day: int, actor: Player, action_type: str, target: Player, *, phase: Phase = Phase.NIGHT_WOLF_ACTION) -> GameEvent:
+def make_night_action(
+    day: int, actor: Player, action_type: str, target: Player, *, phase: Phase = Phase.NIGHT_WOLF_ACTION
+) -> GameEvent:
     return GameEvent.create(
         day=day,
         phase=phase,
@@ -268,10 +275,18 @@ def test_villager_hitting_wolf_scores_better_than_consecutive_good_votes() -> No
 def test_persona_role_normalized_score_is_not_raw_win_rate() -> None:
     calculator = MetricsCalculator()
     player_scores = [
-        PlayerScore("p1", "PersonaA", "persona-a", "PersonaA", "Seer", "village", 1.0, 0.9, 0.8, 0.8, 0.9, 1.0, 0.0, 82.0),
-        PlayerScore("p2", "PersonaA", "persona-a", "PersonaA", "Villager", "village", 0.0, 0.5, 0.4, 0.5, 0.5, 0.4, 0.0, 44.0),
-        PlayerScore("p3", "PersonaB", "persona-b", "PersonaB", "Seer", "village", 0.0, 0.4, 0.5, 0.5, 0.5, 0.4, 0.0, 60.0),
-        PlayerScore("p4", "PersonaB", "persona-b", "PersonaB", "Villager", "village", 1.0, 0.6, 0.6, 0.6, 0.5, 1.0, 0.0, 50.0),
+        PlayerScore(
+            "p1", "PersonaA", "persona-a", "PersonaA", "Seer", "village", 1.0, 0.9, 0.8, 0.8, 0.9, 1.0, 0.0, 82.0
+        ),
+        PlayerScore(
+            "p2", "PersonaA", "persona-a", "PersonaA", "Villager", "village", 0.0, 0.5, 0.4, 0.5, 0.5, 0.4, 0.0, 44.0
+        ),
+        PlayerScore(
+            "p3", "PersonaB", "persona-b", "PersonaB", "Seer", "village", 0.0, 0.4, 0.5, 0.5, 0.5, 0.4, 0.0, 60.0
+        ),
+        PlayerScore(
+            "p4", "PersonaB", "persona-b", "PersonaB", "Villager", "village", 1.0, 0.6, 0.6, 0.6, 0.5, 1.0, 0.0, 50.0
+        ),
     ]
 
     persona_metrics = calculator.aggregate_persona_metrics(player_scores)
@@ -385,8 +400,12 @@ def test_mvp_selection_uses_adjusted_score_and_bonus_weights() -> None:
     seer = make_player("P3", "SeerA", Role.SEER, alive=True)
     state = make_state([wolf, villager, seer], [], winner=Alignment.VILLAGE)
 
-    wolf_score = PlayerScore("P1", "WolfA", "wolf", "WolfA", "Werewolf", "wolf", 0.0, 0.9, 0.8, 0.8, 0.8, 0.2, 0.0, 74.0)
-    villager_score = PlayerScore("P2", "VillagerA", "villager", "VillagerA", "Villager", "village", 1.0, 0.7, 0.6, 0.6, 0.5, 1.0, 0.0, 76.0)
+    wolf_score = PlayerScore(
+        "P1", "WolfA", "wolf", "WolfA", "Werewolf", "wolf", 0.0, 0.9, 0.8, 0.8, 0.8, 0.2, 0.0, 74.0
+    )
+    villager_score = PlayerScore(
+        "P2", "VillagerA", "villager", "VillagerA", "Villager", "village", 1.0, 0.7, 0.6, 0.6, 0.5, 1.0, 0.0, 76.0
+    )
     seer_score = PlayerScore("P3", "SeerA", "seer", "SeerA", "Seer", "village", 1.0, 0.8, 0.8, 0.8, 0.8, 1.0, 0.0, 79.0)
     wolf_score.adjusted_final_score = 90.0
     wolf_score.impact_bonus = 10.0
@@ -650,8 +669,42 @@ def test_leaderboard_aggregator_builds_persona_leaderboard_from_game_metrics() -
         village_survival_rate=0.5,
         info_efficiency=0.8,
         player_scores=[
-            PlayerScore("p1", "PersonaA", "persona-a", "PersonaA", "Seer", "village", 1.0, 0.9, 0.8, 0.8, 0.8, 1.0, 0.0, 80.0, adjusted_final_score=84.0, impact_bonus=2.0),
-            PlayerScore("p2", "PersonaB", "persona-b", "PersonaB", "Seer", "village", 0.0, 0.5, 0.5, 0.5, 0.5, 0.4, 0.0, 60.0, adjusted_final_score=60.0, mistakes=["[critical] miss"]),
+            PlayerScore(
+                "p1",
+                "PersonaA",
+                "persona-a",
+                "PersonaA",
+                "Seer",
+                "village",
+                1.0,
+                0.9,
+                0.8,
+                0.8,
+                0.8,
+                1.0,
+                0.0,
+                80.0,
+                adjusted_final_score=84.0,
+                impact_bonus=2.0,
+            ),
+            PlayerScore(
+                "p2",
+                "PersonaB",
+                "persona-b",
+                "PersonaB",
+                "Seer",
+                "village",
+                0.0,
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.4,
+                0.0,
+                60.0,
+                adjusted_final_score=60.0,
+                mistakes=["[critical] miss"],
+            ),
         ],
         metadata={"strategy_version": "v1"},
     )
@@ -664,8 +717,40 @@ def test_leaderboard_aggregator_builds_persona_leaderboard_from_game_metrics() -
         village_survival_rate=0.5,
         info_efficiency=0.8,
         player_scores=[
-            PlayerScore("p3", "PersonaA", "persona-a", "PersonaA", "Villager", "village", 0.0, 0.5, 0.4, 0.5, 0.5, 0.4, 0.0, 44.0, adjusted_final_score=50.0),
-            PlayerScore("p4", "PersonaB", "persona-b", "PersonaB", "Villager", "village", 1.0, 0.6, 0.6, 0.6, 0.5, 1.0, 0.0, 50.0, adjusted_final_score=58.0),
+            PlayerScore(
+                "p3",
+                "PersonaA",
+                "persona-a",
+                "PersonaA",
+                "Villager",
+                "village",
+                0.0,
+                0.5,
+                0.4,
+                0.5,
+                0.5,
+                0.4,
+                0.0,
+                44.0,
+                adjusted_final_score=50.0,
+            ),
+            PlayerScore(
+                "p4",
+                "PersonaB",
+                "persona-b",
+                "PersonaB",
+                "Villager",
+                "village",
+                1.0,
+                0.6,
+                0.6,
+                0.6,
+                0.5,
+                1.0,
+                0.0,
+                50.0,
+                adjusted_final_score=58.0,
+            ),
         ],
         metadata={"strategy_version": "v2"},
     )
@@ -690,8 +775,40 @@ def test_leaderboard_aggregator_builds_role_leaderboard_sorted_by_adjusted_score
         village_survival_rate=0.5,
         info_efficiency=0.8,
         player_scores=[
-            PlayerScore("p1", "A", "a", "A", "Seer", "village", 1.0, 0.9, 0.8, 0.8, 0.8, 1.0, 0.0, 80.0, adjusted_final_score=85.0),
-            PlayerScore("p2", "B", "b", "B", "Villager", "village", 1.0, 0.6, 0.6, 0.6, 0.5, 1.0, 0.0, 55.0, adjusted_final_score=60.0),
+            PlayerScore(
+                "p1",
+                "A",
+                "a",
+                "A",
+                "Seer",
+                "village",
+                1.0,
+                0.9,
+                0.8,
+                0.8,
+                0.8,
+                1.0,
+                0.0,
+                80.0,
+                adjusted_final_score=85.0,
+            ),
+            PlayerScore(
+                "p2",
+                "B",
+                "b",
+                "B",
+                "Villager",
+                "village",
+                1.0,
+                0.6,
+                0.6,
+                0.6,
+                0.5,
+                1.0,
+                0.0,
+                55.0,
+                adjusted_final_score=60.0,
+            ),
         ],
     )
 
@@ -745,20 +862,38 @@ def test_leaderboard_aggregator_builds_version_leaderboard_from_review_reports()
 
 
 def test_leaderboard_export_is_json_serializable(tmp_path) -> None:
-    result = LeaderboardAggregator().aggregate_persona([
-        GameMetrics(
-            game_id="g4",
-            winner="village",
-            total_days=1,
-            total_events=1,
-            wolf_elimination_rate=1.0,
-            village_survival_rate=1.0,
-            info_efficiency=1.0,
-            player_scores=[
-                PlayerScore("p1", "PersonaA", "persona-a", "PersonaA", "Villager", "village", 1.0, 0.6, 0.7, 0.6, 0.5, 1.0, 0.0, 65.0, adjusted_final_score=70.0),
-            ],
-        )
-    ])
+    result = LeaderboardAggregator().aggregate_persona(
+        [
+            GameMetrics(
+                game_id="g4",
+                winner="village",
+                total_days=1,
+                total_events=1,
+                wolf_elimination_rate=1.0,
+                village_survival_rate=1.0,
+                info_efficiency=1.0,
+                player_scores=[
+                    PlayerScore(
+                        "p1",
+                        "PersonaA",
+                        "persona-a",
+                        "PersonaA",
+                        "Villager",
+                        "village",
+                        1.0,
+                        0.6,
+                        0.7,
+                        0.6,
+                        0.5,
+                        1.0,
+                        0.0,
+                        65.0,
+                        adjusted_final_score=70.0,
+                    ),
+                ],
+            )
+        ]
+    )
     path = tmp_path / "leaderboard.json"
     payload = export_leaderboard(result, path)
 
@@ -849,10 +984,7 @@ def test_strategy_knowledge_is_sanitized_and_safe_for_agent(tmp_path) -> None:
     report = ReviewReportBuilder().build(state, MetricsCalculator().compute(state))
 
     knowledge = StrategyKnowledgeExtractor().extract(report)
-    text_blob = " ".join(
-        f"{item.trigger_condition} {item.suggestion} {item.evidence_summary}"
-        for item in knowledge
-    )
+    text_blob = " ".join(f"{item.trigger_condition} {item.suggestion} {item.evidence_summary}" for item in knowledge)
     assert "SeerA" not in text_blob
     assert "WolfA" not in text_blob
     assert "VillagerA" not in text_blob
@@ -926,7 +1058,10 @@ def test_reusable_strategy_suggestions_are_desensitized() -> None:
     reusable = [item for item in report.strategy_suggestions if item.metadata.get("scope") == "reusable"]
     assert reusable
     assert all(item.metadata.get("safe_for_agent") is True for item in reusable)
-    assert all("WolfA" not in item.suggestion and "SeerA" not in item.suggestion and "VillagerA" not in item.suggestion for item in reusable)
+    assert all(
+        "WolfA" not in item.suggestion and "SeerA" not in item.suggestion and "VillagerA" not in item.suggestion
+        for item in reusable
+    )
 
 
 def test_bonus_conflicts_do_not_generate_generic_seer_release_advice() -> None:
@@ -1160,7 +1295,9 @@ def test_report_optimizer_retries_after_first_failure() -> None:
             return self.good.render(report)
 
     generator = FlakyGenerator()
-    optimizer = ReportOptimizer(generator=generator, evaluator=ReportEvaluator(), quality_checker=ReviewQualityChecker())
+    optimizer = ReportOptimizer(
+        generator=generator, evaluator=ReportEvaluator(), quality_checker=ReviewQualityChecker()
+    )
     state_result = optimizer.optimize(report, max_iterations=2)
     assert generator.calls == 2
     assert state_result.iteration == 2
@@ -1187,7 +1324,9 @@ def test_report_optimizer_respects_max_iterations() -> None:
             return "# bad\nSeer\nglobal_mvp\n"
 
     generator = BadGenerator()
-    optimizer = ReportOptimizer(generator=generator, evaluator=ReportEvaluator(), quality_checker=ReviewQualityChecker())
+    optimizer = ReportOptimizer(
+        generator=generator, evaluator=ReportEvaluator(), quality_checker=ReviewQualityChecker()
+    )
     state_result = optimizer.optimize(report, max_iterations=2)
     assert generator.calls == 2
     assert state_result.iteration == 2
@@ -1214,7 +1353,9 @@ def test_final_quality_gate_is_called() -> None:
             return super().check(report, markdown)
 
     checker = CountingChecker()
-    optimizer = ReportOptimizer(generator=ReportGenerator(review_llm=MockReviewLLM()), evaluator=ReportEvaluator(), quality_checker=checker)
+    optimizer = ReportOptimizer(
+        generator=ReportGenerator(review_llm=MockReviewLLM()), evaluator=ReportEvaluator(), quality_checker=checker
+    )
     optimizer.optimize(report, max_iterations=2)
     assert checker.calls == 1
 
@@ -1335,7 +1476,10 @@ def test_b_counterfactual_soundness_marks_info_release_estimated() -> None:
 
     assert info_cases
     assert all(case.confidence < 1.0 for case in info_cases)
-    assert all("expected" in case.expected_effect.lower() or "would likely" in case.expected_effect.lower() for case in info_cases)
+    assert all(
+        "expected" in case.expected_effect.lower() or "would likely" in case.expected_effect.lower()
+        for case in info_cases
+    )
 
 
 def test_b_strategy_suggestions_are_grounded_in_review_items() -> None:
@@ -1355,7 +1499,9 @@ def test_b_strategy_suggestions_are_grounded_in_review_items() -> None:
     assert report.strategy_suggestions
     assert all(item.source for item in report.strategy_suggestions)
     assert all(item.metadata.get("evidence_summary") for item in report.strategy_suggestions)
-    assert any(item.metadata.get("source_type") in {"bad_case", "counterfactual"} for item in report.strategy_suggestions)
+    assert any(
+        item.metadata.get("source_type") in {"bad_case", "counterfactual"} for item in report.strategy_suggestions
+    )
 
 
 def test_create_report_optimizer_falls_back_when_langgraph_unavailable() -> None:
@@ -1395,7 +1541,9 @@ def test_langgraph_report_optimizer_matches_plain_optimizer_core_output() -> Non
     )
     report = ReviewReportBuilder().build(state, MetricsCalculator().compute(state))
     plain = ReportOptimizer(generator=ReportGenerator(review_llm=MockReviewLLM())).optimize(report, max_iterations=2)
-    graph = LangGraphReportOptimizer(generator=ReportGenerator(review_llm=MockReviewLLM())).optimize(report, max_iterations=2)
+    graph = LangGraphReportOptimizer(generator=ReportGenerator(review_llm=MockReviewLLM())).optimize(
+        report, max_iterations=2
+    )
     assert graph.quality_passed == plain.quality_passed
     assert graph.final_markdown == plain.final_markdown
 
