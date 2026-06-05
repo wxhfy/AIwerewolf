@@ -110,6 +110,69 @@ def list_personas() -> list[dict[str, Any]]:
         db.close()
 
 
+def create_persona(data: dict[str, Any]) -> dict[str, Any]:
+    """Create a new persona in the DB. Raises ValueError on duplicate name."""
+    db = SessionLocal()
+    try:
+        name = str(data.get("name", "")).strip()
+        if not name:
+            raise ValueError("name is required")
+        existing = db.query(PersonaRow).filter(PersonaRow.name == name).first()
+        if existing:
+            raise ValueError(f"Persona '{name}' already exists")
+        row = PersonaRow(name=name, source="manual")
+        _apply_persona_fields(row, data)
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+        return _row_to_dict(row)
+    finally:
+        db.close()
+
+
+def update_persona(name: str, data: dict[str, Any]) -> dict[str, Any]:
+    """Update an existing persona. Raises KeyError if not found."""
+    db = SessionLocal()
+    try:
+        row = db.query(PersonaRow).filter(PersonaRow.name == name).first()
+        if row is None:
+            raise KeyError(f"Persona '{name}' not found")
+        _apply_persona_fields(row, data)
+        # Regenerate system_prompt when core fields change
+        entry = _row_to_dict(row)
+        persona = _hydrate_persona(entry)
+        row.system_prompt = persona.system_prompt
+        db.commit()
+        db.refresh(row)
+        return _row_to_dict(row)
+    finally:
+        db.close()
+
+
+def _apply_persona_fields(row: PersonaRow, data: dict[str, Any]) -> None:
+    """Apply persona field values from a dict to a DB row."""
+    for field_name in _PERSONA_FIELDS:
+        if field_name in data:
+            value = data[field_name]
+            if field_name in ("voice_rules", "relationships", "trigger_topics"):
+                value = list(value) if isinstance(value, (list, tuple)) else []
+            setattr(row, field_name, value)
+    # Non-field extras
+    if "name" in data and data["name"] != row.name:
+        row.name = str(data["name"]).strip()
+    for scalar in ("mbti", "gender", "basic_info", "style_label", "vocabulary_style",
+                   "speech_length_habit", "reasoning_style", "social_habit",
+                   "humor_style", "pressure_style", "uncertainty_style",
+                   "mistake_pattern", "logic_style", "werewolf_experience", "system_prompt"):
+        if scalar in data:
+            setattr(row, scalar, str(data[scalar] or ""))
+    if "age" in data:
+        try:
+            row.age = int(data["age"])
+        except (ValueError, TypeError):
+            row.age = 0
+
+
 def sample_personas(count: int, seed: int | None = None) -> list[dict[str, Any]]:
     """Randomly sample `count` distinct personas from the DB.
 
