@@ -11,7 +11,7 @@ __all__ = ["DeepSeekClient", "create_client", "load_env_file"]
 
 
 _DEFAULT_DOUBAO_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3"
-_DEFAULT_DOUBAO_MODEL = "ep-20260514115354-k4jz4"
+_DEFAULT_DOUBAO_MODEL = "Doubao-Seed-2.0-pro"
 _DEFAULT_ARK_BASE_URL = "https://ark.cn-beijing.volces.com/api/coding/v1"
 _DEFAULT_PROVIDER = "dsv4flash"
 

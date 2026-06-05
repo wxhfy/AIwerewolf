@@ -170,16 +170,15 @@ class AgentLoop:
         self._player_id = player_id
         self._retrieval_policy = retrieval_policy
         self._temperature = temperature
-        # Native function calling via bind_tools is supported by the LLM wrapper
-        # but currently disabled by default. Direct API tests confirm tools work,
-        # but AgentLoop's message construction triggers a provider-specific edge
-        # case with the doubao endpoint. Text-mode tool calling (TOOL: / ARGUMENTS:)
-        # is production-reliable across all providers.
-        # Set AGENT_USE_NATIVE_FC=1 to enable native function calling.
+        # Native function calling via llm.bind_tools().
+        # DeepSeek models (dsv4flash provider) support OpenAI-compatible tool calling.
+        # Set AGENT_USE_NATIVE_FC=0 to disable and fall back to text-mode parsing.
         import os as _os
+        _native_fc_env = _os.getenv("AGENT_USE_NATIVE_FC", "").strip()
+        _native_fc_disabled = _native_fc_env == "0" or _native_fc_env.lower() == "false"
         self._supports_bind_tools = (
             hasattr(llm, 'bind_tools')
-            and _os.getenv("AGENT_USE_NATIVE_FC", "").strip() == "1"
+            and not _native_fc_disabled
         )
 
     # ================================================================
