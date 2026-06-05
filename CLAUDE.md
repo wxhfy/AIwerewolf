@@ -65,53 +65,78 @@ Agent 相关维度合计 70%，工程相关维度合计 30%。
 
 ## 技术栈
 
-- **后端**: Python（FastAPI + asyncio）+ WebSocket
-- **前端**: Next.js + TypeScript + Tailwind CSS
-- **AI**: LLM API 多模型接入（MiniMax / Anthropic / DeepSeek）
+- **后端**: Python 3.12 + FastAPI + WebSocket
+- **前端**: Next.js 15 + React 19 + Tailwind CSS
+- **数据库**: PostgreSQL 15 (Docker @ 127.0.0.1:5433, database: werewolf)
+- **LLM**: 火山方舟 doubao-seed-2.0-pro (ep-20260514115354-k4jz4) / MiniMax
+- **检索**: BM25 + 关键词倒排索引 (GPU-free)
 - **配置**: YAML
 
 ## 项目结构
 
 ```
 AIwerewolf/
-├── CLAUDE.md                  # 项目速查（本文档）
-├── README.md                  # 项目说明
+├── CLAUDE.md                      # 项目速查（本文档）
+├── README.md                      # 项目说明
 ├── docs/
-│   ├── architecture_scoring_review.md         # 架构评审
-│   ├── architecture_improvement_blueprint_v2.md # v2 改进蓝图
-│   └── solution_blueprint.md                  # 解决方案
+│   ├── ARCHITECTURE.md            # ★ 系统架构总览（给评委）
+│   ├── DATA_FLOW.md               # ★ 端到端数据流 & 证据链
+│   ├── backend_acceptance_criteria.md  # 后端验收标准
+│   ├── DEVELOPMENT_ISSUES.md      # 开发问题追踪 (50+ 条)
+│   ├── PROJECT_STATUS.md          # 项目状态速览
+│   ├── DOC_INDEX.md               # 文档索引
+│   └── archive/                   # 历史设计文档 (34 篇)
 ├── configs/
-│   ├── rule_variant_standard.yaml             # 标准规则配置
-│   ├── demo.yaml                              # 演示对局配置
-│   └── strategy_library.yaml                  # 策略知识库
+│   ├── rule_variant_standard.yaml # 标准规则配置
+│   ├── demo.yaml                  # 演示对局配置
+│   └── strategy_library.yaml      # 策略知识库 (187 条)
 ├── backend/
-│   ├── engine/            # 游戏引擎（Phase/Visibility/ActionValidator/GameState）
+│   ├── engine/            # 游戏引擎
+│   │   ├── game.py              # WerewolfGame 主循环 (1721 行)
+│   │   ├── visibility.py        # PlayerView 信息隔离
+│   │   ├── models.py            # GameState, Player, Phase, Decision
+│   │   └── roles/               # RoleRegistry (60+ 角色)
 │   ├── agents/
 │   │   ├── cognitive/     # ★ 主 Agent — Observe-Think-Act 架构
-│   │   │   ├── strategies/ # 角色策略卡（Seer/Witch/Hunter/Guard/Villager/Werewolf）
-│   │   │   ├── agent.py, pipeline.py, observe.py, memory.py
-│   │   │   ├── profiles.py, prompts.py, humanization.py
-│   │   │   ├── retrieval.py, retrieval_prod.py, tools.py
-│   │   │   ├── reflect.py, repository.py, factory.py
-│   │   │   └── wolf_team.py    # 狼队安全协调（WolfTeamView）
+│   │   │   ├── agent.py          # CognitiveAgent (871 行)
+│   │   │   ├── agent_loop.py     # AgentLoop (max 3 tool-call iterations)
+│   │   │   ├── observe.py        # Observation + BeliefTracker
+│   │   │   ├── memory.py         # 短期/长期记忆
+│   │   │   ├── profiles.py       # MBTI + Role Profile
+│   │   │   ├── prompts.py        # Prompt 构造 (3-layer)
+│   │   │   ├── humanization.py   # 人格化发言
+│   │   │   ├── retrieval_prod.py # BM25 + 倒排索引 + 4-filter 安全管线
+│   │   │   ├── tools.py          # 6 个工具函数
+│   │   │   ├── reflect.py        # 赛后反思
+│   │   │   ├── wolf_team.py      # 狼队安全协调 (WolfTeamView)
+│   │   │   └── repository.py     # 知识仓储存取
 │   │   ├── heuristic.py    # 启发式 Agent（降级兜底）
-│   │   ├── llm_agent.py    # 旧 LLM Agent（保留兼容）
 │   │   ├── human_agent.py  # 真人玩家 Agent
 │   │   └── characters.py   # Character 系统（32 个具名角色）
 │   ├── eval/               # ★ 评测系统（Track B + Track C）
-│   │   ├── review.py       # 核心评审（MetricsCalculator/CounterfactualAnalyzer）
-│   │   ├── track_b.py      # Track B 发布管道
-│   │   ├── evolution.py    # Track C 自进化
-│   │   ├── llm_judge.py    # LLM Judge Panel（三法官 + Critic）
-│   │   ├── per_step_scorer.py  # 三级评分级联
-│   │   ├── knowledge_confidence.py  # 知识可信度 + 权限 + 适用条件
-│   │   └── types.py        # 共享数据类型（含 DecisionTrace）
+│   │   ├── per_step_scorer.py    # 三级评分级联 (Tier1→Tier2→Tier3)
+│   │   ├── llm_judge.py          # LLM Judge Panel（三法官 + Critic）
+│   │   ├── review.py             # 复盘系统 (CounterfactualAnalyzer)
+│   │   ├── track_b.py            # Track B 发布管道
+│   │   ├── post_game.py          # 赛后评分入口
+│   │   ├── knowledge_abstractor.py    # 知识提取 (Track C)
+│   │   ├── knowledge_confidence.py    # L0-L4 知识可信度 + 4-filter
+│   │   ├── evolution.py          # 知识生命周期管理
+│   │   └── types.py              # 共享数据类型
 │   ├── protocols/          # 通信协议（Room/Snapshot/WebSocket）
-│   ├── db/                 # 数据库（PostgreSQL/SQLite）
-│   └── llm/                # LLM 客户端
-├── frontend/               # 观战 UI
+│   ├── db/                 # 数据库
+│   │   ├── models.py             # ORM (21 张表, SQLAlchemy)
+│   │   ├── database.py           # 连接池 (10+10, pool_pre_ping)
+│   │   └── persist.py            # 持久化层
+│   ├── llm/                # LLM 客户端
+│   └── ops/                # 运维
+│       └── preflight.py          # 7 项启动预检
+├── frontend/               # Next.js 观战 UI
 ├── tests/                  # 测试
-├── scripts/                # 评测/训练/实验脚本
+├── scripts/                # 实验/验证脚本
+│   ├── run_backend_full_strict.py # 全量严格验证
+│   ├── multi_tier_experiment.py   # 多 Tier 对比实验
+│   └── verify_visibility_strict.py # 信息隔离验证
 └── references/             # 克隆的参考仓库（gitignored）
 ```
 
@@ -121,14 +146,49 @@ AIwerewolf/
 
 接到任务后：
 1. 读本文件（CLAUDE.md）了解项目目标与评判标准
-2. 读 `docs/architecture_improvement_blueprint_v2.md` 了解当前架构蓝图
-3. 动代码前检查对应模块的现有实现，避免重复
-4. 跨模块改动先列计划
+2. 读 `docs/ARCHITECTURE.md` 了解系统架构
+3. 读 `docs/DATA_FLOW.md` 了解端到端数据流
+4. 动代码前检查对应模块的现有实现，避免重复
+5. 跨模块改动先列计划
 
 **铁律**：
 - 每个非平凡改动必须有可量化的验证手段（测试/指标/对比实验）
 - 不引入与现有架构冲突的重复实现
 - 改动效果要能量化：对局完成率、信息泄露测试通过数、降级率、评测分数等
+
+---
+
+## 日常开发命令
+
+```bash
+# 启动预检（7 项：imports/db/llm/strategies/pool）
+python -m backend.ops.preflight
+
+# 全量严格验证（DB → LLM → 对局 → 评分 → 知识 → 报告）
+python scripts/run_backend_full_strict.py
+
+# 完整 LLM 流程（含 Track B/C）
+python scripts/run_full_llm_pipeline.py
+
+# 多 Tier 对比实验
+python scripts/multi_tier_experiment.py
+
+# 信息隔离验证（92 项边界检查）
+python scripts/verify_visibility_strict.py
+
+# 全量测试
+pytest tests/ -q
+
+# 启动后端
+make dev
+
+# 启动前端
+cd frontend && npm run dev
+
+# 数据库连接
+psql -h 127.0.0.1 -p 5433 -U werewolf -d werewolf
+# password: wolf_secret_2026
+```
 
 ---
 
@@ -143,9 +203,37 @@ AIwerewolf/
 基础：Villager / Werewolf / Seer / Witch / Hunter / Guard
 扩展：Idiot / WhiteWolfKing / Cupid / BigBadWolf / WolfCub 等 60+
 
+### Prompt 三层架构（铁律！）
+```
+Layer 1: Persona (MBTI + 性格 + 说话风格) → 只控制"怎么说"
+Layer 2: Role Identity (身份 + 能力边界 + 胜利条件) → 只定义"我是谁"
+Layer 3: Strategy + Tools (检索到的策略 + 6 工具) → 只教"怎么玩"
+```
+**三层物理分离，Persona/Role 层不得包含任何玩法指导。**
+策略知识只能从 Layer 3 进入 Prompt。
+
+### 4-Filter 安全管线
+```
+检索 → confidence_allowed (L0-L3 only)
+     → visibility_allowed (public/self/wolf/postgame)
+     → leaks_current_game_private_info (no current-game leak)
+     → applicability_matches (role/phase/rule/player_count)
+     → top_k result
+```
+
+### 知识生命周期
+```
+candidate → active → deprecated
+     ↑                    │
+     └── promote.py ──────┘
+     └── usage feedback ──┘ (3+ uses 全无效 → deprecated)
+```
+
 ### 开发约定
 - Python 代码使用 type hints
 - 配置使用 YAML 格式
 - 事件日志使用结构化 JSON
 - 每个 Agent 只能看到其角色允许的信息（信息隔离）
 - 参考仓库代码不直接复制，理解后重写
+- 数据库变更写入 `backend/db/migrations/` 目录
+- 新策略追加到 `configs/strategy_library.yaml`（单条 ≤ 60 字符）
