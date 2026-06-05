@@ -69,7 +69,7 @@ def run_post_game_scoring(game_state: Any, game_id: str) -> int:
             "phase": str(row[3] or ""),
             "target_id": str(pa.get("target_id", "") or ""),
             "action_type": str(pa.get("action_type", "") or ""),
-            "raw_text": str(row[5] or ""),
+            "raw_text": str(row[5] or pa.get("speech", "") or ""),
             "vote_weight": float(pa.get("vote_weight", 1.0) or 1.0),
         })
 
