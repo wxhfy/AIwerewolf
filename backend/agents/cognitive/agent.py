@@ -349,9 +349,17 @@ class CognitiveAgent:
         result = self._pipeline.direct_call(prompt)
         parsed = parse_json_target(result)
         target_id = self._resolve_target(parsed["target"])
-        if not target_id and self._strict_no_fallback:
-            raise RuntimeError(f"LLM returned unresolved shoot target: {parsed['target']!r}")
-        target_id = target_id or (self._view.players[0]["id"] if self._view.players else None)
+        if not target_id:
+            parsed_target = str(parsed.get("target", "")).strip().lower()
+            is_explicit_no_action = parsed_target in ("none", "null", "无", "空", "弃票", "弃权", "abstain", "pass", "跳过", "不行动")
+            if self._strict_no_fallback and not is_explicit_no_action:
+                raise RuntimeError(f"LLM returned unresolved shoot target: {parsed['target']!r}")
+            # Fallback: pick first alive player (excluding self)
+            for p in self._view.players:
+                if p.get("alive") and p.get("id") != self.player_id:
+                    target_id = p.get("id", "")
+                    break
+            target_id = target_id or (self._view.players[0]["id"] if self._view.players else None)
         return self._decision(ActionType.SHOOT, target_id=target_id, reasoning=parsed["reasoning"])
 
     def boom(self, targets: list[str] | None = None) -> Decision:

@@ -361,7 +361,7 @@ class AgentLoop:
                     pass
             # Use raw text as speech content
             if self._action_type == "speech":
-                logger.warning(f"Using raw response as speech (no DECISION format found)")
+                logger.warning("Using raw response as speech (no DECISION format found)")
                 return {"speech": last_text[:500], "reasoning": "fallback from raw response"}
 
         raise RuntimeError(
