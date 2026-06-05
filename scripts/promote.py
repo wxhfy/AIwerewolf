@@ -25,7 +25,8 @@ from typing import Any
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-DB_URL = "postgresql://werewolf:wolf_secret_2026@127.0.0.1:5433/werewolf"
+from backend.db.database import DEFAULT_DB_URL
+DB_URL = DEFAULT_DB_URL
 
 # --- Quality mode ---
 def promote_by_quality(conn, quality_threshold: float, deprecation_threshold: float, dry_run: bool) -> dict:

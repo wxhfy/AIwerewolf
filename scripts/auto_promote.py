@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# DEPRECATED: Use scripts/promote.py --mode quality instead. Kept for reference.
 """Auto-promote candidate strategies to active via clustering + quality filter.
 
 Cluster candidates by (role, doc_type), pick Top-1 per cluster meeting

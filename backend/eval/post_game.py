@@ -12,7 +12,7 @@ from typing import Any, Dict, List
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_CONN = "postgresql://werewolf:wolf_secret_2026@127.0.0.1:5433/werewolf"
+from backend.db.database import DEFAULT_DB_URL as _DEFAULT_CONN
 
 
 def run_post_game_scoring(game_state: Any, game_id: str) -> int:
@@ -55,6 +55,28 @@ def run_post_game_scoring(game_state: Any, game_id: str) -> int:
         logger.info(f"No decisions found for game {game_id}, skipping scoring")
         return 0
 
+    # 2.5. Check if this game already has per_step lessons (Track B may have scored it)
+    import json as _check_json
+    try:
+        check_conn = psycopg2.connect(_DEFAULT_CONN)
+        check_conn.set_isolation_level(0)
+        check_cur = check_conn.cursor()
+        check_cur.execute(
+            "SELECT COUNT(*) FROM strategy_knowledge_docs WHERE source_report_ids @> %s::jsonb",
+            (_check_json.dumps([game_id]),),
+        )
+        existing = int(check_cur.fetchone()[0] or 0)
+        check_cur.close()
+        check_conn.close()
+        if existing > 0:
+            logger.info(
+                f"Game {game_id} already has {existing} per_step lessons "
+                f"(from Track B), skipping post_game scoring"
+            )
+            return 0
+    except Exception:
+        logger.debug(f"Could not check existing lessons for game {game_id}, continuing", exc_info=True)
+
     # 3. Build decision dicts for scoring
     decision_dicts: list[dict] = []
     for row in rows:
@@ -92,16 +114,18 @@ def run_post_game_scoring(game_state: Any, game_id: str) -> int:
             )
         else:
             logger.warning("Tier 2/3 disabled: LLM client unavailable: %s", getattr(llm_client, "provider", "unknown"))
-            logger.info(
+            logger.warning(
                 f"Post-game scoring tiers: Tier1=deterministic, "
                 f"Tier2=light_llm (disabled), Tier3=heavy_llm (disabled)"
             )
     except Exception as e:
         logger.warning(f"Tier 2/3 disabled: LLM client unavailable: {e}")
-        logger.info("Post-game scoring tiers: Tier1=deterministic, Tier2=light_llm (disabled), Tier3=heavy_llm (disabled)")
+        logger.warning("Post-game scoring tiers: Tier1=deterministic, Tier2=light_llm (disabled), Tier3=heavy_llm (disabled)")
 
     # 6. Run PerStepScorer
     scorer = PerStepScorer(llm_client=llm_client)
+    if not light_llm:
+        scorer._tiers_disabled = True  # signal for downstream consumers
     scores = scorer.score_all(decision_dicts, state_dict, speech_acts,
                               light_llm=light_llm, heavy_llm=heavy_llm)
 

@@ -1,4 +1,15 @@
-"""Track C: strategy-memory evolution loop built on approved Track B reviews."""
+"""Track C: strategy-memory evolution loop built on approved Track B reviews.
+
+Authoritative knowledge lifecycle (single source of truth):
+  1. promote_candidates():  quality_score >= 0.85 → active, < 0.60 → deprecated
+     Only operates on docs with status="candidate". Does NOT override
+     deprecations from update_usage() — a doc flagged as harmful by usage
+     feedback stays deprecated regardless of quality_score.
+  2. update_usage():        failure >= 3 AND success == 0 → deprecated
+     Based on actual agent usage feedback. Only triggers after >= 3 usages.
+  3. decay_confidence() (in knowledge_confidence.py): kept for future use,
+     not wired into this store — update_usage() handles usage-based decay.
+"""
 
 from __future__ import annotations
 
@@ -1103,7 +1114,18 @@ class StrategyKnowledgeStore:
             return
         success = doc.success_count + (1 if helpful else 0)
         failure = doc.failure_count + (0 if helpful else 1)
-        status = "deprecated" if failure >= 3 and success == 0 else doc.status
+        total_uses = success + failure
+        # Only deprecate on usage feedback when: enough data (>=3 uses) AND
+        # all uses were unhelpful AND not already active with high quality_score.
+        # Prevents premature deprecation from flukes and avoids overriding
+        # quality-based promotions.
+        if failure >= 3 and success == 0 and total_uses >= 3:
+            if doc.quality_score < 0.85 or doc.status != "active":
+                status = "deprecated"
+            else:
+                status = doc.status  # active + high-quality: keep active
+        else:
+            status = doc.status
         quality = self._recompute_quality(doc, success, failure)
         self.docs[doc_id] = replace(
             doc,
@@ -1180,7 +1202,13 @@ class StrategyKnowledgeStore:
                 row.success_count = doc.success_count
                 row.failure_count = doc.failure_count
                 row.status = doc.status
-                row.tags = list(doc.tags)
+                # H6: Tag docs with TIER_EXPERIMENT_ID for tier isolation in
+                # multi-tier experiments. Retrieval layer filters by this tag.
+                tags = list(doc.tags)
+                tier_exp_id = os.getenv("TIER_EXPERIMENT_ID", "")
+                if tier_exp_id and tier_exp_id not in tags:
+                    tags.append(tier_exp_id)
+                row.tags = tags
                 saved += 1
             db.commit()
         finally:
@@ -1926,6 +1954,10 @@ def promote_candidates(
     skipped = 0
     for doc in list(store.docs.values()):
         if doc.status != "candidate":
+            continue
+        # Skip candidates that were previously deprecated by update_usage()
+        # (usage-based deprecation takes precedence over quality thresholds)
+        if doc.failure_count > 2 and doc.success_count == 0:
             continue
         if doc.quality_score >= quality_threshold:
             if not dry_run:

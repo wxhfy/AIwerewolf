@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# DEPRECATED: Use scripts/promote.py --mode quality instead. Kept for reference.
 """Candidate review pipeline: promote high-quality candidates to active,
 deprecate low-quality ones, deduplicate near-identical strategies, and print
 a structured report.

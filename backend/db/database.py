@@ -17,8 +17,8 @@ DATABASE_URL = os.getenv("DATABASE_URL", "")
 if DATABASE_URL:
     # PostgreSQL (Supabase / cloud / local pg)
     SQLALCHEMY_DATABASE_URL = DATABASE_URL
-    _pool_size = int(os.getenv("DB_POOL_SIZE", "5"))
-    _max_overflow = int(os.getenv("DB_MAX_OVERFLOW", "5"))
+    _pool_size = int(os.getenv("DB_POOL_SIZE", "10"))
+    _max_overflow = int(os.getenv("DB_MAX_OVERFLOW", "10"))
     engine = create_engine(
         SQLALCHEMY_DATABASE_URL,
         pool_pre_ping=True,
@@ -36,7 +36,15 @@ else:
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
+DEFAULT_DB_URL = "postgresql://werewolf:wolf_secret_2026@127.0.0.1:5433/werewolf"
+
+_db_initialized = False
+
+
 def init_db() -> None:
+    global _db_initialized
+    if _db_initialized:
+        return
     if os.getenv("REQUIRE_DB", "").lower() == "true":
         try:
             import psycopg2
@@ -54,6 +62,7 @@ def init_db() -> None:
     except Exception:
         # Seeding is best-effort — never block startup on it.
         pass
+    _db_initialized = True
 
 
 def get_db() -> Session:

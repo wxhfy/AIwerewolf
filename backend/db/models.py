@@ -146,6 +146,7 @@ class AgentDecision(Base):
     cost_usd = Column(Float, nullable=True, comment="Estimated USD cost for this LLM call")
     model_name = Column(String, nullable=True, comment="LLM model used (e.g. doubao-seed-2.0-pro)")
     provider = Column(String, nullable=True, comment="LLM provider (e.g. doubao, deepseek)")
+    metadata = Column(JSON, nullable=True, default=dict, comment="AgentDecision metadata dict (tool traces, strategy IDs)")
 
     game = relationship("Game", back_populates="decisions")
 
@@ -493,10 +494,10 @@ class KnowledgeUsageFeedback(Base):
     __tablename__ = "knowledge_usage_feedback"
 
     id = Column(String, primary_key=True, default=_uuid)
-    game_id = Column(String, nullable=False, index=True)
+    game_id = Column(String, ForeignKey("games.id"), nullable=False, index=True)
     decision_id = Column(String, nullable=True, index=True)
-    player_id = Column(String, nullable=False, index=True)
-    knowledge_doc_id = Column(String, nullable=False, index=True)
+    player_id = Column(String, ForeignKey("players.id"), nullable=False, index=True)
+    knowledge_doc_id = Column(String, ForeignKey("strategy_knowledge_docs.id"), nullable=False, index=True)
     retrieved = Column(Boolean, default=True)
     used = Column(Boolean, default=False)
     decision_outcome = Column(String, default="")

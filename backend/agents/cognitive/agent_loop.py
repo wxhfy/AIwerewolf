@@ -39,6 +39,8 @@ from backend.agents.cognitive.tools import create_tools
 logger = logging.getLogger(__name__)
 
 MAX_ITERATIONS = 3
+import threading as _threading
+_STRATEGY_LOCK = _threading.Lock()
 _TRACK_C_RETRIEVAL_CACHE: dict[tuple[str, str, str], tuple[float, list[dict[str, Any]]]] = {}
 _LAST_RETRIEVED_STRATEGIES: dict = {}
 _LAST_LOOP_TRACE: dict = {}
@@ -242,12 +244,13 @@ class AgentLoop:
                     # Merge with auto-injected entries (if any) rather than overwriting.
                     if tname == 'search_strategies' and doc_ids:
                         player_id = str(getattr(obs, "player_id", "") or "")
-                        existing = _LAST_RETRIEVED_STRATEGIES.get(player_id, [])
-                        existing_ids = {s.get("doc_id", "") for s in existing}
-                        for d in doc_ids:
-                            if d and d not in existing_ids:
-                                existing.append({"doc_id": d})
-                        _LAST_RETRIEVED_STRATEGIES[player_id] = existing
+                        with _STRATEGY_LOCK:
+                            existing = _LAST_RETRIEVED_STRATEGIES.get(player_id, [])
+                            existing_ids = {s.get("doc_id", "") for s in existing}
+                            for d in doc_ids:
+                                if d and d not in existing_ids:
+                                    existing.append({"doc_id": d})
+                            _LAST_RETRIEVED_STRATEGIES[player_id] = existing
 
                 # Add assistant response + tool results to context
                 if is_native:
@@ -685,7 +688,8 @@ class AgentLoop:
         """Inject tool trace and auto-injected strategy IDs into the decision dict."""
         decision["_tool_trace"] = tool_trace
         player_id = str(getattr(obs, "player_id", "") or "")
-        auto_injected = _LAST_RETRIEVED_STRATEGIES.pop(player_id, [])
+        with _STRATEGY_LOCK:
+            auto_injected = _LAST_RETRIEVED_STRATEGIES.pop(player_id, [])
         decision["_auto_injected_strategies"] = [
             s.get("doc_id", "") for s in auto_injected
         ]
@@ -699,11 +703,12 @@ class AgentLoop:
         merged_ids = list(dict.fromkeys(
             decision["_auto_injected_strategies"] + tool_called_ids
         ))
-        _LAST_LOOP_TRACE[player_id] = {
-            "tool_trace": tool_trace,
-            "auto_injected_strategies": decision["_auto_injected_strategies"],
-            "retrieved_knowledge_ids": merged_ids,
-        }
+        with _STRATEGY_LOCK:
+            _LAST_LOOP_TRACE[player_id] = {
+                "tool_trace": tool_trace,
+                "auto_injected_strategies": decision["_auto_injected_strategies"],
+                "retrieved_knowledge_ids": merged_ids,
+            }
 
     def _parse_decision(self, response: str) -> Optional[Dict[str, str]]:
         """Parse final decision from LLM response.
@@ -881,10 +886,10 @@ def _retrieve_track_c_strategy_lessons(obs: Observation, action_type: str) -> li
             now = time.monotonic()
             if cached and now - cached[0] <= cache_ttl:
                 return [dict(row) for row in cached[1]]
-        rows = list_strategy_knowledge(role=role, phase=phase, status="active", limit=3)
+        rows = list_strategy_knowledge(role=role, phase=phase, status=None, limit=3)
         if len(rows) < 3:
             seen = {str(row.get("doc_id") or row.get("id") or "") for row in rows}
-            for row in list_strategy_knowledge(role=role, status="active", limit=6):
+            for row in list_strategy_knowledge(role=role, status=None, limit=6):
                 row_id = str(row.get("doc_id") or row.get("id") or "")
                 if row_id and row_id not in seen:
                     rows.append(row)

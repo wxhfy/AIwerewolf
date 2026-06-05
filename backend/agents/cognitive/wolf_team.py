@@ -74,8 +74,8 @@ def build_wolf_team_view(
     # Alive/dead split from public info
     dead_set = set()
     for event in public_events:
-        if event.get("type") == "death":
-            dead_set.add(event.get("target_id", ""))
+        if event.get("type") == "PLAYER_DIED":
+            dead_set.add((event.get("payload") or {}).get("player_id", ""))
 
     view.alive_wolves = [w for w in wolf_ids if w not in dead_set]
     view.dead_wolves = [w for w in wolf_ids if w in dead_set]
@@ -91,9 +91,10 @@ def build_wolf_team_view(
     # Extract public vote patterns
     vote_map: dict[str, list[str]] = {}
     for event in public_events:
-        if event.get("type") == "vote":
-            voter = event.get("voter_id", "")
-            target = event.get("target_id", "")
+        if event.get("type") == "VOTE_CAST":
+            payload = event.get("payload") or {}
+            voter = payload.get("voter_id", "") or event.get("actor_id", "")
+            target = payload.get("target_id", "")
             if voter and target:
                 if voter not in vote_map:
                     vote_map[voter] = []
@@ -115,11 +116,14 @@ def negotiate_wolf_kill(
     public_state: dict[str, Any],
     belief_tracker: Any,
 ) -> str:
-    """Deprecated LLM-only compatibility hook.
+    """[DEPRECATED] LLM-only compatibility hook — DO NOT USE in new code.
 
     Kill selection must be made by the LLM from visible information or from the
     explicit strategy layer. This function intentionally returns no target so a
     caller cannot silently reintroduce a hard-coded kill heuristic.
+
+    For task-tracked wolf kill coordination, see the WolfTeamView task
+    tracking pipeline instead.
     """
     return ""
 
@@ -158,9 +162,12 @@ def assign_wolf_tactics(
     wolf_ids: list[str],
     public_state: dict[str, Any],
 ) -> dict[str, str]:
-    """Deprecated LLM-only compatibility hook.
+    """[DEPRECATED] LLM-only compatibility hook — DO NOT USE in new code.
 
     The non-strategy layer must not assign fixed wolf-team tactics. Explicit
     tactic labels may still come from the LLM planner or strategy layer.
+
+    For task-tracked wolf role assignments, see the WolfTeamView task
+    tracking pipeline instead.
     """
     return {}

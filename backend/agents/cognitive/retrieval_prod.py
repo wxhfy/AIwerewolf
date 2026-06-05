@@ -626,31 +626,73 @@ def _load_from_pg(conn_str: str) -> List[Dict]:
     import psycopg2
     conn = psycopg2.connect(conn_str)
     c = conn.cursor()
-    c.execute("""
-        SELECT id, COALESCE(situation_pattern, ''), COALESCE(recommended_action, ''),
-               COALESCE(rationale, ''), role, phase, quality_score,
-               COALESCE(doc_type, ''),
-               COALESCE(confidence_tier, 'L3_strategic'),
-               COALESCE(visibility_scope, 'public'),
-               COALESCE(deidentified, false),
-               COALESCE(contains_current_game_private_info, false)
-        FROM strategy_knowledge_docs
-        WHERE status = 'active'
-          AND (doc_type != 'reflection' OR quality_score >= 0.85)
-    """)
+
+    # H6: When TIER_EXPERIMENT_ID is set, filter out docs tagged with a
+    # different experiment tier to prevent cross-contamination between
+    # parallel experiment tiers sharing the same PostgreSQL database.
+    # Untagged docs (no experiment tag) remain visible to all tiers.
+    tier_exp_id = os.getenv("TIER_EXPERIMENT_ID", "")
+
+    if tier_exp_id:
+        c.execute("""
+            SELECT id, COALESCE(situation_pattern, ''), COALESCE(recommended_action, ''),
+                   COALESCE(rationale, ''), role, phase, quality_score,
+                   COALESCE(doc_type, ''),
+                   COALESCE(confidence_tier, 'L3_strategic'),
+                   COALESCE(visibility_scope, 'public'),
+                   COALESCE(deidentified, false),
+                   COALESCE(contains_current_game_private_info, false),
+                   COALESCE(tags, '[]'::json)
+            FROM strategy_knowledge_docs
+            WHERE status = 'active'
+              AND (doc_type != 'reflection' OR quality_score >= 0.85)
+        """)
+    else:
+        c.execute("""
+            SELECT id, COALESCE(situation_pattern, ''), COALESCE(recommended_action, ''),
+                   COALESCE(rationale, ''), role, phase, quality_score,
+                   COALESCE(doc_type, ''),
+                   COALESCE(confidence_tier, 'L3_strategic'),
+                   COALESCE(visibility_scope, 'public'),
+                   COALESCE(deidentified, false),
+                   COALESCE(contains_current_game_private_info, false)
+            FROM strategy_knowledge_docs
+            WHERE status = 'active'
+              AND (doc_type != 'reflection' OR quality_score >= 0.85)
+        """)
+
     docs = []
-    for row_id, sit, rec, rat, role, phase, q, dtype, ctier, vscope, deid, cgpi in c.fetchall():
-        docs.append({
-            "doc_id": row_id or "",
-            "situation": sit or "", "strategy": rec or "", "rationale": rat or "",
-            "role": role or "global", "phase": phase or "global",
-            "quality": float(q) if q else 0.8,
-            "doc_type": dtype or "",
-            "confidence_tier": ctier or "L3_strategic",
-            "visibility_scope": vscope or "public",
-            "deidentified": bool(deid) if deid is not None else False,
-            "contains_current_game_private_info": bool(cgpi) if cgpi is not None else False,
-        })
+    if tier_exp_id:
+        import json
+        for row_id, sit, rec, rat, role, phase, q, dtype, ctier, vscope, deid, cgpi, raw_tags in c.fetchall():
+            # H6: If a doc has experiment tags but NOT our tier's tag, skip it.
+            tags = json.loads(raw_tags) if isinstance(raw_tags, str) else (raw_tags or [])
+            if any(t.startswith("exp-") for t in tags) and tier_exp_id not in tags:
+                continue
+            docs.append({
+                "doc_id": row_id or "",
+                "situation": sit or "", "strategy": rec or "", "rationale": rat or "",
+                "role": role or "global", "phase": phase or "global",
+                "quality": float(q) if q else 0.8,
+                "doc_type": dtype or "",
+                "confidence_tier": ctier or "L3_strategic",
+                "visibility_scope": vscope or "public",
+                "deidentified": bool(deid) if deid is not None else False,
+                "contains_current_game_private_info": bool(cgpi) if cgpi is not None else False,
+            })
+    else:
+        for row_id, sit, rec, rat, role, phase, q, dtype, ctier, vscope, deid, cgpi in c.fetchall():
+            docs.append({
+                "doc_id": row_id or "",
+                "situation": sit or "", "strategy": rec or "", "rationale": rat or "",
+                "role": role or "global", "phase": phase or "global",
+                "quality": float(q) if q else 0.8,
+                "doc_type": dtype or "",
+                "confidence_tier": ctier or "L3_strategic",
+                "visibility_scope": vscope or "public",
+                "deidentified": bool(deid) if deid is not None else False,
+                "contains_current_game_private_info": bool(cgpi) if cgpi is not None else False,
+            })
     conn.close()
     return docs
 
@@ -714,7 +756,7 @@ def _load_docs_from_cold_start() -> list[dict]:
             if doc_id not in store.docs:
                 from backend.eval.evolution import StrategyKnowledgeDoc
                 roles = card.applicable_roles
-                role = roles[0] if roles else "global"
+                role = "global" if len(roles) > 2 else (roles[0] if roles else "global")
                 doc = StrategyKnowledgeDoc(
                     doc_id=doc_id,
                     doc_type="cold_start",
@@ -804,33 +846,43 @@ def retrieve_strategies_prod(
     if not include_reflections and output_mode != "count":
         results = [r for r in results if not (r.get("doc_type") or "").startswith("reflection")]
 
-    # Apply 4-filter safety pipeline (strict mode: fail on filter violations)
+    # Apply 4-filter safety pipeline (strict mode: all filters via retrieve_for_agent)
     if os.getenv("AIWEREWOLF_STRICT_MODE", "").lower() == "true":
-        from backend.eval.knowledge_confidence import (
-            confidence_allowed, visibility_allowed,
-            leaks_current_game_private_info, applicability_matches,
-        )
+        from backend.eval.knowledge_confidence import retrieve_for_agent
+
         is_wolf = role in {"Werewolf", "WhiteWolfKing", "BigBadWolf", "WolfCub"}
-        filtered = []
+
+        # Build doc dicts with filter-expected fields, preserving original retriever fields
+        all_docs = []
         for r in results:
-            doc_dict = {
-                "confidence_tier": r.get("confidence_tier", "L3_strategic"),
-                "visibility_scope": r.get("visibility_scope", "public"),
-                "quality_score": r.get("quality", 0.8),
-                "status": "active",
-                "applicability_role": r.get("role", ""),
-                "applicability_phase": phase,
-            }
-            if not confidence_allowed(doc_dict):
-                logger.warning(f"STRICT: doc filtered by confidence_allowed: {r.get('situation','')[:50]}")
-                continue
-            if not visibility_allowed(doc_dict, role, is_wolf):
-                logger.warning(f"STRICT: doc filtered by visibility_allowed for role={role}: {r.get('situation','')[:50]}")
-                continue
-            if not applicability_matches(doc_dict, role, phase, "standard_competition_v1", 7, set(), set()):
-                logger.warning(f"STRICT: doc filtered by applicability for role={role} phase={phase}: {r.get('situation','')[:50]}")
-                continue
-            filtered.append(r)
+            doc = dict(r)
+            doc.setdefault("confidence_tier", r.get("confidence_tier", "L3_strategic"))
+            doc.setdefault("visibility_scope", r.get("visibility_scope", "public"))
+            doc.setdefault("quality_score", r.get("quality", 0.8))
+            doc.setdefault("status", r.get("status", "active"))
+            doc.setdefault("applicability_role", r.get("applicability_role", r.get("role", "")))
+            doc.setdefault("applicability_phase", phase)
+            doc.setdefault("source_game_ids", r.get("source_game_ids", []))
+            doc.setdefault("contains_current_game_private_info", r.get("contains_current_game_private_info", False))
+            doc.setdefault("deidentified", r.get("deidentified", False))
+            doc.setdefault("allowed_roles", r.get("allowed_roles"))
+            doc.setdefault("rule_variant", r.get("rule_variant", "standard_competition_v1"))
+            all_docs.append(doc)
+
+        filtered = retrieve_for_agent(
+            query="",
+            agent_role=role,
+            is_wolf=is_wolf,
+            current_game_id="",
+            current_phase=phase,
+            rule_variant="standard_competition_v1",
+            player_count=0,
+            public_facts=set(),
+            private_state=set(),
+            is_postgame=False,
+            top_k=limit,
+            all_docs=all_docs,
+        )
 
         if len(filtered) < len(results):
             logger.info(f"4-filter: {len(results)} -> {len(filtered)} results after safety filtering")

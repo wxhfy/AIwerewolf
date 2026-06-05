@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# DEPRECATED: Use scripts/promote.py --mode cluster instead. Kept for reference.
 """
 Cluster-based strategy promotion using TF-IDF + KMeans.
 

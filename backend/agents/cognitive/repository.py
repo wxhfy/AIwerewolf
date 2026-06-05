@@ -19,7 +19,8 @@ def load_profiles_from_db(conn_str: str = "") -> Dict[str, Profile]:
     """
     try:
         import psycopg2
-        conn = psycopg2.connect(conn_str or "postgresql://werewolf:wolf_secret_2026@127.0.0.1:5433/werewolf")
+        from backend.db.database import DEFAULT_DB_URL
+        conn = psycopg2.connect(conn_str or DEFAULT_DB_URL)
         c = conn.cursor()
         c.execute("""
             SELECT role, goal, speech_policy, vote_policy, skill_policy, risk_rules

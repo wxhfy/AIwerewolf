@@ -17,6 +17,7 @@ Each game produces:
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -95,7 +96,7 @@ class AbstractedLesson:
             "tags": _json.dumps(self.tags, ensure_ascii=False),
             "status": "candidate",
             "experiment_id": self.experiment_id or None,
-            "game_id": self.source_game_id,
+            "source_game_id": self.source_game_id,
         }
 
 
@@ -151,6 +152,13 @@ class KnowledgeAbstractor:
                 lesson = self._from_observation(step, review)
                 if lesson and lesson.quality_score >= self._min_quality:
                     lessons.append(lesson)
+
+        # Track experiment isolation (H6): tag every lesson with the experiment_id
+        # from the environment so each tier's knowledge stays isolated.
+        exp_id = os.getenv("EXPERIMENT_ID", "")
+        if exp_id:
+            for lesson in lessons:
+                lesson.experiment_id = exp_id
 
         # Deduplicate similar lessons
         lessons = self._deduplicate(lessons)
@@ -362,12 +370,13 @@ def store_lessons_to_db(
     import os as _os
     import psycopg2
     from uuid import uuid4
+    from backend.db.database import DEFAULT_DB_URL
 
     logger = logging.getLogger(__name__)
     auto_promote = _os.getenv("AUTO_PROMOTE_LESSONS", "").lower() == "true"
 
     conn = psycopg2.connect(
-        conn_str or "postgresql://werewolf:wolf_secret_2026@127.0.0.1:5433/werewolf"
+        conn_str or DEFAULT_DB_URL
     )
     c = conn.cursor()
 
@@ -384,8 +393,8 @@ def store_lessons_to_db(
         ):
             doc["status"] = "active"
         # Pop extra keys not present in the INSERT column list
-        doc.pop("experiment_id", None)
         doc.pop("game_id", None)
+        # experiment_id is intentionally kept — it goes into the INSERT below (H6 tier isolation)
         # Generate a primary key (raw psycopg2 bypasses SQLAlchemy default)
         doc["id"] = str(uuid4())
         try:
@@ -394,17 +403,19 @@ def store_lessons_to_db(
                     (id, doc_type, role, phase, persona_scope, situation_pattern,
                      trigger_conditions, recommended_action, avoid_action, rationale,
                      quality_score, confidence, source_report_ids, source_item_ids,
-                     source_event_ids, evidence_summary, tags, status)
+                     source_event_ids, evidence_summary, tags, status, experiment_id,
+                     source_game_id)
                 VALUES (%(id)s, %(doc_type)s, %(role)s, %(phase)s, %(persona_scope)s,
                         %(situation_pattern)s, %(trigger_conditions)s,
                         %(recommended_action)s, %(avoid_action)s, %(rationale)s,
                         %(quality_score)s, %(confidence)s, %(source_report_ids)s,
                         %(source_item_ids)s, %(source_event_ids)s,
-                        %(evidence_summary)s, %(tags)s, %(status)s)
+                        %(evidence_summary)s, %(tags)s, %(status)s, %(experiment_id)s,
+                        %(source_game_id)s)
             """, doc)
             stored += 1
             role_counts[lesson.target_role] = role_counts.get(lesson.target_role, 0) + 1
-        except Exception:
+        except Exception as e:
             conn.rollback()
             errors += 1
             if errors <= 3:

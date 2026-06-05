@@ -124,6 +124,44 @@ CREATE INDEX IF NOT EXISTS ix_games_experiment
     ON games(experiment_id)
     WHERE experiment_id IS NOT NULL;
 
+-- ── 7. Add FK constraints to knowledge_usage_feedback ──
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.table_constraints
+        WHERE constraint_name = 'fk_kuf_game'
+    ) THEN
+        ALTER TABLE knowledge_usage_feedback
+            ADD CONSTRAINT fk_kuf_game
+            FOREIGN KEY (game_id) REFERENCES games(id);
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.table_constraints
+        WHERE constraint_name = 'fk_kuf_player'
+    ) THEN
+        ALTER TABLE knowledge_usage_feedback
+            ADD CONSTRAINT fk_kuf_player
+            FOREIGN KEY (player_id) REFERENCES players(id);
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.table_constraints
+        WHERE constraint_name = 'fk_kuf_knowledge_doc'
+    ) THEN
+        ALTER TABLE knowledge_usage_feedback
+            ADD CONSTRAINT fk_kuf_knowledge_doc
+            FOREIGN KEY (knowledge_doc_id) REFERENCES strategy_knowledge_docs(id);
+    END IF;
+END $$;
+
 -- ================================================================
 -- Verification Queries
 -- ================================================================

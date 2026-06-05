@@ -101,6 +101,7 @@ class BeliefTracker:
         self._unique_roles = {"预言家", "女巫", "猎人", "守卫", "Seer", "Witch", "Hunter", "Guard"}
         self._processed_speech_ids: set = set()
         self._seen_vote_keys: set = set()
+        self._seen_death_keys: set = set()
 
     def update(self, view: Any) -> None:
         """Update tracker from current PlayerView."""
@@ -179,13 +180,17 @@ class BeliefTracker:
                 ))
 
     def _extract_deaths(self, view: Any) -> None:
-        """Extract deaths from public events."""
+        """Extract deaths from public events. Deduplicates by (player_id, cause)."""
         for e in view.public_events:
             if e.get("type") == "PLAYER_DIED":
                 payload = e.get("payload", {}) or {}
                 pid = payload.get("player_id", "")
-                dead = _find_player(view, pid)
                 cause = payload.get("cause", payload.get("reason", "unknown"))
+                death_key = (pid, cause)
+                if death_key in self._seen_death_keys:
+                    continue
+                self._seen_death_keys.add(death_key)
+                dead = _find_player(view, pid)
                 self.deaths.append(DeathInfo(
                     player_id=pid,
                     player_name=dead.get("name", pid),
