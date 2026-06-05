@@ -574,9 +574,12 @@ class CognitiveAgent:
                 if trace.get("auto_injected_strategies"):
                     meta["_auto_injected_strategies"] = trace["auto_injected_strategies"]
                     meta["retrieval_used"] = True
-                    meta["retrieved_knowledge_ids"] = trace["auto_injected_strategies"]
-                # Best-effort: record knowledge usage for each auto-injected strategy
-                self._record_strategy_usage(trace.get("auto_injected_strategies", []))
+                # Use merged retrieved_knowledge_ids (auto-injected + tool-called) if available
+                merged = trace.get("retrieved_knowledge_ids", trace.get("auto_injected_strategies", []))
+                if merged:
+                    meta["retrieved_knowledge_ids"] = merged
+                # Best-effort: record knowledge usage for all retrieved strategies
+                self._record_strategy_usage(merged)
         except Exception:
             pass  # trace injection is best-effort
 
