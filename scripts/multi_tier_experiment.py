@@ -26,6 +26,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 warnings.filterwarnings("ignore")
@@ -36,6 +38,43 @@ TIERS = {
     "trackc_only": {"COGNITIVE_ENABLE_ANTI_PATTERNS": "0", "COGNITIVE_ENABLE_TRACK_C": "1"},
     "both":        {"COGNITIVE_ENABLE_ANTI_PATTERNS": "1", "COGNITIVE_ENABLE_TRACK_C": "1"},
 }
+
+
+def bootstrap_ci(data: list[float], n_bootstrap: int = 10000, ci: float = 0.95) -> dict:
+    """Compute bootstrap confidence interval for win rate data.
+
+    Args:
+        data: List of binary outcomes (1=win, 0=loss).
+        n_bootstrap: Number of bootstrap resamples.
+        ci: Confidence level (default 0.95 for 95% CI).
+
+    Returns:
+        dict with mean, ci_lower, ci_upper, n_samples.
+    """
+    if len(data) < 5:
+        return {
+            "mean": float(np.mean(data)) if data else 0.0,
+            "ci_lower": None, "ci_upper": None,
+            "n_samples": len(data),
+            "warning": "Insufficient samples for bootstrap (< 5)",
+        }
+
+    data_arr = np.array(data)
+    means = []
+    rng = np.random.RandomState(42)
+    for _ in range(n_bootstrap):
+        sample = rng.choice(data_arr, size=len(data_arr), replace=True)
+        means.append(float(np.mean(sample)))
+
+    means_arr = np.array(means)
+    alpha = (1 - ci) / 2
+    return {
+        "mean": round(float(np.mean(data_arr)), 4),
+        "ci_lower": round(float(np.percentile(means_arr, alpha * 100)), 4),
+        "ci_upper": round(float(np.percentile(means_arr, (1 - alpha) * 100)), 4),
+        "n_samples": len(data),
+        "n_bootstrap": n_bootstrap,
+    }
 
 # Script that runs one tier's games
 _WORKER_SCRIPT = """
@@ -156,6 +195,7 @@ def compile_stats(results: list[dict]) -> dict:
     role_stats: dict[str, dict] = defaultdict(
         lambda: {"wins": 0, "games": 0}
     )
+    role_outcomes: dict[str, list] = defaultdict(list)
     mbti_stats: dict[str, dict] = defaultdict(
         lambda: {"wins": 0, "games": 0}
     )
@@ -174,6 +214,7 @@ def compile_stats(results: list[dict]) -> dict:
             won = p["won"]
             role_stats[role]["wins"] += 1 if won else 0
             role_stats[role]["games"] += 1
+            role_outcomes[role].append(1 if won else 0)
             mbti_stats[mbti]["wins"] += 1 if won else 0
             mbti_stats[mbti]["games"] += 1
             team_stats[team]["wins"] += 1 if won else 0
@@ -186,7 +227,17 @@ def compile_stats(results: list[dict]) -> dict:
             out[key] = {"games": d["games"], "wins": d["wins"], "win_rate": round(d["wins"] / n, 4)}
         return out
 
-    return {"role_stats": _fmt(role_stats), "mbti_stats": _fmt(mbti_stats), "team_stats": _fmt(team_stats)}
+    # Compute bootstrap CIs for each role
+    role_stats_fmt = _fmt(role_stats)
+    for role_key in role_stats_fmt:
+        outcomes = role_outcomes.get(role_key, [])
+        ci = bootstrap_ci(outcomes)
+        role_stats_fmt[role_key]["win_rate_ci"] = {
+            "lower": ci["ci_lower"],
+            "upper": ci["ci_upper"],
+        }
+
+    return {"role_stats": role_stats_fmt, "mbti_stats": _fmt(mbti_stats), "team_stats": _fmt(team_stats)}
 
 
 def _print_comparison(tier_summaries: dict) -> None:
@@ -195,9 +246,9 @@ def _print_comparison(tier_summaries: dict) -> None:
     roles = sorted(set().union(*[set(s.get("role_stats", {}).keys()) for s in tier_summaries.values()]))
     mbti_types = sorted(set().union(*[set(s.get("mbti_stats", {}).keys()) for s in tier_summaries.values()]))
 
-    print(f"\n{'='*90}")
+    print(f"\n{'='*110}")
     print("MULTI-TIER WIN RATE COMPARISON")
-    print(f"{'='*90}")
+    print(f"{'='*110}")
 
     # Team-level
     print(f"\n--- Team-Level Win Rates ---")
@@ -216,19 +267,25 @@ def _print_comparison(tier_summaries: dict) -> None:
         print(row)
 
     # Role-level
-    print(f"\n--- Role-Level Win Rates ---")
+    print(f"\n--- Role-Level Win Rates (with 95% bootstrap CI) ---")
     header = f"{'Role':<16s}"
     for t in tiers:
-        header += f" {t:>14s}"
+        header += f" {t:>24s}"
     print(header)
-    print("-" * 90)
+    print("-" * 110)
     for role in roles:
         row = f"{role:<16s}"
         for tier in tiers:
             rs = tier_summaries[tier].get("role_stats", {}).get(role, {})
             wr = rs.get("win_rate", 0)
             g = rs.get("games", 0)
-            row += f" {wr:>8.1%} ({g:>3d}g)"
+            ci_info = rs.get("win_rate_ci", {})
+            ci_lower = ci_info.get("lower")
+            ci_upper = ci_info.get("upper")
+            if ci_lower is not None and ci_upper is not None:
+                row += f" {wr:>6.1%} [{ci_lower:.1%}-{ci_upper:.1%}] ({g:>2d}g)"
+            else:
+                row += f" {wr:>6.1%} (---) ({g:>2d}g)"
         print(row)
 
     # MBTI-level
@@ -263,7 +320,7 @@ def _print_comparison(tier_summaries: dict) -> None:
             else:
                 row += f" {str(val):>14s}"
         print(row)
-    print(f"{'='*90}")
+    print(f"{'='*110}")
 
 
 def run_experiment(n_games: int = 12, require_db: bool = True) -> None:
