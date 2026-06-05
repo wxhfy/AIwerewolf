@@ -137,15 +137,8 @@ class CognitiveAgent:
         self._game_id = getattr(view, "game_id", "") or str(game_setting.get("game_id", ""))
         self._tracker = BeliefTracker()
 
-        # Wire wolf team coordination with legally visible teammate list only.
-        if "wolf" in self.role.lower():
-            known = getattr(view, 'known_wolves', [])
-            if known:
-                all_wolf_ids = [self.player_id] + [
-                    w.get("id", w.get("player_id", "")) for w in known
-                    if w.get("id", w.get("player_id", "")) != self.player_id
-                ]
-                alive_ids = [p["id"] for p in view.players if p.get("alive")]
+        # Wolf team view is built on-demand in attack() from current PlayerView
+        # (legally visible teammate list + public events + belief tracker).
 
     def update(self, view: Any, request: str) -> None:
         self._view = view

@@ -419,12 +419,12 @@ class WerewolfGame:
         return self.play_until_blocked()
 
     def _begin_night(self) -> None:
-        # Resume safety: night already initialized for the next day → skip.
-        # _begin_night increments state.day, so the completion flag lives on day+1.
-        next_day = self.state.day + 1
-        if Phase.NIGHT_START.value in self.state.phase_done.get(next_day, []):
+        # Resume safety: use _phase_done which checks current day.
+        # On first call (day=0): phase_done[0] empty → proceed → day→1 → mark day 1.
+        # On resume (day=1): phase_done[1] has NIGHT_START → skip (already started).
+        if self._phase_done(Phase.NIGHT_START):
             return
-        self.state.day = next_day
+        self.state.day = self.state.day + 1
         self.state.votes = {}
         self.state.pk_targets = []
         self.state.pk_source = None
