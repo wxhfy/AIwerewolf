@@ -1630,7 +1630,18 @@ class WerewolfGame:
             player = players[index]
             self.state.phase_cursor[cursor_key] = index
             self.state.current_speaker_id = player.id
-            handler(player)
+            # Notify observer BEFORE LLM call so frontend sees phase transition + speaker
+            if self.observer is not None:
+                self.observer(self.state)
+            try:
+                handler(player)
+            except GamePaused:
+                raise
+            except Exception:
+                logger.exception(
+                    f"Handler failed for {player.name} (seat={player.seat}) "
+                    f"in phase {phase.value}, skipping"
+                )
         self.state.current_speaker_id = None
         self.state.phase_cursor.pop(cursor_key, None)
 

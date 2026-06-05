@@ -673,6 +673,28 @@ class LLMAgent(Agent):
                 if e.get("type") == "WITCH_POISON":
                     lines.append(f"你用毒药毒了 {e.get('payload', {}).get('target_name', '?')}")
             return "\n".join(lines)
+        # Wolf night discussion: summarize teammate votes and final target
+        if self.role.value in ("werewolf", "white_wolf_king"):
+            wolf_votes = {}
+            wolf_target = None
+            for e in private:
+                p = e.get("payload", {}) or {}
+                kind = p.get("kind", "")
+                if kind == "wolf_attack_vote":
+                    voter_id = e.get("actor_id", "?")
+                    target_name = p.get("target_name", "?")
+                    wolf_votes[voter_id] = target_name
+                elif kind == "wolf_attack_tally":
+                    wolf_target = p.get("target_name")
+            if wolf_votes:
+                lines = ["【狼队夜间商议】"]
+                voter_names = {voter_id: p.get("name", voter_id) for voter_id in wolf_votes for p in view.players if p.get("id") == voter_id}
+                for voter_id, target in wolf_votes.items():
+                    name = voter_names.get(voter_id, voter_id)
+                    lines.append(f"  {name} 提议击杀 {target}")
+                if wolf_target:
+                    lines.append(f"  → 最终目标: {wolf_target}")
+                return "\n".join(lines)
         return ""
 
     def _build_win_condition(self) -> str:
