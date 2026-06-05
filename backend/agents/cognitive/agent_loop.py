@@ -339,6 +339,31 @@ class AgentLoop:
                 self._inject_tool_trace(decision, tool_trace, obs)
                 return decision
 
+        # Last-resort: try to use the last response as the decision content
+        last_text = ""
+        for msg in reversed(context):
+            if hasattr(msg, "content") and msg.content:
+                c = msg.content.strip()
+                if len(c) > 10 and hasattr(msg, "type") and msg.type == "ai":
+                    last_text = c
+                    break
+        if last_text:
+            # Try to extract JSON from the response
+            import re as _re
+            json_match = _re.search(r'\{[^}]+"speech"\s*:\s*"[^"]+".*\}', last_text)
+            if json_match:
+                try:
+                    data = json.loads(json_match.group())
+                    if self._action_type == "speech":
+                        return {"speech": data.get("speech", last_text[:500]), "reasoning": data.get("reasoning", "")}
+                    return {"target": data.get("target", ""), "reasoning": data.get("reasoning", "")}
+                except json.JSONDecodeError:
+                    pass
+            # Use raw text as speech content
+            if self._action_type == "speech":
+                logger.warning(f"Using raw response as speech (no DECISION format found)")
+                return {"speech": last_text[:500], "reasoning": "fallback from raw response"}
+
         raise RuntimeError(
             f"AgentLoop failed to produce a DECISION after {MAX_ITERATIONS} iterations for action={self._action_type}"
         )
