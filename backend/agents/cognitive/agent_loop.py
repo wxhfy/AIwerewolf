@@ -132,6 +132,16 @@ _TOOL_PARAM_SCHEMAS: Dict[str, Dict] = {
 }
 
 
+_WOLF_ROLES_LOOP = {"Werewolf", "WhiteWolfKing", "BigBadWolf", "WolfCub", "AlphaWolf"}
+
+
+def _derive_alignment(role: str) -> str:
+    """Derive alignment from role name. Returns 'wolf' or 'village'."""
+    if not role:
+        return ""
+    return "wolf" if role.strip() in _WOLF_ROLES_LOOP else "village"
+
+
 class AgentLoop:
     """Autonomous tool-calling agent loop for AI Werewolf.
 
@@ -148,11 +158,17 @@ class AgentLoop:
         action_type: str = "speech",
         strategy_bias: Optional[Dict[str, List[str]]] = None,
         temperature: Optional[float] = None,
+        mbti: str = "",
+        player_id: str = "",
+        retrieval_policy: str = "",
     ):
         self._llm = llm
         self._system_prompt = system_prompt
         self._action_type = action_type
         self._strategy_bias = strategy_bias or {}
+        self._mbti = mbti
+        self._player_id = player_id
+        self._retrieval_policy = retrieval_policy
         self._temperature = temperature
         # Native function calling via bind_tools is supported by the LLM wrapper
         # but currently disabled by default. Direct API tests confirm tools work,
@@ -191,7 +207,10 @@ class AgentLoop:
               vote:   {"target": str, "reasoning": str}
               night:  {"target": str, "reasoning": str}
         """
-        tools = create_tools(obs, memory)
+        tools = create_tools(obs, memory,
+                                mbti=self._mbti,
+                                alignment=_derive_alignment(obs.player_role),
+                                player_id=self._player_id)
         tool_schemas = self._tools_to_bind_schemas(tools) if self._supports_bind_tools else None
         context = []  # list of messages for the conversation
         tool_trace: list[dict] = []  # track tool calls for auditing
@@ -238,6 +257,9 @@ class AgentLoop:
                         "doc_ids": doc_ids,
                         "timestamp": time.time(),
                         "result_summary": tr[:200],
+                        "policy": self._retrieval_policy,
+                        "mbti": self._mbti,
+                        "role": obs.player_role,
                     })
                     # Populate _LAST_RETRIEVED_STRATEGIES for search_strategies tool calls
                     # so _record_strategy_usage() can track which docs were actually retrieved.

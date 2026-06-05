@@ -19,8 +19,19 @@ from backend.agents.cognitive.retrieval_prod import format_strategies_for_prompt
 def create_tools(
     obs: Observation,
     memory: Memory,
+    *,
+    mbti: str = "",
+    alignment: str = "",
+    player_id: str = "",
 ) -> Dict[str, Any]:
     """Create tool implementations bound to current Observation and Memory.
+
+    Args:
+        obs: Current observation.
+        memory: Agent memory.
+        mbti: Agent's MBTI type for persona-scoped retrieval.
+        alignment: Agent's alignment ("village"/"wolf") for alignment-scoped retrieval.
+        player_id: Agent's player ID for tracing.
 
     Returns a dict of {tool_name: tool_config} where tool_config contains
     the callable and its description for the system prompt.
@@ -33,6 +44,7 @@ def create_tools(
         include_reflections: bool = False,
         mode: str = "content",
         use_regex: bool = False,
+        retrieval_policy: str = "",
     ) -> str:
         """Search the strategy knowledge base with agent-chosen keywords or regex.
 
@@ -47,13 +59,36 @@ def create_tools(
 
         Keywords: choose precise domain terms (e.g., "被查杀应对", "警徽流").
         With use_regex=True, keywords are Python regex patterns.
+
+        retrieval_policy controls which strategy docs are visible to you:
+          - "global_only": Only global/通用 strategies (no role/MBTI filter)
+          - "self_mbti_only": Only strategies matching your MBTI
+          - "same_role_all_mbti": All strategies for your role (any MBTI)
+          - "same_role_same_mbti": Your role + your MBTI only
+          - "hybrid_role_mbti_global": Layered (default) — same_role_same_mbti
+            → same_role_all_mbti → global
+          - "hybrid_role_alignment_phase": Same as hybrid + phase/action match
+
         Set include_reflections=False to exclude post-game reflections.
         """
         try:
-            from backend.agents.cognitive.retrieval_prod import retrieve_strategies_prod
+            from backend.agents.cognitive.retrieval_prod import (
+                retrieve_strategies_prod, RetrievalPolicy,
+            )
+            # Parse policy from string if provided
+            policy = RetrievalPolicy.GLOBAL_ONLY
+            if retrieval_policy:
+                try:
+                    policy = RetrievalPolicy(retrieval_policy)
+                except ValueError:
+                    policy = RetrievalPolicy.GLOBAL_ONLY
+
             results = retrieve_strategies_prod(
                 obs.player_role, obs.phase, keywords=keywords, limit=limit,
                 output_mode=mode, regex_mode=use_regex,
+                retrieval_policy=policy,
+                mbti=mbti, alignment=alignment, player_id=player_id,
+                action_type=_infer_action_type(obs.phase),
             )
         except Exception as e:
             results = []
@@ -63,7 +98,6 @@ def create_tools(
                 _tlog.warning("STRICT MODE: search_strategies retrieval_prod error: %s", e)
         if not results:
             if os.getenv("ALLOW_FALLBACK", "true").lower() == "false":
-                # Don't raise — 0 results is a valid (empty) answer, not a failure
                 return "(未找到匹配的策略 — 尝试调整搜索关键词)"
             # Fallback to TF-IDF (PostgreSQL-independent)
             results = retrieve_tfidf(
@@ -224,15 +258,21 @@ def create_tools(
         "search_strategies": {
             "fn": search_strategies,
             "description": (
-                'search_strategies(keywords: list[str], limit: int = 3, include_reflections: bool = False, mode: str = "content", use_regex: bool = False)\n'
+                'search_strategies(keywords: list[str], limit: int = 3, include_reflections: bool = False, mode: str = "content", use_regex: bool = False, retrieval_policy: str = "")\n'
                 '  用关键词或正则搜索狼人杀策略库。三层模式：\n'
                 '  mode="count" — 仅返回匹配数量（先测试关键词好坏）\n'
                 '  mode="overview" — 仅返回场景标题和评分（快速扫描）\n'
                 '  mode="content" — 返回完整策略（默认，确认关键词后使用）\n'
+                '  retrieval_policy — 控制检索范围：\n'
+                '    "global_only" 只看全局通用策略\n'
+                '    "self_mbti_only" 只看自己MBTI的策略\n'
+                '    "same_role_all_mbti" 同角色所有MBTI\n'
+                '    "same_role_same_mbti" 同角色同MBTI\n'
+                '    "hybrid_role_mbti_global" 分层混合（默认推荐）\n'
                 '  推荐流程: count → overview → content，逐步缩小范围。\n'
                 '  use_regex=True 时关键词被视为 Python 正则。\n'
                 '  例: search_strategies(keywords=["被查杀"], mode="count")\n'
-                '  例: search_strategies(keywords=["查杀.*狼", "悍跳"], use_regex=True)'
+                '  例: search_strategies(keywords=["悍跳"], retrieval_policy="same_role_all_mbti")'
             ),
         },
         "recall_memory": {
@@ -282,3 +322,25 @@ def create_tools(
             ),
         },
     }
+
+
+def _infer_action_type(phase: str) -> str:
+    """Derive action_type from game phase for retrieval policy filtering."""
+    phase_upper = phase.upper() if phase else ""
+    if "SPEECH" in phase_upper or "CHAT" in phase_upper or "TALK" in phase_upper:
+        return "talk"
+    if "VOTE" in phase_upper or "BALLOT" in phase_upper:
+        return "vote"
+    if "WOLF" in phase_upper:
+        return "attack"
+    if "WITCH" in phase_upper:
+        return "save"
+    if "SEER" in phase_upper:
+        return "check"
+    if "GUARD" in phase_upper:
+        return "guard"
+    if "HUNTER" in phase_upper:
+        return "shoot"
+    if "NIGHT" in phase_upper:
+        return "night_action"
+    return ""

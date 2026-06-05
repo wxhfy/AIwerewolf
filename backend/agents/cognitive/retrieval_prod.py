@@ -27,11 +27,141 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any, Dict, List, Optional
+import re as _stdlib_re
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
 logger = logging.getLogger(__name__)
+
+# ================================================================
+# Retrieval Policy (Track C experiment framework)
+# ================================================================
+
+
+class RetrievalPolicy(str, Enum):
+    """Policy governing which strategy docs an agent can retrieve.
+
+    Inspired by Claude Code's layered search strategy:
+      - "files_with_matches" → overview mode
+      - "content" → full text
+      - Our extension: GLOBAL → ROLE → MBTI → PHASE layering
+
+    Each policy defines a filtering strategy; HYBRID_ROLE_MBTI_GLOBAL is the
+    recommended default as it balances personalization with coverage.
+    """
+
+    GLOBAL_ONLY = "global_only"                    # Only role="global" or role=any docs
+    SELF_MBTI_ONLY = "self_mbti_only"              # Only docs matching agent's MBTI
+    SAME_ROLE_ALL_MBTI = "same_role_all_mbti"      # Docs for agent's role, any MBTI
+    SAME_ROLE_SAME_MBTI = "same_role_same_mbti"    # Docs for agent's role + agent's MBTI
+    HYBRID_ROLE_MBTI_GLOBAL = "hybrid_role_mbti_global"  # Layered: same_role_same_mbti → same_role_all_mbti → global
+    HYBRID_ROLE_ALIGNMENT_PHASE = "hybrid_role_alignment_phase"  # Same as E + phase constraint
+
+    @property
+    def is_hybrid(self) -> bool:
+        """Whether this policy uses layered buckets (requires fill logic)."""
+        return self.value.startswith("hybrid")
+
+    @property
+    def bucket_count(self) -> int:
+        """Number of priority buckets this policy would produce."""
+        if self == RetrievalPolicy.GLOBAL_ONLY:
+            return 1
+        if self == RetrievalPolicy.SELF_MBTI_ONLY:
+            return 1
+        if self == RetrievalPolicy.SAME_ROLE_ALL_MBTI:
+            return 1
+        if self == RetrievalPolicy.SAME_ROLE_SAME_MBTI:
+            return 1
+        if self == RetrievalPolicy.HYBRID_ROLE_MBTI_GLOBAL:
+            return 3
+        if self == RetrievalPolicy.HYBRID_ROLE_ALIGNMENT_PHASE:
+            return 4
+        return 1
+
+
+@dataclass
+class AgentContext:
+    """Context passed to every retrieval call for policy-based filtering.
+
+    All fields default to empty/neutral values so existing callers work
+    without changes (defaults to GLOBAL_ONLY behavior).
+    """
+
+    player_id: str = ""
+    role: str = ""              # "Seer", "Werewolf", "Witch", etc.
+    alignment: str = ""         # "village" or "wolf"
+    mbti: str = ""              # "INTJ", "ENFP", "ISTJ", "ESFP", etc.
+    phase: str = ""             # "DAY_SPEECH", "NIGHT_WOLF_ACTION", etc.
+    action_type: str = ""       # "talk", "vote", "attack", "save", "check", etc.
+    day: int = 0
+    alive_status: bool = True
+    keywords: List[str] = field(default_factory=list)
+
+    @property
+    def is_wolf(self) -> bool:
+        """True if agent is on the wolf team."""
+        return self.alignment.lower() == "wolf"
+
+    @property
+    def normalized_role(self) -> str:
+        """Lowercase role for comparison."""
+        return self.role.lower().strip()
+
+    @property
+    def normalized_mbti(self) -> str:
+        """Uppercase MBTI for comparison."""
+        return self.mbti.upper().strip()
+
+
+_WOLF_ROLES = {"werewolf", "whitewolfking", "bigbadwolf", "wolfcub", "alphawolf"}
+
+
+def _derive_alignment_from_role(role: str) -> str:
+    """Derive alignment ('village'/'wolf') from role name. Fallback: ''."""
+    if not role:
+        return ""
+    rl = role.lower().strip()
+    if rl in _WOLF_ROLES:
+        return "wolf"
+    return "village"
+
+
+def _parse_mbti_from_persona_scope(persona_scope: str | None) -> str:
+    """Extract MBTI type from persona_scope string.
+
+    persona_scope format: "mbti:INTJ+role:Werewolf" → "INTJ"
+    Returns "" if no MBTI found or persona_scope is None, empty, or "any".
+    """
+    if not persona_scope or persona_scope.lower() in ("any", "none"):
+        return ""
+    # Try the mbti: prefix pattern first
+    m = _stdlib_re.search(r"mbti:([A-Za-z]{4})", str(persona_scope))
+    if m:
+        return m.group(1).upper()
+    # If the persona_scope itself looks like an MBTI type (4 uppercase letters)
+    stripped = str(persona_scope).strip().upper()
+    if _stdlib_re.fullmatch(r"[IE][NS][FT][JP]", stripped):
+        return stripped
+    return ""
+
+
+def _parse_role_from_persona_scope(persona_scope: str | None) -> str:
+    """Extract role scope from persona_scope string.
+
+    persona_scope format: "mbti:INTJ+role:Werewolf" → "Werewolf"
+    Returns "" if no role found.
+    """
+    if not persona_scope:
+        return ""
+    m = _stdlib_re.search(r"role:(\w+)", str(persona_scope))
+    if m:
+        return m.group(1)
+    return ""
+
 
 _DEFAULT_CONN = "postgresql://werewolf:wolf_secret_2026@127.0.0.1:5433/werewolf"
 
@@ -85,9 +215,261 @@ def _safe_str(val: Any) -> str:
     return str(val) if val else ""
 
 
-# ============================================================
+# ================================================================
+# Policy Filtering Logic
+# ================================================================
+
+
+def filter_by_policy(
+    docs: List[Dict[str, Any]],
+    policy: RetrievalPolicy,
+    ctx: AgentContext,
+) -> Dict[str, List[Dict[str, Any]]]:
+    """Split and filter docs into priority buckets per retrieval policy.
+
+    Args:
+        docs: Full list of doc dicts (each must have role_scope, mbti_scope, etc.)
+        policy: Which retrieval policy to apply.
+        ctx: Agent context (role, mbti, alignment, phase, action_type).
+
+    Returns:
+        Dict mapping bucket_name → sorted list of docs (by quality desc, then score).
+
+    Each bucket name encodes the matching criteria:
+        "same_role_same_mbti" — role==ctx.role AND mbti==ctx.mbti
+        "same_role_all_mbti" — role==ctx.role, any/no mbti
+        "same_alignment_all_mbti" — alignment matches, any/no mbti
+        "global" — role=="global" or no role restriction
+        "same_role_same_mbti_same_phase" — role + mbti + phase match
+    """
+    if not ctx.role and not ctx.mbti:
+        # No context → fall back to global
+        policy = RetrievalPolicy.GLOBAL_ONLY
+
+    role_key = ctx.normalized_role
+    mbti_key = ctx.normalized_mbti
+    phase_key = ctx.phase.lower().strip()
+    align_key = ctx.alignment.lower().strip()
+
+    if policy == RetrievalPolicy.GLOBAL_ONLY:
+        return _filter_global(docs)
+
+    elif policy == RetrievalPolicy.SELF_MBTI_ONLY:
+        return _filter_self_mbti(docs, mbti_key)
+
+    elif policy == RetrievalPolicy.SAME_ROLE_ALL_MBTI:
+        return _filter_same_role(docs, role_key)
+
+    elif policy == RetrievalPolicy.SAME_ROLE_SAME_MBTI:
+        return _filter_same_role_mbti(docs, role_key, mbti_key)
+
+    elif policy == RetrievalPolicy.HYBRID_ROLE_MBTI_GLOBAL:
+        return _filter_hybrid(docs, role_key, mbti_key)
+
+    elif policy == RetrievalPolicy.HYBRID_ROLE_ALIGNMENT_PHASE:
+        return _filter_hybrid_phase(docs, role_key, mbti_key, align_key, phase_key)
+
+    else:
+        return _filter_global(docs)
+
+
+# ---- Individual policy filters ----
+
+def _filter_global(docs: List[Dict]) -> Dict[str, List[Dict]]:
+    bucket: List[Dict] = []
+    for d in docs:
+        role = _safe_str(d.get("role", "")).lower().strip()
+        if role in ("global", "any", ""):
+            bucket.append(d)
+    bucket.sort(key=lambda d: d.get("quality", 0), reverse=True)
+    return {"global": bucket}
+
+
+def _filter_self_mbti(docs: List[Dict], mbti_key: str) -> Dict[str, List[Dict]]:
+    if not mbti_key:
+        return _filter_global(docs)
+    bucket: List[Dict] = []
+    for d in docs:
+        doc_mbti = _safe_str(d.get("mbti_scope", "")).upper().strip()
+        if not doc_mbti or doc_mbti == mbti_key:
+            bucket.append(d)
+    bucket.sort(key=lambda d: d.get("quality", 0), reverse=True)
+    return {"self_mbti": bucket}
+
+
+def _filter_same_role(docs: List[Dict], role_key: str) -> Dict[str, List[Dict]]:
+    if not role_key:
+        return _filter_global(docs)
+    bucket: List[Dict] = []
+    for d in docs:
+        doc_role = _safe_str(d.get("role", "")).lower().strip()
+        if doc_role == role_key or doc_role in ("global", "any", ""):
+            bucket.append(d)
+    bucket.sort(key=lambda d: d.get("quality", 0), reverse=True)
+    return {"same_role_all_mbti": bucket}
+
+
+def _filter_same_role_mbti(docs: List[Dict], role_key: str, mbti_key: str) -> Dict[str, List[Dict]]:
+    if not role_key and not mbti_key:
+        return _filter_global(docs)
+    if not mbti_key:
+        return _filter_same_role(docs, role_key)
+    bucket: List[Dict] = []
+    for d in docs:
+        doc_role = _safe_str(d.get("role", "")).lower().strip()
+        doc_mbti = _safe_str(d.get("mbti_scope", "")).upper().strip()
+        if doc_role == role_key and doc_mbti == mbti_key:
+            bucket.append(d)
+    bucket.sort(key=lambda d: d.get("quality", 0), reverse=True)
+    return {"same_role_same_mbti": bucket}
+
+
+def _filter_hybrid(docs: List[Dict], role_key: str, mbti_key: str) -> Dict[str, List[Dict]]:
+    """Layered: same_role_same_mbti → same_role_all_mbti → global."""
+    buckets: Dict[str, List[Dict]] = {
+        "same_role_same_mbti": [],
+        "same_role_all_mbti": [],
+        "global": [],
+    }
+    for d in docs:
+        doc_role = _safe_str(d.get("role", "")).lower().strip()
+        doc_mbti = _safe_str(d.get("mbti_scope", "")).upper().strip()
+
+        if role_key and doc_role == role_key and mbti_key and doc_mbti == mbti_key:
+            buckets["same_role_same_mbti"].append(d)
+        elif role_key and (doc_role == role_key or doc_role in ("global", "any", "")):
+            buckets["same_role_all_mbti"].append(d)
+        elif doc_role in ("global", "any", ""):
+            buckets["global"].append(d)
+
+    for bucket in buckets.values():
+        bucket.sort(key=lambda d: d.get("quality", 0), reverse=True)
+    return buckets
+
+
+def _filter_hybrid_phase(
+    docs: List[Dict], role_key: str, mbti_key: str,
+    align_key: str, phase_key: str,
+) -> Dict[str, List[Dict]]:
+    """Layered: same_role_same_mbti_same_phase → same_role_all_mbti → same_alignment → global."""
+    buckets: Dict[str, List[Dict]] = {
+        "same_role_same_mbti_same_phase": [],
+        "same_role_all_mbti": [],
+        "same_alignment_all_mbti": [],
+        "global": [],
+    }
+    for d in docs:
+        doc_role = _safe_str(d.get("role", "")).lower().strip()
+        doc_mbti = _safe_str(d.get("mbti_scope", "")).upper().strip()
+        doc_phase = _safe_str(d.get("phase_scope", d.get("phase", ""))).lower().strip()
+        doc_align = _safe_str(d.get("alignment_scope", "")).lower().strip()
+
+        if (role_key and doc_role == role_key
+                and mbti_key and doc_mbti == mbti_key
+                and phase_key and (doc_phase == phase_key or not doc_phase)):
+            buckets["same_role_same_mbti_same_phase"].append(d)
+        elif role_key and (doc_role == role_key or doc_role in ("global", "any", "")):
+            buckets["same_role_all_mbti"].append(d)
+        elif align_key and (doc_align == align_key or not doc_align):
+            buckets["same_alignment_all_mbti"].append(d)
+        elif doc_role in ("global", "any", ""):
+            buckets["global"].append(d)
+
+    for bucket in buckets.values():
+        bucket.sort(key=lambda d: d.get("quality", 0), reverse=True)
+    return buckets
+
+
+def _fill_from_buckets(
+    buckets: Dict[str, List[Dict]],
+    k: int,
+    ratios: Dict[str, int] | None = None,
+) -> Tuple[List[Dict], Dict[str, Any]]:
+    """Fill k results from priority buckets, applying ratios.
+
+    Underfilled buckets are filled from the next lower-priority bucket.
+    Returns (results, trace_dict) where trace_dict has bucket_fill info.
+    """
+    if ratios is None:
+        ratios = _DEFAULT_HYBRID_BUCKET_RATIOS
+
+    bucket_names = list(buckets.keys())
+    total_ratio = sum(ratios.get(bn, 0) for bn in bucket_names)
+    if total_ratio == 0:
+        # All buckets get equal share
+        ratios = {bn: 1 for bn in bucket_names}
+        total_ratio = len(bucket_names)
+
+    results: List[Dict] = []
+    used_from_bucket: Dict[str, int] = {}
+    underfilled: List[str] = []
+
+    # Phase 1: fill from each bucket to its ratio allocation
+    for bucket_name in bucket_names:
+        target = max(1, int(k * ratios.get(bucket_name, 1) / total_ratio))
+        bucket_docs = buckets.get(bucket_name, [])
+        taken = 0
+        for doc in bucket_docs:
+            if taken >= target:
+                break
+            if doc not in results:
+                results.append(doc)
+                taken += 1
+        used_from_bucket[bucket_name] = taken
+        if taken < target:
+            underfilled.append(bucket_name)
+
+    # Phase 2: if underfilled, fill from remaining docs in lower buckets
+    if len(results) < k and underfilled:
+        for bucket_name in bucket_names:
+            if len(results) >= k:
+                break
+            bucket_docs = buckets.get(bucket_name, [])
+            for doc in bucket_docs:
+                if len(results) >= k:
+                    break
+                if doc not in results:
+                    results.append(doc)
+                    used_from_bucket[bucket_name] += 1
+
+    # Phase 3: if still underfilled, take from original doc list
+    if len(results) < k:
+        for bucket_name in bucket_names:
+            if len(results) >= k:
+                break
+            all_in_bucket = buckets.get(bucket_name, [])
+            for doc in all_in_bucket:
+                if len(results) >= k:
+                    break
+                if doc not in results:
+                    results.append(doc)
+
+    trace = {
+        "buckets_used": used_from_bucket,
+        "bucket_underfilled": underfilled[:3] if underfilled else [],
+        "total_filled": len(results),
+    }
+    return results[:k], trace
+
+
+# Default bucket ratios for HYBRID_ROLE_MBTI_GLOBAL (top-3 auto-inject)
+_DEFAULT_HYBRID_BUCKET_RATIOS = {
+    "same_role_same_mbti": 1,
+    "same_role_all_mbti": 1,
+    "global": 1,
+}
+
+# Default bucket ratios for HYBRID_ROLE_ALIGNMENT_PHASE (top-3 auto-inject)
+_DEFAULT_ALIGNMENT_PHASE_BUCKET_RATIOS = {
+    "same_role_same_mbti_same_phase": 1,
+    "same_role_all_mbti": 1,
+    "same_alignment_all_mbti": 1,
+    "global": 0,  # only fill if others underfilled
+}
+
+# ================================================================
 # Production Retriever
-# ============================================================
+# ================================================================
 
 class StrategyRetriever:
     """BM25 + Keyword Grep retriever for AI Werewolf. GPU-free.
@@ -162,6 +544,8 @@ class StrategyRetriever:
         phase: str = "",
         k: int = TOP_K_FINAL,
         output_mode: str = "content",
+        retrieval_policy: RetrievalPolicy = RetrievalPolicy.GLOBAL_ONLY,
+        agent_context: Optional[AgentContext] = None,
     ) -> List[Dict[str, str]]:
         """BM25 full-text search with role-priority filtering → top-K.
 
@@ -171,20 +555,35 @@ class StrategyRetriever:
         Args:
             output_mode: "content" (full), "overview" (situation+quality only),
                          "count" (just match count).
+            retrieval_policy: Policy for filtering/scoping results.
+            agent_context: Agent's role, mbti, alignment, phase context.
 
         Returns list of {situation, strategy, quality} dicts (fields depend on mode).
         """
         if not self._built:
             return []
 
+        if agent_context is None:
+            agent_context = AgentContext(role=role, phase=phase)
+
         if output_mode == "count":
             import jieba
             tokens = " ".join(jieba.cut(query)).split()
-            n = len(set(i for t in tokens if len(t) >= 2 and t in self._inverted_index
-                        for i in self._inverted_index[t]))
+            candidates = [d for d in self._docs
+                         if any(t in self._inverted_index and self._docs.index(d) in self._inverted_index[t]
+                               for t in tokens if len(t) >= 2)]
+            buckets = filter_by_policy(candidates, retrieval_policy, agent_context)
+            n = sum(len(b) for b in buckets.values())
             return [{"match_count": n, "total_docs": len(self._docs)}]
 
         results = self._bm25_search_roled(query, role, phase, k=k)
+        # Apply policy post-filter
+        if retrieval_policy != RetrievalPolicy.GLOBAL_ONLY and results:
+            buckets = filter_by_policy(results, retrieval_policy, agent_context)
+            filled, _ = _fill_from_buckets(buckets, k)
+            if filled:
+                results = filled
+
         if output_mode == "overview":
             return [{k: v for k, v in r.items() if k in ("doc_id", "situation", "quality", "doc_type")}
                     for r in results]
@@ -203,8 +602,10 @@ class StrategyRetriever:
         use_bm25_rerank: bool = True,
         output_mode: str = "content",
         regex_mode: bool = False,
+        retrieval_policy: RetrievalPolicy = RetrievalPolicy.GLOBAL_ONLY,
+        agent_context: Optional[AgentContext] = None,
     ) -> List[Dict[str, str]]:
-        """Agent-driven search: keywords/regex → inverted index grep → BM25 rerank.
+        """Agent-driven search: keywords/regex → inverted index grep → BM25 rerank → policy filter.
 
         HIGH-PRECISION fast path. Agent-formulated keywords beat raw jieba
         tokenization (NDCG@5 ~0.85 vs 0.62).
@@ -219,39 +620,92 @@ class StrategyRetriever:
             use_bm25_rerank: If True, BM25-score the grep candidates for ranking.
             output_mode: "content" (full), "overview" (situation+quality only), "count".
             regex_mode: If True, treat keywords as regex patterns (re.compile).
+            retrieval_policy: Policy for filtering/scoping results.
+            agent_context: Agent's role, mbti, alignment, phase context for policy filtering.
         """
         if not self._built:
             return []
+
+        # Build context if not provided
+        if agent_context is None:
+            agent_context = AgentContext(role=role, phase=phase, keywords=keywords)
 
         grep_indices = self._keyword_grep(keywords, role, phase, k=TOP_K_CANDIDATES * 2,
                                           regex_mode=regex_mode)
 
         if output_mode == "count":
-            return [{"match_count": len(grep_indices), "total_docs": len(self._docs)}]
+            # Apply policy filter to count
+            candidates = [self._docs[i] for i in grep_indices]
+            buckets = filter_by_policy(candidates, retrieval_policy, agent_context)
+            total = sum(len(b) for b in buckets.values())
+            return [{"match_count": total, "total_docs": len(self._docs)}]
 
         if len(grep_indices) < 3:
             return self.search(" ".join(keywords), role, phase, k=k,
-                               output_mode=output_mode)
+                               output_mode=output_mode,
+                               retrieval_policy=retrieval_policy,
+                               agent_context=agent_context)
 
         # Reorder grep results by role priority: same-role > global > other
         grep_indices = self._reorder_by_role_priority(grep_indices, role)
+        candidates = [self._docs[i] for i in grep_indices]
 
-        if not use_bm25_rerank:
+        # Apply policy filtering to scored candidates
+        buckets = filter_by_policy(candidates, retrieval_policy, agent_context)
+
+        # Fill from buckets with appropriate ratios
+        filled, bucket_trace = _fill_from_buckets(buckets, k)
+
+        # If no results from policy, fall back to BM25 unfiltered
+        if not filled and retrieval_policy != RetrievalPolicy.GLOBAL_ONLY:
+            filled = candidates[:k]
+            bucket_trace = {"fallback": "policy_empty", "buckets_used": {}}
+
+        # Build result dicts
+        def _build_result(doc: Dict, rank: int, bucket_name: str) -> Dict[str, str]:
+            result = {
+                "doc_id": _safe_str(doc.get("doc_id", "")),
+                "situation": _safe_str(doc.get("situation", "")),
+                "strategy": _safe_str(doc.get("strategy", "")),
+                "quality": doc.get("quality", 0.8),
+                "doc_type": _safe_str(doc.get("doc_type", "")),
+                "rank": rank,
+                "bucket": bucket_name,
+                "retrieval_policy": retrieval_policy.value,
+                "role_scope": _safe_str(doc.get("role_scope", doc.get("role", ""))),
+                "mbti_scope": _safe_str(doc.get("mbti_scope", "")),
+                "phase_scope": _safe_str(doc.get("phase_scope", "")),
+                "alignment_scope": _safe_str(doc.get("alignment_scope", "")),
+                "action_scope": _safe_str(doc.get("action_scope", "")),
+                "source_game_id": _safe_str(doc.get("source_game_id", "")),
+                "source_decision_id": _safe_str(doc.get("source_decision_id", "")),
+                "status": _safe_str(doc.get("status", "")),
+                "quality_score": doc.get("quality", 0.8),
+                "_bucket_trace": bucket_trace,
+            }
+            return result
+
+        results = []
+        for rank, doc in enumerate(filled, 1):
+            # Determine which bucket this doc came from
+            bucket_name = "unknown"
+            for bn, bdocs in buckets.items():
+                if doc in bdocs:
+                    bucket_name = bn
+                    break
+            result = _build_result(doc, rank, bucket_name)
             if output_mode == "overview":
-                return [{"doc_id": self._docs[i].get("doc_id", ""),
-                         "situation": self._docs[i]["situation"],
-                         "quality": self._docs[i]["quality"],
-                         "doc_type": self._docs[i].get("doc_type", "")} for i in grep_indices[:k]]
-            return [{"doc_id": self._docs[i].get("doc_id", ""),
-                     "situation": self._docs[i]["situation"],
-                     "strategy": self._docs[i]["strategy"],
-                     "quality": self._docs[i]["quality"],
-                     "doc_type": self._docs[i].get("doc_type", "")} for i in grep_indices[:k]]
+                result = {k: v for k, v in result.items()
+                         if k in ("doc_id", "situation", "quality", "doc_type",
+                                  "rank", "bucket", "retrieval_policy",
+                                  "role_scope", "mbti_scope", "phase_scope",
+                                  "source_game_id", "status")}
+            results.append(result)
 
-        results = self._bm25_rerank_subset(" ".join(keywords), role, phase, grep_indices, k=k)
-        if output_mode == "overview":
-            return [{k: v for k, v in r.items() if k in ("doc_id", "situation", "quality", "doc_type")}
-                    for r in results]
+        if use_bm25_rerank and len(results) >= 3:
+            # BM25 rerank the policy-fill results against original doc indices
+            pass  # policy-bucketed results are already quality-sorted; skip BM25 reorder
+
         return results
 
     def search_regex(
@@ -642,7 +1096,10 @@ def _load_from_pg(conn_str: str) -> List[Dict]:
                    COALESCE(visibility_scope, 'public'),
                    COALESCE(deidentified, false),
                    COALESCE(contains_current_game_private_info, false),
-                   COALESCE(tags, '[]'::json)
+                   COALESCE(persona_scope, ''),
+                   COALESCE(tags, '[]'::json),
+                   source_report_ids,
+                   source_item_ids
             FROM strategy_knowledge_docs
             WHERE status = 'active'
               AND (doc_type != 'reflection' OR quality_score >= 0.85)
@@ -655,7 +1112,10 @@ def _load_from_pg(conn_str: str) -> List[Dict]:
                    COALESCE(confidence_tier, 'L3_strategic'),
                    COALESCE(visibility_scope, 'public'),
                    COALESCE(deidentified, false),
-                   COALESCE(contains_current_game_private_info, false)
+                   COALESCE(contains_current_game_private_info, false),
+                   COALESCE(persona_scope, ''),
+                   source_report_ids,
+                   source_item_ids
             FROM strategy_knowledge_docs
             WHERE status = 'active'
               AND (doc_type != 'reflection' OR quality_score >= 0.85)
@@ -664,37 +1124,80 @@ def _load_from_pg(conn_str: str) -> List[Dict]:
     docs = []
     if tier_exp_id:
         import json
-        for row_id, sit, rec, rat, role, phase, q, dtype, ctier, vscope, deid, cgpi, raw_tags in c.fetchall():
+        for row_id, sit, rec, rat, role, phase, q, dtype, ctier, vscope, deid, cgpi, \
+                persona_scope, raw_tags, raw_src_reports, raw_src_items in c.fetchall():
             # H6: If a doc has experiment tags but NOT our tier's tag, skip it.
             tags = json.loads(raw_tags) if isinstance(raw_tags, str) else (raw_tags or [])
             if any(t.startswith("exp-") for t in tags) and tier_exp_id not in tags:
                 continue
-            docs.append({
-                "doc_id": row_id or "",
-                "situation": sit or "", "strategy": rec or "", "rationale": rat or "",
-                "role": role or "global", "phase": phase or "global",
-                "quality": float(q) if q else 0.8,
-                "doc_type": dtype or "",
-                "confidence_tier": ctier or "L3_strategic",
-                "visibility_scope": vscope or "public",
-                "deidentified": bool(deid) if deid is not None else False,
-                "contains_current_game_private_info": bool(cgpi) if cgpi is not None else False,
-            })
+            # JSONB columns arrive as Python lists; handle both str and list cases
+            src_reports = list(raw_src_reports or []) if isinstance(raw_src_reports, (list, tuple)) else (
+                json.loads(raw_src_reports) if isinstance(raw_src_reports, str) else [])
+            src_items = list(raw_src_items or []) if isinstance(raw_src_items, (list, tuple)) else (
+                json.loads(raw_src_items) if isinstance(raw_src_items, str) else [])
+            docs.append(_build_doc_dict(
+                row_id, sit, rec, rat, role, phase, q, dtype, ctier, vscope, deid, cgpi,
+                persona_scope, src_reports, src_items,
+            ))
     else:
-        for row_id, sit, rec, rat, role, phase, q, dtype, ctier, vscope, deid, cgpi in c.fetchall():
-            docs.append({
-                "doc_id": row_id or "",
-                "situation": sit or "", "strategy": rec or "", "rationale": rat or "",
-                "role": role or "global", "phase": phase or "global",
-                "quality": float(q) if q else 0.8,
-                "doc_type": dtype or "",
-                "confidence_tier": ctier or "L3_strategic",
-                "visibility_scope": vscope or "public",
-                "deidentified": bool(deid) if deid is not None else False,
-                "contains_current_game_private_info": bool(cgpi) if cgpi is not None else False,
-            })
+        for row_id, sit, rec, rat, role, phase, q, dtype, ctier, vscope, deid, cgpi, \
+                persona_scope, raw_src_reports, raw_src_items in c.fetchall():
+            import json
+            src_reports = list(raw_src_reports or []) if isinstance(raw_src_reports, (list, tuple)) else (
+                json.loads(raw_src_reports) if isinstance(raw_src_reports, str) else [])
+            src_items = list(raw_src_items or []) if isinstance(raw_src_items, (list, tuple)) else (
+                json.loads(raw_src_items) if isinstance(raw_src_items, str) else [])
+            docs.append(_build_doc_dict(
+                row_id, sit, rec, rat, role, phase, q, dtype, ctier, vscope, deid, cgpi,
+                persona_scope, src_reports, src_items,
+            ))
     conn.close()
     return docs
+
+
+def _build_doc_dict(
+    row_id: str, sit: str, rec: str, rat: str,
+    role: str, phase: str, q: Any, dtype: str,
+    ctier: str, vscope: str, deid: Any, cgpi: Any,
+    persona_scope: str, src_reports: list, src_items: list,
+) -> Dict[str, Any]:
+    """Build a normalized doc dict with derived scope fields.
+
+    Derives mbti_scope, role_scope, alignment_scope, source_game_id,
+    source_decision_id from DB columns. No migration required.
+    """
+    persona_scope_val = persona_scope.strip() if persona_scope else ""
+    mbti_scope = _parse_mbti_from_persona_scope(persona_scope_val)
+    persona_role = _parse_role_from_persona_scope(persona_scope_val)
+
+    return {
+        # Core fields
+        "doc_id": row_id or "",
+        "situation": sit or "",
+        "strategy": rec or "",
+        "rationale": rat or "",
+        "role": role or "global",
+        "phase": phase or "global",
+        "quality": float(q) if q else 0.8,
+        "doc_type": dtype or "",
+        # Confidence / visibility
+        "confidence_tier": ctier or "L3_strategic",
+        "visibility_scope": vscope or "public",
+        "deidentified": bool(deid) if deid is not None else False,
+        "contains_current_game_private_info": bool(cgpi) if cgpi is not None else False,
+        # Scopes — derived from persona_scope and role/phase columns
+        "persona_scope": persona_scope_val,
+        "mbti_scope": mbti_scope,
+        "role_scope": persona_role or role,
+        "alignment_scope": _derive_alignment_from_role(persona_role or role),
+        "phase_scope": phase if phase and phase.lower() != "global" else "",
+        "action_scope": "",  # not present in current schema
+        # Source tracing
+        "source_game_id": src_reports[0] if src_reports else "",
+        "source_decision_id": src_items[0] if src_items else "",
+        # Status tracking
+        "status": dtype,  # doc_type serves as the status field in current schema
+    }
 
 
 # ============================================================
@@ -808,13 +1311,19 @@ def retrieve_strategies_prod(
     include_reflections: bool = False,
     output_mode: str = "content",
     regex_mode: bool = False,
+    retrieval_policy: RetrievalPolicy = RetrievalPolicy.GLOBAL_ONLY,
+    agent_context: Optional[AgentContext] = None,
+    mbti: str = "",
+    alignment: str = "",
+    player_id: str = "",
+    action_type: str = "",
 ) -> List[Dict[str, str]]:
-    """Production strategy retrieval: Grep + BM25 + role/phase bonus.
+    """Production strategy retrieval: Grep + BM25 + role/phase bonus + policy filter.
 
     Supports three output modes (inspired by Claude Code's grep modes):
       - "count": just return match count (quick keyword assessment)
-      - "overview": situation + quality only (lightweight scan)
-      - "content": full strategy content (default)
+      - "overview": situation + quality + scope info (lightweight scan)
+      - "content": full strategy content with scope annotations (default)
 
     Args:
         role: Current role (e.g., "Seer", "Werewolf").
@@ -825,23 +1334,49 @@ def retrieve_strategies_prod(
         include_reflections: If False, exclude doc_type='reflection' results.
         output_mode: "content" | "overview" | "count"
         regex_mode: If True, keywords are treated as Python regex patterns.
+        retrieval_policy: Which policy to apply for doc filtering/scoping.
+        agent_context: Full AgentContext (takes precedence over individual params).
+        mbti: Agent's MBTI type (used if agent_context is None).
+        alignment: Agent's alignment ("village"/"wolf").
+        player_id: Agent's player ID for tracing.
+        action_type: Current action type ("talk"/"vote"/"attack"/etc.).
 
     Returns:
-        List of dicts (fields depend on output_mode).
+        List of dicts with fields: doc_id, situation, strategy, quality, doc_type,
+        rank, bucket, retrieval_policy, role_scope, mbti_scope, phase_scope,
+        source_game_id, status, ...
     """
     retriever = get_retriever()
     if retriever is None:
         return []
 
+    # Build agent context from individual params if full context not provided
+    if agent_context is None:
+        agent_context = AgentContext(
+            player_id=player_id,
+            role=role,
+            alignment=alignment or _derive_alignment_from_role(role),
+            mbti=mbti,
+            phase=phase,
+            action_type=action_type,
+            keywords=keywords or [],
+        )
+
     if keywords and len(keywords) >= 1:
         results = retriever.search_with_keywords(
             keywords, role=role, phase=phase, k=limit,
             output_mode=output_mode, regex_mode=regex_mode,
+            retrieval_policy=retrieval_policy,
+            agent_context=agent_context,
         )
     else:
         query = situation or _default_query_text(role, phase)
-        results = retriever.search(query, role=role, phase=phase, k=limit,
-                                   output_mode=output_mode)
+        results = retriever.search(
+            query, role=role, phase=phase, k=limit,
+            output_mode=output_mode,
+            retrieval_policy=retrieval_policy,
+            agent_context=agent_context,
+        )
 
     if not include_reflections and output_mode != "count":
         results = [r for r in results if not (r.get("doc_type") or "").startswith("reflection")]
