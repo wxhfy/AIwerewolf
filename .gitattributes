@@ -1,0 +1,14 @@
+# Normalize line endings
+* text=auto
+
+# Python
+*.py text diff=python
+
+# Notebooks — don't merge
+*.ipynb binary
+
+# Shell scripts — LF required
+*.sh text eol=lf
+
+# Lock files — machine generated
+*.lock binary
