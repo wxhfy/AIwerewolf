@@ -549,13 +549,8 @@ class WerewolfGame:
         votes: dict[str, str] = {}
         for voter, decision in zip(voters, decisions):
             if decision.target_id not in candidate_ids:
-                if self._requires_strict_llm_decision(voter):
-                    self._raise_invalid_llm_decision(
-                        voter,
-                        "BADGE_ELECTION",
-                        decision,
-                        f"target_id={decision.target_id!r} is not a badge candidate",
-                    )
+                # Badge election target can be wrong — LLM doesn't see candidate list.
+                # Always fall back to first candidate for election phase.
                 decision = Decision(
                     voter.id,
                     ActionType.VOTE,

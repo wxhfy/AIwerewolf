@@ -1,0 +1,54 @@
+# Python
+__pycache__/
+*.py[codz]
+*.so
+*.egg-info/
+.eggs/
+dist/
+build/
+*.egg
+.venv/
+env/
+venv/
+
+# Node
+node_modules/
+frontend/.next/
+frontend/out/
+frontend/node_modules/
+
+# Git
+.git/
+.gitattributes
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Data
+data/*.db
+data/*.sqlite3
+*.log
+
+# References (third-party clones)
+references/
+
+# Tests
+tests/
+.pytest_cache/
+
+# Outputs
+outputs/
+log/
+
+# OS
+.DS_Store
+Thumbs.db

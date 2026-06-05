@@ -42,7 +42,30 @@ def _initialize_database() -> None:
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok"}
+    """Health check — verifies DB and LLM connectivity."""
+    import os
+
+    from backend.db.database import get_engine
+
+    result: dict = {"status": "ok", "checks": {}}
+
+    # DB check
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            conn.exec_driver_sql("SELECT 1")
+        result["checks"]["database"] = "ok"
+    except Exception as exc:
+        result["checks"]["database"] = f"error: {exc}"
+        result["status"] = "degraded"
+
+    # LLM check
+    provider = os.getenv("LLM_PROVIDER", "unset")
+    result["checks"]["llm_provider"] = provider
+    result["checks"]["strict_mode"] = os.getenv("AIWEREWOLF_STRICT_MODE", "false")
+    result["version"] = "0.1.0"
+
+    return result
 
 
 def _build_game(
