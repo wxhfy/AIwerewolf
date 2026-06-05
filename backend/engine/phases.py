@@ -62,6 +62,7 @@ def default_phase_handlers() -> dict[Phase, PhaseHandler]:
             AtomicPhase(Phase.DAY_BADGE_SPEECH, "_badge_speech_phase"),
             AtomicPhase(Phase.DAY_BADGE_ELECTION, "_badge_election_phase"),
             AtomicPhase(Phase.DAY_SPEECH, "_speech_phase"),
+            AtomicPhase(Phase.DAY_SHERIFF_CLOSING, "_sheriff_closing_phase"),
             AtomicPhase(Phase.DAY_VOTE, "_vote_phase"),
             AtomicPhase(Phase.DAY_RESOLVE, "_day_resolve"),
         ),

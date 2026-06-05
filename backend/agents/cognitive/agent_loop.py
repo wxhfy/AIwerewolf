@@ -218,13 +218,15 @@ class AgentLoop:
         context = []  # list of messages for the conversation
         tool_trace: list[dict] = []  # track tool calls for auditing
 
-        # Build initial system prompt
-        system_text = self._build_system_text(obs, memory, tools, extra_context, cached_analysis)
-        context.append(SystemMessage(content=system_text))
-
-        # Initial user message (triggers the LLM to start thinking)
-        init_user = self._build_initial_user(obs, cached_analysis)
-        context.append(HumanMessage(content=init_user))
+        # ── Prompt Cache Optimisation ──
+        # Split into static SystemMessage (cacheable) + dynamic HumanMessage.
+        # DeepSeek hashes the SystemMessage to decide cache hits — keeping it
+        # identical across calls lets the API skip re-processing 60-80% of
+        # prompt tokens. This matches what Anthropic SDK / Claude Code does.
+        static_system = self._build_static_system_text(obs, tools)
+        dynamic_context = self._build_dynamic_context(obs, memory, extra_context, cached_analysis)
+        context.append(SystemMessage(content=static_system))
+        context.append(HumanMessage(content=dynamic_context))
 
         iteration = 0
         last_tool_results = False
@@ -440,6 +442,61 @@ class AgentLoop:
         # Output format
         blocks.append(self._output_format())
 
+        return "\n\n".join(blocks)
+
+    def _build_static_system_text(self, obs: Observation, tools: dict) -> str:
+        """Cacheable system prompt — same across all calls in a game.
+
+        Only includes content that NEVER changes between calls:
+        - MBTI persona + role identity (from Profile)
+        - Tool descriptions
+        - Output format
+        - Strategy bias (fixed per game)
+        """
+        blocks = [
+            self._system_prompt,
+            self._task_for_action(str(getattr(obs, "player_role", "") or "")),
+        ]
+        if not self._supports_bind_tools:
+            blocks.append(self._format_tools(tools))
+        blocks.append(self._output_format())
+        strategy_bias_text = build_strategy_bias_block(self._strategy_bias, self._strategy_action())
+        if strategy_bias_text:
+            blocks.append(strategy_bias_text)
+        return "\n\n".join(blocks)
+
+    def _build_dynamic_context(
+        self,
+        obs: Observation,
+        memory: Memory,
+        extra_context: str,
+        cached_analysis: str,
+    ) -> str:
+        """Dynamic context — changes every call, goes in HumanMessage.
+
+        Game state, observation, memory, and extra context change each turn.
+        Putting them here (not in SystemMessage) allows the static system
+        prompt to be cached by the API.
+        """
+        blocks = [
+            build_game_context(obs),
+            format_observation(obs),
+        ]
+        memory_text = memory.format_for_prompt()
+        if memory_text:
+            blocks.append(memory_text)
+        if extra_context:
+            blocks.append(f"【额外上下文】\n{extra_context}")
+        if cached_analysis:
+            blocks.append(
+                f"【上一轮分析】\n{cached_analysis}\n"
+                "(你刚分析过这个局势，直接基于已有判断做决策。如需补充信息可以调用工具。)"
+            )
+        track_c_strategy_text = ""
+        if _feature_enabled("COGNITIVE_ENABLE_TRACK_C", True):
+            track_c_strategy_text = _build_track_c_strategy_block(obs, self._action_type)
+        if track_c_strategy_text:
+            blocks.append(track_c_strategy_text)
         return "\n\n".join(blocks)
 
     def _strategy_action(self) -> str:

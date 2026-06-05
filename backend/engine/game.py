@@ -76,13 +76,14 @@ def _phase_already_past(current: Phase, target: Phase) -> bool:
         Phase.DAY_BADGE_ELECTION: 10,
         Phase.DAY_PK_SPEECH: 11,
         Phase.DAY_SPEECH: 12,
-        Phase.DAY_VOTE: 13,
-        Phase.DAY_LAST_WORDS: 14,
-        Phase.DAY_RESOLVE: 15,
-        Phase.BADGE_TRANSFER: 16,
-        Phase.HUNTER_SHOOT: 17,
-        Phase.WHITE_WOLF_KING_BOOM: 18,
-        Phase.GAME_END: 19,
+        Phase.DAY_SHERIFF_CLOSING: 13,
+        Phase.DAY_VOTE: 14,
+        Phase.DAY_LAST_WORDS: 15,
+        Phase.DAY_RESOLVE: 16,
+        Phase.BADGE_TRANSFER: 17,
+        Phase.HUNTER_SHOOT: 18,
+        Phase.WHITE_WOLF_KING_BOOM: 19,
+        Phase.GAME_END: 20,
     }
     return _ORDER.get(current, 0) > _ORDER.get(target, 0)
 
@@ -937,6 +938,27 @@ class WerewolfGame:
         speakers = self._day_speech_order()
         self._run_actor_sequence(Phase.DAY_SPEECH, speakers, handle)
         self._mark_phase_done(Phase.DAY_SPEECH)
+
+    def _sheriff_closing_phase(self) -> None:
+        """警长归票：警长总结发言并推荐投票目标."""
+        if self._phase_done(Phase.DAY_SHERIFF_CLOSING):
+            return
+        sheriff_id = self.state.badge.holder_id
+        if sheriff_id is None:
+            self._mark_phase_done(Phase.DAY_SHERIFF_CLOSING)
+            return
+        sheriff = self.state.player(sheriff_id)
+        if not sheriff.alive:
+            self._mark_phase_done(Phase.DAY_SHERIFF_CLOSING)
+            return
+        self._set_phase(Phase.DAY_SHERIFF_CLOSING)
+        self._log(EventType.SYSTEM_MESSAGE, "public", {
+            "message": f"警长 {sheriff.name} 进行归票总结。",
+        })
+        decision = self._ask(sheriff, "SHERIFF_CLOSING", lambda agent: agent.talk())
+        if self.validator.validate(self.state, decision):
+            self._emit_speech(sheriff, decision, {"sheriff_closing": True})
+        self._mark_phase_done(Phase.DAY_SHERIFF_CLOSING)
 
     def _pk_speech_phase(self, target_ids: list[str]) -> None:
         self._set_phase(Phase.DAY_PK_SPEECH)
