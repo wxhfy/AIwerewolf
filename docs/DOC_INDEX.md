@@ -1,144 +1,81 @@
 # AI Werewolf 文档索引
 
-> 最后更新：2026-06-01
+> 2026-06-05
 
 ---
 
-## 📚 核心文档
+## 展示文档（给评委）
 
-| 文档 | 用途 | 位置 |
-|------|------|------|
-| **README.md** | 项目总览、三大轨道介绍、快速开始 | `/README.md` |
-| **REQUIREMENTS.md** | 课题需求文档（课程作业要求） | `/REQUIREMENTS.md` |
-| **TODO.md** | 待办事项、开发计划 | `/TODO.md` |
-| **AGENTS.md** | AI Agent 开发规范（给 Claude/Copilot 看的） | `/AGENTS.md` |
-| **CLAUDE.md** | Claude Code 特定配置 | `/CLAUDE.md` |
-| **SKILLS.md** | 技能模块文档 | `/SKILLS.md` |
+| 文档 | 内容 |
+|------|------|
+| **[ARCHITECTURE.md](ARCHITECTURE.md)** | 系统架构总览 — CognitiveAgent + 三级评分 + 知识自进化 |
+| **[DATA_FLOW.md](DATA_FLOW.md)** | 端到端数据流 & 证据链 — Game → Decision → Score → Knowledge → 检索闭环 |
+| **[backend_acceptance_criteria.md](backend_acceptance_criteria.md)** | 后端验收标准 — 18/22 Verified, STRICT MODE PASSED |
+| **[evidence_chain_demo.md](evidence_chain_demo.md)** | 证据链演示 — 单条决策的完整追溯 |
 
 ---
 
-## 🏗️ 架构设计
+## 产品 & 设计
 
-| 文档 | 内容 | 位置 |
-|------|------|------|
-| **prd.md** | 产品需求文档（详细功能规格） | `docs/prd.md` |
-| **full-interaction-design.md** | 完整交互设计（UI/UX 流程） | `docs/full-interaction-design.md` |
-| **architecture_cognitive_agent_v2.md** | 认知 Agent 架构设计 v2 | `docs/architecture_cognitive_agent_v2.md` |
-| **retrieval_final_design.md** | 策略检索系统设计 | `docs/retrieval_final_design.md` |
-| **prompt_strategy_injection_v8.md** | Prompt 策略注入设计 v8 | `docs/prompt_strategy_injection_v8.md` |
-| **REFERENCE.md** | 参考资料 | `docs/REFERENCE.md` |
+| 文档 | 内容 |
+|------|------|
+| **[prd.md](prd.md)** | 产品需求规格 V1.3 — 规则引擎、角色系统、Agent 设计 |
+| **[product_backend_spec.md](product_backend_spec.md)** | 后端产品规格 — 核心能力描述 |
+| **[backend_user_journey.md](backend_user_journey.md)** | 用户旅程 — 从大厅到复盘 |
+| **[REFERENCE.md](REFERENCE.md)** | 参考资料 — 研究文献、开源项目 |
 
 ---
 
-## 🎮 Track A — 基础对局引擎
+## 实验 & 协议
 
-| 文档 | 内容 | 位置 |
-|------|------|------|
-| **prompt_composition_audit.md** | Prompt 组成审计 | `docs/prompt_composition_audit.md` |
-| **role_implementation_audit.md** | 角色实现审计 | `docs/role_implementation_audit.md` |
-| **strategy_layer_audit.md** | 策略层审计 | `docs/strategy_layer_audit.md` |
-
----
-
-## 📊 Track B — 评测复盘
-
-| 文档 | 内容 | 位置 |
-|------|------|------|
-| **track_b_complete.md** | Track B 完成报告 | `docs/track_b_complete.md` |
-| **track_b_rubric_alignment.md** | 评分标准对齐 | `docs/track_b_rubric_alignment.md` |
-| **track_b_rubric_demo_report.md** | 评分演示报告 | `docs/track_b_rubric_demo_report.md` |
-| **persona_role_strategy_eval_readiness.md** | 人设-角色-策略评估就绪度 | `docs/persona_role_strategy_eval_readiness.md` |
-| **werewolf_scoring_benchmark_v7.md** | 评分基准 v7 | `docs/werewolf_scoring_benchmark_v7.md` |
-
-### 核心模块（代码）
-| 模块 | 功能 | 位置 |
-|------|------|------|
-| **ProcessScoreV3** | 角色归一化、置信度感知评分 | `backend/eval/process_score_v3.py` |
-| **HybridScorer** | 规则+LLM+反事实混合评分 | `backend/eval/hybrid_scorer.py` |
-| **PerStepScorer** | 逐步评分器（发言/投票/夜间行动） | `backend/eval/per_step_scorer.py` |
-| **PersonaScorer** | 人设一致性评分 | `backend/eval/persona_scorer.py` |
-| **StrategyScorer** | 策略影响评分 | `backend/eval/strategy_scorer.py` |
-| **EloRating** | 跨局 Elo 排名 | `backend/eval/elo_rating.py` |
-| **ScoreCalibrator** | Ridge 回归校准 | `backend/eval/calibration.py` |
-| **V3Report** | V3 报告生成工具 | `backend/eval/v3_report.py` |
+| 文档 | 内容 |
+|------|------|
+| **[experiment_protocol.md](experiment_protocol.md)** | 实验协议 — Multi-Tier 对比设计 |
+| **[retrieval_policy_design.md](retrieval_policy_design.md)** | 检索策略设计 — MBTI-scoped 检索 |
+| **[experiments/track_c_acceptance_report.md](experiments/track_c_acceptance_report.md)** | Track C 验收报告 |
 
 ---
 
-## 🧬 Track C — 自进化 Agent
+## 运维 & 问题
 
-| 文档 | 内容 | 位置 |
-|------|------|------|
-| **Track_C_Evolution_Agent_Plan.md** | Track C 进化 Agent 计划 | `docs/Track_C_Evolution_Agent_Plan.md` |
-
----
-
-## 🔧 运维 & 问题
-
-| 文档 | 内容 | 位置 |
-|------|------|------|
-| **DEVELOPMENT_ISSUES.md** | 开发问题记录（70KB，很详细） | `docs/DEVELOPMENT_ISSUES.md` |
-| **project_risk_and_next_steps.md** | 项目风险与后续步骤 | `docs/project_risk_and_next_steps.md` |
-| **full_project_audit_summary.md** | 全项目审计摘要 | `docs/full_project_audit_summary.md` |
+| 文档 | 内容 |
+|------|------|
+| **[DEVELOPMENT_ISSUES.md](DEVELOPMENT_ISSUES.md)** | 开发问题追踪 — 50+ 条踩坑记录与解决方案 |
+| **[architecture_audit_20260604.md](architecture_audit_20260604.md)** | 2026-06-04 全系统架构审计 (已被后续修复 supersede) |
 
 ---
 
-## 📁 Skills（开发规范）
-
-| 文档 | 内容 | 位置 |
-|------|------|------|
-| **00-team-overview.md** | 团队概览 | `skills/00-team-overview.md` |
-| **10-git-workflow.md** | Git 工作流 | `skills/10-git-workflow.md` |
-| **20-backend-conventions.md** | 后端规范 | `skills/20-backend-conventions.md` |
-| **30-frontend-conventions.md** | 前端规范 | `skills/30-frontend-conventions.md` |
-| **40-agent-development.md** | Agent 开发指南 | `skills/40-agent-development.md` |
-| **50-api-contract.md** | API 契约 | `skills/50-api-contract.md` |
-| **60-testing-ci.md** | 测试与 CI | `skills/60-testing-ci.md` |
-| **70-ai-collaboration.md** | AI 协作指南 | `skills/70-ai-collaboration.md` |
-
----
-
-## 🎯 快速导航
-
-### 我想了解...
-- **项目是什么** → `README.md`
-- **作业要求** → `REQUIREMENTS.md`
-- **怎么跑起来** → `README.md` 快速开始
-- **代码规范** → `skills/` 目录
-- **有什么问题** → `docs/DEVELOPMENT_ISSUES.md`
-
-### 我要做...
-- **改游戏逻辑** → `backend/engine/` + `docs/prompt_composition_audit.md`
-- **改 Agent 策略** → `backend/agents/` + `docs/role_implementation_audit.md`
-- **改评分系统** → `backend/eval/` + `docs/track_b_complete.md`
-- **改前端** → `frontend/` + `docs/full-interaction-design.md`
-
-### 我要查...
-- **Track B 进度** → `docs/track_b_complete.md`
-- **Track C 进度** → `docs/Track_C_Evolution_Agent_Plan.md`
-- **已知问题** → `docs/DEVELOPMENT_ISSUES.md`
-- **项目风险** → `docs/project_risk_and_next_steps.md`
-
----
-
-## 📂 源码目录对应
+## 源码导航
 
 ```
-AIwerewolf/
-├── backend/
-│   ├── agents/          # Agent 实现（LLM/Heuristic/Human）
-│   ├── engine/          # 游戏引擎（核心逻辑）
-│   ├── eval/            # 评测系统（Track B/C）
-│   ├── llm/             # LLM 客户端封装
-│   ├── db/              # 数据库模型
-│   └── app.py           # FastAPI 后端入口
-├── frontend/            # Next.js 前端
-├── docs/                # 文档目录（本索引）
-├── scripts/             # 脚本工具
-├── tests/               # 测试用例
-├── configs/             # 配置文件
-└── data/                # 数据文件
+backend/
+├── engine/          # 游戏引擎 (game.py, visibility.py, models.py)
+├── agents/cognitive/ # CognitiveAgent (agent.py, agent_loop.py, observe.py, retrieval_prod.py)
+├── eval/            # 评测系统 (per_step_scorer.py, llm_judge.py, knowledge_abstractor.py)
+├── db/              # 数据库 (models.py, database.py, persist.py)
+└── ops/             # 运维 (preflight.py)
+
+frontend/            # Next.js 观战 UI
+
+configs/
+├── rule_variant_standard.yaml  # 标准规则配置
+└── strategy_library.yaml      # 策略知识库 (187 条)
+
+scripts/
+├── run_backend_full_strict.py  # 全量严格验证
+├── run_full_llm_pipeline.py    # 完整 LLM 流程
+└── multi_tier_experiment.py    # 多 Tier 对比实验
 ```
 
 ---
 
-*本文档由小爪自动整理 (๑•̀ㅂ•́)و✧*
+## 历史文档
+
+开发过程中的设计文档和中间报告已归档至 [`archive/`](archive/):
+- 架构设计: `architecture_improvement_blueprint_v2.md`, `solution_blueprint.md`
+- Track B 报告 17 篇: `track_b_design.md`, `track_b_*.md`
+- 旧版设计: `prompt_strategy_injection_v8.md`, `retrieval_final_design.md`
+
+---
+
+*由小爪整理 (๑•̀ㅂ•́)و✧*
