@@ -32,6 +32,7 @@ from backend.engine.game import WerewolfGame
 DB_URL = "postgresql://werewolf:wolf_secret_2026@127.0.0.1:5433/werewolf"
 OUTPUT_DIR = ROOT / "outputs"
 PER_GAME_TIMEOUT_SECONDS = 45 * 60  # 45 minutes per game
+COOLDOWN_SECONDS = 30  # pause between games to avoid API rate limiting
 
 # ═══════════════════════════════════════════════════════════════
 # Phase Observer — logs every phase transition for debugging hangs
@@ -244,6 +245,9 @@ def run_experiment(
             timeout_games += 1
             results.append({"seed": seed, "error": "timeout", "duration_s": PER_GAME_TIMEOUT_SECONDS})
             _save_incremental(results, OUTPUT_DIR)
+            if i < n_games - 1:
+                print(f"  Cooling down {COOLDOWN_SECONDS}s before next game...", flush=True)
+                time.sleep(COOLDOWN_SECONDS)
             continue
 
         elapsed = time.perf_counter() - t0
@@ -302,6 +306,11 @@ def run_experiment(
             results.append({"seed": seed, "error": f"subprocess_exitcode={exitcode}"})
 
         _save_incremental(results, OUTPUT_DIR)
+
+        # Cooldown between games to avoid API rate limiting
+        if i < n_games - 1:
+            print(f"  Cooling down {COOLDOWN_SECONDS}s before next game...", flush=True)
+            time.sleep(COOLDOWN_SECONDS)
 
     # ── Compile summary ──
     stats: dict[str, Any] = {}
