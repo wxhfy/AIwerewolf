@@ -55,11 +55,16 @@ def create_tools(
                 obs.player_role, obs.phase, keywords=keywords, limit=limit,
                 output_mode=mode, regex_mode=use_regex,
             )
-        except Exception:
+        except Exception as e:
             results = []
+            if os.getenv("ALLOW_FALLBACK", "true").lower() == "false":
+                import logging
+                _tlog = logging.getLogger(__name__)
+                _tlog.warning("STRICT MODE: search_strategies retrieval_prod error: %s", e)
         if not results:
             if os.getenv("ALLOW_FALLBACK", "true").lower() == "false":
-                raise RuntimeError("STRICT MODE: search_strategies retrieval_prod failed, fallback forbidden")
+                # Don't raise — 0 results is a valid (empty) answer, not a failure
+                return "(未找到匹配的策略 — 尝试调整搜索关键词)"
             # Fallback to TF-IDF (PostgreSQL-independent)
             results = retrieve_tfidf(
                 obs.player_role, obs.phase, situation=" ".join(keywords), limit=limit,

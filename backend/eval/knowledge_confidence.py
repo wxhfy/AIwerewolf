@@ -249,11 +249,11 @@ def applicability_matches(
 ) -> bool:
     """Check if knowledge applicability conditions match current situation."""
     doc_role = doc.get("applicability_role")
-    if doc_role is not None and doc_role.lower() != current_role.lower():
+    if doc_role is not None and doc_role.lower() not in (current_role.lower(), "global"):
         return False
 
     doc_phase = doc.get("applicability_phase")
-    if doc_phase is not None and doc_phase.upper() != current_phase.upper():
+    if doc_phase is not None and doc_phase and doc_phase.upper() != current_phase.upper():
         return False
 
     doc_rule = doc.get("rule_variant", "standard_competition_v1")
