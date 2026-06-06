@@ -57,4 +57,8 @@ class ActionValidator:
                 ActionType.SHOOT,
             }:
                 return False
+            # 狼人不能攻击狼队友（CLAUDE.md 关键规则 #1）
+            if decision.action_type == ActionType.ATTACK:
+                if target.alignment == Alignment.WOLF:
+                    return False
         return True

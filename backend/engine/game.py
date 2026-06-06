@@ -864,12 +864,25 @@ class WerewolfGame:
         self._set_phase(Phase.NIGHT_RESOLVE)
         deaths: list[dict[str, str]] = []
         wolf_target_id = self.state.night_actions.wolf_target_id
-        if (
+        guard_target_id = self.state.night_actions.guard_target_id
+        witch_save = self.state.night_actions.witch_save
+
+        # 奶穿判定：同时被守卫守护和女巫解药救 → 死亡（CLAUDE.md 核心规则）
+        both_guarded_and_saved = (
             wolf_target_id
-            and not self.state.night_actions.witch_save
-            and wolf_target_id != self.state.night_actions.guard_target_id
-        ):
-            deaths.append({"player_id": wolf_target_id, "reason": "wolf"})
+            and witch_save
+            and wolf_target_id == guard_target_id
+        )
+
+        if wolf_target_id:
+            if both_guarded_and_saved:
+                # 同守同救（奶穿）→ 死
+                deaths.append({"player_id": wolf_target_id, "reason": "milk_through"})
+            elif not witch_save and wolf_target_id != guard_target_id:
+                # 既没被守也没被救 → 死
+                deaths.append({"player_id": wolf_target_id, "reason": "wolf"})
+            # else: 只被守或只被救（但不同时）→ 活
+
         poison_target_id = self.state.night_actions.witch_poison_target_id
         if poison_target_id:
             deaths.append({"player_id": poison_target_id, "reason": "poison"})
@@ -1586,12 +1599,30 @@ class WerewolfGame:
         alive_village = [player for player in self.state.alive_players if player.alignment == Alignment.VILLAGE]
         winner: Alignment | None = None
         reason = ""
+
+        # 好人赢：所有狼死
         if not alive_wolves:
             winner = Alignment.VILLAGE
             reason = "all_wolves_dead"
+        # 狼人赢：屠城（人数平局或狼人更多）
         elif len(alive_wolves) >= len(alive_village):
             winner = Alignment.WOLF
             reason = "wolves_reached_parity"
+        # 狼人赢：屠边（所有神死 或 所有村民死）
+        else:
+            # 区分神民和平民
+            gods = [p for p in alive_village if p.role in {Role.SEER, Role.WITCH, Role.HUNTER, Role.GUARD, Role.IDIOT}]
+            villagers = [p for p in alive_village if p.role == Role.VILLAGER]
+
+            if not gods and villagers:
+                # 所有神出局，只剩村民 → 狼人屠边胜利
+                winner = Alignment.WOLF
+                reason = "all_gods_dead"
+            elif not villagers and gods:
+                # 所有村民出局，只剩神 → 狼人屠边胜利
+                winner = Alignment.WOLF
+                reason = "all_villagers_dead"
+
         if winner:
             self.state.winner = winner
             self._log(EventType.GAME_END, "public", {"winner": winner.value, "reason": reason})
