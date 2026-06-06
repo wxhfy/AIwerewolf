@@ -157,6 +157,8 @@ class WerewolfGame:
         self.play_done: _threading.Event = _threading.Event()
         self._play_start_lock: _threading.Lock = _threading.Lock()
         self._shared_lock: _threading.RLock = _threading.RLock()
+        # Agent 独占锁：保护并发 _batch_ask 时的 agent.update() 和决策调用
+        self._agent_locks: dict[str, _threading.RLock] = {}
         sampled_personas = sampled_personas or self._sample_personas_from_db(len(self.state.players), seed)
         if not sampled_personas:
             # DB unavailable — shuffle in-memory PERSONA_POOL per seed so
@@ -208,7 +210,14 @@ class WerewolfGame:
             return None
 
     def attach_agents(self, agents: dict[str, Agent]) -> None:
+        import threading as _threading
+
         self.agents = agents
+        # 为每个 agent 创建独占锁
+        for player_id in agents.keys():
+            if player_id not in self._agent_locks:
+                self._agent_locks[player_id] = _threading.RLock()
+
         for player in self.state.players:
             char = self.characters.get(player.id)
             if char is not None and hasattr(self.agents[player.id], "character"):
@@ -708,8 +717,10 @@ class WerewolfGame:
             self._log_decision(decision, "private", {"ignored": True, "reason": "guard_cannot_repeat"}, [guard.id])
             self._mark_phase_done(Phase.NIGHT_GUARD_ACTION)
             return
-        self.state.night_actions.guard_target_id = decision.target_id
-        self.state.night_actions.last_guard_target_id = decision.target_id
+        # 并发保护：Guard/Wolf/Seer 可能在后台线程运行，锁保护 night_actions 写入
+        with self._shared_lock:
+            self.state.night_actions.guard_target_id = decision.target_id
+            self.state.night_actions.last_guard_target_id = decision.target_id
         self._log_decision(decision, "public", {"target_id": decision.target_id})
         self._mark_phase_done(Phase.NIGHT_GUARD_ACTION)
 
@@ -761,7 +772,9 @@ class WerewolfGame:
             )
             decision = self._ask(wolf, "WOLF_TEAM_VOTE", lambda agent: agent.attack())
             if self.validator.validate(self.state, decision):
-                self.state.night_actions.wolf_votes[wolf.id] = decision.target_id or ""
+                # 并发保护：Wolf 投票写入需要锁
+                with self._shared_lock:
+                    self.state.night_actions.wolf_votes[wolf.id] = decision.target_id or ""
                 self._log_decision(
                     decision,
                     "private",
@@ -776,7 +789,8 @@ class WerewolfGame:
 
         self._run_actor_sequence(Phase.NIGHT_WOLF_ACTION, self._seat_sorted(wolves), handle)
         if self.state.night_actions.wolf_votes:
-            self.state.night_actions.wolf_target_id = self._majority_target(self.state.night_actions.wolf_votes)
+            with self._shared_lock:
+                self.state.night_actions.wolf_target_id = self._majority_target(self.state.night_actions.wolf_votes)
             final_target = self.state.player(self.state.night_actions.wolf_target_id)
             self._log(
                 EventType.PRIVATE_INFO,
@@ -813,8 +827,9 @@ class WerewolfGame:
                     )
                     continue
                 if self.validator.validate(self.state, decision):
-                    self.state.abilities.witch_heal_used = True
-                    self.state.night_actions.witch_save = True
+                    with self._shared_lock:
+                        self.state.abilities.witch_heal_used = True
+                        self.state.night_actions.witch_save = True
                     self._log_decision(decision, "public", {"target_id": decision.target_id})
                 else:
                     logger.warning(f"Witch {witch.name} save rejected: validator failed")
@@ -823,8 +838,9 @@ class WerewolfGame:
                     logger.warning(f"Witch {witch.name} poison rejected: poison already used")
                     continue
                 if self.validator.validate(self.state, decision):
-                    self.state.abilities.witch_poison_used = True
-                    self.state.night_actions.witch_poison_target_id = decision.target_id
+                    with self._shared_lock:
+                        self.state.abilities.witch_poison_used = True
+                        self.state.night_actions.witch_poison_target_id = decision.target_id
                     self._log_decision(decision, "public", {"target_id": decision.target_id})
                 else:
                     logger.warning(f"Witch {witch.name} poison rejected: validator failed")
@@ -852,8 +868,9 @@ class WerewolfGame:
             "is_wolf": target.alignment == Alignment.WOLF,
             "message": f"Seer check: {target.name} is {'wolf' if target.alignment == Alignment.WOLF else 'not wolf'}.",
         }
-        self.state.night_actions.seer_target_id = target.id
-        self.state.night_actions.seer_result = result
+        with self._shared_lock:
+            self.state.night_actions.seer_target_id = target.id
+            self.state.night_actions.seer_result = result
         self._log_decision(decision, "public", {"target_id": target.id}, [seer.id])
         self._log(EventType.PRIVATE_INFO, "private", result, visible_to=[seer.id])
         self._mark_phase_done(Phase.NIGHT_SEER_ACTION)
@@ -1087,10 +1104,11 @@ class WerewolfGame:
             self._refresh_day_summary()
             self._mark_phase_done(Phase.DAY_RESOLVE)
             return
-        self._last_words_phase(target_id)
-        self._kill(target_id, "vote")
+        # 先公布投票结果，再遗言（CLAUDE.md 规则 #4）
         target = self.state.player(target_id)
         self._log(EventType.SYSTEM_MESSAGE, "public", {"message": f"{target.name} was voted out."})
+        self._last_words_phase(target_id)
+        self._kill(target_id, "vote")
         # Check win immediately after death — skip hunter/badge on decided game
         if self._check_win():
             self._mark_phase_done(Phase.DAY_RESOLVE)
@@ -1321,52 +1339,55 @@ class WerewolfGame:
     def _ask(self, player: Player, request: str, call, *, many: bool = False):
         view = self.visibility.for_player(self.state, player.id)
         agent = self.agents[player.id]
-        agent.update(view, request)
-        if not player.is_ai:
-            queued = self.human_action_buffer.get(player.id, [])
-            if not queued:
-                self.state.pending_input = self._build_pending_input(player, request)
-                if self.observer is not None:
-                    self.observer(self.state)
-                raise GamePaused(f"Waiting for human input: {player.name} {request}")
-            result = queued if many else queued[0]
-            self.human_action_buffer[player.id] = []
+
+        # 用 agent 独占锁保护 update() 和 call()，防止并发访问同一 agent
+        with self._agent_locks.get(player.id, self._shared_lock):
+            agent.update(view, request)
+            if not player.is_ai:
+                queued = self.human_action_buffer.get(player.id, [])
+                if not queued:
+                    self.state.pending_input = self._build_pending_input(player, request)
+                    if self.observer is not None:
+                        self.observer(self.state)
+                    raise GamePaused(f"Waiting for human input: {player.name} {request}")
+                result = queued if many else queued[0]
+                self.human_action_buffer[player.id] = []
+                if isinstance(result, Decision):
+                    self._record_decision(player, request, view.__dict__, result, raw_output="[human]")
+                else:
+                    for item in result:
+                        self._record_decision(player, request, view.__dict__, item, raw_output="[human]")
+                return result
+            # AI turn — emit a "thinking" snapshot BEFORE we block on the LLM
+            # round-trip. The frontend reads `current_speaker_id` to light up the
+            # PlayerCard with a "思考中" pulse; without this frame the UI looks
+            # frozen for the 4–10s the LLM is actually working.
+            prior_speaker = self.state.current_speaker_id
+            self.state.current_speaker_id = player.id
+            if self.observer is not None:
+                self.observer(self.state)
+            try:
+                result = call(agent)
+            finally:
+                # Only clear if we set it for this _ask — phases like DAY_SPEECH
+                # already manage current_speaker_id externally and we shouldn't
+                # blow it away.
+                if self.state.current_speaker_id == player.id and prior_speaker != player.id:
+                    self.state.current_speaker_id = prior_speaker
             if isinstance(result, Decision):
-                self._record_decision(player, request, view.__dict__, result, raw_output="[human]")
-            else:
-                for item in result:
-                    self._record_decision(player, request, view.__dict__, item, raw_output="[human]")
-            return result
-        # AI turn — emit a "thinking" snapshot BEFORE we block on the LLM
-        # round-trip. The frontend reads `current_speaker_id` to light up the
-        # PlayerCard with a "思考中" pulse; without this frame the UI looks
-        # frozen for the 4–10s the LLM is actually working.
-        prior_speaker = self.state.current_speaker_id
-        self.state.current_speaker_id = player.id
-        if self.observer is not None:
-            self.observer(self.state)
-        try:
-            result = call(agent)
-        finally:
-            # Only clear if we set it for this _ask — phases like DAY_SPEECH
-            # already manage current_speaker_id externally and we shouldn't
-            # blow it away.
-            if self.state.current_speaker_id == player.id and prior_speaker != player.id:
-                self.state.current_speaker_id = prior_speaker
-        if isinstance(result, Decision):
-            raw = str(result.metadata.get("raw_text", ""))
-            reasoning = str(result.metadata.get("reasoning", ""))
-            if reasoning:
-                raw = f"[推理]\n{reasoning[:3000]}\n\n[输出]\n{raw}"
-            self._record_decision(player, request, view.__dict__, result, raw_output=raw)
-        elif isinstance(result, list):
-            for item in result:
-                raw = str(item.metadata.get("raw_text", ""))
-                reasoning = str(item.metadata.get("reasoning", ""))
+                raw = str(result.metadata.get("raw_text", ""))
+                reasoning = str(result.metadata.get("reasoning", ""))
                 if reasoning:
                     raw = f"[推理]\n{reasoning[:3000]}\n\n[输出]\n{raw}"
-                self._record_decision(player, request, view.__dict__, item, raw_output=raw)
-        return result if many else result
+                self._record_decision(player, request, view.__dict__, result, raw_output=raw)
+            elif isinstance(result, list):
+                for item in result:
+                    raw = str(item.metadata.get("raw_text", ""))
+                    reasoning = str(item.metadata.get("reasoning", ""))
+                    if reasoning:
+                        raw = f"[推理]\n{reasoning[:3000]}\n\n[输出]\n{raw}"
+                    self._record_decision(player, request, view.__dict__, item, raw_output=raw)
+            return result if many else result
 
     def _batch_ask(
         self,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from backend.engine.models import Alignment
 from backend.engine.models import ActionType
 from backend.engine.models import Decision
 from backend.engine.models import GameState

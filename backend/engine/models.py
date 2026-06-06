@@ -329,13 +329,7 @@ class GameState:
             },
             "daily_summaries": dict(self.daily_summaries),
             "daily_summary_facts": dict(self.daily_summary_facts),
-            "role_abilities": {
-                "witch_heal_used": self.abilities.witch_heal_used,
-                "witch_poison_used": self.abilities.witch_poison_used,
-                "hunter_can_shoot": self.abilities.hunter_can_shoot,
-                "idiot_revealed": self.abilities.idiot_revealed,
-                "white_wolf_king_boom_used": self.abilities.white_wolf_king_boom_used,
-            },
+            # role_abilities 移至 moderator_dict()，避免泄露角色能力状态
             "current_speaker_id": self.current_speaker_id,
             "pk_targets": list(self.pk_targets),
             "pk_source": self.pk_source,
@@ -367,6 +361,14 @@ class GameState:
             "seer_target_id": self.night_actions.seer_target_id,
             "seer_result": self.night_actions.seer_result,
             "deaths": list(self.night_actions.deaths),
+        }
+        # role_abilities 从 public_dict 移至此处，仅主持/观众可见
+        data["role_abilities"] = {
+            "witch_heal_used": self.abilities.witch_heal_used,
+            "witch_poison_used": self.abilities.witch_poison_used,
+            "hunter_can_shoot": self.abilities.hunter_can_shoot,
+            "idiot_revealed": self.abilities.idiot_revealed,
+            "white_wolf_king_boom_used": self.abilities.white_wolf_king_boom_used,
         }
         data["phase_cursor"] = dict(self.phase_cursor)
         return data
