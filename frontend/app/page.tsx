@@ -9,14 +9,41 @@ import { createRoom, prepareRoom } from "@/lib/gameApi";
 import { t } from "@/lib/i18n";
 import { LobbyConfigCard } from "@/components/game/LobbyConfigCard";
 import { PrepareModal } from "@/components/game/PrepareModal";
+import { SettingsModal, GameSettings } from "@/components/SettingsModal";
 
 export default function LobbyPage() {
   const router = useRouter();
   const { language, setLanguage, agentType, setAgentType, setGameState } = useAppContext();
 
+  // Settings state
+  const [showSettings, setShowSettings] = useState(false);
+  const [gameSettings, setGameSettings] = useState<GameSettings>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("gameSettings");
+      if (saved) {
+        try {
+          return JSON.parse(saved);
+        } catch {}
+      }
+    }
+    return { viewMode: "public", language: Language.ZH, customApiKey: "" };
+  });
+
   useEffect(() => {
     if (agentType !== "llm") setAgentType("llm" as AgentType);
-  }, [agentType, setAgentType]);
+    // Sync language from settings
+    if (gameSettings.language !== language) {
+      setLanguage(gameSettings.language);
+    }
+  }, [agentType, setAgentType, gameSettings.language, language, setLanguage]);
+
+  const handleSaveSettings = (newSettings: GameSettings) => {
+    setGameSettings(newSettings);
+    setLanguage(newSettings.language);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("gameSettings", JSON.stringify(newSettings));
+    }
+  };
 
   const [playerCount, setPlayerCount] = useState(7);
   const [mode, setMode] = useState<"ai" | "human">("ai");
@@ -85,6 +112,16 @@ export default function LobbyPage() {
         <Link href="/evolution" className="px-3 py-1.5 text-xs font-medium rounded-button border border-border/40 text-text-sub/70 hover:text-primary hover:border-primary/50 transition-colors backdrop-blur-sm">
           {language === "zh" ? "进化看板" : "Evolution"}
         </Link>
+        <button
+          onClick={() => setShowSettings(true)}
+          className="px-3 py-1.5 text-xs font-medium rounded-button border border-border/40 text-text-sub/70 hover:text-primary hover:border-primary/50 transition-colors backdrop-blur-sm flex items-center gap-1.5"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M12 1v6m0 6v6m-5.196-13.804l4.243 4.243m0 6.122l4.243 4.243M1 12h6m6 0h6m-13.804 5.196l4.243-4.243m0-6.122l4.243-4.243" />
+          </svg>
+          {language === "zh" ? "设置" : "Settings"}
+        </button>
         <div className="flex overflow-hidden rounded-button border border-border/40 backdrop-blur-sm">
           <button onClick={() => setLanguage(Language.ZH)} className={`px-3 py-1.5 text-xs font-medium transition-colors ${language === "zh" ? "bg-primary text-white" : "bg-transparent text-text-sub/70 hover:text-textPrimary"}`}>中文</button>
           <button onClick={() => setLanguage(Language.EN)} className={`px-3 py-1.5 text-xs font-medium transition-colors ${language === "en" ? "bg-primary text-white" : "bg-transparent text-text-sub/70 hover:text-textPrimary"}`}>EN</button>
@@ -136,6 +173,14 @@ export default function LobbyPage() {
           onConfirm={handleConfirmStart}
         />
       )}
+
+      {/* ── Settings modal ──────────────────────────────────────── */}
+      <SettingsModal
+        isOpen={showSettings}
+        onClose={() => setShowSettings(false)}
+        currentSettings={gameSettings}
+        onSave={handleSaveSettings}
+      />
     </div>
   );
 }
