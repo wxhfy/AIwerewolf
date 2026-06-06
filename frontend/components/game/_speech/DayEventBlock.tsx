@@ -46,7 +46,9 @@ export interface DayEventBlockProps {
 function isRedundantPhaseAnnouncement(event: GameEvent): boolean {
   if (event.type === EventType.SYSTEM_MESSAGE) {
     const msg = event.payload.message || "";
-    return /^Night \d+ begins\.$/.test(msg) || /^Day \d+ begins\.$/.test(msg);
+    return /^Night \d+ begins\.$/.test(msg)
+        || /^Day \d+ begins\.$/.test(msg)
+        || /was voted out\.$/.test(msg);  // elimination confirmed after last words
   }
   if (event.type === EventType.PHASE_CHANGED && event.payload.phase === "GAME_END") {
     return true;
@@ -121,6 +123,11 @@ function buildWolfDeliberation(
 
   if (rawVotes.length === 0) return entries;
 
+  // 检查是否所有存活狼人都已投票
+  const allWolvesVoted = [...wolfPlayerIds].every(wolfId =>
+    rawVotes.some(v => v.wolfId === wolfId)
+  );
+
   // Resolved target: backend's wolf_target_id takes priority,
   // otherwise all-same-vote → first vote's target
   const allSameTarget = new Set(rawVotes.map(v => v.targetId)).size <= 1;
@@ -145,17 +152,19 @@ function buildWolfDeliberation(
     });
   }
 
-  // ── Final decision ──────────────────────────────────────────────────
-  if (resolvedPlayer) {
-    entries.push({
-      kind: "result",
-      text: format(t("wolfFinalTarget"), {
-        target: String(resolvedPlayer.seat),
-        name: resolvedPlayer.name || "",
-      }),
-    });
-  } else if (rawVotes.length > 1 && !allSameTarget) {
-    entries.push({ kind: "result", text: t("wolfNoConsensus") });
+  // ── Final decision（仅当所有狼人投票完成后） ──────────────────────
+  if (allWolvesVoted) {
+    if (resolvedPlayer) {
+      entries.push({
+        kind: "result",
+        text: format(t("wolfFinalTarget"), {
+          target: String(resolvedPlayer.seat),
+          name: resolvedPlayer.name || "",
+        }),
+      });
+    } else if (!allSameTarget) {
+      entries.push({ kind: "result", text: t("wolfNoConsensus") });
+    }
   }
   return entries;
 }
@@ -185,8 +194,10 @@ export function DayEventBlock({
     event.type !== EventType.PRIVATE_INFO &&
     (viewMode === ViewMode.MODERATOR || event.visibility !== "private") &&
     !isRedundantPhaseAnnouncement(event) &&
-    // 过滤掉狼人行动阶段的单独行动事件，统一显示聚合后的狼队商议内容
-    !(event.phase === "NIGHT_WOLF_ACTION" && event.type === EventType.NIGHT_ACTION)
+    // 过滤狼人行动阶段的单独行动事件，统一显示聚合后的狼队商议内容
+    !(event.phase === "NIGHT_WOLF_ACTION" && event.type === EventType.NIGHT_ACTION) &&
+    // 过滤投票放逐的 PLAYER_DIED 事件，统一在遗言后渲染一次确认
+    !(event.type === EventType.PLAYER_DIED && (event.payload as any)?.reason === "vote")
   );
 
   const timelineEvents = mergeConsecutiveChats(rawEvents);
@@ -196,7 +207,7 @@ export function DayEventBlock({
 
   if (timelineEvents.length === 0) return null;
 
-  // Reveal index: block at first uncompleted CHAT_MESSAGE
+  // Reveal index: block at first uncompleted CHAT_MESSAGE (only blocks chat events)
   let revealIndex = timelineEvents.length;
   for (let i = 0; i < timelineEvents.length; i++) {
     if (timelineEvents[i].type === EventType.CHAT_MESSAGE && !completedIds.has(timelineEvents[i].id)) {
@@ -204,6 +215,10 @@ export function DayEventBlock({
     }
   }
   const visibleEvents = timelineEvents.slice(0, revealIndex + 1);
+  // System events after revealIndex (deaths, hunter shoot, etc.) should render immediately
+  const pendingSystemEvents = timelineEvents.slice(revealIndex + 1).filter(e =>
+    e.type !== EventType.CHAT_MESSAGE && e.type !== EventType.VOTE_CAST
+  );
 
   // Vote result cutoff: show before LAST_WORDS / HUNTER_SHOOT / BADGE_TRANSFER
   let voteCutoff = timelineEvents.length;
@@ -312,6 +327,18 @@ export function DayEventBlock({
             }
           }
 
+          // 渲染被 revealIndex 挡住的系统事件（死亡、猎人开枪等不阻塞）
+          for (const evt of pendingSystemEvents) {
+            nodes.push(
+              <TimelineEvent
+                key={evt.id || `sys-${nodes.length}`} event={evt} index={nodes.length}
+                language={language} isHumanMode={isHumanMode} humanSeat={humanSeat}
+                players={players} animateChat={false}
+                onChatComplete={onChatComplete} isLatest={false}
+              />
+            );
+          }
+
           return nodes;
         })()}
 
@@ -331,6 +358,35 @@ export function DayEventBlock({
               && event.type === EventType.CHAT_MESSAGE && !completedIds.has(event.id)}
           />
         ))}
+
+        {/* ── Elimination confirmation: once after last words ── */}
+        {(() => {
+          // Only for exile votes (not badge), and only after last words rendered
+          if (!dayVotes || Object.keys(dayVotes).length === 0) return null;
+          const hasLastWords = timelineEvents.some(e => e.phase === "DAY_LAST_WORDS");
+          if (!hasLastWords) return null;
+          const lastWordsIdx = timelineEvents.findIndex(e => e.phase === "DAY_LAST_WORDS");
+          if (revealIndex <= lastWordsIdx) return null; // not yet revealed
+          // Find top vote getter
+          const tally: Record<string, number> = {};
+          for (const targetId of Object.values(dayVotes)) {
+            tally[targetId] = (tally[targetId] || 0) + 1;
+          }
+          const topId = Object.entries(tally).sort((a, b) => b[1] - a[1])[0]?.[0];
+          if (!topId) return null;
+          const exiled = players?.find(p => p.id === topId);
+          if (!exiled || exiled.alive) return null;
+          const text = language === "zh"
+            ? `${exiled.seat}号 ${exiled.name} 因投票放逐出局`
+            : `#${exiled.seat} ${exiled.name} was exiled by vote`;
+          return (
+            <div className="flex justify-center py-2">
+              <span className="text-xs text-danger/60 font-medium tracking-wide">
+                ◆ {text}
+              </span>
+            </div>
+          );
+        })()}
       </div>
     </div>
   );

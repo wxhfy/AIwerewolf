@@ -1,0 +1,1413 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Werewolf 人机对战模式设计文档</title>
+  <style>
+    :root {
+      --bg: #f7f3ea;
+      --paper: #fffdf8;
+      --ink: #24201b;
+      --muted: #6f655b;
+      --line: #e7dccb;
+      --accent: #b7833f;
+      --accent-dark: #7c5424;
+      --night: #16141c;
+      --night-soft: #282432;
+      --danger: #9f3c32;
+      --good: #3d7b5f;
+      --code-bg: #f2eadf;
+      --shadow: 0 18px 50px rgba(70, 45, 20, 0.12);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: 0;
+      background:
+        radial-gradient(circle at top left, rgba(183, 131, 63, 0.10), transparent 30%),
+        radial-gradient(circle at bottom right, rgba(58, 46, 74, 0.10), transparent 26%),
+        var(--bg);
+      color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif;
+      line-height: 1.72;
+      font-size: 16px;
+    }
+
+    .page {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 42px 22px 72px;
+    }
+
+    .hero {
+      background:
+        linear-gradient(135deg, rgba(255, 253, 248, 0.98), rgba(255, 248, 235, 0.94)),
+        var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 28px;
+      padding: 42px 46px;
+      box-shadow: var(--shadow);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      right: -90px;
+      top: -90px;
+      width: 220px;
+      height: 220px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(183, 131, 63, .18), transparent 70%);
+    }
+
+    h1 {
+      margin: 0 0 12px;
+      font-size: 36px;
+      line-height: 1.2;
+      letter-spacing: -0.04em;
+    }
+
+    .subtitle {
+      color: var(--muted);
+      font-size: 18px;
+      margin: 0;
+      max-width: 860px;
+    }
+
+    .meta {
+      margin-top: 22px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      border-radius: 999px;
+      background: #f0e2cf;
+      color: var(--accent-dark);
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      gap: 22px;
+      margin-top: 24px;
+      align-items: start;
+    }
+
+    nav {
+      position: sticky;
+      top: 20px;
+      background: rgba(255, 253, 248, 0.86);
+      backdrop-filter: blur(10px);
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      padding: 20px;
+      box-shadow: 0 10px 32px rgba(70, 45, 20, 0.08);
+      max-height: calc(100vh - 40px);
+      overflow: auto;
+    }
+
+    nav h2 {
+      font-size: 15px;
+      margin: 0 0 10px;
+      color: var(--accent-dark);
+    }
+
+    nav a {
+      display: block;
+      color: var(--muted);
+      text-decoration: none;
+      padding: 7px 4px;
+      border-radius: 8px;
+      font-size: 14px;
+    }
+
+    nav a:hover {
+      color: var(--accent-dark);
+      background: #f4eadc;
+    }
+
+    main {
+      min-width: 0;
+    }
+
+    section {
+      background: rgba(255, 253, 248, 0.96);
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      padding: 30px 34px;
+      margin-bottom: 22px;
+      box-shadow: 0 10px 30px rgba(70, 45, 20, 0.06);
+    }
+
+    h2 {
+      margin: 0 0 18px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--line);
+      font-size: 25px;
+      letter-spacing: -0.02em;
+    }
+
+    h3 {
+      margin: 28px 0 10px;
+      font-size: 19px;
+      color: var(--accent-dark);
+    }
+
+    h4 {
+      margin: 20px 0 8px;
+      font-size: 16px;
+      color: #3a3027;
+    }
+
+    p { margin: 10px 0; }
+
+    ul, ol { padding-left: 1.35em; }
+    li { margin: 5px 0; }
+
+    .callout {
+      border-left: 4px solid var(--accent);
+      background: #fbf3e7;
+      border-radius: 14px;
+      padding: 14px 18px;
+      margin: 16px 0;
+      color: #4d3922;
+    }
+
+    .warning {
+      border-left-color: var(--danger);
+      background: #fbebe8;
+      color: #5c2a25;
+    }
+
+    .success {
+      border-left-color: var(--good);
+      background: #eaf5ef;
+      color: #244c3a;
+    }
+
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      background: var(--code-bg);
+      padding: 2px 6px;
+      border-radius: 6px;
+      color: #5a3a16;
+      font-size: 0.92em;
+    }
+
+    pre {
+      background: #2a241e;
+      color: #fff3de;
+      padding: 18px 20px;
+      border-radius: 16px;
+      overflow-x: auto;
+      line-height: 1.55;
+      border: 1px solid rgba(255,255,255,0.06);
+    }
+
+    pre code {
+      background: transparent;
+      color: inherit;
+      padding: 0;
+      border-radius: 0;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 14px 0 22px;
+      overflow: hidden;
+      border-radius: 14px;
+      border: 1px solid var(--line);
+    }
+
+    th, td {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: #f2e4d1;
+      color: #5c3d1a;
+      font-weight: 700;
+    }
+
+    tr:last-child td { border-bottom: none; }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .card {
+      border: 1px solid var(--line);
+      background: #fffaf2;
+      border-radius: 18px;
+      padding: 18px;
+    }
+
+    .card h4 {
+      margin-top: 0;
+      color: var(--accent-dark);
+    }
+
+    .tag-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 12px 0;
+    }
+
+    .tag {
+      padding: 4px 9px;
+      border-radius: 999px;
+      background: #f0e2cf;
+      color: #6a451b;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .stage {
+      border: 1px solid #d9c5a7;
+      background: linear-gradient(135deg, #fffaf2, #f8ecdc);
+      border-radius: 18px;
+      padding: 18px 20px;
+      margin: 16px 0;
+    }
+
+    .stage .name {
+      font-weight: 800;
+      color: var(--accent-dark);
+      margin-bottom: 8px;
+      font-size: 17px;
+    }
+
+    .stage.night {
+      background: linear-gradient(135deg, var(--night), var(--night-soft));
+      color: #f7ead6;
+      border-color: #4a3d58;
+    }
+
+    .stage.night .name { color: #f1bd68; }
+
+    .stage.result {
+      background: linear-gradient(135deg, #fff8eb, #f3dfc4);
+      border-color: #d7b37a;
+    }
+
+    .small {
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    @media (max-width: 980px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
+      nav {
+        position: static;
+        max-height: none;
+      }
+      .hero {
+        padding: 30px 24px;
+      }
+      h1 {
+        font-size: 30px;
+      }
+      .grid-2 {
+        grid-template-columns: 1fr;
+      }
+      section {
+        padding: 24px 20px;
+      }
+    }
+
+    @media print {
+      body { background: white; }
+      .page { max-width: none; padding: 0; }
+      nav { display: none; }
+      section, .hero { box-shadow: none; break-inside: avoid; }
+      .layout { display: block; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header class="hero">
+      <h1>AI Werewolf 人机对战模式设计文档</h1>
+      <p class="subtitle">
+        本文档用于指导人机对战页面设计与实现：复用 AI 观战页成熟的视觉、组件、转场和状态同步机制，但将页面核心从“事件时间线”切换为“当前行动舞台”。
+      </p>
+      <div class="meta">
+        <span class="pill">模式：人机对战</span>
+        <span class="pill">核心：当前行动者舞台化</span>
+        <span class="pill">原则：复用视觉，不复用观战逻辑</span>
+        <span class="pill">协议：沿用 AI 对战数据格式</span>
+        <span class="pill">状态：统一派生，严格隔离</span>
+      </div>
+    </header>
+
+    <div class="layout">
+      <nav>
+        <h2>目录</h2>
+        <a href="#goal">1. 设计目标</a>
+        <a href="#relation">2. 与 AI 观战页的关系</a>
+        <a href="#structure">3. 页面总体结构</a>
+        <a href="#principles">4. 核心交互原则</a>
+        <a href="#header">5. 顶部状态栏</a>
+        <a href="#players">6. 玩家席位</a>
+        <a href="#stages">7. 主舞台阶段模板</a>
+        <a href="#action-panel">8. 底部操作面板</a>
+        <a href="#event-log">9. 事件日志</a>
+        <a href="#data-flow">10. 数据流设计</a>
+        <a href="#state-model">11. 前端状态模型</a>
+        <a href="#privacy">12. 信息隔离</a>
+        <a href="#transition">13. 动画与转场</a>
+        <a href="#ai-speech">14. AI 发言</a>
+        <a href="#error">15. 错误、加载和重连</a>
+        <a href="#components">16. 组件设计</a>
+        <a href="#backend">17. 数据协议约束</a>
+        <a href="#state-sync" style="padding-left:16px;font-size:13px">17.4 状态同步</a>
+        <a href="#event-visibility" style="padding-left:16px;font-size:13px">17.5 事件过滤</a>
+        <a href="#dead-player-state" style="padding-left:16px;font-size:13px">17.6 死亡状态机</a>
+        <a href="#component-cleanup" style="padding-left:16px;font-size:13px">17.7 组件清理</a>
+        <a href="#witch-two-phase" style="padding-left:16px;font-size:13px">17.8 女巫两阶段</a>
+        <a href="#recovery-patterns" style="padding-left:16px;font-size:13px">17.9 错误恢复</a>
+        <a href="#skip-semantics" style="padding-left:16px;font-size:13px">17.10 SKIP 语义</a>
+        <a href="#missing-roles" style="padding-left:16px;font-size:13px">17.11 补充模板</a>
+        <a href="#avoid">18. 必须避免的问题</a>
+        <a href="#acceptance">19. 验收标准</a>
+        <a href="#summary">20. 总结</a>
+      </nav>
+
+      <main>
+        <section id="goal">
+          <h2>1. 设计目标</h2>
+          <p>人机对战模式是“玩家亲自参与，其余角色由 AI 扮演”的狼人杀模式。</p>
+          <p>它不是 AI 观战页的简单加按钮版本，也不是重新做一套完全不同的页面。正确方向是：</p>
+          <div class="callout">
+            <strong>复用 AI 观战页成熟的视觉、组件、转场和状态同步机制，但把中间核心从“事件时间线”改成“当前行动舞台”。</strong>
+          </div>
+          <p>AI 观战页的核心是“看一局 AI 自动对战”，所以它适合以 <code>EventTimeline</code>、打字机、事件顺序播放作为主体验。人机对战页的核心是“我正在参与游戏”，所以它必须优先回答：</p>
+          <ul>
+            <li>现在是第几天或第几夜；</li>
+            <li>当前是什么阶段；</li>
+            <li>现在轮到谁；</li>
+            <li>我是否需要操作；</li>
+            <li>如果需要操作，我应该点什么；</li>
+            <li>如果不需要操作，我在等待什么；</li>
+            <li>哪些信息对我可见，哪些信息必须隐藏。</li>
+          </ul>
+          <p>因此，人机对战页的核心设计原则是：<strong>当前行动者舞台化</strong>。</p>
+          <ul>
+            <li>谁在发言，谁上台；</li>
+            <li>哪个角色正在行动，哪个角色成为舞台主题；</li>
+            <li>玩家能操作时，底部给出明确操作；</li>
+            <li>玩家不能操作时，底部给出明确等待；</li>
+            <li>历史事件进入事件日志，不占据主舞台。</li>
+          </ul>
+        </section>
+
+        <section id="relation">
+          <h2>2. 与 AI 观战页的关系</h2>
+
+          <h3>2.1 必须复用的能力</h3>
+          <table>
+            <thead>
+              <tr><th>能力 / 组件</th><th>复用方式</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><code>GameHeader</code></td><td>顶部栏、房间号、天数、昼夜、视角入口。</td></tr>
+              <tr><td><code>PlayerRail</code></td><td>左右玩家栏。</td></tr>
+              <tr><td><code>PlayerCard</code></td><td>玩家卡基础视觉样式。</td></tr>
+              <tr><td><code>BadgePanel</code></td><td>警长竞选、投票进度展示能力。</td></tr>
+              <tr><td><code>DramaticOverlay</code></td><td>死亡、放逐等强反馈公告。</td></tr>
+              <tr><td><code>PhaseAnnouncement</code></td><td>天亮、天黑、阶段提示。</td></tr>
+              <tr><td><code>PhaseOverlayCoordinator</code></td><td>统一协调阶段提示和死亡/放逐公告。</td></tr>
+              <tr><td><code>usePhaseTransition</code></td><td>昼夜主题切换和过渡时序。</td></tr>
+              <tr><td><code>GameEndPanel</code></td><td>游戏结束弹窗。</td></tr>
+              <tr><td><code>CountdownTimer</code></td><td>倒计时能力。</td></tr>
+              <tr><td><code>VoteTargetGrid</code></td><td>目标选择网格，可扩展为击杀、查验、守护、投票目标选择。</td></tr>
+              <tr><td><code>ErrorBoundary</code></td><td>页面异常兜底。</td></tr>
+              <tr><td><code>i18n</code></td><td>中英文文案映射。</td></tr>
+              <tr><td><code>useRoomStream</code></td><td>WebSocket 房间流。</td></tr>
+              <tr><td><code>useGameDerivedState</code> 思想</td><td>所有组件从统一派生状态读取，避免页面不同区域不同步。</td></tr>
+            </tbody>
+          </table>
+
+          <h3>2.2 不能直接复用的部分</h3>
+          <div class="warning">
+            <strong>AI 观战页的 <code>EventTimeline</code> 不应作为人机页主舞台。</strong>
+          </div>
+          <p>原因是：</p>
+          <ul>
+            <li>AI 观战页是“事件播放”；</li>
+            <li>人机页是“玩家参与”；</li>
+            <li>AI 观战页的 <code>displayPhase</code> 可以跟随最早未完成的聊天消息；</li>
+            <li>人机页的阶段必须跟随现有游戏快照中的真实 <code>phase</code>，并由前端基于当前玩家、角色和行动者派生可操作状态；</li>
+            <li>人机页不能因为打字机没播完就阻塞玩家操作，也不能因为事件流顺序导致顶部、玩家卡、操作面板不同步。</li>
+          </ul>
+          <p>因此，人机页应将 <code>EventTimeline</code> 降级为事件日志 / 发言记录的内容来源，主舞台应由新的 <code>HumanStageArea</code> 承担。</p>
+        </section>
+
+        <section id="structure">
+          <h2>3. 页面总体结构</h2>
+          <p>人机对战页面采用固定牌桌结构：</p>
+          <pre><code>顶部状态栏 GameHeader
+左右玩家席位 PlayerRail
+中间当前行动舞台 HumanStageArea
+底部玩家操作面板 HumanActionPanel
+事件日志抽屉 HumanEventDrawer
+覆盖层 PhaseOverlayCoordinator / DramaticOverlay / GameEndPanel</code></pre>
+
+          <p>页面结构示意：</p>
+          <pre><code>┌──────────────────────────────────────────────┐
+│ GameHeader：房间号 / 第几天夜 / 存活 / 身份 │
+├──────────┬──────────────────────┬──────────┤
+│ 左玩家栏 │      当前行动舞台     │ 右玩家栏 │
+│ Player  │   HumanStageArea      │ Player  │
+│ Rail    │   当前主角 / 当前任务 │ Rail    │
+├──────────┴──────────────────────┴──────────┤
+│ HumanActionPanel：操作区 / 等待区            │
+└──────────────────────────────────────────────┘</code></pre>
+          <p>中间主舞台只展示当前阶段最重要的信息。历史发言、阶段日志、投票记录、系统事件进入事件日志抽屉，不再堆在主舞台中。</p>
+        </section>
+
+        <section id="principles">
+          <h2>4. 核心交互原则</h2>
+
+          <h3>4.1 阶段展示和操作权限分离</h3>
+          <div class="warning">
+            <strong>错误逻辑：</strong>我是预言家，所以夜晚只显示预言家行动，跳过守卫、狼人、女巫。
+          </div>
+          <div class="success">
+            <strong>正确逻辑：</strong>所有玩家都能看到完整阶段流转。只有对应身份玩家在对应阶段可操作。无操作权限的玩家看到等待态。
+          </div>
+          <p>当前玩家是预言家时，夜晚仍然应该看到：</p>
+          <pre><code>第1夜 · 夜幕降临
+第1夜 · 守卫行动：守卫正在行动，请等待
+第1夜 · 狼人行动：狼人正在行动，请等待
+第1夜 · 预言家行动：轮到你了，请选择查验对象
+第1夜 · 女巫行动：女巫正在行动，请等待
+第2天 · 天亮结算</code></pre>
+          <p><code>canAct</code> 只能决定是否显示操作按钮，不能决定是否显示阶段。</p>
+
+          <h3>4.2 当前行动者上台</h3>
+          <p>白天发言、遗言、竞选发言、警长发言等“人说话”的阶段，应突出当前玩家本人。夜晚行动阶段，应突出当前角色主题。</p>
+          <table>
+            <thead>
+              <tr><th>阶段类型</th><th>主舞台展示重点</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>白天发言</td><td>当前发言玩家立绘 / 大头像 / 半身图。</td></tr>
+              <tr><td>遗言阶段</td><td>出局玩家立绘 / 大头像。</td></tr>
+              <tr><td>狼人行动</td><td>狼人主题舞台。</td></tr>
+              <tr><td>预言家行动</td><td>预言家主题舞台。</td></tr>
+              <tr><td>女巫行动</td><td>女巫主题舞台。</td></tr>
+              <tr><td>守卫行动</td><td>守卫主题舞台。</td></tr>
+              <tr><td>投票结果 / 天亮结算 / 游戏结束</td><td>结果卡片，不抢人物舞台。</td></tr>
+            </tbody>
+          </table>
+          <p>如果没有完整立绘资源，可以降级为：放大头像 + 身份徽记 + 主题背景。不能因为缺少立绘就退回日志页。</p>
+
+          <h3>4.3 主舞台只展示当前重点</h3>
+          <p>主舞台不能同时出现投票结果、遗言、夜幕降临、守卫行动、狼人行动、预言家行动、历史发言日志。这些内容必须按阶段逐个展示。</p>
+          <p>每一刻页面只允许有一个主阶段：</p>
+          <div class="tag-list">
+            <span class="tag">第3天 · 投票结果</span>
+            <span class="tag">第3天 · 遗言阶段</span>
+            <span class="tag">第3夜 · 夜幕降临</span>
+            <span class="tag">第3夜 · 守卫行动中</span>
+            <span class="tag">第3夜 · 狼人行动中</span>
+            <span class="tag">第3夜 · 预言家行动中</span>
+            <span class="tag">第3天 · 天亮结算</span>
+          </div>
+          <p>不能出现“第3天 + 第3夜行动”混杂。</p>
+        </section>
+
+        <section id="header">
+          <h2>5. 顶部状态栏设计</h2>
+          <p>顶部状态栏只展示全局状态，不展示任何调试字段。</p>
+          <div class="grid-2">
+            <div class="card">
+              <h4>需要显示</h4>
+              <ul>
+                <li>Logo</li>
+                <li>房间号</li>
+                <li>模式：人机对战</li>
+                <li>当前第几天 / 第几夜</li>
+                <li>存活人数</li>
+                <li>当前阶段</li>
+                <li>当前玩家身份</li>
+                <li>当前视角</li>
+                <li>设置入口</li>
+              </ul>
+            </div>
+            <div class="card">
+              <h4>禁止显示</h4>
+              <ul>
+                <li>D0 / D1 / D3</li>
+                <li>NIGHT_WOLF_ACTION</li>
+                <li>NIGHT_SEER_ACTION</li>
+                <li>phase xxx</li>
+                <li>loading failed</li>
+              </ul>
+            </div>
+          </div>
+          <p>示例：</p>
+          <pre><code>AI Werewolf｜房间 e6b9950a｜人机对战
+第1夜｜存活 10/10｜狼人行动中
+身份：预言家｜玩家视角</code></pre>
+          <pre><code>第3天｜存活 5/7｜遗言阶段
+身份：村民｜玩家视角</code></pre>
+          <p>建议增加统一映射函数：</p>
+          <pre><code>getHumanPhaseDisplay(state): {
+  title: string;
+  subtitle: string;
+  stageLabel: string;
+  theme: "day" | "night" | "neutral";
+  actionText?: string;
+}</code></pre>
+          <p>所有顶部文案、中间标题、事件日志阶段名都从这个映射派生，避免各组件自己拼文案。</p>
+        </section>
+
+        <section id="players">
+          <h2>6. 玩家席位设计</h2>
+          <p>左右玩家席位继续复用 <code>PlayerRail + PlayerCard</code> 的视觉结构，但在人机页中，玩家卡是“局势状态容器”，不是静态名单。</p>
+          <p>每张玩家卡应展示：</p>
+          <div class="tag-list">
+            <span class="tag">玩家编号</span>
+            <span class="tag">头像</span>
+            <span class="tag">昵称</span>
+            <span class="tag">简短人设</span>
+            <span class="tag">存活 / 死亡 / 出局</span>
+            <span class="tag">当前行动</span>
+            <span class="tag">正在发言</span>
+            <span class="tag">遗言中</span>
+            <span class="tag">已发言</span>
+            <span class="tag">已投票</span>
+            <span class="tag">已行动</span>
+            <span class="tag">警长</span>
+            <span class="tag">警长候选人</span>
+            <span class="tag">被当前玩家选中</span>
+            <span class="tag">是否可点击</span>
+          </div>
+          <p>状态标签示例：</p>
+          <pre><code>正在发言
+遗言中
+已出局
+已投票
+当前行动
+已提交
+死亡
+警长
+候选人</code></pre>
+          <ul>
+            <li>当前主舞台是谁，该玩家卡同步高亮；</li>
+            <li>死亡/出局不能只降低透明度，必须显示明确标签；</li>
+            <li>被选为目标的玩家卡和目标网格要同步选中态；</li>
+            <li>普通玩家视角不能通过玩家卡看到其他玩家真实身份；</li>
+            <li>主持视角可以看到全身份，但必须有明显提示。</li>
+          </ul>
+        </section>
+
+        <section id="stages">
+          <h2>7. 主舞台阶段模板</h2>
+
+          <div class="stage">
+            <div class="name">7.1 准备阶段</div>
+            <p>主舞台展示：</p>
+            <pre><code>玩家正在入场
+AI 玩家正在准备
+10/10 已就绪
+等待游戏开始</code></pre>
+            <p>底部操作：未准备显示“准备”；已准备显示“已准备，等待开始 / 取消准备”；房主或可启动者显示“开始游戏”。</p>
+          </div>
+
+          <div class="stage">
+            <div class="name">7.2 身份揭示阶段</div>
+            <p>使用居中身份卡。身份卡内容示例：</p>
+            <pre><code>你的身份：预言家
+能力：每晚可以查验一名玩家的阵营。
+提醒：合理隐藏身份，关键时刻带队。
+按钮：继续</code></pre>
+            <pre><code>你的身份：狼人
+能力：夜晚可与狼队友商议并击杀一名玩家。
+狼队友：3号、7号
+提醒：白天隐藏身份，谨慎发言。
+按钮：继续</code></pre>
+            <p>身份揭示必须遵守信息隔离：玩家只看到自己的身份；狼人额外看到狼队友；公开视角隐藏身份；主持视角显示完整身份。</p>
+          </div>
+
+          <div class="stage night">
+            <div class="name">7.3 夜幕降临过渡</div>
+            <p>“天黑请闭眼”只是夜晚开始的短暂过渡，不是夜晚所有阶段的常驻背景文案。</p>
+            <pre><code>第1夜 · 夜幕降临
+天黑请闭眼</code></pre>
+            <p>过渡期间不显示具体角色操作、不显示目标选择、不显示查验、击杀、守护、用药面板。过渡结束后，再进入具体行动阶段。</p>
+          </div>
+
+          <div class="stage night">
+            <div class="name">7.4 守卫行动</div>
+            <p>守卫本人看到：</p>
+            <pre><code>第1夜 · 守卫行动
+请选择今晚守护对象
+
+底部：
+目标选择网格
+确认守护</code></pre>
+            <p>其他玩家看到：</p>
+            <pre><code>第1夜 · 守卫行动
+守卫正在行动，请等待</code></pre>
+            <p>不能显示守护目标。</p>
+            <div class="warning">
+              <strong>规则限制：</strong>守卫不能连续两晚守护同一名玩家。前端应在目标选择网格中禁用上一晚已守护的目标（灰色 + "已连续守护"提示），防止玩家误选后提交到后端才报错。
+            </div>
+          </div>
+
+          <div class="stage night">
+            <div class="name">7.5 狼人行动</div>
+            <p>狼人本人看到：</p>
+            <pre><code>第1夜 · 狼人行动
+狼人正在商量今晚的击杀目标
+
+底部：
+请选择击杀目标
+目标选择网格
+确认击杀</code></pre>
+            <p>可见信息包括狼队友、狼队友选择状态、狼人内部目标。非狼人只能看到“狼人正在行动，请等待”，不能显示狼队友、击杀目标、狼人讨论内容。</p>
+          </div>
+
+          <div class="stage night">
+            <div class="name">7.6 预言家行动</div>
+            <p>预言家本人看到：</p>
+            <pre><code>第1夜 · 预言家行动
+请选择一名玩家查验身份
+
+底部：
+目标选择网格
+确认查验</code></pre>
+            <p>查验完成后，仅预言家可见：</p>
+            <pre><code>查验结果：5号 夏知白 是好人阵营
+查验结果：5号 夏知白 是狼人阵营</code></pre>
+            <p>其他玩家只看到“预言家正在行动，请等待”，不能显示查验目标和查验结果。</p>
+          </div>
+
+          <div class="stage night">
+            <div class="name">7.7 女巫行动</div>
+            <p>女巫本人看到：</p>
+            <pre><code>第1夜 · 女巫行动
+昨夜有人被袭击
+是否使用解药？
+是否使用毒药？
+
+底部：
+使用解药 / 不使用解药
+使用毒药 / 不使用毒药
+选择毒杀目标
+确认</code></pre>
+            <p>需要记录解药是否可用、毒药是否可用、是否已用药、毒杀目标、是否已提交。其他玩家不能看到死亡目标、用药选择、毒药目标，除非规则允许公开。</p>
+          </div>
+
+          <div class="stage result">
+            <div class="name">7.8 天亮结算</div>
+            <p>夜晚结束后，先进入天亮结算，不要直接跳到发言日志。</p>
+            <pre><code>第2天 · 天亮了
+昨夜死亡：无人
+平安夜
+即将进入发言阶段</code></pre>
+            <pre><code>第2天 · 天亮了
+昨夜死亡：4号 韩书妍
+即将进入遗言阶段</code></pre>
+            <p>死亡公告可以复用 <code>DramaticOverlay</code>。公告结束后，再进入遗言或发言阶段。</p>
+          </div>
+
+          <div class="stage">
+            <div class="name">7.9 警长竞选阶段</div>
+            <pre><code>第1天 · 警长竞选
+是否参与警长竞选？
+
+底部：
+我要竞选
+不竞选
+
+已选择后：
+已提交，等待其他玩家选择</code></pre>
+            <p>竞选发言时，主舞台显示当前竞选发言玩家的大立绘，底部根据是否轮到自己显示发言输入或等待状态。</p>
+          </div>
+
+          <div class="stage">
+            <div class="name">7.10 白天发言阶段</div>
+            <p>白天发言是人机页最重要的舞台体验。当轮到某玩家发言，主舞台显示当前发言玩家大立绘 / 大头像 / 半身形象、玩家编号、昵称、正在发言状态、当前发言内容和最近上下文气泡。</p>
+            <p>如果发言者是 AI，发言内容可复用 <code>useTypewriter</code> 做打字机效果，但打字机只控制当前发言文本，不控制整页 phase。</p>
+            <pre><code>玩家本人发言：
+发言输入框
+提交发言
+
+其他玩家发言：
+等待 5号 赵峰 发言中</code></pre>
+          </div>
+
+          <div class="stage">
+            <div class="name">7.11 遗言阶段</div>
+            <p>遗言阶段必须独立于普通发言阶段。</p>
+            <pre><code>顶部：
+第3天｜遗言阶段
+
+主舞台：
+2号 卡卡 正在遗言
+
+当前玩家是遗言玩家：
+遗言输入框
+结束遗言
+
+其他玩家：
+等待 2号 卡卡 遗言结束</code></pre>
+            <p>禁止出现“顶部：1号正在发言，主舞台：2号正在遗言”。</p>
+          </div>
+
+          <div class="stage">
+            <div class="name">7.12 投票阶段</div>
+            <pre><code>第3天 · 投票放逐
+请选择你要投票放逐的玩家
+已投票 3/5
+
+底部：
+目标选择网格
+确认投票</code></pre>
+            <ul>
+              <li>未选择目标时，确认按钮置灰；</li>
+              <li>选择后显示”已选择：X号 玩家名”；</li>
+              <li>提交后显示”已投票，等待其他玩家”；</li>
+              <li>死亡或出局玩家不可投票，只能观战。</li>
+            </ul>
+            <div class=”warning”>
+              <strong>警长票权：</strong>警长的投票计为 <strong>1.5 票</strong>。前端在投票结果和票数统计中应体现警长票权。警长投票的目标玩家在票数计算时 +1.5 而非 +1。后端 <code>VOTE_CAST</code> 事件已包含 <code>vote_weight</code> 字段，前端直接使用即可。
+            </div>
+          </div>
+
+          <div class=”stage result”>
+            <div class="name">7.13 投票结果阶段</div>
+            <p>投票结束后必须使用结果卡，不要把结果写成几行日志。</p>
+            <pre><code>投票结果
+2号 卡卡 被放逐
+票数：3票
+即将进入遗言阶段</code></pre>
+            <pre><code>投票结果
+无人被放逐
+即将进入夜晚</code></pre>
+            <p>结果卡结束后，再进入遗言或夜幕降临。</p>
+          </div>
+
+          <div class="stage result">
+            <div class="name">7.14 游戏结束阶段</div>
+            <p>复用 <code>GameEndPanel</code>，人机页额外展示：</p>
+            <pre><code>游戏结束
+好人阵营胜利
+你的身份：预言家
+你所在阵营获胜
+查看复盘
+再来一局
+返回大厅</code></pre>
+          </div>
+        </section>
+
+        <section id="action-panel">
+          <h2>8. 底部操作面板设计</h2>
+          <p>底部操作面板是人机页的核心交互区，不是日志尾部。</p>
+          <p>它根据以下状态渲染：</p>
+          <pre><code>phase
+currentPlayerRole
+currentActor / currentSpeaker
+canAct
+actionView（前端派生）
+submittedStatus
+selectedTarget</code></pre>
+
+          <h3>8.1 可操作状态</h3>
+          <p>按钮必须是具体业务动作，不能只写“提交”。</p>
+          <div class="tag-list">
+            <span class="tag">确认击杀</span>
+            <span class="tag">确认守护</span>
+            <span class="tag">确认查验</span>
+            <span class="tag">提交发言</span>
+            <span class="tag">结束遗言</span>
+            <span class="tag">确认投票</span>
+            <span class="tag">使用解药</span>
+            <span class="tag">使用毒药</span>
+            <span class="tag">跳过</span>
+          </div>
+
+          <h3>8.2 等待状态</h3>
+          <p>不是自己行动时，底部显示明确等待：</p>
+          <pre><code>等待守卫行动中
+等待狼人行动中
+等待预言家行动中
+等待女巫行动中
+等待 5号 赵峰 发言中
+等待 2号 卡卡 遗言结束
+等待其他玩家投票</code></pre>
+
+          <h3>8.3 已提交状态</h3>
+          <p>提交后不能继续编辑。</p>
+          <pre><code>已提交，等待阶段推进
+已选择：5号 夏知白
+等待其他玩家</code></pre>
+
+          <h3>8.4 目标选择状态</h3>
+          <p>所有目标选择类操作统一使用目标网格：狼人击杀、守卫守护、预言家查验、女巫毒杀、投票放逐、猎人开枪。</p>
+          <p>目标卡需要区分可选、不可选、已选、死亡、已出局、自己、当前高亮。未选择时按钮置灰，选择后按钮可点击。</p>
+        </section>
+
+        <section id="event-log">
+          <h2>9. 事件日志设计</h2>
+          <p>事件日志作为抽屉或侧边面板存在，不占据主舞台。</p>
+          <p>记录内容包括：</p>
+          <div class="tag-list">
+            <span class="tag">玩家加入</span>
+            <span class="tag">玩家准备</span>
+            <span class="tag">身份分配</span>
+            <span class="tag">夜幕降临</span>
+            <span class="tag">守卫行动完成</span>
+            <span class="tag">狼人行动完成</span>
+            <span class="tag">预言家行动完成</span>
+            <span class="tag">女巫行动完成</span>
+            <span class="tag">天亮结果</span>
+            <span class="tag">发言顺序</span>
+            <span class="tag">警长竞选</span>
+            <span class="tag">投票进度</span>
+            <span class="tag">投票结果</span>
+            <span class="tag">放逐结果</span>
+            <span class="tag">遗言开始</span>
+            <span class="tag">遗言结束</span>
+            <span class="tag">游戏结束</span>
+          </div>
+          <p>事件日志必须按视角过滤：玩家视角不能看到隐藏身份、夜间目标、查验结果、用药选择；公开视角隐藏所有真实身份；主持视角可以看到完整日志；AI 调试信息不能显示在普通玩家日志里。</p>
+        </section>
+
+        <section id="data-flow">
+          <h2>10. 数据流设计</h2>
+          <div class="callout">
+            <strong>重要约束：</strong>人机对战不重新设计前后端交互协议，不要求后端返回新的数据结构。它应沿用 AI 对战模式已有的房间状态、WebSocket 快照流、players、phase、events、logs 等数据格式。人机模式本质上只是把一个 AI 玩家替换为真人玩家。
+          </div>
+          <p>人机对战的数据流应理解为对现有 AI 对战数据流的前端参与式适配：</p>
+          <pre><code>用户在大厅选择人机对战
+→ 创建房间
+→ 准备阶段生成 AI 玩家与真人玩家所在席位
+→ 进入 app/room/[id]/human/page.tsx
+→ 沿用现有 WebSocket /ws/rooms/{id} 快照流
+→ 后端继续推送与 AI 对战一致的 gameState / phase / players / events / logs
+→ 前端基于现有 phase、玩家身份、当前行动者、事件和提交结果派生“当前玩家是否需要操作”
+→ 需要真人输入时，前端展示 HumanActionPanel
+→ 玩家通过现有 action 提交流程提交发言、投票或技能选择
+→ 游戏继续按原有状态流推进
+→ 游戏结束后复用 GameEndPanel</code></pre>
+          <table>
+            <thead>
+              <tr><th>模式</th><th>数据流特征</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>AI 观战模式</td><td>后端持续推进，前端按事件流进行观战叙事。</td></tr>
+              <tr><td>人机对战模式</td><td>沿用同一套数据快照；前端把真人玩家所在席位渲染为可参与、可操作的舞台页面。</td></tr>
+            </tbody>
+          </table>
+          <p>因此，设计重点不是新增后端协议，而是前端基于现有数据结构做派生渲染：阶段舞台、操作面板、玩家卡状态、事件日志抽屉和视角展示。</p>
+        </section>
+
+        <section id="state-model">
+          <h2>11. 前端状态模型</h2>
+          <p>建议构建统一 <code>HumanGameViewState</code>，所有 UI 从它派生。</p>
+          <pre><code>type HumanGameViewState = {
+  roomId: string;
+  mode: "human-ai";
+
+  // 直接来自现有 AI 对战快照或由现有字段派生
+  phase: GamePhase;
+  dayNumber: number;
+  isNight: boolean;
+  aliveCount: number;
+  totalCount: number;
+
+  currentPlayerId: string;
+  currentPlayerRole: Role;
+
+  currentActorId?: string;
+  currentSpeakerId?: string;
+
+  viewMode: "player" | "public" | "host";
+
+  // 前端基于现有 phase / role / actor / events 派生，不要求后端新增 pending_action 协议
+  canAct: boolean;
+  actionView?: HumanActionView;
+
+  submittedStatus: "idle" | "selected" | "submitting" | "submitted" | "failed";
+  selectedTargetId?: string;
+
+  players: PlayerViewModel[];
+
+  voteResult?: VoteResult;
+  deathResult?: DeathResult;
+  exileResult?: ExileResult;
+  lastWordsPlayerId?: string;
+
+  visibleEvents: EventViewModel[];
+  privateHints: PrivateHint[];
+
+  loadingState: "loading" | "ready" | "error" | "reconnecting";
+  errorMessage?: string;
+};</code></pre>
+          <p>派生规则：</p>
+          <ul>
+            <li><code>phase</code> 决定主舞台模板；</li>
+            <li><code>viewMode</code> 决定信息可见范围；</li>
+            <li><code>role + canAct</code> 决定底部操作；</li>
+            <li><code>submittedStatus</code> 决定操作面板状态；</li>
+            <li><code>players</code> 决定玩家卡；</li>
+            <li><code>voteResult / deathResult / exileResult</code> 决定结果卡和覆盖层；</li>
+            <li><code>visibleEvents</code> 决定事件日志；</li>
+            <li><code>privateHints</code> 只在玩家本人可见范围内展示。</li>
+          </ul>
+        </section>
+
+        <section id="privacy">
+          <h2>12. 信息隔离设计</h2>
+          <h3>12.1 玩家视角</h3>
+          <p>玩家可以看到自己的身份、技能说明、狼人可见狼队友、公开发言、公开投票、公开死亡结果、自己的行动结果。</p>
+          <p>玩家不能看到其他玩家真实身份、其他阵营夜间目标、其他玩家查验结果、女巫用药选择、守卫守护目标、AI 内部推理和主持视角数据。</p>
+
+          <h3>12.2 公开视角</h3>
+          <p>公开视角只能看到玩家编号、昵称、存活 / 死亡、公开发言、公开投票结果、阶段流转和游戏结束公开结果。公开视角不能看到任何真实身份和夜间行动目标。</p>
+
+          <h3>12.3 主持视角</h3>
+          <p>主持视角可以看到完整身份和完整行动信息，但必须显示：</p>
+          <pre><code>主持视角｜身份信息仅主持人可见</code></pre>
+          <p>普通玩家不应该能切换到主持视角。不能只靠前端隐藏，后端返回数据也要按权限过滤。</p>
+        </section>
+
+        <section id="transition">
+          <h2>13. 动画与转场设计</h2>
+          <p>人机页复用 AI 观战页的动画机制，但触发条件改为阶段状态变化。</p>
+
+          <h3>13.1 覆盖层优先级</h3>
+          <p><code>DramaticOverlay</code> 优先于 <code>PhaseAnnouncement</code>。例如投票放逐时，先显示放逐公告；放逐公告结束后，再进入遗言或夜晚；不能让放逐公告和天黑提示同时出现。</p>
+
+          <h3>13.2 昼夜切换</h3>
+          <pre><code>覆盖层 fade-in
+→ 完全显现
+→ 切换 data-phase 主题
+→ 停留给用户阅读
+→ fade-out
+→ 进入具体阶段舞台</code></pre>
+          <p>需要避免背景先变黑但文案还在白天、天黑请闭眼还没消失底部已经出现查验按钮、天亮提示还在主舞台已经进入发言、死亡公告和阶段提示互相抢占等问题。</p>
+        </section>
+
+        <section id="ai-speech">
+          <h2>14. AI 发言设计</h2>
+          <p>人机对战中的 AI 发言可以复用打字机效果，但使用范围必须收敛。</p>
+          <table>
+            <thead>
+              <tr><th>页面</th><th>打字机作用</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>AI 观战页</td><td>打字机控制整个事件时间线。</td></tr>
+              <tr><td>人机对战页</td><td>打字机只控制当前 AI 发言文本，不决定全局 phase，不阻塞玩家操作状态，不导致顶部、玩家卡、主舞台不同步。</td></tr>
+            </tbody>
+          </table>
+          <p>白天 AI 发言时，主舞台显示 AI 玩家立绘，当前发言文本使用打字机，完成后归档到事件日志或发言记录，进入下一位发言者或等待玩家操作。玩家本人发言时显示输入框，提交后显示已提交 / 等待状态。</p>
+        </section>
+
+        <section id="error">
+          <h2>15. 错误、加载和重连</h2>
+          <p>所有异常状态必须互斥，不能同时显示正常行动和错误。</p>
+          <table>
+            <thead>
+              <tr><th>状态</th><th>页面文案 / 行为</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>房间加载中</td><td>正在进入房间...</td></tr>
+              <tr><td>房间加载失败</td><td>房间加载失败 / 重试 / 返回大厅</td></tr>
+              <tr><td>阶段数据异常</td><td>当前阶段数据异常，请重试；不允许继续提交操作。</td></tr>
+              <tr><td>行动提交失败</td><td>保留当前选择，显示“提交失败，请重试”，提供“重新提交”。</td></tr>
+              <tr><td>已提交等待</td><td>已提交，等待阶段推进；不允许继续编辑。</td></tr>
+              <tr><td>断线重连</td><td>连接中断，正在重连...</td></tr>
+            </tbody>
+          </table>
+          <p>重连成功后，用最新快照恢复当前 phase、当前行动者、当前玩家已提交状态、事件日志、玩家状态、可见身份信息和底部操作面板状态。</p>
+        </section>
+
+        <section id="components">
+          <h2>16. 组件设计</h2>
+          <p>建议保持 AI 观战页不动，人机页独立实现。</p>
+          <pre><code>页面入口：
+app/room/[id]/human/page.tsx</code></pre>
+
+          <h3>建议组件树</h3>
+          <pre><code>HumanGamePage
+├── ErrorBoundary
+├── PhaseOverlayCoordinator
+├── GameHeader
+├── MobilePlayerRail
+├── HumanGameLayout
+│   ├── PlayerRail(left)
+│   ├── HumanMainArea
+│   │   ├── HumanStatusBar
+│   │   ├── HumanStageArea
+│   │   └── HumanActionPanel
+│   └── PlayerRail(right)
+├── HumanEventDrawer
+├── RoleRevealModal
+└── GameEndPanel</code></pre>
+
+          <h3>新增或重构</h3>
+          <div class="tag-list">
+            <span class="tag">HumanStageArea</span>
+            <span class="tag">ActorPortraitStage</span>
+            <span class="tag">RoleActionStage</span>
+            <span class="tag">DayResultStage</span>
+            <span class="tag">VoteResultStage</span>
+            <span class="tag">LastWordsStage</span>
+            <span class="tag">HumanActionPanel</span>
+            <span class="tag">HumanTargetGrid</span>
+            <span class="tag">HumanEventDrawer</span>
+            <span class="tag">useHumanGameController</span>
+            <span class="tag">useHumanDerivedState</span>
+            <span class="tag">useHumanActionSubmit</span>
+          </div>
+
+          <h3>复用</h3>
+          <div class="tag-list">
+            <span class="tag">GameHeader</span>
+            <span class="tag">PlayerRail</span>
+            <span class="tag">PlayerCard</span>
+            <span class="tag">BadgePanel</span>
+            <span class="tag">DramaticOverlay</span>
+            <span class="tag">PhaseAnnouncement</span>
+            <span class="tag">PhaseOverlayCoordinator</span>
+            <span class="tag">GameEndPanel</span>
+            <span class="tag">CountdownTimer</span>
+            <span class="tag">VoteTargetGrid</span>
+            <span class="tag">ErrorBoundary</span>
+            <span class="tag">i18n</span>
+            <span class="tag">useRoomStream</span>
+            <span class="tag">usePhaseTransition</span>
+          </div>
+        </section>
+
+        <section id="backend">
+          <h2>17. 数据协议约束</h2>
+          <div class="warning">
+            <strong>本节为硬性约束：</strong>人机对战页面不干涉后端返回数据格式，不重新设计前后端交互协议，不要求后端新增 <code>public_state</code>、<code>private_state</code>、<code>host_state</code>、<code>pending_action</code> 等新结构。
+          </div>
+          <p>人机对战应沿用 AI 对战模式已有的数据交换格式。它的本质不是一套新的协议，而是在原有 AI 对战流程中，将一个 AI 玩家替换为真人玩家。</p>
+
+          <h3>17.1 正确理解</h3>
+          <ul>
+            <li>沿用现有房间状态和 WebSocket 快照流；</li>
+            <li>沿用现有 <code>gameState</code>、<code>phase</code>、<code>players</code>、<code>events</code>、<code>logs</code> 等数据结构；</li>
+            <li>真人玩家仍然作为一个普通 <code>player</code> 参与原有游戏流程；</li>
+            <li>真人玩家的发言、投票、夜间行动应通过现有 action 提交流程进入游戏状态；</li>
+            <li>前端基于现有数据派生“是否轮到我”“我能做什么”“应该展示哪个舞台”。</li>
+          </ul>
+
+          <h3>17.2 前端应该做的事情</h3>
+          <p>前端需要在不改变数据格式的前提下，完成以下派生和渲染适配：</p>
+          <div class="tag-list">
+            <span class="tag">从现有 phase 派生当前阶段文案</span>
+            <span class="tag">从现有 players 派生玩家卡状态</span>
+            <span class="tag">从当前玩家 id / role 派生操作权限</span>
+            <span class="tag">从当前行动者 / 发言者派生主舞台主角</span>
+            <span class="tag">从 events / logs 派生事件日志</span>
+            <span class="tag">从提交结果派生已提交 / 失败 / 等待状态</span>
+            <span class="tag">在 UI 层进行视角展示适配</span>
+          </div>
+
+          <h3>17.3 禁止方向</h3>
+          <ul>
+            <li>不要要求后端为人机模式单独返回一套新结构；</li>
+            <li>不要把页面设计建立在新增 <code>pending_action</code> 协议的前提上；</li>
+            <li>不要要求后端新增 <code>public_state / private_state / host_state</code>；</li>
+            <li>不要让前端页面改造反向牵引后端协议重构；</li>
+            <li>不要为了真人玩家操作破坏 AI 对战模式已有的数据流。</li>
+          </ul>
+
+          <div class="callout">
+            最终原则：<strong>后端数据格式保持 AI 对战模式一致；前端基于现有数据结构做参与式页面适配。</strong>
+          </div>
+        </section>
+
+        <section id="state-sync">
+          <h2>17.4 状态同步策略</h2>
+          <div class="warning">
+            <strong>关键决策：</strong>人机模式不使用 WebSocket 流，完全由 POST 请求/响应驱动。
+          </div>
+          <p>理由：</p>
+          <ul>
+            <li>POST <code>/start</code> 和 POST <code>/action</code> 已经返回完整的 GameState 快照；</li>
+            <li>如果同时启用 WebSocket 推送，会与 POST 响应产生竞态——WebSocket 可能推送旧快照覆盖 POST 返回的最新状态，导致 <code>pending_input</code> 丢失或 phase 回退；</li>
+            <li>人机模式是回合制（人等输入→提交→后端继续），不需要实时流。</li>
+          </ul>
+          <p>实现要点：</p>
+          <ul>
+            <li>人机页面不初始化 <code>useRoomStream</code> 的 WebSocket 连接；</li>
+            <li>所有状态更新仅来自 <code>handleHumanAction</code> 的 POST 响应和 <code>startHumanGame</code> 的 POST 响应；</li>
+            <li><code>setGameState(snapshot)</code> 是唯一的状态更新入口；</li>
+            <li>如果未来需要混合模式，必须给每个快照带时间戳或版本号，前端拒绝 timestamp 更旧的快照。</li>
+          </ul>
+          <pre><code>// 竞态保护示例（如未来启用 WebSocket）
+          function setGameStateSafe(snapshot) {
+            if (snapshot._ts <= lastSnapshotTs) return; // 拒绝旧数据
+            lastSnapshotTs = snapshot._ts;
+            setGameState(snapshot);
+          }</code></pre>
+        </section>
+
+        <section id="event-visibility">
+          <h2>17.5 事件可见性过滤</h2>
+          <div class="warning">
+            <strong>现有代码缺陷：</strong>CompactEvents / EventTimeline 完全不检查 <code>visibility</code> 和 <code>visible_to</code> 字段，玩家可以通过事件日志看到夜间行动目标。这是身份泄露 bug。
+          </div>
+          <p>修复方案：</p>
+          <ul>
+            <li>在事件渲染前，根据当前 <code>viewMode</code>、<code>currentPlayerId</code> 过滤事件；</li>
+            <li><code>visibility === "private"</code> 的事件，只有 <code>visible_to</code> 包含当前 playerId 或 viewMode 为主持视角时才渲染；</li>
+            <li><code>visibility === "public"</code> 的事件，所有视角可见；</li>
+            <li>公开视角下，<code>NIGHT_ACTION</code> 类型的事件隐藏目标信息。</li>
+          </ul>
+          <pre><code>function filterEvents(events, viewMode, playerId) {
+            return events.filter(e => {
+              if (viewMode === "moderator") return true;           // 主持全可见
+              if (e.visibility === "public") return true;          // 公开事件
+              if (e.visibility === "private") {
+                return e.visible_to?.includes(playerId);           // 仅可见列表中包含当前玩家
+              }
+              return false;
+            });
+          }</code></pre>
+          <p>此过滤必须同时应用于主舞台的事件引用和事件日志抽屉。</p>
+        </section>
+
+        <section id="dead-player-state">
+          <h2>17.6 死亡玩家状态机</h2>
+          <p>玩家死亡后的三态模型：</p>
+          <table>
+            <thead>
+              <tr><th>状态</th><th>触发条件</th><th>页面行为</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>遗言中</td><td>刚被放逐 &amp;&amp; 有遗言规则</td><td>显示遗言输入框；可提交遗言；顶部标记"遗言阶段"</td></tr>
+              <tr><td>猎人开枪</td><td>死亡原因=投票 &amp;&amp; 角色=猎人</td><td>显示目标选择；可选开枪或放弃</td></tr>
+              <tr><td>观战</td><td>遗言结束 / 无遗言 / 被狼杀</td><td>主舞台显示"你已出局，正在观战"；操作面板隐藏；仍能看到公开阶段流转；不能投票或夜间操作</td></tr>
+            </tbody>
+          </table>
+          <p>关键规则：</p>
+          <ul>
+            <li>死亡玩家的 <code>canAct</code> 始终为 false（除非正在遗言或猎人开枪）；</li>
+            <li>观战玩家的信息可见范围 = 玩家视角（不因死亡而获得更多信息）；</li>
+            <li>不能出现"等待其他玩家..."的永久等待态。</li>
+          </ul>
+        </section>
+
+        <section id="component-cleanup">
+          <h2>17.7 组件清理计划</h2>
+          <p>当前代码中存在职责重叠的组件：</p>
+          <table>
+            <thead>
+              <tr><th>组件</th><th>状态</th><th>处理</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><code>RealStageArea</code></td><td>已创建，未被 human/page 引用</td><td>删除</td></tr>
+              <tr><td><code>HumanStagePanel</code></td><td>已创建，未被 human/page 引用</td><td>删除</td></tr>
+              <tr><td>内联渲染（human/page.tsx）</td><td>当前实际使用的阶段展示</td><td>迁移到 <code>HumanStageArea</code></td></tr>
+              <tr><td><code>HumanStageArea</code>（新）</td><td>方案提议的正式组件</td><td>基于内联渲染逻辑重构，作为唯一中间区域组件</td></tr>
+            </tbody>
+          </table>
+        </section>
+
+        <section id="witch-two-phase">
+          <h2>17.8 女巫两阶段行动处理</h2>
+          <p>女巫行动涉及两个决策：解药（save）和毒药（poison + target）。后端 <code>pending_input</code> 一次只支持一个 action_type。</p>
+          <p>两种可行方案：</p>
+          <table>
+            <thead>
+              <tr><th>方案</th><th>描述</th><th>复杂度</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>A. 两次 pending_input</td><td>后端先发 WITCH_SAVE 请求 → 玩家选择 → 后端再发 WITCH_POISON 请求。前端每次只展示一个决策。</td><td>低</td></tr>
+              <tr><td>B. 内联两阶段</td><td>前端在同一个面板内先展示解药开关，玩家确认后展示毒药目标选择。</td><td>中</td></tr>
+            </tbody>
+          </table>
+          <p>建议先确认后端当前行为属于哪种，再决定前端实现。如果后端已按方案 A 实现，则不需要前端支持内联两阶段。</p>
+        </section>
+
+        <section id="recovery-patterns">
+          <h2>17.9 错误恢复与刷新恢复</h2>
+
+          <h3>身份揭示恢复</h3>
+          <p>问题：<code>revealDone</code> 是本地 useState，刷新后丢失，重新弹身份卡。</p>
+          <p>修复：角色揭示弹窗改用手动确认按钮（"继续"）替代 3 秒自动消失。玩家点击"继续"后不再弹出。如果刷新页面，身份信息仍可从 <code>gameState.players</code> 重新派生但弹窗不再自动触发。</p>
+
+          <h3>ActionPanel 错误恢复</h3>
+          <p>问题：<code>submit()</code> 立即设置 <code>submitted=true</code> 禁用所有输入；如果 <code>handleHumanAction</code> 抛异常，用户无法重试。</p>
+          <p>修复：ActionPanel 新增 <code>error</code> prop。当父组件传入非空 error 时，重置 <code>submitted=false</code>，恢复输入，显示错误提示和"重新提交"按钮。</p>
+          <pre><code>// ActionPanel 新增逻辑
+          useEffect(() => {
+            if (error) {
+              setSubmitted(false);
+              setTimerActive(hasTimer);
+            }
+          }, [error]);</code></pre>
+
+          <h3>行动提交失败</h3>
+          <table>
+            <thead>
+              <tr><th>状态</th><th>行为</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>提交失败</td><td>保留当前选择（targetId / speech 不清空）；显示"提交失败，请重试"；按钮恢复可点击</td></tr>
+              <tr><td>提交成功</td><td>按钮变为 spinner + "已提交"；等待新 pending_input 到达自动重置</td></tr>
+              <tr><td>网络超时</td><td>显示"请求超时，请检查网络后重试"</td></tr>
+            </tbody>
+          </table>
+        </section>
+
+        <section id="skip-semantics">
+          <h2>17.10 SKIP 语义定义</h2>
+          <p>哪些阶段允许跳过：</p>
+          <table>
+            <thead>
+              <tr><th>阶段</th><th>可跳过？</th><th>跳过含义</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>警徽竞选发言</td><td>是</td><td>不竞选，提交空发言</td></tr>
+              <tr><td>自由发言</td><td>是</td><td>本轮不发言</td></tr>
+              <tr><td>遗言</td><td>否</td><td>必须发言（或后端允许空发言=放弃遗言）</td></tr>
+              <tr><td>狼人击杀</td><td>否</td><td>必须选择目标（或后端允许空目标=放弃击杀）</td></tr>
+              <tr><td>预言家查验</td><td>否</td><td>必须选择目标</td></tr>
+              <tr><td>女巫解药</td><td>是</td><td>不使用解药（save=false）</td></tr>
+              <tr><td>女巫毒药</td><td>是</td><td>不使用毒药（target=null）</td></tr>
+              <tr><td>守卫守护</td><td>是（待确认）</td><td>不守护任何人（取决于后端是否允许）</td></tr>
+              <tr><td>猎人开枪</td><td>是</td><td>放弃开枪</td></tr>
+              <tr><td>投票放逐</td><td>否</td><td>必须投票</td></tr>
+            </tbody>
+          </table>
+          <p>以上语义需与后端确认。前端根据 <code>pending_input.can_skip</code> 决定是否显示跳过按钮。</p>
+        </section>
+
+        <section id="missing-roles">
+          <h2>17.11 补充阶段模板</h2>
+
+          <h3>猎人开枪</h3>
+          <p>猎人本人看到：选择开枪目标 / 放弃开枪。其他玩家看到：猎人在选择是否开枪，请等待。</p>
+
+          <h3>白狼王自爆</h3>
+          <p>白狼王本人看到：是否自爆？选择带走的目标玩家。其他玩家看到：白狼王正在行动，请等待。</p>
+
+          <h3>警徽移交</h3>
+          <p>持有警徽的出局玩家看到：选择警徽继承人 / 撕毁警徽。其他玩家看到：警徽正在移交，请等待。</p>
+          <p>警徽移交完成后，主舞台显示"警徽已移交给 X 号玩家"或"警徽已销毁"。</p>
+        </section>
+
+        <section id="avoid">
+          <h2>18. 必须避免的问题</h2>
+          <ul>
+            <li>顶部显示第3天，中间却是第3夜；</li>
+            <li>页面显示天黑请闭眼，但底部已经出现预言家查验；</li>
+            <li>玩家是预言家时，只显示预言家行动，跳过其他夜晚阶段；</li>
+            <li>正在发言的是 A，主舞台却展示 B 的遗言；</li>
+            <li>投票结果和夜晚流程混在同一屏；</li>
+            <li>事件日志占据主舞台；</li>
+            <li>D3、NIGHT_WOLF_ACTION 等内部状态出现在页面；</li>
+            <li>未选择目标时确认按钮可点击；</li>
+            <li>已提交后还能继续编辑；</li>
+            <li>公开视角看到真实身份；</li>
+            <li>普通玩家看到主持视角数据；</li>
+            <li>加载失败和正常游戏状态同时显示；</li>
+            <li>打字机播放进度导致真实 phase 展示错乱；</li>
+            <li>AI 发言结束前，玩家操作状态被错误阻塞；</li>
+            <li>事件日志泄露夜间行动目标；</li>
+            <li>为了人机页面要求后端新增一套不同于 AI 对战的数据格式；</li>
+            <li>把真人玩家设计成独立协议对象，而不是原有 players 中的一个参与者。</li>
+          </ul>
+        </section>
+
+        <section id="acceptance">
+          <h2>19. 验收标准</h2>
+
+          <h3>19.1 基础流程验收</h3>
+          <pre><code>准备阶段
+→ 身份揭示
+→ 夜幕降临
+→ 守卫行动
+→ 狼人行动
+→ 预言家行动
+→ 女巫行动
+→ 天亮结算
+→ 警长竞选
+→ 发言阶段
+→ 投票阶段
+→ 投票结果
+→ 遗言阶段
+→ 下一夜
+→ 游戏结束</code></pre>
+          <p>每个阶段检查：顶部状态栏正确、主舞台只展示当前阶段、玩家卡状态同步、底部操作面板正确、事件日志只记录历史、视角信息不泄露。</p>
+
+          <h3>19.2 角色验收</h3>
+          <table>
+            <thead>
+              <tr><th>当前玩家身份</th><th>验收要求</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>狼人</td><td>能看到狼队友和击杀操作；不能看到预言家、女巫、守卫私密信息。</td></tr>
+              <tr><td>预言家</td><td>能看到完整夜晚阶段；只在预言家阶段可查验；查验结果仅自己可见。</td></tr>
+              <tr><td>女巫</td><td>只在女巫阶段看到用药面板；用药后进入已提交等待。</td></tr>
+              <tr><td>村民</td><td>夜晚看到完整阶段流转；所有夜间阶段均为等待态。</td></tr>
+              <tr><td>死亡玩家</td><td>不能继续投票或夜间操作；如有遗言规则，进入遗言输入；否则只能观战。</td></tr>
+            </tbody>
+          </table>
+
+          <h3>19.3 视角验收</h3>
+          <table>
+            <thead>
+              <tr><th>视角</th><th>验收要求</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>玩家视角</td><td>只看到自己身份和自己可见信息。</td></tr>
+              <tr><td>公开视角</td><td>看不到任何真实身份。</td></tr>
+              <tr><td>主持视角</td><td>能看到完整身份和行动信息；顶部明确标记主持视角；普通玩家没有主持入口。</td></tr>
+            </tbody>
+          </table>
+
+          <h3>19.4 异常验收</h3>
+          <p>房间加载失败、阶段数据异常、行动提交失败、提交后等待、断线重连、刷新恢复，这些状态必须互斥，不能与正常行动同时显示。</p>
+        </section>
+
+        <section id="summary">
+          <h2>20. 总结</h2>
+          <p>人机对战页的本质是参与式狼人杀页面，不是 AI 观战日志页。</p>
+          <p>它应该继承 AI 观战页成熟的视觉体系、玩家卡、转场动画、覆盖层、错误兜底和统一状态派生思想；但页面核心必须从 <code>EventTimeline</code> 切换为 <code>HumanStageArea</code>。</p>
+          <p>同时，人机对战页不改变前后端数据交换格式。真人玩家本质上只是原有 AI 对战流程中的一个玩家席位，前端应基于现有快照数据做舞台化、操作化和视角化渲染适配。</p>
+          <div class="callout">
+            最终体验应该是：白天谁发言，谁上台；遗言谁在说，谁上台；夜晚哪个角色行动，哪个角色成为舞台；玩家能操作时，底部给出明确操作；玩家不能操作时，底部给出明确等待；历史信息进入事件日志；所有 UI 从统一状态派生；所有隐藏信息按视角严格隔离。
+          </div>
+          <p>如果做到这些，人机对战页才会真正像一个可玩的狼人杀牌桌，而不是 AI 观战页的临时改造版。</p>
+        </section>
+      </main>
+    </div>
+  </div>
+</body>
+</html>

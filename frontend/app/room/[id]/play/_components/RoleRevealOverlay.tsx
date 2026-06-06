@@ -23,23 +23,20 @@ export function RoleRevealOverlay({
   }, [onRevealed]);
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-sm">
-      <div className="text-center animate-scale-in">
-        <p className="text-5xl mb-4">
-          {alignment === "wolf" ? "🐺" : "🏘️"}
-        </p>
-        <p className={`text-3xl font-bold ${alignment === "wolf" ? "text-danger" : "text-success"}`}>
+    <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[200] pointer-events-none">
+      <div className="animate-slide-in rounded-xl bg-cardBackground/95 backdrop-blur border border-primary/30 shadow-xl px-6 py-4 text-center">
+        <p className={`text-xl font-bold ${alignment === "wolf" ? "text-danger" : "text-success"}`}>
           {tRole(role, language)}
         </p>
         <p className="text-sm text-text-sub mt-1">
           {seat}号 {name}
         </p>
         {wolfTeammates.length > 0 && (
-          <p className="text-xs text-danger/70 mt-2">
-            {language === "zh" ? "狼队友" : "Wolf teammates"}：{wolfTeammates.join(" · ")}
+          <p className="text-xs text-danger/70 mt-1">
+            {language === "zh" ? "狼队友" : "Wolf"}：{wolfTeammates.join(" · ")}
           </p>
         )}
-        <p className="text-[10px] text-text-sub/30 mt-4 animate-pulse">
+        <p className="text-[10px] text-text-sub/30 mt-2 animate-pulse">
           {language === "zh" ? "即将进入游戏..." : "Entering game..."}
         </p>
       </div>

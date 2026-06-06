@@ -45,13 +45,12 @@ def health():
     """Health check — verifies DB and LLM connectivity."""
     import os
 
-    from backend.db.database import get_engine
+    from backend.db.database import engine
 
     result: dict = {"status": "ok", "checks": {}}
 
     # DB check
     try:
-        engine = get_engine()
         with engine.connect() as conn:
             conn.exec_driver_sql("SELECT 1")
         result["checks"]["database"] = "ok"

@@ -53,6 +53,7 @@ export function usePhaseTransition(
   // ── Event flow freeze / buffer ──────────────────────────────────
   const frozenStateRef = useRef<GameState | null>(null);
   const pendingStateRef = useRef<GameState | null>(null);
+  const pendingQueueRef = useRef<GameState[]>([]);
   const isBlinkingRef = useRef(false);
   const isTransitioningRef = useRef(false);
 
@@ -101,9 +102,12 @@ export function usePhaseTransition(
 
   const bufferSnapshot = useCallback((state: GameState) => {
     pendingStateRef.current = state;
+    pendingQueueRef.current.push(state);
   }, []);
 
-  const getIsBlinking = useCallback(() => isBlinkingRef.current, []);
+  // 整个转场期间（公告+眨眼+settling）都缓冲，防止 NIGHT_START
+  // 事件在 blink 动画之前就渲染到聊天区
+  const getIsBlinking = useCallback(() => isBlinkingRef.current || isTransitioningRef.current, []);
 
   // ── Blink 动画回调 ──────────────────────────────────────────────
 
@@ -167,16 +171,18 @@ export function usePhaseTransition(
     // ── settling: 静默缓冲，眨眼动画本身已传达昼夜信息 ──
     const SETTLE_MS = _announcementGroup === "night" ? 1000 : 500;
 
-    // settling 结束后：释放 transition 锁 → flush 事件
+    // settling 结束后：释放 transition 锁 → flush 队列中所有缓冲快照
     const releaseTimer = setTimeout(() => {
       setIsTransitioning(false);
-      const p = pendingStateRef.current;
       pendingStateRef.current = null;
-      flushResultRef.current = p;
+      flushQueueRef.current = [...pendingQueueRef.current];
+      pendingQueueRef.current = [];
     }, SETTLE_MS + 100);
 
     transitionTimersRef.current = [releaseTimer];
   }
+
+  const flushQueueRef = useRef<GameState[]>([]);
 
   const flushResultRef = useRef<GameState | null>(null);
 
@@ -224,6 +230,7 @@ export function usePhaseTransition(
     // ── 1. 冻结状态 + 锁 UI ──
     frozenStateRef.current = gameState;
     pendingStateRef.current = null;
+    pendingQueueRef.current = [];
     flushResultRef.current = null;
     targetPhaseRef.current = next;
     setIsTransitioning(true);
@@ -285,6 +292,7 @@ export function usePhaseTransition(
     // 后端推进到守卫阶段后"守卫请睁眼"会在天黑前就渲染出来。
     frozenStateRef.current = gameState;
     pendingStateRef.current = null;
+    pendingQueueRef.current = [];
     flushResultRef.current = null;
     targetPhaseRef.current = "night";
     setIsTransitioning(true);
@@ -441,6 +449,7 @@ export function usePhaseTransition(
     bufferSnapshot,
     getIsBlinking,
     flushResultRef,
+    flushQueueRef,
     // Blink callbacks
     onBlinkCloseComplete: handleBlinkCloseComplete,
     onBlinkPauseComplete: handleBlinkPauseComplete,
