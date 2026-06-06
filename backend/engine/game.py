@@ -526,17 +526,15 @@ class WerewolfGame:
             [self.state.player(candidate_id) for candidate_id in self.state.badge.candidates]
         )
 
-        def handle(player: Player) -> None:
-            if not player.alive:
-                return
-            decision = self._ask(player, "BADGE_SPEECH", lambda agent: agent.talk())
-            if not self.validator.validate(self.state, decision):
-                return
-            self._emit_speech(player, decision, {"badge_campaign": True})
-            if self._maybe_white_wolf_king_boom(player):
-                return
-
-        self._run_actor_sequence(Phase.DAY_BADGE_SPEECH, candidates, handle)
+        # Parallel badge campaign speeches
+        decisions = self._batch_ask(candidates, "BADGE_SPEECH", lambda agent: agent.talk())
+        for player, decision in zip(candidates, decisions):
+            if not isinstance(decision, Decision):
+                continue
+            if player.alive and self.validator.validate(self.state, decision):
+                self._emit_speech(player, decision, {"badge_campaign": True})
+                if self._maybe_white_wolf_king_boom(player):
+                    return
         self._mark_phase_done(Phase.DAY_BADGE_SPEECH)
 
     def _badge_election_phase(self) -> None:
@@ -910,16 +908,21 @@ class WerewolfGame:
             return
         self._set_phase(Phase.DAY_SPEECH)
 
-        def handle(player: Player) -> None:
-            decision = self._ask(player, "TALK", lambda agent: agent.talk())
+        speakers = self._day_speech_order()
+        # Parallel execution — all players speak simultaneously.
+        # Each agent forms opinions independently from public info (not from
+        # other speeches in the same round), so parallelism is correct.
+        decisions = self._batch_ask(
+            speakers, "TALK", lambda agent: agent.talk()
+        )
+        for player, decision in zip(speakers, decisions):
+            if not isinstance(decision, Decision):
+                continue
             if not self.validator.validate(self.state, decision):
-                return
+                continue
             self._emit_speech(player, decision, {})
             if self._maybe_white_wolf_king_boom(player):
                 return
-
-        speakers = self._day_speech_order()
-        self._run_actor_sequence(Phase.DAY_SPEECH, speakers, handle)
         self._mark_phase_done(Phase.DAY_SPEECH)
 
     def _sheriff_closing_phase(self) -> None:
@@ -951,15 +954,16 @@ class WerewolfGame:
         names = ", ".join(player.name for player in pk_players)
         self._log(EventType.SYSTEM_MESSAGE, "public", {"message": f"Vote tie. PK speeches between {names}."})
 
-        def handle(player: Player) -> None:
-            decision = self._ask(player, "TALK", lambda agent: agent.talk())
-            if not self.validator.validate(self.state, decision):
-                return
-            self._emit_speech(player, decision, {"pk_speech": True})
-            if self._maybe_white_wolf_king_boom(player):
-                return
-
-        self._run_actor_sequence(Phase.DAY_PK_SPEECH, self._seat_sorted(pk_players), handle)
+        # Parallel PK speeches
+        pk_sorted = self._seat_sorted(pk_players)
+        decisions = self._batch_ask(pk_sorted, "TALK", lambda agent: agent.talk())
+        for player, decision in zip(pk_sorted, decisions):
+            if not isinstance(decision, Decision):
+                continue
+            if self.validator.validate(self.state, decision):
+                self._emit_speech(player, decision, {"pk_speech": True})
+                if self._maybe_white_wolf_king_boom(player):
+                    return
 
     def _vote_phase(self) -> None:
         if self._phase_done(Phase.DAY_VOTE):
