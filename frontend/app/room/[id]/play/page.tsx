@@ -303,8 +303,8 @@ export default function GamePage() {
         />
       </div>
 
-      {/* ═══ Human mode: role reveal overlay ═══ */}
-      {isHuman && humanDisplay.isMyTurn && !humanActions.revealDone && humanPlayer && (
+      {/* ═══ Human mode: role reveal — show immediately when role is known, before game starts ═══ */}
+      {isHuman && humanPlayer?.role && !humanActions.revealDone && (
         <RoleRevealOverlay
           role={(humanPlayer.role as string) || ""}
           alignment={(humanPlayer.alignment as string) || ""}

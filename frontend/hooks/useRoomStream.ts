@@ -90,7 +90,8 @@ export function useRoomStream({
 
       if (msg.type === "room" && msg.room) setRoom(msg.room);
       if (msg.type === "snapshot" && msg.state) {
-        // 眨眼转场期间：缓冲快照，不更新 UI
+        const s = msg.state;
+        console.log(`[GAME] phase=${s.phase} day=${s.day} evt=${s.events?.length||0} alive=${s.alive_count} pending=${s.pending_input?.player_name||"none"} speaker=${s.current_speaker_id?.slice(0,10)||"none"}`);
         if (getIsBlinking?.() && bufferSnapshot) {
           bufferSnapshot(msg.state);
         } else {

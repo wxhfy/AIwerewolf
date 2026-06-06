@@ -39,17 +39,22 @@ export function SpeechCard({ player, seat, name, children, isSpeaking, headerRig
     <div className={cn("py-1.5 animate-slide-in", className)}>
       <div
         className={cn(
-          "rounded-xl overflow-hidden transition-shadow duration-300 flex",
-          "bg-cardBackground/95 border border-border/80",
-          isSpeaking && "border-primary/50 bg-primary/[0.04] shadow-[0_0_16px_rgb(var(--color-primary-rgb)/0.08)]",
+          // 基础样式
+          "speech-card rounded-2xl overflow-hidden transition-all duration-300 flex",
+          // 白天：暖白底 + 微妙边框 + 柔和阴影
+          "bg-[#FFFBF7] border border-amber-100/60",
+          "shadow-[0_2px_8px_rgba(0,0,0,0.06),0_1px_2px_rgba(0,0,0,0.04)]",
+          "text-gray-700",
+          // 正在发言时的高亮
+          isSpeaking && "shadow-xl ring-2 ring-primary/25 border-primary/30",
         )}
       >
         {/* 立绘区域 - 左侧 */}
         {player && (
-          <div className="shrink-0 p-3 border-r border-border/50">
-            <PlayerPortrait 
-              player={player} 
-              size="md" 
+          <div className="speech-card-portrait shrink-0 p-3 bg-amber-50/40">
+            <PlayerPortrait
+              player={player}
+              size="md"
               isHighlighted={isSpeaking}
             />
           </div>
@@ -60,11 +65,11 @@ export function SpeechCard({ player, seat, name, children, isSpeaking, headerRig
           {/* Header */}
           <div className="flex items-center gap-2 px-4 pt-3 pb-1.5">
             {displaySeat != null && (
-              <span className="text-sm font-semibold text-primary/70 tabular-nums tracking-wide">
+              <span className="speech-card-seat text-sm font-semibold text-amber-700 tabular-nums tracking-wide">
                 {displaySeat}号
               </span>
             )}
-            <span className="text-base font-medium text-textPrimary">{displayName}</span>
+            <span className="speech-card-name text-base font-medium text-gray-800">{displayName}</span>
             {headerRight && (
               <span className="text-xs text-primary font-medium animate-pulse">
                 {headerRight}
@@ -73,7 +78,7 @@ export function SpeechCard({ player, seat, name, children, isSpeaking, headerRig
           </div>
 
           {/* Body */}
-          <div className="px-4 pb-3 text-base leading-relaxed whitespace-pre-wrap break-words">
+          <div className="speech-card-body px-4 pb-3 text-base leading-relaxed whitespace-pre-wrap break-words text-gray-700">
             {children}
           </div>
         </div>

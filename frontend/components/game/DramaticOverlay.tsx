@@ -72,11 +72,7 @@ export function DramaticOverlay({ onVisibilityChange }: { onVisibilityChange?: (
       title = language === "zh" ? "昨夜平安夜" : "Peaceful Night";
       subtitle = language === "zh" ? "无人死亡" : "No one died";
       type = "peaceful";
-    } else if (msg.includes("was voted out")) {
-      const name = msg.replace("was voted out.", "").trim();
-      title = language === "zh" ? "投票放逐" : "Voted Out";
-      subtitle = name || msg;
-      type = "elimination";
+    // "was voted out" is rendered once after last words in DayEventBlock
     } else if (msg.includes("revealed as Idiot")) {
       title = language === "zh" ? "白痴翻牌" : "Idiot Revealed";
       subtitle = msg;

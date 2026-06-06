@@ -112,12 +112,11 @@ export function VoteResultPanel({ votes, players, language, isBadgeVote = false 
         })}
       </div>
 
-      {/* ── Exile result ────────────────────────────────── */}
+      {/* ── Top vote indicator ───────────────────────────── */}
       {exiled && !isBadgeVote && (
-        <div className="px-4 py-3 border-t border-border/20 bg-danger/5">
-          <p className="text-sm text-danger font-semibold">
-            🚫 {exiled.seat}{language === "zh" ? "号" : ""} {exiled.name}{" "}
-            {language === "zh" ? "被放逐出局" : "is exiled"}
+        <div className="px-4 py-2.5 border-t border-border/20 bg-amber-50/80">
+          <p className="text-xs text-amber-700 font-medium">
+            {language === "zh" ? "最高票" : "Most votes"}：{exiled.seat}{language === "zh" ? "号" : ""} {exiled.name}（{top?.count}{language === "zh" ? "票" : ""}）
           </p>
         </div>
       )}

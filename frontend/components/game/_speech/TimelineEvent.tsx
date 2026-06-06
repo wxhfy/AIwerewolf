@@ -33,8 +33,8 @@ function translateSystemMessage(msg: string, lang: Language): string {
     if (badgeTransfer) return msg;
     const badgeDestroy = msg.match(/^(.+) 撕掉了警徽.*$/);
     if (badgeDestroy) return msg;
-    const wasVotedOut = msg.match(/^(.+) was voted out\.$/);
-    if (wasVotedOut) return `${wasVotedOut[1]} 被投票放逐。`;
+    // "was voted out" is filtered by DayEventBlock — elimination
+    // confirmation rendered once after last words, not as a system log
     const revealedIdiot = msg.includes("revealed as Idiot");
     if (revealedIdiot) {
       const m = msg.match(/^(.+) revealed as Idiot.*$/);

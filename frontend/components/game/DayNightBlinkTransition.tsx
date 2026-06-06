@@ -89,6 +89,12 @@ export function DayNightBlinkTransition({
   // 当 blinkPhase 为 null 时不渲染
   const isVisible = blinkPhase !== null;
   const isClosed = blinkPhase === "closing" || blinkPhase === "paused";
+  const isOpening = blinkPhase === "opening";
+
+  // 闭眼：深蓝黑夜色  /  睁眼：暖金色晨光
+  const colors = isOpening
+    ? { top: "#3b2c0a", mid: "#2a1f06", bot: "#1a1200", edge: "rgba(180,130,40,0.3)", glow: "rgba(255,200,80," }
+    : { top: "#08081e", mid: "#050514", bot: "#02020e", edge: "rgba(3,3,18,0.4)", glow: "rgba(0,0,0," };
 
   return (
     <AnimatePresence>
@@ -97,62 +103,26 @@ export function DayNightBlinkTransition({
           {/* ── 上眼皮 ── */}
           <motion.div
             className="fixed inset-x-0 top-0 z-[1500] overflow-hidden"
-            style={{ height: "51vh" }} // 51vh 确保与下眼皮有 1vh 重叠，不留缝隙
+            style={{ height: "51vh" }}
             initial={{ y: "-100%" }}
             animate={{ y: isClosed ? "0%" : "-100%" }}
             exit={{ y: "-100%" }}
             transition={{
-              duration: blinkPhase === "closing" ? CLOSE_DURATION : OPEN_DURATION,
+              duration: isOpening ? OPEN_DURATION : CLOSE_DURATION,
               ease: eyelidEase,
             }}
             onAnimationComplete={
               blinkPhase === "closing" ? handleCloseComplete
-              : blinkPhase === "opening" ? handleOpenComplete
+              : isOpening ? handleOpenComplete
               : undefined
             }
           >
-            {/* 主遮罩：深蓝黑渐变 */}
-            <div
-              className="absolute inset-0"
-              style={{
-                background:
-                  "linear-gradient(to bottom, #08081e 0%, #050514 50%, #02020e 100%)",
-              }}
-            />
-            {/* 眼皮下缘柔化：模拟睫毛/眼睑边缘的模糊过渡 */}
-            <div
-              className="absolute bottom-0 inset-x-0 h-20"
-              style={{
-                background:
-                  "linear-gradient(to bottom, transparent 0%, rgba(3,3,18,0.4) 40%, rgba(2,2,14,0.7) 100%)",
-              }}
-            />
-            <div
-              className="absolute bottom-0 inset-x-0 h-8"
-              style={{
-                backdropFilter: "blur(6px)",
-                WebkitBackdropFilter: "blur(6px)",
-                maskImage:
-                  "linear-gradient(to bottom, transparent 0%, black 100%)",
-                WebkitMaskImage:
-                  "linear-gradient(to bottom, transparent 0%, black 100%)",
-              }}
-            />
-            {/* 暗角效果 */}
-            <div
-              className="absolute inset-0"
-              style={{
-                boxShadow: "inset 0 0 120px 50px rgba(0,0,0,0.35)",
-              }}
-            />
-            {/* 中心区域更暗 — 模拟眼皮弧度 */}
-            <div
-              className="absolute inset-0"
-              style={{
-                background:
-                  "radial-gradient(ellipse 80% 30% at center bottom, rgba(0,0,0,0.5) 0%, transparent 100%)",
-              }}
-            />
+            <div className="absolute inset-0"
+              style={{ background: `linear-gradient(to bottom, ${colors.top} 0%, ${colors.mid} 50%, ${colors.bot} 100%)` }} />
+            <div className="absolute bottom-0 inset-x-0 h-20"
+              style={{ background: `linear-gradient(to bottom, transparent 0%, ${colors.edge} 40%, ${colors.glow}0.7) 100%)` }} />
+            <div className="absolute inset-0"
+              style={{ boxShadow: `inset 0 0 120px 50px ${colors.glow}0.35)` }} />
           </motion.div>
 
           {/* ── 下眼皮 ── */}
@@ -163,72 +133,31 @@ export function DayNightBlinkTransition({
             animate={{ y: isClosed ? "0%" : "100%" }}
             exit={{ y: "100%" }}
             transition={{
-              duration: blinkPhase === "closing" ? CLOSE_DURATION : OPEN_DURATION,
+              duration: isOpening ? OPEN_DURATION : CLOSE_DURATION,
               ease: eyelidEase,
             }}
             onAnimationComplete={
               blinkPhase === "closing" ? handleCloseComplete
-              : blinkPhase === "opening" ? handleOpenComplete
+              : isOpening ? handleOpenComplete
               : undefined
             }
           >
-            {/* 主遮罩：深蓝黑渐变（下眼皮方向相反） */}
-            <div
-              className="absolute inset-0"
-              style={{
-                background:
-                  "linear-gradient(to top, #08081e 0%, #050514 50%, #02020e 100%)",
-              }}
-            />
-            {/* 眼皮上缘柔化 */}
-            <div
-              className="absolute top-0 inset-x-0 h-20"
-              style={{
-                background:
-                  "linear-gradient(to top, transparent 0%, rgba(3,3,18,0.4) 40%, rgba(2,2,14,0.7) 100%)",
-              }}
-            />
-            <div
-              className="absolute top-0 inset-x-0 h-8"
-              style={{
-                backdropFilter: "blur(6px)",
-                WebkitBackdropFilter: "blur(6px)",
-                maskImage:
-                  "linear-gradient(to top, transparent 0%, black 100%)",
-                WebkitMaskImage:
-                  "linear-gradient(to top, transparent 0%, black 100%)",
-              }}
-            />
-            {/* 暗角 */}
-            <div
-              className="absolute inset-0"
-              style={{
-                boxShadow: "inset 0 0 120px 50px rgba(0,0,0,0.35)",
-              }}
-            />
-            {/* 中心弧度 */}
-            <div
-              className="absolute inset-0"
-              style={{
-                background:
-                  "radial-gradient(ellipse 80% 30% at center top, rgba(0,0,0,0.5) 0%, transparent 100%)",
-              }}
-            />
+            <div className="absolute inset-0"
+              style={{ background: `linear-gradient(to top, ${colors.top} 0%, ${colors.mid} 50%, ${colors.bot} 100%)` }} />
+            <div className="absolute top-0 inset-x-0 h-20"
+              style={{ background: `linear-gradient(to top, transparent 0%, ${colors.edge} 40%, ${colors.glow}0.7) 100%)` }} />
+            <div className="absolute inset-0"
+              style={{ boxShadow: `inset 0 0 120px 50px ${colors.glow}0.35)` }} />
           </motion.div>
 
-          {/* ── 缝隙填充层：在上下眼皮即将闭合时，覆盖可能的极细缝隙 ── */}
+          {/* ── 缝隙填充层 ── */}
           <motion.div
             className="fixed inset-0 z-[1499] pointer-events-none"
             initial={{ opacity: 0 }}
             animate={{ opacity: isClosed ? 1 : 0 }}
             exit={{ opacity: 0 }}
-            transition={{
-              duration: 0.15,
-              delay: isClosed ? CLOSE_DURATION * 0.85 : 0,
-            }}
-            style={{
-              background: "#02020e",
-            }}
+            transition={{ duration: 0.15, delay: isClosed ? CLOSE_DURATION * 0.85 : 0 }}
+            style={{ background: colors.bot }}
           />
         </>
       )}
