@@ -3,6 +3,7 @@ back into publishable state when ALL other inputs (markdown, scoreboard) are
 intact? This isolates the 'fallback shortcut' question — i.e. whether the
 repair loop is a real fix or just a soft-pass.
 """
+
 from __future__ import annotations
 
 import json
@@ -17,21 +18,12 @@ if ROOT not in sys.path:
 os.environ.setdefault("AIWEREWOLF_DB_URL", "sqlite:///:memory:")
 
 from backend.engine.game import WerewolfGame
-from backend.engine.models import Phase
-from backend.eval.review import (
-    MarkdownReportRenderer,
-    MetricsCalculator,
-    ReviewReportBuilder,
-    generate_review_report,
-)
-from backend.eval.track_b import (
-    ReplayBundleBuilder,
-    ReviewRepairLoop,
-    SpeechActAnalyzer,
-    SuspicionMatrixBuilder,
-    TrackBValidator,
-    generate_published_review_document,
-)
+from backend.eval.review import generate_review_report
+from backend.eval.track_b import ReplayBundleBuilder
+from backend.eval.track_b import ReviewRepairLoop
+from backend.eval.track_b import SpeechActAnalyzer
+from backend.eval.track_b import SuspicionMatrixBuilder
+from backend.eval.track_b import TrackBValidator
 
 
 def run_one(seed: int) -> dict:
@@ -88,7 +80,7 @@ def main() -> None:
     seeds = [7, 11, 13, 17, 23, 31, 37, 41, 43, 47]
     rows = [run_one(s) for s in seeds]
     success = sum(1 for r in rows if r.get("post_publish_allowed"))
-    print(f"repair_loop_publish_recovery success = {success}/{len(rows)}  ({success/len(rows)*100:.1f}%)")
+    print(f"repair_loop_publish_recovery success = {success}/{len(rows)}  ({success / len(rows) * 100:.1f}%)")
     print()
     for r in rows:
         print(json.dumps(r, ensure_ascii=False))

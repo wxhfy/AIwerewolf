@@ -13,36 +13,35 @@ Behavior adapts to available information:
 
 from __future__ import annotations
 
-from collections import Counter
-from random import Random
-
 import math
 import re
+from collections import Counter
 from random import Random
+from typing import Any
 
 from backend.agents.base import Agent
 from backend.agents.characters import Character
-from backend.agents.humanization import (
-    HumanizationProfile,
-    build_humanization_profile,
-    build_stance_summary,
-)
-from backend.agents.playbooks import build_role_brief
-from backend.engine.models import ActionType, Decision, Role
+from backend.agents.humanization import HumanizationProfile
+from backend.agents.humanization import build_humanization_profile
+from backend.agents.humanization import build_stance_summary
+from backend.engine.models import ActionType
+from backend.engine.models import Decision
+from backend.engine.models import Role
 from backend.engine.visibility import PlayerView
-
 
 # Wolf-family role set — kept in one place so the heuristic agent doesn't
 # silently downgrade new wolf roles (WhiteWolfKing, WolfKing, BigBadWolf,
 # WolfCub) to villager logic. The registry is the source of truth at runtime
 # but this constant lets the heuristic short-circuit without re-importing.
-WOLF_FAMILY: frozenset[Role] = frozenset({
-    Role.WEREWOLF,
-    Role.WHITE_WOLF_KING,
-    Role.WOLF_KING,
-    Role.BIG_BAD_WOLF,
-    Role.WOLF_CUB,
-})
+WOLF_FAMILY: frozenset[Role] = frozenset(
+    {
+        Role.WEREWOLF,
+        Role.WHITE_WOLF_KING,
+        Role.WOLF_KING,
+        Role.BIG_BAD_WOLF,
+        Role.WOLF_CUB,
+    }
+)
 
 
 class HeuristicAgent(Agent):
@@ -55,8 +54,14 @@ class HeuristicAgent(Agent):
     - Different roles use different evidence sources
     """
 
-    def __init__(self, player_id: str, *, seed: int | None = None, character: Character | None = None,
-                 strategy_bias: dict[str, list[str]] | None = None):
+    def __init__(
+        self,
+        player_id: str,
+        *,
+        seed: int | None = None,
+        character: Character | None = None,
+        strategy_bias: dict[str, list[str]] | None = None,
+    ):
         self.player_id = player_id
         self.view: PlayerView | None = None
         self.strategy_bias = {k: list(v) for k, v in (strategy_bias or {}).items() if v}
@@ -80,9 +85,9 @@ class HeuristicAgent(Agent):
         self.last_speeches: list[dict] = []  # speeches heard this round
         # Persistent stance memory across rounds
         self.public_stance: dict[str, Any] = {
-            "suspects": {},       # player_id -> {score, reason, day}
-            "trusted": {},        # player_id -> {score, reason, day}
-            "grudges": {},        # player_id -> float
+            "suspects": {},  # player_id -> {score, reason, day}
+            "trusted": {},  # player_id -> {score, reason, day}
+            "grudges": {},  # player_id -> float
             "last_vote_target": None,
             "tunnel_target": None,  # for first_impression types
             "follow_player": None,
@@ -95,8 +100,6 @@ class HeuristicAgent(Agent):
     def initialize(self, view: PlayerView, game_setting: dict) -> None:
         self.view = view
         self._init_suspicion()
-        char_name = self.character.persona.name if self.character else "Player"
-        role = self.role.value
         # Wolves know their teammates
         if self.role in WOLF_FAMILY:
             for w in view.known_wolves:
@@ -108,9 +111,9 @@ class HeuristicAgent(Agent):
         self._current_request = request
         # Track new speeches since last update
         self.last_speeches = [
-            e for e in view.public_events[-7:]
-            if e.get("type") == "CHAT_MESSAGE"
-            and e.get("payload", {}).get("actor_id") != self.player_id
+            e
+            for e in view.public_events[-7:]
+            if e.get("type") == "CHAT_MESSAGE" and e.get("payload", {}).get("actor_id") != self.player_id
         ]
         # Update suspicion from public events
         self._update_suspicion_from_events()
@@ -181,7 +184,7 @@ class HeuristicAgent(Agent):
                     # Track who mentions our name -> grudge
                     if my_name in speech:
                         grudge_delta = 0.25 * hp.grudge_weight
-                        self._adjust_suspicion(actor, grudge_delta, f"mentioned_me")
+                        self._adjust_suspicion(actor, grudge_delta, "mentioned_me")
                         if actor not in self.public_stance["grudges"]:
                             self.public_stance["grudges"][actor] = 0.0
                         self.public_stance["grudges"][actor] += grudge_delta
@@ -210,8 +213,11 @@ class HeuristicAgent(Agent):
 
         # STEP 2: Build speech based on information + game state + role strategy
         speech, reasoning = self._build_contextual_speech(
-            role=role, day=day, info_level=info_level,
-            alive_count=alive_count, my_name=my_name,
+            role=role,
+            day=day,
+            info_level=info_level,
+            alive_count=alive_count,
+            my_name=my_name,
         )
 
         # STEP 3: Split into segments for multi-bubble emission
@@ -264,8 +270,8 @@ class HeuristicAgent(Agent):
         # Ensure we don't exceed max_segments
         if len(segments) > hp.speech_max_segments:
             # Merge last segments
-            overflow = segments[hp.speech_max_segments - 1:]
-            segments = segments[:hp.speech_max_segments - 1]
+            overflow = segments[hp.speech_max_segments - 1 :]
+            segments = segments[: hp.speech_max_segments - 1]
             segments.append("".join(overflow).strip())
 
         return segments if segments else [speech.strip()]
@@ -274,44 +280,62 @@ class HeuristicAgent(Agent):
         view = self._view()
         target = self._choose_vote_target()
         reasoning = getattr(self, "_last_vote_reasoning", "") or f"Voting {target['name']}"
-        return Decision(view.player_id, ActionType.VOTE, target_id=target["id"],
-                       reasoning=reasoning)
+        return Decision(view.player_id, ActionType.VOTE, target_id=target["id"], reasoning=reasoning)
 
     def attack(self) -> Decision:
         view = self._view()
         target = self._choose_wolf_kill_target()
         day = view.day
         reason = "盲刀，排除队友后随机选择" if day <= 1 else f"狼人集火{target['name']}"
-        return Decision(view.player_id, ActionType.ATTACK, target_id=target["id"],
-                       reasoning=reason)
+        return Decision(view.player_id, ActionType.ATTACK, target_id=target["id"], reasoning=reason)
 
     def divine(self) -> Decision:
         view = self._view()
         target = self._choose_divine_target()
-        return Decision(view.player_id, ActionType.DIVINE, target_id=target["id"],
-                       reasoning=f"Check {target['name']} to clarify the board")
+        return Decision(
+            view.player_id,
+            ActionType.DIVINE,
+            target_id=target["id"],
+            reasoning=f"Check {target['name']} to clarify the board",
+        )
 
     def guard(self) -> Decision:
         view = self._view()
         target = self._choose_guard_target()
-        return Decision(view.player_id, ActionType.GUARD, target_id=target["id"],
-                       reasoning=f"Guard {target['name']} as likely village priority")
+        return Decision(
+            view.player_id,
+            ActionType.GUARD,
+            target_id=target["id"],
+            reasoning=f"Guard {target['name']} as likely village priority",
+        )
 
     def witch_act(self, victim_id: str | None) -> list[Decision]:
         view = self._view()
         decisions: list[Decision] = []
         # Save on night 0 or if victim might be important
         if victim_id and (view.day <= 1):
-            decisions.append(Decision(view.player_id, ActionType.WITCH_SAVE, target_id=victim_id,
-                             reasoning="Save early to preserve village numbers"))
+            decisions.append(
+                Decision(
+                    view.player_id,
+                    ActionType.WITCH_SAVE,
+                    target_id=victim_id,
+                    reasoning="Save early to preserve village numbers",
+                )
+            )
         # Poison only if we have confirmed wolf info
         poison_candidates = sorted(self.suspicion.items(), key=lambda x: x[1], reverse=True)
         for pid, score in poison_candidates:
             if score >= 3.0 and pid != victim_id:
                 p = self._player(pid)
                 if p and p["alive"]:
-                    decisions.append(Decision(view.player_id, ActionType.WITCH_POISON, target_id=pid,
-                                     reasoning=f"Poison {p['name']} based on high suspicion ({score:.1f})"))
+                    decisions.append(
+                        Decision(
+                            view.player_id,
+                            ActionType.WITCH_POISON,
+                            target_id=pid,
+                            reasoning=f"Poison {p['name']} based on high suspicion ({score:.1f})",
+                        )
+                    )
                     break
         if not decisions:
             decisions.append(Decision(view.player_id, ActionType.SKIP, reasoning="Hold potions, not enough evidence"))
@@ -321,8 +345,12 @@ class HeuristicAgent(Agent):
         view = self._view()
         # Shoot the most suspicious alive player
         target = self._highest_suspicion_alive()
-        return Decision(view.player_id, ActionType.SHOOT, target_id=target["id"],
-                       reasoning=f"Hunter shoots {target['name']} as strongest suspect")
+        return Decision(
+            view.player_id,
+            ActionType.SHOOT,
+            target_id=target["id"],
+            reasoning=f"Hunter shoots {target['name']} as strongest suspect",
+        )
 
     def boom(self) -> Decision:
         view = self._view()
@@ -331,15 +359,11 @@ class HeuristicAgent(Agent):
         # Only boom when wolves are losing badly: more village alive than wolves by a large margin
         # and the White Wolf King himself is under heavy suspicion (likely to be voted out anyway)
         target = self._highest_suspicion_alive()
-        my_suspicion_on_me = sum(1 for p in view.players if p["alive"] and p["id"] != self.player_id)
+        sum(1 for p in view.players if p["alive"] and p["id"] != self.player_id)
         wolf_alive = sum(1 for p in view.players if p["alive"] and p.get("alignment") == "wolf")
         village_alive = sum(1 for p in view.players if p["alive"] and p.get("alignment") != "wolf")
         # Boom only when: day >= 4 AND wolves are outnumbered AND I'm heavily suspected
-        should_boom = (
-            view.day >= 4
-            and village_alive > wolf_alive + 2
-            and self.suspicion.get(self.player_id, 0) >= 2.0
-        )
+        should_boom = view.day >= 4 and village_alive > wolf_alive + 2 and self.suspicion.get(self.player_id, 0) >= 2.0
         if should_boom:
             return Decision(
                 view.player_id,
@@ -593,7 +617,8 @@ class HeuristicAgent(Agent):
 
         # 1. Yesterday's vote tally
         vote_events = [
-            e for e in events
+            e
+            for e in events
             if e.get("type") == "VOTE_CAST"
             and not e.get("payload", {}).get("badge_election")
             and e.get("day", 0) == day - 1
@@ -617,7 +642,8 @@ class HeuristicAgent(Agent):
 
         # 2. Who was executed (voted out) yesterday
         executed_events = [
-            e for e in events
+            e
+            for e in events
             if e.get("type") == "PLAYER_DIED"
             and e.get("payload", {}).get("reason") == "vote"
             and e.get("day", 0) == day - 1
@@ -627,21 +653,20 @@ class HeuristicAgent(Agent):
 
         # 3. Last night's deaths
         night_deaths = [
-            e for e in events
+            e
+            for e in events
             if e.get("type") == "PLAYER_DIED"
             and e.get("payload", {}).get("reason") in ("wolf", "poison")
             and e.get("day", 0) == day
         ]
         if night_deaths:
-            facts["night_death_names"] = [
-                e.get("payload", {}).get("player_name", "?") for e in night_deaths
-            ]
+            facts["night_death_names"] = [e.get("payload", {}).get("player_name", "?") for e in night_deaths]
 
         # 4. Badge holder
         badge_events = [
-            e for e in events
-            if e.get("type") == "SYSTEM_MESSAGE"
-            and "sheriff" in e.get("payload", {}).get("message", "").lower()
+            e
+            for e in events
+            if e.get("type") == "SYSTEM_MESSAGE" and "sheriff" in e.get("payload", {}).get("message", "").lower()
         ]
         if badge_events:
             msg = badge_events[-1].get("payload", {}).get("message", "")
@@ -663,22 +688,19 @@ class HeuristicAgent(Agent):
 
         # 6. Who hasn't spoken this round
         speakers_this_round = {
-            s.get("payload", {}).get("actor_name", "")
-            for s in self.last_speeches
-            if s.get("day", 0) == day
+            s.get("payload", {}).get("actor_name", "") for s in self.last_speeches if s.get("day", 0) == day
         }
         my_name = self._player(self.player_id)
         my_name_str = my_name.get("name", "") if my_name else ""
-        all_names = {
-            p.get("name", "") for p in view.players if p.get("alive", True)
-        }
+        all_names = {p.get("name", "") for p in view.players if p.get("alive", True)}
         quiet_names = all_names - speakers_this_round - {my_name_str}
         if quiet_names:
             facts["quiet_players"] = list(quiet_names)
 
         # 7. My own vote last round
         my_vote_events = [
-            e for e in events
+            e
+            for e in events
             if e.get("type") == "VOTE_CAST"
             and e.get("payload", {}).get("voter_id") == self.player_id
             and not e.get("payload", {}).get("badge_election")
@@ -772,8 +794,7 @@ class HeuristicAgent(Agent):
         event_facts = self._gather_event_facts()
 
         # Gather what just happened
-        deaths_today = [e for e in view.public_events[-5:]
-                       if e.get("type") == "PLAYER_DIED" and e.get("day") == day]
+        deaths_today = [e for e in view.public_events[-5:] if e.get("type") == "PLAYER_DIED" and e.get("day") == day]
         recent_speeches = self.last_speeches
 
         # Build the speech organically
@@ -809,7 +830,9 @@ class HeuristicAgent(Agent):
         elif info_level == "strong":
             parts.append(self._strong_push(role, my_name, alive_count))
         else:
-            parts.append(self._developing_case(role, style, my_name, recent_speeches, alive_count, local_rng, event_facts))
+            parts.append(
+                self._developing_case(role, style, my_name, recent_speeches, alive_count, local_rng, event_facts)
+            )
 
         # 2b. Wolves: proactively fake Seer claim — replaces normal speech
         if self.role in WOLF_FAMILY and day >= 1:
@@ -974,11 +997,14 @@ class HeuristicAgent(Agent):
                 f"{tags}被刀了，说明狼急了或者狼很自信。不管哪种，今天都得有人交代。",
             ],
         }
-        lines = templates_by_style.get(style, [
-            f"昨晚{tags}死了，刀口值得琢磨。狼人选他一定有原因，我想听听大家怎么看。",
-            f"{tags}走了，今天得好好分析。他之前的发言和票型都要重新过一遍。",
-            f"{tags}没了，这个刀口信息量不小。大家说说自己的判断，别藏着。",
-        ])
+        lines = templates_by_style.get(
+            style,
+            [
+                f"昨晚{tags}死了，刀口值得琢磨。狼人选他一定有原因，我想听听大家怎么看。",
+                f"{tags}走了，今天得好好分析。他之前的发言和票型都要重新过一遍。",
+                f"{tags}没了，这个刀口信息量不小。大家说说自己的判断，别藏着。",
+            ],
+        )
         return rng.choice(lines)
 
     def _opening_close(self, style: str, rng: Random) -> str:
@@ -1032,8 +1058,15 @@ class HeuristicAgent(Agent):
         lines = templates.get(style, templates["neutral"])
         return rng.choice(lines)
 
-    def _day1_observation(self, style: str, my_name: str, speeches: list[dict], alive: int,
-                          event_facts: dict | None = None, rng: Random | None = None) -> str:
+    def _day1_observation(
+        self,
+        style: str,
+        my_name: str,
+        speeches: list[dict],
+        alive: int,
+        event_facts: dict | None = None,
+        rng: Random | None = None,
+    ) -> str:
         """Day 1: no info yet. Observe behavior, ask questions, don't accuse."""
         rng = rng or self.rng
         event_facts = event_facts or {}
@@ -1120,20 +1153,12 @@ class HeuristicAgent(Agent):
                 tag = self._tag(wolf)
                 if role == Role.SEER:
                     day = self._view().day
-                    village_alive = sum(
-                        1 for p in self._view().players
-                        if p["alive"] and p.get("alignment") != "wolf"
-                    )
+                    village_alive = sum(1 for p in self._view().players if p["alive"] and p.get("alignment") != "wolf")
                     wolf_alive = sum(
-                        1 for p in self._view().players
-                        if p["alive"] and p.get("role") in ("Werewolf", "WhiteWolfKing")
+                        1 for p in self._view().players if p["alive"] and p.get("role") in ("Werewolf", "WhiteWolfKing")
                     )
                     # Reveal only when: late game, multiple checks, or village is outnumbered
-                    should_reveal = (
-                        day >= 3
-                        or len(self.known_wolf_ids) >= 2
-                        or village_alive <= wolf_alive + 2
-                    )
+                    should_reveal = day >= 3 or len(self.known_wolf_ids) >= 2 or village_alive <= wolf_alive + 2
                     if should_reveal:
                         return f"我是预言家，昨晚验了{tag}，查杀！今天全票出{tag}，不接受分票。有对跳的出来，我等着。"
                     else:
@@ -1143,8 +1168,16 @@ class HeuristicAgent(Agent):
                     return f"我强烈怀疑{tag}是狼。今天的票应该集中在他身上，不要分散。我有比较强的把握，大家信我。"
         return "我有比较强的把握，今天的票型要集中。大家不要分散投票，跟着我的判断走。"
 
-    def _developing_case(self, role: Role, style: str, my_name: str, speeches: list[dict], alive: int,
-                         rng: Random, event_facts: dict | None = None) -> str:
+    def _developing_case(
+        self,
+        role: Role,
+        style: str,
+        my_name: str,
+        speeches: list[dict],
+        alive: int,
+        rng: Random,
+        event_facts: dict | None = None,
+    ) -> str:
         """Some information, building a case but not certain."""
         top = self._highest_suspicion_alive()
         score = self.suspicion.get(top["id"], 0)
@@ -1320,11 +1353,14 @@ class HeuristicAgent(Agent):
                 "我等着看谁敢跟我对票。不发言的我已经记本上了，别以为沉默就安全。",
             ],
         }
-        lines = templates.get(style, [
-            "大家各自说说自己的票向，不要跟风。都聊聊自己怎么想的，别藏着。",
-            "都聊聊自己怎么想的，别藏着。一个个把判断理由说清楚，不要只报名字。",
-            "一个个把判断理由说清楚。每个人说一下你最怀疑谁、为什么。",
-        ])
+        lines = templates.get(
+            style,
+            [
+                "大家各自说说自己的票向，不要跟风。都聊聊自己怎么想的，别藏着。",
+                "都聊聊自己怎么想的，别藏着。一个个把判断理由说清楚，不要只报名字。",
+                "一个个把判断理由说清楚。每个人说一下你最怀疑谁、为什么。",
+            ],
+        )
         return rng.choice(lines)
 
     # ---- Target selection ----
@@ -1520,7 +1556,9 @@ class HeuristicAgent(Agent):
         for c in candidates:
             for e in self._view().public_events[-10:]:
                 if e.get("type") == "CHAT_MESSAGE":
-                    if "预言家" in e.get("payload", {}).get("speech", "") and c["name"] in e.get("payload", {}).get("speech", ""):
+                    if "预言家" in e.get("payload", {}).get("speech", "") and c["name"] in e.get("payload", {}).get(
+                        "speech", ""
+                    ):
                         return c
         # Guard self or random good-looking player
         me = self._player(self.player_id)
@@ -1544,10 +1582,7 @@ class HeuristicAgent(Agent):
         """Pick a non-wolf alive player for a wolf to claim as their Seer check target."""
         view = self._view()
         wolf_ids = {p["id"] for p in view.known_wolves}
-        candidates = [
-            p for p in self._alive_others()
-            if p["id"] not in wolf_ids and p["id"] != self.player_id
-        ]
+        candidates = [p for p in self._alive_others() if p["id"] not in wolf_ids and p["id"] != self.player_id]
         return self.rng.choice(candidates) if candidates else None
 
     def _wolf_seer_counter_claim(self, rng: Random) -> str | None:
@@ -1586,7 +1621,7 @@ class HeuristicAgent(Agent):
         if not fake_target:
             return None
         fake_tag = self._tag(fake_target)
-        fake_name = fake_target.get("name", "?")
+        fake_target.get("name", "?")
 
         # Pick strategy: 金水 (good) or 查杀 (wolf) for the target
         if seer_already_claimed:

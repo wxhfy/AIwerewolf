@@ -6,7 +6,7 @@ from backend.engine.game import WerewolfGame
 
 def test_create_game_api() -> None:
     client = TestClient(app)
-    response = client.post("/api/games?seed=7&agent_type=heuristic")
+    response = client.post("/api/games?seed=7&agent_type=llm")
 
     assert response.status_code == 200
     data = response.json()
@@ -43,10 +43,12 @@ def test_create_game_api() -> None:
 
 def test_create_game_with_wolfcha_10p_pack() -> None:
     client = TestClient(app)
-    response = client.post("/api/games?seed=13&agent_type=heuristic&player_count=10")
+    response = client.post("/api/games?seed=13&agent_type=llm&player_count=10")
     assert response.status_code == 200
     data = response.json()
-    roles = {player.get("role") for player in client.get(f"/api/games/{data['id']}?show_private=true").json()["players"]}
+    roles = {
+        player.get("role") for player in client.get(f"/api/games/{data['id']}?show_private=true").json()["players"]
+    }
     assert len(data["players"]) == 10
     assert "WhiteWolfKing" in roles
     assert "Guard" in roles
@@ -62,8 +64,8 @@ def test_health_api() -> None:
 
 def test_leaderboard_api_returns_cross_game_views() -> None:
     client = TestClient(app)
-    client.post("/api/games?seed=31&agent_type=heuristic")
-    client.post("/api/games?seed=37&agent_type=heuristic")
+    client.post("/api/games?seed=31&agent_type=llm")
+    client.post("/api/games?seed=37&agent_type=llm")
 
     response = client.get("/api/leaderboard")
     assert response.status_code == 200
@@ -75,18 +77,18 @@ def test_leaderboard_api_returns_cross_game_views() -> None:
 
 def test_room_api_flow() -> None:
     client = TestClient(app)
-    room_response = client.post("/api/rooms?name=RoomA&seed=9&player_count=7&agent_type=heuristic")
+    room_response = client.post("/api/rooms?name=RoomA&seed=9&player_count=7&agent_type=llm")
     assert room_response.status_code == 200
     room = room_response.json()
     assert room["name"] == "RoomA"
     assert room["status"] == "idle"
-    assert room["agent_type"] == "heuristic"
+    assert room["agent_type"] == "llm"
     assert room["player_count"] == 7
 
     get_room = client.get(f"/api/rooms/{room['id']}")
     assert get_room.status_code == 200
     assert get_room.json()["id"] == room["id"]
-    assert get_room.json()["agent_type"] == "heuristic"
+    assert get_room.json()["agent_type"] == "llm"
 
     game_response = client.post(f"/api/rooms/{room['id']}/games")
     assert game_response.status_code == 200
@@ -115,7 +117,7 @@ def test_human_room_flow_blocks_and_accepts_action() -> None:
     human_seat = next(player.seat for player in probe_game.state.players if player.role.value == "Guard")
 
     room_response = client.post(
-        f"/api/rooms?name=HumanRoom&seed=7&player_count=7&agent_type=heuristic&human_seat={human_seat}"
+        f"/api/rooms?name=HumanRoom&seed=7&player_count=7&agent_type=llm&human_seat={human_seat}"
     )
     assert room_response.status_code == 200
     room = room_response.json()
@@ -140,7 +142,7 @@ def test_human_room_flow_blocks_and_accepts_action() -> None:
 def test_runtime_metrics_and_aggregate_endpoints() -> None:
     """Track B/C dashboard contracts: per-game runtime + cross-game aggregate."""
     client = TestClient(app)
-    create = client.post("/api/games?seed=11&agent_type=heuristic")
+    create = client.post("/api/games?seed=11&agent_type=llm")
     assert create.status_code == 200
     game_id = create.json()["id"]
 
@@ -149,11 +151,18 @@ def test_runtime_metrics_and_aggregate_endpoints() -> None:
     body = runtime.json()
     assert body["game_id"] == game_id
     assert body["status"] == "finished"
-    # Stable contract: zero defaults must be present even when no LLM was used.
+    # Stable contract: local fake LLM still exposes the same runtime fields.
     for key in (
-        "decision_count", "valid_decision_count", "invalid_decision_count",
-        "validity_rate", "llm_call_count", "latency_ms", "tokens",
-        "speech", "by_role", "by_player",
+        "decision_count",
+        "valid_decision_count",
+        "invalid_decision_count",
+        "validity_rate",
+        "llm_call_count",
+        "latency_ms",
+        "tokens",
+        "speech",
+        "by_role",
+        "by_player",
     ):
         assert key in body, key
     for stat_key in ("count", "min", "max", "avg", "p50", "p95", "sum"):
@@ -173,8 +182,14 @@ def test_runtime_metrics_and_aggregate_endpoints() -> None:
     assert isinstance(games["winners"], dict)
     runtime_block = payload["runtime"]
     for key in (
-        "decision_count", "llm_call_count", "fallback_count", "fallback_ratio",
-        "retrieval_used_count", "retrieval_used_rate", "latency_ms", "tokens",
+        "decision_count",
+        "llm_call_count",
+        "fallback_count",
+        "fallback_ratio",
+        "retrieval_used_count",
+        "retrieval_used_rate",
+        "latency_ms",
+        "tokens",
         "speech_char_len",
     ):
         assert key in runtime_block, key
@@ -186,3 +201,10 @@ def test_runtime_metrics_404_for_unknown_game() -> None:
     client = TestClient(app)
     resp = client.get("/api/games/does-not-exist/runtime_metrics")
     assert resp.status_code == 404
+
+
+def test_heuristic_agent_type_is_rejected_for_games() -> None:
+    client = TestClient(app)
+    resp = client.post("/api/games?seed=7&agent_type=heuristic")
+    assert resp.status_code == 400
+    assert "heuristic agents are disabled" in resp.json()["detail"]

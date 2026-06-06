@@ -9,24 +9,27 @@ Uses GroupKFold by game_id. Computes per-role Cohen's d for good/bad separation.
 
 from __future__ import annotations
 
-import json, math, statistics, sys
+import json
+import math
+import statistics
+import sys
 from collections import defaultdict
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from backend.eval.scoring_models import (
-    DecisionQualityModel, ModelFeatures, extract_features,
-)
-from scripts.train_and_ablate import (
-    load_opportunities, load_labeled, load_baseline,
-    rule_opportunity_value, rule_decision_quality,
-    group_kfold_split,
-)
+from backend.eval.scoring_models import DecisionQualityModel
+from backend.eval.scoring_models import ModelFeatures
+from backend.eval.scoring_models import extract_features
+from scripts.train_and_ablate import group_kfold_split
+from scripts.train_and_ablate import load_baseline
+from scripts.train_and_ablate import load_labeled
+from scripts.train_and_ablate import load_opportunities
+from scripts.train_and_ablate import rule_decision_quality
+from scripts.train_and_ablate import rule_opportunity_value
 
 
 def cohens_d(values_a: list[float], values_b: list[float]) -> float:
@@ -48,19 +51,20 @@ def main() -> int:
     baseline = load_baseline()
 
     # Load game outcome data
-    from backend.db.database import SessionLocal, init_db
-    from backend.db.models import PublishedReview
     from sqlalchemy import text
+
+    from backend.db.database import SessionLocal
+    from backend.db.database import init_db
+
     init_db()
     db = SessionLocal()
     clean_ids = set(json.loads(Path("/tmp/clean_llm_game_ids.json").read_text()))
-    games = db.execute(text("SELECT id, winner FROM games WHERE id IN :ids"),
-        {"ids": tuple(clean_ids)}).fetchall()
+    games = db.execute(text("SELECT id, winner FROM games WHERE id IN :ids"), {"ids": tuple(clean_ids)}).fetchall()
     winner_map = {g[0]: g[1] for g in games}
     db.close()
 
     # Map: opportunity_id → game_id, player_id
-    opp_game = {o["opportunity_id"]: o["game_id"] for o in opps}
+    {o["opportunity_id"]: o["game_id"] for o in opps}
     opp_player = {}
     for o in opps:
         pid = o.get("player_id", "")
@@ -93,8 +97,8 @@ def main() -> int:
     q_model = DecisionQualityModel()
 
     for fold_i, (train_opps, test_opps) in enumerate(folds):
-        train_games = set(o["game_id"] for o in train_opps)
-        test_games = set(o["game_id"] for o in test_opps)
+        train_games = {o["game_id"] for o in train_opps}
+        test_games = {o["game_id"] for o in test_opps}
 
         train_mask = np.array([g in train_games for g in game_all])
         test_mask = np.array([g in test_games for g in game_all])
@@ -120,8 +124,15 @@ def main() -> int:
                     if (y_pred[i] > y_pred[j]) == (y_binary[test_mask][i] > y_binary[test_mask][j]):
                         n_correct += 1
         paw = n_correct / max(n_pairs, 1)
-        fold_results.append({"fold": fold_i, "accuracy": acc, "pairwise_accuracy": paw,
-                             "n_train": int(train_mask.sum()), "n_test": int(test_mask.sum())})
+        fold_results.append(
+            {
+                "fold": fold_i,
+                "accuracy": acc,
+                "pairwise_accuracy": paw,
+                "n_train": int(train_mask.sum()),
+                "n_test": int(test_mask.sum()),
+            }
+        )
 
     if fold_results:
         mean_acc = statistics.mean([r["accuracy"] for r in fold_results])
@@ -218,7 +229,7 @@ def main() -> int:
     lines = [
         "# Learned Evaluator Ablation Report",
         "",
-        f"**Date**: 2026-05-27",
+        "**Date**: 2026-05-27",
         f"**Data**: 56 games, {len(opps)} opportunities, {len(labeled)} labeled samples",
         "",
         "## Systems Compared",
@@ -227,8 +238,8 @@ def main() -> int:
         "- **C (+Small Model)**: w_rule(o) × q_model(o) — rule-based importance + ML decision quality",
         "",
         "## DecisionQualityModel Performance",
-        f"| Metric | Value |",
-        f"|--------|-------|",
+        "| Metric | Value |",
+        "|--------|-------|",
         f"| Cross-validation Accuracy | {mean_acc:.4f} |",
         f"| Pairwise Accuracy | {mean_paw:.4f} |",
         f"| Training Samples | {len(X_all)} |",
@@ -269,7 +280,7 @@ def main() -> int:
         if c_d.get(role, 0) > a_d.get(role, 0):
             improved.append(role)
 
-    lines.append(f"### Witch / Guard / Hunter Improvement")
+    lines.append("### Witch / Guard / Hunter Improvement")
     for role in ["Witch", "Guard", "Hunter"]:
         a = a_d.get(role, 0)
         c = c_d.get(role, 0)
@@ -286,7 +297,7 @@ def main() -> int:
         lines.append("| Rank | Feature | Importance |")
         lines.append("|------|---------|------------|")
         for i, (name, imp) in enumerate(sorted_feats[:10]):
-            lines.append(f"| {i+1} | {name} | {imp:.6f} |")
+            lines.append(f"| {i + 1} | {name} | {imp:.6f} |")
 
     lines += [
         "",

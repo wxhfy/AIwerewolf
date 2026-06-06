@@ -13,28 +13,30 @@ adds the missing acceptance-layer pieces from docs/B_REVIEW_VALIDATION_PLAN.md:
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
-from html import escape
 import json
 import re
-from typing import Any, Iterable
+from dataclasses import asdict
+from dataclasses import dataclass
+from dataclasses import field
+from datetime import datetime
+from datetime import timezone
+from html import escape
+from typing import Any
+from typing import Iterable
 from uuid import uuid4
 
-from backend.engine.models import EventType, GameEvent, GameState, Phase
-from backend.eval.review import (
-    BadCaseReport,
-    CounterfactualCase,
-    LeaderboardAggregator,
-    MarkdownReportRenderer,
-    MVPResult,
-    PlayerReview,
-    ReportEvaluationResult,
-    ReviewReport,
-    StrategySuggestion,
-    TurningPoint,
-    generate_review_report,
-)
+from backend.engine.models import EventType
+from backend.engine.models import GameEvent
+from backend.engine.models import GameState
+from backend.eval.review import LeaderboardAggregator
+from backend.eval.review import generate_review_report
+from backend.eval.types import BadCaseReport
+from backend.eval.types import CounterfactualCase
+from backend.eval.types import MVPResult
+from backend.eval.types import PlayerReview
+from backend.eval.types import ReviewReport
+from backend.eval.types import StrategySuggestion
+from backend.eval.types import TurningPoint
 
 
 def _utcnow_iso() -> str:
@@ -196,7 +198,7 @@ class VisualReportAgent:
             """
         step = width / max(len(points), 1)
         nodes: list[str] = [
-            f'<line x1="60" y1="{height/2:.1f}" x2="{width-60}" y2="{height/2:.1f}" stroke="#d3b18d" stroke-width="6" stroke-linecap="round"/>'
+            f'<line x1="60" y1="{height / 2:.1f}" x2="{width - 60}" y2="{height / 2:.1f}" stroke="#d3b18d" stroke-width="6" stroke-linecap="round"/>'
         ]
         for index, point in enumerate(points):
             x = step * index + step / 2
@@ -206,18 +208,18 @@ class VisualReportAgent:
             day = escape(str(point.get("day", "-")))
             nodes.append(
                 f"""
-                <circle cx="{x:.1f}" cy="{height/2:.1f}" r="12" fill="#9c5d2c" />
-                <line x1="{x:.1f}" y1="{height/2:.1f}" x2="{x:.1f}" y2="{y:.1f}" stroke="#9c5d2c" stroke-width="3"/>
-                <rect x="{x-88:.1f}" y="{y-42:.1f}" width="176" height="62" rx="16" fill="#fff9f1" stroke="#dfc7ac"/>
-                <text x="{x-74:.1f}" y="{y-18:.1f}" font-size="13" font-family="Segoe UI, PingFang SC, sans-serif" fill="#9c5d2c">Day {day}</text>
-                <text x="{x-74:.1f}" y="{y+2:.1f}" font-size="14" font-weight="700" font-family="Segoe UI, PingFang SC, sans-serif" fill="#1f1a17">{title}</text>
-                <text x="{x-74:.1f}" y="{y+22:.1f}" font-size="11.5" font-family="Segoe UI, PingFang SC, sans-serif" fill="#6d6057">{desc}</text>
+                <circle cx="{x:.1f}" cy="{height / 2:.1f}" r="12" fill="#9c5d2c" />
+                <line x1="{x:.1f}" y1="{height / 2:.1f}" x2="{x:.1f}" y2="{y:.1f}" stroke="#9c5d2c" stroke-width="3"/>
+                <rect x="{x - 88:.1f}" y="{y - 42:.1f}" width="176" height="62" rx="16" fill="#fff9f1" stroke="#dfc7ac"/>
+                <text x="{x - 74:.1f}" y="{y - 18:.1f}" font-size="13" font-family="Segoe UI, PingFang SC, sans-serif" fill="#9c5d2c">Day {day}</text>
+                <text x="{x - 74:.1f}" y="{y + 2:.1f}" font-size="14" font-weight="700" font-family="Segoe UI, PingFang SC, sans-serif" fill="#1f1a17">{title}</text>
+                <text x="{x - 74:.1f}" y="{y + 22:.1f}" font-size="11.5" font-family="Segoe UI, PingFang SC, sans-serif" fill="#6d6057">{desc}</text>
                 """
             )
         return f"""
         <svg viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="turning point timeline">
           <rect width="{width}" height="{height}" rx="24" fill="#fffaf3" stroke="#e5d3bd"/>
-          {''.join(nodes)}
+          {"".join(nodes)}
         </svg>
         """
 
@@ -226,7 +228,7 @@ class VisualReportAgent:
         players = document.replay_bundle.get("players", [])
         player_names = {player["id"]: player["name"] for player in players}
         ordered_ids = [player["id"] for player in players[:8]]
-        cols = max(len(snapshots), 1)
+        max(len(snapshots), 1)
         rows = max(len(ordered_ids), 1)
         width = 980
         height = 76 + rows * 36
@@ -242,45 +244,151 @@ class VisualReportAgent:
         for row, player_id in enumerate(ordered_ids):
             y = 58 + row * 36
             nodes.append(
-                f'<text x="24" y="{y+18}" font-size="13" font-family="Segoe UI, PingFang SC, sans-serif" fill="#1f1a17">{escape(player_names.get(player_id, player_id))}</text>'
+                f'<text x="24" y="{y + 18}" font-size="13" font-family="Segoe UI, PingFang SC, sans-serif" fill="#1f1a17">{escape(player_names.get(player_id, player_id))}</text>'
             )
             for col, snapshot in enumerate(snapshots):
                 value = float(snapshot.get("target_scores", {}).get(player_id, 0.0))
                 shade = int(255 - min(max(value, 0.0), 1.0) * 120)
-                fill = f"rgb(190,{shade},{shade-24 if shade > 40 else 16})"
+                fill = f"rgb(190,{shade},{shade - 24 if shade > 40 else 16})"
                 nodes.append(
                     f'<rect x="{header_x + col * cell_w}" y="{y}" width="118" height="{cell_h}" rx="10" fill="{fill}" stroke="#ebd8c5"/>'
                 )
                 nodes.append(
-                    f'<text x="{header_x + col * cell_w + 44}" y="{y+17}" font-size="12" font-weight="700" font-family="Segoe UI, PingFang SC, sans-serif" fill="#fff">{value:.2f}</text>'
+                    f'<text x="{header_x + col * cell_w + 44}" y="{y + 17}" font-size="12" font-weight="700" font-family="Segoe UI, PingFang SC, sans-serif" fill="#fff">{value:.2f}</text>'
                 )
         return f"""
         <svg viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="suspicion heatmap">
-          {''.join(nodes)}
+          {"".join(nodes)}
         </svg>
         """
 
+    def render_vote_flow(self, document: PublishedReviewDocument) -> str:
+        """Vote flow diagram: who voted for whom across days (sankey-style SVG)."""
+        votes = document.replay_bundle.get("votes", [])
+        players = document.replay_bundle.get("players", [])
+        names = {p["id"]: p["name"] for p in players}
+        if not votes:
+            return ""
+        by_day: dict[int, list[dict]] = {}
+        for v in votes:
+            by_day.setdefault(v.get("day", 0), []).append(v)
+        days = sorted(by_day.keys())[-3:]
+        width, _cell_h, row_h = 980, 28, 36
+        height = 50 + len(days) * (len(players) * row_h + 20)
+        nodes = [
+            f'<rect width="{width}" height="{height}" rx="24" fill="#fffaf3" stroke="#e5d3bd"/>',
+            '<text x="36" y="34" font-size="16" font-weight="700" fill="#1f1a17">Vote Flow</text>',
+        ]
+        y = 50
+        for day in days:
+            day_votes = by_day.get(day, [])
+            nodes.append(f'<text x="36" y="{y + 18}" font-size="14" fill="#9c5d2c">Day {day}</text>')
+            y += 24
+            for v in day_votes[: len(players) * 2]:
+                voter_n = escape(names.get(v.get("voter_id", ""), "?"))
+                target_n = escape(names.get(v.get("target_id", ""), "?"))
+                nodes.append(f'<text x="36" y="{y + 18}" font-size="12" fill="#4b3d34">{voter_n} → {target_n}</text>')
+                y += row_h
+            y += 8
+        return f'<svg viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg">{"".join(nodes)}</svg>'
+
+    def render_decision_trajectory(self, document: PublishedReviewDocument) -> str:
+        """Per-player decision quality trajectory (SVG line chart)."""
+        per_step = document.review_report.get("metadata", {}).get("per_step_scores", [])
+        if not per_step:
+            return ""
+        players = {}
+        for ps in per_step:
+            players.setdefault(ps.get("player_name", "?"), []).append(ps)
+        width, height = 980, 120 + len(players) * 80
+        nodes = [
+            f'<rect width="{width}" height="{height}" rx="24" fill="#fffaf3" stroke="#e5d3bd"/>',
+            '<text x="36" y="34" font-size="16" font-weight="700" fill="#1f1a17">Decision Quality Trajectory</text>',
+        ]
+        colors = ["#9c5d2c", "#4a90d9", "#e74c3c", "#27ae60", "#8e44ad", "#f39c12", "#1abc9c"]
+        y = 50
+        for pi, (pname, scores) in enumerate(players.items()):
+            color = colors[pi % len(colors)]
+            nodes.append(f'<text x="36" y="{y + 16}" font-size="12" fill="{color}">{escape(pname)}</text>')
+            if len(scores) >= 2:
+                step_w = (width - 80) / max(len(scores) - 1, 1)
+                pts = [
+                    f"{80 + i * step_w:.0f},{y + 50 - s.get('overall_score', 0.5) * 30:.0f}"
+                    for i, s in enumerate(scores)
+                ]
+                nodes.append(f'<polyline points="{" ".join(pts)}" fill="none" stroke="{color}" stroke-width="2"/>')
+            y += 70
+        return f'<svg viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg">{"".join(nodes)}</svg>'
+
+    def render_score_radar(self, document: PublishedReviewDocument) -> str:
+        """Multi-dimensional score radar for top 3 players (SVG)."""
+        scoreboard = document.review_report.get("scoreboard", [])[:3]
+        players = document.replay_bundle.get("players", [])
+        names = {p["id"]: p["name"] for p in players}
+        if not scoreboard:
+            return ""
+        width, height, cx, cy, r = 400, 300, 180, 150, 110
+        dims = ["strategy", "logic", "social"]
+        colors = ["#9c5d2c", "#4a90d9", "#e74c3c"]
+        angles = {d: -90 + i * 120 for i, d in enumerate(dims)}
+        nodes = [
+            f'<rect width="{width}" height="{height}" rx="20" fill="#fffaf3" stroke="#e5d3bd"/>',
+            '<text x="20" y="28" font-size="14" font-weight="700" fill="#1f1a17">Score Radar</text>',
+        ]
+        for level in [0.3, 0.6, 0.9]:
+            pts = [
+                f"{cx + r * level * __import__('math').cos(__import__('math').radians(a)):.0f},{cy + r * level * __import__('math').sin(__import__('math').radians(a)):.0f}"
+                for a in angles.values()
+            ]
+            nodes.append(f'<polygon points="{" ".join(pts)}" fill="none" stroke="#e5d3bd" stroke-width="1"/>')
+        for dim, angle in angles.items():
+            lx = cx + r * 1.05 * __import__("math").cos(__import__("math").radians(angle))
+            ly = cy + r * 1.05 * __import__("math").sin(__import__("math").radians(angle))
+            nodes.append(
+                f'<text x="{lx - 16:.0f}" y="{ly + 4:.0f}" font-size="10" fill="#7a6c62" text-anchor="middle">{dim}</text>'
+            )
+        for pi, player in enumerate(scoreboard):
+            pid = player.get("player_id", "")
+            pname = escape(names.get(pid, player.get("player_name", "?")))
+            scores = player.get("judge_scores", {})
+            pts = []
+            for dim, angle in angles.items():
+                s = scores.get(dim, 0.5) / 10.0
+                x = cx + r * s * __import__("math").cos(__import__("math").radians(angle))
+                y = cy + r * s * __import__("math").sin(__import__("math").radians(angle))
+                pts.append(f"{x:.0f},{y:.0f}")
+            nodes.append(
+                f'<polygon points="{" ".join(pts)}" fill="{colors[pi]}" fill-opacity="0.2" stroke="{colors[pi]}" stroke-width="2"/>'
+            )
+            nodes.append(f'<text x="20" y="{270 + pi * 14}" font-size="10" fill="{colors[pi]}">{pname}</text>')
+        return f'<svg viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg">{"".join(nodes)}</svg>'
+
 
 class HTMLReviewRenderer:
-    """Standalone HTML renderer with lightweight chart-style visuals."""
-
     def render(self, document: PublishedReviewDocument) -> str:
         visual_agent = VisualReportAgent()
         report = document.review_report
         scoreboard = list(report.get("scoreboard", []))
         latest_suspicion = document.suspicion_matrix[-1]["target_scores"] if document.suspicion_matrix else {}
-        player_name_by_id = {
-            player["id"]: player["name"] for player in document.replay_bundle.get("players", [])
-        }
+        player_name_by_id = {player["id"]: player["name"] for player in document.replay_bundle.get("players", [])}
         speech_counts: dict[str, int] = {}
         for item in document.speech_acts:
             speech_counts[item["stance"]] = speech_counts.get(item["stance"], 0) + 1
 
         score_max = max([float(entry.get("adjusted_final_score", 0.0)) for entry in scoreboard] + [1.0])
         suspicion_items = sorted(latest_suspicion.items(), key=lambda item: item[1], reverse=True)[:8]
-        winner = escape(str(report.get("winner") or document.review_report.get("winner") or document.replay_bundle.get("winner") or "unknown"))
+        winner = escape(
+            str(
+                report.get("winner")
+                or document.review_report.get("winner")
+                or document.replay_bundle.get("winner")
+                or "unknown"
+            )
+        )
         total_players = len(document.replay_bundle.get("players", []))
-        village_count = sum(1 for player in document.replay_bundle.get("players", []) if player.get("alignment") == "village")
+        village_count = sum(
+            1 for player in document.replay_bundle.get("players", []) if player.get("alignment") == "village"
+        )
         wolf_count = max(total_players - village_count, 0)
         village_pct = round((village_count / max(total_players, 1)) * 100, 1)
 
@@ -293,7 +401,7 @@ class HTMLReviewRenderer:
                 <span class="meta">{escape(str(entry.get("role", "")))} · {escape(str(entry.get("alignment", "")))}</span>
               </div>
               <div class="bar-wrap">
-                <div class="bar" style="width:{(float(entry.get('adjusted_final_score', 0.0)) / score_max) * 100:.1f}%"></div>
+                <div class="bar" style="width:{(float(entry.get("adjusted_final_score", 0.0)) / score_max) * 100:.1f}%"></div>
                 <span class="bar-value">{float(entry.get("adjusted_final_score", 0.0)):.2f}</span>
               </div>
             </div>
@@ -316,36 +424,51 @@ class HTMLReviewRenderer:
             for player_id, value in suspicion_items
         )
 
-        speech_rows = "\n".join(
-            f"""
+        speech_rows = (
+            "\n".join(
+                f"""
             <div class="speech-chip">
               <span>{escape(stance)}</span>
               <strong>{count}</strong>
             </div>
             """
-            for stance, count in sorted(speech_counts.items(), key=lambda item: item[1], reverse=True)
-        ) or '<div class="speech-chip"><span>none</span><strong>0</strong></div>'
+                for stance, count in sorted(speech_counts.items(), key=lambda item: item[1], reverse=True)
+            )
+            or '<div class="speech-chip"><span>none</span><strong>0</strong></div>'
+        )
 
-        highlights = "\n".join(
-            f"<li><strong>{escape(str(item.get('title', '')))}</strong><span>{escape(str(item.get('description', '')))}</span></li>"
-            for item in report.get("turning_points", [])[:5]
-        ) or "<li><strong>暂无</strong><span>No turning points</span></li>"
+        highlights = (
+            "\n".join(
+                f"<li><strong>{escape(str(item.get('title', '')))}</strong><span>{escape(str(item.get('description', '')))}</span></li>"
+                for item in report.get("turning_points", [])[:5]
+            )
+            or "<li><strong>暂无</strong><span>No turning points</span></li>"
+        )
 
-        bad_cases = "\n".join(
-            f"<li><strong>{escape(str(item.get('player_name', '')))} · {escape(str(item.get('severity', '')))}</strong><span>{escape(str(item.get('description', '')))}</span></li>"
-            for item in report.get("bad_cases", [])[:5]
-        ) or "<li><strong>暂无</strong><span>No bad cases</span></li>"
+        bad_cases = (
+            "\n".join(
+                f"<li><strong>{escape(str(item.get('player_name', '')))} · {escape(str(item.get('severity', '')))}</strong><span>{escape(str(item.get('description', '')))}</span></li>"
+                for item in report.get("bad_cases", [])[:5]
+            )
+            or "<li><strong>暂无</strong><span>No bad cases</span></li>"
+        )
 
-        counterfactuals = "\n".join(
-            f"<li><strong>{escape(str(item.get('counterfactual_type', '')))}</strong><span>{escape(str(item.get('expected_effect', '')))}</span></li>"
-            for item in report.get("counterfactuals", [])[:4]
-        ) or "<li><strong>暂无</strong><span>No counterfactuals</span></li>"
+        counterfactuals = (
+            "\n".join(
+                f"<li><strong>{escape(str(item.get('counterfactual_type', '')))}</strong><span>{escape(str(item.get('expected_effect', '')))}</span></li>"
+                for item in report.get("counterfactuals", [])[:4]
+            )
+            or "<li><strong>暂无</strong><span>No counterfactuals</span></li>"
+        )
 
         validation = document.validation_result
-        validation_items = "\n".join(
-            f"<li><strong>{escape(issue['gate'])}</strong><span>{escape(issue['message'])}</span></li>"
-            for issue in validation.get("issues", [])[:6]
-        ) or "<li><strong>PASS</strong><span>No blocking issues. Report published.</span></li>"
+        validation_items = (
+            "\n".join(
+                f"<li><strong>{escape(issue['gate'])}</strong><span>{escape(issue['message'])}</span></li>"
+                for issue in validation.get("issues", [])[:6]
+            )
+            or "<li><strong>PASS</strong><span>No blocking issues. Report published.</span></li>"
+        )
         banner_svg = visual_agent.render_story_banner(document)
         timeline_svg = visual_agent.render_timeline_ribbon(document)
         heatmap_svg = visual_agent.render_suspicion_heatmap(document)
@@ -724,7 +847,9 @@ class ReplayBundleBuilder:
         elif event.type == EventType.VOTE_CAST:
             public_text = f"{payload.get('voter_name', payload.get('voter_id'))} -> {payload.get('target_name', payload.get('target_id'))}"
         elif event.type == EventType.PLAYER_DIED:
-            public_text = f"{payload.get('player_name', payload.get('player_id'))} died by {payload.get('reason', 'unknown')}"
+            public_text = (
+                f"{payload.get('player_name', payload.get('player_id'))} died by {payload.get('reason', 'unknown')}"
+            )
         return {
             "event_id": event.id,
             "game_id": payload.get("game_id"),
@@ -744,7 +869,9 @@ class ReplayBundleBuilder:
 
 
 class SpeechActAnalyzer:
-    ROLE_CLAIM_PATTERN = re.compile(r"(我是|我就是|i am|i'm)\s*(预言家|女巫|猎人|守卫|村民|狼人|seer|witch|hunter|guard|villager|werewolf)", re.I)
+    ROLE_CLAIM_PATTERN = re.compile(
+        r"(我是|我就是|i am|i'm)\s*(预言家|女巫|猎人|守卫|村民|狼人|seer|witch|hunter|guard|villager|werewolf)", re.I
+    )
     CHECK_WOLF_PATTERN = re.compile(r"(查杀|金水|wolf|good)", re.I)
 
     def analyze(self, state: GameState) -> list[SpeechAct]:
@@ -764,9 +891,22 @@ class SpeechActAnalyzer:
             risk_flags: list[str] = []
             lowered = speech.lower()
             for name in mentioned_players:
-                if any(token in speech for token in [f"投{name}", f"{name}像狼", f"怀疑{name}", f"出{name}", f"{name}有问题"]) or "vote" in lowered or "wolf" in lowered:
+                if (
+                    any(
+                        token in speech
+                        for token in [f"投{name}", f"{name}像狼", f"怀疑{name}", f"出{name}", f"{name}有问题"]
+                    )
+                    or "vote" in lowered
+                    or "wolf" in lowered
+                ):
                     suspected_players.append(name_to_id[name])
-                if any(token in speech for token in [f"保{name}", f"{name}像好", f"{name}偏好", f"信{name}", f"{name}金水"]) or "good" in lowered:
+                if (
+                    any(
+                        token in speech
+                        for token in [f"保{name}", f"{name}像好", f"{name}偏好", f"信{name}", f"{name}金水"]
+                    )
+                    or "good" in lowered
+                ):
                     defended_players.append(name_to_id[name])
             if self.ROLE_CLAIM_PATTERN.search(speech):
                 claims.append("role_claim")
@@ -815,10 +955,7 @@ class SpeechActAnalyzer:
             if event.id == current_event.id:
                 break
             payload = event.payload
-            if any(
-                name in json.dumps(payload, ensure_ascii=False)
-                for name in mentioned_players
-            ):
+            if any(name in json.dumps(payload, ensure_ascii=False) for name in mentioned_players):
                 grounded.append(event.id)
         return grounded[-3:]
 
@@ -917,12 +1054,44 @@ class TrackBValidator:
 
     def _schema_validity(self, report_id: str, review_report: dict[str, Any]) -> list[ValidationIssue]:
         issues: list[ValidationIssue] = []
-        required = ["game_id", "scoreboard", "mvp_results", "turning_points", "player_reviews", "bad_cases", "counterfactuals", "strategy_suggestions", "metadata"]
+        required = [
+            "game_id",
+            "scoreboard",
+            "mvp_results",
+            "turning_points",
+            "player_reviews",
+            "bad_cases",
+            "counterfactuals",
+            "strategy_suggestions",
+            "metadata",
+        ]
         for field_name in required:
             if field_name not in review_report:
-                issues.append(self._issue("SchemaValidityGate", "critical", "missing_field", {"field": field_name}, f"报告缺少字段 {field_name}", [], f"补齐字段 {field_name}", "ReplayQueryTool"))
+                issues.append(
+                    self._issue(
+                        "SchemaValidityGate",
+                        "critical",
+                        "missing_field",
+                        {"field": field_name},
+                        f"报告缺少字段 {field_name}",
+                        [],
+                        f"补齐字段 {field_name}",
+                        "ReplayQueryTool",
+                    )
+                )
         if not isinstance(review_report.get("scoreboard", []), list):
-            issues.append(self._issue("SchemaValidityGate", "critical", "bad_type", {"field": "scoreboard"}, "scoreboard 必须是列表", [], "重建 scoreboard", "ScoreRecomputeTool"))
+            issues.append(
+                self._issue(
+                    "SchemaValidityGate",
+                    "critical",
+                    "bad_type",
+                    {"field": "scoreboard"},
+                    "scoreboard 必须是列表",
+                    [],
+                    "重建 scoreboard",
+                    "ScoreRecomputeTool",
+                )
+            )
         if review_report.get("game_id") and review_report.get("game_id") != report_id.split(":")[-1]:
             pass
         return issues
@@ -940,27 +1109,31 @@ class TrackBValidator:
             if decision.get("parsed_success") is False:
                 invalid_decisions.append(str(decision.get("decision_id") or decision.get("player_id") or "unknown"))
         if fallback_decisions:
-            issues.append(self._issue(
-                "AgentRobustnessGate",
-                "critical",
-                "fallback_used",
-                {"decision_ids": fallback_decisions[:10], "count": len(fallback_decisions)},
-                "对局包含 fallback 决策，不能作为高质量 LLM/策略验收样本发布。",
-                fallback_decisions[:10],
-                "重新运行对局或修复 LLM 输出解析，确保所有 AgentDecision 由目标 agent 有效产生。",
-                "ReplayQueryTool",
-            ))
+            issues.append(
+                self._issue(
+                    "AgentRobustnessGate",
+                    "critical",
+                    "fallback_used",
+                    {"decision_ids": fallback_decisions[:10], "count": len(fallback_decisions)},
+                    "对局包含 fallback 决策，不能作为高质量 LLM/策略验收样本发布。",
+                    fallback_decisions[:10],
+                    "重新运行对局或修复 LLM 输出解析，确保所有 AgentDecision 由目标 agent 有效产生。",
+                    "ReplayQueryTool",
+                )
+            )
         if invalid_decisions:
-            issues.append(self._issue(
-                "AgentRobustnessGate",
-                "critical",
-                "invalid_decision",
-                {"decision_ids": invalid_decisions[:10], "count": len(invalid_decisions)},
-                "对局包含非法或解析失败决策，不能发布为 ApprovedReviewReport。",
-                invalid_decisions[:10],
-                "修复 ActionValidator / Agent 输出后重新生成复盘。",
-                "ReplayQueryTool",
-            ))
+            issues.append(
+                self._issue(
+                    "AgentRobustnessGate",
+                    "critical",
+                    "invalid_decision",
+                    {"decision_ids": invalid_decisions[:10], "count": len(invalid_decisions)},
+                    "对局包含非法或解析失败决策，不能发布为 ApprovedReviewReport。",
+                    invalid_decisions[:10],
+                    "修复 ActionValidator / Agent 输出后重新生成复盘。",
+                    "ReplayQueryTool",
+                )
+            )
         return issues
 
     def _report_completeness(self, markdown: str, review_report: dict[str, Any]) -> list[ValidationIssue]:
@@ -979,9 +1152,31 @@ class TrackBValidator:
         issues: list[ValidationIssue] = []
         for section in required_sections:
             if section not in markdown:
-                issues.append(self._issue("ReportCompletenessGate", "major", "missing_section", {"section": section}, f"Markdown 缺少章节 {section}", [], f"补全章节 {section}", "ScoreTableRenderer"))
+                issues.append(
+                    self._issue(
+                        "ReportCompletenessGate",
+                        "major",
+                        "missing_section",
+                        {"section": section},
+                        f"Markdown 缺少章节 {section}",
+                        [],
+                        f"补全章节 {section}",
+                        "ScoreTableRenderer",
+                    )
+                )
         if not review_report.get("turning_points"):
-            issues.append(self._issue("ReportCompletenessGate", "major", "missing_highlight", {"section": "turning_points"}, "报告没有关键高光/转折点", [], "补充高光或转折点", "EvidenceResolveTool"))
+            issues.append(
+                self._issue(
+                    "ReportCompletenessGate",
+                    "major",
+                    "missing_highlight",
+                    {"section": "turning_points"},
+                    "报告没有关键高光/转折点",
+                    [],
+                    "补充高光或转折点",
+                    "EvidenceResolveTool",
+                )
+            )
         return issues
 
     def _evidence_coverage(self, review_report: dict[str, Any]) -> list[ValidationIssue]:
@@ -990,7 +1185,18 @@ class TrackBValidator:
             for index, item in enumerate(review_report.get(section_name, [])):
                 evidence = item.get("evidence_event_ids") or item.get("evidence") or item.get("grounded_event_ids")
                 if not evidence:
-                    issues.append(self._issue("EvidenceCoverageGate", "critical", "missing_evidence", {"section": section_name, "index": index}, f"{section_name}[{index}] 缺少 evidence_event_ids", [], "补齐证据链", "EvidenceResolveTool"))
+                    issues.append(
+                        self._issue(
+                            "EvidenceCoverageGate",
+                            "critical",
+                            "missing_evidence",
+                            {"section": section_name, "index": index},
+                            f"{section_name}[{index}] 缺少 evidence_event_ids",
+                            [],
+                            "补齐证据链",
+                            "EvidenceResolveTool",
+                        )
+                    )
         return issues
 
     def _fact_consistency(
@@ -1006,11 +1212,44 @@ class TrackBValidator:
             for index, item in enumerate(review_report.get(section_name, [])):
                 for evidence_id in item.get("evidence_event_ids", []):
                     if evidence_id not in event_ids:
-                        issues.append(self._issue("FactConsistencyGate", "critical", "unknown_event", {"section": section_name, "index": index}, f"{section_name}[{index}] 引用了不存在的事件 {evidence_id}", [evidence_id], "重查事实证据", "ReplayQueryTool"))
+                        issues.append(
+                            self._issue(
+                                "FactConsistencyGate",
+                                "critical",
+                                "unknown_event",
+                                {"section": section_name, "index": index},
+                                f"{section_name}[{index}] 引用了不存在的事件 {evidence_id}",
+                                [evidence_id],
+                                "重查事实证据",
+                                "ReplayQueryTool",
+                            )
+                        )
         if not speech_acts:
-            issues.append(self._issue("FactConsistencyGate", "major", "missing_speech_acts", {"section": "speech_acts"}, "缺少 SpeechAct 分析结果", [], "生成 SpeechAct 分析", "SpeechActRecheckTool"))
+            issues.append(
+                self._issue(
+                    "FactConsistencyGate",
+                    "major",
+                    "missing_speech_acts",
+                    {"section": "speech_acts"},
+                    "缺少 SpeechAct 分析结果",
+                    [],
+                    "生成 SpeechAct 分析",
+                    "SpeechActRecheckTool",
+                )
+            )
         if not suspicion_matrix:
-            issues.append(self._issue("FactConsistencyGate", "major", "missing_suspicion_matrix", {"section": "suspicion_matrix"}, "缺少 SuspicionMatrix", [], "重建公共怀疑矩阵", "ReplayQueryTool"))
+            issues.append(
+                self._issue(
+                    "FactConsistencyGate",
+                    "major",
+                    "missing_suspicion_matrix",
+                    {"section": "suspicion_matrix"},
+                    "缺少 SuspicionMatrix",
+                    [],
+                    "重建公共怀疑矩阵",
+                    "ReplayQueryTool",
+                )
+            )
         return issues
 
     def _score_consistency(self, review_report: dict[str, Any], markdown: str) -> list[ValidationIssue]:
@@ -1019,19 +1258,56 @@ class TrackBValidator:
         for entry in review_report.get("scoreboard", []):
             score_payload = player_scores.get(entry.get("player_id"))
             if score_payload is None:
-                issues.append(self._issue("ScoreConsistencyGate", "critical", "missing_player_score", {"player_id": entry.get("player_id")}, f"{entry.get('player_name')} 缺少 player_scores 来源", [], "补齐 player_scores", "ScoreRecomputeTool"))
+                issues.append(
+                    self._issue(
+                        "ScoreConsistencyGate",
+                        "critical",
+                        "missing_player_score",
+                        {"player_id": entry.get("player_id")},
+                        f"{entry.get('player_name')} 缺少 player_scores 来源",
+                        [],
+                        "补齐 player_scores",
+                        "ScoreRecomputeTool",
+                    )
+                )
                 continue
-            expected = round(float(score_payload.get("adjusted_final_score") or score_payload.get("final_score") or 0.0), 2)
+            expected = round(
+                float(score_payload.get("adjusted_final_score") or score_payload.get("final_score") or 0.0), 2
+            )
             actual = round(float(entry.get("adjusted_final_score") or 0.0), 2)
             if expected != actual:
-                issues.append(self._issue("ScoreConsistencyGate", "critical", "score_mismatch", {"player_id": entry.get("player_id")}, f"{entry.get('player_name')} 的最终分与底层 player_scores 不一致", [], "重算 scoreboard", "ScoreRecomputeTool"))
+                issues.append(
+                    self._issue(
+                        "ScoreConsistencyGate",
+                        "critical",
+                        "score_mismatch",
+                        {"player_id": entry.get("player_id")},
+                        f"{entry.get('player_name')} 的最终分与底层 player_scores 不一致",
+                        [],
+                        "重算 scoreboard",
+                        "ScoreRecomputeTool",
+                    )
+                )
             if str(actual) not in markdown:
-                issues.append(self._issue("ScoreConsistencyGate", "major", "markdown_score_mismatch", {"player_id": entry.get("player_id")}, f"Markdown 未展示 {entry.get('player_name')} 的最终分 {actual}", [], "重绘分数表", "ScoreTableRenderer"))
+                issues.append(
+                    self._issue(
+                        "ScoreConsistencyGate",
+                        "major",
+                        "markdown_score_mismatch",
+                        {"player_id": entry.get("player_id")},
+                        f"Markdown 未展示 {entry.get('player_name')} 的最终分 {actual}",
+                        [],
+                        "重绘分数表",
+                        "ScoreTableRenderer",
+                    )
+                )
         return issues
 
-    def _counterfactual_soundness(self, replay_bundle: ReplayBundle, review_report: dict[str, Any]) -> list[ValidationIssue]:
+    def _counterfactual_soundness(
+        self, replay_bundle: ReplayBundle, review_report: dict[str, Any]
+    ) -> list[ValidationIssue]:
         issues: list[ValidationIssue] = []
-        vote_events = [vote for vote in replay_bundle.votes]
+        vote_events = list(replay_bundle.votes)
         grouped_votes: dict[int, list[dict[str, Any]]] = {}
         for vote in vote_events:
             grouped_votes.setdefault(int(vote["day"]), []).append(vote)
@@ -1043,47 +1319,159 @@ class TrackBValidator:
                 day = int(item.get("day") or 0)
                 evidence_ids = set(item.get("evidence_event_ids", []))
                 if day not in grouped_votes or not evidence_ids:
-                    issues.append(self._issue("CounterfactualSoundnessGate", "major", "invalid_vote_cf", {"index": index}, "vote_flip 反事实缺少原始票型依据", list(evidence_ids), "补齐投票证据并重算", "CounterfactualRecomputeTool"))
+                    issues.append(
+                        self._issue(
+                            "CounterfactualSoundnessGate",
+                            "major",
+                            "invalid_vote_cf",
+                            {"index": index},
+                            "vote_flip 反事实缺少原始票型依据",
+                            list(evidence_ids),
+                            "补齐投票证据并重算",
+                            "CounterfactualRecomputeTool",
+                        )
+                    )
                 # B §21 vote_flip must declare exact_recalculation and present a recomputed tally.
                 if effect_type != "exact_recalculation":
-                    issues.append(self._issue("CounterfactualSoundnessGate", "major", "vote_cf_wrong_effect_type", {"index": index, "effect_type": effect_type}, "vote_flip 反事实必须标记 effect_type=exact_recalculation", [], "在 CounterfactualCase 上补 effect_type=exact_recalculation", "CounterfactualRecomputeTool"))
+                    issues.append(
+                        self._issue(
+                            "CounterfactualSoundnessGate",
+                            "major",
+                            "vote_cf_wrong_effect_type",
+                            {"index": index, "effect_type": effect_type},
+                            "vote_flip 反事实必须标记 effect_type=exact_recalculation",
+                            [],
+                            "在 CounterfactualCase 上补 effect_type=exact_recalculation",
+                            "CounterfactualRecomputeTool",
+                        )
+                    )
                 if "new_tally" not in recomputed and "tally_unchanged" not in recomputed:
-                    issues.append(self._issue("CounterfactualSoundnessGate", "major", "vote_cf_no_recompute", {"index": index}, "vote_flip 反事实未给出重算后的票型 (new_tally / tally_unchanged)", [], "调用 _recompute_vote_flip 写入 recomputed_outcome", "CounterfactualRecomputeTool"))
+                    issues.append(
+                        self._issue(
+                            "CounterfactualSoundnessGate",
+                            "major",
+                            "vote_cf_no_recompute",
+                            {"index": index},
+                            "vote_flip 反事实未给出重算后的票型 (new_tally / tally_unchanged)",
+                            [],
+                            "调用 _recompute_vote_flip 写入 recomputed_outcome",
+                            "CounterfactualRecomputeTool",
+                        )
+                    )
             if cf_type == "skill":
                 if effect_type != "local_recalculation":
-                    issues.append(self._issue("CounterfactualSoundnessGate", "major", "skill_cf_wrong_effect_type", {"index": index, "effect_type": effect_type}, "skill 反事实必须标记 effect_type=local_recalculation", [], "在 CounterfactualCase 上补 effect_type=local_recalculation", "CounterfactualRecomputeTool"))
+                    issues.append(
+                        self._issue(
+                            "CounterfactualSoundnessGate",
+                            "major",
+                            "skill_cf_wrong_effect_type",
+                            {"index": index, "effect_type": effect_type},
+                            "skill 反事实必须标记 effect_type=local_recalculation",
+                            [],
+                            "在 CounterfactualCase 上补 effect_type=local_recalculation",
+                            "CounterfactualRecomputeTool",
+                        )
+                    )
             if cf_type == "info_release":
                 expected = str(item.get("expected_effect") or "")
                 if any(token in expected for token in ["一定", "必然", "稳胜", "100%"]):
-                    issues.append(self._issue("CounterfactualSoundnessGate", "major", "deterministic_info_cf", {"index": index}, "信息释放反事实不能写成必然结果", item.get("evidence_event_ids", []), "将结论改成 estimated 语气", "CounterfactualRecomputeTool"))
+                    issues.append(
+                        self._issue(
+                            "CounterfactualSoundnessGate",
+                            "major",
+                            "deterministic_info_cf",
+                            {"index": index},
+                            "信息释放反事实不能写成必然结果",
+                            item.get("evidence_event_ids", []),
+                            "将结论改成 estimated 语气",
+                            "CounterfactualRecomputeTool",
+                        )
+                    )
                 if effect_type != "estimated":
-                    issues.append(self._issue("CounterfactualSoundnessGate", "major", "info_cf_wrong_effect_type", {"index": index, "effect_type": effect_type}, "info_release 反事实必须标记 effect_type=estimated", [], "在 CounterfactualCase 上补 effect_type=estimated", "CounterfactualRecomputeTool"))
+                    issues.append(
+                        self._issue(
+                            "CounterfactualSoundnessGate",
+                            "major",
+                            "info_cf_wrong_effect_type",
+                            {"index": index, "effect_type": effect_type},
+                            "info_release 反事实必须标记 effect_type=estimated",
+                            [],
+                            "在 CounterfactualCase 上补 effect_type=estimated",
+                            "CounterfactualRecomputeTool",
+                        )
+                    )
         return issues
 
-    def _visibility_safety(self, review_report: dict[str, Any], markdown: str, view_scope: str) -> list[ValidationIssue]:
+    def _visibility_safety(
+        self, review_report: dict[str, Any], markdown: str, view_scope: str
+    ) -> list[ValidationIssue]:
         issues: list[ValidationIssue] = []
         if view_scope == "moderator_view":
             return issues
         leaked_tokens = ["private_reason", "狼队友", "昨晚刀口", "未公开查验"]
         for token in leaked_tokens:
             if token in markdown:
-                issues.append(self._issue("VisibilitySafetyGate", "critical", "private_leak", {"token": token}, f"公开报告泄露了私有信息：{token}", [], "移除私有信息", "VisibilityCheckTool"))
+                issues.append(
+                    self._issue(
+                        "VisibilitySafetyGate",
+                        "critical",
+                        "private_leak",
+                        {"token": token},
+                        f"公开报告泄露了私有信息：{token}",
+                        [],
+                        "移除私有信息",
+                        "VisibilityCheckTool",
+                    )
+                )
         for review in review_report.get("player_reviews", []):
             if "private_reason" in json.dumps(review, ensure_ascii=False):
-                issues.append(self._issue("VisibilitySafetyGate", "critical", "private_leak", {"player_id": review.get("player_id")}, "player review 泄露了 private_reason", [], "去除私有字段", "VisibilityCheckTool"))
+                issues.append(
+                    self._issue(
+                        "VisibilitySafetyGate",
+                        "critical",
+                        "private_leak",
+                        {"player_id": review.get("player_id")},
+                        "player review 泄露了 private_reason",
+                        [],
+                        "去除私有字段",
+                        "VisibilityCheckTool",
+                    )
+                )
         return issues
 
     def _recommendation_grounding(self, review_report: dict[str, Any]) -> list[ValidationIssue]:
         issues: list[ValidationIssue] = []
         for index, item in enumerate(review_report.get("strategy_suggestions", [])):
             if not item.get("evidence_event_ids"):
-                issues.append(self._issue("RecommendationGroundingGate", "major", "ungrounded_suggestion", {"index": index}, "策略建议缺少来源证据", [], "为策略建议补充 evidence_event_ids", "EvidenceResolveTool"))
+                issues.append(
+                    self._issue(
+                        "RecommendationGroundingGate",
+                        "major",
+                        "ungrounded_suggestion",
+                        {"index": index},
+                        "策略建议缺少来源证据",
+                        [],
+                        "为策略建议补充 evidence_event_ids",
+                        "EvidenceResolveTool",
+                    )
+                )
         return issues
 
     def _presentation_quality(self, markdown: str) -> list[ValidationIssue]:
         issues: list[ValidationIssue] = []
-        if any(token in markdown for token in ["global_mvp", "winning_camp_mvp", "DAY_SPEECH", "\"scoreboard\""]):
-            issues.append(self._issue("PresentationQualityGate", "major", "debug_token", {}, "Markdown 仍包含英文枚举或调试字段", [], "转成中文展示并移除调试字段", "ScoreTableRenderer"))
+        if any(token in markdown for token in ["global_mvp", "winning_camp_mvp", "DAY_SPEECH", '"scoreboard"']):
+            issues.append(
+                self._issue(
+                    "PresentationQualityGate",
+                    "major",
+                    "debug_token",
+                    {},
+                    "Markdown 仍包含英文枚举或调试字段",
+                    [],
+                    "转成中文展示并移除调试字段",
+                    "ScoreTableRenderer",
+                )
+            )
         return issues
 
     def _issue(
@@ -1171,10 +1559,16 @@ class ReviewRepairLoop:
         players_by_name = {player["name"]: player["id"] for player in replay_bundle.players}
         vote_events = [event for event in replay_bundle.events if event["event_type"] == EventType.VOTE_CAST.value]
         speech_events = [event for event in replay_bundle.events if event["event_type"] == EventType.CHAT_MESSAGE.value]
-        action_events = [event for event in replay_bundle.events if event["event_type"] in {EventType.NIGHT_ACTION.value, EventType.HUNTER_SHOT.value}]
+        action_events = [
+            event
+            for event in replay_bundle.events
+            if event["event_type"] in {EventType.NIGHT_ACTION.value, EventType.HUNTER_SHOT.value}
+        ]
         death_events = [event for event in replay_bundle.events if event["event_type"] == EventType.PLAYER_DIED.value]
 
-        def actor_events(player_name: str, day: int | None = None, sources: list[dict[str, Any]] | None = None) -> list[str]:
+        def actor_events(
+            player_name: str, day: int | None = None, sources: list[dict[str, Any]] | None = None
+        ) -> list[str]:
             player_id = players_by_name.get(player_name)
             if not player_id:
                 return []
@@ -1204,7 +1598,9 @@ class ReviewRepairLoop:
                 if not case["evidence_event_ids"]:
                     case["evidence_event_ids"] = actor_events(player_name, None, speech_events)[-3:]
             else:
-                case["evidence_event_ids"] = (actor_events(player_name, day) + actor_events(player_name, day, death_events))[:3]
+                case["evidence_event_ids"] = (
+                    actor_events(player_name, day) + actor_events(player_name, day, death_events)
+                )[:3]
             if not case["evidence_event_ids"]:
                 case["evidence_event_ids"] = actor_events(player_name)[-3:]
 
@@ -1225,13 +1621,13 @@ class ReviewRepairLoop:
             affected = item.get("affected_players") or []
             if item.get("counterfactual_type") == "vote":
                 item["evidence_event_ids"] = [
-                    event["event_id"]
-                    for event in vote_events
-                    if int(event.get("day") or 0) == int(day or 0)
+                    event["event_id"] for event in vote_events if int(event.get("day") or 0) == int(day or 0)
                 ][:5]
             else:
                 names = [name for name in affected if isinstance(name, str)]
-                item["evidence_event_ids"] = self._evidence_from_names_and_day({"related_players": names, "day": day}, replay_bundle)
+                item["evidence_event_ids"] = self._evidence_from_names_and_day(
+                    {"related_players": names, "day": day}, replay_bundle
+                )
 
         for item in review_report.get("strategy_suggestions", []):
             if item.get("evidence_event_ids"):
@@ -1241,7 +1637,9 @@ class ReviewRepairLoop:
             if player_name:
                 item["evidence_event_ids"] = actor_events(player_name)[:3]
             else:
-                item["evidence_event_ids"] = [event["event_id"] for event in speech_events[:2]] or [event["event_id"] for event in vote_events[:2]]
+                item["evidence_event_ids"] = [event["event_id"] for event in speech_events[:2]] or [
+                    event["event_id"] for event in vote_events[:2]
+                ]
         return review_report
 
     def _repair_markdown(self, markdown: str, review_report: dict[str, Any]) -> str:
@@ -1258,7 +1656,11 @@ class ReviewRepairLoop:
             if isinstance(value, str) and value:
                 names.add(value)
         if not names:
-            return [event["event_id"] for event in replay_bundle.events if day is None or int(event.get("day") or 0) == int(day or 0)][:3]
+            return [
+                event["event_id"]
+                for event in replay_bundle.events
+                if day is None or int(event.get("day") or 0) == int(day or 0)
+            ][:3]
         matched: list[str] = []
         for event in replay_bundle.events:
             if day is not None and int(event.get("day") or 0) != int(day):
@@ -1321,26 +1723,30 @@ def _record_knowledge_usage(state: GameState, review_report: dict[str, Any]) -> 
         player_name = player_name_by_id.get(record.player_id, "")
         helpful = (player_name, int(record.day)) not in bad_case_player_days
         for doc_id in doc_ids:
-            feedback.append({
-                "doc_id": doc_id,
-                "player_id": record.player_id,
-                "day": record.day,
-                "phase": record.phase,
-                "helpful": helpful,
-            })
+            feedback.append(
+                {
+                    "doc_id": doc_id,
+                    "player_id": record.player_id,
+                    "day": record.day,
+                    "phase": record.phase,
+                    "helpful": helpful,
+                }
+            )
             if record_knowledge_usage is not None:
                 try:
-                    record_knowledge_usage({
-                        "game_id": state.id,
-                        "decision_id": record.id,
-                        "player_id": record.player_id,
-                        "knowledge_doc_id": doc_id,
-                        "retrieved": True,
-                        "used": True,
-                        "decision_outcome": "good" if helpful else "bad",
-                        "helpful": helpful,
-                        "metadata": {"day": record.day, "phase": record.phase},
-                    })
+                    record_knowledge_usage(
+                        {
+                            "game_id": state.id,
+                            "decision_id": record.id,
+                            "player_id": record.player_id,
+                            "knowledge_doc_id": doc_id,
+                            "retrieved": True,
+                            "used": True,
+                            "decision_outcome": "good" if helpful else "bad",
+                            "helpful": helpful,
+                            "metadata": {"day": record.day, "phase": record.phase},
+                        }
+                    )
                 except Exception:
                     # Persistence is best-effort; an in-memory store still
                     # has the truth in the feedback list above.
@@ -1348,7 +1754,373 @@ def _record_knowledge_usage(state: GameState, review_report: dict[str, Any]) -> 
     return feedback
 
 
-def generate_published_review_document(state: GameState, *, view_scope: str = "moderator_view") -> PublishedReviewDocument:
+def _compute_per_step_scores(
+    state: GameState,
+    replay_bundle: ReplayBundle,
+    speech_acts: list[SpeechAct],
+    *,
+    llm_client: Any = None,
+    cascade: bool = False,
+) -> list[dict[str, Any]]:
+    """Compute per-step decision scores with optional three-tier cascade.
+
+    Tier 1 (deterministic): Always runs — hard rules for all decisions. Free, instant.
+    Tier 2 (light LLM):    Activates when cascade=True + llm_client is set.
+                            Single-judge LLM for ambiguous decisions (~12% of total).
+    Tier 3 (heavy LLM):    3-judge panel for high-impact + ambiguous (~3% of total).
+
+    Args:
+        state: Full game state.
+        replay_bundle: Replay data including decisions.
+        speech_acts: Analyzed speech acts.
+        llm_client: Optional LLM client for Tier 2/3 scoring.
+        cascade: If True and llm_client is provided, run the three-tier cascade.
+    """
+    from backend.eval.per_step_scorer import PerStepScorer
+
+    scorer = PerStepScorer(llm_client=llm_client)
+    players = {p.id: p for p in state.players}
+    state_dict = {
+        "players": [
+            {
+                "id": p.id,
+                "name": p.name,
+                "role": p.role.value if hasattr(p.role, "value") else str(p.role),
+                "alignment": p.alignment.value if hasattr(p.alignment, "value") else str(p.alignment),
+                "alive": p.alive,
+            }
+            for p in state.players
+        ],
+    }
+    acts_dicts = [
+        {
+            "player_id": a.player_id,
+            "day": a.day,
+            "stance": a.stance,
+            "suspected_players": a.suspected_players,
+            "defended_players": a.defended_players,
+            "grounded_event_ids": a.grounded_event_ids,
+            "risk_flags": a.risk_flags,
+        }
+        for a in speech_acts
+    ]
+
+    # Build decision dicts for score_all (standard format)
+    decision_dicts = []
+    for decision in replay_bundle.decisions or []:
+        pa = decision.get("selected_action") or {}
+        player_id = decision.get("player_id", "")
+        player = players.get(player_id)
+        if player is None:
+            continue
+        decision_dicts.append(
+            {
+                "id": decision.get("decision_id", ""),
+                "player_id": player_id,
+                "player_name": player.name,
+                "player_role": player.role.value if hasattr(player.role, "value") else str(player.role),
+                "day": decision.get("day", 0),
+                "phase": decision.get("phase", ""),
+                "target_id": pa.get("target_id", ""),
+                "action_type": pa.get("action_type", ""),
+                "raw_text": str(pa.get("reasoning", "") or ""),
+            }
+        )
+
+    # Run cascade scoring
+    if cascade and llm_client is not None:
+        scores = scorer.score_all(decision_dicts, state_dict, acts_dicts, light_llm=True, heavy_llm=True)
+        tier_counts = scorer.tally_tiers(scores)
+        import logging
+
+        logging.getLogger(__name__).info(f"Per-step cascade complete: {tier_counts}")
+    else:
+        scores = scorer.score_all(decision_dicts, state_dict, acts_dicts)
+
+    return [
+        {
+            "decision_id": s.decision_id,
+            "player_name": s.player_name,
+            "role": s.role,
+            "day": s.day,
+            "phase": s.phase,
+            "action_type": s.action_type,
+            "correctness": s.correctness,
+            "overall_score": s.overall_score,
+            "evidence": s.evidence,
+            "scoring_tier": s.scoring_tier,
+            "light_llm_score": s.light_llm_score,
+            "heavy_llm_score": s.heavy_llm_score,
+            "metadata": s.metadata,
+        }
+        for s in scores
+    ]
+
+
+def _extract_and_store_knowledge(
+    state: GameState,
+    per_step_scores: list[dict[str, Any]],
+    decisions: list[dict[str, Any]],
+) -> int:
+    """Extract Track C knowledge from Track B enriched per-step scores.
+
+    Converts Track B's per-step score dicts into ScoredStep objects, groups by
+    player into PlayerReviewReports, calls KnowledgeAbstractor, and persists
+    lessons to PostgreSQL.
+
+    Returns number of lessons stored (0 if skipped or failed).
+    """
+    try:
+        from collections import defaultdict
+
+        import psycopg2
+
+        from backend.db.database import DEFAULT_DB_URL
+        from backend.eval.knowledge_abstractor import KnowledgeAbstractor
+        from backend.eval.knowledge_abstractor import store_lessons_to_db
+        from backend.eval.per_step_scorer import PlayerReviewReport
+        from backend.eval.per_step_scorer import ScoredStep
+
+        # 1. Check if Track B already extracted knowledge for this game
+        conn = psycopg2.connect(DEFAULT_DB_URL)
+        c = conn.cursor()
+        c.execute(
+            "SELECT COUNT(*) FROM strategy_knowledge_docs WHERE source_game_id = %s",
+            (state.id,),
+        )
+        existing = c.fetchone()[0]
+        c.close()
+        conn.close()
+        if existing > 0:
+            import logging
+
+            logging.getLogger(__name__).info(
+                f"Knowledge already extracted for game {state.id} ({existing} lessons), skipping"
+            )
+            return existing
+
+        # 2. Build lookup: decision_id → decision dict (for raw_text, player_id)
+        decision_lookup: dict[str, dict] = {}
+        for dec in decisions:
+            did = dec.get("decision_id", "")
+            if did:
+                decision_lookup[did] = dec
+
+        # 3. Build ScoredStep objects from per_step_scores + decision lookup
+        by_player: dict[str, list[ScoredStep]] = defaultdict(list)
+        players = {p.id: p for p in state.players}
+
+        for ps in per_step_scores:
+            did = ps.get("decision_id", "")
+            dec = decision_lookup.get(did, {})
+            pid = dec.get("player_id", "")
+            if not pid:
+                continue
+            phase = str(ps.get("phase", ""))
+            step_type = _phase_to_step_type(phase)
+            role = str(ps.get("role", ""))
+            score = float(ps.get("overall_score", 0.5))
+            correctness = float(ps.get("correctness", 0.5))
+
+            # Get action_summary from decision's selected_action
+            selected = dec.get("selected_action") or {}
+            raw_text = str(selected.get("reasoning") or dec.get("public_reason") or "")[:200]
+            action_summary = raw_text[:200] if raw_text else f"{role} {step_type} on D{ps.get('day', 0)}"
+
+            evidence = ps.get("evidence") or []
+            lesson_abstract = str(evidence[0]) if evidence else ""
+
+            # Infer mistake_type
+            mistake_type = ""
+            if score <= 0.30:
+                if correctness < 0.2 and "VOTE" in phase:
+                    mistake_type = "wrong_vote"
+                elif correctness < 0.3 and ("SPEECH" in phase or "TALK" in phase) and len(raw_text) < 30:
+                    mistake_type = "empty_speech"
+                elif correctness < 0.3 and "NIGHT" in phase:
+                    mistake_type = "bad_target"
+                elif correctness < 0.3:
+                    mistake_type = "bad_decision"
+
+            by_player[pid].append(
+                ScoredStep(
+                    step_id=did,
+                    step_type=step_type,
+                    day=int(ps.get("day", 0)),
+                    phase=phase,
+                    role=role,
+                    step_score=score,
+                    scoring_tier=str(ps.get("scoring_tier", "deterministic")),
+                    action_summary=action_summary,
+                    is_highlight=(score >= 0.75),
+                    is_mistake=(score <= 0.30),
+                    mistake_type=mistake_type,
+                    lesson_abstract=lesson_abstract,
+                    lesson_tags=[role, step_type],
+                    evidence_event_ids=[did],
+                )
+            )
+
+        # 4. Build PlayerReviewReports
+        reviews: list[PlayerReviewReport] = []
+        for pid, steps in by_player.items():
+            player = players.get(pid)
+            persona = (player.persona or {}) if player else {}
+            reviews.append(
+                PlayerReviewReport(
+                    game_id=state.id,
+                    player_id=pid,
+                    role=steps[0].role if steps else "",
+                    persona_style=str(persona.get("style_label", "") or ""),
+                    persona_mbti=str(persona.get("mbti", "") or ""),
+                    scored_steps=steps,
+                )
+            )
+
+        # 5. Run KnowledgeAbstractor
+        abstractor = KnowledgeAbstractor()
+        by_role_lessons = abstractor.abstract_from_game(reviews)
+        all_lessons = []
+        for lessons in by_role_lessons.values():
+            all_lessons.extend(lessons)
+
+        if not all_lessons:
+            return 0
+
+        # 6. Store lessons
+        stored = store_lessons_to_db(all_lessons)
+        import logging
+
+        logging.getLogger(__name__).info(f"Track B→C: {stored} knowledge lessons extracted for game {state.id}")
+        return stored
+
+    except Exception as e:
+        import logging
+
+        logging.getLogger(__name__).warning(
+            f"Knowledge extraction from Track B scores failed (non-fatal): {e}", exc_info=True
+        )
+        return 0
+
+
+def _phase_to_step_type(phase: str) -> str:
+    """Map phase string to step_type: speech | vote | night_action."""
+    if "SPEECH" in phase or "TALK" in phase or "LAST_WORDS" in phase:
+        return "speech"
+    if "VOTE" in phase or "BADGE" in phase:
+        return "vote"
+    return "night_action"
+
+
+def _compute_llm_game_scores(
+    state: GameState,
+    replay_bundle: ReplayBundle,
+    llm_client: Any,
+) -> list[dict[str, Any]] | None:
+    """Run full LLM Judge Panel (3-judge + Critic round) for game-level scoring.
+
+    This is the heaviest scoring tier — 3 specialized judges independently score
+    each player on strategy, logic, and social dimensions, then a Critic round
+    challenges extreme scores, followed by trimmed-mean aggregation.
+
+    Args:
+        state: Full game state.
+        replay_bundle: Replay data including decisions.
+        llm_client: LLM client (must support chat_sync).
+
+    Returns:
+        List of GameLevelScore dicts, or None on failure.
+    """
+    try:
+        from backend.eval.llm_judge import LLMJudgePanel
+
+        panel = LLMJudgePanel(llm_client)
+
+        # Build game_state dict for the judge panel
+        game_state_dict = {
+            "winner": str(state.winner or "unknown"),
+            "players": [
+                {
+                    "name": p.name,
+                    "role": p.role.value if hasattr(p.role, "value") else str(p.role),
+                    "alignment": p.alignment.value if hasattr(p.alignment, "value") else str(p.alignment),
+                }
+                for p in state.players
+            ],
+            "events": [
+                {
+                    "type": e.type.value if hasattr(e.type, "value") else str(e.type),
+                    "day": e.day,
+                    "phase": e.phase.value if hasattr(e.phase, "value") else str(e.phase),
+                    "payload": e.payload or {},
+                }
+                for e in state.events[-200:]  # Last 200 events max
+            ],
+        }
+
+        # Build player_decisions dict
+        player_decisions: dict[str, list[dict]] = {}
+        for decision in replay_bundle.decisions or []:
+            pa = decision.get("selected_action") or {}
+            player_name = decision.get("player_name", "") or str(
+                next((p.name for p in state.players if p.id == decision.get("player_id", "")), "")
+            )
+            if not player_name:
+                continue
+            player_decisions.setdefault(player_name, []).append(
+                {
+                    "id": decision.get("decision_id", ""),
+                    "player_name": player_name,
+                    "player_role": decision.get("player_role", ""),
+                    "day": decision.get("day", 0),
+                    "phase": decision.get("phase", ""),
+                    "action_type": pa.get("action_type", ""),
+                    "target_id": pa.get("target_id", ""),
+                    "raw_text": str(pa.get("reasoning", "") or ""),
+                }
+            )
+
+        game_scores = panel.score_game(game_state_dict, player_decisions)
+
+        return [
+            {
+                "player_name": s.player_name,
+                "role": s.role,
+                "alignment": s.alignment,
+                "strategy_score": s.strategy_score,
+                "logic_score": s.logic_score,
+                "social_score": s.social_score,
+                "composite": s.composite,
+                "judge_agreement": s.judge_agreement,
+                "rubric_hash": s.rubric_hash,
+            }
+            for s in game_scores
+        ]
+    except Exception as e:
+        import logging
+
+        logging.getLogger(__name__).warning(f"LLM game-level scoring failed: {e}")
+        return None
+
+
+def generate_published_review_document(
+    state: GameState,
+    *,
+    view_scope: str = "moderator_view",
+    llm_client: Any = None,
+    cascade: bool = False,
+) -> PublishedReviewDocument:
+    """Generate a complete published review document for a finished game.
+
+    Args:
+        state: Completed game state.
+        view_scope: Visibility scope for the published document.
+        llm_client: Optional LLM client. When provided with cascade=True,
+                    enables Tier 2 (light LLM single-judge) and Tier 3
+                    (heavy LLM 3-judge panel) scoring.
+        cascade: If True and llm_client is provided, run three-tier cascade
+                 (deterministic → light LLM → heavy LLM).
+    """
     replay_bundle = ReplayBundleBuilder().build(state)
     generated = generate_review_report(state)
     review_report = dict(generated["report"])
@@ -1367,7 +2139,11 @@ def generate_published_review_document(state: GameState, *, view_scope: str = "m
         view_scope=view_scope,
     )
     markdown = _append_validation_section(markdown.split("## 10. 报告可信度校验", 1)[0].rstrip(), validation)
-    status = "approved" if validation.publish_allowed else ("needs_revision" if validation.grade == "needs_revision" else "rejected")
+    status = (
+        "approved"
+        if validation.publish_allowed
+        else ("needs_revision" if validation.grade == "needs_revision" else "rejected")
+    )
     knowledge_feedback: list[dict[str, Any]] = []
     if validation.publish_allowed:
         # Track C §20: close the knowledge-usage feedback loop. For every
@@ -1377,6 +2153,26 @@ def generate_published_review_document(state: GameState, *, view_scope: str = "m
         # demote unhelpful knowledge over time.
         knowledge_feedback = _record_knowledge_usage(state, review_report)
     leaderboard_snapshot = _build_leaderboard_snapshot(review_report)
+    # B Track: per-step decision scoring (three-tier cascade when llm_client provided)
+    per_step_scores = _compute_per_step_scores(
+        state,
+        replay_bundle,
+        speech_acts,
+        llm_client=llm_client,
+        cascade=cascade,
+    )
+    review_report.setdefault("metadata", {})["per_step_scores"] = per_step_scores
+
+    # Track C: Extract knowledge from Track B enriched per-step scores
+    # (Critical fix C6: B→C data handoff was broken — Track B computed scores
+    # but never fed them to KnowledgeAbstractor).
+    _extract_and_store_knowledge(state, per_step_scores, replay_bundle.decisions or [])
+
+    # C Track: LLM Judge Panel game-level scoring (optional, heavy)
+    if cascade and llm_client is not None:
+        llm_game_scores = _compute_llm_game_scores(state, replay_bundle, llm_client)
+        if llm_game_scores:
+            review_report.setdefault("metadata", {})["llm_game_scores"] = llm_game_scores
     preview_document = PublishedReviewDocument(
         report_id=str(uuid4()),
         game_id=state.id,
@@ -1449,6 +2245,8 @@ def reconstruct_review_report(payload: dict[str, Any]) -> ReviewReport:
         player_reviews=[_coerce_dataclass(PlayerReview, item) for item in payload.get("player_reviews", [])],
         bad_cases=[_coerce_dataclass(BadCaseReport, item) for item in payload.get("bad_cases", [])],
         counterfactuals=[_coerce_dataclass(CounterfactualCase, item) for item in payload.get("counterfactuals", [])],
-        strategy_suggestions=[_coerce_dataclass(StrategySuggestion, item) for item in payload.get("strategy_suggestions", [])],
+        strategy_suggestions=[
+            _coerce_dataclass(StrategySuggestion, item) for item in payload.get("strategy_suggestions", [])
+        ],
         metadata=dict(payload.get("metadata", {})),
     )

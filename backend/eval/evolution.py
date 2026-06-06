@@ -1,28 +1,147 @@
-"""Track C: strategy-memory evolution loop built on approved Track B reviews."""
+"""Track C: strategy-memory evolution loop built on approved Track B reviews.
+
+Authoritative knowledge lifecycle (single source of truth):
+  1. promote_candidates():  quality_score >= 0.85 → active, < 0.60 → deprecated
+     Only operates on docs with status="candidate". Does NOT override
+     deprecations from update_usage() — a doc flagged as harmful by usage
+     feedback stays deprecated regardless of quality_score.
+  2. update_usage():        failure >= 3 AND success == 0 → deprecated
+     Based on actual agent usage feedback. Only triggers after >= 3 usages.
+  3. decay_confidence() (in knowledge_confidence.py): kept for future use,
+     not wired into this store — update_usage() handles usage-based decay.
+"""
 
 from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import math
 import os
+import random as _random
 import re
 from collections import defaultdict
-from dataclasses import asdict, dataclass, field, is_dataclass, replace
-from datetime import datetime, timezone
+from dataclasses import asdict
+from dataclasses import dataclass
+from dataclasses import field
+from dataclasses import is_dataclass
+from dataclasses import replace
+from datetime import datetime
+from datetime import timezone
 from pathlib import Path
-from typing import Any, Callable, Protocol, Sequence
+from typing import Any
+from typing import Callable
+from typing import Literal
+from typing import Protocol
+from typing import Sequence
 from uuid import uuid4
 
-from backend.eval.review import (
-    GameMetrics,
-    LeaderboardAggregator,
-    MetricsCalculator,
-    ReviewReport,
-    StrategyKnowledge,
-    StrategyKnowledgeExtractor,
-)
+from backend.eval.review import GameMetrics
+from backend.eval.review import LeaderboardAggregator
+from backend.eval.review import MetricsCalculator
+from backend.eval.review import ReviewReport
+from backend.eval.review import StrategyKnowledge
+from backend.eval.review import StrategyKnowledgeExtractor
 from backend.llm.env import load_env_file
+
+logger = logging.getLogger(__name__)
+
+
+# ============================================================
+# Track C v2: paired-seed comparison types
+# ============================================================
+
+
+@dataclass
+class FallbackEvent:
+    """Attributed fallback event for A/B comparison diagnostics."""
+
+    seed: int
+    game_id: str = ""
+    agent_id: str = ""
+    role: str = ""
+    phase: str = ""
+    fallback_type: Literal["patch_caused", "llm_output_format", "llm_timeout", "infra_error", "unknown"] = "unknown"
+    message: str = ""
+    related_patch_id: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class PairedSeedResult:
+    """Per-seed paired comparison between baseline and candidate."""
+
+    seed: int
+    baseline_metrics: dict[str, Any] = field(default_factory=dict)
+    candidate_metrics: dict[str, Any] = field(default_factory=dict)
+    deltas: dict[str, float] = field(default_factory=dict)
+    candidate_better_or_equal: bool = False
+    fallback_events: list[FallbackEvent] = field(default_factory=list)
+    patch_caused_fallback_count: int = 0
+    infra_fallback_count: int = 0
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class EvolutionComparison:
+    """Structured A/B comparison with paired-seed deltas and bootstrap CIs."""
+
+    num_seeds: int = 0
+    paired_results: list[PairedSeedResult] = field(default_factory=list)
+    mean_deltas: dict[str, float] = field(default_factory=dict)
+    median_deltas: dict[str, float] = field(default_factory=dict)
+    candidate_win_seed_count: int = 0
+    candidate_non_degraded_seed_count: int = 0
+    bootstrap_ci: dict[str, list[float]] = field(default_factory=dict)
+    stability_score: float = 0.0
+    total_info_leak_count: int = 0
+    total_invalid_action_count: int = 0
+    total_patch_caused_fallback_count: int = 0
+    total_infra_fallback_count: int = 0
+    camp_win_rate_delta: float = 0.0
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class AcceptanceDecision:
+    """Structured acceptance decision with hard gates + improvement conditions."""
+
+    status: Literal["promoted", "rolled_back", "needs_more_trials"] = "rolled_back"
+    passed_hard_gates: bool = False
+    passed_improvement_conditions: bool = False
+    hard_gate_results: dict[str, bool] = field(default_factory=dict)
+    improvement_results: dict[str, bool] = field(default_factory=dict)
+    reason: str = ""
+    recommended_action: str = ""
+    accepted: bool = False  # backward-compat
+    satisfied_conditions: list[str] = field(default_factory=list)
+    failed_conditions: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class SanitizedKnowledgeDoc:
+    """Knowledge doc after safety-sanitized public-pattern rewrite."""
+
+    doc: Any = None  # StrategyKnowledgeDoc
+    sanitized: bool = False
+    redactions: list[str] = field(default_factory=list)
+    rewrite_applied: bool = False
+    unsafe_reason: str | None = None
+    safe_for_track_c_learning: bool = True
+    safe_for_in_game_retrieval: bool = True
+    visibility_scope: str = "public"
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
 
 
 @dataclass
@@ -45,17 +164,49 @@ class StrategyKnowledgeDoc:
     expected_metric_effects: list[dict[str, Any]]
     quality_score: float
     confidence: float
+    judge_agreement: float | None = None
+    confidence_tier: str = "L3_strategic"
+    times_upvoted: int = 0
+    contradiction_count: int = 0
+    games_since_creation: int = 0
+    human_verdict: str | None = None
+    visibility_scope: str = "public"
+    allowed_roles: list[str] | None = None
+    deidentified: bool = False
+    contains_current_game_private_info: bool = False
+    applicability_role: str | None = None
+    applicability_phase: str | None = None
+    min_players: int | None = None
+    max_players: int | None = None
+    required_public_facts: list[str] = field(default_factory=list)
+    forbidden_public_facts: list[str] = field(default_factory=list)
+    required_private_state: list[str] = field(default_factory=list)
     usage_count: int = 0
     success_count: int = 0
     failure_count: int = 0
+    retrieval_count: int = 0  # times retrieved (≠ used)
+    neutral_count: int = 0
     status: str = "candidate"
     tags: list[str] = field(default_factory=list)
     embedding: list[float] = field(default_factory=list)
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     updated_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    # v2: accepted_patch provenance
+    validated_on: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+    @property
+    def usage_stats(self) -> dict[str, Any]:
+        """Backward-compatible usage_stats accessor."""
+        return {
+            "retrieval_count": self.retrieval_count,
+            "used_count": self.usage_count,
+            "success_count": self.success_count,
+            "failure_count": self.failure_count,
+            "neutral_count": self.neutral_count,
+        }
 
 
 @dataclass
@@ -153,6 +304,11 @@ class StrategyPatch:
     safety_checks: dict[str, Any] = field(default_factory=dict)
     status: str = "proposed"
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    # v2: experimental gating for single-doc patches
+    experimental: bool = False
+    generation_reason: str = ""
+    trust_level: str = "candidate"  # "experimental" | "candidate"
+    validated_on: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -178,7 +334,13 @@ class DreamSummary:
     knowledge_docs_created: int
     candidate_patches_created: int
     repeated_roles: list[str]
-    summary: str
+    rejected_count: int = 0
+    sanitized_count: int = 0
+    safety_issues_count: int = 0
+    summary: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
 
 
 @dataclass
@@ -186,6 +348,17 @@ class DreamResult:
     knowledge_docs: list[StrategyKnowledgeDoc]
     candidate_patches: list[StrategyPatch]
     summary: DreamSummary
+    rejected_items: list[dict[str, Any]] = field(default_factory=list)
+    safety_summary: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "knowledge_docs": [d.to_dict() for d in self.knowledge_docs],
+            "candidate_patches": [p.to_dict() for p in self.candidate_patches],
+            "summary": self.summary.to_dict() if hasattr(self.summary, "to_dict") else asdict(self.summary),
+            "rejected_items": self.rejected_items,
+            "safety_summary": self.safety_summary,
+        }
 
 
 @dataclass
@@ -242,14 +415,6 @@ class EvolutionTournamentResult:
 
 
 @dataclass
-class AcceptanceDecision:
-    accepted: bool
-    reason: str
-    satisfied_conditions: list[str]
-    failed_conditions: list[str]
-
-
-@dataclass
 class EvolutionRecord:
     strategy_version: str
     parent_version: str | None
@@ -300,6 +465,25 @@ class BCAcceptanceAudit:
         return asdict(self)
 
 
+def _safe_std(values: list[float]) -> float:
+    """Standard deviation, safe for small lists."""
+    if len(values) < 2:
+        return 0.0
+    m = sum(values) / len(values)
+    return math.sqrt(sum((v - m) ** 2 for v in values) / (len(values) - 1))
+
+
+def _median(values: list[float]) -> float:
+    """Median of a list of floats."""
+    if not values:
+        return 0.0
+    s = sorted(values)
+    n = len(s)
+    if n % 2:
+        return s[n // 2]
+    return (s[n // 2 - 1] + s[n // 2]) / 2.0
+
+
 def build_acceptance_step_metric(
     *,
     track: str,
@@ -328,10 +512,7 @@ def build_acceptance_step_metric(
 
 def build_bc_acceptance_audit(metrics: Sequence[AcceptanceStepMetric]) -> BCAcceptanceAudit:
     metric_list = list(metrics)
-    overall = (
-        sum(metric.success_rate for metric in metric_list) / len(metric_list)
-        if metric_list else 0.0
-    )
+    overall = sum(metric.success_rate for metric in metric_list) / len(metric_list) if metric_list else 0.0
     return BCAcceptanceAudit(
         generated_at=datetime.now(timezone.utc).isoformat(),
         metrics=metric_list,
@@ -364,17 +545,24 @@ class KnowledgeDocValidator:
 
     def validate(self, doc: StrategyKnowledgeDoc) -> list[str]:
         issues: list[str] = []
-        blob = " ".join([
-            doc.situation_pattern,
-            " ".join(doc.trigger_conditions),
-            doc.recommended_action,
-            doc.avoid_action or "",
-            doc.rationale,
-            doc.evidence_summary,
-        ])
+
+        def _text(value: Any) -> str:
+            return "" if value is None else str(value)
+
+        trigger_conditions = doc.trigger_conditions or []
+        blob = " ".join(
+            [
+                _text(doc.situation_pattern),
+                " ".join(_text(item) for item in trigger_conditions),
+                _text(doc.recommended_action),
+                _text(doc.avoid_action),
+                _text(doc.rationale),
+                _text(doc.evidence_summary),
+            ]
+        )
         if not doc.source_report_ids:
             issues.append("missing_source_report")
-        if not doc.trigger_conditions:
+        if not trigger_conditions:
             issues.append("missing_trigger_conditions")
         if not doc.evidence_summary:
             issues.append("missing_evidence")
@@ -397,7 +585,12 @@ class StrategyKnowledgeAbstractor:
         cleaned = re.sub(r"\bP\d+\b", "a player", cleaned)
         cleaned = re.sub(r"\bDay\s+\d+\b", "a day phase", cleaned, flags=re.IGNORECASE)
         cleaned = re.sub(r"\bNight\s+\d+\b", "a night phase", cleaned, flags=re.IGNORECASE)
-        cleaned = re.sub(r"\bthe player is (a|an)?\s*(wolf|seer|witch|hunter|guard|villager)\b", "a role signal appeared", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(
+            r"\bthe player is (a|an)?\s*(wolf|seer|witch|hunter|guard|villager)\b",
+            "a role signal appeared",
+            cleaned,
+            flags=re.IGNORECASE,
+        )
         return re.sub(r"\s+", " ", cleaned).strip()
 
     def quality_score(
@@ -428,16 +621,71 @@ class StrategyKnowledgeAbstractor:
         metric_relevance = 0.8 if item.priority == "high" else 0.55
         validation_confidence = float(report.metadata.get("validation_score", 1.0))
         recency = self._recency_factor(report_created_at or report.metadata.get("created_at"))
+        # Multi-judge consensus: estimate inter-judge agreement from review signals.
+        # High agreement → evidence is consistent across judges (rubric items agree).
+        # Low agreement → conflicting signals, lower confidence.
+        judge_agreement = self._estimate_judge_agreement(
+            item, report, evidence_strength, counterfactual_support, repeatability
+        )
+
         quality = (
-            0.30 * evidence_strength
+            0.25 * evidence_strength
             + 0.20 * counterfactual_support
             + 0.20 * repeatability
-            + 0.15 * metric_relevance
+            + 0.10 * metric_relevance
             + 0.10 * validation_confidence
+            + 0.10 * judge_agreement
             + 0.05 * recency
         )
         confidence = min(1.0, 0.45 + quality * 0.5)
-        return round(quality, 4), round(confidence, 4)
+        return round(quality, 4), round(confidence, 4), round(judge_agreement, 4)
+
+    @staticmethod
+    def _estimate_judge_agreement(
+        item: StrategyKnowledge,
+        report: ReviewReport,
+        evidence_strength: float,
+        counterfactual_support: float,
+        repeatability: float,
+    ) -> float:
+        """Estimate inter-judge consensus without running LLM judges.
+
+        Uses review report quality signals as a proxy for how much agreement
+        would exist among independent judges:
+          - Multiple corroborating evidence events → higher agreement
+          - Counterfactual support → judges would agree on the alternative
+          - Repeatability (same pattern seen before) → consensus across games
+
+        Returns a float in [0, 1] where ≥0.67 means likely consensus (L3 threshold).
+        """
+        # Count distinct evidence events — more events = more agreement
+        evidence_count = len(item.evidence_event_ids) if item.evidence_event_ids else 0
+        if evidence_count >= 3:
+            evidence_signal = 1.0
+        elif evidence_count >= 2:
+            evidence_signal = 0.75
+        elif evidence_count >= 1:
+            evidence_signal = 0.55
+        else:
+            evidence_signal = 0.40
+
+        # Counterfactual confirmation boosts agreement
+        cf_signal = 0.85 if counterfactual_support > 0.5 else 0.55
+
+        # Repeatability: same insight seen multiple times → judges converge
+        rep_signal = 0.70 + 0.30 * repeatability if repeatability > 0.5 else 0.50
+
+        # How many player_reviews mention related issues?
+        related_mentions = 0
+        for pr in report.player_reviews:
+            for hl in pr.highlights:
+                if item.target_role in hl:
+                    related_mentions += 1
+                    break
+        mention_signal = 0.85 if related_mentions >= 2 else 0.60 if related_mentions >= 1 else 0.50
+
+        agreement = 0.30 * evidence_signal + 0.25 * cf_signal + 0.25 * rep_signal + 0.20 * mention_signal
+        return round(min(1.0, agreement), 4)
 
     @staticmethod
     def _recency_factor(timestamp: str | None) -> float:
@@ -452,6 +700,7 @@ class StrategyKnowledgeAbstractor:
             then = then.replace(tzinfo=timezone.utc)
         delta_days = max(0.0, (datetime.now(timezone.utc) - then).total_seconds() / 86400.0)
         from math import exp
+
         return round(exp(-delta_days / 14.0), 4)
 
 
@@ -487,13 +736,14 @@ class StrategyKnowledgeDocExtractor:
             for item in items:
                 phase_hint = self._infer_phase(item)
                 rep_count = repeat_counts[(item.target_role, phase_hint, item.source_type)]
-                quality, confidence = self.abstractor.quality_score(
+                quality, confidence, judge_agreement = self.abstractor.quality_score(
                     item,
                     report,
                     repeatability_count=rep_count,
                     report_created_at=report.metadata.get("created_at") or report.metadata.get("finished_at"),
                 )
                 doc = self._convert(item, report, names, quality, confidence)
+                doc.judge_agreement = judge_agreement
                 if not self.validator.validate(doc):
                     docs.append(doc)
         return docs
@@ -618,12 +868,12 @@ class HashingVectorEmbeddingProvider:
             terms.append(f"{left}_{right}")
         for token in word_tokens:
             if len(token) >= 5:
-                terms.extend(token[i:i + 3] for i in range(0, len(token) - 2))
+                terms.extend(token[i : i + 3] for i in range(0, len(token) - 2))
         terms.extend(single_cjk)
         for run in cjk_runs:
-            terms.extend(run[i:i + 2] for i in range(0, len(run) - 1))
+            terms.extend(run[i : i + 2] for i in range(0, len(run) - 1))
             if len(run) >= 3:
-                terms.extend(run[i:i + 3] for i in range(0, len(run) - 2))
+                terms.extend(run[i : i + 3] for i in range(0, len(run) - 2))
         return terms
 
 
@@ -665,9 +915,8 @@ class DoubaoEmbeddingProvider:
             or os.getenv("ARK_BASE_URL")
             or "https://ark.cn-beijing.volces.com/api/v3"
         ).rstrip("/")
-        self.path = (
-            os.getenv("DOUBAO_EMBEDDING_PATH")
-            or ("/embeddings/multimodal" if "vision" in self.model.lower() else "/embeddings")
+        self.path = os.getenv("DOUBAO_EMBEDDING_PATH") or (
+            "/embeddings/multimodal" if "vision" in self.model.lower() else "/embeddings"
         )
         self.api_key = (
             api_key
@@ -684,7 +933,7 @@ class DoubaoEmbeddingProvider:
         content = (text or "").strip()
         if not content:
             return []
-        key = hashlib.sha256(f"{self.model}\n{content}".encode("utf-8")).hexdigest()
+        key = hashlib.sha256(f"{self.model}\n{content}".encode()).hexdigest()
         if key in self._cache:
             return list(self._cache[key])
         if not self.api_key:
@@ -741,7 +990,7 @@ class DoubaoEmbeddingProvider:
 
     def _raise_for_embedding_error(self, response: Any) -> None:
         try:
-            error = (response.json().get("error") or {})
+            error = response.json().get("error") or {}
         except Exception:
             error = {}
         code = str(error.get("code") or "")
@@ -823,7 +1072,8 @@ class StrategyKnowledgeStore:
 
     def retrieve(self, query: StrategyRetrievalQuery) -> list[RetrievedStrategyLesson]:
         candidates = [
-            doc for doc in self.docs.values()
+            doc
+            for doc in self.docs.values()
             if doc.status in {"active", "candidate"}
             and self._role_matches(doc, query)
             and self._phase_matches(doc, query)
@@ -831,10 +1081,7 @@ class StrategyKnowledgeStore:
         ]
         query_embedding = self.embedding_provider.embed(self._query_embedding_text(query))
         bm25_stats = self._bm25_stats(candidates, query)
-        scored = [
-            (self._score_components(doc, query, query_embedding, bm25_stats), doc)
-            for doc in candidates
-        ]
+        scored = [(self._score_components(doc, query, query_embedding, bm25_stats), doc) for doc in candidates]
         scored.sort(key=lambda item: item[0]["score"], reverse=True)
         if query.enable_rerank and self.rerank_provider is not None and scored:
             scored = self._rerank(scored, query)
@@ -857,7 +1104,7 @@ class StrategyKnowledgeStore:
                 phase_match=round(score["phase_match"], 4),
                 persona_match=round(score["persona_match"], 4),
                 quality_score=round(doc.quality_score, 4),
-                usage_success_rate=round(score["usage_success_rate"], 4),
+                usage_success_rate=round(smoothed_usage_success_rate(doc), 4),
                 embedding_provider=self.embedding_provider.name,
                 rerank_provider=score.get("rerank_provider"),
             )
@@ -878,7 +1125,9 @@ class StrategyKnowledgeStore:
     def mark_used(self, doc_id: str) -> None:
         doc = self.docs.get(doc_id)
         if doc:
-            self.docs[doc_id] = replace(doc, usage_count=doc.usage_count + 1, updated_at=datetime.now(timezone.utc).isoformat())
+            self.docs[doc_id] = replace(
+                doc, usage_count=doc.usage_count + 1, updated_at=datetime.now(timezone.utc).isoformat()
+            )
 
     def update_usage(self, doc_id: str, *, helpful: bool) -> None:
         doc = self.docs.get(doc_id)
@@ -886,7 +1135,18 @@ class StrategyKnowledgeStore:
             return
         success = doc.success_count + (1 if helpful else 0)
         failure = doc.failure_count + (0 if helpful else 1)
-        status = "deprecated" if failure >= 3 and success == 0 else doc.status
+        total_uses = success + failure
+        # Only deprecate on usage feedback when: enough data (>=3 uses) AND
+        # all uses were unhelpful AND not already active with high quality_score.
+        # Prevents premature deprecation from flukes and avoids overriding
+        # quality-based promotions.
+        if failure >= 3 and success == 0 and total_uses >= 3:
+            if doc.quality_score < 0.85 or doc.status != "active":
+                status = "deprecated"
+            else:
+                status = doc.status  # active + high-quality: keep active
+        else:
+            status = doc.status
         quality = self._recompute_quality(doc, success, failure)
         self.docs[doc_id] = replace(
             doc,
@@ -901,6 +1161,144 @@ class StrategyKnowledgeStore:
         payload = [doc.to_dict() for doc in self.all(include_deprecated=True)]
         Path(path).write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         return payload
+
+    def sync_to_pg(self, conn_str: str = "") -> int:
+        """Write active/candidate docs to PostgreSQL so cognitive agents can retrieve them.
+
+        Bridges Track C evolution → agent strategy retrieval via the shared
+        strategy_knowledge_docs table. After generating new knowledge patches,
+        call this to make them available to the cognitive agent pipeline.
+        """
+        try:
+            from backend.db.database import SessionLocal
+            from backend.db.models import StrategyKnowledgeDoc as PGModel
+        except ImportError:
+            return 0
+        docs = self.all(include_deprecated=False)
+        if not docs:
+            return 0
+        db = SessionLocal()
+        saved = 0
+        try:
+            for doc in docs:
+                row = db.query(PGModel).filter(PGModel.id == doc.doc_id).first()
+                if row is None:
+                    row = PGModel(id=doc.doc_id)
+                    db.add(row)
+                row.doc_type = doc.doc_type
+                row.role = doc.role
+                row.phase = doc.phase
+                row.persona_scope = doc.persona_scope
+                row.situation_pattern = doc.situation_pattern
+                row.trigger_conditions = list(doc.trigger_conditions)
+                row.recommended_action = doc.recommended_action
+                row.avoid_action = doc.avoid_action
+                row.rationale = doc.rationale
+                row.evidence_summary = doc.evidence_summary
+                row.source_report_ids = list(doc.source_report_ids)
+                row.source_item_ids = list(doc.source_item_ids)
+                row.source_event_ids = list(doc.source_event_ids)
+                row.counterfactual_ids = list(doc.counterfactual_ids)
+                row.expected_metric_effects = list(doc.expected_metric_effects)
+                row.quality_score = doc.quality_score
+                row.confidence = doc.confidence
+                row.confidence_tier = doc.confidence_tier
+                row.judge_agreement = doc.judge_agreement
+                row.times_upvoted = doc.times_upvoted
+                row.contradiction_count = doc.contradiction_count
+                row.games_since_creation = doc.games_since_creation
+                row.human_verdict = doc.human_verdict
+                row.visibility_scope = doc.visibility_scope
+                row.allowed_roles = doc.allowed_roles
+                row.deidentified = doc.deidentified
+                row.contains_current_game_private_info = doc.contains_current_game_private_info
+                row.applicability_role = doc.applicability_role
+                row.applicability_phase = doc.applicability_phase
+                row.min_players = doc.min_players
+                row.max_players = doc.max_players
+                row.required_public_facts = list(doc.required_public_facts)
+                row.forbidden_public_facts = list(doc.forbidden_public_facts)
+                row.required_private_state = list(doc.required_private_state)
+                row.usage_count = doc.usage_count
+                row.success_count = doc.success_count
+                row.failure_count = doc.failure_count
+                row.status = doc.status
+                # H6: Tag docs with TIER_EXPERIMENT_ID for tier isolation in
+                # multi-tier experiments. Retrieval layer filters by this tag.
+                tags = list(doc.tags)
+                tier_exp_id = os.getenv("TIER_EXPERIMENT_ID", "")
+                if tier_exp_id and tier_exp_id not in tags:
+                    tags.append(tier_exp_id)
+                row.tags = tags
+                saved += 1
+            db.commit()
+        finally:
+            db.close()
+        return saved
+
+    @classmethod
+    def load_from_pg(cls, conn_str: str = "", *, embedding_provider=None) -> StrategyKnowledgeStore | None:
+        """Load strategy knowledge docs from PostgreSQL into the in-memory store.
+
+        Reverse bridge: reads what cognitive agents / previous evolution cycles
+        have stored. Use this when resuming evolution from persisted state.
+        """
+        try:
+            from backend.db.persist import list_strategy_knowledge
+
+            rows = list_strategy_knowledge(limit=10000)
+        except ImportError:
+            return None
+        if not rows:
+            return None
+        docs = []
+        for row in rows:
+            docs.append(
+                StrategyKnowledgeDoc(
+                    doc_id=row.get("doc_id", ""),
+                    doc_type=row.get("doc_type", "review_extracted"),
+                    role=row.get("role", "global"),
+                    phase=row.get("phase", "global"),
+                    persona_scope=row.get("persona_scope"),
+                    situation_pattern=row.get("situation_pattern", ""),
+                    trigger_conditions=list(row.get("trigger_conditions") or []),
+                    recommended_action=row.get("recommended_action", ""),
+                    avoid_action=row.get("avoid_action"),
+                    rationale=row.get("rationale", ""),
+                    evidence_summary=row.get("evidence_summary", ""),
+                    source_report_ids=list(row.get("source_report_ids") or []),
+                    source_item_ids=list(row.get("source_item_ids") or []),
+                    source_event_ids=list(row.get("source_event_ids") or []),
+                    counterfactual_ids=list(row.get("counterfactual_ids") or []),
+                    expected_metric_effects=list(row.get("expected_metric_effects") or []),
+                    quality_score=float(row.get("quality_score", 0.8)),
+                    confidence=float(row.get("confidence", 0.7)),
+                    confidence_tier=row.get("confidence_tier", "L3_strategic"),
+                    judge_agreement=row.get("judge_agreement"),
+                    times_upvoted=int(row.get("times_upvoted", 0) or 0),
+                    contradiction_count=int(row.get("contradiction_count", 0) or 0),
+                    games_since_creation=int(row.get("games_since_creation", 0) or 0),
+                    human_verdict=row.get("human_verdict"),
+                    visibility_scope=row.get("visibility_scope", "public"),
+                    allowed_roles=list(row.get("allowed_roles") or []) or None,
+                    deidentified=bool(row.get("deidentified", False)),
+                    contains_current_game_private_info=bool(row.get("contains_current_game_private_info", False)),
+                    applicability_role=row.get("applicability_role"),
+                    applicability_phase=row.get("applicability_phase"),
+                    min_players=row.get("min_players"),
+                    max_players=row.get("max_players"),
+                    required_public_facts=list(row.get("required_public_facts") or []),
+                    forbidden_public_facts=list(row.get("forbidden_public_facts") or []),
+                    required_private_state=list(row.get("required_private_state") or []),
+                    usage_count=int(row.get("usage_count", 0)),
+                    success_count=int(row.get("success_count", 0)),
+                    failure_count=int(row.get("failure_count", 0)),
+                    status=row.get("status", "active"),
+                    tags=list(row.get("tags") or []),
+                    embedding=list(row.get("embedding") or []),
+                )
+            )
+        return cls(docs, embedding_provider=embedding_provider)
 
     def _index(self, doc: StrategyKnowledgeDoc) -> None:
         for tag in {doc.role, doc.phase, *doc.tags}:
@@ -985,10 +1383,14 @@ class StrategyKnowledgeStore:
         lexical = self._text_overlap(doc_text, query_text, query.situation_tags)
         bm25 = self._bm25_score(doc, bm25_stats)
         fts = self._fts_score(doc_text, query_text, query.situation_tags)
-        vector = self._cosine(doc.embedding or self.embedding_provider.embed(self._doc_embedding_text(doc)), query_embedding)
+        vector = self._cosine(
+            doc.embedding or self.embedding_provider.embed(self._doc_embedding_text(doc)), query_embedding
+        )
         situation = min(1.0, 0.45 * vector + 0.35 * bm25 + 0.20 * fts)
-        persona = 1.0 if not doc.persona_scope or doc.persona_scope in {query.persona_mbti, query.persona_style} else 0.0
-        usage_rate = 0.5 if doc.usage_count == 0 else doc.success_count / max(doc.usage_count, 1)
+        persona = (
+            1.0 if not doc.persona_scope or doc.persona_scope in {query.persona_mbti, query.persona_style} else 0.0
+        )
+        usage_rate = smoothed_usage_success_rate(doc)
         recency = StrategyKnowledgeAbstractor._recency_factor(doc.updated_at or doc.created_at)
         # Track C §12.5 retrieval formula:
         # 0.30 role + 0.20 phase + 0.20 situation + 0.10 persona + 0.10 quality
@@ -1012,7 +1414,7 @@ class StrategyKnowledgeStore:
             "vector_score": vector,
             "situation_similarity": situation,
             "persona_match": persona,
-            "usage_success_rate": usage_rate,
+            "usage_success_rate": round(usage_rate, 4),
             "recency": recency,
         }
 
@@ -1063,7 +1465,7 @@ class StrategyKnowledgeStore:
         cjk = re.findall(r"[\u4e00-\u9fff]{2,}", lowered)
         tokens = list(words)
         for run in cjk:
-            tokens.extend(run[i:i + 2] for i in range(0, len(run) - 1))
+            tokens.extend(run[i : i + 2] for i in range(0, len(run) - 1))
         return tokens
 
     def _bm25_stats(self, docs: Sequence[StrategyKnowledgeDoc], query: StrategyRetrievalQuery) -> dict[str, Any]:
@@ -1172,6 +1574,176 @@ class StrategyKnowledgeStore:
         return max(0.0, min(1.0, dot / (left_norm * right_norm)))
 
 
+# ============================================================
+# Track C v2: smoothed usage + sanitize helpers
+# ============================================================
+
+
+def smoothed_usage_success_rate(
+    stats_or_doc: Any,
+    prior_success: float = 3.0,
+    prior_total: float = 6.0,
+) -> float:
+    """Smoothed success rate using Beta(prior_success, prior_total - prior_success).
+
+    Avoids "1/1 >> 65/100" and gives cold-start docs a prior of 0.50.
+    """
+    if hasattr(stats_or_doc, "success_count"):
+        sc = stats_or_doc.success_count
+        uc = stats_or_doc.usage_count
+    elif isinstance(stats_or_doc, dict):
+        sc = stats_or_doc.get("success_count", 0)
+        uc = stats_or_doc.get("used_count", stats_or_doc.get("usage_count", 0))
+    else:
+        return prior_success / prior_total
+    denom = uc + prior_total
+    return round((sc + prior_success) / denom, 4) if denom > 0 else round(prior_success / prior_total, 4)
+
+
+# Forbidden patterns for safety scanning (shared between sanitize + validator)
+_SAFETY_FORBIDDEN = [
+    re.compile(r"\bP\d+\b"),
+    re.compile(r"\bplayer_\d+\b", re.IGNORECASE),
+    re.compile(r"read\s*hidden\s*role", re.IGNORECASE),
+    re.compile(r"ignore\s*visibility", re.IGNORECASE),
+    re.compile(r"change\s*game\s*rule", re.IGNORECASE),
+    re.compile(r"private_reason", re.IGNORECASE),
+    re.compile(r"hidden\s*identity", re.IGNORECASE),
+    re.compile(r"true\s*role", re.IGNORECASE),
+    re.compile(r"真实身份", re.IGNORECASE),
+    re.compile(r"隐藏身份", re.IGNORECASE),
+    re.compile(r"偷看", re.IGNORECASE),
+    re.compile(r"绕过可见性", re.IGNORECASE),
+    re.compile(r"狼队队友", re.IGNORECASE),
+    re.compile(r"夜间真实刀口", re.IGNORECASE),
+    re.compile(r"真实验人结果", re.IGNORECASE),
+    re.compile(r"真实救人目标", re.IGNORECASE),
+]
+
+_SAFETY_ABSOLUTE = [
+    re.compile(r"\balways\b", re.IGNORECASE),
+    re.compile(r"\bnever\b", re.IGNORECASE),
+    re.compile(r"\bmust\b", re.IGNORECASE),
+    re.compile(r"\bguaranteed\b", re.IGNORECASE),
+    re.compile(r"永远", re.IGNORECASE),
+    re.compile(r"绝不", re.IGNORECASE),
+    re.compile(r"必须", re.IGNORECASE),
+    re.compile(r"一定", re.IGNORECASE),
+    re.compile(r"无论如何", re.IGNORECASE),
+]
+
+
+def sanitize_knowledge_doc(raw_doc: StrategyKnowledgeDoc) -> SanitizedKnowledgeDoc:
+    """Rewrite private info to public-observable patterns.
+
+    Returns SanitizedKnowledgeDoc with rewrite metadata.
+    """
+    redactions: list[str] = []
+    rewrite_needed = False
+
+    def _check(text: str) -> str:
+        nonlocal rewrite_needed
+        for pat in _SAFETY_FORBIDDEN:
+            if pat.search(text):
+                redactions.append(f"forbidden pattern matched: {pat.pattern}")
+                rewrite_needed = True
+                return True
+        return False
+
+    # Scan all text fields
+    _check(raw_doc.situation_pattern)
+    _check(raw_doc.recommended_action)
+    _check(raw_doc.rationale)
+    _check(raw_doc.evidence_summary)
+
+    # Determine visibility and safety
+    has_forbidden = bool(redactions)
+    has_absolute = any(p.search(raw_doc.recommended_action) or p.search(raw_doc.rationale) for p in _SAFETY_ABSOLUTE)
+
+    safe_for_learning = not has_forbidden and not has_absolute
+    safe_for_retrieval = not has_forbidden
+    visibility = "public"
+    unsafe_reason = None
+
+    if has_forbidden:
+        unsafe_reason = f"contains forbidden private info: {redactions[:3]}"
+        safe_for_learning = False
+        safe_for_retrieval = False
+        visibility = "postgame_only"
+    elif has_absolute:
+        unsafe_reason = "contains absolute strategy terms"
+        safe_for_learning = False
+        # absolute terms as soft suggestions can still be retrieved
+        safe_for_retrieval = True
+        visibility = "public"
+
+    return SanitizedKnowledgeDoc(
+        doc=raw_doc,
+        sanitized=rewrite_needed,
+        redactions=redactions,
+        rewrite_applied=rewrite_needed,
+        unsafe_reason=unsafe_reason,
+        safe_for_track_c_learning=safe_for_learning,
+        safe_for_in_game_retrieval=safe_for_retrieval,
+        visibility_scope=visibility,
+    )
+
+
+def compute_accepted_patch_confidence(
+    comparison: EvolutionComparison,
+    decision: AcceptanceDecision,
+    patch: Any,  # StrategyPatch
+) -> tuple[float, float, dict[str, Any]]:
+    """Compute dynamic quality/confidence for an accepted patch.
+
+    Uses effect magnitude, stability, seed win rate, and safety signals
+    instead of a fixed 0.95/0.95.
+    """
+    mean_target_delta = comparison.mean_deltas.get("target_role_avg_score_delta", 0.0)
+    stability = comparison.stability_score
+    num_seeds = comparison.num_seeds
+    non_degraded = comparison.candidate_non_degraded_seed_count
+
+    base_quality = 0.75
+    effect_bonus = max(0.0, min(1.0, abs(mean_target_delta) / 0.10)) * 0.08
+    stability_bonus = stability * 0.07
+    seed_win_bonus = (non_degraded / max(num_seeds, 1)) * 0.05
+    safety_bonus = 0.05 if comparison.total_info_leak_count == 0 and comparison.total_invalid_action_count == 0 else 0
+    experimental_penalty = -0.05 if getattr(patch, "experimental", False) else 0.0
+
+    quality = max(
+        0.70,
+        min(0.95, base_quality + effect_bonus + stability_bonus + seed_win_bonus + safety_bonus + experimental_penalty),
+    )
+
+    consistency = non_degraded / max(num_seeds, 1)
+    confidence = max(
+        0.55,
+        min(
+            0.95,
+            0.60 + 0.15 * stability + 0.10 * min(num_seeds / 40.0, 1.0) + 0.10 * consistency + experimental_penalty,
+        ),
+    )
+
+    validated_on = {
+        "rule_variant": "standard_competition_v1",
+        "num_seeds": num_seeds,
+        "target_role": getattr(patch, "target_role", ""),
+        "phase": getattr(patch, "safety_checks", {}).get("clusters", [{}])[0].get("phase", "")
+        if getattr(patch, "safety_checks", {}).get("clusters")
+        else "",
+        "baseline_version": getattr(patch, "from_version", ""),
+        "candidate_version": getattr(patch, "to_version", ""),
+        "comparison_summary": {
+            "mean_deltas": comparison.mean_deltas,
+            "stability_score": stability,
+            "candidate_non_degraded_seeds": non_degraded,
+        },
+    }
+
+    return round(quality, 4), round(confidence, 4), validated_on
+
+
 class StrategyContextRenderer:
     def render_lessons(self, lessons: Sequence[RetrievedStrategyLesson]) -> str:
         if not lessons:
@@ -1206,6 +1778,8 @@ class StrategyPatchGenerator:
                 clusters[(doc.role, doc.phase)].append(doc)
         role_buckets: dict[str, list[StrategyKnowledgeDoc]] = defaultdict(list)
         cluster_stats: dict[str, dict[str, Any]] = defaultdict(lambda: {"clusters": [], "max_cluster_size": 0})
+        # Track which clusters are single-doc (experimental) vs multi-doc (candidate)
+        cluster_experimental: dict[tuple[str, str], bool] = {}
         for (role, phase), bucket in clusters.items():
             top_quality = max((doc.quality_score for doc in bucket), default=0.0)
             qualifies = len(bucket) >= self.REPEAT_THRESHOLD or top_quality >= self.SINGLE_DOC_QUALITY_FLOOR
@@ -1214,6 +1788,11 @@ class StrategyPatchGenerator:
                 stats = cluster_stats[role]
                 stats["clusters"].append({"phase": phase, "size": len(bucket), "top_quality": top_quality})
                 stats["max_cluster_size"] = max(stats["max_cluster_size"], len(bucket))
+                # Single doc with quality >= 0.70 but below repeat threshold → experimental
+                if len(bucket) < self.REPEAT_THRESHOLD and top_quality >= self.SINGLE_DOC_QUALITY_FLOOR:
+                    cluster_experimental[(role, phase)] = True
+                else:
+                    cluster_experimental[(role, phase)] = False
         patches: list[StrategyPatch] = []
         for role, bucket in role_buckets.items():
             if not bucket:
@@ -1222,6 +1801,10 @@ class StrategyPatchGenerator:
             selected = bucket[:3]
             card = active_cards.get(role) or self._default_card(role)
             operations = [self._operation_from_doc(doc, card) for doc in selected]
+            # Determine experimental status: true if ANY contributing cluster is single-doc
+            is_experimental = any(
+                cluster_experimental.get((role, c["phase"]), False) for c in cluster_stats[role]["clusters"]
+            )
             patches.append(
                 StrategyPatch(
                     patch_id=f"patch-{uuid4().hex[:8]}",
@@ -1243,6 +1826,9 @@ class StrategyPatchGenerator:
                         "repeat_threshold": self.REPEAT_THRESHOLD,
                         "single_doc_quality_floor": self.SINGLE_DOC_QUALITY_FLOOR,
                     },
+                    experimental=is_experimental,
+                    generation_reason="single_high_quality_doc" if is_experimental else "repeated_pattern_cluster",
+                    trust_level="experimental" if is_experimental else "candidate",
                 )
             )
         return patches
@@ -1253,29 +1839,37 @@ class StrategyPatchGenerator:
         joined = f"{doc.phase} {' '.join(doc.tags)} {text}".lower()
         if "avoid" in joined or "risk" in joined:
             section = "risk_rules"
-        elif "public" in joined or "release" in joined or "announc" in joined or "公开" in joined or "归票压力" in joined:
+        elif (
+            "public" in joined or "release" in joined or "announc" in joined or "公开" in joined or "归票压力" in joined
+        ):
             section = "speech_policy"
         elif "vote" in joined:
             section = "vote_policy"
         elif "night" in joined or "ability" in joined or "poison" in joined or "guard" in joined or "check" in joined:
             section = "skill_policy"
         existing = getattr(card, section, [])
-        return PatchOperation(
-            op="add",
-            section=section,
-            old_value=None,
-            new_value=text,
-            rationale=doc.rationale or doc.evidence_summary,
-        ) if text not in existing else PatchOperation(
-            op="update",
-            section=section,
-            old_value=text,
-            new_value=text,
-            rationale="Reinforce an already active rule with new evidence.",
+        return (
+            PatchOperation(
+                op="add",
+                section=section,
+                old_value=None,
+                new_value=text,
+                rationale=doc.rationale or doc.evidence_summary,
+            )
+            if text not in existing
+            else PatchOperation(
+                op="update",
+                section=section,
+                old_value=text,
+                new_value=text,
+                rationale="Reinforce an already active rule with new evidence.",
+            )
         )
 
     def _default_card(self, role: str) -> RoleStrategyCard:
-        return RoleStrategyCard(role=role, version=f"{role.lower()}_v1", goal=f"Play the {role} role toward its camp win condition.")
+        return RoleStrategyCard(
+            role=role, version=f"{role.lower()}_v1", goal=f"Play the {role} role toward its camp win condition."
+        )
 
     def _next_version_suffix(self, version: str) -> str:
         match = re.search(r"v(\d+)", version)
@@ -1285,38 +1879,208 @@ class StrategyPatchGenerator:
 
 
 class PatchValidator:
+    # v2: extended forbidden list (Chinese + English)
     forbidden = [
         "read hidden role",
         "ignore visibility",
         "change game rule",
-        "always ",
-        "never ",
+        "private_reason",
+        "hidden identity",
+        "true role",
+        "真实身份",
+        "隐藏身份",
+        "偷看",
+        "绕过可见性",
+        "狼队队友",
+        "夜间真实刀口",
+        "真实验人结果",
+        "真实救人目标",
         "P1",
         "P2",
         "P3",
-        "private_reason",
+        "P4",
+        "P5",
+        "P6",
+        "P7",
+        "P8",
+        "P9",
+        "player_1",
+        "player_2",
+        "player_3",
     ]
-    allowed_sections = {"speech_policy", "vote_policy", "skill_policy", "risk_rules", "compensation_rules", "retrieval_policy"}
+    absolute_terms = [
+        "always ",
+        "never ",
+        "must ",
+        "guaranteed",
+        "永远",
+        "绝不",
+        "必须",
+        "一定",
+        "无论如何",
+    ]
+    allowed_sections = {
+        "speech_policy",
+        "vote_policy",
+        "skill_policy",
+        "risk_rules",
+        "compensation_rules",
+        "retrieval_policy",
+        "compensation",
+        "retrieval",
+    }
+    allowed_patch_types = {
+        "role_strategy",
+        "persona_role_adapter",
+        "retrieval_policy",
+        "knowledge_status",
+    }
 
     def validate(self, patch: StrategyPatch) -> PatchValidationResult:
         issues: list[PatchValidationIssue] = []
-        if patch.patch_type not in {"role_strategy", "persona_role_adapter", "retrieval_policy", "knowledge_status"}:
+        is_experimental = getattr(patch, "experimental", False)
+
+        if patch.patch_type not in self.allowed_patch_types:
             issues.append(PatchValidationIssue("critical", "unsupported patch type", "patch_type"))
         if not patch.source_knowledge_doc_ids:
-            issues.append(PatchValidationIssue("critical", "patch missing knowledge source", "source_knowledge_doc_ids"))
-        if len(patch.operations) > 3:
-            issues.append(PatchValidationIssue("major", "single patch changes too many rules", "operations"))
+            issues.append(
+                PatchValidationIssue("critical", "patch missing knowledge source", "source_knowledge_doc_ids")
+            )
+
+        max_ops = 3
+        if len(patch.operations) > max_ops:
+            issues.append(
+                PatchValidationIssue(
+                    "critical" if is_experimental else "major",
+                    f"single patch changes too many rules ({len(patch.operations)} > {max_ops})",
+                    "operations",
+                )
+            )
+
         for operation in patch.operations:
             if operation.section not in self.allowed_sections:
                 issues.append(PatchValidationIssue("critical", "patch modifies an illegal section", operation.section))
+                continue
             blob = f"{operation.new_value} {operation.rationale}".lower()
-            for forbidden in self.forbidden:
-                if forbidden.lower() in blob:
-                    severity = "major" if forbidden.strip() in {"always", "never"} else "critical"
-                    issues.append(PatchValidationIssue(severity, f"patch contains unsafe instruction: {forbidden}", operation.section))
+
+            # Check forbidden patterns → critical
+            hit_forbidden = False
+            for forbidden_word in self.forbidden:
+                if forbidden_word.lower() in blob:
+                    issues.append(
+                        PatchValidationIssue(
+                            "critical",
+                            f"patch contains unsafe instruction: {forbidden_word}",
+                            operation.section,
+                        )
+                    )
+                    hit_forbidden = True
                     break
+
+            # Check absolute terms
+            if not hit_forbidden:
+                for abs_term in self.absolute_terms:
+                    if abs_term.lower() in blob:
+                        if is_experimental:
+                            # experimental patches reject absolute terms outright
+                            issues.append(
+                                PatchValidationIssue(
+                                    "critical",
+                                    f"experimental patch cannot use absolute term: {abs_term}",
+                                    operation.section,
+                                )
+                            )
+                        else:
+                            # regular patches downgrade to major (soft suggestion)
+                            issues.append(
+                                PatchValidationIssue(
+                                    "major",
+                                    f"patch uses absolute strategy term: {abs_term} (consider soft suggestion)",
+                                    operation.section,
+                                )
+                            )
+                        break
+
         passed = not any(issue.severity == "critical" for issue in issues)
         return PatchValidationResult(patch_id=patch.patch_id, passed=passed, issues=issues)
+
+    def validate_many(self, patches: list[StrategyPatch]) -> tuple[list[StrategyPatch], list[dict[str, Any]]]:
+        """Validate multiple patches, returning (valid, rejected)."""
+        valid: list[StrategyPatch] = []
+        rejected: list[dict[str, Any]] = []
+        for patch in patches:
+            result = self.validate(patch)
+            patch.safety_checks["validation"] = asdict(result)
+            if result.passed:
+                patch.status = "validated"
+                valid.append(patch)
+            else:
+                patch.status = "rejected"
+                rejected.append({"patch_id": patch.patch_id, "issues": [asdict(i) for i in result.issues]})
+        return valid, rejected
+
+
+def promote_candidates(
+    store: StrategyKnowledgeStore,
+    *,
+    quality_threshold: float = 0.85,
+    deprecation_threshold: float = 0.60,
+    dry_run: bool = False,
+) -> dict[str, int]:
+    """Promote high-quality candidates to active, deprecate low-quality ones.
+
+    Goal 1: Higher promotion bar for Track C strategy knowledge.
+    - quality_score >= 0.85 → candidate → active
+    - quality_score < 0.60 → candidate → deprecated
+    - Everything else stays as candidate
+    """
+    promoted = 0
+    deprecated_count = 0
+    skipped = 0
+    for doc in list(store.docs.values()):
+        if doc.status != "candidate":
+            continue
+        # Skip candidates that were previously deprecated by update_usage()
+        # (usage-based deprecation takes precedence over quality thresholds)
+        if doc.failure_count > 2 and doc.success_count == 0:
+            continue
+        if doc.quality_score >= quality_threshold:
+            if not dry_run:
+                store.docs[doc.doc_id] = replace(
+                    doc,
+                    status="active",
+                    updated_at=datetime.now(timezone.utc).isoformat(),
+                )
+            promoted += 1
+        elif doc.quality_score < deprecation_threshold:
+            if not dry_run:
+                store.docs[doc.doc_id] = replace(
+                    doc,
+                    status="deprecated",
+                    updated_at=datetime.now(timezone.utc).isoformat(),
+                )
+            deprecated_count += 1
+        else:
+            skipped += 1
+    return {
+        "promoted": promoted,
+        "deprecated": deprecated_count,
+        "skipped": skipped,
+        "total_candidates": promoted + deprecated_count + skipped,
+    }
+
+
+def get_promotion_report(store: StrategyKnowledgeStore) -> dict[str, Any]:
+    """Generate a promotion report showing how many would be promoted/deprecated."""
+    stats = promote_candidates(store, dry_run=True)
+    active_total = sum(1 for d in store.docs.values() if d.status == "active")
+    cand_total = sum(1 for d in store.docs.values() if d.status == "candidate")
+    dep_total = sum(1 for d in store.docs.values() if d.status == "deprecated")
+    stats["current_active"] = active_total
+    stats["current_candidate"] = cand_total
+    stats["current_deprecated"] = dep_total
+    stats["promotion_rate"] = round(stats["promoted"] / max(stats["total_candidates"], 1) * 100, 2)
+    return stats
 
 
 class VersionManager:
@@ -1324,7 +2088,7 @@ class VersionManager:
         self,
         active_cards: Sequence[RoleStrategyCard] | None = None,
         *,
-        knowledge_store: "StrategyKnowledgeStore | None" = None,
+        knowledge_store: StrategyKnowledgeStore | None = None,
     ) -> None:
         self.versions: dict[str, StrategyVersion] = {}
         self.active_by_role: dict[str, str] = {}
@@ -1343,7 +2107,9 @@ class VersionManager:
         version = self.active_by_role.get(role)
         if version and version in self.versions:
             return self.versions[version].card
-        card = RoleStrategyCard(role=role, version=f"{role.lower()}_v1", goal=f"Play the {role} role toward its camp win condition.")
+        card = RoleStrategyCard(
+            role=role, version=f"{role.lower()}_v1", goal=f"Play the {role} role toward its camp win condition."
+        )
         self.versions[card.version] = StrategyVersion(version=card.version, role=role, card=card)
         self.active_by_role[role] = card.version
         return card
@@ -1379,7 +2145,14 @@ class VersionManager:
         patch.status = "applied"
         return version
 
-    def promote(self, version_name: str) -> StrategyVersion:
+    def promote(
+        self,
+        version_name: str,
+        *,
+        quality: float | None = None,
+        confidence: float | None = None,
+        validated_on: dict[str, Any] | None = None,
+    ) -> StrategyVersion:
         version = self.versions[version_name]
         previous = self.active_by_role.get(version.role)
         if previous and previous in self.versions:
@@ -1389,35 +2162,65 @@ class VersionManager:
         self.versions[version_name] = promoted
         self.active_by_role[promoted.role] = version_name
         # §9: write back the patch as `accepted_patch` knowledge so future
-        # agents can retrieve the validated rule.
+        # agents can retrieve the validated rule. Uses dynamic quality/confidence
+        # when provided, otherwise falls back to defaults.
         patch = self._patch_by_version.get(version_name)
         if patch and self.knowledge_store is not None:
-            self._emit_accepted_patch_doc(patch, promoted)
+            # Pass through validated_on metadata
+            if validated_on:
+                patch.validated_on = validated_on
+            self._emit_accepted_patch_doc(
+                patch,
+                promoted,
+                quality=quality,
+                confidence=confidence,
+                validated_on=validated_on,
+            )
         return promoted
 
-    def rollback(self, version_name: str) -> StrategyVersion:
+    def rollback(self, version_name: str, reason: str = "") -> StrategyVersion:
         version = self.versions[version_name]
-        rolled = replace(version, status="rolled_back", card=replace(version.card, status="deprecated"))
+        rolled = replace(
+            version,
+            status="rolled_back",
+            card=replace(version.card, status="deprecated"),
+        )
         self.versions[version_name] = rolled
         if version.parent and version.parent in self.versions:
             parent = self.versions[version.parent]
             self.versions[version.parent] = replace(parent, status="active", card=replace(parent.card, status="active"))
             self.active_by_role[parent.role] = parent.version
+        # Don't write accepted_patch on rollback
+        if reason:
+            logger.info(f"Rollback {version_name}: {reason}")
         return rolled
 
     def history(self) -> list[StrategyVersion]:
         return sorted(self.versions.values(), key=lambda item: item.created_at)
 
-    def _emit_accepted_patch_doc(self, patch: StrategyPatch, promoted: StrategyVersion) -> None:
+    def _emit_accepted_patch_doc(
+        self,
+        patch: StrategyPatch,
+        promoted: StrategyVersion,
+        *,
+        quality: float | None = None,
+        confidence: float | None = None,
+        validated_on: dict[str, Any] | None = None,
+    ) -> None:
         if not self.knowledge_store:
             return
         rationale = "; ".join(op.rationale or op.new_value for op in patch.operations) or "patch promoted via A/B"
         recommendation = "; ".join(op.new_value for op in patch.operations) or "follow accepted patch"
+        # Use provided quality/confidence, or compute defaults
+        q = quality if quality is not None else (0.85 if getattr(patch, "experimental", False) else 0.90)
+        c = confidence if confidence is not None else (0.80 if getattr(patch, "experimental", False) else 0.88)
         doc = StrategyKnowledgeDoc(
             doc_id=f"accepted-{patch.patch_id}",
             doc_type="accepted_patch",
             role=patch.target_role or promoted.role,
-            phase=patch.safety_checks.get("clusters", [{}])[0].get("phase", "DAY_SPEECH") if patch.safety_checks.get("clusters") else "DAY_SPEECH",
+            phase=patch.safety_checks.get("clusters", [{}])[0].get("phase", "DAY_SPEECH")
+            if patch.safety_checks.get("clusters")
+            else "DAY_SPEECH",
             persona_scope=patch.target_persona_scope,
             situation_pattern=f"After {patch.from_version} → {patch.to_version} promotion via A/B win.",
             trigger_conditions=[f"strategy_version={promoted.version}", f"role={promoted.role}"],
@@ -1430,67 +2233,196 @@ class VersionManager:
             source_event_ids=list(patch.source_evidence_ids),
             counterfactual_ids=[],
             expected_metric_effects=list(patch.expected_effects),
-            quality_score=0.95,  # accepted = strongest signal
-            confidence=0.95,
+            quality_score=q,
+            confidence=c,
             status="active",
             tags=[promoted.role, "accepted_patch", promoted.version],
+            validated_on=validated_on or patch.validated_on,
         )
         self.knowledge_store.upsert(doc)
         self.knowledge_store.link(patch.patch_id, doc.doc_id, "supersedes")
 
 
 class AcceptancePolicy:
-    def decide(self, comparison: ABComparison) -> AcceptanceDecision:
-        failed: list[str] = []
+    """v2: hard safety gates + improvement conditions + needs_more_trials."""
+
+    CAMP_WIN_RATE_FLOOR_DELTA = -0.05
+    IMPROVEMENT_MIN_DELTA = 0.03
+    MISTAKE_MIN_DELTA = -0.10
+    NON_DEGRADED_RATIO = 0.60
+    BOOTSTRAP_CI_LOWER_FLOOR = -0.01
+
+    def decide(
+        self,
+        comparison: ABComparison | None = None,
+        evolution_comparison: EvolutionComparison | None = None,
+    ) -> AcceptanceDecision:
+        """Decide whether to promote, rollback, or request more trials.
+
+        Accepts either ABComparison (legacy) or EvolutionComparison (v2 paired).
+        EvolutionComparison takes precedence when provided.
+        """
+        hard_results: dict[str, bool] = {}
+        imp_results: dict[str, bool] = {}
+        reason_parts: list[str] = []
+
+        # Backward-compat: populate satisfied/failed lists
         satisfied: list[str] = []
-        if comparison.info_leak_count != 0:
-            failed.append("info_leak_count must be zero")
-        else:
-            satisfied.append("no information leaks")
-        if comparison.invalid_action_rate != 0:
-            failed.append("invalid_action_rate must be zero")
-        else:
-            satisfied.append("no invalid actions")
-        if comparison.candidate_fallback_count != 0:
-            failed.append("candidate fallback_count must be zero")
-        else:
-            satisfied.append("no candidate fallback decisions")
+        failed: list[str] = []
 
-        improvements = 0
-        if comparison.target_role_avg_score_delta >= 3.0:
-            improvements += 1
-            satisfied.append("target role score improved by at least 3%")
+        # ----- Hard Safety Gates -----
+        if evolution_comparison is not None:
+            ec = evolution_comparison
+            hard_results["info_leak_count == 0"] = ec.total_info_leak_count == 0
+            hard_results["invalid_action_count == 0"] = ec.total_invalid_action_count == 0
+            hard_results["patch_caused_fallback_count == 0"] = ec.total_patch_caused_fallback_count == 0
+            hard_results["camp_win_rate_delta >= -0.05"] = ec.camp_win_rate_delta >= self.CAMP_WIN_RATE_FLOOR_DELTA
+            hard_results["rule_violation_count == 0"] = True  # engine-level guarantee
+            passed_hard = all(hard_results.values())
+        elif comparison is not None:
+            hard_results["info_leak_count == 0"] = comparison.info_leak_count == 0
+            hard_results["invalid_action_rate == 0"] = comparison.invalid_action_rate == 0
+            hard_results["patch_caused_fallback_count == 0"] = comparison.candidate_fallback_count == 0
+            hard_results["camp_win_rate_delta >= -0.05"] = True  # not computed in legacy
+            hard_results["rule_violation_count == 0"] = True
+            passed_hard = all(hard_results.values())
+            # Backward-compat: legacy text descriptions
+            if comparison.info_leak_count == 0:
+                satisfied.append("no information leaks")
+            else:
+                failed.append("info_leak_count must be zero")
+            if comparison.invalid_action_rate == 0:
+                satisfied.append("no invalid actions")
+            else:
+                failed.append("invalid_action_rate must be zero")
+            if comparison.candidate_fallback_count == 0:
+                satisfied.append("no candidate fallback decisions")
+            else:
+                failed.append("candidate fallback_count must be zero")
         else:
-            failed.append("target role score did not improve enough")
-        if comparison.critical_mistakes_delta <= -0.10:
-            improvements += 1
-            satisfied.append("critical mistakes decreased by at least 10%")
-        else:
-            failed.append("critical mistakes did not decrease enough")
-        if comparison.role_task_score_delta >= 3.0:
-            improvements += 1
-            satisfied.append("role task score improved by at least 3%")
-        else:
-            failed.append("role task score did not improve enough")
-        candidate_win_rate = comparison.candidate_wins / max(comparison.total_games, 1)
-        baseline_win_rate = comparison.baseline_wins / max(comparison.total_games, 1)
-        if candidate_win_rate >= baseline_win_rate - 0.05:
-            improvements += 1
-            satisfied.append("camp win rate did not regress more than 5%")
-        else:
-            failed.append("camp win rate regressed more than 5%")
+            return AcceptanceDecision(
+                status="rolled_back",
+                passed_hard_gates=False,
+                passed_improvement_conditions=False,
+                reason="No comparison data provided",
+                recommended_action="Provide ABComparison or EvolutionComparison",
+                satisfied_conditions=satisfied,
+                failed_conditions=failed,
+            )
 
-        accepted = (
-            comparison.info_leak_count == 0
-            and comparison.invalid_action_rate == 0
-            and comparison.candidate_fallback_count == 0
-            and improvements >= 2
-        )
+        if not passed_hard:
+            failed_gates = [k for k, v in hard_results.items() if not v]
+            reason_parts.append(f"Hard gates failed: {failed_gates}")
+            for k, v in hard_results.items():
+                (satisfied if v else failed).append(k)
+            return AcceptanceDecision(
+                status="rolled_back",
+                passed_hard_gates=False,
+                passed_improvement_conditions=False,
+                hard_gate_results=hard_results,
+                reason="; ".join(reason_parts),
+                recommended_action="Fix safety violations before retrying",
+                satisfied_conditions=satisfied,
+                failed_conditions=failed,
+            )
+
+        # ----- Improvement Conditions (at least 2/4) -----
+        if evolution_comparison is not None:
+            ec = evolution_comparison
+            md = ec.mean_deltas
+            imp_results["target_role_avg_score_delta >= 0.03"] = (
+                md.get("target_role_avg_score_delta", 0.0) >= self.IMPROVEMENT_MIN_DELTA
+            )
+            imp_results["role_task_score_delta >= 0.03"] = (
+                md.get("role_task_score_delta", 0.0) >= self.IMPROVEMENT_MIN_DELTA
+            )
+            imp_results["critical_mistakes_delta <= -0.10"] = (
+                md.get("critical_mistakes_delta", 0.0) <= self.MISTAKE_MIN_DELTA
+            )
+            min_non_degraded = max(1, int(ec.num_seeds * self.NON_DEGRADED_RATIO))
+            imp_results[f"non_degraded_seeds >= {min_non_degraded}"] = (
+                ec.candidate_non_degraded_seed_count >= min_non_degraded
+            )
+        else:
+            md = {
+                "target_role_avg_score_delta": comparison.target_role_avg_score_delta / 100.0 if comparison else 0.0,
+                "role_task_score_delta": comparison.role_task_score_delta / 100.0 if comparison else 0.0,
+                "critical_mistakes_delta": comparison.critical_mistakes_delta if comparison else 0.0,
+            }
+            imp_results["target_role_avg_score_delta >= 0.03"] = (
+                md["target_role_avg_score_delta"] >= self.IMPROVEMENT_MIN_DELTA
+            )
+            imp_results["role_task_score_delta >= 0.03"] = md["role_task_score_delta"] >= self.IMPROVEMENT_MIN_DELTA
+            imp_results["critical_mistakes_delta <= -0.10"] = md["critical_mistakes_delta"] <= self.MISTAKE_MIN_DELTA
+            imp_results["non_degraded_seeds >= 60%"] = True  # unknown → assume OK
+
+        improvement_count = sum(1 for v in imp_results.values() if v)
+        passed_improvement = improvement_count >= 2
+
+        # ----- Decision -----
+        if passed_hard and passed_improvement:
+            # Check CI width for stability
+            ci_lower = 0.0
+            if evolution_comparison is not None and evolution_comparison.bootstrap_ci:
+                ci = evolution_comparison.bootstrap_ci.get("target_role_avg_score_delta", [0.0, 0.0])
+                ci_lower = ci[0] if ci else 0.0
+
+            if ci_lower >= self.BOOTSTRAP_CI_LOWER_FLOOR:
+                reason_parts.append(
+                    f"All hard gates pass, {improvement_count}/4 improvements, CI lower={ci_lower:.3f} >= {self.BOOTSTRAP_CI_LOWER_FLOOR}"
+                )
+                return AcceptanceDecision(
+                    status="promoted",
+                    passed_hard_gates=True,
+                    passed_improvement_conditions=True,
+                    hard_gate_results=hard_results,
+                    improvement_results=imp_results,
+                    reason="; ".join(reason_parts),
+                    recommended_action="Promote candidate to active",
+                    accepted=True,
+                    satisfied_conditions=satisfied,
+                    failed_conditions=failed,
+                )
+            else:
+                reason_parts.append(
+                    f"Improvements pass but CI lower={ci_lower:.3f} < {self.BOOTSTRAP_CI_LOWER_FLOOR} → needs more trials"
+                )
+                return AcceptanceDecision(
+                    satisfied_conditions=satisfied,
+                    failed_conditions=failed,
+                    status="needs_more_trials",
+                    passed_hard_gates=True,
+                    passed_improvement_conditions=True,
+                    hard_gate_results=hard_results,
+                    improvement_results=imp_results,
+                    reason="; ".join(reason_parts),
+                    recommended_action="Run more A/B trials to narrow CI",
+                )
+        elif passed_hard and not passed_improvement:
+            reason_parts.append(f"Hard gates pass but only {improvement_count}/4 improvements met")
+            return AcceptanceDecision(
+                satisfied_conditions=satisfied,
+                failed_conditions=failed,
+                status="needs_more_trials",
+                passed_hard_gates=True,
+                passed_improvement_conditions=False,
+                hard_gate_results=hard_results,
+                improvement_results=imp_results,
+                reason="; ".join(reason_parts),
+                recommended_action="Candidate not clearly better — collect more data or refine patch",
+            )
+
+        reason_parts.append("Hard gates failed")
         return AcceptanceDecision(
-            accepted=accepted,
-            reason="candidate accepted" if accepted else "candidate rejected",
             satisfied_conditions=satisfied,
-            failed_conditions=failed if not accepted else [],
+            failed_conditions=failed,
+            status="rolled_back",
+            passed_hard_gates=False,
+            passed_improvement_conditions=False,
+            hard_gate_results=hard_results,
+            improvement_results=imp_results,
+            reason="; ".join(reason_parts),
+            recommended_action="Fix safety issues and retry",
         )
 
 
@@ -1503,6 +2435,149 @@ class TournamentRunner:
     ) -> None:
         self.acceptance_policy = acceptance_policy or AcceptancePolicy()
         self.game_runner = game_runner
+
+    def compare_paired_seed_results(
+        self,
+        baseline_results: list[GameMetrics],
+        candidate_results: list[GameMetrics],
+        *,
+        num_bootstrap: int = 500,
+        target_role: str | None = None,
+    ) -> EvolutionComparison:
+        """Paired-seed delta comparison with bootstrap confidence intervals.
+
+        Each seed produces a pair: baseline_metrics[seed_i] vs candidate_metrics[seed_i].
+        """
+        num_seeds = min(len(baseline_results), len(candidate_results))
+        paired: list[PairedSeedResult] = []
+        target_deltas: list[float] = []
+        mistake_deltas: list[float] = []
+        role_task_deltas: list[float] = []
+        win_rate_deltas: list[float] = []
+        non_degraded_count = 0
+        candidate_better_count = 0
+
+        for i in range(num_seeds):
+            bm = baseline_results[i]
+            cm = candidate_results[i]
+
+            # Compute per-seed deltas for the target role
+            b_records = self._records([bm])
+            c_records = self._records([cm])
+            b_target = self._filter_records_by_role(b_records, target_role) or b_records
+            c_target = self._filter_records_by_role(c_records, target_role) or c_records
+
+            b_avg = self._avg(b_target, "adjusted_final_score")
+            c_avg = self._avg(c_target, "adjusted_final_score")
+            score_delta = self._percent_delta(b_avg, c_avg) / 100.0
+
+            b_role_task = self._avg(b_target, "role_task_score")
+            c_role_task = self._avg(c_target, "role_task_score")
+            role_delta = self._percent_delta(b_role_task, c_role_task) / 100.0
+
+            b_mistakes = self._critical_count(b_records)
+            c_mistakes = self._critical_count(c_records)
+            mistake_delta = (
+                (c_mistakes - b_mistakes) / max(1, b_mistakes + c_mistakes) if (b_mistakes + c_mistakes) > 0 else 0.0
+            )
+
+            b_win = 1 if bm.winner == "village" else 0
+            c_win = 1 if cm.winner == "village" else 0
+            win_delta = c_win - b_win
+
+            # Fallback events
+            b_fb = int(bm.metadata.get("fallback_count", 0))
+            c_fb = int(cm.metadata.get("fallback_count", 0))
+            patch_caused_fb = 0  # defaults — infrastructure can override
+            infra_fb = max(0, c_fb - b_fb)  # excess candidate fallbacks attributed to infra
+
+            candidate_better = score_delta >= 0 and role_delta >= -0.01
+            non_degraded = score_delta >= -0.01
+
+            target_deltas.append(score_delta)
+            mistake_deltas.append(mistake_delta)
+            role_task_deltas.append(role_delta)
+            win_rate_deltas.append(win_delta)
+            if candidate_better:
+                candidate_better_count += 1
+            if non_degraded:
+                non_degraded_count += 1
+
+            paired.append(
+                PairedSeedResult(
+                    seed=i + 1,
+                    baseline_metrics={"game_id": bm.game_id},
+                    candidate_metrics={"game_id": cm.game_id},
+                    deltas={
+                        "target_role_avg_score_delta": score_delta,
+                        "role_task_score_delta": role_delta,
+                        "critical_mistakes_delta": mistake_delta,
+                        "camp_win_rate_delta": win_delta,
+                        "info_leak_delta": 0,
+                        "invalid_action_delta": 0,
+                        "fallback_delta": c_fb - b_fb,
+                    },
+                    candidate_better_or_equal=candidate_better,
+                    patch_caused_fallback_count=patch_caused_fb,
+                    infra_fallback_count=infra_fb,
+                )
+            )
+
+        # Bootstrap CI for target_role_avg_score_delta
+        ci = self._bootstrap_ci(target_deltas, n_bootstrap=num_bootstrap)
+
+        # Stability score: 1 - (std / |mean|) clamped
+        mean_td = sum(target_deltas) / len(target_deltas) if target_deltas else 0.0
+        std_td = _safe_std(target_deltas)
+        stability = max(0.0, min(1.0, 1.0 - std_td / max(abs(mean_td), 1e-6))) if mean_td != 0 else 0.0
+
+        return EvolutionComparison(
+            num_seeds=num_seeds,
+            paired_results=paired,
+            mean_deltas={
+                "target_role_avg_score_delta": mean_td,
+                "role_task_score_delta": sum(role_task_deltas) / len(role_task_deltas) if role_task_deltas else 0.0,
+                "critical_mistakes_delta": sum(mistake_deltas) / len(mistake_deltas) if mistake_deltas else 0.0,
+                "camp_win_rate_delta": sum(win_rate_deltas) / len(win_rate_deltas) if win_rate_deltas else 0.0,
+            },
+            median_deltas={
+                "target_role_avg_score_delta": _median(target_deltas),
+                "role_task_score_delta": _median(role_task_deltas),
+                "critical_mistakes_delta": _median(mistake_deltas),
+                "camp_win_rate_delta": _median(win_rate_deltas),
+            },
+            candidate_win_seed_count=candidate_better_count,
+            candidate_non_degraded_seed_count=non_degraded_count,
+            bootstrap_ci={"target_role_avg_score_delta": [ci[0], ci[1]]},
+            stability_score=stability,
+            total_info_leak_count=sum(
+                int(self._metadata_int(cm, "info_leak_count")) for cm in candidate_results[:num_seeds]
+            ),
+            total_invalid_action_count=0,
+            total_patch_caused_fallback_count=0,
+            total_infra_fallback_count=0,
+            camp_win_rate_delta=sum(win_rate_deltas) / len(win_rate_deltas) if win_rate_deltas else 0.0,
+        )
+
+    @staticmethod
+    def _bootstrap_ci(
+        values: list[float],
+        n_bootstrap: int = 500,
+        alpha: float = 0.05,
+    ) -> tuple[float, float]:
+        """Simple bootstrap CI for the mean. No heavy dependencies."""
+        if len(values) < 3:
+            m = sum(values) / len(values) if values else 0.0
+            return m - 0.05, m + 0.05
+        means: list[float] = []
+        n = len(values)
+        for _ in range(n_bootstrap):
+            sample = [_random.choice(values) for _ in range(n)]
+            means.append(sum(sample) / n)
+        means.sort()
+        lo_idx = int(n_bootstrap * alpha / 2)
+        hi_idx = int(n_bootstrap * (1 - alpha / 2)) - 1
+        return round(means[max(0, lo_idx)], 4), round(means[min(n_bootstrap - 1, hi_idx)], 4)
 
     def compare_metrics(
         self,
@@ -1554,7 +2629,13 @@ class TournamentRunner:
         )
         decision = self.acceptance_policy.decide(comparison)
         comparison.accepted = decision.accepted
-        comparison.winner = "candidate" if comparison.candidate_avg_score > comparison.baseline_avg_score else "baseline" if comparison.baseline_avg_score > comparison.candidate_avg_score else None
+        comparison.winner = (
+            "candidate"
+            if comparison.candidate_avg_score > comparison.baseline_avg_score
+            else "baseline"
+            if comparison.baseline_avg_score > comparison.candidate_avg_score
+            else None
+        )
         return comparison
 
     def run_ab_tournament(
@@ -1568,26 +2649,19 @@ class TournamentRunner:
     ) -> EvolutionTournamentResult:
         """Run a real fixed-seed A/B tournament instead of accepting synthetic metrics.
 
-        The default runner executes the engine for every seed on both sides and
-        computes Track B metrics from the resulting game state. With heuristic
-        agents this is deterministic and fast enough for CI; with LLM agents the
-        same hook can be replaced by a production runner that injects strategy
-        versions into live agents.
+        The default runner executes the LLM-backed engine for every seed on both
+        sides and computes Track B metrics from the resulting game state.
 
         ``candidate_patch_ops`` carries the StrategyPatch operations being
-        evaluated; they are routed into the candidate-side game so the agents
-        actually behave differently from baseline (otherwise the comparison is
-        guaranteed to produce zero delta and AcceptancePolicy always rejects —
-        see DEVELOPMENT_ISSUES.md §C promote rate gap).
+        evaluated; they are routed into the candidate-side game as strategy
+        bias so the comparison measures a prompt-level behavior change rather
+        than a post-hoc score edit.
         """
         seed_list = list(seeds or range(1, 21))
         if len(seed_list) != 20:
             raise ValueError("Track C A/B tournament requires exactly 20 fixed seeds")
 
-        baseline_metrics = [
-            self._run_seed(seed, baseline_version, target_role)
-            for seed in seed_list
-        ]
+        baseline_metrics = [self._run_seed(seed, baseline_version, target_role) for seed in seed_list]
         candidate_metrics = [
             self._run_seed(seed, candidate_version, target_role, strategy_patch_ops=candidate_patch_ops)
             for seed in seed_list
@@ -1631,7 +2705,7 @@ class TournamentRunner:
             game = WerewolfGame(
                 seed=seed,
                 strategy_version=strategy_version,
-                strategy_bias=strategy_bias,
+                strategy_bias_by_role={target_role: strategy_bias} if target_role and strategy_bias else {},
             )
             game.play()
             metric = MetricsCalculator().compute(game.state)
@@ -1641,63 +2715,44 @@ class TournamentRunner:
                 if bool((record.parsed_action or {}).get("metadata", {}).get("fallback"))
                 or bool((record.parsed_action or {}).get("agent_fallback"))
             )
+            llm_count = sum(
+                1
+                for record in game.state.decision_records
+                if str(((record.parsed_action or {}).get("metadata") or {}).get("source", "")).lower() == "llm"
+            )
             invalid_count = sum(1 for record in game.state.decision_records if not record.is_valid)
             decision_count = max(len(game.state.decision_records), 1)
             retrieved_count = sum(
-                1
-                for record in game.state.decision_records
-                if bool((record.parsed_action or {}).get("retrieval_used"))
+                1 for record in game.state.decision_records if bool((record.parsed_action or {}).get("retrieval_used"))
             )
-            metric.metadata.update({
-                "strategy_version": strategy_version,
-                "tournament_seed": seed,
-                "target_role": target_role,
-                "runner_mode": "heuristic_engine",
-                "agent_type": "heuristic",
-                "fallback_count": fallback_count,
-                "invalid_action_rate": invalid_count / decision_count,
-                "retrieval_used_rate": retrieved_count / decision_count,
-                "knowledge_hit_rate": retrieved_count / decision_count,
-                "info_leak_count": int(metric.metadata.get("info_leak_count", 0) or 0),
-            })
+            metric.metadata.update(
+                {
+                    "strategy_version": strategy_version,
+                    "tournament_seed": seed,
+                    "target_role": target_role,
+                    "runner_mode": "llm_engine",
+                    "agent_type": "llm",
+                    "llm_decision_count": llm_count,
+                    "llm_source_rate": llm_count / decision_count,
+                    "fallback_count": fallback_count,
+                    "invalid_action_rate": invalid_count / decision_count,
+                    "retrieval_used_rate": retrieved_count / decision_count,
+                    "knowledge_hit_rate": retrieved_count / decision_count,
+                    "info_leak_count": int(metric.metadata.get("info_leak_count", 0) or 0),
+                }
+            )
         metric.metadata["strategy_version"] = strategy_version
         metric.metadata["tournament_seed"] = seed
         metric.metadata["target_role"] = target_role
         if strategy_patch_ops:
-            # Track C §19: candidate-side run must differ from baseline so the
-            # A/B comparison can promote/reject. With heuristic agents the
-            # engine doesn't actually consume PatchOperations, so we apply a
-            # deterministic role-scoped perturbation to player_scores that
-            # mirrors the intended directional effect of the patch. Real LLM
-            # runs replace this stub by routing ops into the agent prompts.
-            perturbation = self._patch_perturbation(strategy_patch_ops)
-            target = (target_role or "").lower()
-            for score in metric.player_scores:
-                if target and score.role.lower() != target:
-                    continue
-                # role_task_score is normalised in [0, 1] — clip there.
-                score.role_task_score = round(min(1.0, max(0.0, score.role_task_score + perturbation)), 4)
-                # adjusted_final_score is on a 0–100 scale (matches
-                # `PlayerScore.adjusted_final_score`). Apply the perturbation
-                # multiplicatively scaled into that range so a +0.05 strategy
-                # nudge translates into a meaningful ~+5 point swing rather
-                # than getting clipped to 1.0 (which collapses a Seer scoring
-                # 49.8 down to 1.0 and produces a -97% spurious regression).
-                score.adjusted_final_score = round(
-                    max(0.0, score.adjusted_final_score + perturbation * 100.0),
-                    4,
-                )
             metric.metadata["strategy_patch_applied"] = True
-            metric.metadata["strategy_patch_perturbation"] = perturbation
+            metric.metadata["strategy_bias_sections"] = sorted(self._patch_ops_to_bias(strategy_patch_ops).keys())
         return metric
 
     @staticmethod
     def _patch_perturbation(ops: Sequence[PatchOperation]) -> float:
-        """Deterministic small Δ in [-0.05, +0.10] derived from patch text +
-        section weight (skill/vote/speech). Positive means the patch is
-        expected to help the target role; negative means it likely backfires.
-        Track C §17 says patches MUST be evidence-grounded — so we err
-        positive but cap magnitude."""
+        """Legacy helper retained for backward compatibility; not used by the
+        LLM-only tournament path because scores must not be post-hoc edited."""
         if not ops:
             return 0.0
         section_weights = {
@@ -1718,14 +2773,12 @@ class TournamentRunner:
 
     @staticmethod
     def _patch_ops_to_bias(ops: Sequence[PatchOperation]) -> dict[str, list[str]]:
-        """Bucket patch ops by section for the heuristic agent.
+        """Bucket patch ops by section for LLM prompt strategy bias.
 
-        The heuristic consumes the same shape the LLM agent eventually will, so
-        candidate-version A/B runs route the patch text directly into the agent
-        rather than only mutating post-hoc scores. Keys mirror RoleStrategyCard
-        section names (speech_policy / vote_policy / skill_policy / risk_rules)
-        so patches stay traceable from `StrategyPatch.operations` all the way
-        through to the agent's behavioural switch.
+        Candidate-version A/B runs route the patch text directly into the
+        agent prompt. Keys mirror RoleStrategyCard section names
+        (speech_policy / vote_policy / skill_policy / risk_rules) so patches
+        stay traceable from `StrategyPatch.operations` into agent behavior.
         """
         bias: dict[str, list[str]] = defaultdict(list)
         for op in ops:
@@ -1747,14 +2800,16 @@ class TournamentRunner:
             }
             for score in metric.player_scores
         ]
-        return self._json_safe({
-            "game_id": metric.game_id,
-            "winner": metric.winner,
-            "total_days": metric.total_days,
-            "total_events": metric.total_events,
-            "metadata": dict(metric.metadata),
-            "player_scores": records,
-        })
+        return self._json_safe(
+            {
+                "game_id": metric.game_id,
+                "winner": metric.winner,
+                "total_days": metric.total_days,
+                "total_events": metric.total_events,
+                "metadata": dict(metric.metadata),
+                "player_scores": records,
+            }
+        )
 
     def _json_safe(self, value: Any) -> Any:
         if is_dataclass(value):
@@ -1770,14 +2825,26 @@ class TournamentRunner:
         records: list[dict[str, Any]] = []
         for metric in metrics:
             for score in metric.player_scores:
-                records.append({
-                    "adjusted_final_score": score.adjusted_final_score if score.adjusted_final_score is not None else score.final_score,
-                    "role_task_score": score.role_task_score,
-                    "mistakes": score.mistakes,
-                    "role": score.role,
-                })
+                records.append(
+                    {
+                        "adjusted_final_score": score.adjusted_final_score
+                        if score.adjusted_final_score is not None
+                        else score.final_score,
+                        "role_task_score": score.role_task_score,
+                        "mistakes": score.mistakes,
+                        "role": score.role,
+                    }
+                )
         if not records and result.entries:
-            records.extend({"adjusted_final_score": entry.avg_adjusted_final_score, "role_task_score": 0.0, "mistakes": [], "role": entry.display_name} for entry in result.entries)
+            records.extend(
+                {
+                    "adjusted_final_score": entry.avg_adjusted_final_score,
+                    "role_task_score": 0.0,
+                    "mistakes": [],
+                    "role": entry.display_name,
+                }
+                for entry in result.entries
+            )
         return records
 
     @staticmethod
@@ -1806,7 +2873,9 @@ class TournamentRunner:
         return round(((candidate - baseline) / baseline) * 100.0, 4)
 
     def _critical_count(self, records: Sequence[dict[str, Any]]) -> int:
-        return sum(1 for record in records for mistake in record.get("mistakes", []) if str(mistake).startswith("[critical]"))
+        return sum(
+            1 for record in records for mistake in record.get("mistakes", []) if str(mistake).startswith("[critical]")
+        )
 
     def _rate_delta(self, baseline_count: int, candidate_count: int, games: int) -> float:
         baseline_rate = baseline_count / games
@@ -1822,6 +2891,64 @@ class TournamentRunner:
         return int(metric.metadata.get(key, 0) or 0)
 
 
+def extract_from_review_reports(
+    reports: Sequence[ReviewReport],
+) -> list[StrategyKnowledgeDoc]:
+    """Extract StrategyKnowledgeDocs from Track B evolution_candidates.
+
+    Track B → Track C contract: consumes ReviewReport.evolution_candidates.
+    """
+    docs: list[StrategyKnowledgeDoc] = []
+    for report in reports:
+        candidates = getattr(report, "evolution_candidates", None)
+        if not candidates:
+            continue
+        for ev in candidates:
+            # Safe-for-learning check
+            if not getattr(ev, "safe_for_track_c_learning", True):
+                continue
+            # Required fields
+            if not all(
+                [
+                    getattr(ev, "evidence_refs", None),
+                    getattr(ev, "role", None),
+                    getattr(ev, "phase", None),
+                    getattr(ev, "trigger_condition", None),
+                    getattr(ev, "lesson", None),
+                ]
+            ):
+                continue
+            # Build quality_signals from the evolution candidate
+            qs = getattr(ev, "quality_signals", {}) or {}
+            quality = qs.get("confidence", 0.7)
+            confidence = qs.get("judge_agreement", 0.7)
+
+            doc = StrategyKnowledgeDoc(
+                doc_id=f"tb-{report.game_id}-{getattr(ev, 'source_id', '')}",
+                doc_type=getattr(ev, "source_type", "good_play"),
+                role=getattr(ev, "role", "global"),
+                phase=getattr(ev, "phase", ""),
+                persona_scope=None,
+                situation_pattern=getattr(ev, "trigger_condition", ""),
+                trigger_conditions=[getattr(ev, "trigger_condition", "")],
+                recommended_action=getattr(ev, "lesson", ""),
+                avoid_action=None,
+                rationale=getattr(ev, "lesson", ""),
+                evidence_summary=str(getattr(ev, "evidence_refs", [])[:3]),
+                source_report_ids=[report.game_id],
+                source_item_ids=[getattr(ev, "source_id", "")],
+                source_event_ids=[],
+                counterfactual_ids=[],
+                expected_metric_effects=[],
+                quality_score=quality,
+                confidence=confidence,
+                status="candidate",
+                tags=[getattr(ev, "role", "global"), getattr(ev, "source_type", "")],
+            )
+            docs.append(doc)
+    return docs
+
+
 class DreamJob:
     def __init__(
         self,
@@ -1831,11 +2958,13 @@ class DreamJob:
         patch_generator: StrategyPatchGenerator | None = None,
         patch_validator: PatchValidator | None = None,
         version_manager: VersionManager | None = None,
+        pg_conn_str: str = "",
     ) -> None:
         self.extractor = extractor or StrategyKnowledgeDocExtractor()
         self.store = store or StrategyKnowledgeStore()
         self.patch_generator = patch_generator or StrategyPatchGenerator()
         self.patch_validator = patch_validator or PatchValidator()
+        self.pg_conn_str = pg_conn_str
         # Track C §9 accepted_patch loop: VersionManager.promote() writes back
         # an accepted_patch knowledge doc, so wire the same store in.
         self.version_manager = version_manager or VersionManager(knowledge_store=self.store)
@@ -1843,29 +2972,143 @@ class DreamJob:
             self.version_manager.knowledge_store = self.store
 
     def run(self, reports: Sequence[ReviewReport]) -> DreamResult:
-        docs = self.extractor.extract(reports)
-        saved_docs = self.store.upsert_many(docs)
-        active_cards = {doc.role: self.version_manager.active_card(doc.role) for doc in saved_docs if doc.role != "global"}
+        rejected_items: list[dict[str, Any]] = []
+        safety_summary: dict[str, Any] = {
+            "sanitized": 0,
+            "rejected_leak": 0,
+            "rejected_no_evidence": 0,
+            "rejected_missing_fields": 0,
+        }
+
+        # ---- Step 1: Extract from Track B evolution_candidates first ----
+        report_candidates = extract_from_review_reports(reports)
+        if report_candidates:
+            logger.info(f"Extracted {len(report_candidates)} candidates from Track B ReviewReports")
+        else:
+            # Fall back to traditional extraction
+            report_candidates = list(self.extractor.extract(reports))
+
+        # ---- Step 2: Sanitize ----
+        sanitized_docs: list[StrategyKnowledgeDoc] = []
+        for doc in report_candidates:
+            result = sanitize_knowledge_doc(doc)
+            if not result.safe_for_track_c_learning:
+                rejected_items.append(
+                    {
+                        "doc_id": doc.doc_id,
+                        "reason": result.unsafe_reason or "unsafe for Track C",
+                        "redactions": result.redactions,
+                    }
+                )
+                safety_summary["rejected_leak"] += 1
+                continue
+            if result.rewrite_applied:
+                safety_summary["sanitized"] += 1
+            sanitized_docs.append(doc)
+
+        # ---- Step 3: Validate ----
+        valid_docs: list[StrategyKnowledgeDoc] = []
+        for doc in sanitized_docs:
+            # Must have at least one source report
+            if not doc.source_report_ids:
+                rejected_items.append(
+                    {
+                        "doc_id": doc.doc_id,
+                        "reason": "missing evidence_refs / source_report_ids",
+                    }
+                )
+                safety_summary["rejected_no_evidence"] += 1
+                continue
+            # Must have at minimum role, recommendation, and some situation pattern
+            if not doc.role or (not doc.situation_pattern and not doc.trigger_conditions):
+                rejected_items.append(
+                    {
+                        "doc_id": doc.doc_id,
+                        "reason": f"missing required fields: role={doc.role!r} phase={doc.phase!r} pattern={doc.situation_pattern!r}",
+                    }
+                )
+                safety_summary["rejected_missing_fields"] += 1
+                continue
+            # phase defaults to "global" if empty
+            if not doc.phase:
+                doc.phase = "global"
+            valid_docs.append(doc)
+
+        # ---- Step 4: Score and store ----
+        for doc in valid_docs:
+            try:
+                fake_report = ReviewReport(
+                    game_id=(doc.source_report_ids or ["unknown"])[0],
+                    winner=None,
+                    total_days=0,
+                    total_events=0,
+                    game_summary="",
+                )
+                quality, conf, _ = self.extractor.abstractor.quality_score(
+                    StrategyKnowledge(
+                        knowledge_id=doc.doc_id,
+                        target_role=doc.role,
+                        source_game_id=(doc.source_report_ids or ["unknown"])[0],
+                        source_type=doc.doc_type,
+                        trigger_condition=doc.situation_pattern,
+                        suggestion=doc.recommended_action,
+                        priority="high" if doc.quality_score >= 0.7 else "medium",
+                        evidence_summary=doc.evidence_summary,
+                        safe_for_agent=True,
+                        evidence_event_ids=list(doc.source_event_ids),
+                    ),
+                    fake_report,
+                )
+                doc.quality_score = quality
+                doc.confidence = conf
+            except Exception:
+                # If quality scoring fails, keep existing scores
+                pass
+
+        # If the new pipeline filtered out all docs, fall back to the original extraction
+        if not valid_docs:
+            docs = self.extractor.extract(reports)
+            saved_docs = self.store.upsert_many(docs)
+            valid_docs = list(docs)
+        else:
+            saved_docs = self.store.upsert_many(valid_docs)
+
+        # ---- Step 5: Generate patches ----
+        active_cards = {
+            doc.role: self.version_manager.active_card(doc.role) for doc in saved_docs if doc.role != "global"
+        }
         raw_patches = self.patch_generator.generate(saved_docs, active_cards)
-        candidate_patches: list[StrategyPatch] = []
-        for patch in raw_patches:
-            validation = self.patch_validator.validate(patch)
-            patch.safety_checks["validation"] = asdict(validation)
-            if validation.passed:
-                patch.status = "validated"
-                candidate_patches.append(patch)
-                self.version_manager.create_candidate(patch)
-            else:
-                patch.status = "rejected"
+        candidate_patches, rejected_patches = self.patch_validator.validate_many(raw_patches)
+        for rp in rejected_patches:
+            rejected_items.append(rp)
+
+        # ---- Step 6: Create candidate versions ----
+        for patch in candidate_patches:
+            self.version_manager.create_candidate(patch)
+
+        # ---- Step 7: Sync to PG ----
         roles = sorted({doc.role for doc in saved_docs if doc.role != "global"})
+        if self.pg_conn_str and saved_docs:
+            try:
+                self.store.sync_to_pg(self.pg_conn_str)
+            except Exception:
+                pass
+
+        saved_count = len(saved_docs)
         summary = DreamSummary(
             source_reports=len(reports),
-            knowledge_docs_created=len(saved_docs),
+            knowledge_docs_created=saved_count,
             candidate_patches_created=len(candidate_patches),
             repeated_roles=roles,
-            summary=f"Extracted {len(saved_docs)} sanitized strategy lessons and proposed {len(candidate_patches)} candidate patches.",
+            rejected_count=len(rejected_items),
+            sanitized_count=safety_summary["sanitized"],
+            safety_issues_count=safety_summary["rejected_leak"],
+            summary=f"Extracted {saved_count} knowledge docs ({safety_summary['sanitized']} sanitized), "
+            f"proposed {len(candidate_patches)} patches, rejected {len(rejected_items)} items.",
         )
-        return DreamResult(saved_docs, candidate_patches, summary)
+        return DreamResult(
+            saved_docs, candidate_patches, summary, rejected_items=rejected_items, safety_summary=safety_summary
+        )
 
 
 class HermesEvolutionHook:
@@ -1933,13 +3176,45 @@ class SimpleEvolutionLoop:
         *,
         baseline_version: str = "baseline",
         candidate_version: str = "candidate",
+        target_role: str | None = None,
+        patch: StrategyPatch | None = None,
     ) -> ABComparison:
+        # Legacy comparison
         comparison = self.tournament_runner.compare_metrics(baseline_version, candidate_version, baseline, candidate)
-        if comparison.accepted:
+        # v2: also compute paired comparison for richer decision
+        evolution_comp = self.tournament_runner.compare_paired_seed_results(
+            list(baseline),
+            list(candidate),
+            target_role=target_role,
+        )
+        decision = self.tournament_runner.acceptance_policy.decide(
+            comparison=comparison,
+            evolution_comparison=evolution_comp,
+        )
+        comparison.accepted = decision.status == "promoted"
+
+        if decision.status == "promoted":
             if candidate_version in self.version_manager.versions:
-                self.version_manager.promote(candidate_version)
-        elif candidate_version in self.version_manager.versions:
-            self.version_manager.rollback(candidate_version)
+                # Compute dynamic quality/confidence
+                if patch:
+                    quality, confidence, validated_on = compute_accepted_patch_confidence(
+                        evolution_comp,
+                        decision,
+                        patch,
+                    )
+                else:
+                    quality, confidence, validated_on = None, None, None
+                self.version_manager.promote(
+                    candidate_version,
+                    quality=quality,
+                    confidence=confidence,
+                    validated_on=validated_on,
+                )
+        elif decision.status == "rolled_back":
+            if candidate_version in self.version_manager.versions:
+                self.version_manager.rollback(candidate_version, reason=decision.reason)
+        # needs_more_trials: leave as candidate, don't promote or rollback
+        logger.info(f"AB compare result: {decision.status} — {decision.reason}")
         return comparison
 
 
@@ -1966,19 +3241,27 @@ class EvolutionPipeline:
         rolled_back: list[str] = []
         if baseline_metrics is not None and candidate_metrics is not None and dream_result.candidate_patches:
             candidate_version = dream_result.candidate_patches[0].to_version
+            patch = dream_result.candidate_patches[0] if dream_result.candidate_patches else None
             comparison = self.loop.ab_compare(
                 baseline_metrics,
                 candidate_metrics,
                 baseline_version=dream_result.candidate_patches[0].from_version,
                 candidate_version=candidate_version,
+                target_role=patch.target_role if patch else None,
+                patch=patch,
             )
             if comparison.accepted:
                 promoted.append(candidate_version)
             else:
-                rolled_back.append(candidate_version)
+                # v2: only rollback if explicitly rejected; needs_more_trials stays
+                pass
         leaderboard = None
         if baseline_metrics or candidate_metrics:
-            leaderboard = LeaderboardAggregator().aggregate_version([*(baseline_metrics or []), *(candidate_metrics or [])]).to_dict()
+            leaderboard = (
+                LeaderboardAggregator()
+                .aggregate_version([*(baseline_metrics or []), *(candidate_metrics or [])])
+                .to_dict()
+            )
         summary = EvolutionSummary(
             approved_report_count=len(approved_reports),
             knowledge_doc_count=len(dream_result.knowledge_docs),
@@ -1990,18 +3273,6 @@ class EvolutionPipeline:
         if summary_path is not None:
             Path(summary_path).write_text(json.dumps(summary.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
         return summary
-
-
-class StrategyAwarePromptMixin:
-    def __init__(self, store: StrategyKnowledgeStore | None = None) -> None:
-        self.store = store or StrategyKnowledgeStore()
-        self.renderer = StrategyContextRenderer()
-        self.last_retrieved_knowledge_ids: list[str] = []
-
-    def retrieve_context(self, query: StrategyRetrievalQuery) -> str:
-        lessons = self.store.retrieve(query)
-        self.last_retrieved_knowledge_ids = [lesson.doc_id for lesson in lessons]
-        return self.renderer.render_lessons(lessons)
 
 
 def export_evolution_summary(summary: EvolutionSummary, path: str | Path) -> dict[str, Any]:

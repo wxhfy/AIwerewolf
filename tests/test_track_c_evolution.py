@@ -2,33 +2,43 @@ from __future__ import annotations
 
 import json
 
-from backend.engine.models import Alignment, Role
-from backend.engine.visibility import PlayerView
 from backend.agents.llm_agent import LLMAgent
-from backend.eval.evolution import (
-    AcceptancePolicy,
-    DreamJob,
-    EvolutionPipeline,
-    HashingVectorEmbeddingProvider,
-    KnowledgeDocValidator,
-    PatchOperation,
-    PatchValidator,
-    RoleStrategyCard,
-    StrategyContextRenderer,
-    StrategyKnowledgeDoc,
-    StrategyKnowledgeDocExtractor,
-    StrategyKnowledgeStore,
-    StrategyPatch,
-    StrategyRetrievalQuery,
-    TournamentRunner,
-    VersionManager,
-    build_acceptance_step_metric,
-    build_bc_acceptance_audit,
-    export_evolution_summary,
-    load_strategy_knowledge,
-)
-from backend.eval.review import GameMetrics, MetricsCalculator, PlayerScore, ReviewReportBuilder
-from tests.test_review_metrics import make_death, make_player, make_seer_result, make_speech, make_state, make_vote
+from backend.engine.models import Alignment
+from backend.engine.models import Role
+from backend.engine.visibility import PlayerView
+from backend.eval.evolution import AcceptancePolicy
+from backend.eval.evolution import DreamJob
+from backend.eval.evolution import EvolutionPipeline
+from backend.eval.evolution import HashingVectorEmbeddingProvider
+from backend.eval.evolution import KnowledgeDocValidator
+from backend.eval.evolution import PatchOperation
+from backend.eval.evolution import PatchValidator
+from backend.eval.evolution import RoleStrategyCard
+from backend.eval.evolution import StrategyContextRenderer
+from backend.eval.evolution import StrategyKnowledgeDoc
+from backend.eval.evolution import StrategyKnowledgeDocExtractor
+from backend.eval.evolution import StrategyKnowledgeStore
+from backend.eval.evolution import StrategyPatch
+from backend.eval.evolution import StrategyRetrievalQuery
+from backend.eval.evolution import TournamentRunner
+from backend.eval.evolution import VersionManager
+from backend.eval.evolution import build_acceptance_step_metric
+from backend.eval.evolution import build_bc_acceptance_audit
+from backend.eval.evolution import export_evolution_summary
+from backend.eval.evolution import load_strategy_knowledge
+from backend.eval.review import GameMetrics
+from backend.eval.review import MetricsCalculator
+from backend.eval.review import PlayerScore
+from backend.eval.review import ReviewReportBuilder
+from backend.eval.review import StrategyKnowledgeExtractor
+from backend.eval.types import ReviewReport as TrackBReviewReport
+from backend.eval.types import StrategySuggestion as TrackBStrategySuggestion
+from tests.test_review_metrics import make_death
+from tests.test_review_metrics import make_player
+from tests.test_review_metrics import make_seer_result
+from tests.test_review_metrics import make_speech
+from tests.test_review_metrics import make_state
+from tests.test_review_metrics import make_vote
 
 
 def _approved_report():
@@ -51,7 +61,9 @@ def _approved_report():
     return report
 
 
-def _metrics(version: str, score: float, role_task: float, *, critical: bool = False, winner: str = "village") -> GameMetrics:
+def _metrics(
+    version: str, score: float, role_task: float, *, critical: bool = False, winner: str = "village"
+) -> GameMetrics:
     return GameMetrics(
         game_id=f"{version}-{score}",
         winner=winner,
@@ -100,6 +112,33 @@ def test_c_extracts_sanitized_docs_only_from_approved_reports() -> None:
     assert all(not KnowledgeDocValidator().validate(doc) for doc in docs)
 
 
+def test_strategy_knowledge_extractor_accepts_track_b_report_type_as_single_report() -> None:
+    report = TrackBReviewReport(
+        game_id="track-b-report",
+        winner="village",
+        total_days=2,
+        total_events=10,
+        game_summary="Track B reconstructed report.",
+        strategy_suggestions=[
+            TrackBStrategySuggestion(
+                target_type="role",
+                target="Seer",
+                suggestion_type="speech_conversion",
+                suggestion="Convert confirmed information into public vote pressure.",
+                source="approved Track B report",
+                priority="high",
+            )
+        ],
+        metadata={"validation_result": {"passed": True, "publish_allowed": True}},
+    )
+
+    items = StrategyKnowledgeExtractor().extract(report)
+
+    assert len(items) == 1
+    assert items[0].source_game_id == "track-b-report"
+    assert items[0].target_role == "Seer"
+
+
 def test_knowledge_store_retrieves_by_role_phase_and_updates_usage(tmp_path) -> None:
     doc = StrategyKnowledgeDoc(
         doc_id="doc-1",
@@ -124,7 +163,11 @@ def test_knowledge_store_retrieves_by_role_phase_and_updates_usage(tmp_path) -> 
         tags=["seer", "info_release"],
     )
     store = StrategyKnowledgeStore([doc], embedding_provider=HashingVectorEmbeddingProvider(), rerank_provider=None)
-    lessons = store.retrieve(StrategyRetrievalQuery(role="Seer", phase="DAY_SPEECH", observation_summary="I have a wolf check and need vote pressure"))
+    lessons = store.retrieve(
+        StrategyRetrievalQuery(
+            role="Seer", phase="DAY_SPEECH", observation_summary="I have a wolf check and need vote pressure"
+        )
+    )
     assert lessons[0].doc_id == "doc-1"
     assert lessons[0].retrieval_mode == "hybrid_vector_bm25_fts_rerank_v2"
     assert lessons[0].vector_score > 0
@@ -195,7 +238,9 @@ def test_knowledge_store_uses_vector_score_not_only_keyword_overlap() -> None:
         confidence=0.8,
         status="active",
     )
-    store = StrategyKnowledgeStore([doc_semantic, doc_keyword], embedding_provider=StubEmbeddingProvider(), rerank_provider=None)
+    store = StrategyKnowledgeStore(
+        [doc_semantic, doc_keyword], embedding_provider=StubEmbeddingProvider(), rerank_provider=None
+    )
 
     lessons = store.retrieve(
         StrategyRetrievalQuery(
@@ -307,7 +352,9 @@ def test_acceptance_audit_quantifies_pass_rates() -> None:
 
 def test_dream_job_generates_valid_candidate_patch_and_version() -> None:
     report = _approved_report()
-    manager = VersionManager([RoleStrategyCard(role="Seer", version="seer_v1", goal="Convert information into village wins.")])
+    manager = VersionManager(
+        [RoleStrategyCard(role="Seer", version="seer_v1", goal="Convert information into village wins.")]
+    )
     dream = DreamJob(version_manager=manager)
 
     result = dream.run([report])
@@ -316,7 +363,11 @@ def test_dream_job_generates_valid_candidate_patch_and_version() -> None:
     assert all(patch.status == "applied" for patch in result.candidate_patches)
     candidate_versions = [version for version in manager.history() if version.status == "candidate"]
     assert candidate_versions
-    assert any("public" in " ".join(version.card.speech_policy + version.card.skill_policy).lower() for version in candidate_versions)
+    assert any(
+        "public" in " ".join(version.card.speech_policy + version.card.skill_policy).lower()
+        or "公共" in " ".join(version.card.speech_policy + version.card.skill_policy)
+        for version in candidate_versions
+    )
 
 
 def test_patch_validator_rejects_rule_visibility_and_absolute_changes() -> None:
@@ -357,7 +408,11 @@ def test_version_manager_promotes_and_rolls_back_candidate() -> None:
         source_report_ids=["g1"],
         source_knowledge_doc_ids=["doc-1"],
         source_evidence_ids=[],
-        operations=[PatchOperation("add", "speech_policy", "Release confirmed wolf checks when vote pressure matters.", "approved evidence")],
+        operations=[
+            PatchOperation(
+                "add", "speech_policy", "Release confirmed wolf checks when vote pressure matters.", "approved evidence"
+            )
+        ],
         expected_effects=[],
     )
     candidate = manager.create_candidate(patch)
@@ -392,7 +447,9 @@ def test_evolution_pipeline_exports_summary(tmp_path) -> None:
     candidate = [_metrics("seer_v2_candidate", 72.0, 0.70), _metrics("seer_v2_candidate", 74.0, 0.72)]
     path = tmp_path / "evolution_summary.json"
 
-    summary = EvolutionPipeline().run([report], baseline_metrics=baseline, candidate_metrics=candidate, summary_path=path)
+    summary = EvolutionPipeline().run(
+        [report], baseline_metrics=baseline, candidate_metrics=candidate, summary_path=path
+    )
     payload = export_evolution_summary(summary, tmp_path / "summary-copy.json")
 
     assert summary.approved_report_count == 1
@@ -404,14 +461,20 @@ def test_evolution_pipeline_exports_summary(tmp_path) -> None:
 
 
 def test_strategy_context_renderer_outputs_prompt_block() -> None:
-    lesson = StrategyContextRenderer().render_lessons([
-        type("Lesson", (), {
-            "recommendation": "Release checks into public pressure.",
-            "trigger": "When vote pressure is split.",
-            "rationale": "Approved report evidence.",
-            "doc_id": "doc-1",
-        })()
-    ])
+    lesson = StrategyContextRenderer().render_lessons(
+        [
+            type(
+                "Lesson",
+                (),
+                {
+                    "recommendation": "Release checks into public pressure.",
+                    "trigger": "When vote pressure is split.",
+                    "rationale": "Approved report evidence.",
+                    "doc_id": "doc-1",
+                },
+            )()
+        ]
+    )
     assert "Retrieved Lessons" in lesson
     assert "doc-1" in lesson
 
@@ -484,10 +547,8 @@ def test_strategy_knowledge_docs_carry_source_event_ids_end_to_end() -> None:
     )
 
 
-def test_tournament_run_seed_responds_to_strategy_version() -> None:
-    """BC promote gap: WerewolfGame._run_seed default path must consume strategy_version
-    so candidate vs baseline produce different metrics, otherwise AcceptancePolicy
-    always rejects (delta=0 fails the >=3% improvement gate)."""
+def test_tournament_run_seed_injects_strategy_patch_into_llm_game() -> None:
+    """Candidate patches must enter the LLM game path without post-hoc score edits."""
     runner = TournamentRunner()
     baseline_metric = runner._run_seed(seed=7, strategy_version="seer_v1", target_role="Seer")
     candidate_patch_ops = [
@@ -506,7 +567,10 @@ def test_tournament_run_seed_responds_to_strategy_version() -> None:
     )
     baseline_total = sum(score.adjusted_final_score for score in baseline_metric.player_scores)
     candidate_total = sum(score.adjusted_final_score for score in candidate_metric.player_scores)
-    assert baseline_total != candidate_total, (
-        "candidate produced identical aggregate score as baseline for the same seed — "
-        "strategy_version is not affecting agent behavior, so A/B tournament cannot promote"
-    )
+    assert baseline_metric.metadata["runner_mode"] == "llm_engine"
+    assert candidate_metric.metadata["runner_mode"] == "llm_engine"
+    assert candidate_metric.metadata["strategy_patch_applied"] is True
+    assert candidate_metric.metadata["strategy_bias_sections"] == ["vote_policy"]
+    assert "strategy_patch_perturbation" not in candidate_metric.metadata
+    assert isinstance(baseline_total, (int, float))
+    assert isinstance(candidate_total, (int, float))

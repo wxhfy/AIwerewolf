@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from backend.agents.base import Agent
-from backend.engine.models import ActionType, Decision
+from backend.engine.models import ActionType
+from backend.engine.models import Decision
 from backend.engine.visibility import PlayerView
 
 

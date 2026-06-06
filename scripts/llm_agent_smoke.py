@@ -8,7 +8,6 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from backend.agents.llm_agent import LLMAgent
-from backend.agents.heuristic import HeuristicAgent
 from backend.engine.game import WerewolfGame
 from backend.engine.rules import build_players
 from backend.engine.visibility import Visibility
@@ -16,11 +15,8 @@ from backend.engine.visibility import Visibility
 
 def main() -> int:
     players = build_players(seed=7)
-    agent = LLMAgent(players[0].id, seed=7)
-    agents = {
-        player.id: (agent if player.id == players[0].id else HeuristicAgent(player.id, seed=7 + player.seat))
-        for player in players
-    }
+    agents = {player.id: LLMAgent(player.id, seed=7 + player.seat, provider="fake") for player in players}
+    agent = agents[players[0].id]
     game = WerewolfGame(players=players, agents=agents, seed=7)
     game.initialize()
     view = Visibility().for_player(game.state, players[0].id)

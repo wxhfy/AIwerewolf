@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from dataclasses import field
 from enum import Enum
 from time import time
 from typing import Any
@@ -48,6 +49,7 @@ class Phase(str, Enum):
     DAY_PK_SPEECH = "DAY_PK_SPEECH"
     DAY_LAST_WORDS = "DAY_LAST_WORDS"
     DAY_SPEECH = "DAY_SPEECH"
+    DAY_SHERIFF_CLOSING = "DAY_SHERIFF_CLOSING"
     DAY_VOTE = "DAY_VOTE"
     DAY_RESOLVE = "DAY_RESOLVE"
     BADGE_TRANSFER = "BADGE_TRANSFER"
@@ -110,7 +112,9 @@ class Player:
             "persona": {
                 "style_label": self.persona.get("style_label"),
                 "mbti": self.persona.get("mbti"),
-            } if self.persona else None,
+            }
+            if self.persona
+            else None,
         }
 
     def private_dict(self) -> dict[str, Any]:
@@ -148,6 +152,17 @@ class DecisionAudit:
     prompt_tokens: int | None
     completion_tokens: int | None
     created_at: float
+    # v2 DecisionTrace fields (populated when LLM decisions are recorded)
+    visible_facts: list[str] = field(default_factory=list)
+    candidate_actions: list[dict[str, Any]] = field(default_factory=list)
+    confidence: float | None = None
+    prompt_hash: str | None = None
+    cost_usd: float | None = None
+    model_name: str | None = None
+    provider: str | None = None
+    fallback_used: bool = False
+    fallback_reason: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -199,7 +214,7 @@ class GameEvent:
         visibility: str,
         payload: dict[str, Any],
         visible_to: list[str] | None = None,
-    ) -> "GameEvent":
+    ) -> GameEvent:
         return cls(
             id=str(uuid4()),
             ts=time(),
