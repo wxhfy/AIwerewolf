@@ -436,10 +436,14 @@ class WerewolfGame:
         return self.play_until_blocked()
 
     def _begin_night(self) -> None:
-        # Resume safety: use _phase_done which checks current day.
-        # On first call (day=0): phase_done[0] empty → proceed → day→1 → mark day 1.
-        # On resume (day=1): phase_done[1] has NIGHT_START → skip (already started).
-        if self._phase_done(Phase.NIGHT_START):
+        # Resume guard: skip re-init ONLY when resuming mid-night (phase is still
+        # a NIGHT_* step from a restored snapshot). When the previous day just
+        # ended (phase == DAY_RESOLVE / HUNTER_SHOOT / BADGE_TRANSFER), we MUST
+        # advance to the next night — phase_done[current_day] alone can't tell
+        # these apart because both have NIGHT_START marked done for the current
+        # day. Without the phase check, day stays at 1 and play_until_blocked
+        # spins forever on DAY_RESOLVE → run(NIGHT_START) → skip.
+        if self._phase_done(Phase.NIGHT_START) and self.state.phase.value.startswith("NIGHT"):
             return
         self.state.day = self.state.day + 1
         self.state.votes = {}
@@ -878,9 +882,9 @@ class WerewolfGame:
             target = self.state.player(death["player_id"])
             if target.role == Role.HUNTER and self.state.abilities.hunter_can_shoot:
                 self.pending_hunter_id = target.id
-                self.phase_manager.run(Phase.HUNTER_SHOOT, self)
+                self._hunter_shoot_from_pending()
         if self.pending_badge_transfer_from_id and self.state.winner is None:
-            self.phase_manager.run(Phase.BADGE_TRANSFER, self)
+            self._badge_transfer_from_pending()
             self._set_phase(Phase.NIGHT_RESOLVE)  # restore: while-loop routes NIGHT_RESOLVE → DAY
         # If hunter shot happened, restore phase so the main while-loop routes
         # NIGHT_RESOLVE → DAY_START instead of HUNTER_SHOOT → NIGHT_START.
@@ -1076,9 +1080,9 @@ class WerewolfGame:
         self.state.pk_source = None
         if target.role == Role.HUNTER and self.state.abilities.hunter_can_shoot:
             self.pending_hunter_id = target.id
-            self.phase_manager.run(Phase.HUNTER_SHOOT, self)
+            self._hunter_shoot_from_pending()
         if self.pending_badge_transfer_from_id and self.state.winner is None:
-            self.phase_manager.run(Phase.BADGE_TRANSFER, self)
+            self._badge_transfer_from_pending()
         self._refresh_day_summary()
         # Restore phase so the play_until_blocked dispatcher routes us to night.
         self._set_phase(Phase.DAY_RESOLVE)
@@ -1202,9 +1206,9 @@ class WerewolfGame:
         )
         if target.role == Role.HUNTER and self.state.abilities.hunter_can_shoot:
             self.pending_hunter_id = target.id
-            self.phase_manager.run(Phase.HUNTER_SHOOT, self)
+            self._hunter_shoot_from_pending()
         if self.pending_badge_transfer_from_id and self.state.winner is None:
-            self.phase_manager.run(Phase.BADGE_TRANSFER, self)
+            self._badge_transfer_from_pending()
         self.interrupt_phase_cycle = True
         self._refresh_day_summary()
 

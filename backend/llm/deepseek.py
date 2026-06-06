@@ -43,8 +43,8 @@ logger = logging.getLogger(__name__)
 #  write=60s    — generous upload window for large prompts
 #  pool=5s      — connection pool acquisition timeout
 
-DEFAULT_TIMEOUT = httpx.Timeout(connect=5.0, read=600.0, write=60.0, pool=5.0)
-DEFAULT_MAX_RETRIES = 5
+DEFAULT_TIMEOUT = httpx.Timeout(connect=5.0, read=120.0, write=60.0, pool=5.0)
+DEFAULT_MAX_RETRIES = 2
 
 # HTTP status codes worth retrying (matches Anthropic SDK policy).
 # 408 Request Timeout, 409 Conflict, 429 Rate Limit — all transient.

@@ -49,8 +49,8 @@ def default_phase_handlers() -> dict[Phase, PhaseHandler]:
             AtomicPhase(Phase.NIGHT_START, "_begin_night"),
             AtomicPhase(Phase.NIGHT_GUARD_ACTION, "_guard_phase"),
             AtomicPhase(Phase.NIGHT_WOLF_ACTION, "_wolf_phase"),
-            AtomicPhase(Phase.NIGHT_SEER_ACTION, "_seer_phase"),
             AtomicPhase(Phase.NIGHT_WITCH_ACTION, "_witch_phase"),
+            AtomicPhase(Phase.NIGHT_SEER_ACTION, "_seer_phase"),
             AtomicPhase(Phase.NIGHT_RESOLVE, "_night_resolve"),
         ),
     )
