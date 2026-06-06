@@ -341,12 +341,14 @@ class AgentLoop:
                 self._inject_tool_trace(decision, tool_trace, obs)
                 return decision
 
-        # Last-resort: try to use the last response as the decision content
+        # Last-resort: use the most recent assistant response as the decision.
+        # LLM responses may be stored as HumanMessage during format-correction
+        # feedback, so we check for any non-system message with content.
         last_text = ""
         for msg in reversed(context):
             if hasattr(msg, "content") and msg.content:
                 c = msg.content.strip()
-                if len(c) > 10 and hasattr(msg, "type") and msg.type == "ai":
+                if len(c) > 10 and getattr(msg, "type", "") != "system":
                     last_text = c
                     break
         if last_text:
@@ -361,10 +363,13 @@ class AgentLoop:
                     return {"target": data.get("target", ""), "reasoning": data.get("reasoning", "")}
                 except json.JSONDecodeError:
                     pass
-            # Use raw text as speech content
+            # Use raw text as decision content
             if self._action_type == "speech":
                 logger.warning("Using raw response as speech (no DECISION format found)")
                 return {"speech": last_text[:500], "reasoning": "fallback from raw response"}
+            # For vote/night: try to extract a player name as target
+            logger.warning(f"Using raw response for {self._action_type} (no DECISION format found)")
+            return {"target": "", "reasoning": f"fallback: {last_text[:100]}"}
 
         raise RuntimeError(
             f"AgentLoop failed to produce a DECISION after {MAX_ITERATIONS} iterations for action={self._action_type}"
