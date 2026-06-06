@@ -112,13 +112,18 @@ export function EventItem({ event, index = 0, players = [] }: EventItemProps) {
       };
       const rawReason = (p.reason as string) || "";
       const displayReason = reasonMap[rawReason] || rawReason;
+      const pName = (p.player_name || p.target_name || "?") as string;
+      const player = (players || []).find(pl => pl.id === (p.player_id as string));
+      const seatLabel = player != null ? `${player.seat}号 ` : "";
+      const reasonText = displayReason
+        ? (language === "zh" ? `因${displayReason}出局` : `died by ${displayReason}`)
+        : (language === "zh" ? "出局" : "died");
       return (
-        <span className="text-sm text-danger font-medium">
-          {p.player_name || p.target_name || "?"}
-          {language === "zh" ? " 因" : " died by "}
-          {displayReason}
-          {language === "zh" ? " 出局" : ""}
-        </span>
+        <div className="flex justify-center py-2">
+          <span className="text-xs text-danger/60 font-medium tracking-wide">
+            ◆ {seatLabel}{pName} {reasonText}
+          </span>
+        </div>
       );
     }
 
@@ -166,6 +171,10 @@ export function EventItem({ event, index = 0, players = [] }: EventItemProps) {
     );
   }
 
+  const hasStrip = ![
+    EventType.PLAYER_DIED, EventType.HUNTER_SHOT, EventType.WHITE_WOLF_KING_BOOM,
+  ].includes(event.type);
+
   return (
     <div
       className={cn(
@@ -174,8 +183,8 @@ export function EventItem({ event, index = 0, players = [] }: EventItemProps) {
       )}
       style={{ animationDelay: `${index * 50}ms` }}
     >
-      {/* Color strip */}
-      <div className={cn("w-1 rounded-full flex-shrink-0", strip)} />
+      {/* Color strip — hidden for death events (use ◆ prefix instead) */}
+      {hasStrip && <div className={cn("w-1 rounded-full flex-shrink-0", strip)} />}
 
       {/* Content */}
       <div className="flex-1 min-w-0">{content()}</div>

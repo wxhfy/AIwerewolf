@@ -12,7 +12,7 @@ interface AIStatusBarProps {
 }
 
 export function AIStatusBar({ gameState, derived, language }: AIStatusBarProps) {
-  const { statusTitle, actionText } = deriveStatusText(gameState, language);
+  const { statusTitle, actionText } = deriveStatusText(gameState, language, derived.speakerState);
 
   return (
     <div className="flex items-center gap-3 border-b border-border bg-cardBackground px-5 py-2.5 text-base font-medium">

@@ -540,5 +540,5 @@ export function tPhase(phase: string, lang: Language = Language.ZH): string {
  */
 export function tPhaseStatus(phase: string, lang: Language = Language.ZH): string {
   const statuses: Record<string, string> = (translations[lang] as any).phaseStatus || {};
-  return statuses[phase] || phase;
+  return statuses[phase] || "";
 }

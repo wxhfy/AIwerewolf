@@ -118,33 +118,37 @@ export function useGameDerivedState(gameState: GameState | null, humanSeat: numb
     return { roles, pendingActorId, roleMatchedIds };
   }, [gameState?.phase, gameState?.players, gameState?.pending_input?.player_id]);
 
-  // 统一发言阶段状态：thinking → speaking → finished（仅对发言类阶段生效）
+  // 统一发言阶段状态：thinking → speaking → finished
+  // 覆盖：SPEECH 阶段 + VOTE 阶段（警长归票）+ PK 阶段
   const speakerState = useMemo(() => {
     const phase = gameState?.phase || "";
-    // 仅发言类阶段启用状态
-    if (!phase.includes("SPEECH")) return { state: "finished" as const, speakerId: null };
-    
-    const pendingId = gameState?.pending_input?.player_id;
-    if (!pendingId) return { state: "finished" as const, speakerId: null };
-    
-    // 检查是否已经有该玩家的CHAT_MESSAGE事件
-    const hasChatEvent = gameState?.events?.some(e => 
-      e.type === "CHAT_MESSAGE" && e.payload.actor_id === pendingId
+    const isSpeechLike = phase.includes("SPEECH") || phase.includes("VOTE") || phase.includes("PK") || phase.includes("CLOSING");
+    if (!isSpeechLike) return { state: "finished" as const, speakerId: null };
+
+    // ── 1. 发言中：找 events 里当前阶段最新一条未完成的 CHAT_MESSAGE ──
+    // 不依赖 current_speaker_id，因为后端可能在 CHAT_MESSAGE 到达的同一帧
+    // 就把 current_speaker_id 切到了下一个人，导致说话者状态丢失
+    const lastUncompleted = [...(gameState?.events || [])].reverse().find(e =>
+      e.type === "CHAT_MESSAGE" && e.phase === phase && !completedIds?.has(e.id)
     );
-    
-    // 检查事件是否已经完成
-    const isCompleted = completedIds ? gameState?.events?.some(e => 
-      e.type === "CHAT_MESSAGE" && e.payload.actor_id === pendingId && completedIds.has(e.id)
-    ) : false;
-    
-    if (!hasChatEvent) {
-      return { state: "thinking" as const, speakerId: pendingId };
-    } else if (!isCompleted) {
-      return { state: "speaking" as const, speakerId: pendingId };
-    } else {
-      return { state: "finished" as const, speakerId: pendingId };
+    if (lastUncompleted) {
+      const actorId = (lastUncompleted.payload as any)?.actor_id as string || "";
+      return { state: "speaking" as const, speakerId: actorId };
     }
-  }, [gameState?.phase, gameState?.pending_input?.player_id, gameState?.events, completedIds]);
+
+    // ── 2. 思考中：current_speaker_id 指向的玩家还没有 CHAT_MESSAGE ──
+    const pendingId = gameState?.pending_input?.player_id;
+    const speakerId = pendingId || gameState?.current_speaker_id || null;
+    if (speakerId) {
+      const hasChat = gameState?.events?.some(e =>
+        e.type === "CHAT_MESSAGE" && e.payload.actor_id === speakerId && e.phase === phase
+      );
+      if (!hasChat) return { state: "thinking" as const, speakerId };
+    }
+
+    // ── 3. 已完成或无当前发言者 ──
+    return { state: "finished" as const, speakerId: null };
+  }, [gameState?.phase, gameState?.pending_input?.player_id, gameState?.events, completedIds, completedTick]);
 
   return {
     dayBlocks,

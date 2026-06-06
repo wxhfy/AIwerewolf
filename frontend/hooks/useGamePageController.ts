@@ -115,6 +115,22 @@ export function useGamePageController(roomId: string) {
     }
   }, [phase.isBlinking, phase.isTransitioning]);
 
+  // 队列回放：过渡期间缓冲的快照按序逐个 apply
+  useEffect(() => {
+    const queue = phase.flushQueueRef.current;
+    if (queue.length > 0 && !phase.isBlinking && !phase.isTransitioning) {
+      phase.flushQueueRef.current = [];
+      let i = 0;
+      const replay = () => {
+        if (i >= queue.length) return;
+        setGameState(queue[i]);
+        i++;
+        if (i < queue.length) setTimeout(replay, 50);
+      };
+      replay();
+    }
+  }, [phase.isBlinking, phase.isTransitioning]);
+
   useEffect(() => {
     latestGameStateRef.current = gameState;
   }, [gameState]);

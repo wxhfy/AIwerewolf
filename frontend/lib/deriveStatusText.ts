@@ -13,6 +13,7 @@ export interface StatusText {
 export function deriveStatusText(
   gameState: GameState | null,
   language: Language,
+  speakerState?: { state: 'thinking' | 'speaking' | 'finished'; speakerId: string | null },
 ): StatusText {
   const pending = gameState?.pending_input;
   const phase = gameState?.phase || "";
@@ -64,6 +65,22 @@ export function deriveStatusText(
     const isPkSpeech = phase === "DAY_PK_SPEECH";
 
     if (isVotePhase && !isPkSpeech) {
+      // 投票阶段可能先有警长归票发言：优先用 speakerState
+      if (speakerState && speakerState.state === "speaking" && speakerState.speakerId) {
+        const speaker = players.find(p => p.id === speakerState.speakerId && p.alive);
+        if (speaker) {
+          const speakingText = format(t("playerSpeakingStatus" as any, language), { seat: String(speaker.seat), name: speaker.name });
+          return { statusTitle: speakingText, actionText: "" };
+        }
+      }
+      if (speakerState && speakerState.state === "thinking" && speakerState.speakerId) {
+        const speaker = players.find(p => p.id === speakerState.speakerId && p.alive);
+        if (speaker) {
+          const thinkingText = format(t("playerThinkingStatus" as any, language), { seat: String(speaker.seat), name: speaker.name });
+          return { statusTitle: thinkingText, actionText: "" };
+        }
+      }
+
       const voters = new Set<string>();
       for (const e of (gameState?.events || [])) {
         if (e.type === "VOTE_CAST") {
@@ -92,10 +109,22 @@ export function deriveStatusText(
     }
 
     if (isPkSpeech) {
+      // 发言优先：speakerState 判断 thinking/speaking
+      if (speakerState && speakerState.state === "speaking" && speakerState.speakerId) {
+        const speaker = players.find(p => p.id === speakerState.speakerId && p.alive);
+        if (speaker) {
+          const speakingText = format(t("playerSpeakingStatus" as any, language), { seat: String(speaker.seat), name: speaker.name });
+          return { statusTitle: speakingText, actionText: "" };
+        }
+      }
       const speakerId = gameState?.current_speaker_id;
       if (speakerId) {
         const speaker = players.find(p => p.id === speakerId && p.alive);
         if (speaker) {
+          if (speakerState && speakerState.speakerId === speakerId && speakerState.state === "thinking") {
+            const thinkingText = format(t("playerThinkingStatus" as any, language), { seat: String(speaker.seat), name: speaker.name });
+            return { statusTitle: thinkingText, actionText: "" };
+          }
           const text = format(t("playerSpeakingStatus" as any, language), { seat: String(speaker.seat), name: speaker.name });
           return { statusTitle: text, actionText: "" };
         }
@@ -103,12 +132,27 @@ export function deriveStatusText(
       return { statusTitle: language === Language.ZH ? "PK 发言中" : "PK Speech", actionText: "" };
     }
 
+    // 发言中的玩家优先（可能 current_speaker_id 已切到下一个思考者）
+    if (speakerState && speakerState.state === "speaking" && speakerState.speakerId) {
+      const speaker = players.find(p => p.id === speakerState.speakerId && p.alive);
+      if (speaker) {
+        const speakingText = format(t("playerSpeakingStatus" as any, language), { seat: String(speaker.seat), name: speaker.name });
+        return { statusTitle: speakingText, actionText: "" };
+      }
+    }
+
     const speakerId = gameState?.current_speaker_id;
     if (speakerId) {
       const speaker = players.find(p => p.id === speakerId && p.alive);
       if (speaker) {
-        const speakingText = format(t("playerSpeakingStatus" as any, language), { seat: String(speaker.seat), name: speaker.name });
-        return { statusTitle: speakingText, actionText: "" };
+        if (speakerState && speakerState.speakerId === speakerId && speakerState.state === "thinking") {
+          const thinkingText = format(t("playerThinkingStatus" as any, language), { seat: String(speaker.seat), name: speaker.name });
+          return { statusTitle: thinkingText, actionText: "" };
+        }
+        if (!speakerState || speakerState.state === "finished") {
+          const speakingText = format(t("playerSpeakingStatus" as any, language), { seat: String(speaker.seat), name: speaker.name });
+          return { statusTitle: speakingText, actionText: "" };
+        }
       }
     }
     const statusLabel = tPhaseStatus(phase, language);
