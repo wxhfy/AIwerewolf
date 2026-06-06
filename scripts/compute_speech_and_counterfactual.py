@@ -17,17 +17,21 @@ Run: python scripts/compute_speech_and_counterfactual.py
 
 from __future__ import annotations
 
-import ast, json, statistics, sys
-from collections import Counter, defaultdict
+import ast
+import json
+import statistics
+import sys
+from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from backend.db.database import SessionLocal, init_db
+
+from backend.db.database import SessionLocal
+from backend.db.database import init_db
 from backend.db.models import PublishedReview
-from sqlalchemy import text
 
 
 def load_replay_bundles() -> list[dict]:
@@ -36,11 +40,15 @@ def load_replay_bundles() -> list[dict]:
     db = SessionLocal()
     clean_ids = set(json.loads(Path("/tmp/clean_llm_game_ids.json").read_text()))
     bundles = []
-    for review in db.query(PublishedReview).filter(
-        PublishedReview.game_id.in_(clean_ids),
-        PublishedReview.publish_allowed == True,
-        PublishedReview.replay_bundle != None,
-    ).all():
+    for review in (
+        db.query(PublishedReview)
+        .filter(
+            PublishedReview.game_id.in_(clean_ids),
+            PublishedReview.publish_allowed,
+            PublishedReview.replay_bundle is not None,
+        )
+        .all()
+    ):
         bundles.append(review.replay_bundle)
     db.close()
     return bundles
@@ -65,6 +73,7 @@ def parse_field(val: Any) -> Any:
 
 # ---- SpeechScore ----
 
+
 def compute_speech_scores(bundles: list[dict]) -> list[dict]:
     """Compute SpeechScore components from replay bundle speech_acts and events."""
     all_scores = []
@@ -76,8 +85,8 @@ def compute_speech_scores(bundles: list[dict]) -> list[dict]:
         decisions = bundle.get("decisions", [])
         votes = bundle.get("votes", [])
 
-        player_names = {p["id"]: p.get("name", p["id"]) for p in players}
-        player_roles = {p["id"]: p.get("role", "") for p in players}
+        {p["id"]: p.get("name", p["id"]) for p in players}
+        {p["id"]: p.get("role", "") for p in players}
 
         # Build vote history per player
         player_votes: dict[str, list[dict]] = defaultdict(list)
@@ -166,11 +175,31 @@ def compute_speech_scores(bundles: list[dict]) -> list[dict]:
 
             # ---- information_safety: no private info leaks ----
             info_safety = 15  # Start perfect
-            leak_keywords = ["我被刀了", "我查了", "我毒了", "我守了", "我是女巫", "我是预言家", "我是守卫", "我是猎人",
-                            "昨晚", "刀口", "银水", "解药", "毒药"]
+            leak_keywords = [
+                "我被刀了",
+                "我查了",
+                "我毒了",
+                "我守了",
+                "我是女巫",
+                "我是预言家",
+                "我是守卫",
+                "我是猎人",
+                "昨晚",
+                "刀口",
+                "银水",
+                "解药",
+                "毒药",
+            ]
             for kw in leak_keywords:
                 if kw in speech_text:
-                    if role in ["Witch", "Guard", "Hunter", "Seer"] and ("我是" + {"Seer": "预言家", "Witch": "女巫", "Guard": "守卫", "Hunter": "猎人"}.get(role, "")) in speech_text:
+                    if (
+                        role in ["Witch", "Guard", "Hunter", "Seer"]
+                        and (
+                            "我是"
+                            + {"Seer": "预言家", "Witch": "女巫", "Guard": "守卫", "Hunter": "猎人"}.get(role, "")
+                        )
+                        in speech_text
+                    ):
                         pass  # Explicit claim of own role is strategic, not a leak
                     elif kw == "昨晚" and role in ["Seer", "Witch", "Guard"]:
                         info_safety = max(0, info_safety - 8)  # Referencing night info
@@ -179,25 +208,28 @@ def compute_speech_scores(bundles: list[dict]) -> list[dict]:
 
             speech_quality = groundedness + stance_clarity + consistency + strategic_value + info_safety
 
-            all_scores.append({
-                "game_id": game_id,
-                "player_id": player_id,
-                "role": role,
-                "day": day,
-                "phase": phase,
-                "groundedness": min(25, max(0, groundedness)),
-                "stance_clarity": min(20, max(0, stance_clarity)),
-                "consistency": min(20, max(0, consistency)),
-                "strategic_value": min(20, max(0, strategic_value)),
-                "information_safety": min(15, max(0, info_safety)),
-                "speech_quality": min(100, max(0, speech_quality)),
-                "speech_text_preview": speech_text[:100],
-            })
+            all_scores.append(
+                {
+                    "game_id": game_id,
+                    "player_id": player_id,
+                    "role": role,
+                    "day": day,
+                    "phase": phase,
+                    "groundedness": min(25, max(0, groundedness)),
+                    "stance_clarity": min(20, max(0, stance_clarity)),
+                    "consistency": min(20, max(0, consistency)),
+                    "strategic_value": min(20, max(0, strategic_value)),
+                    "information_safety": min(15, max(0, info_safety)),
+                    "speech_quality": min(100, max(0, speech_quality)),
+                    "speech_text_preview": speech_text[:100],
+                }
+            )
 
     return all_scores
 
 
 # ---- CounterfactualImpact ----
+
 
 def compute_counterfactual_impact(bundles: list[dict]) -> list[dict]:
     """Compute vote_flip and skill_swap counterfactual impacts."""
@@ -207,8 +239,8 @@ def compute_counterfactual_impact(bundles: list[dict]) -> list[dict]:
         game_id = bundle["game_id"]
         players = bundle.get("players", [])
         events = bundle.get("events", [])
-        votes = bundle.get("votes", [])
-        deaths = bundle.get("deaths", [])
+        bundle.get("votes", [])
+        bundle.get("deaths", [])
         decisions = bundle.get("decisions", [])
 
         player_roles = {p["id"]: p.get("role", "") for p in players}
@@ -235,7 +267,7 @@ def compute_counterfactual_impact(bundles: list[dict]) -> list[dict]:
                 continue
 
             alt_target = alt_targets[0]
-            alt_role = player_roles.get(alt_target, "")
+            player_roles.get(alt_target, "")
             alt_alignment = player_alignments.get(alt_target, "")
 
             # Impact: if vote flipped to a wolf target → positive impact
@@ -246,19 +278,21 @@ def compute_counterfactual_impact(bundles: list[dict]) -> list[dict]:
             elif alt_alignment == "village" and orig_target_alignment == "wolf":
                 impact_value = -0.5  # Bad flip
 
-            impacts.append({
-                "game_id": game_id,
-                "type": "vote_flip",
-                "player_id": voter_id,
-                "role": voter_role,
-                "day": day,
-                "original_target": original_target,
-                "alternative_target": alt_target,
-                "original_alignment": orig_target_alignment,
-                "alternative_alignment": alt_alignment,
-                "impact_value": impact_value,
-                "confidence": 0.6,
-            })
+            impacts.append(
+                {
+                    "game_id": game_id,
+                    "type": "vote_flip",
+                    "player_id": voter_id,
+                    "role": voter_role,
+                    "day": day,
+                    "original_target": original_target,
+                    "alternative_target": alt_target,
+                    "original_alignment": orig_target_alignment,
+                    "alternative_alignment": alt_alignment,
+                    "impact_value": impact_value,
+                    "confidence": 0.6,
+                }
+            )
 
         # ---- Skill swap counterfactuals ----
         # Witch poison: what if they poisoned a different target?
@@ -298,20 +332,22 @@ def compute_counterfactual_impact(bundles: list[dict]) -> list[dict]:
                     elif alt_alignment == "village" and orig_target_alignment == "wolf":
                         impact_value = -0.6  # Actually poisoned wolf, good
 
-                impacts.append({
-                    "game_id": game_id,
-                    "type": "skill_swap",
-                    "subtype": f"witch_{action_type}",
-                    "player_id": player_id,
-                    "role": role,
-                    "day": day,
-                    "original_target": target,
-                    "alternative_target": alt["id"],
-                    "original_alignment": orig_target_alignment,
-                    "alternative_alignment": alt_alignment,
-                    "impact_value": impact_value,
-                    "confidence": 0.5,
-                })
+                impacts.append(
+                    {
+                        "game_id": game_id,
+                        "type": "skill_swap",
+                        "subtype": f"witch_{action_type}",
+                        "player_id": player_id,
+                        "role": role,
+                        "day": day,
+                        "original_target": target,
+                        "alternative_target": alt["id"],
+                        "original_alignment": orig_target_alignment,
+                        "alternative_alignment": alt_alignment,
+                        "impact_value": impact_value,
+                        "confidence": 0.5,
+                    }
+                )
 
     return impacts
 
@@ -341,7 +377,9 @@ def main() -> int:
         avg_strategic = statistics.mean(s["strategic_value"] for s in scores)
         avg_safety = statistics.mean(s["information_safety"] for s in scores)
         player_speech_agg[pid] = {
-            "player_id": pid, "role": role, "n_speeches": len(scores),
+            "player_id": pid,
+            "role": role,
+            "n_speeches": len(scores),
             "avg_speech_quality": round(avg_quality, 1),
             "avg_groundedness": round(avg_groundedness, 1),
             "avg_stance_clarity": round(avg_stance, 1),
@@ -377,11 +415,13 @@ def main() -> int:
         "| Component | Mean | Description |",
         "|-----------|------|-------------|",
     ]
-    for comp, desc in [("avg_groundedness", "Based on real public events"),
-                        ("avg_stance_clarity", "Clear accusation/defense/vote guidance"),
-                        ("avg_consistency", "Speech matches later vote"),
-                        ("avg_strategic_value", "Advances camp objective"),
-                        ("avg_information_safety", "No private info leaks")]:
+    for comp, desc in [
+        ("avg_groundedness", "Based on real public events"),
+        ("avg_stance_clarity", "Clear accusation/defense/vote guidance"),
+        ("avg_consistency", "Speech matches later vote"),
+        ("avg_strategic_value", "Advances camp objective"),
+        ("avg_information_safety", "No private info leaks"),
+    ]:
         vals = [p[comp] for p in player_speech_agg.values()]
         lines.append(f"| {desc} | {statistics.mean(vals):.1f} | {comp} |")
 
@@ -397,11 +437,13 @@ def main() -> int:
     for role in ["Seer", "Witch", "Guard", "Hunter", "Werewolf", "Villager"]:
         items = role_speech.get(role, [])
         if items:
-            lines.append(f"| {role} | {len(items)} | "
-                        f"{statistics.mean(i['avg_speech_quality'] for i in items):.1f} | "
-                        f"{statistics.mean(i['avg_groundedness'] for i in items):.1f} | "
-                        f"{statistics.mean(i['avg_stance_clarity'] for i in items):.1f} | "
-                        f"{statistics.mean(i['avg_consistency'] for i in items):.1f} |")
+            lines.append(
+                f"| {role} | {len(items)} | "
+                f"{statistics.mean(i['avg_speech_quality'] for i in items):.1f} | "
+                f"{statistics.mean(i['avg_groundedness'] for i in items):.1f} | "
+                f"{statistics.mean(i['avg_stance_clarity'] for i in items):.1f} | "
+                f"{statistics.mean(i['avg_consistency'] for i in items):.1f} |"
+            )
 
     lines += [
         "",
@@ -411,7 +453,7 @@ def main() -> int:
         "- Total speech_quality range: 0-100",
     ]
     (ROOT / "data/health/speech_score_report.md").write_text("\n".join(lines))
-    print(f"  → speech_score_report.md")
+    print("  → speech_score_report.md")
 
     # CounterfactualImpact report
     lines = [
@@ -445,16 +487,16 @@ def main() -> int:
         "- Confidence is low (0.5-0.6) for MVP; needs better causal modeling",
     ]
     (ROOT / "data/health/counterfactual_impact_report.md").write_text("\n".join(lines))
-    print(f"  → counterfactual_impact_report.md")
+    print("  → counterfactual_impact_report.md")
 
     # Save data
     with open(ROOT / "data/health/speech_scores.json", "w", encoding="utf-8") as f:
         json.dump(list(player_speech_agg.values()), f, ensure_ascii=False, indent=2)
-    print(f"  → speech_scores.json")
+    print("  → speech_scores.json")
 
     with open(ROOT / "data/health/counterfactual_impacts.json", "w", encoding="utf-8") as f:
         json.dump(impacts, f, ensure_ascii=False, indent=2)
-    print(f"  → counterfactual_impacts.json")
+    print("  → counterfactual_impacts.json")
 
     return 0
 

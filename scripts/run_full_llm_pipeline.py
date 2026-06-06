@@ -29,8 +29,8 @@ import json
 import sys
 import time
 import traceback
-from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import datetime
+from datetime import timezone
 from pathlib import Path
 from typing import Any
 
@@ -39,21 +39,18 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from backend.agents.factory import create_agents
-from backend.agents.llm_agent import LLMAgent, LLMFallbackForbidden
+from backend.agents.llm_agent import LLMAgent
+from backend.agents.llm_agent import LLMFallbackForbidden
 from backend.engine.game import WerewolfGame
-from backend.engine.models import EventType
 from backend.engine.rules import build_players
-from backend.eval.evolution import (
-    DreamJob,
-    StrategyKnowledgeDocExtractor,
-    StrategyKnowledgeStore,
-    TournamentRunner,
-    AcceptancePolicy,
-    PatchOperation,
-)
-from backend.eval.review import MetricsCalculator, GameMetrics
+from backend.eval.evolution import AcceptancePolicy
+from backend.eval.evolution import DreamJob
+from backend.eval.evolution import PatchOperation
+from backend.eval.evolution import StrategyKnowledgeStore
+from backend.eval.evolution import TournamentRunner
+from backend.eval.review import GameMetrics
+from backend.eval.review import MetricsCalculator
 from backend.eval.track_b import generate_published_review_document
-
 
 HEALTH_DIR = ROOT / "data" / "health"
 HEALTH_DIR.mkdir(parents=True, exist_ok=True)
@@ -77,28 +74,27 @@ def run_one_game(seed: int, strict: bool) -> dict[str, Any]:
 
     decisions = state.decision_records
     fallback_decisions = [
-        rec for rec in decisions
+        rec
+        for rec in decisions
         if bool((rec.parsed_action or {}).get("metadata", {}).get("fallback"))
         or bool((rec.parsed_action or {}).get("agent_fallback"))
         or str((rec.parsed_action or {}).get("metadata", {}).get("source", "")) == "fallback"
     ]
     llm_decisions = [
-        rec for rec in decisions
-        if str((rec.parsed_action or {}).get("metadata", {}).get("source", "")) == "llm"
+        rec for rec in decisions if str((rec.parsed_action or {}).get("metadata", {}).get("source", "")) == "llm"
     ]
-    retrieval_decisions = [
-        rec for rec in decisions
-        if bool((rec.parsed_action or {}).get("retrieval_used"))
-    ]
+    retrieval_decisions = [rec for rec in decisions if bool((rec.parsed_action or {}).get("retrieval_used"))]
     invalid_decisions = [rec for rec in decisions if not rec.is_valid]
     llm_source_rate = len(llm_decisions) / max(len(decisions), 1)
     if strict and decisions and llm_source_rate < 0.95:
         raise RuntimeError(
-            f"strict LLM run produced non-LLM decisions: "
-            f"llm={len(llm_decisions)} total={len(decisions)}"
+            f"strict LLM run produced non-LLM decisions: llm={len(llm_decisions)} total={len(decisions)}"
         )
 
     document = generate_published_review_document(state)
+    from backend.db.persist import save_published_review
+
+    save_published_review(state)
     review_report = document.review_report
     validation = document.validation_result
 
@@ -128,8 +124,12 @@ def run_one_game(seed: int, strict: bool) -> dict[str, Any]:
         "speech_act_count": len(document.speech_acts),
         "suspicion_snapshot_count": len(document.suspicion_matrix),
         "knowledge_feedback_count": len(document.metadata.get("knowledge_feedback") or []),
-        "knowledge_feedback_helpful": sum(1 for fb in document.metadata.get("knowledge_feedback") or [] if fb.get("helpful")),
-        "knowledge_feedback_unhelpful": sum(1 for fb in document.metadata.get("knowledge_feedback") or [] if not fb.get("helpful")),
+        "knowledge_feedback_helpful": sum(
+            1 for fb in document.metadata.get("knowledge_feedback") or [] if fb.get("helpful")
+        ),
+        "knowledge_feedback_unhelpful": sum(
+            1 for fb in document.metadata.get("knowledge_feedback") or [] if not fb.get("helpful")
+        ),
     }
 
 
@@ -169,18 +169,22 @@ def run_pipeline(seeds: list[int], strict: bool, skip_ab: bool) -> dict[str, Any
             per_game.append(game_metric)
         except LLMFallbackForbidden as exc:
             print(f"  ✗ ABORTED — LLM fallback would have fired: {exc}", flush=True)
-            errors.append({
-                "seed": seed,
-                "kind": "fallback_aborted",
-                "message": str(exc),
-            })
+            errors.append(
+                {
+                    "seed": seed,
+                    "kind": "fallback_aborted",
+                    "message": str(exc),
+                }
+            )
         except Exception as exc:
             traceback.print_exc()
-            errors.append({
-                "seed": seed,
-                "kind": type(exc).__name__,
-                "message": str(exc),
-            })
+            errors.append(
+                {
+                    "seed": seed,
+                    "kind": type(exc).__name__,
+                    "message": str(exc),
+                }
+            )
 
     # Track C extraction over the in-process reports we just published.
     # Replay the DB-persisted PublishedReview rows for the seeds we ran.
@@ -234,7 +238,8 @@ def _aggregate(per_game: list[dict[str, Any]]) -> dict[str, Any]:
         "total_knowledge_helpful": _sum("knowledge_feedback_helpful"),
         "knowledge_helpfulness_rate": (
             round(_sum("knowledge_feedback_helpful") / max(_sum("knowledge_feedback_count"), 1), 4)
-            if _sum("knowledge_feedback_count") else None
+            if _sum("knowledge_feedback_count")
+            else None
         ),
     }
 
@@ -319,19 +324,23 @@ def _run_strict_ab_tournament(strict: bool) -> dict[str, Any]:
     baseline: list[GameMetrics] = []
     candidate: list[GameMetrics] = []
     for seed in seeds:
-        baseline.append(_run_llm_ab_seed(
-            seed=seed,
-            strategy_version="seer_v1",
-            target_role="Seer",
-            strict=strict,
-        ))
-        candidate.append(_run_llm_ab_seed(
-            seed=seed,
-            strategy_version="seer_v2_candidate",
-            target_role="Seer",
-            strict=strict,
-            strategy_patch_ops=candidate_ops,
-        ))
+        baseline.append(
+            _run_llm_ab_seed(
+                seed=seed,
+                strategy_version="seer_v1",
+                target_role="Seer",
+                strict=strict,
+            )
+        )
+        candidate.append(
+            _run_llm_ab_seed(
+                seed=seed,
+                strategy_version="seer_v2_candidate",
+                target_role="Seer",
+                strict=strict,
+                strategy_patch_ops=candidate_ops,
+            )
+        )
 
     comparison = runner.compare_metrics(
         baseline_version="seer_v1",
@@ -383,13 +392,14 @@ def _run_llm_ab_seed(
     """
     LLMAgent.STRICT_NO_FALLBACK = strict
     strategy_bias = TournamentRunner._patch_ops_to_bias(strategy_patch_ops or [])
+    role_models = {target_role: {"strategy_bias": strategy_bias}} if target_role and strategy_bias else {}
     players = build_players(seed=seed)
     agents = create_agents(
         players,
         {
             "type": "llm",
             "seed": seed,
-            "strategy_bias": strategy_bias,
+            "role_models": role_models,
             "temperature": 0.4,
             "speech_temperature": 1.1,
         },
@@ -399,7 +409,7 @@ def _run_llm_ab_seed(
         agents=agents,
         seed=seed,
         strategy_version=strategy_version,
-        strategy_bias=strategy_bias,
+        strategy_bias_by_role={target_role: strategy_bias} if target_role and strategy_bias else {},
     )
     state = game.play()
     metric = MetricsCalculator().compute(state)
@@ -419,26 +429,27 @@ def _run_llm_ab_seed(
         raise LLMFallbackForbidden(f"A/B seed={seed} {strategy_version} produced fallback_count={fallback_count}")
     if strict and total and llm_rate < 0.95:
         raise RuntimeError(
-            f"A/B seed={seed} {strategy_version} produced non-LLM decisions: "
-            f"llm={llm_count} total={total}"
+            f"A/B seed={seed} {strategy_version} produced non-LLM decisions: llm={llm_count} total={total}"
         )
-    metric.metadata.update({
-        "runner_mode": "llm",
-        "agent_type": "llm",
-        "strategy_version": strategy_version,
-        "tournament_seed": seed,
-        "target_role": target_role,
-        "total_decisions": total,
-        "llm_decision_count": llm_count,
-        "llm_source_rate": round(llm_rate, 4),
-        "fallback_count": fallback_count,
-        "invalid_action_rate": invalid_count / max(total, 1),
-        "retrieval_used_rate": retrieval_count / max(total, 1),
-        "knowledge_hit_rate": retrieval_count / max(total, 1),
-        "strategy_patch_applied": bool(strategy_patch_ops),
-        "strategy_bias_sections": sorted(strategy_bias),
-        "info_leak_count": int(metric.metadata.get("info_leak_count", 0) or 0),
-    })
+    metric.metadata.update(
+        {
+            "runner_mode": "llm",
+            "agent_type": "llm",
+            "strategy_version": strategy_version,
+            "tournament_seed": seed,
+            "target_role": target_role,
+            "total_decisions": total,
+            "llm_decision_count": llm_count,
+            "llm_source_rate": round(llm_rate, 4),
+            "fallback_count": fallback_count,
+            "invalid_action_rate": invalid_count / max(total, 1),
+            "retrieval_used_rate": retrieval_count / max(total, 1),
+            "knowledge_hit_rate": retrieval_count / max(total, 1),
+            "strategy_patch_applied": bool(strategy_patch_ops),
+            "strategy_bias_sections": sorted(strategy_bias),
+            "info_leak_count": int(metric.metadata.get("info_leak_count", 0) or 0),
+        }
+    )
     return metric
 
 
@@ -463,16 +474,16 @@ def _record_is_llm(record: Any) -> bool:
     source = str(metadata.get("source", "")).lower()
     if source == "llm" and not _record_is_fallback(record):
         return True
-    return bool(getattr(record, "prompt_tokens", None) or getattr(record, "completion_tokens", None)) and not _record_is_fallback(record)
+    return bool(
+        getattr(record, "prompt_tokens", None) or getattr(record, "completion_tokens", None)
+    ) and not _record_is_fallback(record)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--seeds", type=int, nargs="+", default=[7])
-    parser.add_argument("--strict-fallback", default="true",
-                        help="If true, any LLM fallback aborts the game (default)")
-    parser.add_argument("--skip-ab", action="store_true",
-                        help="Skip the 20-seed A/B tournament step")
+    parser.add_argument("--strict-fallback", default="true", help="If true, any LLM fallback aborts the game (default)")
+    parser.add_argument("--skip-ab", action="store_true", help="Skip the 20-seed A/B tournament step")
     args = parser.parse_args()
 
     strict = args.strict_fallback.lower() not in {"false", "0", "no", "off"}
@@ -484,30 +495,53 @@ def main() -> int:
 
     aggregate = record["aggregate"]
     print("\n=== Aggregate ===")
-    for key in ("village_wins", "wolf_wins", "publish_allowed_rate",
-                "total_llm_decisions", "total_fallback_decisions",
-                "fallback_rate", "retrieval_used_rate",
-                "total_bad_cases", "total_highlights", "total_counterfactuals",
-                "knowledge_helpfulness_rate"):
+    for key in (
+        "village_wins",
+        "wolf_wins",
+        "publish_allowed_rate",
+        "total_llm_decisions",
+        "total_fallback_decisions",
+        "fallback_rate",
+        "retrieval_used_rate",
+        "total_bad_cases",
+        "total_highlights",
+        "total_counterfactuals",
+        "knowledge_helpfulness_rate",
+    ):
         if key in aggregate:
             print(f"  {key} = {aggregate[key]}")
 
     if record["track_c"]:
         print("\n=== Track C ===")
-        for key in ("games", "knowledge_doc_count", "candidate_patch_count",
-                    "doc_type_breakdown", "doc_status_breakdown",
-                    "quality_buckets", "patch_target_roles"):
+        for key in (
+            "games",
+            "knowledge_doc_count",
+            "candidate_patch_count",
+            "doc_type_breakdown",
+            "doc_status_breakdown",
+            "quality_buckets",
+            "patch_target_roles",
+        ):
             if key in record["track_c"]:
                 print(f"  {key} = {record['track_c'][key]}")
 
     if record["ab_tournament"]:
         print("\n=== A/B Tournament ===")
         ab = record["ab_tournament"]
-        for key in ("baseline_avg_score", "candidate_avg_score",
-                    "target_role_avg_score_delta_pct", "role_task_score_delta_pct",
-                    "candidate_wins", "baseline_wins", "info_leak_count",
-                    "invalid_action_rate", "candidate_fallback_count",
-                    "accepted", "satisfied_conditions", "failed_conditions"):
+        for key in (
+            "baseline_avg_score",
+            "candidate_avg_score",
+            "target_role_avg_score_delta_pct",
+            "role_task_score_delta_pct",
+            "candidate_wins",
+            "baseline_wins",
+            "info_leak_count",
+            "invalid_action_rate",
+            "candidate_fallback_count",
+            "accepted",
+            "satisfied_conditions",
+            "failed_conditions",
+        ):
             print(f"  {key} = {ab[key]}")
 
     if record["games_aborted"]:

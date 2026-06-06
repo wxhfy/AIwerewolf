@@ -10,7 +10,6 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -61,6 +60,8 @@ def main() -> int:
     port = free_port()
     env = os.environ.copy()
     env["PYTHONPATH"] = str(ROOT)
+    env["LLM_PROVIDER"] = "fake"
+    env["AIWEREWOLF_DEFAULT_AGENT_TYPE"] = "llm"
     server = subprocess.Popen(
         [sys.executable, "-m", "uvicorn", "backend.app:app", "--host", "127.0.0.1", "--port", str(port)],
         cwd=str(ROOT),
@@ -81,12 +82,12 @@ def main() -> int:
         assert root_payload["docs"] == "/docs"
 
         status, room_body = http_post(
-            f"http://127.0.0.1:{port}/api/rooms?name=SmokeRoom&seed=5&player_count=7&agent_type=heuristic"
+            f"http://127.0.0.1:{port}/api/rooms?name=SmokeRoom&seed=5&player_count=7&agent_type=llm"
         )
         assert status == 200
         room = json.loads(room_body)
         assert room["name"] == "SmokeRoom"
-        assert room["agent_type"] == "heuristic"
+        assert room["agent_type"] == "llm"
         room_id = room["id"]
 
         status, fetched_room = http_get(f"http://127.0.0.1:{port}/api/rooms/{room_id}")
@@ -110,7 +111,7 @@ def main() -> int:
         assert room_snapshot["id"] == room_game_payload["id"]
 
         for seed in (3, 7, 11):
-            status, body = http_post(f"http://127.0.0.1:{port}/api/games?seed={seed}&agent_type=heuristic")
+            status, body = http_post(f"http://127.0.0.1:{port}/api/games?seed={seed}&agent_type=llm&player_count=7")
             assert status == 200
             payload = json.loads(body)
             assert_match_payload(payload)

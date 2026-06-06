@@ -7,7 +7,8 @@ parameters that shape how an agent votes, speaks, remembers, and reacts.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING
+from typing import Any
 
 if TYPE_CHECKING:
     from backend.agents.characters import Character
@@ -17,18 +18,18 @@ if TYPE_CHECKING:
 class HumanizationProfile:
     """Numeric behavioral parameters derived from a character's personality."""
 
-    vote_temperature: float          # softmax temperature for vote selection
-    suspicion_gain: float            # multiplier on suspicion deltas
-    recency_weight: float            # weight on recent events vs older
-    grudge_weight: float             # how much being mentioned/accused matters
-    follow_weight: float             # tendency to follow trusted players' reads
-    stubbornness: float              # resistance to changing opinion
-    self_protection_weight: float    # how much self-preservation matters
-    speech_min_segments: int         # minimum speech bubbles per talk
-    speech_max_segments: int         # maximum speech bubbles per talk
-    analysis_depth: str              # "shallow" | "moderate" | "deep"
-    risk_appetite: str               # "low" | "medium" | "high"
-    uncertainty_style: str           # "admit" | "deflect" | "overcompensate"
+    vote_temperature: float  # softmax temperature for vote selection
+    suspicion_gain: float  # multiplier on suspicion deltas
+    recency_weight: float  # weight on recent events vs older
+    grudge_weight: float  # how much being mentioned/accused matters
+    follow_weight: float  # tendency to follow trusted players' reads
+    stubbornness: float  # resistance to changing opinion
+    self_protection_weight: float  # how much self-preservation matters
+    speech_min_segments: int  # minimum speech bubbles per talk
+    speech_max_segments: int  # maximum speech bubbles per talk
+    analysis_depth: str  # "shallow" | "moderate" | "deep"
+    risk_appetite: str  # "low" | "medium" | "high"
+    uncertainty_style: str  # "admit" | "deflect" | "overcompensate"
 
 
 def build_humanization_profile(character: Character | None) -> HumanizationProfile:
@@ -199,7 +200,7 @@ def build_stance_summary(
     # Grudges (who pointed at me)
     if grudges:
         grudge_strs = []
-        for pid, score in sorted(grudges.items(), key=lambda x: -x[1]):
+        for pid, _score in sorted(grudges.items(), key=lambda x: -x[1]):
             tag = _resolve_tag(pid, view)
             grudge_strs.append(tag)
         if grudge_strs:

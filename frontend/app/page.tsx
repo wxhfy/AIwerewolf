@@ -79,6 +79,9 @@ export default function LobbyPage() {
 
       {/* ── Top nav ────────────────────────────────────────────── */}
       <div className="absolute top-4 right-4 z-20 flex items-center gap-2">
+        <Link href="/personas" className="px-3 py-1.5 text-xs font-medium rounded-button border border-border/40 text-text-sub/70 hover:text-primary hover:border-primary/50 transition-colors backdrop-blur-sm">
+          {language === "zh" ? "角色库" : "Personas"}
+        </Link>
         <Link href="/evolution" className="px-3 py-1.5 text-xs font-medium rounded-button border border-border/40 text-text-sub/70 hover:text-primary hover:border-primary/50 transition-colors backdrop-blur-sm">
           {language === "zh" ? "进化看板" : "Evolution"}
         </Link>

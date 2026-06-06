@@ -5,10 +5,14 @@ from random import Random
 from typing import Iterable
 from uuid import uuid4
 
-from backend.engine.models import Alignment, Player, Role
+from backend.engine.models import Alignment
+from backend.engine.models import Player
+from backend.engine.models import Role
+
 # Importing the roles package triggers each module's `register_role(...)` so
 # `ROLE_REGISTRY` is fully populated before anything below reads it.
-from backend.engine.roles import ROLE_REGISTRY, get_playable_roles
+from backend.engine.roles import ROLE_REGISTRY
+from backend.engine.roles import get_playable_roles
 from backend.engine.roles.registry import RoleSpec as _RegistryRoleSpec
 
 
@@ -33,9 +37,7 @@ def _legacy_spec(spec: _RegistryRoleSpec) -> RoleSpec:
     )
 
 
-ROLE_SPECS: dict[Role, RoleSpec] = {
-    role: _legacy_spec(spec) for role, spec in ROLE_REGISTRY.items()
-}
+ROLE_SPECS: dict[Role, RoleSpec] = {role: _legacy_spec(spec) for role, spec in ROLE_REGISTRY.items()}
 
 
 DEFAULT_ROLE_SET: tuple[Role, ...] = (
@@ -158,8 +160,22 @@ def build_players(
         default_names = char_pool[: len(role_list)]
     else:
         fallback_pool = [
-            "Ada", "Bert", "Cora", "Duke", "Eli", "Faye", "Gina", "Hale",
-            "Iris", "Jude", "Kira", "Luca", "Mina", "Nora", "Orin", "Pia",
+            "Ada",
+            "Bert",
+            "Cora",
+            "Duke",
+            "Eli",
+            "Faye",
+            "Gina",
+            "Hale",
+            "Iris",
+            "Jude",
+            "Kira",
+            "Luca",
+            "Mina",
+            "Nora",
+            "Orin",
+            "Pia",
         ]
         default_names = list(char_pool)
         for name in fallback_pool:

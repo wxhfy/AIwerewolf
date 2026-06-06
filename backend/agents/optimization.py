@@ -1,9 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, Protocol
+from dataclasses import dataclass
+from dataclasses import field
+from typing import Any
+from typing import Protocol
 
-from backend.engine.models import GameState, Role
+from backend.engine.models import GameState
+from backend.engine.models import Role
 
 
 @dataclass
@@ -29,8 +32,7 @@ class OptimizationResult:
 class MultiAgentOptimizer(Protocol):
     """Common extension boundary for future optimization schemes."""
 
-    def optimize(self, games: list[GameState]) -> OptimizationResult:
-        ...
+    def optimize(self, games: list[GameState]) -> OptimizationResult: ...
 
 
 class ReplayHeuristicOptimizer:

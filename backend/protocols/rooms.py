@@ -4,7 +4,8 @@ from time import time
 
 from backend.engine.game import WerewolfGame
 from backend.engine.models import GameState
-from backend.protocols.schemas import RoomCreateRequest, RoomRecord
+from backend.protocols.schemas import RoomCreateRequest
+from backend.protocols.schemas import RoomRecord
 
 
 class RoomManager:

@@ -1,9 +1,11 @@
 """Baseline village role: plain villager."""
+
 from __future__ import annotations
 
-from backend.engine.models import Alignment, Role
-from backend.engine.roles.registry import RoleSpec, register_role
-
+from backend.engine.models import Alignment
+from backend.engine.models import Role
+from backend.engine.roles.registry import RoleSpec
+from backend.engine.roles.registry import register_role
 
 register_role(
     RoleSpec(

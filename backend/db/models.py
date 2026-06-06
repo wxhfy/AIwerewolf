@@ -4,10 +4,20 @@ from __future__ import annotations
 
 import os
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
+from datetime import timezone
 
-from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Index, Integer, String, Text
-from sqlalchemy.orm import DeclarativeBase, relationship
+from sqlalchemy import Boolean
+from sqlalchemy import Column
+from sqlalchemy import DateTime
+from sqlalchemy import Float
+from sqlalchemy import ForeignKey
+from sqlalchemy import Index
+from sqlalchemy import Integer
+from sqlalchemy import String
+from sqlalchemy import Text
+from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.orm import relationship
 
 # Pick a JSON type that works on both Postgres (JSONB, indexable) and SQLite.
 if os.getenv("DATABASE_URL", "").startswith(("postgres", "postgresql")):
@@ -113,6 +123,12 @@ class GameEvent(Base):
 
 
 class AgentDecision(Base):
+    """Structured decision trace for every agent action.
+
+    v2: Now includes full DecisionTrace fields (candidate_actions, visible_facts,
+    confidence, prompt_hash, cost_usd) per blueprints §G2 and §G10.
+    """
+
     __tablename__ = "agent_decisions"
 
     id = Column(String, primary_key=True, default=_uuid)
@@ -132,13 +148,24 @@ class AgentDecision(Base):
     completion_tokens = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=_utcnow)
 
+    # ---- v2 DecisionTrace fields (blueprints §G2 + §G10) ----
+    candidate_actions = Column(JSON, nullable=True, comment="List of {action, score, rationale} considered")
+    visible_facts = Column(JSON, nullable=True, comment="List of facts visible to agent at decision time")
+    confidence = Column(Float, nullable=True, comment="Agent self-reported confidence 0.0-1.0")
+    prompt_hash = Column(String, nullable=True, comment="SHA256 of the assembled prompt")
+    cost_usd = Column(Float, nullable=True, comment="Estimated USD cost for this LLM call")
+    model_name = Column(String, nullable=True, comment="LLM model used (e.g. doubao-seed-2.0-pro)")
+    provider = Column(String, nullable=True, comment="LLM provider (e.g. doubao, deepseek)")
+    decision_metadata = Column(
+        "metadata", JSON, nullable=True, default=dict, comment="AgentDecision metadata dict (tool traces, strategy IDs)"
+    )
+
     game = relationship("Game", back_populates="decisions")
 
     __table_args__ = (
-        # Per-player decision timeline within a game (review tooling)
         Index("ix_decisions_game_player_day", "game_id", "player_id", "day"),
-        # Failure analytics: WHERE is_valid=false GROUP BY error_type
         Index("ix_decisions_invalid", "is_valid", "error_type"),
+        Index("ix_decisions_model", "model_name", "provider"),
     )
 
 
@@ -215,11 +242,11 @@ class AgentVersion(Base):
     __tablename__ = "agent_versions"
 
     id = Column(String, primary_key=True, default=_uuid)
-    name = Column(String, nullable=False)              # e.g. "wolf-aggressive-v2"
-    agent_type = Column(String, default="llm")        # llm / heuristic / human
-    model_name = Column(String, default="")            # e.g. doubao-seed-2.0-pro
+    name = Column(String, nullable=False)  # e.g. "wolf-aggressive-v2"
+    agent_type = Column(String, default="llm")  # llm / heuristic / human
+    model_name = Column(String, default="")  # e.g. doubao-seed-2.0-pro
     prompt_version = Column(String, default="v1")
-    config = Column(JSON, default=dict)                # full hyper-params snapshot
+    config = Column(JSON, default=dict)  # full hyper-params snapshot
     parent_version_id = Column(String, ForeignKey("agent_versions.id"), nullable=True)
     notes = Column(Text, default="")
     created_at = Column(DateTime, default=_utcnow)
@@ -242,14 +269,15 @@ class LeaderboardEntry(Base):
     wins = Column(Integer, default=0)
     losses = Column(Integer, default=0)
     win_rate = Column(Float, default=0.0)
-    kpi_speech_quality = Column(Float, default=0.0)     # 发言质量
-    kpi_vote_accuracy = Column(Float, default=0.0)      # 投票准确率
-    kpi_skill_efficiency = Column(Float, default=0.0)   # 技能使用效率
-    kpi_survival_value = Column(Float, default=0.0)     # 存活价值
+    kpi_speech_quality = Column(Float, default=0.0)  # 发言质量
+    kpi_vote_accuracy = Column(Float, default=0.0)  # 投票准确率
+    kpi_skill_efficiency = Column(Float, default=0.0)  # 技能使用效率
+    kpi_survival_value = Column(Float, default=0.0)  # 存活价值
     extra = Column(JSON, default=dict)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
 
 
+# NOTE: This ORM table is not written by the production pipeline. Use PublishedReview instead.
 class ReviewReport(Base):
     """Structured post-game review / replay report (Track B).
 
@@ -263,7 +291,7 @@ class ReviewReport(Base):
     id = Column(String, primary_key=True, default=_uuid)
     game_id = Column(String, ForeignKey("games.id"), nullable=False, index=True)
     player_id = Column(String, nullable=True)
-    severity = Column(String, default="info")          # info / warn / critical
+    severity = Column(String, default="info")  # info / warn / critical
     day = Column(Integer, default=0)
     phase = Column(String, default="")
     title = Column(String, default="")
@@ -300,7 +328,12 @@ class PublishedReview(Base):
 
 
 class StrategyKnowledgeDoc(Base):
-    """Sanitized Track C strategy knowledge extracted from approved reviews."""
+    """Sanitized Track C strategy knowledge extracted from approved reviews.
+
+    v2: Now carries the full L0-L4 confidence tier + access control +
+    applicability metadata so the 4-filter retrieval pipeline
+    (knowledge_confidence.retrieve_for_agent) can gate every retrieval.
+    """
 
     __tablename__ = "strategy_knowledge_docs"
 
@@ -330,11 +363,46 @@ class StrategyKnowledgeDoc(Base):
     created_at = Column(DateTime, default=_utcnow)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
 
+    # ---- L0-L4 Confidence Tier (knowledge_confidence.KnowledgeConfidence) ----
+    confidence_tier = Column(
+        String,
+        default="L3_strategic",
+        index=True,
+        comment="L0_fact | L1_rule | L2_statistical | L3_strategic | L4_speculative",
+    )
+    judge_agreement = Column(Float, nullable=True, comment="Inter-judge agreement 0.0-1.0 (L3)")
+    times_upvoted = Column(Integer, default=0)
+    contradiction_count = Column(Integer, default=0)
+    games_since_creation = Column(Integer, default=0)
+    human_verdict = Column(String, nullable=True, comment="confirmed | rejected | revised | unreviewed")
+
+    # ---- Access Control (knowledge_confidence.KnowledgeAccessControl) ----
+    visibility_scope = Column(
+        String,
+        default="public",
+        index=True,
+        comment="public | self_private | wolf_team_private | postgame_only | global_deidentified",
+    )
+    allowed_roles = Column(JSON, nullable=True, comment="Roles allowed for self_private scope")
+    deidentified = Column(Boolean, default=False, comment="Player IDs removed")
+    contains_current_game_private_info = Column(Boolean, default=False)
+
+    # ---- Applicability (knowledge_confidence.KnowledgeApplicability) ----
+    applicability_role = Column(String, nullable=True, comment="Required role, None=any")
+    applicability_phase = Column(String, nullable=True, comment="Required phase, None=any")
+    min_players = Column(Integer, nullable=True)
+    max_players = Column(Integer, nullable=True)
+    required_public_facts = Column(JSON, default=list)
+    forbidden_public_facts = Column(JSON, default=list)
+    required_private_state = Column(JSON, default=list)
+
     __table_args__ = (
         Index("ix_strategy_knowledge_role_phase_status", "role", "phase", "status"),
+        Index("ix_strategy_knowledge_tier_scope", "confidence_tier", "visibility_scope"),
     )
 
 
+# NOTE: Only populated by scripts/build_strategy_graph.py, not the game pipeline.
 class StrategyGraphLink(Base):
     """GraphRAG-lite edge between strategy knowledge entities."""
 
@@ -371,11 +439,10 @@ class RoleStrategyCard(Base):
     created_at = Column(DateTime, default=_utcnow)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
 
-    __table_args__ = (
-        Index("ix_role_strategy_role_version", "role", "version"),
-    )
+    __table_args__ = (Index("ix_role_strategy_role_version", "role", "version"),)
 
 
+# NOTE: ORM table has no insert path in production. Data class exists in eval/evolution.py.
 class PersonaRoleAdapter(Base):
     """Versioned persona-role compensation layer."""
 
@@ -441,10 +508,10 @@ class KnowledgeUsageFeedback(Base):
     __tablename__ = "knowledge_usage_feedback"
 
     id = Column(String, primary_key=True, default=_uuid)
-    game_id = Column(String, nullable=False, index=True)
+    game_id = Column(String, ForeignKey("games.id"), nullable=False, index=True)
     decision_id = Column(String, nullable=True, index=True)
-    player_id = Column(String, nullable=False, index=True)
-    knowledge_doc_id = Column(String, nullable=False, index=True)
+    player_id = Column(String, ForeignKey("players.id"), nullable=False, index=True)
+    knowledge_doc_id = Column(String, ForeignKey("strategy_knowledge_docs.id"), nullable=False, index=True)
     retrieved = Column(Boolean, default=True)
     used = Column(Boolean, default=False)
     decision_outcome = Column(String, default="")

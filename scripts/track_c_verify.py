@@ -4,13 +4,10 @@ Critical safety:
 - Pulls approved published_reviews only from the supplied game_ids (defaults
   to all all-LLM games created today). Avoids the heuristic AB-tournament
   contamination from concurrent tenants on the shared DB.
-- Uses TournamentRunner._run_seed default (no llm_agent) for the A/B side
-  so we can quickly compare Δwin from a candidate patch without paying
-  another 10-min/game LLM cost. The candidate-side games are heuristic
-  but use the patched strategy_bias so we measure whether the patch
-  actually changes anything. If the patched heuristic stays at Δwin=0
-  the way the historical 35 tournaments did, that's a real signal that
-  the patch hook is dead.
+- Uses TournamentRunner._run_seed for the A/B side, which now creates
+  LLM-backed CognitiveAgents. Local no-cost verification may set
+  LLM_PROVIDER=fake, but the game path must still be LLM-compatible and
+  must not fall back to HeuristicAgent.
 """
 
 from __future__ import annotations
@@ -25,16 +22,14 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from backend.db.database import SessionLocal
 from sqlalchemy import text
 
-from backend.eval.evolution import (
-    AcceptancePolicy,
-    DreamJob,
-    PatchOperation,
-    StrategyKnowledgeStore,
-    TournamentRunner,
-)
+from backend.db.database import SessionLocal
+from backend.eval.evolution import AcceptancePolicy
+from backend.eval.evolution import DreamJob
+from backend.eval.evolution import PatchOperation
+from backend.eval.evolution import StrategyKnowledgeStore
+from backend.eval.evolution import TournamentRunner
 from backend.eval.track_b import reconstruct_review_report
 
 
@@ -55,13 +50,15 @@ def load_my_game_ids(label: str | None) -> list[str]:
             return ids
     db = SessionLocal()
     try:
-        rows = db.execute(text("""
+        rows = db.execute(
+            text("""
             SELECT g.id FROM games g
             WHERE g.status='finished' AND g.created_at >= '2026-05-25 12:00:00'
               AND EXISTS (SELECT 1 FROM players p WHERE p.game_id=g.id AND p.agent_type='llm')
               AND NOT EXISTS (SELECT 1 FROM players p WHERE p.game_id=g.id AND p.agent_type!='llm')
             ORDER BY g.created_at
-        """)).fetchall()
+        """)
+        ).fetchall()
         return [r[0] for r in rows]
     finally:
         db.close()
@@ -72,10 +69,13 @@ def load_approved_reports(game_ids: list[str]) -> list[Any]:
         return []
     db = SessionLocal()
     try:
-        rows = db.execute(text("""
+        rows = db.execute(
+            text("""
             SELECT report_json FROM published_reviews
             WHERE game_id IN :gids AND publish_allowed = true
-        """), {"gids": tuple(game_ids)}).fetchall()
+        """),
+            {"gids": tuple(game_ids)},
+        ).fetchall()
         reports: list[Any] = []
         for (rj,) in rows:
             if not rj:
@@ -91,7 +91,7 @@ def load_approved_reports(game_ids: list[str]) -> list[Any]:
 
 def run_dream(reports: list[Any]) -> dict[str, Any]:
     """Build knowledge docs + candidate patches from approved reports."""
-    print(f"\n=== Stage 1: DreamJob (knowledge extraction) ===")
+    print("\n=== Stage 1: DreamJob (knowledge extraction) ===")
     store = StrategyKnowledgeStore()
     job = DreamJob(store=store)
     result = job.run(reports)
@@ -120,11 +120,10 @@ def run_dream(reports: list[Any]) -> dict[str, Any]:
 
 
 def run_one_tournament(patch_target_role: str | None = "Seer") -> dict[str, Any]:
-    """Run a fixed-seed 20-game A/B tournament with a synthetic candidate
-    patch on a target role. Uses heuristic engine (default TournamentRunner)
-    so it's fast (<1 min) and tests whether the strategy_bias hook is alive.
+    """Run a fixed-seed 20-game LLM-only A/B tournament with a candidate
+    patch on a target role.
     """
-    print(f"\n=== Stage 2: A/B Tournament (target_role={patch_target_role}, heuristic) ===")
+    print(f"\n=== Stage 2: A/B Tournament (target_role={patch_target_role}, llm-only) ===")
     runner = TournamentRunner(acceptance_policy=AcceptancePolicy())
     seeds = list(range(201, 221))  # 20 seeds disjoint from our LLM batch
 
@@ -132,18 +131,25 @@ def run_one_tournament(patch_target_role: str | None = "Seer") -> dict[str, Any]
         PatchOperation(
             op="add",
             section="speech_policy",
-            new_value=("如果预言家手里有金水/查杀,优先公开报金水保护好人,"
-                       "再用查杀给狼施压;务必让信息传到票上。"),
+            new_value=("如果预言家手里有金水/查杀,优先公开报金水保护好人,再用查杀给狼施压;务必让信息传到票上。"),
             rationale="LLM 复盘多次提到神职信息没转化为投票指引,导致跟票失败。",
         )
     ]
-    print(f"  fixed seeds 201-220 (heuristic engine)")
+    print("  fixed seeds 201-220 (llm engine)")
 
-    baseline = [runner._run_seed(seed=s, strategy_version=f"{patch_target_role}_v1",
-                                  target_role=patch_target_role) for s in seeds]
-    candidate = [runner._run_seed(seed=s, strategy_version=f"{patch_target_role}_v2_cand",
-                                   target_role=patch_target_role,
-                                   strategy_patch_ops=candidate_ops) for s in seeds]
+    baseline = [
+        runner._run_seed(seed=s, strategy_version=f"{patch_target_role}_v1", target_role=patch_target_role)
+        for s in seeds
+    ]
+    candidate = [
+        runner._run_seed(
+            seed=s,
+            strategy_version=f"{patch_target_role}_v2_cand",
+            target_role=patch_target_role,
+            strategy_patch_ops=candidate_ops,
+        )
+        for s in seeds
+    ]
 
     comparison = runner.compare_metrics(
         baseline_version=f"{patch_target_role}_v1",

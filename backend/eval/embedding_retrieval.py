@@ -14,19 +14,16 @@ Model: BGE-M3 (BAAI/bge-m3)
 from __future__ import annotations
 
 import json
-import math
-import os
-from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any
 
 import numpy as np
-
 
 # ---------------------------------------------------------------------------
 # BGE-M3 provider
 # ---------------------------------------------------------------------------
+
 
 class BGEM3Provider:
     """Thin wrapper around BGE-M3 for opportunity text embedding."""
@@ -40,6 +37,7 @@ class BGEM3Provider:
     def model(self):
         if self._model is None:
             from FlagEmbedding import BGEM3FlagModel
+
             self._model = BGEM3FlagModel(self.model_name, use_fp16=(self.device != "cpu"))
         return self._model
 
@@ -69,6 +67,7 @@ class BGEM3Provider:
 # Opportunity text formatter (§6.3)
 # ---------------------------------------------------------------------------
 
+
 def format_opportunity_text(opp: dict[str, Any]) -> str:
     """Format an opportunity into a searchable text representation.
 
@@ -87,7 +86,7 @@ def format_opportunity_text(opp: dict[str, Any]) -> str:
         lines.append(f"存活人数：{gf.get('alive_count', '?')}")
         cb = gf.get("camp_balance", {})
         if cb:
-            lines.append(f"阵营：好人{cb.get('village_alive','?')}人 狼人{cb.get('wolf_alive','?')}人")
+            lines.append(f"阵营：好人{cb.get('village_alive', '?')}人 狼人{cb.get('wolf_alive', '?')}人")
 
     # Target features
     tf = opp.get("target_features", {})
@@ -121,9 +120,11 @@ def format_opportunity_text(opp: dict[str, Any]) -> str:
 # Similarity index
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class RetrievedCase:
     """One similar historical case retrieved by embedding search."""
+
     opportunity_id: str
     role: str
     opportunity_type: str
@@ -146,14 +147,14 @@ class OpportunityIndex:
         self.texts: list[str] = []
         self.embeddings: np.ndarray | None = None
 
-    def add(self, opportunities: list[dict[str, Any]]) -> "OpportunityIndex":
+    def add(self, opportunities: list[dict[str, Any]]) -> OpportunityIndex:
         self.opportunities.extend(opportunities)
         new_texts = [format_opportunity_text(o) for o in opportunities]
         self.texts.extend(new_texts)
         self.embeddings = None  # Invalidate cache
         return self
 
-    def build(self, batch_size: int = 32) -> "OpportunityIndex":
+    def build(self, batch_size: int = 32) -> OpportunityIndex:
         if not self.texts:
             return self
         print(f"  Building BGE-M3 index for {len(self.texts)} opportunities...")
@@ -192,13 +193,15 @@ class OpportunityIndex:
             if opp.get("opportunity_id") == query_opp.get("opportunity_id"):
                 continue  # Skip self
 
-            results.append(RetrievedCase(
-                opportunity_id=opp.get("opportunity_id", ""),
-                role=opp.get("role", ""),
-                opportunity_type=opp.get("opportunity_type", ""),
-                similarity=round(float(sim), 4),
-                text=self.texts[i][:300],
-            ))
+            results.append(
+                RetrievedCase(
+                    opportunity_id=opp.get("opportunity_id", ""),
+                    role=opp.get("role", ""),
+                    opportunity_type=opp.get("opportunity_type", ""),
+                    similarity=round(float(sim), 4),
+                    text=self.texts[i][:300],
+                )
+            )
 
         results.sort(key=lambda r: r.similarity, reverse=True)
         return results[:top_k]
@@ -222,8 +225,8 @@ class OpportunityIndex:
     def compute_retrieval_features(
         self,
         query_opp: dict[str, Any],
-        good_index: "OpportunityIndex | None" = None,
-        bad_index: "OpportunityIndex | None" = None,
+        good_index: OpportunityIndex | None = None,
+        bad_index: OpportunityIndex | None = None,
         top_k: int = 3,
     ) -> dict[str, float]:
         """Compute embedding retrieval features for DecisionQualityModel.
@@ -247,18 +250,14 @@ class OpportunityIndex:
             good_results = good_index.search(query_opp, top_k=top_k)
             if good_results:
                 features["nearest_good_similarity"] = good_results[0].similarity
-                features["similar_good_avg_quality"] = sum(
-                    r.similarity for r in good_results
-                ) / len(good_results)
+                features["similar_good_avg_quality"] = sum(r.similarity for r in good_results) / len(good_results)
                 features["similar_good_count"] = len(good_results)
 
         if bad_index and bad_index.embeddings is not None:
             bad_results = bad_index.search(query_opp, top_k=top_k)
             if bad_results:
                 features["nearest_bad_similarity"] = bad_results[0].similarity
-                features["similar_bad_avg_quality"] = sum(
-                    r.similarity for r in bad_results
-                ) / len(bad_results)
+                features["similar_bad_avg_quality"] = sum(r.similarity for r in bad_results) / len(bad_results)
                 features["similar_bad_count"] = len(bad_results)
 
         if features["nearest_good_similarity"] > 0 and features["nearest_bad_similarity"] > 0:
@@ -281,7 +280,7 @@ class OpportunityIndex:
         print(f"Index saved to {path} ({len(self.opportunities)} items)")
 
     @classmethod
-    def load(cls, path: str | Path, opportunities: list[dict[str, Any]]) -> "OpportunityIndex":
+    def load(cls, path: str | Path, opportunities: list[dict[str, Any]]) -> OpportunityIndex:
         data = np.load(path, allow_pickle=True)
         index = cls()
         index.embeddings = data["embeddings"]
@@ -294,6 +293,7 @@ class OpportunityIndex:
 # Train/val/test split by game
 # ---------------------------------------------------------------------------
 
+
 def split_by_game(
     opportunities: list[dict[str, Any]],
     val_ratio: float = 0.15,
@@ -302,9 +302,10 @@ def split_by_game(
 ) -> tuple[list[dict], list[dict], list[dict]]:
     """Split opportunities by game_id to avoid data leakage."""
     import random
+
     random.seed(seed)
 
-    game_ids = list(set(o["game_id"] for o in opportunities))
+    game_ids = list({o["game_id"] for o in opportunities})
     random.shuffle(game_ids)
 
     n = len(game_ids)
@@ -313,8 +314,8 @@ def split_by_game(
     n_train = n - n_val - n_test
 
     train_games = set(game_ids[:n_train])
-    val_games = set(game_ids[n_train:n_train + n_val])
-    test_games = set(game_ids[n_train + n_val:])
+    val_games = set(game_ids[n_train : n_train + n_val])
+    test_games = set(game_ids[n_train + n_val :])
 
     train = [o for o in opportunities if o["game_id"] in train_games]
     val = [o for o in opportunities if o["game_id"] in val_games]
@@ -327,8 +328,10 @@ def split_by_game(
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main() -> int:
     import argparse
+
     ap = argparse.ArgumentParser()
     ap.add_argument("--input", default="data/health/opportunities.jsonl")
     ap.add_argument("--build-index", action="store_true")
@@ -348,7 +351,7 @@ def main() -> int:
     print(f"Loaded {len(opportunities)} opportunities")
 
     if args.limit:
-        opportunities = opportunities[:args.limit]
+        opportunities = opportunities[: args.limit]
 
     if args.build_index:
         index = OpportunityIndex()
@@ -373,7 +376,7 @@ def main() -> int:
                 print(f"\n=== Query: {role} {op_type} ===")
                 results = index.search(opp, top_k=3, same_role_only=True)
                 for i, r in enumerate(results):
-                    print(f"  {i+1}. [{r.role}] sim={r.similarity:.4f} | {r.text[:120]}")
+                    print(f"  {i + 1}. [{r.role}] sim={r.similarity:.4f} | {r.text[:120]}")
 
     return 0
 

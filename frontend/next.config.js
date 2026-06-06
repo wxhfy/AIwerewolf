@@ -1,5 +1,5 @@
 /** @type {import('next').NextConfig} */
-const backendOrigin = process.env.BACKEND_ORIGIN || "http://localhost:8000";
+const backendOrigin = process.env.BACKEND_ORIGIN || "http://localhost:8001";
 
 const nextConfig = {
   eslint: {

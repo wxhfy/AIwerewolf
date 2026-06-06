@@ -14,13 +14,10 @@ Run: python scripts/train_and_ablate.py [--limit N]
 from __future__ import annotations
 
 import json
-import math
-import pickle
 import random
 import statistics
 import sys
-import time
-from collections import Counter, defaultdict
+from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -31,19 +28,14 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from backend.eval.scoring_models import (
-    DecisionQualityModel,
-    MistakeSeverityModel,
-    ModelFeatures,
-    OpportunityValueModel,
-    ProcessScoreResult,
-    calculate_process_score,
-    extract_features,
-)
+from backend.eval.scoring_models import DecisionQualityModel
+from backend.eval.scoring_models import OpportunityValueModel
+from backend.eval.scoring_models import extract_features
 
 # ---------------------------------------------------------------------------
 # Data loading
 # ---------------------------------------------------------------------------
+
 
 def load_opportunities(path: str = "data/health/opportunities.jsonl") -> list[dict]:
     opps = []
@@ -77,9 +69,10 @@ def load_baseline(path: str = "data/health/baseline_scoring_report.json") -> dic
 # Group-aware splitting
 # ---------------------------------------------------------------------------
 
+
 def group_kfold_split(opportunities: list[dict], n_splits: int = 5) -> list[tuple[list, list]]:
     """Split opportunities by game_id for GroupKFold."""
-    game_ids = sorted(set(o["game_id"] for o in opportunities))
+    game_ids = sorted({o["game_id"] for o in opportunities})
     random.seed(42)
     random.shuffle(game_ids)
 
@@ -102,19 +95,27 @@ def group_kfold_split(opportunities: list[dict], n_splits: int = 5) -> list[tupl
 # Rule-based opportunity scoring (Ablation B)
 # ---------------------------------------------------------------------------
 
+
 def rule_opportunity_value(opp: dict) -> float:
     """Rule-based opportunity importance w(o)."""
     op_type = opp.get("opportunity_type", "")
     game_feat = opp.get("game_features", {})
-    day = opp.get("day", 1)
+    opp.get("day", 1)
     alive = game_feat.get("alive_count", 6)
     is_endgame = game_feat.get("is_endgame", False)
 
     # Night actions are high-value
     base = {
-        "werewolf_kill": 1.0, "guard_protect": 0.8, "seer_check": 0.9,
-        "witch_save": 0.9, "witch_poison": 0.95, "hunter_shot": 0.95,
-        "witch_skip": 0.6, "seer_release": 0.7, "vote": 0.5, "speech": 0.4,
+        "werewolf_kill": 1.0,
+        "guard_protect": 0.8,
+        "seer_check": 0.9,
+        "witch_save": 0.9,
+        "witch_poison": 0.95,
+        "hunter_shot": 0.95,
+        "witch_skip": 0.6,
+        "seer_release": 0.7,
+        "vote": 0.5,
+        "speech": 0.4,
     }.get(op_type, 0.5)
 
     # Endgame bonus
@@ -170,6 +171,7 @@ def rule_decision_quality(opp: dict) -> float:
 # Training with GroupKFold
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class TrainingResult:
     model_name: str
@@ -179,7 +181,9 @@ class TrainingResult:
 
 
 def train_opportunity_value_model(
-    labeled: list[dict], opportunities: list[dict], n_splits: int = 5,
+    labeled: list[dict],
+    opportunities: list[dict],
+    n_splits: int = 5,
 ) -> TrainingResult:
     """Train OpportunityValueModel with GroupKFold."""
     # Build training data: use rule-based w(o) as pseudo-label for MVP
@@ -210,8 +214,8 @@ def train_opportunity_value_model(
 
     model = OpportunityValueModel()
     for fold_i, (train_opps, test_opps) in enumerate(folds):
-        train_games = set(o["game_id"] for o in train_opps)
-        test_games = set(o["game_id"] for o in test_opps)
+        train_games = {o["game_id"] for o in train_opps}
+        test_games = {o["game_id"] for o in test_opps}
 
         train_mask = np.isin(game_ids_arr, list(train_games))
         test_mask = np.isin(game_ids_arr, list(test_games))
@@ -227,7 +231,15 @@ def train_opportunity_value_model(
         y_pred = model.predict(X[test_mask])
         mse = float(np.mean((y[test_mask] - y_pred) ** 2))
         mae = float(np.mean(np.abs(y[test_mask] - y_pred)))
-        fold_metrics.append({"fold": fold_i, "mse": round(mse, 4), "mae": round(mae, 4), "n_train": int(train_mask.sum()), "n_test": int(test_mask.sum())})
+        fold_metrics.append(
+            {
+                "fold": fold_i,
+                "mse": round(mse, 4),
+                "mae": round(mae, 4),
+                "n_train": int(train_mask.sum()),
+                "n_test": int(test_mask.sum()),
+            }
+        )
         all_importances.append(model.feature_importances_)
 
     # Average importances
@@ -244,13 +256,15 @@ def train_opportunity_value_model(
             continue
         feats = extract_features(opp)
         w_pred = model.predict(feats.to_array().reshape(1, -1))[0]
-        predictions.append({
-            "opportunity_id": item["opportunity_id"],
-            "role": opp["role"],
-            "op_type": opp["opportunity_type"],
-            "w_predicted": round(float(w_pred), 4),
-            "w_rule": round(y_list[i] if i < len(y_list) else 0.0, 4),
-        })
+        predictions.append(
+            {
+                "opportunity_id": item["opportunity_id"],
+                "role": opp["role"],
+                "op_type": opp["opportunity_type"],
+                "w_predicted": round(float(w_pred), 4),
+                "w_rule": round(y_list[i] if i < len(y_list) else 0.0, 4),
+            }
+        )
 
     return TrainingResult(
         model_name="OpportunityValueModel",
@@ -261,7 +275,9 @@ def train_opportunity_value_model(
 
 
 def train_decision_quality_model(
-    labeled: list[dict], opportunities: list[dict], n_splits: int = 5,
+    labeled: list[dict],
+    opportunities: list[dict],
+    n_splits: int = 5,
 ) -> TrainingResult:
     """Train DecisionQualityModel with GroupKFold."""
     opp_by_id = {o["opportunity_id"]: o for o in opportunities}
@@ -295,8 +311,8 @@ def train_decision_quality_model(
 
     model = DecisionQualityModel()
     for fold_i, (train_opps, test_opps) in enumerate(folds):
-        train_games = set(o["game_id"] for o in train_opps)
-        test_games = set(o["game_id"] for o in test_opps)
+        train_games = {o["game_id"] for o in train_opps}
+        test_games = {o["game_id"] for o in test_opps}
 
         train_mask = np.isin(game_ids_arr, list(train_games))
         test_mask = np.isin(game_ids_arr, list(test_games))
@@ -332,11 +348,15 @@ def train_decision_quality_model(
         else:
             pairwise_acc = 0.5
 
-        fold_metrics.append({
-            "fold": fold_i, "accuracy": round(accuracy, 4),
-            "pairwise_accuracy": round(pairwise_acc, 4),
-            "n_train": int(train_mask.sum()), "n_test": int(test_mask.sum()),
-        })
+        fold_metrics.append(
+            {
+                "fold": fold_i,
+                "accuracy": round(accuracy, 4),
+                "pairwise_accuracy": round(pairwise_acc, 4),
+                "n_train": int(train_mask.sum()),
+                "n_test": int(test_mask.sum()),
+            }
+        )
         all_importances.append(model.feature_importances_)
 
     avg_importances: dict[str, float] = {}
@@ -356,6 +376,7 @@ def train_decision_quality_model(
 # Ablation comparison
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class AblationResult:
     system: str
@@ -364,19 +385,20 @@ class AblationResult:
     cohens_d: dict[str, float]
 
 
-def compute_ablation(opportunities: list[dict], labeled: list[dict],
-                     q_model: DecisionQualityModel | None = None) -> dict[str, AblationResult]:
+def compute_ablation(
+    opportunities: list[dict], labeled: list[dict], q_model: DecisionQualityModel | None = None
+) -> dict[str, AblationResult]:
     """Run ablation A/B/C comparison."""
-    from backend.db.database import SessionLocal, init_db
-    from backend.db.models import PublishedReview, Game
     from sqlalchemy import text
+
+    from backend.db.database import SessionLocal
+    from backend.db.database import init_db
 
     # Load outcome data
     init_db()
     db = SessionLocal()
     clean_ids = set(json.loads(Path("/tmp/clean_llm_game_ids.json").read_text()))
-    games = db.execute(text("SELECT id, winner FROM games WHERE id IN :ids"),
-        {"ids": tuple(clean_ids)}).fetchall()
+    games = db.execute(text("SELECT id, winner FROM games WHERE id IN :ids"), {"ids": tuple(clean_ids)}).fetchall()
     winner_map = {g[0]: g[1] for g in games}
     db.close()
 
@@ -391,11 +413,11 @@ def compute_ablation(opportunities: list[dict], labeled: list[dict],
         opp_id = item["opportunity_id"]
         game_id = opp_game_map.get(opp_id, "")
         role = opp_role_map.get(opp_id, "")
-        winner = winner_map.get(game_id, "")
+        winner_map.get(game_id, "")
         player_id = item.get("player_id", opp_id.split("-")[2] if "-" in opp_id else "unknown")
 
         label = item.get("label", {})
-        qs = label.get("quality_score", 50)
+        label.get("quality_score", 50)
 
         # System A: old rule baseline (map from stored baseline)
         # We compute B and C here, A comes from baseline_scoring_report.json
@@ -439,8 +461,7 @@ def compute_ablation(opportunities: list[dict], labeled: list[dict],
 
     results["A_old_rule"] = AblationResult(
         system="A: Old Rule Baseline",
-        per_role={r: {"mean": d.get("mean_adjusted", 0), "cohens_d": d.get("cohens_d", 0)}
-                   for r, d in a_role.items()},
+        per_role={r: {"mean": d.get("mean_adjusted", 0), "cohens_d": d.get("cohens_d", 0)} for r, d in a_role.items()},
         pairwise_accuracy=0.0,
         cohens_d={r: d.get("cohens_d", 0) for r, d in a_role.items()},
     )
@@ -481,6 +502,7 @@ def compute_ablation(opportunities: list[dict], labeled: list[dict],
 # Report generation
 # ---------------------------------------------------------------------------
 
+
 def generate_reports(
     ovm_result: TrainingResult,
     dqm_result: TrainingResult,
@@ -494,19 +516,29 @@ def generate_reports(
     metrics = {
         "OpportunityValueModel": {
             "fold_metrics": ovm_result.fold_metrics,
-            "mean_mae": round(statistics.mean([m["mae"] for m in ovm_result.fold_metrics]), 4) if ovm_result.fold_metrics else 0,
+            "mean_mae": round(statistics.mean([m["mae"] for m in ovm_result.fold_metrics]), 4)
+            if ovm_result.fold_metrics
+            else 0,
         },
         "DecisionQualityModel": {
             "fold_metrics": dqm_result.fold_metrics,
-            "mean_accuracy": round(statistics.mean([m["accuracy"] for m in dqm_result.fold_metrics]), 4) if dqm_result.fold_metrics else 0,
-            "mean_pairwise_accuracy": round(statistics.mean([m["pairwise_accuracy"] for m in dqm_result.fold_metrics]), 4) if dqm_result.fold_metrics else 0,
+            "mean_accuracy": round(statistics.mean([m["accuracy"] for m in dqm_result.fold_metrics]), 4)
+            if dqm_result.fold_metrics
+            else 0,
+            "mean_pairwise_accuracy": round(
+                statistics.mean([m["pairwise_accuracy"] for m in dqm_result.fold_metrics]), 4
+            )
+            if dqm_result.fold_metrics
+            else 0,
         },
     }
     (output_dir / "model_metrics.json").write_text(json.dumps(metrics, ensure_ascii=False, indent=2))
 
     # 2. feature_importance.md
     lines = ["# Feature Importance (DecisionQualityModel)", ""]
-    sorted_feats = sorted(dqm_result.feature_importances.items(), key=lambda x: -x[1]) if dqm_result.feature_importances else []
+    sorted_feats = (
+        sorted(dqm_result.feature_importances.items(), key=lambda x: -x[1]) if dqm_result.feature_importances else []
+    )
     lines.append("| Feature | Importance |")
     lines.append("|---------|------------|")
     for name, imp in sorted_feats[:15]:
@@ -567,8 +599,10 @@ def generate_reports(
 # Main
 # ---------------------------------------------------------------------------
 
+
 def main() -> int:
     import argparse
+
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--output-dir", default="data/health")
@@ -589,19 +623,27 @@ def main() -> int:
         return 1
 
     if args.limit:
-        opportunities = opportunities[:args.limit]
-        labeled = labeled[:args.limit]
+        opportunities = opportunities[: args.limit]
+        labeled = labeled[: args.limit]
 
     # Train models
     print("\n=== Training OpportunityValueModel ===")
     ovm_result = train_opportunity_value_model(labeled, opportunities)
-    print(f"  Folds: {len(ovm_result.fold_metrics)}, Mean MAE: {statistics.mean([m['mae'] for m in ovm_result.fold_metrics]):.4f}" if ovm_result.fold_metrics else "  No folds trained")
+    print(
+        f"  Folds: {len(ovm_result.fold_metrics)}, Mean MAE: {statistics.mean([m['mae'] for m in ovm_result.fold_metrics]):.4f}"
+        if ovm_result.fold_metrics
+        else "  No folds trained"
+    )
 
     print("\n=== Training DecisionQualityModel ===")
     dqm_result = train_decision_quality_model(labeled, opportunities)
-    print(f"  Folds: {len(dqm_result.fold_metrics)}, Mean Accuracy: {statistics.mean([m['accuracy'] for m in dqm_result.fold_metrics]):.4f}" if dqm_result.fold_metrics else "  No folds trained")
+    print(
+        f"  Folds: {len(dqm_result.fold_metrics)}, Mean Accuracy: {statistics.mean([m['accuracy'] for m in dqm_result.fold_metrics]):.4f}"
+        if dqm_result.fold_metrics
+        else "  No folds trained"
+    )
     if dqm_result.fold_metrics:
-        paw = statistics.mean([m['pairwise_accuracy'] for m in dqm_result.fold_metrics])
+        paw = statistics.mean([m["pairwise_accuracy"] for m in dqm_result.fold_metrics])
         print(f"  Mean Pairwise Accuracy: {paw:.4f}")
 
     # Ablation
@@ -619,8 +661,30 @@ def main() -> int:
         label_qs = item.get("label", {}).get("quality_score")
         all_y.append((label_qs / 100.0) if label_qs is not None else rule_decision_quality(opp))
 
-    if len(set(int(y >= 0.5) for y in all_y)) >= 2:
+    if len({int(y >= 0.5) for y in all_y}) >= 2:
         q_model.fit(np.array(all_X), np.array([int(y >= 0.5) for y in all_y]))
+
+    # Train final OpportunityValueModel on all labeled data
+    print("\n=== Training final models on all data ===")
+    ovm_final = OpportunityValueModel()
+    ovm_X, ovm_y = [], []
+    for item in labeled:
+        opp = opp_by_id.get(item["opportunity_id"])
+        if opp is None:
+            continue
+        feats = extract_features(opp)
+        ovm_X.append(feats.to_array())
+        w = rule_opportunity_value(opp)
+        label_qs = item.get("label", {}).get("quality_score")
+        if label_qs is not None:
+            w = 0.7 * w + 0.3 * (label_qs / 100.0)
+        ovm_y.append(w)
+
+    if len(ovm_X) >= 5:
+        ovm_final.fit(np.array(ovm_X), np.array(ovm_y))
+        print(f"  OVM trained on {len(ovm_X)} samples")
+    else:
+        print("  OVM: insufficient data, skipping")
 
     ablation = compute_ablation(opportunities, labeled, q_model)
     print(f"  Systems: {list(ablation.keys())}")
@@ -630,9 +694,15 @@ def main() -> int:
     generate_reports(ovm_result, dqm_result, ablation, out_dir)
 
     # Save models
+    out_dir.mkdir(parents=True, exist_ok=True)
     ovm_path = out_dir / "opportunity_value_model.pkl"
     dqm_path = out_dir / "decision_quality_model.pkl"
-    # (Models will be saved in their class methods)
+    if ovm_final.model is not None:
+        ovm_final.save(ovm_path)
+        print(f"  OVM saved to {ovm_path}")
+    if q_model.model is not None:
+        q_model.save(dqm_path)
+        print(f"  DQM saved to {dqm_path}")
 
     print(f"\nDone! Reports in {out_dir}/")
     return 0

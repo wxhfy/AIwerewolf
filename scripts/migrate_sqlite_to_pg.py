@@ -21,6 +21,7 @@ Behaviour:
 Run:
     python scripts/migrate_sqlite_to_pg.py [--dry-run] [--keep-bak]
 """
+
 from __future__ import annotations
 
 import argparse
@@ -28,24 +29,23 @@ import shutil
 import sys
 from pathlib import Path
 
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import create_engine
+from sqlalchemy import inspect
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from backend.db.database import engine as pg_engine  # noqa: E402
-from backend.db.models import (  # noqa: E402
-    AgentDecision,
-    Base,
-    Evaluation,
-    Game,
-    GameEvent,
-    GameSnapshot,
-    Player,
-    Vote,
-)
-
+from backend.db.models import AgentDecision  # noqa: E402
+from backend.db.models import Base  # noqa: E402
+from backend.db.models import Evaluation  # noqa: E402
+from backend.db.models import Game  # noqa: E402
+from backend.db.models import GameEvent  # noqa: E402
+from backend.db.models import GameSnapshot  # noqa: E402
+from backend.db.models import Player  # noqa: E402
+from backend.db.models import Vote  # noqa: E402
 
 # Migration order matters: parents before children (FK).
 MIGRATION_ORDER: tuple[type[Base], ...] = (

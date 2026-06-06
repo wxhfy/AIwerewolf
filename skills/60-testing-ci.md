@@ -107,7 +107,7 @@ from backend.app import app
 
 def test_create_game_returns_winner():
     client = TestClient(app)
-    res = client.post("/api/games?seed=7&agent_type=heuristic")
+    res = client.post("/api/games?seed=7&agent_type=llm")
     assert res.status_code == 200
     body = res.json()
     assert body["winner"] in {"village", "wolf"}
@@ -115,7 +115,7 @@ def test_create_game_returns_winner():
 
 **注意**:
 
-- `agent_type="heuristic"` 跑快、稳定;`"llm"` 不要在 CI 跑(费 token + 不稳定)
+- CI / 本地 smoke 用 `LLM_PROVIDER=fake` + `agent_type="llm"`；不得用 `agent_type="heuristic"` 代替对局
 - 路由变更要在 `test_api.py` 同步加测试
 - 错误路径(404 / 400)也要覆盖
 
@@ -207,13 +207,13 @@ jobs:
 
 **不要在 CI 跑**:
 
-- LLM 真实调用(费钱、不稳)
+- LLM 真实调用(费钱、不稳；CI 用 fake LLM stub)
 - UI smoke(慢,需要 headless 浏览器额外配置)
 
 **可以在 CI 跑**:
 
-- pytest 全套(纯 Python,heuristic Agent)
-- e2e_smoke.py(纯 HTTP,heuristic Agent)
+- pytest 全套(纯 Python,fake LLM)
+- e2e_smoke.py(纯 HTTP,fake LLM)
 - mypy / ruff / black(若引入)
 
 ---

@@ -1,0 +1,178 @@
+{
+  "entries": [
+    {
+      "profile": "ISTJ-conservative",
+      "mbti": "ISTJ",
+      "description": "证据优先、低风险、稳定执行、不冒进",
+      "games_played": 3,
+      "avg_process_score": 57.98,
+      "avg_speech_score": 0.57,
+      "avg_vote_score": 0.62,
+      "avg_skill_score": 0.62,
+      "avg_survival_score": 0.83,
+      "critical_mistake_rate": 0.29,
+      "counterfactual_coverage": 0.83,
+      "win_rate": 0.67,
+      "confidence_interval": [
+        47.57,
+        68.39
+      ],
+      "low_sample_warning": true,
+      "speech_audit": {
+        "pressure_signal": 0.1606,
+        "information_seeking_signal": 0.4685,
+        "defensive_posture_signal": 0.3683,
+        "evidence_grounding_signal": 0.1915,
+        "identity_claim_signal": 0.0843,
+        "actionability_signal": 0.0982
+      },
+      "speech_act_distribution": {
+        "accusation": 0.1606,
+        "interrogation": 0.4685,
+        "defense": 0.3683,
+        "evidence_use": 0.1915,
+        "identity_declaration": 0.0843,
+        "call_for_action": 0.0982
+      },
+      "role_distribution": {
+        "Werewolf": 6,
+        "Hunter": 3,
+        "Seer": 3,
+        "Villager": 3,
+        "Guard": 3,
+        "Witch": 3
+      }
+    },
+    {
+      "profile": "ENTJ-shotcaller",
+      "mbti": "ENTJ",
+      "description": "强势归票，主动领导，快速决策，善于推动票型",
+      "games_played": 3,
+      "avg_process_score": 57.95,
+      "avg_speech_score": 0.58,
+      "avg_vote_score": 0.61,
+      "avg_skill_score": 0.59,
+      "avg_survival_score": 0.85,
+      "critical_mistake_rate": 0.24,
+      "counterfactual_coverage": 0.8,
+      "win_rate": 1.0,
+      "confidence_interval": [
+        48.45,
+        67.45
+      ],
+      "low_sample_warning": true,
+      "speech_audit": {
+        "pressure_signal": 0.1606,
+        "information_seeking_signal": 0.4685,
+        "defensive_posture_signal": 0.3683,
+        "evidence_grounding_signal": 0.1915,
+        "identity_claim_signal": 0.0843,
+        "actionability_signal": 0.0982
+      },
+      "speech_act_distribution": {
+        "accusation": 0.1606,
+        "interrogation": 0.4685,
+        "defense": 0.3683,
+        "evidence_use": 0.1915,
+        "identity_declaration": 0.0843,
+        "call_for_action": 0.0982
+      },
+      "role_distribution": {
+        "Werewolf": 6,
+        "Hunter": 3,
+        "Seer": 3,
+        "Villager": 3,
+        "Guard": 3,
+        "Witch": 3
+      }
+    },
+    {
+      "profile": "INTJ-strategist",
+      "mbti": "INTJ",
+      "description": "长线规划，重视证据和反事实推理，发言精准克制",
+      "games_played": 3,
+      "avg_process_score": 56.27,
+      "avg_speech_score": 0.58,
+      "avg_vote_score": 0.61,
+      "avg_skill_score": 0.59,
+      "avg_survival_score": 0.85,
+      "critical_mistake_rate": 0.29,
+      "counterfactual_coverage": 0.67,
+      "win_rate": 1.0,
+      "confidence_interval": [
+        46.25,
+        66.29
+      ],
+      "low_sample_warning": true,
+      "speech_audit": {
+        "pressure_signal": 0.1606,
+        "information_seeking_signal": 0.4685,
+        "defensive_posture_signal": 0.3683,
+        "evidence_grounding_signal": 0.1915,
+        "identity_claim_signal": 0.0843,
+        "actionability_signal": 0.0982
+      },
+      "speech_act_distribution": {
+        "accusation": 0.1606,
+        "interrogation": 0.4685,
+        "defense": 0.3683,
+        "evidence_use": 0.1915,
+        "identity_declaration": 0.0843,
+        "call_for_action": 0.0982
+      },
+      "role_distribution": {
+        "Werewolf": 6,
+        "Hunter": 3,
+        "Seer": 3,
+        "Villager": 3,
+        "Guard": 3,
+        "Witch": 3
+      }
+    },
+    {
+      "profile": "ENFP-social-chaotic",
+      "mbti": "ENFP",
+      "description": "高互动、多发言、信息开放、容易被新发言影响",
+      "games_played": 3,
+      "avg_process_score": 56.11,
+      "avg_speech_score": 0.58,
+      "avg_vote_score": 0.6,
+      "avg_skill_score": 0.61,
+      "avg_survival_score": 0.79,
+      "critical_mistake_rate": 0.33,
+      "counterfactual_coverage": 1.0,
+      "win_rate": 0.67,
+      "confidence_interval": [
+        44.81,
+        67.41
+      ],
+      "low_sample_warning": true,
+      "speech_audit": {
+        "pressure_signal": 0.1606,
+        "information_seeking_signal": 0.4685,
+        "defensive_posture_signal": 0.3683,
+        "evidence_grounding_signal": 0.1915,
+        "identity_claim_signal": 0.0843,
+        "actionability_signal": 0.0982
+      },
+      "speech_act_distribution": {
+        "accusation": 0.1606,
+        "interrogation": 0.4685,
+        "defense": 0.3683,
+        "evidence_use": 0.1915,
+        "identity_declaration": 0.0843,
+        "call_for_action": 0.0982
+      },
+      "role_distribution": {
+        "Werewolf": 6,
+        "Hunter": 3,
+        "Seer": 3,
+        "Villager": 3,
+        "Guard": 3,
+        "Witch": 3
+      }
+    }
+  ],
+  "total_games": 12,
+  "base_model": "deepseek-v4-pro[1m]"
+}

@@ -1,0 +1,22 @@
+# Track B Open Data Sources Manifest
+# Generated: placeholder — regenerate with scripts/build_open_data_manifest.py
+version: "0.1.0"
+sources:
+  werewolf_among_us:
+    priority: P0
+    raw_dir: data/external/raw/werewolf_among_us
+    license_status: public
+    description: "Werewolf Among Us game logs"
+    project_url: "https://github.com/example/werewolf-among-us"
+  ai_werewolf_synthetic:
+    priority: P2
+    raw_dir: data/external/raw/ai_werewolf_synthetic
+    license_status: synthetic
+    description: "Synthetic AI werewolf game logs"
+    paper_url: "https://arxiv.org/abs/example"
+  human_annotation:
+    priority: P3
+    raw_dir: data/external/raw/human_annotation
+    license_status: private
+    description: "Human-annotated bad case examples"
+    project_url: "https://github.com/example/annotation"

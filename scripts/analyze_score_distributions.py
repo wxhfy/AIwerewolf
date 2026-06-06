@@ -25,7 +25,6 @@ import argparse
 import json
 import math
 import statistics
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -123,7 +122,11 @@ def analyze_role(role: str, records_by_variant: dict[str, list[dict[str, Any]]])
     d_task = cohens_d(g_task, b_task)
     p_task = welch_t_p(g_task, b_task)
 
-    abs_d_final = abs(d_final) if not math.isnan(d_final) and not math.isinf(d_final) else (float("inf") if math.isinf(d_final) else 0.0)
+    abs_d_final = (
+        abs(d_final)
+        if not math.isnan(d_final) and not math.isinf(d_final)
+        else (float("inf") if math.isinf(d_final) else 0.0)
+    )
     discriminates = (
         abs_d_final >= 0.8
         and (math.isnan(p_final) or p_final < 0.05)
@@ -147,8 +150,10 @@ def analyze_role(role: str, records_by_variant: dict[str, list[dict[str, Any]]])
         "cohens_d_role_task_score": d_task,
         "welch_t_p_role_task_score": p_task,
         "verdict": (
-            "DISCRIMINATES" if discriminates
-            else "INCONCLUSIVE" if (len(g_final) < 2 or len(b_final) < 2)
+            "DISCRIMINATES"
+            if discriminates
+            else "INCONCLUSIVE"
+            if (len(g_final) < 2 or len(b_final) < 2)
             else "FAILS_DISCRIMINATION"
         ),
     }
@@ -156,7 +161,9 @@ def analyze_role(role: str, records_by_variant: dict[str, list[dict[str, Any]]])
 
 def render_table(per_role: list[dict[str, Any]]) -> None:
     print()
-    print(f"{'role':<10} {'good_n':>6} {'bad_n':>6} {'good_avg':>10} {'bad_avg':>10} {'d_final':>9} {'p_final':>9} {'verdict':<24}")
+    print(
+        f"{'role':<10} {'good_n':>6} {'bad_n':>6} {'good_avg':>10} {'bad_avg':>10} {'d_final':>9} {'p_final':>9} {'verdict':<24}"
+    )
     print("-" * 96)
     for entry in per_role:
         g_n = entry["good"]["adjusted_final_score"]["n"]
@@ -169,7 +176,9 @@ def render_table(per_role: list[dict[str, Any]]) -> None:
         b_str = f"{b_mean:.2f}" if b_mean is not None else "—"
         d_str = f"{d:+.3f}" if not math.isnan(d) and not math.isinf(d) else ("+inf" if math.isinf(d) and d > 0 else "—")
         p_str = f"{p:.4f}" if not math.isnan(p) else "—"
-        print(f"{entry['role']:<10} {g_n:>6} {b_n:>6} {g_str:>10} {b_str:>10} {d_str:>9} {p_str:>9} {entry['verdict']:<24}")
+        print(
+            f"{entry['role']:<10} {g_n:>6} {b_n:>6} {g_str:>10} {b_str:>10} {d_str:>9} {p_str:>9} {entry['verdict']:<24}"
+        )
     print()
 
 
@@ -190,9 +199,11 @@ def main() -> int:
 
     discriminating_count = sum(1 for entry in per_role if entry["verdict"] == "DISCRIMINATES")
     overall_pass = discriminating_count >= args.threshold_roles
-    print(f"Roles discriminating (d≥{args.threshold_d}, p<0.05): "
-          f"{discriminating_count}/{len(per_role)}  →  "
-          f"OVERALL {'PASS' if overall_pass else 'FAIL'}")
+    print(
+        f"Roles discriminating (d≥{args.threshold_d}, p<0.05): "
+        f"{discriminating_count}/{len(per_role)}  →  "
+        f"OVERALL {'PASS' if overall_pass else 'FAIL'}"
+    )
 
     payload = {
         "threshold_d": args.threshold_d,

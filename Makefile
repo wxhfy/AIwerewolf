@@ -1,54 +1,94 @@
-# AI Werewolf — common dev/ops shortcuts
-# Run `make help` to see the full list.
+# ============================================================================
+# AI Werewolf — Makefile
+# ============================================================================
+# Quick reference:
+#   make deploy        — one-command production deploy (Docker full stack)
+#   make dev           — local development server
+# ============================================================================
 
-.PHONY: help install demo dev test smoke human-smoke db-up db-down db-shell db-init db-migrate \
-        compose-up compose-down compose-logs lint clean
+PYTHON  ?= python
+PORT    ?= 8000
+SEED    ?= 7
+COMPOSE := docker compose
 
-PYTHON ?= python
-PORT   ?= 8000
-SEED   ?= 7
+# ------------------------------------------------------------------
+# 🚀  One-command Deploy
+# ------------------------------------------------------------------
 
-help:
-	@echo "AI Werewolf Makefile"
+.PHONY: deploy deploy-dev deploy-down deploy-logs deploy-status
+
+deploy: .env
+	@echo "🐺  AI Werewolf — Production Deploy"
+	@echo "========================================"
+	$(COMPOSE) up -d --build --wait
 	@echo ""
-	@echo "  make install       — pip install -r requirements.txt"
-	@echo "  make demo          — run one offline AI vs AI game (seed=$(SEED))"
-	@echo "  make dev           — start FastAPI (port $(PORT)) with reload"
-	@echo "  make test          — run pytest unit suite"
-	@echo "  make smoke         — run scripts/e2e_smoke.py"
-	@echo "  make human-smoke   — run scripts/human_smoke.py (server must be up)"
-	@echo "  make db-up         — start the Postgres container (port 5433)"
-	@echo "  make db-down       — stop the Postgres container"
-	@echo "  make db-shell      — psql shell into the container"
-	@echo "  make db-init       — create / refresh schema in the configured DB"
-	@echo "  make db-migrate    — copy historical games from data/werewolf.db into PG (idempotent)"
-	@echo "  make compose-up    — bring up the full stack (postgres + backend)"
-	@echo "  make compose-down  — tear the full stack down"
-	@echo "  make compose-logs  — tail backend logs"
-	@echo "  make clean         — remove caches and the local sqlite DB"
+	@echo "✅  Deploy complete!"
+	@echo "    Frontend : http://localhost"
+	@echo "    API      : http://localhost/api"
+	@echo "    Swagger  : http://localhost/api/docs"
+
+deploy-dev: .env
+	@echo "🐺  AI Werewolf — Dev Deploy (hot-reload)"
+	@echo "========================================"
+	$(COMPOSE) --profile dev up -d --build
+	@echo ""
+	@echo "✅  Dev deploy complete!"
+	@echo "    Backend  : http://localhost:8000"
+	@echo "    Frontend : http://localhost:3001"
+
+deploy-down:
+	$(COMPOSE) down -v
+
+deploy-logs:
+	$(COMPOSE) logs -f
+
+deploy-status:
+	@$(COMPOSE) ps
+
+# ------------------------------------------------------------------
+# 🛠  Local Development
+# ------------------------------------------------------------------
+
+.PHONY: install dev demo test lint format
 
 install:
 	$(PYTHON) -m pip install -r requirements.txt
-
-demo:
-	$(PYTHON) -m backend.run_demo --seed $(SEED)
+	cd frontend && npm install --legacy-peer-deps
 
 dev:
 	$(PYTHON) -m uvicorn backend.app:app --host 0.0.0.0 --port $(PORT) --reload
 
+demo:
+	$(PYTHON) -m backend.run_demo --seed $(SEED)
+
 test:
-	$(PYTHON) -m pytest tests/test_engine.py tests/test_llm_config.py tests/test_api.py -x --tb=short
+	$(PYTHON) -m pytest tests/ -x --tb=short -q
 
-smoke:
-	$(PYTHON) scripts/e2e_smoke.py
+test-strict:
+	$(PYTHON) scripts/run_backend_full_strict.py
 
-human-smoke:
-	$(PYTHON) scripts/human_smoke.py
+test-visibility:
+	$(PYTHON) scripts/verify_visibility_strict.py
+
+lint:
+	$(PYTHON) -m ruff check backend/ scripts/ tests/ configs/
+	$(PYTHON) -m ruff format --check backend/ scripts/ tests/ configs/
+
+format:
+	$(PYTHON) -m ruff check --fix backend/ scripts/ tests/ configs/
+	$(PYTHON) -m ruff format backend/ scripts/ tests/ configs/
+
+# ------------------------------------------------------------------
+# 🗄  Database
+# ------------------------------------------------------------------
+
+.PHONY: db-up db-down db-shell db-init db-migrate
 
 db-up:
 	docker start werewolf-pg 2>/dev/null || \
 	docker run -d --name werewolf-pg --restart unless-stopped \
-	  -e POSTGRES_USER=werewolf -e POSTGRES_PASSWORD=wolf_secret_2026 -e POSTGRES_DB=werewolf \
+	  -e POSTGRES_USER=werewolf -e POSTGRES_PASSWORD=wolf_secret_2026 \
+	  -e POSTGRES_DB=werewolf \
 	  -p 5433:5432 -v werewolf-pg-data:/var/lib/postgresql/data \
 	  postgres:16-alpine
 
@@ -59,20 +99,70 @@ db-shell:
 	docker exec -it werewolf-pg psql -U werewolf -d werewolf
 
 db-init:
-	$(PYTHON) -c "from backend.db.database import init_db; init_db(); print('schema created')"
+	$(PYTHON) -c "from backend.db.database import init_db; init_db(); print('Schema created')"
 
 db-migrate:
 	$(PYTHON) scripts/migrate_sqlite_to_pg.py
 
-compose-up:
-	docker compose up -d --build
+# ------------------------------------------------------------------
+# 🧹  Utilities
+# ------------------------------------------------------------------
 
-compose-down:
-	docker compose down
+.PHONY: preflight clean nuke help
 
-compose-logs:
-	docker compose logs -f backend
+preflight:
+	$(PYTHON) -m backend.ops.preflight
 
 clean:
 	find . -type d -name __pycache__ -prune -exec rm -rf {} +
 	rm -f data/werewolf.db
+
+nuke: deploy-down clean
+	docker volume rm werewolf-pg-data 2>/dev/null || true
+	docker rmi aiwerewolf-backend aiwerewolf-frontend 2>/dev/null || true
+	@echo "🧹  All containers, volumes, and images removed"
+
+help:
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "🐺  AI Werewolf — Makefile"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo ""
+	@echo "🚀  Deploy (Docker)"
+	@echo "  make deploy         — full stack: nginx + backend + frontend + postgres"
+	@echo "  make deploy-dev      — dev mode with hot-reload"
+	@echo "  make deploy-down     — stop everything"
+	@echo "  make deploy-logs     — tail all service logs"
+	@echo "  make deploy-status   — show running containers"
+	@echo ""
+	@echo "🛠  Development"
+	@echo "  make install         — pip install + npm install"
+	@echo "  make dev             — start FastAPI (reload, port $(PORT))"
+	@echo "  make demo            — one offline AI vs AI game (seed=$(SEED))"
+	@echo ""
+	@echo "🧪  Testing"
+	@echo "  make test            — unit tests"
+	@echo "  make test-strict     — full strict-mode validation"
+	@echo "  make test-visibility — information isolation check (92 items)"
+	@echo "  make lint            — ruff check + format check"
+	@echo "  make format          — ruff auto-fix + format"
+	@echo ""
+	@echo "🗄  Database"
+	@echo "  make db-up           — start PostgreSQL (port 5433)"
+	@echo "  make db-down         — stop PostgreSQL"
+	@echo "  make db-shell        — psql shell"
+	@echo "  make db-init         — create / refresh schema"
+	@echo ""
+	@echo "🧹  Utilities"
+	@echo "  make preflight       — 7-item startup check"
+	@echo "  make clean           — remove caches + sqlite DB"
+	@echo "  make nuke            — remove ALL containers + volumes + images"
+	@echo ""
+
+# ------------------------------------------------------------------
+# Ensure .env exists
+# ------------------------------------------------------------------
+.env:
+	@echo "⚠️  .env not found — copying .env.example"
+	@cp .env.example .env
+	@echo "🔧  Edit .env with your API keys, then re-run make"
+	@exit 1

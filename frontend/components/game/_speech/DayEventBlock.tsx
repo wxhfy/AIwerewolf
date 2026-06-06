@@ -58,7 +58,12 @@ function mergeConsecutiveChats(events: GameEvent[]): GameEvent[] {
   const merged: GameEvent[] = [];
   for (const event of events) {
     const prev = merged[merged.length - 1];
+    // Don't merge multi-segment speeches (segment_total > 1) — they are
+    // intentionally separate bubbles from the backend
+    const isMultiSegment = (event.payload as any)?.segment_total > 1
+      || (prev?.payload as any)?.segment_total > 1;
     if (
+      !isMultiSegment &&
       prev && event.type === EventType.CHAT_MESSAGE && prev.type === EventType.CHAT_MESSAGE &&
       event.payload.actor_id && event.payload.actor_id === prev.payload.actor_id &&
       event.phase === prev.phase &&
@@ -244,7 +249,7 @@ export function DayEventBlock({
               break;
             }
           }
-          const showWolf = day > 0 && day === currentDay && !isTransitioning && wolfInsertAt > 0;
+          const showWolf = day > 0 && (day <= (currentDay ?? day)) && !isTransitioning && wolfInsertAt > 0;
           const wolfEntries = showWolf
             ? buildWolfDeliberation(day, nightActions, decisionRecords, players || [], language)
             : [];

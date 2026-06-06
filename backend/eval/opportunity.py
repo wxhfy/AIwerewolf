@@ -10,8 +10,11 @@ Design follows docs/狼人杀 B 方向评分系统重构 Goal 文档.md §2.2.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from dataclasses import asdict
+from dataclasses import dataclass
+from dataclasses import field
+from datetime import datetime
+from datetime import timezone
 from typing import Any
 from uuid import uuid4
 
@@ -27,6 +30,7 @@ def _utcnow_iso() -> str:
 # ---------------------------------------------------------------------------
 # Dataclass
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class DecisionOpportunity:
@@ -62,6 +66,11 @@ class DecisionOpportunity:
     # Evidence trail
     evidence_event_ids: list[str] = field(default_factory=list)
 
+    # V8: Strategy traceability
+    strategy_id: str = ""
+    strategy_name: str = ""
+    strategy_type: str = ""
+
     # Metadata
     extracted_at: str = field(default_factory=_utcnow_iso)
     source_decision_id: str | None = None
@@ -73,6 +82,7 @@ class DecisionOpportunity:
 # ---------------------------------------------------------------------------
 # Opportunity type constants
 # ---------------------------------------------------------------------------
+
 
 class OpportunityType:
     SEER_CHECK = "seer_check"
@@ -106,6 +116,7 @@ SPEECH_PHASES = {"BADGE_SPEECH", "DAY_SPEECH", "DAY_LAST_WORDS", "BADGE_SIGNUP"}
 # ---------------------------------------------------------------------------
 # Feature builders
 # ---------------------------------------------------------------------------
+
 
 class GameFeatureBuilder:
     """Builds game_features and target_features from replay context."""
@@ -160,7 +171,7 @@ class GameFeatureBuilder:
         for e in events:
             if e.get("day", 0) > up_to_day:
                 break
-            content = e.get("content", {})
+            e.get("content", {})
             text = str(e.get("public_text", "") or "")
             for role_label in ["预言家", "女巫", "守卫", "猎人", "Seer", "Witch", "Guard", "Hunter"]:
                 if role_label in text:
@@ -206,6 +217,7 @@ class OutcomeFeatureBuilder:
 # Extractor
 # ---------------------------------------------------------------------------
 
+
 class OpportunityExtractor:
     """Extracts DecisionOpportunity records from a ReplayBundle.
 
@@ -227,14 +239,21 @@ class OpportunityExtractor:
             game_id = bundle["game_id"]
             winner = bundle.get("winner")
         else:
-            players = [asdict(p) if hasattr(p, '__dict__') else p for p in bundle.players]
+            players = [asdict(p) if hasattr(p, "__dict__") else p for p in bundle.players]
             events = bundle.events
             decisions = bundle.decisions
-            deaths = getattr(bundle, 'deaths', [])
+            deaths = getattr(bundle, "deaths", [])
             game_id = bundle.game_id
-            winner = getattr(bundle, 'winner', None)
+            winner = getattr(bundle, "winner", None)
 
         opportunities: list[DecisionOpportunity] = []
+
+        # V8: build player lookup for strategy fallback
+        player_map: dict[str, dict] = {}
+        for p in players:
+            pid = p.get("id", "") if isinstance(p, dict) else getattr(p, "id", "")
+            if pid:
+                player_map[pid] = p if isinstance(p, dict) else asdict(p) if hasattr(p, "__dict__") else {}
 
         for dec in decisions:
             role = dec.get("role", "Unknown")
@@ -251,10 +270,20 @@ class OpportunityExtractor:
             # Build features
             target_id = self._extract_target_id(dec, op_type)
             game_feat, target_feat = GameFeatureBuilder.build(
-                players, events, day, phase, player_id, target_id,
+                players,
+                events,
+                day,
+                phase,
+                player_id,
+                target_id,
             )
             outcome_feat = OutcomeFeatureBuilder.build(
-                events, deaths, day, target_id, player_id, winner,
+                events,
+                deaths,
+                day,
+                target_id,
+                player_id,
+                winner,
             )
 
             # Build context summaries
@@ -264,25 +293,40 @@ class OpportunityExtractor:
             # Gather evidence events
             evidence_ids = self._gather_evidence(events, day, phase, player_id, target_id)
 
-            opportunities.append(DecisionOpportunity(
-                opportunity_id=f"opp-{game_id[:8]}-{player_id}-{day}-{op_type}-{_uid()}",
-                game_id=game_id,
-                player_id=player_id,
-                role=role,
-                persona_id=persona_id,
-                day=day,
-                phase=phase,
-                opportunity_type=op_type,
-                legal_actions=list(dec.get("legal_actions", [])),
-                chosen_action=dict(dec.get("selected_action", {})),
-                public_context_summary=public_ctx,
-                private_context_summary=private_ctx,
-                target_features=target_feat,
-                game_features=game_feat,
-                outcome_features=outcome_feat,
-                evidence_event_ids=evidence_ids,
-                source_decision_id=dec.get("decision_id"),
-            ))
+            opportunities.append(
+                DecisionOpportunity(
+                    opportunity_id=f"opp-{game_id[:8]}-{player_id}-{day}-{op_type}-{_uid()}",
+                    game_id=game_id,
+                    player_id=player_id,
+                    role=role,
+                    persona_id=persona_id,
+                    day=day,
+                    phase=phase,
+                    opportunity_type=op_type,
+                    legal_actions=list(dec.get("legal_actions", [])),
+                    chosen_action=dict(dec.get("selected_action", {})),
+                    public_context_summary=public_ctx,
+                    private_context_summary=private_ctx,
+                    target_features=target_feat,
+                    game_features=game_feat,
+                    outcome_features=outcome_feat,
+                    evidence_event_ids=evidence_ids,
+                    source_decision_id=dec.get("decision_id"),
+                    # V8: strategy traceability — read from parsed_action, fallback to player
+                    strategy_id=(
+                        (dec.get("parsed_action") or {}).get("strategy_id")
+                        or player_map.get(player_id, {}).get("strategy_id", "")
+                    ),
+                    strategy_name=(
+                        (dec.get("parsed_action") or {}).get("strategy_name")
+                        or player_map.get(player_id, {}).get("strategy_name", "")
+                    ),
+                    strategy_type=(
+                        (dec.get("parsed_action") or {}).get("strategy_type")
+                        or player_map.get(player_id, {}).get("strategy_type", "")
+                    ),
+                )
+            )
 
         return opportunities
 
@@ -312,9 +356,13 @@ class OpportunityExtractor:
     def _classify_night(self, role: str, action_type: str) -> str | None:
         mapping = {
             "Seer": {"divine": OpportunityType.SEER_CHECK, "check": OpportunityType.SEER_CHECK},
-            "Witch": {"save": OpportunityType.WITCH_SAVE, "poison": OpportunityType.WITCH_POISON,
-                       "antidote": OpportunityType.WITCH_SAVE, "use_antidote": OpportunityType.WITCH_SAVE,
-                       "use_poison": OpportunityType.WITCH_POISON},
+            "Witch": {
+                "save": OpportunityType.WITCH_SAVE,
+                "poison": OpportunityType.WITCH_POISON,
+                "antidote": OpportunityType.WITCH_SAVE,
+                "use_antidote": OpportunityType.WITCH_SAVE,
+                "use_poison": OpportunityType.WITCH_POISON,
+            },
             "Guard": {"guard": OpportunityType.GUARD_PROTECT, "protect": OpportunityType.GUARD_PROTECT},
             "Werewolf": {"kill": OpportunityType.WEREWOLF_KILL, "attack": OpportunityType.WEREWOLF_KILL},
             "Hunter": {"shoot": OpportunityType.HUNTER_SHOT},
@@ -338,33 +386,35 @@ class OpportunityExtractor:
     @staticmethod
     def _extract_target_id(dec: dict, op_type: str) -> str | None:
         action = dec.get("selected_action", {})
-        return (
-            action.get("target_id")
-            or action.get("target")
-            or action.get("player_id")
-            or action.get("victim_id")
-        )
+        return action.get("target_id") or action.get("target") or action.get("player_id") or action.get("victim_id")
 
     @staticmethod
     def _build_public_context(
-        events: list[dict], day: int, phase: str, player_id: str,
+        events: list[dict],
+        day: int,
+        phase: str,
+        player_id: str,
     ) -> str:
         """Build a short public context summary from recent events."""
         recent = [
-            e for e in events
-            if e.get("day", 0) == day
-            and e.get("event_type") in ("CHAT_MESSAGE", "VOTE_CAST", "PLAYER_DIED")
+            e
+            for e in events
+            if e.get("day", 0) == day and e.get("event_type") in ("CHAT_MESSAGE", "VOTE_CAST", "PLAYER_DIED")
         ]
         lines = []
         for e in recent[-8:]:
             pt = e.get("public_text", "")
             if pt:
-                lines.append(f"[D{e.get('day',0)}|{e.get('phase','')}] {pt[:120]}")
+                lines.append(f"[D{e.get('day', 0)}|{e.get('phase', '')}] {pt[:120]}")
         return "\n".join(lines) if lines else "(no public events)"
 
     @staticmethod
     def _gather_evidence(
-        events: list[dict], day: int, phase: str, player_id: str, target_id: str | None,
+        events: list[dict],
+        day: int,
+        phase: str,
+        player_id: str,
+        target_id: str | None,
     ) -> list[str]:
         """Collect event IDs that serve as evidence for this opportunity."""
         ids: list[str] = []
@@ -381,6 +431,7 @@ class OpportunityExtractor:
 # Batch extraction entry point
 # ---------------------------------------------------------------------------
 
+
 def extract_all_opportunities(
     game_ids: list[str],
     *,
@@ -390,20 +441,24 @@ def extract_all_opportunities(
     import json
     from pathlib import Path
 
-    from backend.db.database import SessionLocal, init_db
-    from backend.db.models import PublishedReview
-    from backend.eval.track_b import reconstruct_review_report, ReplayBundleBuilder
+    from backend.db.database import SessionLocal
+    from backend.db.database import init_db
+    from backend.eval.track_b import reconstruct_review_report
 
     init_db()
     db = SessionLocal()
     try:
         from sqlalchemy import text
+
         gids = tuple(game_ids)
-        rows = db.execute(text(
-            "SELECT pr.game_id, pr.report_json, g.winner "
-            "FROM published_reviews pr JOIN games g ON g.id = pr.game_id "
-            "WHERE pr.game_id IN :gids AND pr.publish_allowed = true"
-        ), {"gids": gids}).fetchall()
+        rows = db.execute(
+            text(
+                "SELECT pr.game_id, pr.report_json, g.winner "
+                "FROM published_reviews pr JOIN games g ON g.id = pr.game_id "
+                "WHERE pr.game_id IN :gids AND pr.publish_allowed = true"
+            ),
+            {"gids": gids},
+        ).fetchall()
 
         extractor = OpportunityExtractor()
         all_opps: list[DecisionOpportunity] = []
@@ -412,7 +467,7 @@ def extract_all_opportunities(
             if not report_json:
                 continue
             try:
-                report = reconstruct_review_report(report_json)
+                reconstruct_review_report(report_json)
             except Exception:
                 continue
 
@@ -457,14 +512,16 @@ def _extract_players_from_report(report: dict) -> list[dict[str, Any]]:
     """Extract player info from a review report's player_reviews."""
     players: list[dict[str, Any]] = []
     for pr in report.get("player_reviews", []):
-        players.append({
-            "id": pr.get("player_id", ""),
-            "name": pr.get("player_name", ""),
-            "role": pr.get("role", ""),
-            "alignment": pr.get("alignment", "village"),
-            "alive": True,
-            "persona": {"name": pr.get("player_name", "")},
-        })
+        players.append(
+            {
+                "id": pr.get("player_id", ""),
+                "name": pr.get("player_name", ""),
+                "role": pr.get("role", ""),
+                "alignment": pr.get("alignment", "village"),
+                "alive": True,
+                "persona": {"name": pr.get("player_name", "")},
+            }
+        )
     return players
 
 
@@ -483,36 +540,40 @@ def _extract_decisions_from_report(report: dict) -> list[dict[str, Any]]:
     for pr in report.get("player_reviews", []):
         player_id = pr.get("player_id", "")
         role = pr.get("role", "")
-        alignment = pr.get("alignment", "village")
+        pr.get("alignment", "village")
 
         # Vote opportunity
         if pr.get("rule_score_reasons") and any("投票" in str(r) for r in pr.get("rule_score_reasons", [])):
-            synthetic.append({
-                "decision_id": f"synth-vote-{player_id}",
-                "player_id": player_id,
-                "role": role,
-                "day": 1,
-                "phase": "DAY_VOTE",
-                "observation_summary": pr.get("overall_summary", ""),
-                "legal_actions": [{"type": "vote", "targets": []}],
-                "selected_action": {"type": "vote"},
-                "parsed_success": True,
-                "fallback_used": False,
-            })
+            synthetic.append(
+                {
+                    "decision_id": f"synth-vote-{player_id}",
+                    "player_id": player_id,
+                    "role": role,
+                    "day": 1,
+                    "phase": "DAY_VOTE",
+                    "observation_summary": pr.get("overall_summary", ""),
+                    "legal_actions": [{"type": "vote", "targets": []}],
+                    "selected_action": {"type": "vote"},
+                    "parsed_success": True,
+                    "fallback_used": False,
+                }
+            )
 
         # Speech opportunity
         if pr.get("speech_summary"):
-            synthetic.append({
-                "decision_id": f"synth-speech-{player_id}",
-                "player_id": player_id,
-                "role": role,
-                "day": 1,
-                "phase": "DAY_SPEECH",
-                "observation_summary": pr.get("speech_summary", ""),
-                "legal_actions": [{"type": "speech"}],
-                "selected_action": {"type": "speech", "speech": pr.get("speech_summary", "")},
-                "parsed_success": True,
-                "fallback_used": False,
-            })
+            synthetic.append(
+                {
+                    "decision_id": f"synth-speech-{player_id}",
+                    "player_id": player_id,
+                    "role": role,
+                    "day": 1,
+                    "phase": "DAY_SPEECH",
+                    "observation_summary": pr.get("speech_summary", ""),
+                    "legal_actions": [{"type": "speech"}],
+                    "selected_action": {"type": "speech", "speech": pr.get("speech_summary", "")},
+                    "parsed_success": True,
+                    "fallback_used": False,
+                }
+            )
 
     return synthetic

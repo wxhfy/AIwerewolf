@@ -1,0 +1,542 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Track B Review · badcase-001-402fb820dd68</title>
+  <style>
+    :root {
+      --bg: #f7efe4;
+      --paper: #fffaf3;
+      --ink: #1f1a17;
+      --muted: #7a6c62;
+      --line: #e5d3bd;
+      --accent: #9c5d2c;
+      --accent-soft: #d8b08d;
+      --danger: #9f3f3f;
+      --success: #2d7d55;
+      --shadow: 0 24px 60px rgba(71, 49, 26, 0.14);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "PingFang SC", "Hiragino Sans GB", sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(156,93,44,0.08), transparent 36%),
+        linear-gradient(180deg, #fbf5ec 0%, var(--bg) 100%);
+      color: var(--ink);
+      padding: 28px;
+    }
+    .report {
+      max-width: 1300px;
+      margin: 0 auto;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 28px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    .hero {
+      padding: 32px;
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(135deg, rgba(156,93,44,0.12), rgba(255,255,255,0.5));
+    }
+    .eyebrow {
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 10px;
+    }
+    h1 { margin: 0; font-size: 34px; }
+    .sub {
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.6;
+    }
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 24px;
+    }
+    .visual-stage {
+      margin-top: 22px;
+      border-radius: 24px;
+      overflow: hidden;
+      border: 1px solid rgba(122,108,98,0.12);
+      background: rgba(255,255,255,0.74);
+    }
+    .visual-note {
+      margin-top: 12px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    .meta-card, .panel {
+      background: rgba(255,255,255,0.72);
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      padding: 18px;
+    }
+    .meta-card strong { display: block; font-size: 26px; margin-top: 8px; }
+    .layout {
+      display: grid;
+      grid-template-columns: 1.25fr .95fr;
+      gap: 18px;
+      padding: 22px;
+    }
+    .stack { display: grid; gap: 18px; }
+    .panel h2 {
+      margin: 0 0 14px;
+      font-size: 18px;
+    }
+    .row {
+      display: grid;
+      grid-template-columns: 220px 1fr;
+      gap: 12px;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .row.compact { grid-template-columns: 150px 1fr; }
+    .row-head {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .rank {
+      display: inline-flex;
+      width: fit-content;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .name { font-weight: 700; }
+    .meta { font-size: 12px; color: var(--muted); }
+    .bar-wrap {
+      position: relative;
+      height: 18px;
+      border-radius: 999px;
+      background: rgba(156,93,44,0.12);
+      overflow: hidden;
+    }
+    .bar {
+      position: absolute;
+      inset: 0 auto 0 0;
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--accent), #c88448);
+    }
+    .bar.suspicion {
+      background: linear-gradient(90deg, #b55b47, #d79958);
+    }
+    .bar-value {
+      position: absolute;
+      right: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 12px;
+      font-weight: 700;
+      color: #fff;
+    }
+    .camp-ring {
+      width: 180px;
+      height: 180px;
+      margin: 8px auto 12px;
+      border-radius: 50%;
+      background: conic-gradient(var(--success) 0 71.4%, var(--danger) 71.4% 100%);
+      display: grid;
+      place-items: center;
+    }
+    .camp-ring::after {
+      content: "";
+      width: 92px;
+      height: 92px;
+      border-radius: 50%;
+      background: var(--paper);
+      border: 1px solid var(--line);
+    }
+    .camp-caption { text-align: center; color: var(--muted); font-size: 13px; }
+    ul.clean {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      display: grid;
+      gap: 10px;
+    }
+    ul.clean li {
+      padding: 12px 14px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: rgba(255,255,255,0.66);
+      display: grid;
+      gap: 6px;
+    }
+    ul.clean strong { font-size: 14px; }
+    ul.clean span { color: var(--muted); font-size: 13px; line-height: 1.55; }
+    .speech-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .wide-panel {
+      padding: 0;
+      overflow: hidden;
+    }
+    .wide-panel .inner {
+      padding: 18px;
+    }
+    .speech-chip {
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.66);
+      border-radius: 999px;
+      padding: 8px 12px;
+      display: inline-flex;
+      gap: 10px;
+      align-items: center;
+      font-size: 13px;
+    }
+    .footer {
+      padding: 20px 24px 28px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 13px;
+    }
+    @media (max-width: 980px) {
+      body { padding: 14px; }
+      .meta-grid, .layout { grid-template-columns: 1fr; }
+      .row, .row.compact { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="report">
+    <section class="hero">
+      <div class="eyebrow">Track B Review</div>
+      <h1>AI Werewolf 复盘报告</h1>
+      <p class="sub">狼人阵营在 3 天、33 个事件后获胜。本局最大转折点出现在第 2 天的“女巫A 的致命失误”。 胜方 MVP 为 狼人A。<br/>Winner: <strong>wolf</strong> · Validation: <strong>needs_revision</strong> · Publish: <strong>no</strong></p>
+      <div class="meta-grid">
+        <div class="meta-card"><span>Game</span><strong>badcase-</strong></div>
+        <div class="meta-card"><span>Scoreboard</span><strong>7</strong></div>
+        <div class="meta-card"><span>Speech Acts</span><strong>7</strong></div>
+        <div class="meta-card"><span>Suspicion Frames</span><strong>19</strong></div>
+      </div>
+      <div class="visual-stage">
+        <svg viewBox="0 0 1100 260" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="review banner">
+          <defs>
+            <linearGradient id="bannerBg" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#f6dcc0" />
+              <stop offset="50%" stop-color="#f2efe8" />
+              <stop offset="100%" stop-color="#d9b38a" />
+            </linearGradient>
+            <linearGradient id="moonGlow" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#fff6db" />
+              <stop offset="100%" stop-color="#e7c289" />
+            </linearGradient>
+          </defs>
+          <rect x="0" y="0" width="1100" height="260" rx="28" fill="url(#bannerBg)" />
+          <circle cx="872" cy="74" r="42" fill="url(#moonGlow)" opacity="0.95" />
+          <path d="M0 198 C180 160 280 250 466 212 C666 170 790 230 1100 178 L1100 260 L0 260 Z" fill="#c48752" opacity="0.25"/>
+          <path d="M0 214 C140 176 308 236 476 208 C640 182 830 238 1100 188 L1100 260 L0 260 Z" fill="#7d4f34" opacity="0.16"/>
+          <g transform="translate(58 52)">
+            <text x="0" y="0" font-size="14" font-family="Segoe UI, PingFang SC, sans-serif" fill="#7a6c62" letter-spacing="2">VISUAL REPORT AGENT</text>
+            <text x="0" y="48" font-size="34" font-weight="700" font-family="Segoe UI, PingFang SC, sans-serif" fill="#1f1a17">AI Werewolf · Final Table Tableau</text>
+            <text x="0" y="88" font-size="16" font-family="Segoe UI, PingFang SC, sans-serif" fill="#4b3d34">Winner: wolf · Days: 3 · Events: 33 · Alive at finish: 3</text>
+            <text x="0" y="122" font-size="15" font-family="Segoe UI, PingFang SC, sans-serif" fill="#5f5147">Standout seats: 狼人A · 狼人B · 村民A</text>
+          </g>
+          <g transform="translate(768 136)">
+            <rect x="0" y="0" width="240" height="74" rx="18" fill="#fff9f1" stroke="#dfc7ac"/>
+            <text x="22" y="28" font-size="13" font-family="Segoe UI, PingFang SC, sans-serif" fill="#7a6c62">Players / Seats</text>
+            <text x="22" y="56" font-size="28" font-weight="700" font-family="Segoe UI, PingFang SC, sans-serif" fill="#1f1a17">7</text>
+            <text x="136" y="28" font-size="13" font-family="Segoe UI, PingFang SC, sans-serif" fill="#7a6c62">Report grade</text>
+            <text x="136" y="56" font-size="28" font-weight="700" font-family="Segoe UI, PingFang SC, sans-serif" fill="#9c5d2c">needs_revision</text>
+          </g>
+        </svg>
+        </div>
+      <div class="visual-note">All report visuals on this page are painted by a dedicated visual report agent as inline SVG artifacts, then embedded into the final HTML snapshot for replay-safe delivery.</div>
+    </section>
+
+    <section class="layout">
+      <div class="stack">
+        <div class="panel">
+          <h2>玩家评分榜</h2>
+          
+            <div class="row">
+              <div class="row-head">
+                <span class="rank">#1</span>
+                <span class="name">狼人A</span>
+                <span class="meta">Werewolf · wolf</span>
+              </div>
+              <div class="bar-wrap">
+                <div class="bar" style="width:100.0%"></div>
+                <span class="bar-value">93.40</span>
+              </div>
+            </div>
+            
+
+            <div class="row">
+              <div class="row-head">
+                <span class="rank">#2</span>
+                <span class="name">狼人B</span>
+                <span class="meta">Werewolf · wolf</span>
+              </div>
+              <div class="bar-wrap">
+                <div class="bar" style="width:96.3%"></div>
+                <span class="bar-value">89.90</span>
+              </div>
+            </div>
+            
+
+            <div class="row">
+              <div class="row-head">
+                <span class="rank">#3</span>
+                <span class="name">村民A</span>
+                <span class="meta">Villager · village</span>
+              </div>
+              <div class="bar-wrap">
+                <div class="bar" style="width:21.9%"></div>
+                <span class="bar-value">20.50</span>
+              </div>
+            </div>
+            
+
+            <div class="row">
+              <div class="row-head">
+                <span class="rank">#4</span>
+                <span class="name">猎人A</span>
+                <span class="meta">Hunter · village</span>
+              </div>
+              <div class="bar-wrap">
+                <div class="bar" style="width:8.9%"></div>
+                <span class="bar-value">8.33</span>
+              </div>
+            </div>
+            
+
+            <div class="row">
+              <div class="row-head">
+                <span class="rank">#5</span>
+                <span class="name">守卫A</span>
+                <span class="meta">Guard · village</span>
+              </div>
+              <div class="bar-wrap">
+                <div class="bar" style="width:1.2%"></div>
+                <span class="bar-value">1.10</span>
+              </div>
+            </div>
+            
+
+            <div class="row">
+              <div class="row-head">
+                <span class="rank">#6</span>
+                <span class="name">预言家A</span>
+                <span class="meta">Seer · village</span>
+              </div>
+              <div class="bar-wrap">
+                <div class="bar" style="width:0.0%"></div>
+                <span class="bar-value">0.00</span>
+              </div>
+            </div>
+            
+
+            <div class="row">
+              <div class="row-head">
+                <span class="rank">#7</span>
+                <span class="name">女巫A</span>
+                <span class="meta">Witch · village</span>
+              </div>
+              <div class="bar-wrap">
+                <div class="bar" style="width:0.0%"></div>
+                <span class="bar-value">0.00</span>
+              </div>
+            </div>
+            
+        </div>
+        <div class="panel">
+          <h2>关键高光 / 转折点</h2>
+          <ul class="clean"><li><strong>关键神职保护</strong><span>守卫多次把守护资源放在高价值神职身上，提升了好人信息链稳定性。</span></li>
+<li><strong>女巫A 的致命失误</strong><span>女巫A poisoned villager-side player 守卫A.</span></li>
+<li><strong>猎人A 的致命失误</strong><span>猎人A shot villager-side player 预言家A.</span></li>
+<li><strong>关键一票</strong><span>关键投票直接改变了当轮的放逐结果。</span></li></ul>
+        </div>
+        <div class="panel">
+          <h2>局部反事实</h2>
+          <ul class="clean"><li><strong>skill</strong><span>Village retains 守卫A and one extra vote for future days.</span></li>
+<li><strong>skill</strong><span>Preserving 女巫A retains Witch abilities.</span></li>
+<li><strong>guard_target</strong><span>Guard target change does not affect outcome — 女巫A died for other reasons.</span></li>
+<li><strong>skill</strong><span>Village resources preserved; wolf 狼人A eliminated instead.</span></li></ul>
+        </div>
+        <div class="panel wide-panel">
+          <div class="inner">
+            <h2>局势时间线图</h2>
+          </div>
+          
+        <svg viewBox="0 0 980 180" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="turning point timeline">
+          <rect width="980" height="180" rx="24" fill="#fffaf3" stroke="#e5d3bd"/>
+          <line x1="60" y1="90.0" x2="920" y2="90.0" stroke="#d3b18d" stroke-width="6" stroke-linecap="round"/>
+                <circle cx="122.5" cy="90.0" r="12" fill="#9c5d2c" />
+                <line x1="122.5" y1="90.0" x2="122.5" y2="90.0" stroke="#9c5d2c" stroke-width="3"/>
+                <rect x="34.5" y="48.0" width="176" height="62" rx="16" fill="#fff9f1" stroke="#dfc7ac"/>
+                <text x="48.5" y="72.0" font-size="13" font-family="Segoe UI, PingFang SC, sans-serif" fill="#9c5d2c">Day 3</text>
+                <text x="48.5" y="92.0" font-size="14" font-weight="700" font-family="Segoe UI, PingFang SC, sans-serif" fill="#1f1a17">关键神职保护</text>
+                <text x="48.5" y="112.0" font-size="11.5" font-family="Segoe UI, PingFang SC, sans-serif" fill="#6d6057">守卫多次把守护资源放在高价值神职身上，提升了好人信息链稳定性。</text>
+                
+                <circle cx="367.5" cy="90.0" r="12" fill="#9c5d2c" />
+                <line x1="367.5" y1="90.0" x2="367.5" y2="114.0" stroke="#9c5d2c" stroke-width="3"/>
+                <rect x="279.5" y="72.0" width="176" height="62" rx="16" fill="#fff9f1" stroke="#dfc7ac"/>
+                <text x="293.5" y="96.0" font-size="13" font-family="Segoe UI, PingFang SC, sans-serif" fill="#9c5d2c">Day 2</text>
+                <text x="293.5" y="116.0" font-size="14" font-weight="700" font-family="Segoe UI, PingFang SC, sans-serif" fill="#1f1a17">女巫A 的致命失误</text>
+                <text x="293.5" y="136.0" font-size="11.5" font-family="Segoe UI, PingFang SC, sans-serif" fill="#6d6057">女巫A poisoned villager-side player 守卫A.</text>
+                
+                <circle cx="612.5" cy="90.0" r="12" fill="#9c5d2c" />
+                <line x1="612.5" y1="90.0" x2="612.5" y2="90.0" stroke="#9c5d2c" stroke-width="3"/>
+                <rect x="524.5" y="48.0" width="176" height="62" rx="16" fill="#fff9f1" stroke="#dfc7ac"/>
+                <text x="538.5" y="72.0" font-size="13" font-family="Segoe UI, PingFang SC, sans-serif" fill="#9c5d2c">Day 1</text>
+                <text x="538.5" y="92.0" font-size="14" font-weight="700" font-family="Segoe UI, PingFang SC, sans-serif" fill="#1f1a17">猎人A 的致命失误</text>
+                <text x="538.5" y="112.0" font-size="11.5" font-family="Segoe UI, PingFang SC, sans-serif" fill="#6d6057">猎人A shot villager-side player 预言家A.</text>
+                
+                <circle cx="857.5" cy="90.0" r="12" fill="#9c5d2c" />
+                <line x1="857.5" y1="90.0" x2="857.5" y2="114.0" stroke="#9c5d2c" stroke-width="3"/>
+                <rect x="769.5" y="72.0" width="176" height="62" rx="16" fill="#fff9f1" stroke="#dfc7ac"/>
+                <text x="783.5" y="96.0" font-size="13" font-family="Segoe UI, PingFang SC, sans-serif" fill="#9c5d2c">Day 1</text>
+                <text x="783.5" y="116.0" font-size="14" font-weight="700" font-family="Segoe UI, PingFang SC, sans-serif" fill="#1f1a17">关键一票</text>
+                <text x="783.5" y="136.0" font-size="11.5" font-family="Segoe UI, PingFang SC, sans-serif" fill="#6d6057">关键投票直接改变了当轮的放逐结果。</text>
+                
+        </svg>
+        
+        </div>
+      </div>
+
+      <div class="stack">
+        <div class="panel">
+          <h2>阵营分布</h2>
+          <div class="camp-ring"></div>
+          <div class="camp-caption">Village 5 · Wolf 2</div>
+        </div>
+        <div class="panel">
+          <h2>公共怀疑矩阵（最终帧）</h2>
+          
+            <div class="row compact">
+              <div class="row-head">
+                <span class="name">狼人A</span>
+              </div>
+              <div class="bar-wrap">
+                <div class="bar suspicion" style="width:58.0%"></div>
+                <span class="bar-value">0.58</span>
+              </div>
+            </div>
+            
+
+            <div class="row compact">
+              <div class="row-head">
+                <span class="name">狼人B</span>
+              </div>
+              <div class="bar-wrap">
+                <div class="bar suspicion" style="width:58.0%"></div>
+                <span class="bar-value">0.58</span>
+              </div>
+            </div>
+            
+
+            <div class="row compact">
+              <div class="row-head">
+                <span class="name">预言家A</span>
+              </div>
+              <div class="bar-wrap">
+                <div class="bar suspicion" style="width:58.0%"></div>
+                <span class="bar-value">0.58</span>
+              </div>
+            </div>
+            
+
+            <div class="row compact">
+              <div class="row-head">
+                <span class="name">女巫A</span>
+              </div>
+              <div class="bar-wrap">
+                <div class="bar suspicion" style="width:58.0%"></div>
+                <span class="bar-value">0.58</span>
+              </div>
+            </div>
+            
+
+            <div class="row compact">
+              <div class="row-head">
+                <span class="name">守卫A</span>
+              </div>
+              <div class="bar-wrap">
+                <div class="bar suspicion" style="width:58.0%"></div>
+                <span class="bar-value">0.58</span>
+              </div>
+            </div>
+            
+
+            <div class="row compact">
+              <div class="row-head">
+                <span class="name">村民A</span>
+              </div>
+              <div class="bar-wrap">
+                <div class="bar suspicion" style="width:58.0%"></div>
+                <span class="bar-value">0.58</span>
+              </div>
+            </div>
+            
+
+            <div class="row compact">
+              <div class="row-head">
+                <span class="name">猎人A</span>
+              </div>
+              <div class="bar-wrap">
+                <div class="bar suspicion" style="width:42.0%"></div>
+                <span class="bar-value">0.42</span>
+              </div>
+            </div>
+            
+        </div>
+        <div class="panel wide-panel">
+          <div class="inner">
+            <h2>怀疑热力图</h2>
+          </div>
+          
+        <svg viewBox="0 0 980 328" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="suspicion heatmap">
+          <rect width="980" height="328" rx="24" fill="#fffaf3" stroke="#e5d3bd"/><text x="188" y="34" font-size="12" font-family="Segoe UI, PingFang SC, sans-serif" fill="#7a6c62">D1 · HUNTER_SHOOT</text><text x="338" y="34" font-size="12" font-family="Segoe UI, PingFang SC, sans-serif" fill="#7a6c62">D1 · HUNTER_SHOOT</text><text x="488" y="34" font-size="12" font-family="Segoe UI, PingFang SC, sans-serif" fill="#7a6c62">D2 · NIGHT_RESOLVE</text><text x="638" y="34" font-size="12" font-family="Segoe UI, PingFang SC, sans-serif" fill="#7a6c62">D2 · NIGHT_RESOLVE</text><text x="24" y="76" font-size="13" font-family="Segoe UI, PingFang SC, sans-serif" fill="#1f1a17">狼人A</text><rect x="168" y="58" width="118" height="26" rx="10" fill="rgb(190,185,161)" stroke="#ebd8c5"/><text x="212" y="75" font-size="12" font-weight="700" font-family="Segoe UI, PingFang SC, sans-serif" fill="#fff">0.58</text><rect x="318" y="58" width="118" height="26" rx="10" fill="rgb(190,185,161)" stroke="#ebd8c5"/><text x="362" y="75" font-size="12" font-weight="700" font-family="Segoe UI, PingFang SC, sans-serif" fill="#fff">0.58</text><rect x="468" y="58" width="118" height="26" rx="10" fill="rgb(190,185,161)" stroke="#ebd8c5"/><text x="512" y="75" font-size="12" font-weight="700" font-family="Segoe UI, PingFang SC, sans-serif" fill="#fff">0.58</text><rect x="618" y="58" width="118" height="26" rx="10" fill="rgb(190,185,161)" stroke="#ebd8c5"/><text x="662" y="75" font-size="12" font-weight="700" font-family="Segoe UI, PingFang SC, sans-serif" fill="#fff">0.58</text><text x="24" y="112" font-size="13" font-family="Segoe UI, PingFang SC, sans-serif" fill="#1f1a17">狼人B</text><rect x="168" y="94" width="118" height="26" rx="10" fill="rgb(190,185,161)" stroke="#ebd8c5"/><text x="212" y="111" font-size="12" font-weight="700" font-family="Segoe UI, PingFang SC, sans-serif" fill="#fff">0.58</text><rect x="318" y="94" width="118" height="26" rx="10" fill="rgb(190,185,161)" stroke="#ebd8c5"/><text x="362" y="111" font-size="12" font-weight="700" font-family="Segoe UI, PingFang SC, sans-serif" fill="#fff">0.58</text><rect x="468" y="94" width="118" height="26" rx="10" fill="rgb(190,185,161)" stroke="#ebd8c5"/><text x="512" y="111" font-size="12" font-weight="700" font-family="Segoe UI, PingFang SC, sans-serif" fill="#fff">0.58</text><rect x="618" y="94" width="118" height="26" rx="10" fill="rgb(190,185,161)" stroke="#ebd8c5"/><text x="662" y="111" font-size="12" font-weight="700" font-family="Segoe UI, PingFang SC, sans-serif" fill="#fff">0.58</text><text x="24" y="148" font-size="13" font-family="Segoe UI, PingFang SC, sans-serif" fill="#1f1a17">预言家A</text><rect x="168" y="130" width="118" height="26" rx="10" fill="rgb(190,185,161)" stroke="#ebd8c5"/><text x="212" y="147" font-size="12" font-weight="700" font-family="Segoe UI, PingFang SC, sans-serif" fill="#fff">0.58</text><rect x="318" y="130" width="118" height="26" rx="10" fill="rgb(190,185,161)" stroke="#ebd8c5"/><text x="362" y="147" font-size="12" font-weight="700" font-family="Segoe UI, PingFang SC, sans-serif" fill="#fff">0.58</text><rect x="468" y="130" width="118" height="26" rx="10" fill="rgb(190,185,161)" stroke="#ebd8c5"/><text x="512" y="147" font-size="12" font-weight="700" font-family="Segoe UI, PingFang SC, sans-serif" fill="#fff">0.58</text><rect x="618" y="130" width="118" height="26" rx="10" fill="rgb(190,185,161)" stroke="#ebd8c5"/><text x="662" y="147" font-size="12" font-weight="700" font-family="Segoe UI, PingFang SC, sans-serif" fill="#fff">0.58</text><text x="24" y="184" font-size="13" font-family="Segoe UI, PingFang SC, sans-serif" fill="#1f1a17">女巫A</text><rect x="168" y="166" width="118" height="26" rx="10" fill="rgb(190,185,161)" stroke="#ebd8c5"/><text x="212" y="183" font-size="12" font-weight="700" font-family="Segoe UI, PingFang SC, sans-serif" fill="#fff">0.58</text><rect x="318" y="166" width="118" height="26" rx="10" fill="rgb(190,185,161)" stroke="#ebd8c5"/><text x="362" y="183" font-size="12" font-weight="700" font-family="Segoe UI, PingFang SC, sans-serif" fill="#fff">0.58</text><rect x="468" y="166" width="118" height="26" rx="10" fill="rgb(190,185,161)" stroke="#ebd8c5"/><text x="512" y="183" font-size="12" font-weight="700" font-family="Segoe UI, PingFang SC, sans-serif" fill="#fff">0.58</text><rect x="618" y="166" width="118" height="26" rx="10" fill="rgb(190,185,161)" stroke="#ebd8c5"/><text x="662" y="183" font-size="12" font-weight="700" font-family="Segoe UI, PingFang SC, sans-serif" fill="#fff">0.58</text><text x="24" y="220" font-size="13" font-family="Segoe UI, PingFang SC, sans-serif" fill="#1f1a17">守卫A</text><rect x="168" y="202" width="118" height="26" rx="10" fill="rgb(190,185,161)" stroke="#ebd8c5"/><text x="212" y="219" font-size="12" font-weight="700" font-family="Segoe UI, PingFang SC, sans-serif" fill="#fff">0.58</text><rect x="318" y="202" width="118" height="26" rx="10" fill="rgb(190,185,161)" stroke="#ebd8c5"/><text x="362" y="219" font-size="12" font-weight="700" font-family="Segoe UI, PingFang SC, sans-serif" fill="#fff">0.58</text><rect x="468" y="202" width="118" height="26" rx="10" fill="rgb(190,185,161)" stroke="#ebd8c5"/><text x="512" y="219" font-size="12" font-weight="700" font-family="Segoe UI, PingFang SC, sans-serif" fill="#fff">0.58</text><rect x="618" y="202" width="118" height="26" rx="10" fill="rgb(190,185,161)" stroke="#ebd8c5"/><text x="662" y="219" font-size="12" font-weight="700" font-family="Segoe UI, PingFang SC, sans-serif" fill="#fff">0.58</text><text x="24" y="256" font-size="13" font-family="Segoe UI, PingFang SC, sans-serif" fill="#1f1a17">猎人A</text><rect x="168" y="238" width="118" height="26" rx="10" fill="rgb(190,204,180)" stroke="#ebd8c5"/><text x="212" y="255" font-size="12" font-weight="700" font-family="Segoe UI, PingFang SC, sans-serif" fill="#fff">0.42</text><rect x="318" y="238" width="118" height="26" rx="10" fill="rgb(190,204,180)" stroke="#ebd8c5"/><text x="362" y="255" font-size="12" font-weight="700" font-family="Segoe UI, PingFang SC, sans-serif" fill="#fff">0.42</text><rect x="468" y="238" width="118" height="26" rx="10" fill="rgb(190,204,180)" stroke="#ebd8c5"/><text x="512" y="255" font-size="12" font-weight="700" font-family="Segoe UI, PingFang SC, sans-serif" fill="#fff">0.42</text><rect x="618" y="238" width="118" height="26" rx="10" fill="rgb(190,204,180)" stroke="#ebd8c5"/><text x="662" y="255" font-size="12" font-weight="700" font-family="Segoe UI, PingFang SC, sans-serif" fill="#fff">0.42</text><text x="24" y="292" font-size="13" font-family="Segoe UI, PingFang SC, sans-serif" fill="#1f1a17">村民A</text><rect x="168" y="274" width="118" height="26" rx="10" fill="rgb(190,185,161)" stroke="#ebd8c5"/><text x="212" y="291" font-size="12" font-weight="700" font-family="Segoe UI, PingFang SC, sans-serif" fill="#fff">0.58</text><rect x="318" y="274" width="118" height="26" rx="10" fill="rgb(190,185,161)" stroke="#ebd8c5"/><text x="362" y="291" font-size="12" font-weight="700" font-family="Segoe UI, PingFang SC, sans-serif" fill="#fff">0.58</text><rect x="468" y="274" width="118" height="26" rx="10" fill="rgb(190,185,161)" stroke="#ebd8c5"/><text x="512" y="291" font-size="12" font-weight="700" font-family="Segoe UI, PingFang SC, sans-serif" fill="#fff">0.58</text><rect x="618" y="274" width="118" height="26" rx="10" fill="rgb(190,185,161)" stroke="#ebd8c5"/><text x="662" y="291" font-size="12" font-weight="700" font-family="Segoe UI, PingFang SC, sans-serif" fill="#fff">0.58</text>
+        </svg>
+        
+        </div>
+        <div class="panel">
+          <h2>Speech Act 画像</h2>
+          <div class="speech-grid">
+            <div class="speech-chip">
+              <span>neutral</span>
+              <strong>6</strong>
+            </div>
+            
+
+            <div class="speech-chip">
+              <span>claim</span>
+              <strong>1</strong>
+            </div>
+            </div>
+        </div>
+        <div class="panel">
+          <h2>关键失误</h2>
+          <ul class="clean"><li><strong>预言家A · major</strong><span>预言家A checked wolf 狼人A but did not release the information later.</span></li>
+<li><strong>预言家A · major</strong><span>预言家A knew wolf 狼人A but voted 猎人A instead.</span></li>
+<li><strong>女巫A · critical</strong><span>女巫A poisoned villager-side player 守卫A.</span></li>
+<li><strong>守卫A · major</strong><span>守卫A repeated the same guard target 守卫A on consecutive nights.</span></li>
+<li><strong>猎人A · critical</strong><span>猎人A shot villager-side player 预言家A.</span></li></ul>
+        </div>
+        <div class="panel">
+          <h2>Valid Agent 校验</h2>
+          <ul class="clean"><li><strong>CounterfactualSoundnessGate</strong><span>skill 反事实必须标记 effect_type=local_recalculation</span></li>
+<li><strong>CounterfactualSoundnessGate</strong><span>skill 反事实必须标记 effect_type=local_recalculation</span></li>
+<li><strong>CounterfactualSoundnessGate</strong><span>skill 反事实必须标记 effect_type=local_recalculation</span></li></ul>
+        </div>
+      </div>
+    </section>
+
+    <div class="footer">
+      Generated at 2026-06-02T14:02:46.518731+00:00 · Published -
+    </div>
+  </div>
+</body>
+</html>

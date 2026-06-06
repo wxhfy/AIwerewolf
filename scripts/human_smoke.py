@@ -9,10 +9,8 @@ from __future__ import annotations
 import json
 import re
 import sys
-import time
 import urllib.error
 import urllib.request
-
 
 CONTROL_RE = re.compile(r"[\x00-\x1f]")
 BASE = "http://127.0.0.1:8765"
@@ -68,16 +66,21 @@ def drive(room_id: str, max_steps: int = 60) -> dict:
 
 
 def main() -> int:
-    room = post("/api/rooms?name=HumanSmoke&seed=11&player_count=7&agent_type=heuristic&human_seat=3")
+    room = post("/api/rooms?name=HumanSmoke&seed=11&player_count=7&agent_type=llm&human_seat=3")
     print("Room:", room["id"])
     state = drive(room["id"])
-    print(json.dumps({
-        "winner": state.get("winner"),
-        "day": state.get("day"),
-        "phase": state.get("phase"),
-        "alive_count": state.get("alive_count"),
-        "event_count": state.get("event_count"),
-    }, ensure_ascii=False))
+    print(
+        json.dumps(
+            {
+                "winner": state.get("winner"),
+                "day": state.get("day"),
+                "phase": state.get("phase"),
+                "alive_count": state.get("alive_count"),
+                "event_count": state.get("event_count"),
+            },
+            ensure_ascii=False,
+        )
+    )
     return 0 if state.get("winner") else 1
 
 

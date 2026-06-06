@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from backend.engine.models import ActionType, Decision, GameState, Role
+from backend.engine.models import ActionType
+from backend.engine.models import Decision
+from backend.engine.models import GameState
+from backend.engine.models import Role
 
 
 @dataclass(frozen=True)

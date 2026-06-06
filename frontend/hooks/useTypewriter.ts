@@ -78,10 +78,11 @@ export function useTypewriter(
       return;
     }
 
-    // Not enabled yet — waiting for turn
+    // Not enabled yet — preserve whatever text was already displayed.
+    // The parent controls enable/disable; clearing text here would
+    // blank out bubbles that were externally completed (fallback timer,
+    // phase timeout, or any other out-of-band completion).
     if (!enabled) {
-      setDisplayedText("");
-      setFinished(false);
       return;
     }
 
