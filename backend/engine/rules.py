@@ -56,10 +56,10 @@ WOLFCHA_ROLE_CONFIGS: dict[int, tuple[Role, ...]] = {
     8: (
         Role.WEREWOLF,
         Role.WEREWOLF,
-        Role.WEREWOLF,
         Role.SEER,
         Role.WITCH,
         Role.HUNTER,
+        Role.GUARD,
         Role.VILLAGER,
         Role.VILLAGER,
     ),
