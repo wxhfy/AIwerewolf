@@ -793,6 +793,18 @@ async def stream_game(
                     msg["room_id"] = room_id
                     _rooms.record_snapshot(room_id, snap)
                 await websocket.send_json(msg)
+            # Task 3: Check for streaming tokens from LLM calls
+            stream_tokens = getattr(game, "_stream_token_buffer", None)
+            if stream_tokens:
+                tokens_to_send = []
+                while not stream_tokens.empty():
+                    try:
+                        token = stream_tokens.get_nowait()
+                        tokens_to_send.append(token)
+                    except Exception:
+                        break
+                for token_data in tokens_to_send:
+                    await websocket.send_json({"type": "stream_token", **token_data})
             await aio.sleep(0.08)  # poll every 80ms (was 300ms — felt sluggish during LLM turns)
         # Final flush so we don't drop snapshots queued between the last loop
         # iteration and done.set().
@@ -807,6 +819,15 @@ async def stream_game(
                 await websocket.send_json(msg)
             except Exception:
                 break
+        # Task 3: Final flush of any remaining stream tokens
+        stream_tokens = getattr(game, "_stream_token_buffer", None)
+        if stream_tokens:
+            while not stream_tokens.empty():
+                try:
+                    token = stream_tokens.get_nowait()
+                    await websocket.send_json({"type": "stream_token", **token})
+                except Exception:
+                    break
 
     drain_task = aio.create_task(drain_queue())
     try:

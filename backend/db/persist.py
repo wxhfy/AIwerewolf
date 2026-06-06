@@ -162,6 +162,57 @@ def save_event(game_id: str, event: GameEvent) -> None:
         db.close()
 
 
+def save_decisions_batch(decisions: list[dict]) -> int:
+    """Batch-insert multiple agent decisions in a single transaction.
+
+    Uses executemany-style insert for performance. Each decision dict must
+    contain game_id, player_id, day, phase, observation, parsed_action, raw_output
+    plus optional v2 DecisionTrace fields.
+
+    Returns the number of rows inserted.
+    """
+    if not decisions:
+        return 0
+    db = SessionLocal()
+    try:
+        rows = []
+        for d in decisions:
+            rows.append(
+                AgentDecision(
+                    game_id=d["game_id"],
+                    player_id=d["player_id"],
+                    day=d.get("day", 0),
+                    phase=str(d.get("phase", "")),
+                    observation=d.get("observation", {}),
+                    legal_actions=[],
+                    prompt_version="v1",
+                    raw_output=str(d.get("raw_output", "") or ""),
+                    parsed_action=d.get("parsed_action", {}),
+                    is_valid=bool(d.get("is_valid", True)),
+                    error_type=d.get("error_type"),
+                    latency_ms=d.get("latency_ms"),
+                    prompt_tokens=d.get("prompt_tokens"),
+                    completion_tokens=d.get("completion_tokens"),
+                    candidate_actions=d.get("candidate_actions", []),
+                    visible_facts=d.get("visible_facts", []),
+                    confidence=d.get("confidence"),
+                    prompt_hash=d.get("prompt_hash"),
+                    cost_usd=d.get("cost_usd"),
+                    model_name=d.get("model_name"),
+                    provider=d.get("provider"),
+                    decision_metadata={
+                        "fallback": d.get("fallback_used", False),
+                        "fallback_reason": d.get("fallback_reason"),
+                    },
+                )
+            )
+        db.bulk_save_objects(rows)
+        db.commit()
+        return len(rows)
+    finally:
+        db.close()
+
+
 def save_decision(
     game_id: str,
     player_id: str,

@@ -88,11 +88,34 @@ class LLMJudgePanel:
 
     Usage:
         panel = LLMJudgePanel(llm_client)
+        # Or with KeyFallbackClient for resilience:
+        panel = LLMJudgePanel(client=key_fallback_client)
         scores = panel.score_game(game_state_dict, player_decisions)
     """
 
-    def __init__(self, llm_client: Any):
-        self._llm = llm_client
+    def __init__(self, llm_client: Any = None, *, client: Any = None):
+        """Args:
+            llm_client: Legacy client (must have chat_sync method).
+            client: KeyFallbackClient or DeepSeekClient (preferred — has retry + fallback).
+        """
+        self._llm = client or llm_client
+        if self._llm is None:
+            # Task 5: Auto-create KeyFallbackClient for Judge (uses DSV4FLASH key,
+            # doesn't consume main DOUBAO quota)
+            import os
+
+            from backend.llm.deepseek import create_key_fallback_client
+
+            dsv4flash_key = os.getenv("DSV4FLASH_API_KEY", "").strip()
+            dsv4flash_url = os.getenv("DSV4FLASH_BASE_URL", "").strip()
+            dsv4flash_model = os.getenv("DSV4FLASH_MODEL", "deepseek-v4-flash").strip()
+
+            self._llm = create_key_fallback_client(
+                primary_api_key=dsv4flash_key,
+                primary_base_url=dsv4flash_url,
+                model=dsv4flash_model,
+            )
+
         self._judges = {
             "strategist": STRATEGIST_RUBRIC,
             "logician": LOGICIAN_RUBRIC,
@@ -358,7 +381,12 @@ class LLMJudgePanel:
         )
 
     def _call_llm(self, system: str, user: str, max_tokens: int = 800) -> str:
-        """Call the LLM client."""
+        """Call the LLM client — uses DeepSeekClient/KeyFallbackClient with retry.
+
+        Task 5: All judge LLM calls go through the client's built-in retry +
+        exponential backoff. If a KeyFallbackClient is in use, failed keys
+        automatically fall through to backup API keys.
+        """
         try:
             messages = [
                 {"role": "system", "content": system},
@@ -368,10 +396,14 @@ class LLMJudgePanel:
             if isinstance(resp, dict):
                 choices = resp.get("choices", [])
                 if choices:
-                    return choices[0].get("message", {}).get("content", "")
+                    content = choices[0].get("message", {}).get("content", "")
+                    if content:
+                        return content
+                # Handle non-dict response (legacy clients)
+                return str(resp.get("choices", [{}])[0].get("message", {}).get("content", "{}"))
             return str(resp)
         except Exception as e:
-            logger.error(f"LLM judge call failed: {e}")
+            logger.error(f"LLM judge call failed after all retries: {e}")
             return "{}"
 
     def _parse_judge_output(self, raw: str, rubric: list) -> list[JudgeVerdict]:

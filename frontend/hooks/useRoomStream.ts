@@ -89,6 +89,23 @@ export function useRoomStream({
       }
 
       if (msg.type === "room" && msg.room) setRoom(msg.room);
+      // Task 3: Handle streaming tokens from live LLM output
+      if (msg.type === "stream_token") {
+        const state = getGameState();
+        if (state && msg.delta) {
+          // Emit a synthetic CHAT_MESSAGE-like event for real-time typewriter display
+          const streamEvent = {
+            type: "stream_token",
+            player_id: msg.player_id,
+            player_name: msg.player_name,
+            delta: msg.delta,
+          };
+          // Dispatch custom event for components to consume
+          if (typeof window !== "undefined") {
+            window.dispatchEvent(new CustomEvent("llm_stream_token", { detail: streamEvent }));
+          }
+        }
+      }
       if (msg.type === "snapshot" && msg.state) {
         // 眨眼转场期间：缓冲快照，不更新 UI
         if (getIsBlinking?.() && bufferSnapshot) {

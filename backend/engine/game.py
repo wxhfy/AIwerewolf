@@ -4,6 +4,7 @@ import hashlib
 import json
 import logging
 import os
+import queue
 from collections import Counter
 from random import Random
 from typing import Any
@@ -138,6 +139,13 @@ class WerewolfGame:
         self.human_action_buffer: dict[str, list[Decision]] = {}
         self.interrupt_phase_cycle = False
         self.phase_delay_ms = phase_delay_ms
+
+        # Task 2: Deferred DB write — buffer all decisions in memory, flush at game end.
+        self._pending_decisions: list[dict] = []
+        self._decisions_flushed: bool = False
+
+        # Task 3: Streaming token buffer for WebSocket real-time output
+        self._stream_token_buffer: queue.Queue = queue.Queue()
         # `_play_started` flips True the moment someone calls play() so a
         # reconnecting WebSocket can tell "this game is already running, just
         # tail it" apart from "this game was prepared but never started — I
@@ -339,6 +347,13 @@ class WerewolfGame:
                         "Human input required; use play_until_blocked/submit_human_action for mixed games."
                     )
             return self.state
+        except Exception:
+            # Task 2: Crash-safe — flush pending decisions even on game crash
+            try:
+                self.flush_decisions_to_db()
+            except Exception:
+                pass
+            raise
         finally:
             self.play_done.set()
 
@@ -396,6 +411,8 @@ class WerewolfGame:
             self._set_phase(Phase.GAME_END)
             for agent in self.agents.values():
                 agent.finish(self.state.winner.value if self.state.winner else None)
+            # Task 2: Flush buffered decisions to DB before final save_game_end
+            self.flush_decisions_to_db()
             try:
                 from backend.db.persist import save_game_end
 
@@ -601,81 +618,81 @@ class WerewolfGame:
         self._mark_phase_done(Phase.DAY_BADGE_ELECTION)
 
     def _night_role_actions_parallel(self) -> None:
-        """Run Guard + Wolf + Seer with parallelism where safe.
+        """Run Guard + Wolf + Seer night actions with maximum parallelism.
 
-        Guard and Seer are independent of each other and of wolves (they
-        read public state only, write to different NightActions fields).
-        Wolf internal voting is sequential (later wolves see earlier votes)
-        so it stays in the main thread. Witch depends on wolf_target_id
-        and runs separately after this method completes.
+        Guard and Seer are independent (read public state, write different
+        NightActions fields). Wolf internal voting is sequential (each wolf
+        sees earlier teammates' votes) so it stays synchronous, but its
+        first LLM call overlaps with Guard/Seer via ThreadPoolExecutor.
 
-        Thread safety: _guard_phase / _wolf_phase / _seer_phase all use
-        _set_phase → _log → events.append and _record_decision →
-        decision_records.append, both now protected by _shared_lock.
+        Witch depends on wolf_target_id and runs after this method completes.
         """
-        import sys as _sys
-        import threading as _thr
+        import concurrent.futures as _futures
+        from concurrent.futures import ThreadPoolExecutor as _TPE
 
         guard = self._alive_role(Role.GUARD)
         seer = self._alive_role(Role.SEER)
 
-        guard_done = _thr.Event()
-        seer_done = _thr.Event()
-        guard_err: list[BaseException | None] = [None]
-        seer_err: list[BaseException | None] = [None]
+        tasks: list[tuple[str, Any]] = []
+        if guard and not self._phase_done(Phase.NIGHT_GUARD_ACTION):
+            self._clear_phase_done(Phase.NIGHT_GUARD_ACTION)
+            tasks.append(("guard", self._guard_phase))
+        if seer and not self._phase_done(Phase.NIGHT_SEER_ACTION):
+            self._clear_phase_done(Phase.NIGHT_SEER_ACTION)
+            tasks.append(("seer", self._seer_phase))
 
-        def _run_guard():
-            try:
-                if guard and not self._phase_done(Phase.NIGHT_GUARD_ACTION):
-                    self._clear_phase_done(Phase.NIGHT_GUARD_ACTION)
-                    self._guard_phase()
-            except GamePaused:
-                guard_err[0] = _sys.exc_info()[1]
-            except BaseException as e:
-                guard_err[0] = e
-            finally:
-                guard_done.set()
+        has_wolf = not self._phase_done(Phase.NIGHT_WOLF_ACTION)
 
-        def _run_seer():
-            try:
-                if seer and not self._phase_done(Phase.NIGHT_SEER_ACTION):
-                    self._clear_phase_done(Phase.NIGHT_SEER_ACTION)
-                    self._seer_phase()
-            except GamePaused:
-                seer_err[0] = _sys.exc_info()[1]
-            except BaseException as e:
-                seer_err[0] = e
-            finally:
-                seer_done.set()
+        if not tasks and not has_wolf:
+            return
 
-        g_thread = _thr.Thread(target=_run_guard, name="guard") if guard else None
-        s_thread = _thr.Thread(target=_run_seer, name="seer") if seer else None
+        errors: dict[str, BaseException] = {}
 
-        if g_thread:
-            g_thread.start()
-        if s_thread:
-            s_thread.start()
+        # Launch Guard + Seer in thread pool; Wolf runs in main thread
+        # so its sequential internal voting is naturally handled.  The
+        # first wolf LLM call overlaps with Guard/Seer HTTP round-trips.
+        if tasks:
+            with _TPE(max_workers=len(tasks)) as pool:
+                fut_to_name: dict[_futures.Future, str] = {}
+                for name, fn in tasks:
+                    fut = pool.submit(fn)
+                    fut_to_name[fut] = name
 
-        # Run Wolf in main thread while Guard/Seer progress in background
-        if not self._phase_done(Phase.NIGHT_WOLF_ACTION):
+                if has_wolf:
+                    try:
+                        self._wolf_phase()
+                    except GamePaused:
+                        # Let background tasks finish so we don't leave
+                        # dangling threads mutating game state.
+                        for fut in _futures.as_completed(fut_to_name):
+                            try:
+                                fut.result()
+                            except Exception:
+                                pass
+                        raise
+
+                # Collect Guard / Seer results
+                for fut in _futures.as_completed(fut_to_name):
+                    name = fut_to_name[fut]
+                    try:
+                        fut.result()
+                    except GamePaused as e:
+                        errors[name] = e
+                    except BaseException as e:
+                        logger.error(f"Night action {name} failed: {e}", exc_info=True)
+                        errors[name] = e
+        elif has_wolf:
+            # Only wolf phase — no thread pool needed
             self._wolf_phase()
 
-        # Wait for Guard and Seer to finish
-        if g_thread:
-            g_thread.join()
-        if s_thread:
-            s_thread.join()
-
-        # Propagate GamePaused from background threads
-        if isinstance(guard_err[0], GamePaused):
-            raise guard_err[0]
-        if isinstance(seer_err[0], GamePaused):
-            raise seer_err[0]
-        # Propagate other errors
-        if guard_err[0]:
-            raise guard_err[0]
-        if seer_err[0]:
-            raise seer_err[0]
+        # Propagate GamePaused after all threads have joined
+        for _name, err in errors.items():
+            if isinstance(err, GamePaused):
+                raise err
+        # Surface first non-pause error
+        for _name, err in errors.items():
+            if not isinstance(err, GamePaused):
+                raise err
 
     def _guard_phase(self) -> None:
         if self._phase_done(Phase.NIGHT_GUARD_ACTION):
@@ -1537,6 +1554,26 @@ class WerewolfGame:
             },
         )
 
+    def flush_decisions_to_db(self) -> int:
+        """Batch-insert all buffered decisions to PostgreSQL at game end.
+
+        Uses the existing persist.save_decisions_batch() for bulk insert.
+        Exception-safe: wraps in try/except so a DB failure never crashes the game.
+        Returns the number of decisions flushed.
+        """
+        if self._decisions_flushed or not self._pending_decisions:
+            return 0
+        try:
+            from backend.db.persist import save_decisions_batch
+
+            count = save_decisions_batch(self._pending_decisions)
+            self._decisions_flushed = True
+            logger.info(f"Flushed {count} decisions to DB for game {self.state.id}")
+            return count
+        except Exception:
+            logger.exception("Failed to flush decisions to DB (non-fatal)")
+            return 0
+
     def _check_win(self) -> bool:
         # Guard against duplicate calls — winner is already set
         if self.state.winner is not None:
@@ -1766,6 +1803,43 @@ class WerewolfGame:
                 for target in self.state.alive_players:
                     if target.id != player.id and (allowed is None or target.id in allowed):
                         candidate_actions.append({"target_id": target.id, "target_name": target.name})
+
+        # Task 2: Buffer decision for deferred batch DB write
+        decision_data = {
+            "game_id": self.state.id,
+            "player_id": player.id,
+            "player_name": player.name,
+            "day": self.state.day,
+            "phase": self.state.phase.value,
+            "request": request,
+            "observation": view,
+            "parsed_action": {
+                "action_type": decision.action_type.value,
+                "target_id": decision.target_id,
+                "speech": decision.speech,
+                "reasoning": decision.reasoning,
+                "metadata": decision.metadata,
+                "retrieved_knowledge_ids": list(decision.metadata.get("retrieved_knowledge_ids", [])),
+                "retrieval_query_summary": decision.metadata.get("retrieval_query_summary"),
+                "retrieval_used": bool(decision.metadata.get("retrieval_used", False)),
+            },
+            "raw_output": raw_output,
+            "is_valid": is_valid,
+            "error_type": error_type,
+            "latency_ms": int(latency_ms) if isinstance(latency_ms, (int, float)) else None,
+            "prompt_tokens": int(prompt_tokens) if isinstance(prompt_tokens, (int, float)) else None,
+            "completion_tokens": int(completion_tokens) if isinstance(completion_tokens, (int, float)) else None,
+            "visible_facts": visible_facts,
+            "candidate_actions": candidate_actions,
+            "confidence": meta.get("confidence"),
+            "prompt_hash": prompt_hash,
+            "cost_usd": cost_usd,
+            "model_name": meta.get("model"),
+            "provider": meta.get("provider"),
+            "fallback_used": bool(meta.get("fallback", False)),
+            "fallback_reason": meta.get("fallback_reason"),
+        }
+        self._pending_decisions.append(decision_data)
 
         with self._shared_lock:
             self.state.decision_records.append(

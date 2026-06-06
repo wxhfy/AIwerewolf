@@ -285,7 +285,8 @@ export type WebSocketMessage =
   | { type: "snapshot"; state: GameState; room_id?: string }
   | { type: "complete"; state?: GameState; room?: RoomRecord }
   | { type: "room"; room: RoomRecord }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string }
+  | { type: "stream_token"; player_id: string; player_name: string; delta: string; finish_reason?: string | null };
 
 export type WebSocketRequest = {
   action: "start";

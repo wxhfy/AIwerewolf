@@ -825,6 +825,60 @@ class AgentLoop:
         # Find DECISION: marker
         marker_match = re.search(r"DECISION:\s*", response, re.IGNORECASE)
         if not marker_match:
+            # Fallback: LLM often outputs JSON directly without DECISION: prefix.
+            # Try to find any top-level JSON object that looks like a decision.
+            json_match = re.search(r'\{\s*"(?:speech|target|reasoning)"\s*:', response)
+            if json_match:
+                marker_match = json_match
+                # Pretend marker was at position 0 so the JSON parsing works
+                # — we just need the JSON starting from the first brace.
+                brace_start = response.rfind("{", 0, json_match.start() + 1)
+                if brace_start < 0:
+                    brace_start = json_match.start()
+                # We'll set start manually below instead of using marker_match
+                start = brace_start
+                # Skip DECISION prefix logic, go straight to JSON extraction
+                # Check for balanced braces
+                depth = 0
+                in_string = False
+                escape = False
+                end = start
+                for i in range(start, len(response)):
+                    ch = response[i]
+                    if escape:
+                        escape = False
+                        continue
+                    if ch == "\\":
+                        escape = True
+                        continue
+                    if ch == '"':
+                        in_string = not in_string
+                        continue
+                    if in_string:
+                        continue
+                    if ch == "{":
+                        depth += 1
+                    elif ch == "}":
+                        depth -= 1
+                        if depth == 0:
+                            end = i + 1
+                            break
+                json_str = response[start:end] if depth == 0 else response[start:]
+                try:
+                    data = json.loads(json_str)
+                    if isinstance(data, dict) and (data.get("speech") or data.get("target")):
+                        result: Dict[str, str] = {}
+                        if self._action_type == "speech":
+                            result["speech"] = data.get("speech", data.get("content", ""))
+                            result["reasoning"] = data.get("reasoning", "")
+                        else:
+                            result["target"] = data.get("target", "")
+                            result["reasoning"] = data.get("reasoning", "")
+                        if any(v for v in result.values()):
+                            logger.info(f"No DECISION: marker, but found JSON directly: {list(result.keys())}")
+                            return result
+                except json.JSONDecodeError:
+                    pass
             return None
 
         start = marker_match.end()

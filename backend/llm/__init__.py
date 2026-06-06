@@ -5,9 +5,17 @@ import re
 from typing import Any
 
 from backend.llm.deepseek import DeepSeekClient
+from backend.llm.deepseek import KeyFallbackClient
+from backend.llm.deepseek import create_key_fallback_client
 from backend.llm.env import load_env_file
 
-__all__ = ["DeepSeekClient", "create_client", "load_env_file"]
+__all__ = [
+    "DeepSeekClient",
+    "KeyFallbackClient",
+    "create_client",
+    "create_key_fallback_client",
+    "load_env_file",
+]
 
 
 _DEFAULT_DOUBAO_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3"

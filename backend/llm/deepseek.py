@@ -292,6 +292,170 @@ class DeepSeekClient:
             return data
 
     # ------------------------------------------------------------------
+    # chat_batch — concurrent LLM calls via ThreadPoolExecutor
+    # ------------------------------------------------------------------
+
+    def chat_batch(
+        self,
+        requests: list[dict],
+        *,
+        max_workers: int | None = None,
+        return_exceptions: bool = False,
+    ) -> list[dict]:
+        """Execute multiple chat requests concurrently.
+
+        Each request dict supports the same kwargs as chat_sync():
+          {messages, model, temperature, max_tokens, thinking, reasoning_effort, ...}
+
+        Uses ThreadPoolExecutor to run chat_sync() calls in parallel through
+        the shared httpx.Client (which is thread-safe).  Falls back to
+        sequential execution when max_workers=1.
+
+        Returns a list of API response dicts in the same order as requests.
+        When return_exceptions=True, exceptions are returned in-place instead
+        of being raised.
+        """
+        import concurrent.futures as _futures
+        import threading as _thr
+
+        n = len(requests)
+        if n == 0:
+            return []
+
+        if max_workers is None:
+            max_workers = min(n, 8)  # cap at 8 concurrent requests
+
+        results: list[dict | BaseException | None] = [None] * n
+        lock = _thr.Lock()
+
+        def _send(idx: int, req: dict) -> None:
+            try:
+                # Extract known kwargs; pass the rest through
+                messages = req.pop("messages")
+                model = req.pop("model", None)
+                temperature = req.pop("temperature", 0.7)
+                max_tokens = req.pop("max_tokens", 2048)
+                thinking = req.pop("thinking", True)
+                reasoning_effort = req.pop("reasoning_effort", "medium")
+                extra_kwargs = req  # remaining keys forwarded as-is
+            except KeyError as e:
+                with lock:
+                    results[idx] = e
+                return
+
+            try:
+                result = self.chat_sync(
+                    messages=messages,
+                    model=model,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    thinking=thinking,
+                    reasoning_effort=reasoning_effort,
+                    **extra_kwargs,
+                )
+                with lock:
+                    results[idx] = result
+            except BaseException as e:
+                with lock:
+                    results[idx] = e
+
+        if max_workers <= 1:
+            # Sequential path — no thread overhead
+            for i, req in enumerate(requests):
+                _send(i, dict(req))  # shallow copy so pop() doesn't mutate caller
+        else:
+            with _futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
+                futures = [_futures.Future() for _ in range(n)]
+                for i, req in enumerate(requests):
+                    futures[i] = pool.submit(_send, i, dict(req))
+                for fut in _futures.as_completed(futures):
+                    fut.result()  # surface any unhandled errors from the thread
+
+        if not return_exceptions:
+            for i, result in enumerate(results):
+                if isinstance(result, BaseException):
+                    raise result
+
+        return results  # type: ignore[return-value]
+
+    # ------------------------------------------------------------------
+    # chat_stream — streaming response with SSE parsing
+    # ------------------------------------------------------------------
+
+    def chat_stream(
+        self,
+        messages: list[dict],
+        model: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: int = 2048,
+        thinking: bool = True,
+        reasoning_effort: str = "medium",
+        **kwargs,
+    ):
+        """Synchronous streaming chat completion — yields content deltas.
+
+        Uses httpx.stream() for SSE parsing. Each yield is a dict:
+          {"delta": "...", "finish_reason": None} for content chunks
+          {"delta": "", "finish_reason": "stop"} for the final chunk
+          {"delta": "", "finish_reason": "error", "error": "..."} on error
+
+        Usage:
+            for chunk in client.chat_stream(messages):
+                text = chunk["delta"]
+                if chunk["finish_reason"]:
+                    break
+        """
+        payload = {
+            "model": model or self.model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "stream": True,
+        }
+        payload.update(kwargs)
+        has_tools = "tools" in payload or "tool_choice" in payload or "functions" in payload
+        if thinking and not has_tools:
+            payload["thinking"] = {"type": "enabled"}
+            payload["reasoning_effort"] = reasoning_effort
+
+        try:
+            with self._sync_client.stream(
+                "POST",
+                f"{self.base_url}/chat/completions",
+                headers=self._headers(),
+                json=payload,
+                timeout=self.timeout if isinstance(self.timeout, httpx.Timeout) else httpx.Timeout(self.timeout),
+            ) as response:
+                response.raise_for_status()
+                for line in response.iter_lines():
+                    if not line or not line.startswith("data: "):
+                        continue
+                    data_str = line[6:]  # strip "data: " prefix
+                    if data_str.strip() == "[DONE]":
+                        yield {"delta": "", "finish_reason": "stop"}
+                        return
+                    try:
+                        import json as _json
+                        data = _json.loads(data_str)
+                        choices = data.get("choices", [])
+                        if choices:
+                            choice = choices[0]
+                            finish_reason = choice.get("finish_reason")
+                            if finish_reason:
+                                yield {"delta": "", "finish_reason": str(finish_reason)}
+                                return
+                            delta = choice.get("delta", {})
+                            content = delta.get("content", "")
+                            if content:
+                                yield {"delta": str(content), "finish_reason": None}
+                    except Exception:
+                        continue
+                yield {"delta": "", "finish_reason": "stop"}
+        except Exception as e:
+            logger.error(f"Stream error: {e}")
+            yield {"delta": "", "finish_reason": "error", "error": str(e)}
+
+    # ------------------------------------------------------------------
     # Parse helpers
     # ------------------------------------------------------------------
 
@@ -313,6 +477,177 @@ class DeepSeekClient:
             self._sync_client.close()
         except Exception:
             pass
+
+
+# ---------------------------------------------------------------------------
+# KeyFallbackClient — multi-key resilience
+# ---------------------------------------------------------------------------
+
+class KeyFallbackClient:
+    """Wraps multiple DeepSeekClient instances with different API keys.
+
+    On failure, falls through keys in order: primary → fallback_1 → fallback_2.
+    All keys point to the same model to keep game quality consistent.
+    Usage:
+        client = KeyFallbackClient([
+            DeepSeekClient(api_key=key1, ...),  # primary (doubao)
+            DeepSeekClient(api_key=key2, ...),  # fallback 1 (dsv4flash)
+            DeepSeekClient(api_key=key3, ...),  # fallback 2 (deepseek)
+        ])
+        response = client.chat_sync(messages)
+    """
+
+    def __init__(self, clients: list[DeepSeekClient]):
+        if not clients:
+            raise ValueError("KeyFallbackClient requires at least one client")
+        self._clients = clients
+        self._primary = clients[0]
+
+    @property
+    def available(self) -> bool:
+        return any(c.available for c in self._clients)
+
+    @property
+    def provider(self) -> str:
+        return getattr(self._primary, "provider", "")
+
+    @property
+    def model(self) -> str:
+        return self._primary.model
+
+    @property
+    def timeout(self) -> float:
+        return self._primary.timeout.read if isinstance(self._primary.timeout, httpx.Timeout) else self._primary.timeout
+
+    @timeout.setter
+    def timeout(self, value: float) -> None:
+        for c in self._clients:
+            c.timeout = value if isinstance(value, httpx.Timeout) else httpx.Timeout(value)
+
+    def chat_sync(self, messages: list[dict], **kwargs) -> dict:
+        """Try primary key first, fall through backups on failure."""
+        last_exc: Exception | None = None
+        for i, client in enumerate(self._clients):
+            if not client.available:
+                continue
+            try:
+                result = client.chat_sync(messages, **kwargs)
+                if i > 0:
+                    result["_key_fallback_level"] = i
+                    logger.info(f"KeyFallbackClient: used fallback key #{i} ({client.provider})")
+                return result
+            except Exception as e:
+                last_exc = e
+                if i < len(self._clients) - 1:
+                    logger.warning(
+                        f"KeyFallbackClient: key #{i} ({client.provider}) failed ({e}), "
+                        f"trying fallback #{i + 1}..."
+                    )
+        raise RuntimeError(
+            f"KeyFallbackClient: all {len(self._clients)} keys failed"
+        ) from last_exc
+
+    def chat_batch(
+        self,
+        requests: list[dict],
+        *,
+        max_workers: int | None = None,
+        return_exceptions: bool = False,
+    ) -> list[dict]:
+        """Batch via primary key; falls back to secondary keys on failure.
+
+        Tries the entire batch on the primary client first. If any request
+        fails with a retryable error, re-runs the whole batch on the next
+        fallback client. This keeps the batch atomic per key.
+        """
+        last_exc: Exception | None = None
+        for i, client in enumerate(self._clients):
+            if not client.available:
+                continue
+            try:
+                result = client.chat_batch(
+                    requests,
+                    max_workers=max_workers,
+                    return_exceptions=False,
+                )
+                if i > 0:
+                    logger.info(f"KeyFallbackClient chat_batch: used fallback key #{i} ({client.base_url})")
+                return result
+            except Exception as e:
+                last_exc = e
+                if i < len(self._clients) - 1:
+                    logger.warning(
+                        f"KeyFallbackClient chat_batch: key #{i} failed ({e}), "
+                        f"trying fallback #{i + 1}..."
+                    )
+        raise RuntimeError(
+            f"KeyFallbackClient chat_batch: all {len(self._clients)} keys failed"
+        ) from last_exc
+
+    def close(self) -> None:
+        for c in self._clients:
+            try:
+                c.close()
+            except Exception:
+                pass
+
+    def __del__(self) -> None:
+        self.close()
+
+
+def create_key_fallback_client(
+    primary_api_key: str,
+    primary_base_url: str,
+    model: str,
+    *,
+    fallback_keys: list[tuple[str, str]] | None = None,
+    timeout: httpx.Timeout | float | None = None,
+    max_retries: int = DEFAULT_MAX_RETRIES,
+) -> KeyFallbackClient:
+    """Factory: create a KeyFallbackClient from env-configured keys.
+
+    Primary = DOUBAO_API_KEY + DOUBAO_BASE_URL
+    Fallback 1 = DSV4FLASH_API_KEY + DSV4FLASH_BASE_URL
+    Fallback 2 = DEEPSEEK_API_KEY + DEEPSEEK_BASE_URL
+
+    All use the same model name.
+    """
+    clients = [
+        DeepSeekClient(
+            api_key=primary_api_key,
+            base_url=primary_base_url,
+            model=model,
+            timeout=timeout,
+            max_retries=max_retries,
+        )
+    ]
+
+    if fallback_keys is None:
+        # Auto-detect from env
+        dsv4flash_key = os.getenv("DSV4FLASH_API_KEY", "").strip()
+        dsv4flash_url = os.getenv("DSV4FLASH_BASE_URL", "").strip()
+        deepseek_key = os.getenv("DEEPSEEK_API_KEY", "").strip()
+        deepseek_url = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com").strip()
+
+        fallback_keys = []
+        if dsv4flash_key and dsv4flash_url:
+            fallback_keys.append((dsv4flash_key, dsv4flash_url))
+        if deepseek_key and deepseek_url:
+            fallback_keys.append((deepseek_key, deepseek_url))
+
+    for fb_key, fb_url in fallback_keys:
+        if fb_key and fb_url:
+            clients.append(
+                DeepSeekClient(
+                    api_key=fb_key,
+                    base_url=fb_url,
+                    model=model,
+                    timeout=timeout,
+                    max_retries=max_retries,
+                )
+            )
+
+    return KeyFallbackClient(clients)
 
 
 # ---------------------------------------------------------------------------

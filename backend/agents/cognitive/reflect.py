@@ -130,10 +130,17 @@ class Reflector:
 
     def __init__(
         self,
-        llm: Runnable,
+        llm: Runnable = None,
         conn_str: str = "",
+        client: Any = None,
     ):
+        """Args:
+            llm: LangChain Runnable (legacy path).
+            conn_str: PostgreSQL connection string.
+            client: DeepSeekClient or KeyFallbackClient (preferred — has retry + fallback).
+        """
         self._llm = llm
+        self._client = client
         self._conn_str = conn_str or _DEFAULT_CONN
 
     # ---- Main entry point ----
@@ -330,18 +337,41 @@ class Reflector:
     # ---- LLM call ----
 
     def _call_llm(self, system: str, user: str, max_tokens: int = 800) -> str:
-        """Call LLM for reflection."""
-        try:
-            resp = self._llm.invoke(
-                [
-                    SystemMessage(content=system),
-                    HumanMessage(content=user),
+        """Call LLM for reflection — uses DeepSeekClient with retry if available."""
+        # Task 5: Prefer DeepSeekClient (has retry + backoff) over raw Runnable
+        if self._client is not None:
+            try:
+                messages = [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user},
                 ]
-            )
-            return resp.content.strip()
-        except Exception as e:
-            logger.error(f"Reflection LLM call failed: {e}")
-            return '{"what_worked":[],"what_failed":[],"patterns_discovered":[],"mistakes_to_avoid":[],"key_insight":"","confidence":0.0}'
+                resp = self._client.chat_sync(messages, max_tokens=max_tokens)
+                if isinstance(resp, dict):
+                    choices = resp.get("choices", [])
+                    if choices:
+                        content = choices[0].get("message", {}).get("content", "")
+                        return content.strip()
+                return str(resp)
+            except Exception as e:
+                logger.error(f"Reflection LLM call via client failed: {e}")
+                return '{"what_worked":[],"what_failed":[],"patterns_discovered":[],"mistakes_to_avoid":[],"key_insight":"","confidence":0.0}'
+
+        # Legacy path: LangChain Runnable
+        if self._llm is not None:
+            try:
+                resp = self._llm.invoke(
+                    [
+                        SystemMessage(content=system),
+                        HumanMessage(content=user),
+                    ]
+                )
+                return resp.content.strip()
+            except Exception as e:
+                logger.error(f"Reflection LLM call failed: {e}")
+                return '{"what_worked":[],"what_failed":[],"patterns_discovered":[],"mistakes_to_avoid":[],"key_insight":"","confidence":0.0}'
+
+        logger.error("Reflection LLM call failed: no client or llm available")
+        return '{"what_worked":[],"what_failed":[],"patterns_discovered":[],"mistakes_to_avoid":[],"key_insight":"","confidence":0.0}'
 
     # ---- Parse ----
 
