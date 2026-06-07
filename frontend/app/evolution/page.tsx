@@ -134,19 +134,8 @@ export default function EvolutionPage() {
   const cards = (api?.active_versions || []).filter(c => c.status === "active");
   const acceptance = api?.acceptance_metrics || [];
 
-  // Only show active knowledge with de-identified, abstracted strategy content
-  const knowledge = useMemo(() => {
-    const raw = api?.knowledge || [];
-    return raw.filter(k => {
-      if (k.status !== "active") return false;
-      const text = bestDisplayText(k);
-      if (!text || isEnglishOnly(text)) return false;
-      // Filter out raw game data: seat numbers (#号) and player names
-      if (/\d+号/.test(text)) return false;
-      if (/[顾景行苗信夏知霁川袁汐大壮宋知野]/.test(text)) return false;
-      return true;
-    });
-  }, [api?.knowledge]);
+  // API now returns only active+CN+dedup+de-identified knowledge
+  const knowledge = api?.knowledge || [];;
 
   // Group cards by faction
   const godCards = cards.filter(c => GOD_ROLES.includes(c.role as any));
