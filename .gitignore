@@ -239,9 +239,18 @@ tsconfig.tsbuildinfo
 data/
 wolf/
 prototype/
+models/open_data/
 
 # Reference images (large, not code)
 frontend/photos/
+
+# Reference repos (local-only, not part of the project source)
+references/
+
+# Experiment outputs (local-only, not for repo)
+frontend/public/experiments/
+docs/experiments/
+docs/html_plan/
 
 # Planning docs (transient)
 plans/
@@ -253,7 +262,9 @@ plans/
 .agents/
 
 # Next.js build variants
+.next-audit/
 .next-visual-check/
+.next-probe/
 
 # Skills cache (tracked via skills/locks/ instead)
 skills/gsap-*

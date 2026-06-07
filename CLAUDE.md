@@ -100,12 +100,13 @@ AIwerewolf/
 ├── logs/                  # 运行日志
 ├── models/                # 本地模型文件
 ├── nginx/                 # 反向代理配置
-└── references/            # 克隆的参考仓库（gitignored）
+└── references/            # 参考仓库（local-only，.gitignore）
 ```
 
 ## 参考仓库速查
 
-所有参考仓库已克隆到 `references/` 目录。详细分析见 `docs/REFERENCE.md`。
+> **注意**：参考仓库为 local-only，不在 GitHub 仓库中。需手动克隆到 `references/` 目录。
+> 详细分析见 `docs/archive/REFERENCE.md`。
 
 ### 优先级排序
 

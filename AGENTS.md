@@ -89,12 +89,12 @@ AIwerewolf/
 ├── data/                  # 实验数据
 ├── models/                # 本地模型
 ├── nginx/                 # 反向代理
-└── references/            # 克隆的参考仓库 (gitignored)
+└── references/            # 参考仓库（local-only，.gitignore）
 ```
 
 ## 参考仓库速查
 
-全部在 `AIwerewolf/references/`：
+> **注意**：参考仓库为 local-only，不在 GitHub 仓库中。需手动克隆到 `references/` 目录。
 
 | 优先级 | 仓库 | 目录名 | 核心价值 |
 |--------|------|--------|----------|
