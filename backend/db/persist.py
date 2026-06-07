@@ -1482,12 +1482,36 @@ def get_evolution_dashboard() -> dict[str, Any]:
         active_versions = (
             db.query(RoleStrategyCard).order_by(RoleStrategyCard.role, RoleStrategyCard.created_at.desc()).all()
         )
-        knowledge = (
+        # Only active entries, deduplicated by recommended_action,
+        # with non-empty Chinese content, quality >= 0.7
+        knowledge_raw = (
             db.query(StrategyKnowledgeDoc)
+            .filter(StrategyKnowledgeDoc.status == "active")
+            .filter(StrategyKnowledgeDoc.quality_score >= 0.70)
+            .filter(StrategyKnowledgeDoc.recommended_action.isnot(None))
+            .filter(StrategyKnowledgeDoc.recommended_action != "")
             .order_by(StrategyKnowledgeDoc.quality_score.desc(), StrategyKnowledgeDoc.updated_at.desc())
-            .limit(50)
+            .limit(200)
             .all()
         )
+        # Dedup: keep only one entry per (role, recommended_action prefix)
+        seen = set()
+        knowledge = []
+        for row in knowledge_raw:
+            action = (row.recommended_action or "").strip()
+            # Skip English-only entries
+            if not any("一" <= c <= "鿿" for c in action):
+                continue
+            # Skip raw player records (contain player names in situation)
+            sit = (row.situation_pattern or "")
+            if "对局教训" in sit or "对局总结" in sit:
+                continue
+            key = (row.role, action[:80])
+            if key in seen:
+                continue
+            seen.add(key)
+            knowledge.append(row)
+        knowledge = knowledge[:50]
         acceptance_audit = _lightweight_bc_acceptance_summary(db)
         return _clean(
             {
