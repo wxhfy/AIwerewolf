@@ -20,6 +20,7 @@ This module ONLY handles:
 from __future__ import annotations
 
 import json
+import os as _os
 import re
 from typing import Any
 from typing import Dict
@@ -226,12 +227,16 @@ class CognitiveAgent:
 
     # ---- Vote ----
 
+    @staticmethod
+    def _skip_optimisations_enabled() -> bool:
+        return _os.getenv("_DISABLE_SKIP_OPTIMISATIONS") != "1"
+
     def vote(self) -> Decision:
         obs = self._observe()
         legal_target_ids = {player.id for player in obs.legal_targets}
 
         # ── Optimisation: skip LLM when there is only one legal target ──
-        if len(legal_target_ids) == 1:
+        if self._skip_optimisations_enabled() and len(legal_target_ids) == 1:
             only_target_id = next(iter(legal_target_ids))
             only_target = obs.legal_targets[0]
             reasoning = f"唯一合法目标 {only_target.seat}号:{only_target.name}，无需LLM决策"
@@ -243,18 +248,19 @@ class CognitiveAgent:
             return self._decision(ActionType.VOTE, target_id=only_target_id, reasoning=reasoning)
 
         # ── Optimisation: reuse tentative_vote from speech if nothing changed ──
-        tentative = self._pipeline.get_tentative_vote()
-        if tentative and tentative.get("raw"):
-            tentative_target = self._resolve_target(tentative["raw"])
-            if tentative_target and tentative_target in legal_target_ids:
-                if not self._has_meaningful_new_info_since_speech(obs):
-                    reasoning = f"发言立场未变: 投{tentative_target}（" + tentative["raw"] + "）"
-                    self.memory.add_action("vote", tentative_target, f"投{tentative_target}", reasoning)
-                    self._detect_speech_vote_mismatch()
-                    active = self.memory.planner.get_active(self.memory.day, self.memory.phase)
-                    if active and "VOTE" in active.target_phase:
-                        self.memory.planner.mark_executed(self.memory.day, self.memory.phase)
-                    return self._decision(ActionType.VOTE, target_id=tentative_target, reasoning=reasoning)
+        if self._skip_optimisations_enabled():
+            tentative = self._pipeline.get_tentative_vote()
+            if tentative and tentative.get("raw"):
+                tentative_target = self._resolve_target(tentative["raw"])
+                if tentative_target and tentative_target in legal_target_ids:
+                    if not self._has_meaningful_new_info_since_speech(obs):
+                        reasoning = f"发言立场未变: 投{tentative_target}（" + tentative["raw"] + "）"
+                        self.memory.add_action("vote", tentative_target, f"投{tentative_target}", reasoning)
+                        self._detect_speech_vote_mismatch()
+                        active = self.memory.planner.get_active(self.memory.day, self.memory.phase)
+                        if active and "VOTE" in active.target_phase:
+                            self.memory.planner.mark_executed(self.memory.day, self.memory.phase)
+                        return self._decision(ActionType.VOTE, target_id=tentative_target, reasoning=reasoning)
 
         result = self._pipeline.run_vote(
             obs,
@@ -308,7 +314,7 @@ class CognitiveAgent:
         legal_target_ids = {player.id for player in obs.legal_targets}
 
         # ── Optimisation: skip LLM when there is only one legal target ──
-        if len(legal_target_ids) == 1:
+        if self._skip_optimisations_enabled() and len(legal_target_ids) == 1:
             only_target = obs.legal_targets[0]
             reasoning = f"唯一合法击杀目标 {only_target.seat}号:{only_target.name}，无需LLM决策"
             return self._night_decision(
@@ -330,7 +336,7 @@ class CognitiveAgent:
         legal_target_ids = {player.id for player in obs.legal_targets}
 
         # ── Optimisation: skip LLM when there is only one legal target ──
-        if len(legal_target_ids) == 1:
+        if self._skip_optimisations_enabled() and len(legal_target_ids) == 1:
             only_target = obs.legal_targets[0]
             reasoning = f"唯一合法查验目标 {only_target.seat}号:{only_target.name}，无需LLM决策"
             return self._night_decision(
@@ -367,7 +373,7 @@ class CognitiveAgent:
 
     def witch_act(self, victim_id: Optional[str]) -> List[Decision]:
         # ── Optimisation: skip LLM when no potions available ──
-        if self._witch_save_used and self._witch_poison_used:
+        if self._skip_optimisations_enabled() and self._witch_save_used and self._witch_poison_used:
             return [self._decision(ActionType.SKIP, reasoning="双药已用，无需LLM决策")]
 
         lines = []

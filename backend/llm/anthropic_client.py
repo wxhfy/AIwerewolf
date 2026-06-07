@@ -36,6 +36,18 @@ load_env_file()
 
 logger = logging.getLogger(__name__)
 
+# Global token counter (for benchmarking)
+_GLOBAL_TOKEN_COUNTER = {"calls": 0, "input": 0, "output": 0}
+
+
+def reset_global_token_counter():
+    _GLOBAL_TOKEN_COUNTER.update({"calls": 0, "input": 0, "output": 0})
+
+
+def get_global_token_counter() -> dict:
+    return dict(_GLOBAL_TOKEN_COUNTER)
+
+
 DEFAULT_TIMEOUT = httpx.Timeout(connect=5.0, read=120.0, write=30.0, pool=5.0)
 DEFAULT_MAX_RETRIES = 1
 _RETRYABLE_STATUSES: frozenset[int] = frozenset({408, 409, 429})
@@ -129,7 +141,15 @@ class AnthropicClient:
         }
 
         data = self._request_with_retry("POST", "/v1/messages", headers, body)
-        return self._response_to_openai(data)
+        result = self._response_to_openai(data)
+
+        # Update global counter
+        usage = data.get("usage", {})
+        _GLOBAL_TOKEN_COUNTER["calls"] += 1
+        _GLOBAL_TOKEN_COUNTER["input"] += usage.get("input_tokens", 0)
+        _GLOBAL_TOKEN_COUNTER["output"] += usage.get("output_tokens", 0)
+
+        return result
 
     async def chat(self, messages: list[dict], **kwargs: Any) -> dict[str, Any]:
         return self.chat_sync(messages, **kwargs)
