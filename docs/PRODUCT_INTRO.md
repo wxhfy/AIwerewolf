@@ -351,7 +351,7 @@ Track C 是把 Track B 的复盘结论变成"下一代 Agent 更强"的桥梁：
 
 - **动机**：让对局经验沉淀复用，但**绝不能**让赛后才该知道的信息泄漏回正在进行的对局。
 - **改动**：知识生命周期（candidate→active→deprecated）+ L0–L4 分级 + 4 重安全过滤 + Agent 检索注入。
-- **效果（实测，严格单局，源：`docs/archive/PROJECT_CLOSURE_EXPERIMENT_RESULTS.md`）**：
+- **效果（实测，严格单局，源：`PROJECT_FINAL_FACTS.json`、`backend_acceptance_criteria.md`）**：
 
 | 指标 | 值 | 来源 |
 |---|---|---|
