@@ -262,11 +262,13 @@ def test_public_snapshot_redacts_night_subphase_events() -> None:
     assert private_snapshot["phase"] == Phase.NIGHT_SEER_ACTION.value
     assert all(
         event["phase"] in {Phase.NIGHT_START.value, Phase.NIGHT_RESOLVE.value}
+        or event["type"] == EventType.NIGHT_ACTION.value
         for event in public_snapshot["events"]
         if event["phase"].startswith("NIGHT_")
     )
     assert all(
         event["payload"].get("phase") in {None, Phase.NIGHT_START.value, Phase.NIGHT_RESOLVE.value}
+        or event["type"] == EventType.NIGHT_ACTION.value
         for event in public_snapshot["events"]
         if str(event["payload"].get("phase", "")).startswith("NIGHT_")
     )
@@ -294,12 +296,58 @@ def test_public_snapshot_redacts_night_action_payload() -> None:
     public_event = game.state.snapshot(show_private=False)["events"][-1]
     private_event = game.state.snapshot(show_private=True)["events"][-1]
 
-    assert public_event["phase"] == Phase.NIGHT_START.value
-    assert public_event["payload"] == {"message": "行动完毕"}
+    assert public_event["phase"] == Phase.NIGHT_GUARD_ACTION.value
+    assert public_event["payload"] == {
+        "message": "行动完毕",
+        "phase": Phase.NIGHT_GUARD_ACTION.value,
+    }
     assert private_event["phase"] == Phase.NIGHT_GUARD_ACTION.value
     assert private_event["payload"]["actor_id"] == guard.id
     assert private_event["payload"]["target_id"] == target.id
     assert private_event["payload"]["reasoning"] == "守护关键神职"
+
+
+def test_public_snapshot_shows_wolf_completion_without_private_process() -> None:
+    game = WerewolfGame(seed=7, player_count=7)
+    game.initialize()
+    wolves = [player for player in game.state.players if player.alignment == Alignment.WOLF]
+    target = next(player for player in game.state.players if player.alignment != Alignment.WOLF)
+
+    game._set_phase(Phase.NIGHT_WOLF_ACTION)
+    game._log(
+        EventType.PRIVATE_INFO,
+        "private",
+        {
+            "kind": "wolf_attack_vote",
+            "actor_id": wolves[0].id,
+            "actor_name": wolves[0].name,
+            "target_id": target.id,
+            "target_name": target.name,
+            "reasoning": "focus the seer claim",
+        },
+        visible_to=[wolf.id for wolf in wolves],
+    )
+    game._log_night_phase_completed(Phase.NIGHT_WOLF_ACTION)
+
+    public_events = game.state.snapshot(show_private=False)["events"]
+    private_events = game.state.snapshot(show_private=True)["events"]
+
+    public_wolf_events = [
+        event
+        for event in public_events
+        if event["type"] == EventType.NIGHT_ACTION.value
+        and event["payload"].get("phase") == Phase.NIGHT_WOLF_ACTION.value
+    ]
+    assert public_wolf_events
+    assert public_wolf_events[-1]["payload"] == {
+        "message": "行动完毕",
+        "phase": Phase.NIGHT_WOLF_ACTION.value,
+    }
+    assert all(event["type"] != EventType.PRIVATE_INFO.value for event in public_events)
+    assert any(
+        event["type"] == EventType.PRIVATE_INFO.value and event["payload"].get("kind") == "wolf_attack_vote"
+        for event in private_events
+    )
 
 
 def test_day_vote_tie_enters_pk_and_resolves() -> None:

@@ -655,19 +655,13 @@ def build_effect_summary(
             "score": round(scores.get(policy_name, 0.0), 4),
             "score_delta": round(scores.get(policy_name, 0.0) - baseline_score, 4),
             "precision_at_3": round(metric.precision_at_3, 4),
-            "precision_at_3_delta": round(
-                metric.precision_at_3 - (baseline.precision_at_3 if baseline else 0.0), 4
-            ),
+            "precision_at_3_delta": round(metric.precision_at_3 - (baseline.precision_at_3 if baseline else 0.0), 4),
             "ndcg_at_5": round(metric.ndcg_at_5, 4),
             "ndcg_at_5_delta": round(metric.ndcg_at_5 - (baseline.ndcg_at_5 if baseline else 0.0), 4),
             "coverage_rate": round(metric.coverage_rate, 4),
-            "coverage_rate_delta": round(
-                metric.coverage_rate - (baseline.coverage_rate if baseline else 0.0), 4
-            ),
+            "coverage_rate_delta": round(metric.coverage_rate - (baseline.coverage_rate if baseline else 0.0), 4),
             "avg_relevance": round(metric.avg_relevance, 4),
-            "avg_relevance_delta": round(
-                metric.avg_relevance - (baseline.avg_relevance if baseline else 0.0), 4
-            ),
+            "avg_relevance_delta": round(metric.avg_relevance - (baseline.avg_relevance if baseline else 0.0), 4),
             "n_empty": metric.n_empty,
         }
     return {

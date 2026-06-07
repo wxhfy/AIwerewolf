@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { GameEvent, EventType, Player } from "@/types";
+import { GameEvent, EventType, Player, Language } from "@/types";
 import { useAppContext } from "@/context/AppContext";
 import { t, tPhase, format } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -40,6 +40,22 @@ function VoteReasoning({ text }: { text: string }) {
       )}
     </p>
   );
+}
+
+function nightCompletionLabel(phase: string, language: Language): string {
+  const zh: Record<string, string> = {
+    NIGHT_GUARD_ACTION: "守卫",
+    NIGHT_WOLF_ACTION: "狼人",
+    NIGHT_WITCH_ACTION: "女巫",
+    NIGHT_SEER_ACTION: "预言家",
+  };
+  const en: Record<string, string> = {
+    NIGHT_GUARD_ACTION: "Guard",
+    NIGHT_WOLF_ACTION: "Wolves",
+    NIGHT_WITCH_ACTION: "Witch",
+    NIGHT_SEER_ACTION: "Seer",
+  };
+  return (language === Language.ZH ? zh[phase] : en[phase]) || tPhase(phase, language);
 }
 
 export function EventItem({ event, index = 0, players = [] }: EventItemProps) {
@@ -139,6 +155,17 @@ export function EventItem({ event, index = 0, players = [] }: EventItemProps) {
     }
 
     if (event.type === EventType.NIGHT_ACTION) {
+      if (p.message === "行动完毕") {
+        const phase = (p.phase || event.phase || "") as string;
+        const phaseText = nightCompletionLabel(phase, language);
+        return (
+          <span className="text-xs text-text-sub">
+            {language === "zh"
+              ? `${phaseText}完成任务`
+              : `${phaseText} completed`}
+          </span>
+        );
+      }
       const actionLabels = {
         guard: t("actionGuard", language),
         attack: t("actionAttack", language),

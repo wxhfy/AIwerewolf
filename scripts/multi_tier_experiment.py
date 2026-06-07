@@ -92,7 +92,7 @@ def configure_experiment_env() -> str:
 def current_model_name() -> str:
     provider = os.environ.get("LLM_PROVIDER", "")
     provider_candidates = {
-        "doubao": ["MODEL_POOL", "DOUBAO_MODEL_POOL", "DOUBAO_MODEL", "DOUBAO_ENDPOINT"],
+        "doubao": ["MODEL_POOL", "DOUBAO_MODEL_POOL", "DOUBAO_ENDPOINT", "DOUBAO_MODEL"],
         "deepseek": ["DEEPSEEK_MODEL"],
         "dsv4flash": ["DSV4FLASH_MODEL"],
         "ark": ["MODEL_POOL", "DOUBAO_MODEL_POOL", "ANTHROPIC_MODEL", "DSV4FLASH_MODEL"],
@@ -104,8 +104,8 @@ def current_model_name() -> str:
         "DOUBAO_MODEL_POOL",
         "DEEPSEEK_MODEL",
         "DSV4FLASH_MODEL",
-        "DOUBAO_MODEL",
         "DOUBAO_ENDPOINT",
+        "DOUBAO_MODEL",
         "WEAPI_MODEL",
         "FAKE_LLM_MODEL",
     ]
@@ -282,12 +282,16 @@ def run_game_isolated(
 
     if proc.returncode != 0:
         detail = (proc.stderr or proc.stdout)[-1000:]
-        return empty_error_result("ChildProcessError", f"game child exited with code {proc.returncode}: {detail}", started)
+        return empty_error_result(
+            "ChildProcessError", f"game child exited with code {proc.returncode}: {detail}", started
+        )
     try:
         lines = [line for line in proc.stdout.splitlines() if line.strip()]
         return json.loads(lines[-1])
     except Exception:
-        return empty_error_result("JSONDecodeError", f"single-game subprocess produced invalid JSON: {proc.stdout[-1000:]}", started)
+        return empty_error_result(
+            "JSONDecodeError", f"single-game subprocess produced invalid JSON: {proc.stdout[-1000:]}", started
+        )
 
 
 def empty_error_result(error_type: str, message: str, started: float) -> dict[str, Any]:

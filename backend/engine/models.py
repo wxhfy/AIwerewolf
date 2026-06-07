@@ -349,18 +349,24 @@ class GameState:
             Phase.NIGHT_START.value,
             Phase.NIGHT_RESOLVE.value,
         }
-        if is_night_subphase:
-            data["phase"] = Phase.NIGHT_START.value
         payload = data.get("payload")
         if isinstance(payload, dict):
-            payload_phase = str(payload.get("phase") or "")
-            if payload_phase.startswith("NIGHT_") and payload_phase not in {
-                Phase.NIGHT_START.value,
-                Phase.NIGHT_RESOLVE.value,
-            }:
-                data["payload"] = {**payload, "phase": Phase.NIGHT_START.value}
             if is_night_subphase and data.get("type") == EventType.NIGHT_ACTION.value:
-                data["payload"] = {"message": "行动完毕"}
+                data["payload"] = {
+                    "message": "行动完毕",
+                    "phase": phase,
+                }
+            else:
+                if is_night_subphase:
+                    data["phase"] = Phase.NIGHT_START.value
+                payload_phase = str(payload.get("phase") or "")
+                if payload_phase.startswith("NIGHT_") and payload_phase not in {
+                    Phase.NIGHT_START.value,
+                    Phase.NIGHT_RESOLVE.value,
+                }:
+                    data["payload"] = {**payload, "phase": Phase.NIGHT_START.value}
+        elif is_night_subphase:
+            data["phase"] = Phase.NIGHT_START.value
         return data
 
     def _public_pending_input(self) -> dict[str, Any] | None:

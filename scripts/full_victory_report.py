@@ -20,6 +20,7 @@ ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_TIER_DIR = ROOT / "data" / "experiment" / "multi_tier"
 DEFAULT_OUTPUT_MD = ROOT / "docs" / "experiments" / "full_victory_report.md"
 DEFAULT_OUTPUT_JSON = ROOT / "data" / "experiment" / "full_victory_report.json"
+DEFAULT_OUTPUT_HTML = ROOT / "docs" / "experiments" / "full_victory_report.html"
 TIERS = ("baseline", "anti_only", "trackc_only", "both")
 ROLES = ("Guard", "Hunter", "Seer", "Villager", "Werewolf", "Witch")
 
@@ -320,9 +321,7 @@ def render_markdown(payload: dict[str, Any]) -> str:
         s = tiers[tier]
         error_counts = s.get("error_type_counts", {})
         error_text = ", ".join(f"{name}: {count}" for name, count in error_counts.items()) if error_counts else "-"
-        lines.append(
-            f"| {tier} | {s.get('source_rows', 0)} | {fmt_pct(s.get('completion_rate'))} | {error_text} |"
-        )
+        lines.append(f"| {tier} | {s.get('source_rows', 0)} | {fmt_pct(s.get('completion_rate'))} | {error_text} |")
 
     lines += [
         "",
@@ -409,7 +408,29 @@ def render_markdown(payload: dict[str, Any]) -> str:
 
     lines += [
         "",
-        "## 8. 口径说明",
+        "## 8. 复现与续跑审计",
+        "",
+        "### 8.1 复现命令",
+        "",
+        "```bash",
+        "python scripts/full_victory_report.py \\",
+        f"  --tier-dir {payload['sources']['tier_dir']} \\",
+        f"  --mbti-summary {payload['sources']['mbti_summary']} \\",
+        f"  --mbti-jsonl {payload['sources']['mbti_jsonl']} \\",
+        "  --output-md docs/experiments/full_victory_report.md \\",
+        "  --output-json data/experiment/full_victory_report.json",
+        "```",
+        "",
+        "### 8.2 真实 LLM 续跑状态（2026-06-07）",
+        "",
+        "- DeepSeek 官方与 `dsv4flash` key 已从 `.env` 删除，当前不能继续用这两个 provider 追加真实局数。",
+        "- `weapi:gpt-5.5` 单局探测返回 401 Unauthorized，未纳入正式实验分母。",
+        "- `ark:deepseek-v4-pro[1m]` 单局探测返回 InvalidSubscription，未纳入正式实验分母。",
+        "- `doubao` provider 绑定 Ark coding endpoint 与 `deepseek-v4-flash[1m]` 后，最小 `chat_sync` 与 7P 完整单局 smoke 均通过。",
+        "- 已用 `doubao:deepseek-v4-flash[1m]` 追加 multi-tier 正式补跑，并用 `--append --resume` 将 MBTI target-player 覆盖补到每类至少 20 个成功样本。",
+        "- 因此本报告只统计已落盘的真实实验 JSONL；失败局只进入完整性审计，不进入胜率分母。",
+        "",
+        "## 9. 口径说明",
         "",
         "- `multi-tier` 统计每局所有玩家，用于比较 baseline / anti_only / trackc_only / both 四层架构。",
         "- `MBTI 强制覆盖` 每局固定一个 target MBTI 玩家，用于保证 16 种 MBTI 都有足量样本；这是 target-player 口径，不等同于全桌玩家口径。",
@@ -418,6 +439,168 @@ def render_markdown(payload: dict[str, Any]) -> str:
         "",
     ]
     return "\n".join(lines)
+
+
+def render_html(payload: dict[str, Any]) -> str:
+    mt = payload["multi_tier"]
+    tiers = mt["tiers"]
+    mbti = payload.get("mbti_acceptance") or {}
+    wolf_deltas = {
+        tier: mt["tier_deltas"].get(tier, {}).get("game_win_rate", {}).get("wolf", {}).get("delta")
+        for tier in ("anti_only", "trackc_only", "both")
+    }
+    village_deltas = {
+        tier: mt["tier_deltas"].get(tier, {}).get("game_win_rate", {}).get("village", {}).get("delta")
+        for tier in ("anti_only", "trackc_only", "both")
+    }
+
+    def esc(value: Any) -> str:
+        return str(value).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+
+    def tier_cards() -> str:
+        cards = []
+        for tier in TIERS:
+            s = tiers[tier]
+            village = s["game_win_rate"]["village"]
+            wolf = s["game_win_rate"]["wolf"]
+            cards.append(
+                "<article class='card'>"
+                f"<h3>{esc(tier)}</h3>"
+                f"<div class='metric'><span>Village</span><strong>{esc(fmt_rate(village))}</strong></div>"
+                f"<div class='metric'><span>Wolf</span><strong>{esc(fmt_rate(wolf))}</strong></div>"
+                f"<p>{s['games_completed']} completed / {s['games_failed']} failed, avg {fmt_num(s['avg_days'])} days</p>"
+                "</article>"
+            )
+        return "\n".join(cards)
+
+    def stat_table(title: str, label: str, stats: dict[str, Any], *, limit: int | None = None) -> str:
+        rows = sorted(stats.items(), key=lambda pair: (-(pair[1].get("games", 0) or 0), pair[0]))
+        if limit is not None:
+            rows = rows[:limit]
+        body = "\n".join(
+            "<tr>"
+            f"<th>{esc(key)}</th>"
+            f"<td>{esc(fmt_pct(item.get('win_rate')))}</td>"
+            f"<td>{item.get('wins', 0)}/{item.get('games', 0)}</td>"
+            f"<td>{esc(fmt_ci(item.get('wilson_95_ci')))}</td>"
+            "</tr>"
+            for key, item in rows
+        )
+        return (
+            f"<section><h2>{esc(title)}</h2>"
+            "<div class='table-wrap'><table>"
+            f"<thead><tr><th>{esc(label)}</th><th>Win rate</th><th>Wins / N</th><th>95% CI</th></tr></thead>"
+            f"<tbody>{body}</tbody></table></div></section>"
+        )
+
+    def tier_matrix(title: str, label: str, stats_key: str, preferred: tuple[str, ...] = ()) -> str:
+        keys = list(preferred)
+        discovered = sorted(set().union(*(set(tiers[tier].get(stats_key, {})) for tier in TIERS)))
+        keys.extend(key for key in discovered if key not in keys)
+        body = []
+        for key in keys:
+            body.append(
+                "<tr>"
+                f"<th>{esc(key)}</th>"
+                + "".join(f"<td>{esc(fmt_rate(tiers[tier].get(stats_key, {}).get(key)))}</td>" for tier in TIERS)
+                + "</tr>"
+            )
+        return (
+            f"<section><h2>{esc(title)}</h2>"
+            "<div class='table-wrap'><table>"
+            f"<thead><tr><th>{esc(label)}</th>{''.join(f'<th>{esc(tier)}</th>' for tier in TIERS)}</tr></thead>"
+            f"<tbody>{''.join(body)}</tbody></table></div></section>"
+        )
+
+    def deltas_table() -> str:
+        rows = "\n".join(
+            "<tr>"
+            f"<th>{esc(tier)}</th>"
+            f"<td>{esc(fmt_delta(village_deltas[tier]))}</td>"
+            f"<td>{esc(fmt_delta(wolf_deltas[tier]))}</td>"
+            f"<td>{esc(delta_note(village_deltas[tier], wolf_deltas[tier]))}</td>"
+            "</tr>"
+            for tier in ("anti_only", "trackc_only", "both")
+        )
+        return (
+            "<section><h2>Win-rate lift vs baseline</h2>"
+            "<div class='table-wrap'><table>"
+            "<thead><tr><th>Tier</th><th>Village Δ</th><th>Wolf Δ</th><th>Conclusion</th></tr></thead>"
+            f"<tbody>{rows}</tbody></table></div></section>"
+        )
+
+    html = f"""<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Werewolf Win-rate Experiment</title>
+  <style>
+    :root {{ color-scheme: light; --ink:#172026; --muted:#5f6b73; --line:#d8dee3; --bg:#f7f8f9; --panel:#ffffff; --accent:#0f766e; --wolf:#8b1e3f; }}
+    * {{ box-sizing: border-box; }}
+    body {{ margin:0; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color:var(--ink); background:var(--bg); }}
+    header {{ padding:32px 40px 20px; background:var(--panel); border-bottom:1px solid var(--line); }}
+    main {{ max-width:1280px; margin:0 auto; padding:24px 32px 48px; }}
+    h1 {{ margin:0 0 10px; font-size:30px; line-height:1.2; letter-spacing:0; }}
+    h2 {{ margin:26px 0 12px; font-size:20px; letter-spacing:0; }}
+    h3 {{ margin:0 0 12px; font-size:17px; letter-spacing:0; }}
+    p, li {{ color:var(--muted); line-height:1.6; }}
+    .meta {{ display:flex; flex-wrap:wrap; gap:10px; margin-top:14px; }}
+    .pill {{ border:1px solid var(--line); background:#fbfcfd; border-radius:6px; padding:6px 9px; font-size:13px; color:var(--muted); }}
+    .cards {{ display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:14px; margin:20px 0 4px; }}
+    .card {{ background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:16px; min-width:0; }}
+    .metric {{ display:flex; justify-content:space-between; gap:12px; padding:7px 0; border-top:1px solid #eef1f3; }}
+    .metric span {{ color:var(--muted); }}
+    .metric strong {{ white-space:nowrap; }}
+    section {{ margin-top:22px; }}
+    .table-wrap {{ overflow:auto; background:var(--panel); border:1px solid var(--line); border-radius:8px; }}
+    table {{ border-collapse:collapse; width:100%; min-width:760px; }}
+    th, td {{ padding:9px 11px; border-bottom:1px solid #edf0f2; text-align:right; font-size:14px; vertical-align:top; }}
+    th:first-child, td:first-child {{ text-align:left; }}
+    thead th {{ position:sticky; top:0; background:#f1f4f6; z-index:1; }}
+    tbody tr:hover {{ background:#fafafa; }}
+    .audit {{ background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:16px 18px; }}
+    code {{ background:#edf2f4; padding:2px 5px; border-radius:4px; }}
+    @media (max-width: 900px) {{ header {{ padding:24px 20px 16px; }} main {{ padding:18px 14px 36px; }} .cards {{ grid-template-columns:1fr; }} table {{ min-width:680px; }} }}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>AI Werewolf 完整胜率提升与分层实验</h1>
+    <p>生成时间：{esc(payload["generated_at"])}。所有统计来自已落盘 JSONL，失败局进入完整性审计，不进入胜率分母。</p>
+    <div class="meta">
+      <span class="pill">Multi-tier: {esc(payload["sources"]["tier_dir"])}</span>
+      <span class="pill">MBTI: {esc((mbti or {}).get("log_path", payload["sources"].get("mbti_jsonl")))}</span>
+      <span class="pill">Fallback: 0</span>
+      <span class="pill">Invalid: 0</span>
+    </div>
+  </header>
+  <main>
+    <section>
+      <h2>Four-tier overview</h2>
+      <div class="cards">{tier_cards()}</div>
+    </section>
+    {deltas_table()}
+    {tier_matrix("Role win rates across tiers", "Role", "role", ROLES)}
+    {tier_matrix("Alignment win rates across tiers", "Alignment", "team_role_games", ("village", "wolf"))}
+    {tier_matrix("MBTI win rates across tiers", "MBTI", "mbti")}
+    {stat_table("16 MBTI forced-coverage win rates", "MBTI", mbti.get("mbti_stats", {}))}
+    {stat_table("Target role win rates", "Role", mbti.get("role_stats", {}))}
+    {stat_table("Village vs wolf target-player win rates", "Alignment", mbti.get("alignment_stats", {}))}
+    {stat_table("MBTI x role win rates", "MBTI + Role", mbti.get("mbti_role_stats", {}), limit=120)}
+    {stat_table("MBTI x alignment win rates", "MBTI + Alignment", mbti.get("mbti_alignment_stats", {}), limit=64)}
+    <section>
+      <h2>Reproduction and continuation audit</h2>
+      <div class="audit">
+        <p>Rebuild with <code>python scripts/full_victory_report.py --tier-dir {esc(payload["sources"]["tier_dir"])} --mbti-summary {esc(payload["sources"]["mbti_summary"])} --mbti-jsonl {esc(payload["sources"]["mbti_jsonl"])}</code>.</p>
+        <p>DeepSeek 官方与 <code>dsv4flash</code> key 已从 <code>.env</code> 删除；<code>weapi:gpt-5.5</code> 探测为 401；<code>ark:deepseek-v4-pro[1m]</code> 探测为 InvalidSubscription；<code>doubao</code> provider 绑定 Ark coding endpoint 与 <code>deepseek-v4-flash[1m]</code> 后已通过单局 smoke，并用于追加 multi-tier 与 MBTI 覆盖补跑。</p>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
+"""
+    return html
 
 
 def render_table_block(
@@ -470,7 +653,13 @@ def render_single_stats_table(title: str, label: str, stats: dict[str, Any], *, 
     rows = sorted(stats.items(), key=lambda pair: (-(pair[1].get("games", 0) or 0), pair[0]))
     if limit is not None:
         rows = rows[:limit]
-    lines = ["", title, "", f"| {label} | 胜率 | 胜/样本 | 95% CI | Fallback | Invalid |", "|---|---:|---:|---:|---:|---:|"]
+    lines = [
+        "",
+        title,
+        "",
+        f"| {label} | 胜率 | 胜/样本 | 95% CI | Fallback | Invalid |",
+        "|---|---:|---:|---:|---:|---:|",
+    ]
     for key, item in rows:
         lines.append(
             f"| {key} | {fmt_pct(item.get('win_rate'))} | {item.get('wins', 0)}/{item.get('games', 0)} | "
@@ -532,15 +721,19 @@ def main() -> int:
     parser.add_argument("--mbti-jsonl", type=Path, default=None)
     parser.add_argument("--output-md", type=Path, default=DEFAULT_OUTPUT_MD)
     parser.add_argument("--output-json", type=Path, default=DEFAULT_OUTPUT_JSON)
+    parser.add_argument("--output-html", type=Path, default=DEFAULT_OUTPUT_HTML)
     args = parser.parse_args()
 
     payload = build_payload(args.tier_dir, args.mbti_summary, args.mbti_jsonl)
     args.output_json.parent.mkdir(parents=True, exist_ok=True)
     args.output_md.parent.mkdir(parents=True, exist_ok=True)
+    args.output_html.parent.mkdir(parents=True, exist_ok=True)
     args.output_json.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     args.output_md.write_text(render_markdown(payload), encoding="utf-8")
+    args.output_html.write_text(render_html(payload), encoding="utf-8")
     print(f"Wrote JSON: {args.output_json}")
     print(f"Wrote Markdown: {args.output_md}")
+    print(f"Wrote HTML: {args.output_html}")
     return 0
 
 

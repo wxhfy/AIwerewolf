@@ -364,6 +364,13 @@ class LLMAgent(Agent):
         # Part 2: Task section (varies by phase)
         if is_last_words:
             task_line = "你已经出局，现在发表遗言。只能引用自己真实可见的信息和公开事实。"
+        elif str(phase) == "DAY_SHERIFF_CLOSING":
+            task_line = (
+                "现在是警长归票总结阶段。你要用警长身份收束讨论："
+                "先用公开事实概括关键分歧，再明确给出今天建议集中投票的对象，"
+                "并给出一个备选焦点。主归票对象必须是当前存活、可被投票的玩家，"
+                "用 @N号:名字 点名；不要写成主持人总结，也不要只泛泛说继续观察。"
+            )
         elif "BADGE" in str(phase):
             task_line = "现在是警徽相关发言阶段。围绕你的可见信息、角色边界和当前判断表达。"
         elif str(phase) == "DAY_PK_SPEECH":
@@ -687,7 +694,12 @@ class LLMAgent(Agent):
                     wolf_target = p.get("target_name")
             if wolf_votes:
                 lines = ["【狼队夜间商议】"]
-                voter_names = {voter_id: p.get("name", voter_id) for voter_id in wolf_votes for p in view.players if p.get("id") == voter_id}
+                voter_names = {
+                    voter_id: p.get("name", voter_id)
+                    for voter_id in wolf_votes
+                    for p in view.players
+                    if p.get("id") == voter_id
+                }
                 for voter_id, target in wolf_votes.items():
                     name = voter_names.get(voter_id, voter_id)
                     lines.append(f"  {name} 提议击杀 {target}")
@@ -806,6 +818,12 @@ class LLMAgent(Agent):
             "DAY_BADGE_SPEECH": "你正在进行警徽竞选发言。",
             "DAY_PK_SPEECH": "你正在进行警徽PK发言。",
             "DAY_LAST_WORDS": "你正在发表遗言。",
+            "DAY_SHERIFF_CLOSING": (
+                "你正在进行警长归票。请必须完成三件事："
+                "1）点名今天的主归票对象；2）用公开发言/票型/死亡信息说明依据；"
+                "3）给出一个备选焦点或说明为什么不分票。主归票对象必须是当前存活、"
+                "可被投票的玩家，并写成 @N号:名字；不要输出“继续观察”这类无归票结论。"
+            ),
         }
         hint = phase_map.get(view.phase, "")
         if not hint:

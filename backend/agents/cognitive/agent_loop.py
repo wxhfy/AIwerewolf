@@ -1040,13 +1040,11 @@ class AgentLoop:
         if self._supports_bind_tools:
             if self._action_type == "speech":
                 return (
-                    prefix
-                    + f"信息已足够。现在不要调用任何信息工具，只调用 {DECISION_TOOL_NAME}，"
+                    prefix + f"信息已足够。现在不要调用任何信息工具，只调用 {DECISION_TOOL_NAME}，"
                     "参数必须包含 speech 和 reasoning。"
                 )
             return (
-                prefix
-                + f"信息已足够。现在不要调用任何信息工具，只调用 {DECISION_TOOL_NAME}，"
+                prefix + f"信息已足够。现在不要调用任何信息工具，只调用 {DECISION_TOOL_NAME}，"
                 "参数必须包含 target 和 reasoning。"
             )
         if self._action_type == "speech":
@@ -1227,11 +1225,7 @@ class AgentLoop:
         result: Dict[str, str] = {}
         if self._action_type == "speech":
             result["speech"] = str(
-                data.get("speech")
-                or data.get("content")
-                or data.get("message")
-                or data.get("utterance")
-                or ""
+                data.get("speech") or data.get("content") or data.get("message") or data.get("utterance") or ""
             )
             result["reasoning"] = str(data.get("reasoning") or data.get("reason") or "")
             if not result["speech"]:

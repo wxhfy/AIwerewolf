@@ -161,11 +161,6 @@ export function TimelineEvent({
     return null;
   }
 
-  // ── Wolf attack NIGHT_ACTION: handled by wolf deliberation panel ──
-  if (event.type === EventType.NIGHT_ACTION && event.phase === "NIGHT_WOLF_ACTION") {
-    return null;
-  }
-
   // ── Other night actions, player deaths, etc. ──
   return <EventItem event={event} index={index} players={players} />;
 }

@@ -25,8 +25,8 @@ import random
 import ssl
 import threading
 import time
-from contextlib import contextmanager
 from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Optional
 
 import httpx
@@ -59,6 +59,7 @@ _RETRYABLE_STATUSES: frozenset[int] = frozenset({408, 409, 429})
 # ---------------------------------------------------------------------------
 # Backoff helpers
 # ---------------------------------------------------------------------------
+
 
 def _backoff(attempt: int, cap: float = 8.0, base: float = 1.0) -> float:
     """Short exponential backoff for *attempt* (1-indexed), capped at *cap* seconds."""
@@ -190,6 +191,7 @@ def _normalize_thinking_payload(
 # DeepSeekClient
 # ---------------------------------------------------------------------------
 
+
 class DeepSeekClient:
     """Production OpenAI-compatible client with Anthropic-grade resilience.
 
@@ -225,9 +227,7 @@ class DeepSeekClient:
         return {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.api_key}",
-            "x-stainless-timeout": str(
-                self.timeout.read if isinstance(self.timeout, httpx.Timeout) else self.timeout
-            ),
+            "x-stainless-timeout": str(self.timeout.read if isinstance(self.timeout, httpx.Timeout) else self.timeout),
         }
 
     def _request_timeout(self) -> httpx.Timeout:
@@ -333,8 +333,7 @@ class DeepSeekClient:
                 if has_retry and _should_retry(0, exc=e):
                     delay = _backoff(attempt) + _jitter(0, 1)
                     logger.warning(
-                        f"API timeout (attempt {attempt}/{total_attempts}), "
-                        f"retrying in {delay:.1f}s... ({e})"
+                        f"API timeout (attempt {attempt}/{total_attempts}), retrying in {delay:.1f}s... ({e})"
                     )
                     time.sleep(delay)
                 else:
@@ -357,8 +356,7 @@ class DeepSeekClient:
                 if has_retry and _should_retry(0, exc=e):
                     delay = _backoff(attempt) + _jitter(0, 1)
                     logger.warning(
-                        f"API network/SSL error (attempt {attempt}/{total_attempts}), "
-                        f"retrying in {delay:.1f}s... ({e})"
+                        f"API network/SSL error (attempt {attempt}/{total_attempts}), retrying in {delay:.1f}s... ({e})"
                     )
                     time.sleep(delay)
                 else:
@@ -564,6 +562,7 @@ class DeepSeekClient:
                         return
                     try:
                         import json as _json
+
                         data = _json.loads(data_str)
                         choices = data.get("choices", [])
                         if choices:
@@ -610,6 +609,7 @@ class DeepSeekClient:
 # ---------------------------------------------------------------------------
 # KeyFallbackClient — multi-key resilience
 # ---------------------------------------------------------------------------
+
 
 class KeyFallbackClient:
     """Wraps multiple DeepSeekClient instances with different API keys.
@@ -668,12 +668,9 @@ class KeyFallbackClient:
                 last_exc = e
                 if i < len(self._clients) - 1:
                     logger.warning(
-                        f"KeyFallbackClient: key #{i} ({client.provider}) failed ({e}), "
-                        f"trying fallback #{i + 1}..."
+                        f"KeyFallbackClient: key #{i} ({client.provider}) failed ({e}), trying fallback #{i + 1}..."
                     )
-        raise RuntimeError(
-            f"KeyFallbackClient: all {len(self._clients)} keys failed"
-        ) from last_exc
+        raise RuntimeError(f"KeyFallbackClient: all {len(self._clients)} keys failed") from last_exc
 
     def chat_batch(
         self,
@@ -704,13 +701,8 @@ class KeyFallbackClient:
             except Exception as e:
                 last_exc = e
                 if i < len(self._clients) - 1:
-                    logger.warning(
-                        f"KeyFallbackClient chat_batch: key #{i} failed ({e}), "
-                        f"trying fallback #{i + 1}..."
-                    )
-        raise RuntimeError(
-            f"KeyFallbackClient chat_batch: all {len(self._clients)} keys failed"
-        ) from last_exc
+                    logger.warning(f"KeyFallbackClient chat_batch: key #{i} failed ({e}), trying fallback #{i + 1}...")
+        raise RuntimeError(f"KeyFallbackClient chat_batch: all {len(self._clients)} keys failed") from last_exc
 
     def close(self) -> None:
         for c in self._clients:
@@ -781,6 +773,7 @@ def create_key_fallback_client(
 # ---------------------------------------------------------------------------
 # Quick test
 # ---------------------------------------------------------------------------
+
 
 def test_connection():
     """Test DeepSeek API connection. Run via: python -m backend.llm.deepseek"""

@@ -135,9 +135,9 @@ class Reflector:
         client: Any = None,
     ):
         """Args:
-            llm: LangChain Runnable (legacy path).
-            conn_str: PostgreSQL connection string.
-            client: DeepSeekClient or KeyFallbackClient (preferred — has retry + fallback).
+        llm: LangChain Runnable (legacy path).
+        conn_str: PostgreSQL connection string.
+        client: DeepSeekClient or KeyFallbackClient (preferred — has retry + fallback).
         """
         self._llm = llm
         self._client = client

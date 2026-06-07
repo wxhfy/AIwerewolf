@@ -31,9 +31,7 @@ def test_summarize_tier_results_includes_role_mbti_and_deltas() -> None:
         }
     ]
 
-    summary = summarize_tier_results(
-        {"baseline": baseline, "anti_only": [], "trackc_only": [], "both": both}
-    )
+    summary = summarize_tier_results({"baseline": baseline, "anti_only": [], "trackc_only": [], "both": both})
 
     assert summary["tiers"]["baseline"]["role"]["Seer"]["win_rate"] == 1.0
     assert summary["tiers"]["both"]["mbti_role"]["ENTP+Werewolf"]["win_rate"] == 1.0

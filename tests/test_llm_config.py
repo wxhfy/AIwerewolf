@@ -4,9 +4,9 @@ import httpx
 import pytest
 from langchain_core.messages import HumanMessage
 
-from backend.agents.factory import create_agents
-from backend.agents.factory import _create_llm_runnable
 from backend.agents.cognitive.factory import create_llm_from_client
+from backend.agents.factory import _create_llm_runnable
+from backend.agents.factory import create_agents
 from backend.engine.models import Alignment
 from backend.engine.models import Player
 from backend.engine.models import Role

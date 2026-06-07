@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Werewolf Win-rate Experiment</title>
+  <style>
+    :root { color-scheme: light; --ink:#172026; --muted:#5f6b73; --line:#d8dee3; --bg:#f7f8f9; --panel:#ffffff; --accent:#0f766e; --wolf:#8b1e3f; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color:var(--ink); background:var(--bg); }
+    header { padding:32px 40px 20px; background:var(--panel); border-bottom:1px solid var(--line); }
+    main { max-width:1280px; margin:0 auto; padding:24px 32px 48px; }
+    h1 { margin:0 0 10px; font-size:30px; line-height:1.2; letter-spacing:0; }
+    h2 { margin:26px 0 12px; font-size:20px; letter-spacing:0; }
+    h3 { margin:0 0 12px; font-size:17px; letter-spacing:0; }
+    p, li { color:var(--muted); line-height:1.6; }
+    .meta { display:flex; flex-wrap:wrap; gap:10px; margin-top:14px; }
+    .pill { border:1px solid var(--line); background:#fbfcfd; border-radius:6px; padding:6px 9px; font-size:13px; color:var(--muted); }
+    .cards { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:14px; margin:20px 0 4px; }
+    .card { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:16px; min-width:0; }
+    .metric { display:flex; justify-content:space-between; gap:12px; padding:7px 0; border-top:1px solid #eef1f3; }
+    .metric span { color:var(--muted); }
+    .metric strong { white-space:nowrap; }
+    section { margin-top:22px; }
+    .table-wrap { overflow:auto; background:var(--panel); border:1px solid var(--line); border-radius:8px; }
+    table { border-collapse:collapse; width:100%; min-width:760px; }
+    th, td { padding:9px 11px; border-bottom:1px solid #edf0f2; text-align:right; font-size:14px; vertical-align:top; }
+    th:first-child, td:first-child { text-align:left; }
+    thead th { position:sticky; top:0; background:#f1f4f6; z-index:1; }
+    tbody tr:hover { background:#fafafa; }
+    .audit { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:16px 18px; }
+    code { background:#edf2f4; padding:2px 5px; border-radius:4px; }
+    @media (max-width: 900px) { header { padding:24px 20px 16px; } main { padding:18px 14px 36px; } .cards { grid-template-columns:1fr; } table { min-width:680px; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>AI Werewolf 完整胜率提升与分层实验</h1>
+    <p>生成时间：2026-06-07T16:16:22。所有统计来自已落盘 JSONL，失败局进入完整性审计，不进入胜率分母。</p>
+    <div class="meta">
+      <span class="pill">Multi-tier: data/experiment/multi_tier/formal_dsv4flash_7p_tier_6x_v2</span>
+      <span class="pill">MBTI: data/health/mbti_acceptance_formal_dsv4flash_7p_mbti_16x1_v2.jsonl</span>
+      <span class="pill">Fallback: 0</span>
+      <span class="pill">Invalid: 0</span>
+    </div>
+  </header>
+  <main>
+    <section>
+      <h2>Four-tier overview</h2>
+      <div class="cards"><article class='card'><h3>baseline</h3><div class='metric'><span>Village</span><strong>33.3% (6/18)</strong></div><div class='metric'><span>Wolf</span><strong>66.7% (12/18)</strong></div><p>18 completed / 4 failed, avg 1.72 days</p></article>
+<article class='card'><h3>anti_only</h3><div class='metric'><span>Village</span><strong>20.0% (4/20)</strong></div><div class='metric'><span>Wolf</span><strong>80.0% (16/20)</strong></div><p>20 completed / 2 failed, avg 1.85 days</p></article>
+<article class='card'><h3>trackc_only</h3><div class='metric'><span>Village</span><strong>30.8% (4/13)</strong></div><div class='metric'><span>Wolf</span><strong>69.2% (9/13)</strong></div><p>13 completed / 13 failed, avg 1.77 days</p></article>
+<article class='card'><h3>both</h3><div class='metric'><span>Village</span><strong>23.1% (3/13)</strong></div><div class='metric'><span>Wolf</span><strong>76.9% (10/13)</strong></div><p>13 completed / 20 failed, avg 1.69 days</p></article></div>
+    </section>
+    <section><h2>Win-rate lift vs baseline</h2><div class='table-wrap'><table><thead><tr><th>Tier</th><th>Village Δ</th><th>Wolf Δ</th><th>Conclusion</th></tr></thead><tbody><tr><th>anti_only</th><td>-13.3%</td><td>+13.3%</td><td>好人下降；狼人提升</td></tr>
+<tr><th>trackc_only</th><td>-2.6%</td><td>+2.6%</td><td>好人下降；狼人提升</td></tr>
+<tr><th>both</th><td>-10.2%</td><td>+10.2%</td><td>好人下降；狼人提升</td></tr></tbody></table></div></section>
+    <section><h2>Role win rates across tiers</h2><div class='table-wrap'><table><thead><tr><th>Role</th><th>baseline</th><th>anti_only</th><th>trackc_only</th><th>both</th></tr></thead><tbody><tr><th>Guard</th><td>33.3% (6/18)</td><td>20.0% (4/20)</td><td>30.8% (4/13)</td><td>23.1% (3/13)</td></tr><tr><th>Hunter</th><td>33.3% (6/18)</td><td>20.0% (4/20)</td><td>30.8% (4/13)</td><td>23.1% (3/13)</td></tr><tr><th>Seer</th><td>33.3% (6/18)</td><td>20.0% (4/20)</td><td>30.8% (4/13)</td><td>23.1% (3/13)</td></tr><tr><th>Villager</th><td>33.3% (6/18)</td><td>20.0% (4/20)</td><td>30.8% (4/13)</td><td>23.1% (3/13)</td></tr><tr><th>Werewolf</th><td>66.7% (24/36)</td><td>80.0% (32/40)</td><td>69.2% (18/26)</td><td>76.9% (20/26)</td></tr><tr><th>Witch</th><td>33.3% (6/18)</td><td>20.0% (4/20)</td><td>30.8% (4/13)</td><td>23.1% (3/13)</td></tr></tbody></table></div></section>
+    <section><h2>Alignment win rates across tiers</h2><div class='table-wrap'><table><thead><tr><th>Alignment</th><th>baseline</th><th>anti_only</th><th>trackc_only</th><th>both</th></tr></thead><tbody><tr><th>village</th><td>33.3% (30/90)</td><td>20.0% (20/100)</td><td>30.8% (20/65)</td><td>23.1% (15/65)</td></tr><tr><th>wolf</th><td>66.7% (24/36)</td><td>80.0% (32/40)</td><td>69.2% (18/26)</td><td>76.9% (20/26)</td></tr></tbody></table></div></section>
+    <section><h2>MBTI win rates across tiers</h2><div class='table-wrap'><table><thead><tr><th>MBTI</th><th>baseline</th><th>anti_only</th><th>trackc_only</th><th>both</th></tr></thead><tbody><tr><th>ENFJ</th><td>33.3% (4/12)</td><td>41.7% (5/12)</td><td>50.0% (3/6)</td><td>33.3% (3/9)</td></tr><tr><th>ENFP</th><td>80.0% (4/5)</td><td>71.4% (5/7)</td><td>66.7% (4/6)</td><td>40.0% (2/5)</td></tr><tr><th>ENTJ</th><td>50.0% (3/6)</td><td>33.3% (2/6)</td><td>57.1% (4/7)</td><td>80.0% (4/5)</td></tr><tr><th>ENTP</th><td>25.0% (1/4)</td><td>20.0% (1/5)</td><td>66.7% (2/3)</td><td>66.7% (2/3)</td></tr><tr><th>ESFJ</th><td>50.0% (5/10)</td><td>44.4% (4/9)</td><td>28.6% (2/7)</td><td>28.6% (2/7)</td></tr><tr><th>ESFP</th><td>66.7% (2/3)</td><td>25.0% (1/4)</td><td>25.0% (1/4)</td><td>25.0% (1/4)</td></tr><tr><th>ESTJ</th><td>33.3% (2/6)</td><td>50.0% (4/8)</td><td>16.7% (1/6)</td><td>33.3% (3/9)</td></tr><tr><th>ESTP</th><td>11.1% (1/9)</td><td>36.4% (4/11)</td><td>16.7% (1/6)</td><td>33.3% (2/6)</td></tr><tr><th>INFJ</th><td>38.5% (5/13)</td><td>50.0% (7/14)</td><td>66.7% (6/9)</td><td>45.5% (5/11)</td></tr><tr><th>INFP</th><td>54.5% (6/11)</td><td>25.0% (3/12)</td><td>30.0% (3/10)</td><td>37.5% (3/8)</td></tr><tr><th>INTJ</th><td>38.9% (7/18)</td><td>30.0% (6/20)</td><td>37.5% (3/8)</td><td>42.9% (3/7)</td></tr><tr><th>INTP</th><td>50.0% (2/4)</td><td>0.0% (0/5)</td><td>0.0% (0/2)</td><td>0.0% (0/1)</td></tr><tr><th>ISFJ</th><td>50.0% (2/4)</td><td>50.0% (2/4)</td><td>100.0% (1/1)</td><td>50.0% (1/2)</td></tr><tr><th>ISFP</th><td>16.7% (1/6)</td><td>16.7% (1/6)</td><td>40.0% (2/5)</td><td>33.3% (2/6)</td></tr><tr><th>ISTJ</th><td>66.7% (8/12)</td><td>28.6% (4/14)</td><td>40.0% (4/10)</td><td>20.0% (1/5)</td></tr><tr><th>ISTP</th><td>33.3% (1/3)</td><td>100.0% (3/3)</td><td>100.0% (1/1)</td><td>33.3% (1/3)</td></tr></tbody></table></div></section>
+    <section><h2>16 MBTI forced-coverage win rates</h2><div class='table-wrap'><table><thead><tr><th>MBTI</th><th>Win rate</th><th>Wins / N</th><th>95% CI</th></tr></thead><tbody><tr><th>INFJ</th><td>47.8%</td><td>11/23</td><td>[29.2%, 67.0%]</td></tr>
+<tr><th>ENTJ</th><td>31.8%</td><td>7/22</td><td>[16.4%, 52.7%]</td></tr>
+<tr><th>ENTP</th><td>23.8%</td><td>5/21</td><td>[10.6%, 45.1%]</td></tr>
+<tr><th>INTJ</th><td>42.9%</td><td>9/21</td><td>[24.5%, 63.4%]</td></tr>
+<tr><th>ENFJ</th><td>45.0%</td><td>9/20</td><td>[25.8%, 65.8%]</td></tr>
+<tr><th>ENFP</th><td>35.0%</td><td>7/20</td><td>[18.1%, 56.7%]</td></tr>
+<tr><th>ESFJ</th><td>35.0%</td><td>7/20</td><td>[18.1%, 56.7%]</td></tr>
+<tr><th>ESFP</th><td>40.0%</td><td>8/20</td><td>[21.9%, 61.3%]</td></tr>
+<tr><th>ESTJ</th><td>35.0%</td><td>7/20</td><td>[18.1%, 56.7%]</td></tr>
+<tr><th>ESTP</th><td>25.0%</td><td>5/20</td><td>[11.2%, 46.9%]</td></tr>
+<tr><th>INFP</th><td>35.0%</td><td>7/20</td><td>[18.1%, 56.7%]</td></tr>
+<tr><th>INTP</th><td>30.0%</td><td>6/20</td><td>[14.5%, 51.9%]</td></tr>
+<tr><th>ISFJ</th><td>45.0%</td><td>9/20</td><td>[25.8%, 65.8%]</td></tr>
+<tr><th>ISFP</th><td>25.0%</td><td>5/20</td><td>[11.2%, 46.9%]</td></tr>
+<tr><th>ISTJ</th><td>35.0%</td><td>7/20</td><td>[18.1%, 56.7%]</td></tr>
+<tr><th>ISTP</th><td>25.0%</td><td>5/20</td><td>[11.2%, 46.9%]</td></tr></tbody></table></div></section>
+    <section><h2>Target role win rates</h2><div class='table-wrap'><table><thead><tr><th>Role</th><th>Win rate</th><th>Wins / N</th><th>95% CI</th></tr></thead><tbody><tr><th>Werewolf</th><td>68.0%</td><td>53/78</td><td>[57.0%, 77.2%]</td></tr>
+<tr><th>Hunter</th><td>17.2%</td><td>10/58</td><td>[9.6%, 28.9%]</td></tr>
+<tr><th>Witch</th><td>32.1%</td><td>17/53</td><td>[21.1%, 45.5%]</td></tr>
+<tr><th>Seer</th><td>32.0%</td><td>16/50</td><td>[20.8%, 45.8%]</td></tr>
+<tr><th>Guard</th><td>22.2%</td><td>10/45</td><td>[12.5%, 36.3%]</td></tr>
+<tr><th>Villager</th><td>18.6%</td><td>8/43</td><td>[9.7%, 32.6%]</td></tr></tbody></table></div></section>
+    <section><h2>Village vs wolf target-player win rates</h2><div class='table-wrap'><table><thead><tr><th>Alignment</th><th>Win rate</th><th>Wins / N</th><th>95% CI</th></tr></thead><tbody><tr><th>village</th><td>24.5%</td><td>61/249</td><td>[19.6%, 30.2%]</td></tr>
+<tr><th>wolf</th><td>68.0%</td><td>53/78</td><td>[57.0%, 77.2%]</td></tr></tbody></table></div></section>
+    <section><h2>MBTI x role win rates</h2><div class='table-wrap'><table><thead><tr><th>MBTI + Role</th><th>Win rate</th><th>Wins / N</th><th>95% CI</th></tr></thead><tbody><tr><th>ENFJ+Werewolf</th><td>55.6%</td><td>5/9</td><td>[26.7%, 81.1%]</td></tr>
+<tr><th>ENTP+Villager</th><td>12.5%</td><td>1/8</td><td>[2.2%, 47.1%]</td></tr>
+<tr><th>INFJ+Werewolf</th><td>71.4%</td><td>5/7</td><td>[35.9%, 91.8%]</td></tr>
+<tr><th>INFP+Hunter</th><td>14.3%</td><td>1/7</td><td>[2.6%, 51.3%]</td></tr>
+<tr><th>INTJ+Werewolf</th><td>85.7%</td><td>6/7</td><td>[48.7%, 97.4%]</td></tr>
+<tr><th>ISFJ+Werewolf</th><td>85.7%</td><td>6/7</td><td>[48.7%, 97.4%]</td></tr>
+<tr><th>ENTJ+Seer</th><td>16.7%</td><td>1/6</td><td>[3.0%, 56.4%]</td></tr>
+<tr><th>ENTJ+Witch</th><td>16.7%</td><td>1/6</td><td>[3.0%, 56.4%]</td></tr>
+<tr><th>ESFJ+Witch</th><td>50.0%</td><td>3/6</td><td>[18.8%, 81.2%]</td></tr>
+<tr><th>ISTP+Hunter</th><td>0.0%</td><td>0/6</td><td>[0.0%, 39.0%]</td></tr>
+<tr><th>ENFP+Seer</th><td>40.0%</td><td>2/5</td><td>[11.8%, 76.9%]</td></tr>
+<tr><th>ENFP+Werewolf</th><td>80.0%</td><td>4/5</td><td>[37.5%, 96.4%]</td></tr>
+<tr><th>ESFP+Witch</th><td>40.0%</td><td>2/5</td><td>[11.8%, 76.9%]</td></tr>
+<tr><th>ESTJ+Seer</th><td>40.0%</td><td>2/5</td><td>[11.8%, 76.9%]</td></tr>
+<tr><th>ESTP+Werewolf</th><td>60.0%</td><td>3/5</td><td>[23.1%, 88.2%]</td></tr>
+<tr><th>INFJ+Hunter</th><td>20.0%</td><td>1/5</td><td>[3.6%, 62.5%]</td></tr>
+<tr><th>INTJ+Seer</th><td>20.0%</td><td>1/5</td><td>[3.6%, 62.5%]</td></tr>
+<tr><th>INTP+Werewolf</th><td>60.0%</td><td>3/5</td><td>[23.1%, 88.2%]</td></tr>
+<tr><th>ISFJ+Hunter</th><td>20.0%</td><td>1/5</td><td>[3.6%, 62.5%]</td></tr>
+<tr><th>ISFP+Hunter</th><td>0.0%</td><td>0/5</td><td>[0.0%, 43.5%]</td></tr>
+<tr><th>ISFP+Werewolf</th><td>80.0%</td><td>4/5</td><td>[37.5%, 96.4%]</td></tr>
+<tr><th>ISTJ+Guard</th><td>0.0%</td><td>0/5</td><td>[0.0%, 43.5%]</td></tr>
+<tr><th>ISTJ+Hunter</th><td>60.0%</td><td>3/5</td><td>[23.1%, 88.2%]</td></tr>
+<tr><th>ISTJ+Witch</th><td>40.0%</td><td>2/5</td><td>[11.8%, 76.9%]</td></tr>
+<tr><th>ISTP+Werewolf</th><td>60.0%</td><td>3/5</td><td>[23.1%, 88.2%]</td></tr>
+<tr><th>ENFP+Witch</th><td>25.0%</td><td>1/4</td><td>[4.6%, 69.9%]</td></tr>
+<tr><th>ENTJ+Guard</th><td>25.0%</td><td>1/4</td><td>[4.6%, 69.9%]</td></tr>
+<tr><th>ENTJ+Werewolf</th><td>75.0%</td><td>3/4</td><td>[30.1%, 95.4%]</td></tr>
+<tr><th>ENTP+Werewolf</th><td>50.0%</td><td>2/4</td><td>[15.0%, 85.0%]</td></tr>
+<tr><th>ESFJ+Hunter</th><td>0.0%</td><td>0/4</td><td>[0.0%, 49.0%]</td></tr>
+<tr><th>ESFJ+Werewolf</th><td>75.0%</td><td>3/4</td><td>[30.1%, 95.4%]</td></tr>
+<tr><th>ESFP+Hunter</th><td>50.0%</td><td>2/4</td><td>[15.0%, 85.0%]</td></tr>
+<tr><th>ESFP+Werewolf</th><td>50.0%</td><td>2/4</td><td>[15.0%, 85.0%]</td></tr>
+<tr><th>ESTP+Witch</th><td>25.0%</td><td>1/4</td><td>[4.6%, 69.9%]</td></tr>
+<tr><th>INFJ+Guard</th><td>50.0%</td><td>2/4</td><td>[15.0%, 85.0%]</td></tr>
+<tr><th>INFP+Witch</th><td>50.0%</td><td>2/4</td><td>[15.0%, 85.0%]</td></tr>
+<tr><th>INTJ+Guard</th><td>25.0%</td><td>1/4</td><td>[4.6%, 69.9%]</td></tr>
+<tr><th>INTP+Villager</th><td>25.0%</td><td>1/4</td><td>[4.6%, 69.9%]</td></tr>
+<tr><th>ISFP+Guard</th><td>0.0%</td><td>0/4</td><td>[0.0%, 49.0%]</td></tr>
+<tr><th>ISTP+Witch</th><td>25.0%</td><td>1/4</td><td>[4.6%, 69.9%]</td></tr>
+<tr><th>ENFJ+Seer</th><td>33.3%</td><td>1/3</td><td>[6.2%, 79.2%]</td></tr>
+<tr><th>ENFJ+Villager</th><td>66.7%</td><td>2/3</td><td>[20.8%, 93.8%]</td></tr>
+<tr><th>ENFP+Villager</th><td>0.0%</td><td>0/3</td><td>[0.0%, 56.1%]</td></tr>
+<tr><th>ENTP+Hunter</th><td>0.0%</td><td>0/3</td><td>[0.0%, 56.1%]</td></tr>
+<tr><th>ENTP+Seer</th><td>66.7%</td><td>2/3</td><td>[20.8%, 93.8%]</td></tr>
+<tr><th>ESFP+Guard</th><td>0.0%</td><td>0/3</td><td>[0.0%, 56.1%]</td></tr>
+<tr><th>ESTJ+Guard</th><td>66.7%</td><td>2/3</td><td>[20.8%, 93.8%]</td></tr>
+<tr><th>ESTJ+Hunter</th><td>33.3%</td><td>1/3</td><td>[6.2%, 79.2%]</td></tr>
+<tr><th>ESTJ+Villager</th><td>0.0%</td><td>0/3</td><td>[0.0%, 56.1%]</td></tr>
+<tr><th>ESTJ+Werewolf</th><td>33.3%</td><td>1/3</td><td>[6.2%, 79.2%]</td></tr>
+<tr><th>ESTJ+Witch</th><td>33.3%</td><td>1/3</td><td>[6.2%, 79.2%]</td></tr>
+<tr><th>ESTP+Guard</th><td>33.3%</td><td>1/3</td><td>[6.2%, 79.2%]</td></tr>
+<tr><th>ESTP+Seer</th><td>0.0%</td><td>0/3</td><td>[0.0%, 56.1%]</td></tr>
+<tr><th>ESTP+Villager</th><td>0.0%</td><td>0/3</td><td>[0.0%, 56.1%]</td></tr>
+<tr><th>INFJ+Villager</th><td>33.3%</td><td>1/3</td><td>[6.2%, 79.2%]</td></tr>
+<tr><th>INFP+Guard</th><td>33.3%</td><td>1/3</td><td>[6.2%, 79.2%]</td></tr>
+<tr><th>INFP+Seer</th><td>66.7%</td><td>2/3</td><td>[20.8%, 93.8%]</td></tr>
+<tr><th>INTP+Guard</th><td>33.3%</td><td>1/3</td><td>[6.2%, 79.2%]</td></tr>
+<tr><th>INTP+Hunter</th><td>0.0%</td><td>0/3</td><td>[0.0%, 56.1%]</td></tr>
+<tr><th>INTP+Seer</th><td>0.0%</td><td>0/3</td><td>[0.0%, 56.1%]</td></tr>
+<tr><th>ISFJ+Seer</th><td>33.3%</td><td>1/3</td><td>[6.2%, 79.2%]</td></tr>
+<tr><th>ISFJ+Villager</th><td>33.3%</td><td>1/3</td><td>[6.2%, 79.2%]</td></tr>
+<tr><th>ISFP+Seer</th><td>0.0%</td><td>0/3</td><td>[0.0%, 56.1%]</td></tr>
+<tr><th>ISTP+Villager</th><td>0.0%</td><td>0/3</td><td>[0.0%, 56.1%]</td></tr>
+<tr><th>ENFJ+Hunter</th><td>0.0%</td><td>0/2</td><td>[0.0%, 65.8%]</td></tr>
+<tr><th>ENFJ+Witch</th><td>50.0%</td><td>1/2</td><td>[9.4%, 90.5%]</td></tr>
+<tr><th>ENFP+Guard</th><td>0.0%</td><td>0/2</td><td>[0.0%, 65.8%]</td></tr>
+<tr><th>ENTJ+Hunter</th><td>50.0%</td><td>1/2</td><td>[9.4%, 90.5%]</td></tr>
+<tr><th>ENTP+Witch</th><td>0.0%</td><td>0/2</td><td>[0.0%, 65.8%]</td></tr>
+<tr><th>ESFJ+Guard</th><td>0.0%</td><td>0/2</td><td>[0.0%, 65.8%]</td></tr>
+<tr><th>ESFJ+Seer</th><td>50.0%</td><td>1/2</td><td>[9.4%, 90.5%]</td></tr>
+<tr><th>ESFJ+Villager</th><td>0.0%</td><td>0/2</td><td>[0.0%, 65.8%]</td></tr>
+<tr><th>ESFP+Seer</th><td>50.0%</td><td>1/2</td><td>[9.4%, 90.5%]</td></tr>
+<tr><th>ESFP+Villager</th><td>50.0%</td><td>1/2</td><td>[9.4%, 90.5%]</td></tr>
+<tr><th>ESTP+Hunter</th><td>0.0%</td><td>0/2</td><td>[0.0%, 65.8%]</td></tr>
+<tr><th>INFJ+Seer</th><td>100.0%</td><td>2/2</td><td>[34.2%, 100.0%]</td></tr>
+<tr><th>INFJ+Witch</th><td>0.0%</td><td>0/2</td><td>[0.0%, 65.8%]</td></tr>
+<tr><th>INFP+Werewolf</th><td>50.0%</td><td>1/2</td><td>[9.4%, 90.5%]</td></tr>
+<tr><th>INTJ+Villager</th><td>0.0%</td><td>0/2</td><td>[0.0%, 65.8%]</td></tr>
+<tr><th>INTJ+Witch</th><td>50.0%</td><td>1/2</td><td>[9.4%, 90.5%]</td></tr>
+<tr><th>INTP+Witch</th><td>50.0%</td><td>1/2</td><td>[9.4%, 90.5%]</td></tr>
+<tr><th>ISFP+Villager</th><td>50.0%</td><td>1/2</td><td>[9.4%, 90.5%]</td></tr>
+<tr><th>ISTJ+Seer</th><td>0.0%</td><td>0/2</td><td>[0.0%, 65.8%]</td></tr>
+<tr><th>ISTJ+Werewolf</th><td>100.0%</td><td>2/2</td><td>[34.2%, 100.0%]</td></tr>
+<tr><th>ISTP+Guard</th><td>50.0%</td><td>1/2</td><td>[9.4%, 90.5%]</td></tr>
+<tr><th>ENFJ+Guard</th><td>0.0%</td><td>0/1</td><td>[0.0%, 79.3%]</td></tr>
+<tr><th>ENFP+Hunter</th><td>0.0%</td><td>0/1</td><td>[0.0%, 79.3%]</td></tr>
+<tr><th>ENTP+Guard</th><td>0.0%</td><td>0/1</td><td>[0.0%, 79.3%]</td></tr>
+<tr><th>INFP+Villager</th><td>0.0%</td><td>0/1</td><td>[0.0%, 79.3%]</td></tr>
+<tr><th>INTJ+Hunter</th><td>0.0%</td><td>0/1</td><td>[0.0%, 79.3%]</td></tr>
+<tr><th>ISFJ+Guard</th><td>0.0%</td><td>0/1</td><td>[0.0%, 79.3%]</td></tr>
+<tr><th>ISFJ+Witch</th><td>0.0%</td><td>0/1</td><td>[0.0%, 79.3%]</td></tr>
+<tr><th>ISFP+Witch</th><td>0.0%</td><td>0/1</td><td>[0.0%, 79.3%]</td></tr>
+<tr><th>ISTJ+Villager</th><td>0.0%</td><td>0/1</td><td>[0.0%, 79.3%]</td></tr></tbody></table></div></section>
+    <section><h2>MBTI x alignment win rates</h2><div class='table-wrap'><table><thead><tr><th>MBTI + Alignment</th><th>Win rate</th><th>Wins / N</th><th>95% CI</th></tr></thead><tbody><tr><th>ENTJ+village</th><td>22.2%</td><td>4/18</td><td>[9.0%, 45.2%]</td></tr>
+<tr><th>INFP+village</th><td>33.3%</td><td>6/18</td><td>[16.3%, 56.2%]</td></tr>
+<tr><th>ISTJ+village</th><td>27.8%</td><td>5/18</td><td>[12.5%, 50.9%]</td></tr>
+<tr><th>ENTP+village</th><td>17.6%</td><td>3/17</td><td>[6.2%, 41.0%]</td></tr>
+<tr><th>ESTJ+village</th><td>35.3%</td><td>6/17</td><td>[17.3%, 58.7%]</td></tr>
+<tr><th>ESFJ+village</th><td>25.0%</td><td>4/16</td><td>[10.2%, 49.5%]</td></tr>
+<tr><th>ESFP+village</th><td>37.5%</td><td>6/16</td><td>[18.5%, 61.4%]</td></tr>
+<tr><th>INFJ+village</th><td>37.5%</td><td>6/16</td><td>[18.5%, 61.4%]</td></tr>
+<tr><th>ENFP+village</th><td>20.0%</td><td>3/15</td><td>[7.0%, 45.2%]</td></tr>
+<tr><th>ESTP+village</th><td>13.3%</td><td>2/15</td><td>[3.7%, 37.9%]</td></tr>
+<tr><th>INTP+village</th><td>20.0%</td><td>3/15</td><td>[7.0%, 45.2%]</td></tr>
+<tr><th>ISFP+village</th><td>6.7%</td><td>1/15</td><td>[1.2%, 29.8%]</td></tr>
+<tr><th>ISTP+village</th><td>13.3%</td><td>2/15</td><td>[3.7%, 37.9%]</td></tr>
+<tr><th>INTJ+village</th><td>21.4%</td><td>3/14</td><td>[7.6%, 47.6%]</td></tr>
+<tr><th>ISFJ+village</th><td>23.1%</td><td>3/13</td><td>[8.2%, 50.3%]</td></tr>
+<tr><th>ENFJ+village</th><td>36.4%</td><td>4/11</td><td>[15.2%, 64.6%]</td></tr>
+<tr><th>ENFJ+wolf</th><td>55.6%</td><td>5/9</td><td>[26.7%, 81.1%]</td></tr>
+<tr><th>INFJ+wolf</th><td>71.4%</td><td>5/7</td><td>[35.9%, 91.8%]</td></tr>
+<tr><th>INTJ+wolf</th><td>85.7%</td><td>6/7</td><td>[48.7%, 97.4%]</td></tr>
+<tr><th>ISFJ+wolf</th><td>85.7%</td><td>6/7</td><td>[48.7%, 97.4%]</td></tr>
+<tr><th>ENFP+wolf</th><td>80.0%</td><td>4/5</td><td>[37.5%, 96.4%]</td></tr>
+<tr><th>ESTP+wolf</th><td>60.0%</td><td>3/5</td><td>[23.1%, 88.2%]</td></tr>
+<tr><th>INTP+wolf</th><td>60.0%</td><td>3/5</td><td>[23.1%, 88.2%]</td></tr>
+<tr><th>ISFP+wolf</th><td>80.0%</td><td>4/5</td><td>[37.5%, 96.4%]</td></tr>
+<tr><th>ISTP+wolf</th><td>60.0%</td><td>3/5</td><td>[23.1%, 88.2%]</td></tr>
+<tr><th>ENTJ+wolf</th><td>75.0%</td><td>3/4</td><td>[30.1%, 95.4%]</td></tr>
+<tr><th>ENTP+wolf</th><td>50.0%</td><td>2/4</td><td>[15.0%, 85.0%]</td></tr>
+<tr><th>ESFJ+wolf</th><td>75.0%</td><td>3/4</td><td>[30.1%, 95.4%]</td></tr>
+<tr><th>ESFP+wolf</th><td>50.0%</td><td>2/4</td><td>[15.0%, 85.0%]</td></tr>
+<tr><th>ESTJ+wolf</th><td>33.3%</td><td>1/3</td><td>[6.2%, 79.2%]</td></tr>
+<tr><th>INFP+wolf</th><td>50.0%</td><td>1/2</td><td>[9.4%, 90.5%]</td></tr>
+<tr><th>ISTJ+wolf</th><td>100.0%</td><td>2/2</td><td>[34.2%, 100.0%]</td></tr></tbody></table></div></section>
+    <section>
+      <h2>Reproduction and continuation audit</h2>
+      <div class="audit">
+        <p>Rebuild with <code>python scripts/full_victory_report.py --tier-dir data/experiment/multi_tier/formal_dsv4flash_7p_tier_6x_v2 --mbti-summary data/health/mbti_acceptance_formal_dsv4flash_7p_mbti_16x1_v2.summary.json --mbti-jsonl data/health/mbti_acceptance_formal_dsv4flash_7p_mbti_16x1_v2.jsonl</code>.</p>
+        <p>DeepSeek 官方与 <code>dsv4flash</code> key 已从 <code>.env</code> 删除；<code>weapi:gpt-5.5</code> 探测为 401；<code>ark:deepseek-v4-pro[1m]</code> 探测为 InvalidSubscription；<code>doubao</code> provider 绑定 Ark coding endpoint 与 <code>deepseek-v4-flash[1m]</code> 后已通过单局 smoke，并用于追加 multi-tier 与 MBTI 覆盖补跑。</p>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

@@ -184,9 +184,7 @@ class _ToolCallingRunnable(Runnable):
         if tools:
             call_kwargs["tools"] = tools
             call_kwargs["tool_choice"] = (
-                {"type": "function", "function": {"name": force_tool_name}}
-                if force_tool_name
-                else "auto"
+                {"type": "function", "function": {"name": force_tool_name}} if force_tool_name else "auto"
             )
 
         resp = self._client.chat_sync(

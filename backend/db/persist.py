@@ -1480,9 +1480,7 @@ def get_evolution_dashboard() -> dict[str, Any]:
         patches = db.query(StrategyPatch).order_by(StrategyPatch.created_at.desc()).limit(20).all()
         tournaments = db.query(EvolutionTournament).order_by(EvolutionTournament.created_at.desc()).limit(20).all()
         active_versions = (
-            db.query(RoleStrategyCard)
-            .order_by(RoleStrategyCard.role, RoleStrategyCard.created_at.desc())
-            .all()
+            db.query(RoleStrategyCard).order_by(RoleStrategyCard.role, RoleStrategyCard.created_at.desc()).all()
         )
         knowledge = (
             db.query(StrategyKnowledgeDoc)
@@ -1586,7 +1584,8 @@ def _lightweight_bc_acceptance_summary(db) -> dict[str, Any]:
     passed = all(item.passed for item in metrics)
     return {
         "generated_at": _now().isoformat(),
-        "overall_success_rate": sum(float(item["success_rate"]) for item in metrics_payload) / max(len(metrics_payload), 1),
+        "overall_success_rate": sum(float(item["success_rate"]) for item in metrics_payload)
+        / max(len(metrics_payload), 1),
         "passed": passed,
         "metrics": metrics_payload,
         "mode": "dashboard_summary",

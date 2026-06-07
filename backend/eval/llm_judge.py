@@ -95,8 +95,8 @@ class LLMJudgePanel:
 
     def __init__(self, llm_client: Any = None, *, client: Any = None):
         """Args:
-            llm_client: Legacy client (must have chat_sync method).
-            client: KeyFallbackClient or DeepSeekClient (preferred — has retry + fallback).
+        llm_client: Legacy client (must have chat_sync method).
+        client: KeyFallbackClient or DeepSeekClient (preferred — has retry + fallback).
         """
         self._llm = client or llm_client
         if self._llm is None:

@@ -258,6 +258,14 @@ updated: 2026-06-03
 - **涉及文件 / 模块**：`frontend/package.json`、本地开发环境。
 - **教训**：前端验证要先确认项目实际端口；lint 无正文时不能假装通过，也不能把端口错误误判成页面不可用。
 
+### 问题 B11b：对局页发言气泡与公开夜晚边界混乱
+- **发生时间 / Session**：2026-06-07 ｜ Codex
+- **现象**：用户反馈夜晚也出现“当前发言”底部大气泡；角色发言依旧被一股脑塞进底部大气泡；对局日志里仍有打字机和大段文本；普通观众夜晚阶段不应看到完整思考/行动过程，只应看到对应职业完成任务；对局页右上角仍有视角切换 UI；音乐按钮位置更适合右下角。
+- **根因**：`BottomDialogueDock` 在无发言时渲染占位文案，并用 `completedIds` 队列控制上方日志归档；移除底部气泡前，时间线还依赖该队列导致发言显示职责耦合。另一个根因是 public snapshot 把所有夜间子阶段统一折叠为 `NIGHT_START`，前端无法在不泄漏目标/推理的前提下显示“守卫/狼人/女巫/预言家完成任务”。
+- **解决方案**：对局页移除底部 `BottomDialogueDock`，日志 `ChatBubble` 直接展示完整发言且不启用打字机；前端收到 `CHAT_MESSAGE` 后立即标记完成，避免 displayPhase 等待不存在的底部播放；`GameHeader` 移除右上角视角切换，只显示当前视角状态；音乐按钮改为右下角；public `NIGHT_ACTION` 脱敏 payload 只保留 `{message:"行动完毕", phase:<night role phase>}`，不保留 actor/target/reasoning，前端渲染为“守卫完成任务”等。
+- **涉及文件 / 模块**：`frontend/app/room/[id]/play/page.tsx`、`frontend/components/game/GameHeader.tsx`、`frontend/components/game/_speech/DayEventBlock.tsx`、`frontend/components/game/EventItem.tsx`、`frontend/hooks/useGamePageController.ts`、`backend/engine/models.py`、`tests/test_engine.py`
+- **教训**：当前发言播放和对局日志归档不能互相阻塞；公开视角的脱敏也要保留足够的非敏感语义，否则 UI 无法表达“哪个职业阶段完成”。
+
 ### 问题 B12：真人模式确认后无限 Starting
 - **发生时间 / Session**：2026-05-24
 - **现象**：真人模式在确认弹窗点击“Confirm & Start”后一直显示 `Starting...`，页面不跳转；直接请求 `/api/rooms/{id}/start?show_private=true` 超过 60 秒没有响应。
@@ -427,6 +435,14 @@ updated: 2026-06-03
 - **解决方案**：新增真实 `TournamentRunner.run_ab_tournament()`：强制 20 个固定 seed，baseline/candidate 各跑 20 局 `WerewolfGame`，再用 Track B `MetricsCalculator` 生成指标；`AcceptancePolicy` 增加 `candidate_fallback_count == 0` 硬门；测试新增 C9b 覆盖真实 20 seed 运行；API cycle 改用真实 tournament 并落库。
 - **涉及文件 / 模块**：`backend/eval/evolution.py`、`backend/db/persist.py`、`tests/test_c_acceptance_verification.py`
 - **教训**：验收测试不能只比较构造数据；凡是文档写“跑固定 seed 20 局”，测试必须证明引擎真的被调用、结果数量真的为 20×2。
+
+### 问题 C9：警长归票按普通发言生成
+- **发生时间 / Session**：2026-06-07 ｜ Codex
+- **现象**：用户指出“警长做总结的时候，提示词貌似有问题”。排查发现警长归票阶段虽然 request 是 `SHERIFF_CLOSING`，但实际仍调用 `agent.talk()`，LLM talk prompt 只把 `DAY_SHERIFF_CLOSING` 当普通白天自由发言处理，缺少“归票总结”的任务约束。
+- **根因**：`LLMAgent._build_talk_system_parts()` 与 `_build_phase_hint()` 只特化了警徽竞选、PK 和遗言，没有覆盖 `DAY_SHERIFF_CLOSING`；因此模型容易泛泛总结或继续观察，而不是明确主归票对象和依据。
+- **解决方案**：为 `DAY_SHERIFF_CLOSING` 增加专门任务语义：要求警长收束讨论、引用公开事实、明确主归票对象、给出备选焦点或说明不分票理由；不改 Agent 协议和引擎阶段。
+- **涉及文件 / 模块**：`backend/agents/llm_agent.py`
+- **教训**：每个特殊发言阶段都需要独立 prompt slot；只换 request 名称但复用普通发言提示，LLM 不会自动理解阶段职责。
 
 ### 问题 C8b：LLMAgent 检索空知识库
 - **发生时间 / Session**：2026-05-25
@@ -967,6 +983,14 @@ updated: 2026-06-03
 - **涉及文件 / 模块**：`scripts/full_victory_report.py`、`tests/test_full_victory_report.py`、`docs/experiments/full_victory_report.md`
 - **教训**：生成物写入和读取不能并行；实验报告要以原始 JSONL 行为权威来源，环境验证命令要绑定同一个 Python 解释器。
 
+### 问题 H15：删 DS key 后实验续跑仍指向 DeepSeek
+- **发生时间 / Session**：2026-06-07 ｜ Codex
+- **现象**：用户要求删除 `.env` 里的 DeepSeek 官方 API key 后，`.env` 仍保留 `LLM_PROVIDER=deepseek` / `MODEL_POOL=deepseek:deepseek-v4-flash`，直接运行正式实验会立刻失败于 `LLM provider deepseek is unavailable`。后续 provider 探测发现 `weapi:gpt-5.5` 返回 401、`ark:deepseek-v4-pro[1m]` 返回 InvalidSubscription；改用 `doubao` provider 绑定 Ark coding endpoint 与 `deepseek-v4-flash[1m]` 后，最小 chat 和 7P 完整单局 smoke 均可通过。
+- **根因**：密钥删除和 provider/model 指向是两件事；实验脚本会自动读取 `.env`，旧 provider 设置不会因为 key 删除而失效或自动切到可用通道。真实对局的吞吐还取决于多轮 LLM 决策，不等同于单次 chat 可用。
+- **解决方案**：没有把失败探测局混入正式胜率分母；使用显式环境变量清空旧 `MODEL_POOL`，将 `DOUBAO_API_KEY/DOUBAO_BASE_URL/DOUBAO_ENDPOINT` 绑定到 Ark coding token/base/model 后追加正式补跑。multi-tier 新增 24 个真实尝试；MBTI 用 `--append --resume` 补到 16 类每类至少 20 个成功 target-player 样本。`scripts/full_victory_report.py` 生成的正式报告加入“复现与续跑审计”，并新增 HTML 展示页。
+- **涉及文件 / 模块**：`.env`（本地未跟踪）、`scripts/multi_tier_experiment.py`、`scripts/mbti_acceptance_batch.py`、`scripts/full_victory_report.py`、`docs/experiments/full_victory_report.md`、`docs/experiments/full_victory_report.html`
+- **教训**：实验环境要同时审计 key 存在性、provider/model 指向和端到端单局吞吐；只验证单次 chat 成功不足以证明可以启动长批次。
+
 ---
 
 ## §I. 用户反复强调或纠正的偏好（沉淀）
@@ -1018,6 +1042,14 @@ updated: 2026-06-03
 - **解决方案**：前端只保留设置弹窗语言入口；底部发言负责播放、上方日志负责归档；公开夜晚统一展示“行动完毕/等待天亮”，全局视角才展示完整夜间行动；终局提供 JSON 导出。
 - **涉及文件 / 模块**：`frontend/` 对局页与 `backend/engine/models.py`
 - **教训**：Demo UI 的信息边界要比调试页面更克制，公开观众只看叙事结果，全局视角才看系统细节。
+
+### 对局页日志、夜晚与控制入口边界
+- **发生时间 / Session**：2026-06-07 ｜ Codex
+- **现象**：用户继续纠正：夜晚不显示底部当前发言气泡；只有白天有人发言时才出现发言形态；普通观众在夜晚对应职业结束后只看“XX 完成任务”，全局视角才展示思考过程和行动；对局页面右上角不能再有视角切换，只能在外部设置；对局日志里不能有打字机和一大段当前发言；音乐图标更适合右下角。
+- **根因**：这是对 Demo 观战页信息架构的进一步收紧：对局页本身应该是消费设置后的观战界面，不再提供调试/切换控制；日志应是已发生记录，不是当前发言播放器；公开夜晚只能呈现主持人可公开播报的完成状态。
+- **解决方案**：对局页移除右上角视角切换和底部常驻发言 dock；日志直接完整显示已产生发言，不做打字机；public 夜间动作保留非敏感职业阶段用于“完成任务”提示；音乐按钮放右下角。
+- **涉及文件 / 模块**：`frontend/app/room/[id]/play/page.tsx`、`frontend/components/game/GameHeader.tsx`、`frontend/components/game/EventItem.tsx`、`backend/engine/models.py`
+- **教训**：对局页不要混入设置页职责；“日志”和“当前发言”是不同层级，公开夜晚必须只给结果级叙事。
 
 ### 关于规则正确性
 - **猎人死亡 → 开枪、遗言环节、信息隔离**一个都不能漏。

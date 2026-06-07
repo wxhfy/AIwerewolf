@@ -65,9 +65,7 @@ def str_to_bool(value: str | bool | int) -> bool:
 def assert_remote_llm_provider(provider: str, model_pool: str) -> None:
     tokens = {provider.strip().lower()}
     tokens.update(part.split(":", 1)[0].strip().lower() for part in model_pool.split(",") if part.strip())
-    if tokens & {"fake", "fake_llm", "offline_llm"} and not str_to_bool(
-        os.environ.get("ALLOW_OFFLINE_FAKE_LLM", "0")
-    ):
+    if tokens & {"fake", "fake_llm", "offline_llm"} and not str_to_bool(os.environ.get("ALLOW_OFFLINE_FAKE_LLM", "0")):
         raise RuntimeError(
             "Offline fake LLM is not allowed for MBTI acceptance experiments. "
             "Use a real provider such as LLM_PROVIDER=weapi, or set "
@@ -113,7 +111,7 @@ def configure_experiment_env() -> str:
 def current_model_name() -> str:
     provider = os.environ.get("LLM_PROVIDER", "").strip()
     provider_candidates = {
-        "doubao": ["MODEL_POOL", "DOUBAO_MODEL_POOL", "DOUBAO_MODEL", "DOUBAO_ENDPOINT"],
+        "doubao": ["MODEL_POOL", "DOUBAO_MODEL_POOL", "DOUBAO_ENDPOINT", "DOUBAO_MODEL"],
         "deepseek": ["DEEPSEEK_MODEL"],
         "dsv4flash": ["DSV4FLASH_MODEL"],
         "ark": ["MODEL_POOL", "DOUBAO_MODEL_POOL", "ANTHROPIC_MODEL", "DSV4FLASH_MODEL"],
@@ -125,8 +123,8 @@ def current_model_name() -> str:
         "DOUBAO_MODEL_POOL",
         "DEEPSEEK_MODEL",
         "DSV4FLASH_MODEL",
-        "DOUBAO_MODEL",
         "DOUBAO_ENDPOINT",
+        "DOUBAO_MODEL",
         "WEAPI_MODEL",
         "FAKE_LLM_MODEL",
     ]

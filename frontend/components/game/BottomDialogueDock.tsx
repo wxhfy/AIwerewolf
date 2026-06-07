@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useMemo } from "react";
-import { GameEvent, Player, EventType, Language } from "@/types";
+import { GameEvent, Player, Language } from "@/types";
 import { t, tPhase } from "@/lib/i18n";
 import { normalizeSpeechContent } from "@/lib/eventFilter";
 import { useTypewriter } from "@/hooks/useTypewriter";
@@ -29,8 +29,17 @@ function getPhaseHint(phase: string | undefined, language: Language) {
   return tPhase(phase, language);
 }
 
+function isDaySpeechPhase(phase: string | undefined): boolean {
+  return Boolean(
+    phase === "DAY_BADGE_SPEECH" ||
+    phase === "DAY_SPEECH" ||
+    phase === "DAY_SHERIFF_CLOSING" ||
+    phase === "DAY_PK_SPEECH" ||
+    phase === "DAY_LAST_WORDS",
+  );
+}
+
 export function BottomDialogueDock({
-  events,
   players,
   currentChat,
   pendingPlayerId,
@@ -41,13 +50,13 @@ export function BottomDialogueDock({
   onChatComplete,
 }: BottomDialogueDockProps) {
   const latestChat = useMemo(() => {
-    if (currentChat) return currentChat;
-    for (let index = events.length - 1; index >= 0; index--) {
-      const event = events[index];
-      if (event.type === EventType.CHAT_MESSAGE) return event;
-    }
-    return null;
-  }, [events]);
+    if (!currentChat) return null;
+    if (!isDaySpeechPhase(currentChat.phase || phase)) return null;
+    return currentChat;
+  }, [currentChat, phase]);
+
+  if (!latestChat && !pendingPlayerName) return null;
+  if (!latestChat && !isDaySpeechPhase(phase)) return null;
 
   const actorId = latestChat?.payload.actor_id || pendingPlayerId || "";
   const player = players.find((item) => item.id === actorId);

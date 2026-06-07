@@ -267,9 +267,7 @@ def _normalize_doc_for_policy(doc: Dict[str, Any]) -> Dict[str, Any]:
     normalized["alignment_scope"] = _safe_str(
         normalized.get("alignment_scope") or _derive_alignment_from_role(role_scope)
     )
-    normalized["phase_scope"] = _safe_str(
-        normalized.get("phase_scope") or ("" if phase.lower() == "global" else phase)
-    )
+    normalized["phase_scope"] = _safe_str(normalized.get("phase_scope") or ("" if phase.lower() == "global" else phase))
     normalized["action_scope"] = _safe_str(normalized.get("action_scope", ""))
     normalized["source_game_id"] = _safe_str(normalized.get("source_game_id", ""))
     normalized["source_decision_id"] = _safe_str(normalized.get("source_decision_id", ""))
@@ -476,7 +474,7 @@ def _fill_from_buckets(
     bucket_names = list(buckets.keys())
     results: List[Dict] = []
     seen_ids: set = set()
-    used_from_bucket: Dict[str, int] = {bucket_name: 0 for bucket_name in bucket_names}
+    used_from_bucket: Dict[str, int] = dict.fromkeys(bucket_names, 0)
     underfilled: List[str] = []
 
     # Phase 1: fill by priority with quality threshold.
@@ -777,9 +775,7 @@ class StrategyRetriever:
             return result
 
         bucket_by_identity = {
-            id(doc): bucket_name
-            for bucket_name, bucket_docs in buckets.items()
-            for doc in bucket_docs
+            id(doc): bucket_name for bucket_name, bucket_docs in buckets.items() for doc in bucket_docs
         }
         results = []
         for rank, doc in enumerate(filled, 1):

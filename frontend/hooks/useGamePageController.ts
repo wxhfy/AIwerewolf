@@ -116,6 +116,30 @@ export function useGamePageController(roomId: string) {
     setCompletedTick((n) => n + 1);
   }, []);
 
+  useEffect(() => {
+    const events = gameState?.events;
+    if (!events) return;
+
+    let changed = false;
+    let prevActor = "";
+    let prevPhase = "";
+    for (const event of events) {
+      if (event.type !== EventType.CHAT_MESSAGE) {
+        prevActor = "";
+        prevPhase = "";
+        continue;
+      }
+      if (isMergedChatSegment(event, prevActor, prevPhase)) continue;
+      prevActor = (event.payload as any)?.actor_id || "";
+      prevPhase = event.phase || "";
+      if (!completedIdsRef.current.has(event.id)) {
+        completedIdsRef.current.add(event.id);
+        changed = true;
+      }
+    }
+    if (changed) setCompletedTick((n) => n + 1);
+  }, [gameState?.events]);
+
   const currentDialogueChat = useMemo(() => {
     const events = gameState?.events;
     if (!events) return null;

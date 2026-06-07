@@ -41,26 +41,11 @@ class FakeLLMClient:
         tools = kwargs.get("tools") or []
         tool_choice = kwargs.get("tool_choice")
         forced_tool = self._forced_tool_name(tool_choice)
-        tool_names = [
-            str((tool.get("function") or {}).get("name") or "")
-            for tool in tools
-            if isinstance(tool, dict)
-        ]
-        if forced_tool == "submit_decision" or (
-            "submit_decision" in tool_names and tool_names == ["submit_decision"]
-        ):
-            return self._tool_call_response(
-                "submit_decision", self._decision_args(text, target)
-            )
-        if (
-            tools
-            and "submit_decision" in tool_names
-            and "recall_memory" in tool_names
-            and "【任务：发言】" in text
-        ):
-            return self._tool_call_response(
-                "recall_memory", {"filter": "all", "target_player": ""}
-            )
+        tool_names = [str((tool.get("function") or {}).get("name") or "") for tool in tools if isinstance(tool, dict)]
+        if forced_tool == "submit_decision" or ("submit_decision" in tool_names and tool_names == ["submit_decision"]):
+            return self._tool_call_response("submit_decision", self._decision_args(text, target))
+        if tools and "submit_decision" in tool_names and "recall_memory" in tool_names and "【任务：发言】" in text:
+            return self._tool_call_response("recall_memory", {"filter": "all", "target_player": ""})
         if "=== 复盘任务 ===" in text or '"what_worked"' in text:
             content = json.dumps(
                 {
@@ -157,10 +142,7 @@ class FakeLLMClient:
         seer_target = FakeLLMClient._seer_strategy_target(text)
         legal_matches = re.findall(r"合法目标[:：]\s*([^\n]+)", text)
         if legal_matches:
-            legal_names = [
-                name.strip()
-                for name in re.findall(r"@?\d+号[:：]([^，,\n]+)", legal_matches[-1])
-            ]
+            legal_names = [name.strip() for name in re.findall(r"@?\d+号[:：]([^，,\n]+)", legal_matches[-1])]
             if seer_target and seer_target in legal_names:
                 return seer_target
             pressure_target = FakeLLMClient._public_pressure_target(text, legal_names)
@@ -181,14 +163,9 @@ class FakeLLMClient:
     def _seer_strategy_target(text: str) -> str:
         if "【本局强制策略规则" not in text:
             return ""
-        if not any(
-            token in text
-            for token in ("wolf check", "查杀", "查验结果", "confirmed information")
-        ):
+        if not any(token in text for token in ("wolf check", "查杀", "查验结果", "confirmed information")):
             return ""
-        if not re.search(
-            r"is_wolf['\"]?\s*:\s*True|is_wolf['\"]?\s*:\s*true", text
-        ):
+        if not re.search(r"is_wolf['\"]?\s*:\s*True|is_wolf['\"]?\s*:\s*true", text):
             return ""
         match = re.search(r"target_name['\"]?\s*:\s*['\"]([^'\"]+)['\"]", text)
         return match.group(1).strip() if match else ""

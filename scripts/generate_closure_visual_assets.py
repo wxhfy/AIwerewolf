@@ -10,14 +10,12 @@ from __future__ import annotations
 
 import argparse
 import json
-import textwrap
 import urllib.error
 import urllib.request
 from collections import Counter
 from html import escape
 from pathlib import Path
 from typing import Any
-
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OUT = ROOT / "docs" / "assets" / "closure"
@@ -109,7 +107,7 @@ def metric_card(label: str, value: Any, source: str = "") -> str:
     <div class="metric-card">
       <div class="metric-value">{escape(str(value))}</div>
       <div class="metric-label">{escape(label)}</div>
-      {f'<div class="metric-source">{escape(source)}</div>' if source else ''}
+      {f'<div class="metric-source">{escape(source)}</div>' if source else ""}
     </div>
     """
 
@@ -198,7 +196,7 @@ def generate_architecture_svg() -> str:
   <text x="540" y="58" text-anchor="middle" font-size="34" font-weight="800" fill="#2c211b">AI Werewolf Product Architecture</text>
   <text x="540" y="88" text-anchor="middle" font-size="18" fill="#6f6259">Frontend -> Game Engine -> Cognitive Agents -> Evaluation -> Knowledge Feedback</text>
   {arrow_svg}
-  {''.join(box_svg)}
+  {"".join(box_svg)}
 </svg>
 """
 
@@ -206,9 +204,27 @@ def generate_architecture_svg() -> str:
 def generate_loop_svg(strict: dict[str, Any]) -> str:
     dbv = strict.get("db_verify", {})
     cards = [
-        ("Play", "7-player real LLM game", f"{strict['game']['winner']} win / {strict['game']['duration_s']}s", 110, "#fffaf3"),
-        ("Audit", "AgentDecision + GameEvent", f"{dbv.get('decision_count')} decisions / {dbv.get('event_count')} events", 350, "#f8efe4"),
-        ("Evaluate", "Track B scoring", f"{strict['artifacts'].get('evaluation_count')} evals / {strict['artifacts'].get('review_count')} review", 590, "#eef7f1"),
+        (
+            "Play",
+            "7-player real LLM game",
+            f"{strict['game']['winner']} win / {strict['game']['duration_s']}s",
+            110,
+            "#fffaf3",
+        ),
+        (
+            "Audit",
+            "AgentDecision + GameEvent",
+            f"{dbv.get('decision_count')} decisions / {dbv.get('event_count')} events",
+            350,
+            "#f8efe4",
+        ),
+        (
+            "Evaluate",
+            "Track B scoring",
+            f"{strict['artifacts'].get('evaluation_count')} evals / {strict['artifacts'].get('review_count')} review",
+            590,
+            "#eef7f1",
+        ),
         ("Evolve", "Track C lessons", f"+{dbv.get('new_lessons')} candidate lessons", 830, "#f4edf8"),
     ]
     body = []
@@ -222,7 +238,7 @@ def generate_loop_svg(strict: dict[str, Any]) -> str:
 </g>"""
         )
     arrows = "\n".join(
-        f'<path d="M{x} 245 L{x+45} 245" stroke="#8f7b6b" stroke-width="5" marker-end="url(#arrow)" fill="none"/>'
+        f'<path d="M{x} 245 L{x + 45} 245" stroke="#8f7b6b" stroke-width="5" marker-end="url(#arrow)" fill="none"/>'
         for x in (300, 540, 780)
     )
     return f"""<svg xmlns="http://www.w3.org/2000/svg" width="1130" height="510" viewBox="0 0 1130 510" role="img" aria-label="Play Evaluate Evolve loop">
@@ -233,9 +249,9 @@ def generate_loop_svg(strict: dict[str, Any]) -> str:
   </defs>
   <rect width="1130" height="510" fill="#f7efe4"/>
   <text x="565" y="72" text-anchor="middle" font-size="36" font-weight="800" fill="#2c211b">Play -> Evaluate -> Evolve</text>
-  <text x="565" y="108" text-anchor="middle" font-size="18" fill="#6f6259">Strict run evidence: {escape(strict['game']['game_id'])}</text>
+  <text x="565" y="108" text-anchor="middle" font-size="18" fill="#6f6259">Strict run evidence: {escape(strict["game"]["game_id"])}</text>
   {arrows}
-  {''.join(body)}
+  {"".join(body)}
   <path d="M930 330 C930 420 200 420 200 330" stroke="#9c5d2c" stroke-width="5" fill="none" marker-end="url(#arrow)" opacity="0.72"/>
   <text x="565" y="444" text-anchor="middle" font-size="19" fill="#6f6259">candidate knowledge returns to StrategyRetriever after safety filters</text>
 </svg>
@@ -264,7 +280,9 @@ def generate_evidence_chain_svg() -> str:
 </g>"""
         )
         if i < len(labels) - 1:
-            rows.append(f'<path d="M120 {y + 66} L120 {y + 112}" stroke="#8f7b6b" stroke-width="4" marker-end="url(#arrow)" fill="none"/>')
+            rows.append(
+                f'<path d="M120 {y + 66} L120 {y + 112}" stroke="#8f7b6b" stroke-width="4" marker-end="url(#arrow)" fill="none"/>'
+            )
         y += 105
     return f"""<svg xmlns="http://www.w3.org/2000/svg" width="920" height="800" viewBox="0 0 920 800" role="img" aria-label="Database evidence chain">
   <defs>
@@ -274,7 +292,7 @@ def generate_evidence_chain_svg() -> str:
   </defs>
   <rect width="920" height="800" fill="#f7efe4"/>
   <text x="460" y="58" text-anchor="middle" font-size="34" font-weight="800" fill="#2c211b">Database Evidence Chain</text>
-  {''.join(rows)}
+  {"".join(rows)}
 </svg>
 """
 
@@ -322,13 +340,13 @@ def generate_game_snapshot_html(strict: dict[str, Any], replay: dict[str, Any]) 
                         break
         player_cards.append(
             f"""
-            <article class="player-card {alignment} {'alive' if alive else 'dead'}">
-              <div class="seat">{escape(str(player.get('seat', player.get('seat_no', '?'))))}</div>
+            <article class="player-card {alignment} {"alive" if alive else "dead"}">
+              <div class="seat">{escape(str(player.get("seat", player.get("seat_no", "?"))))}</div>
               <div>
-                <h3>{escape(player.get('name', 'Unknown'))}</h3>
-                <p>{escape(role)} · {escape(persona.get('mbti', 'MBTI?'))} {escape(persona.get('style_label', ''))}</p>
+                <h3>{escape(player.get("name", "Unknown"))}</h3>
+                <p>{escape(role)} · {escape(persona.get("mbti", "MBTI?"))} {escape(persona.get("style_label", ""))}</p>
               </div>
-              <span class="status">{'Alive' if alive else 'Dead D' + str(player.get('death_day') or '')}</span>
+              <span class="status">{"Alive" if alive else "Dead D" + str(player.get("death_day") or "")}</span>
             </article>
             """
         )
@@ -338,9 +356,9 @@ def generate_game_snapshot_html(strict: dict[str, Any], replay: dict[str, Any]) 
         timeline.append(
             f"""
             <li>
-              <span class="seq">#{event.get('seq')}</span>
-              <span class="phase">{escape(event.get('phase', ''))}</span>
-              <span class="etype">{escape(event.get('type', event.get('event_type', '')))}</span>
+              <span class="seq">#{event.get("seq")}</span>
+              <span class="phase">{escape(event.get("phase", ""))}</span>
+              <span class="etype">{escape(event.get("type", event.get("event_type", "")))}</span>
               <p>{escape(event_summary(event, player_names))}</p>
             </li>
             """
@@ -459,12 +477,12 @@ def generate_game_snapshot_html(strict: dict[str, Any], replay: dict[str, Any]) 
         <div class="game-id">game_id: {escape(game.get("game_id", replay.get("id", "")))}</div>
         <div class="metrics">{metrics}</div>
       </div>
-      <div class="panel players">{''.join(player_cards)}</div>
+      <div class="panel players">{"".join(player_cards)}</div>
     </section>
     <section class="grid">
       <div class="panel section">
         <h2>关键事件时间线</h2>
-        <ol class="timeline">{''.join(timeline)}</ol>
+        <ol class="timeline">{"".join(timeline)}</ol>
       </div>
       <div class="panel section">
         <h2>决策与事件分布</h2>

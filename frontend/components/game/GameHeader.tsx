@@ -16,7 +16,6 @@ interface GameHeaderProps {
   canRun: boolean;
   onRun: () => void;
   onStartHuman: () => void;
-  onViewModeChange: (mode: ViewMode) => void;
 }
 
 export function GameHeader({
@@ -30,7 +29,6 @@ export function GameHeader({
   canRun,
   onRun,
   onStartHuman,
-  onViewModeChange,
 }: GameHeaderProps) {
   return (
     <header className="relative z-10 flex flex-wrap items-center gap-3 border-b border-border bg-cardBackground px-4 py-2.5 md:px-6" data-phase-aware>
@@ -54,10 +52,6 @@ export function GameHeader({
           {viewMode === ViewMode.PUBLIC
             ? (language === Language.ZH ? "只看公开进程" : "Public flow")
             : (language === Language.ZH ? "含隐藏信息" : "Hidden info")}
-        </div>
-        <div className="flex overflow-hidden rounded-button border border-border bg-background/40">
-          <button onClick={() => onViewModeChange(ViewMode.PUBLIC)} className={`px-3 py-1.5 text-xs font-medium transition-colors ${viewMode === ViewMode.PUBLIC ? "bg-primary text-white" : "bg-transparent text-text-sub hover:text-textPrimary"}`}>{t("public", language)}</button>
-          <button onClick={() => onViewModeChange(ViewMode.MODERATOR)} className={`px-3 py-1.5 text-xs font-medium transition-colors ${viewMode === ViewMode.MODERATOR ? "bg-primary text-white" : "bg-transparent text-text-sub hover:text-textPrimary"}`}>{t("private", language)}</button>
         </div>
         {canRun && !isHumanMode && <Button size="sm" onClick={onRun}>{t("run", language)}</Button>}
         {canRun && isHumanMode && <Button size="sm" onClick={onStartHuman}>{t("run", language)}</Button>}

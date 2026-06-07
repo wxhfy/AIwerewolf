@@ -1,17 +1,10 @@
 "use client";
 
 import React from "react";
-import { GameEvent, Language, ViewMode, Player, NightActions, JsonRecord } from "@/types";
+import { GameEvent, Language, ViewMode, Player } from "@/types";
 import { DayEventBlock } from "@/components/game/_speech/DayEventBlock";
 
 // ── Types ────────────────────────────────────────────────────────────
-
-type DecisionRecordLike = Record<string, unknown> & {
-  player_id?: string; day?: number; request?: string;
-  parsed_action?: Record<string, unknown> & {
-    action_type?: string; target_id?: string | null; speech?: string; reasoning?: string;
-  };
-};
 
 interface EventTimelineProps {
   dayBlocks: Array<[number, GameEvent[]]>;
@@ -24,8 +17,6 @@ interface EventTimelineProps {
   hideDayHeaders?: boolean;
   dayVotes?: Record<number, Record<string, string>>;
   players?: Player[];
-  nightActions?: NightActions | null;
-  decisionRecords?: JsonRecord[] | null;
   isTransitioning?: boolean;
   currentDay?: number;
   speakerState?: { state: 'thinking' | 'speaking' | 'finished'; speakerId: string | null };
@@ -40,7 +31,7 @@ interface EventTimelineProps {
 export function EventTimeline({
   dayBlocks, language, viewMode, isHumanMode, humanSeat,
   completedIds, onChatComplete, hideDayHeaders, dayVotes, players,
-  nightActions, decisionRecords, isTransitioning, currentDay, speakerState,
+  isTransitioning, currentDay, speakerState,
 }: EventTimelineProps) {
   return (
     <>
@@ -58,8 +49,6 @@ export function EventTimeline({
           hideDayHeaders={hideDayHeaders}
           dayVotes={dayVotes?.[day]}
           players={players}
-          nightActions={nightActions}
-          decisionRecords={decisionRecords as unknown as DecisionRecordLike[] | null | undefined}
           isTransitioning={isTransitioning}
           currentDay={currentDay}
           speakerState={speakerState}

@@ -12,7 +12,6 @@ import { PhaseOverlayCoordinator } from "@/components/game/PhaseOverlayCoordinat
 import { DayNightBlinkTransition } from "@/components/game/DayNightBlinkTransition";
 import { ThinkingBubble } from "@/components/game/ThinkingBubble";
 import { VotePanel } from "@/components/game/VotePanel";
-import { BottomDialogueDock } from "@/components/game/BottomDialogueDock";
 import { BackgroundMusic } from "@/components/game/BackgroundMusic";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { useGamePageController } from "@/hooks/useGamePageController";
@@ -92,7 +91,7 @@ export default function GamePage() {
         onOpenComplete={controller.onBlinkOpenComplete}
       />
       <PhaseOverlayCoordinator phaseAnnouncement={phase.phaseAnnouncement} />
-      <BackgroundMusic language={language} />
+      <BackgroundMusic language={language} placement="bottom-right" />
 
       {/* ── Fetch error ── */}
       {controller.fetchError && (
@@ -125,7 +124,6 @@ export default function GamePage() {
         canRun={!isHuman && !controller.isPlaying && !gameState?.winner && !!controller.fetchError}
         onRun={controller.runGame}
         onStartHuman={controller.startHumanGame}
-        onViewModeChange={controller.setViewMode}
       />
 
       {/* ── Mobile player rail ── */}
@@ -207,8 +205,6 @@ export default function GamePage() {
                   hideDayHeaders={isHuman}
                   dayVotes={gameState?.vote_history as Record<number, Record<string, string>> | undefined}
                   players={gameState?.players}
-                  nightActions={isGlobalView ? gameState?.night_actions : null}
-                  decisionRecords={isGlobalView ? gameState?.decision_records as any : null}
                   isTransitioning={controller.isTransitioning}
                   currentDay={gameState?.day}
                   speakerState={derived.speakerState}
@@ -269,18 +265,6 @@ export default function GamePage() {
             </div>
           )}
           {/* VoteResultPanel is now inline in EventTimeline (part of chat narrative flow) */}
-
-          <BottomDialogueDock
-            events={gameState?.events || []}
-            players={gameState?.players || []}
-            currentChat={controller.currentDialogueChat}
-            pendingPlayerId={derived.pendingInput?.player_id || undefined}
-            pendingPlayerName={derived.pendingInput?.player_name || undefined}
-            phase={gameState?.phase}
-            language={language}
-            isLocked={isLocked}
-            onChatComplete={controller.onChatComplete}
-          />
 
           {/* ═══ AI mode: ActionPanel ═══ */}
           {!isHuman && isGlobalView && derived.pendingInput && (

@@ -138,9 +138,7 @@ def _normalize_agent_type(agent_type: str | None) -> str:
 def _resolve_retrieval_policy(config: dict[str, Any]) -> str:
     """Resolve the default cognitive retrieval policy for game agents."""
     return str(
-        config.get("retrieval_policy")
-        or os.getenv("AIWEREWOLF_RETRIEVAL_POLICY", "")
-        or "hybrid_role_mbti_global"
+        config.get("retrieval_policy") or os.getenv("AIWEREWOLF_RETRIEVAL_POLICY", "") or "hybrid_role_mbti_global"
     ).strip()
 
 

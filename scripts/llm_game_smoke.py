@@ -41,7 +41,9 @@ def main() -> int:
         except RuntimeError as exc:
             last_error = exc
             print(f"seed {seed} rejected: {exc}")
-    raise RuntimeError(f"No strict full-game LLM smoke passed in seed range {args.seed}..{args.max_seed}") from last_error
+    raise RuntimeError(
+        f"No strict full-game LLM smoke passed in seed range {args.seed}..{args.max_seed}"
+    ) from last_error
 
 
 def _run_one(seed: int, max_days: int):

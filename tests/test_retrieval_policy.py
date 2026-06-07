@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from backend.agents.factory import _resolve_retrieval_policy
 from backend.agents.cognitive.agent_loop import AgentLoop
 from backend.agents.cognitive.memory import Memory
 from backend.agents.cognitive.observe import Observation
@@ -11,6 +10,7 @@ from backend.agents.cognitive.retrieval_prod import AgentContext
 from backend.agents.cognitive.retrieval_prod import RetrievalPolicy
 from backend.agents.cognitive.retrieval_prod import StrategyRetriever
 from backend.agents.cognitive.tools import create_tools
+from backend.agents.factory import _resolve_retrieval_policy
 
 
 def _docs() -> list[dict[str, Any]]:

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import os
+import os  # noqa: F401 — used extensively in create_client()
 from typing import Any
 
 from backend.llm.anthropic_client import AnthropicClient
