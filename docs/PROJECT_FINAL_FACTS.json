@@ -1,0 +1,563 @@
+{
+  "project_name": "AI Werewolf",
+  "report_type": "project_final_closure_report",
+  "writing_style": "product_and_system_summary",
+  "one_sentence_summary": "AI Werewolf 是一个覆盖 AI 狼人杀完整对局、信息隔离、决策审计、赛后评分、知识抽取与策略回流的多智能体对战与自进化系统。",
+  "core_pipeline": [
+    "Play",
+    "Evaluate",
+    "Evolve"
+  ],
+  "real_data_policy": {
+    "real_results_must_have_source": true,
+    "placeholders_allowed": true,
+    "placeholders_must_be_labeled": true,
+    "placeholders_not_allowed_in_final_conclusions": true
+  },
+  "source_inventory": {
+    "found": [
+      "README.md",
+      "AGENTS.md",
+      "docs/backend_acceptance_criteria.md",
+      "docs/DATA_FLOW.md",
+      "docs/DEVELOPMENT_ISSUES.md",
+      "docs/experiments/",
+      "docs/archive/",
+      "data/experiment/",
+      "data/health/reports/",
+      "logs/",
+      "docs/assets/closure/",
+      "PostgreSQL database werewolf"
+    ],
+    "not_found_at_project_root": [
+      "DOC_INDEX.md",
+      "PROJECT_STATUS.md",
+      "docs/ARCHITECTURE.md",
+      "docs/evidence_chain_demo.md",
+      "docs/experiment_protocol.md",
+      "docs/retrieval_policy_design.md",
+      "outputs/",
+      "reports/",
+      "artifacts/"
+    ],
+    "archived_equivalents_found": [
+      "docs/archive/DOC_INDEX.md",
+      "docs/archive/PROJECT_STATUS.md",
+      "docs/archive/ARCHITECTURE.md",
+      "docs/archive/evidence_chain_demo.md",
+      "docs/archive/experiment_protocol.md",
+      "docs/archive/retrieval_policy_design.md"
+    ]
+  },
+  "modules": [
+    {
+      "name": "WerewolfGame",
+      "role_in_system": "对局规则核心，负责阶段推进、行动请求、动作校验、技能结算、投票、死亡和胜负判定。",
+      "design_goal": "让游戏流程由确定性引擎控制，Agent 只输出行动意图。",
+      "design_solution": "采用阶段状态机和统一决策审计入口；可并行的投票和部分夜间动作通过批量调度降低 LLM 延迟。",
+      "benefits": [
+        "规则一致",
+        "状态可回放",
+        "便于验收",
+        "便于扩展角色",
+        "避免 LLM 控制流程造成状态混乱"
+      ],
+      "evidence": [
+        "backend/engine/game.py",
+        "docs/backend_acceptance_criteria.md",
+        "docs/DEVELOPMENT_ISSUES.md §A"
+      ],
+      "status": "strict mode 文档验收通过；当前数据库有大量 finished game 快照。",
+      "limitations": [
+        "长期高并发稳定性仍需专项实验",
+        "扩展角色需要继续补齐规则测试"
+      ]
+    },
+    {
+      "name": "Visibility / PlayerView",
+      "role_in_system": "把完整 GameState 裁剪成每个 Agent 合法可见的局部视图。",
+      "design_goal": "保证狼人杀信息不对称，防止 Agent 获得上帝视角。",
+      "design_solution": "GameState 保留真实状态，Visibility.for_player() 输出 PlayerView，区分 self、wolf team、public events、private events 和 legal_targets。",
+      "benefits": [
+        "信息隔离在代码层完成",
+        "支持公开视角与主持视角",
+        "为赛后评分提供可见事实边界"
+      ],
+      "evidence": [
+        "backend/engine/visibility.py",
+        "scripts/verify_visibility_strict.py",
+        "docs/backend_acceptance_criteria.md 记录 92 项检查通过"
+      ],
+      "status": "已实现并有 strict visibility 文档记录。",
+      "limitations": [
+        "新增角色或私有事件后需要同步扩展隔离测试"
+      ]
+    },
+    {
+      "name": "CognitiveAgent",
+      "role_in_system": "AI 玩家决策主体，执行 Observe -> Think -> Act。",
+      "design_goal": "支持角色差异、人格表达、多轮记忆、狼人协作和可解释决策。",
+      "design_solution": "将 PlayerView 转成 Observation，结合 Memory、BeliefTracker、SocialModel、Planner、WolfTeamView 和 AgentLoop 输出 Decision。",
+      "benefits": [
+        "角色动作统一接口",
+        "可记录推理与工具使用",
+        "支持赛后反思",
+        "支持狼人阵营合法协作"
+      ],
+      "evidence": [
+        "backend/agents/cognitive/agent.py",
+        "backend/agents/cognitive/observe.py",
+        "backend/agents/cognitive/memory.py",
+        "backend/agents/cognitive/social_model.py",
+        "backend/agents/cognitive/planner.py"
+      ],
+      "status": "已接入游戏引擎和 strict mode 验收链路。",
+      "limitations": [
+        "16 MBTI x 多角色的稳定性仍需系统性补测"
+      ]
+    },
+    {
+      "name": "Persona / Role / Strategy 三层 Prompt",
+      "role_in_system": "组织 Agent 的表达风格、身份规则和策略知识来源。",
+      "design_goal": "分离人格表达、角色身份和可演进策略，避免策略污染身份层。",
+      "design_solution": "Persona/MBTI 控制表达，Role Identity 定义身份技能，Strategy + Tools 注入检索策略和动态建议。",
+      "benefits": [
+        "表达风格和玩法策略分离",
+        "策略层可独立演进",
+        "便于 A/B 实验",
+        "便于审计策略来源"
+      ],
+      "evidence": [
+        "README.md 三层架构",
+        "backend/agents/cognitive/prompts.py",
+        "docs/archive/PROJECT_CLOSURE_DESIGN_SELECTIONS.md"
+      ],
+      "status": "设计与代码均已落地。",
+      "limitations": [
+        "三层拆分对最终胜率的独立贡献尚未有可靠在线对照实验"
+      ]
+    },
+    {
+      "name": "AgentLoop and Tools",
+      "role_in_system": "工具调用式推理循环，组织策略检索、规则查询、记忆查询和最终决策提交。",
+      "design_goal": "减少一次性 Prompt 压力，让 Agent 按局势主动获取信息。",
+      "design_solution": "AgentLoop.run() 根据动作类型控制工具轮数，工具包括 search_strategies、recall_memory、check_rules、get_social_info、analyze_votes、set_strategic_intent、submit_decision。",
+      "benefits": [
+        "tool_trace 可审计",
+        "支持动态检索",
+        "支持策略使用反馈",
+        "便于定位工具是否真正参与决策"
+      ],
+      "evidence": [
+        "backend/agents/cognitive/agent_loop.py",
+        "backend/agents/cognitive/tools.py",
+        "docs/backend_acceptance_criteria.md 记录 26/27 决策带工具追踪"
+      ],
+      "status": "已接入 CognitiveAgent。",
+      "limitations": [
+        "工具贡献对胜率或过程分的因果效果仍需补实验"
+      ]
+    },
+    {
+      "name": "StrategyRetriever",
+      "role_in_system": "策略知识检索与安全过滤模块。",
+      "design_goal": "让策略知识按角色、阶段、MBTI、阵营和可见性进入 Agent 策略层，而不是写死在 Prompt 中。",
+      "design_solution": "使用 BM25、倒排索引、RetrievalPolicy 和 4-filter 安全管线；支持 global_only、same_role_all_mbti、same_role_same_mbti、hybrid_role_mbti_global、hybrid_role_alignment_phase 等策略。",
+      "benefits": [
+        "无需 GPU",
+        "结果可解释",
+        "支持 candidate/active 隔离",
+        "支持检索策略对比"
+      ],
+      "evidence": [
+        "backend/agents/cognitive/retrieval_prod.py",
+        "docs/archive/retrieval_policy_design.md",
+        "docs/experiments/retrieval_policy_results.md"
+      ],
+      "status": "已实现并有离线检索评估报告。",
+      "limitations": [
+        "当前离线评估不能直接解释为真实对局胜率提升"
+      ]
+    },
+    {
+      "name": "PostgreSQL Evidence Chain",
+      "role_in_system": "保存游戏、玩家、事件、快照、决策、评分、复盘、知识、反馈与进化记录。",
+      "design_goal": "让每一步决策可审计、可复盘、可统计、可回流。",
+      "design_solution": "核心表包括 games、players、game_events、game_snapshots、agent_decisions、evaluations、published_reviews、strategy_knowledge_docs、knowledge_usage_feedback 等。",
+      "benefits": [
+        "支持证据链追溯",
+        "支持 Track B/C",
+        "支持实验统计",
+        "支持前端复盘与 leaderboard"
+      ],
+      "evidence": [
+        "backend/db/models.py",
+        "PostgreSQL 快照：2026-06-07 13:55:01 UTC，22 张表，250603 条 agent_decisions"
+      ],
+      "status": "当前数据库可查询。",
+      "limitations": [
+        "数据库快照包含历史实验、运行中对局和不同 provider 记录，正式统计需按实验 ID 过滤"
+      ]
+    },
+    {
+      "name": "Track B Scoring and Review",
+      "role_in_system": "逐步评价 Agent 决策并生成赛后复盘报告。",
+      "design_goal": "用过程评分解释每一步发言、投票和技能决策，而不只看胜负。",
+      "design_solution": "PerStepScorer 输出 DecisionScore 与 ScoredStep，Track B 生成 PlayerReviewReport 和 PublishedReview。",
+      "benefits": [
+        "定位关键失误",
+        "标记高光决策",
+        "为知识抽取提供结构化输入",
+        "支撑展示报告和 leaderboard"
+      ],
+      "evidence": [
+        "backend/eval/per_step_scorer.py",
+        "backend/eval/track_b.py",
+        "docs/backend_acceptance_criteria.md",
+        "PostgreSQL 快照：95790 条 evaluations，3827 条 published_reviews"
+      ],
+      "status": "链路已实现并有验收记录。",
+      "limitations": [
+        "Tier1/Tier2/Tier3 实际触发比例和 judge agreement 仍需补统计"
+      ]
+    },
+    {
+      "name": "Track C Knowledge Evolution",
+      "role_in_system": "将赛后经验抽象为策略知识并管理 candidate -> active -> deprecated 生命周期。",
+      "design_goal": "让系统积累对局经验，同时避免新抽取知识直接污染正式策略池。",
+      "design_solution": "KnowledgeAbstractor 从 ScoredStep 和 reflection 中生成 AbstractedLesson，写入 strategy_knowledge_docs；promote.py / evolution.py 管理晋级、降级和 tournament。",
+      "benefits": [
+        "经验可沉淀",
+        "策略可回流",
+        "candidate/active 隔离降低污染风险",
+        "支持后续 A/B 验证"
+      ],
+      "evidence": [
+        "backend/eval/knowledge_abstractor.py",
+        "backend/eval/evolution.py",
+        "scripts/promote.py",
+        "docs/backend_acceptance_criteria.md 记录 Active 池零污染、Candidate +194、99 lessons"
+      ],
+      "status": "知识抽取链路已验收；晋级后效果仍需更多真实对局验证。",
+      "limitations": [
+        "不能在当前证据下宣称策略回流显著提升整体胜率"
+      ]
+    },
+    {
+      "name": "Frontend Console",
+      "role_in_system": "提供大厅、观战、玩家状态、事件时间线、行动面板和复盘入口。",
+      "design_goal": "让 AI 对局过程可视化，便于演示、调试和后续人机混战。",
+      "design_solution": "Next.js + React + Tailwind，通过 FastAPI / WebSocket 获取房间和快照数据。",
+      "benefits": [
+        "产品化展示",
+        "便于验收",
+        "支持公开/主持视角",
+        "为 replay viewer 扩展打基础"
+      ],
+      "evidence": [
+        "frontend/app/room/[id]/play/page.tsx",
+        "frontend/hooks/useRoomStream.ts",
+        "frontend/components/game/*",
+        "docs/assets/closure/screenshots/"
+      ],
+      "status": "代码实现存在；本轮未重新做完整 Playwright 视觉验收。",
+      "limitations": [
+        "前端性能、WebSocket 延迟和视角切换正确性需补专项验证"
+      ]
+    }
+  ],
+  "design_history": [
+    {
+      "stage": "第一阶段：基础对局跑通",
+      "goal": "让狼人杀标准局能完整结束。",
+      "main_changes": [
+        "实现 WerewolfGame 阶段流转",
+        "实现基础角色动作",
+        "实现投票和胜负判定",
+        "建立 EventLog"
+      ],
+      "problem_solved": "从脚本式流程转为可复用对局引擎。",
+      "evidence": [
+        "backend/engine/game.py",
+        "docs/DEVELOPMENT_ISSUES.md A1-A6"
+      ]
+    },
+    {
+      "stage": "第二阶段：信息隔离与决策审计",
+      "goal": "让每个 Agent 只能看到合法信息，并能追溯每步决策。",
+      "main_changes": [
+        "引入 Visibility / PlayerView",
+        "引入 legal_targets",
+        "引入 agent_decisions 入库",
+        "记录 observation、raw_output、parsed_action、metadata"
+      ],
+      "problem_solved": "防止上帝视角和无法复盘的问题。",
+      "evidence": [
+        "backend/engine/visibility.py",
+        "backend/db/models.py::AgentDecision",
+        "docs/DEVELOPMENT_ISSUES.md A11"
+      ]
+    },
+    {
+      "stage": "第三阶段：CognitiveAgent 与三层 Prompt",
+      "goal": "从简单 Agent 走向角色化、人格化、可解释的认知 Agent。",
+      "main_changes": [
+        "实现 CognitiveAgent",
+        "引入 Memory、BeliefTracker、SocialModel、Planner、WolfTeamView",
+        "拆分 Persona / Role / Strategy 三层"
+      ],
+      "problem_solved": "单一 Prompt 难以区分表达风格、角色规则和可演进策略。",
+      "evidence": [
+        "backend/agents/cognitive/",
+        "README.md 三层架构",
+        "docs/DEVELOPMENT_ISSUES.md C19、C24、C28"
+      ]
+    },
+    {
+      "stage": "第四阶段：策略检索与工具调用",
+      "goal": "让 Agent 能动态检索策略、规则和记忆。",
+      "main_changes": [
+        "实现 AgentLoop",
+        "实现 search_strategies 等工具",
+        "实现 StrategyRetriever 和 RetrievalPolicy",
+        "引入 hybrid_role_mbti_global 与 4-filter"
+      ],
+      "problem_solved": "静态 Prompt 无法吸收历史经验，工具使用无法审计。",
+      "evidence": [
+        "backend/agents/cognitive/agent_loop.py",
+        "backend/agents/cognitive/tools.py",
+        "backend/agents/cognitive/retrieval_prod.py",
+        "docs/experiments/retrieval_policy_results.md"
+      ]
+    },
+    {
+      "stage": "第五阶段：Track B 赛后评分",
+      "goal": "对每一步决策进行过程评价，而不仅看胜负。",
+      "main_changes": [
+        "实现 PerStepScorer",
+        "定义 DecisionScore 与 ScoredStep",
+        "生成 PlayerReviewReport 与 PublishedReview",
+        "引入高光和失误标记"
+      ],
+      "problem_solved": "胜负无法解释每个 Agent 的具体行为质量。",
+      "evidence": [
+        "backend/eval/per_step_scorer.py",
+        "backend/eval/track_b.py",
+        "docs/backend_acceptance_criteria.md"
+      ]
+    },
+    {
+      "stage": "第六阶段：Track C 知识回流",
+      "goal": "把复盘结果沉淀为可检索策略知识。",
+      "main_changes": [
+        "实现 KnowledgeAbstractor",
+        "新增 strategy_knowledge_docs 生命周期",
+        "candidate / active / deprecated 隔离",
+        "引入 promote.py 与 usage feedback"
+      ],
+      "problem_solved": "复盘经验无法进入下一局 Agent 决策。",
+      "evidence": [
+        "backend/eval/knowledge_abstractor.py",
+        "backend/eval/evolution.py",
+        "scripts/promote.py",
+        "docs/backend_acceptance_criteria.md"
+      ]
+    },
+    {
+      "stage": "第七阶段：后端收敛与 strict mode 验收",
+      "goal": "把 DB、LLM、游戏、评分、知识和报告导出纳入统一验收。",
+      "main_changes": [
+        "实现 scripts/run_backend_full_strict.py",
+        "设置 REQUIRE_DB / REQUIRE_LLM / REQUIRE_TRACK_B / REQUIRE_TRACK_C",
+        "禁用 silent fallback 和 candidate 自动晋级",
+        "记录 active 池零污染与 candidate 产出"
+      ],
+      "problem_solved": "分散测试无法证明端到端链路完整。",
+      "evidence": [
+        "scripts/run_backend_full_strict.py",
+        "docs/backend_acceptance_criteria.md"
+      ]
+    }
+  ],
+  "acceptance": {
+    "strict_mode_status": "PASSED（验收文档记录）",
+    "command": "python scripts/run_backend_full_strict.py",
+    "source": "docs/backend_acceptance_criteria.md",
+    "game_id": "edbde010",
+    "player_count": 7,
+    "winner": "Village",
+    "duration_seconds": 1553,
+    "verified_modules": [
+      "DB",
+      "LLM",
+      "LLM 降级链",
+      "Game Engine",
+      "Agent Decision",
+      "Information Isolation",
+      "Strategy Retrieval",
+      "Anti-Pattern Injection",
+      "Track B Scoring",
+      "Track B Review",
+      "Track C Knowledge",
+      "Experiment multi-tier",
+      "Report Export",
+      "Preflight / Health Check",
+      "Error Handling / Resilience",
+      "Configuration Validity",
+      "Concurrency / Multi-Game"
+    ],
+    "partial_modules": [
+      "Knowledge Snapshot",
+      "Track C Evolution Loop"
+    ],
+    "planned_modules": [
+      "Experiment Leaderboard"
+    ],
+    "evidence_files": [
+      "docs/backend_acceptance_criteria.md",
+      "docs/DATA_FLOW.md",
+      "scripts/run_backend_full_strict.py"
+    ]
+  },
+  "effect_analysis": {
+    "real_metrics": [
+      {
+        "metric": "PostgreSQL table count",
+        "value": 22,
+        "source": "PostgreSQL full query, docker exec werewolf-pg, 2026-06-07 13:55:01 UTC"
+      },
+      {
+        "metric": "PostgreSQL agent_decisions",
+        "value": 250603,
+        "source": "PostgreSQL full query, 2026-06-07 13:55:01 UTC"
+      },
+      {
+        "metric": "data/experiment/batch_summary total games",
+        "value": 20,
+        "source": "data/experiment/batch_summary.json"
+      },
+      {
+        "metric": "data/experiment/batch_summary successful games",
+        "value": 20,
+        "source": "data/experiment/batch_summary.json"
+      },
+      {
+        "metric": "multi-tier completed games by tier",
+        "value": {
+          "baseline": 18,
+          "anti_only": 20,
+          "trackc_only": 13,
+          "both": 13
+        },
+        "source": "data/experiment/multi_tier/formal_dsv4flash_7p_tier_6x_v2/summary.json",
+        "caveat": "各 tier 失败数不均，不能写成稳定提升结论"
+      }
+    ],
+    "document_only_metrics": [
+      {
+        "metric": "strict mode PASS, Game edbde010, 7P, 1 day, Village win, 1553s",
+        "source": "docs/backend_acceptance_criteria.md"
+      },
+      {
+        "metric": "Information Isolation 92 checks passed",
+        "source": "docs/backend_acceptance_criteria.md and docs/DATA_FLOW.md"
+      },
+      {
+        "metric": "Active pool 1065->1065, Candidate +194, 99 lessons",
+        "source": "docs/backend_acceptance_criteria.md"
+      }
+    ],
+    "placeholder_metrics": [
+      "多局实验平均决策数模板",
+      "策略使用率模板",
+      "Track B tier 触发比例模板",
+      "前端 snapshot 延迟模板"
+    ],
+    "needs_experiment": [
+      "多局稳定性：连续 20/50 局 strict LLM 全链路",
+      "检索策略在线对比：global_only / same_role_all_mbti / same_role_same_mbti / hybrid_role_mbti_global / hybrid_role_alignment_phase",
+      "Track B 评分有效性：Tier 分布、judge agreement、人工抽样一致性",
+      "Track C 知识回流：candidate 晋级率、active 池变化、回流前后过程分趋势",
+      "前端展示验证：WebSocket 延迟、视角切换、完整对局可视化"
+    ]
+  },
+  "references": [
+    {
+      "topic": "AI 狼人杀产品与 Persona",
+      "work": "oil-oil/wolfcha",
+      "borrowed_idea": "阶段枚举、AI 人格、双层扮演、产品化观战体验",
+      "mapped_module": "Phase design, Persona, Frontend Console",
+      "citation_status": "GitHub 信息完整，论文引用不适用"
+    },
+    {
+      "topic": "房间与实时通信",
+      "work": "xiong35/werewolf",
+      "borrowed_idea": "房间系统、WebSocket、断线重连、事件表",
+      "mapped_module": "FastAPI/WebSocket, Room, Frontend",
+      "citation_status": "GitHub 信息完整"
+    },
+    {
+      "topic": "多模型狼人杀评测",
+      "work": "Char-lotte-Xia/WereWolfPlus",
+      "borrowed_idea": "Prompt 分层、动作 schema、批量对局与评测指标",
+      "mapped_module": "Prompt, Track B, Experiment scripts",
+      "citation_status": "GitHub 信息完整"
+    },
+    {
+      "topic": "Agent 生命周期接口",
+      "work": "AIWolfPy",
+      "borrowed_idea": "initialize/update/dayStart/talk/vote/attack/divine/guard/finish 生命周期",
+      "mapped_module": "Agent interface",
+      "citation_status": "GitHub 信息完整"
+    },
+    {
+      "topic": "工具调用式 Agent",
+      "work": "ReAct / Tool Calling / Building Effective Agents",
+      "borrowed_idea": "推理过程中调用工具、观察工具结果后再决策",
+      "mapped_module": "AgentLoop and Tools",
+      "citation_status": "待补全正式引用"
+    },
+    {
+      "topic": "赛后反思与终身学习",
+      "work": "Reflexion / Voyager",
+      "borrowed_idea": "将失败经验抽象为可复用记忆或技能",
+      "mapped_module": "Track C KnowledgeAbstractor",
+      "citation_status": "待补全正式引用"
+    },
+    {
+      "topic": "检索增强生成",
+      "work": "RAG / BM25 / information retrieval",
+      "borrowed_idea": "将外部知识通过检索注入上下文",
+      "mapped_module": "StrategyRetriever",
+      "citation_status": "待补全正式引用"
+    },
+    {
+      "topic": "LLM 评审",
+      "work": "LLM-as-a-Judge / multi-judge panel",
+      "borrowed_idea": "用单评委和多评委评价复杂决策质量",
+      "mapped_module": "PerStepScorer / LLMJudgePanel",
+      "citation_status": "待补全正式引用"
+    }
+  ],
+  "figures_ready": [
+    "图 1 系统总体架构图",
+    "图 2 Play-Evaluate-Evolve 闭环图",
+    "图 3 单局对局流程图",
+    "图 4 Agent 决策流程图",
+    "图 5 信息隔离示意图",
+    "图 6 决策证据链图",
+    "图 7 设计演进路线图",
+    "图 8 Track B 评分流程图",
+    "图 9 Track C 知识回流流程图",
+    "图 10 各阶段改进效果表",
+    "图 11 多局实验占位图表",
+    "图 12 检索策略对比占位图表"
+  ],
+  "open_questions": [
+    "当前 strict mode 原始 outputs/ 目录未在仓库根目录找到，是否需要重新运行脚本生成 outputs/backend_e2e_report.json？",
+    "docs/backend_acceptance_criteria.md 与当前 PostgreSQL 快照的 active/candidate 数量不同，正式报告应选定一个冻结时间点。",
+    "multi-tier 实验存在 tier 完成数不均和失败数不均，正式结论需要重新跑平衡实验。",
+    "Track B tier 分布与 judge agreement 尚未从当前数据库全量统计。",
+    "前端观战体验尚需 Playwright 或人工录屏验收数据。"
+  ]
+}

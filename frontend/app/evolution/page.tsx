@@ -16,9 +16,46 @@ interface KnowledgeDoc {
   doc_id: string; role: string; phase: string; quality_score: number;
   usage_count: number; success_count: number; failure_count: number;
   status: string; recommended_action: string; situation_pattern: string; confidence_tier: string;
+  evidence_summary?: string; rationale?: string;
 }
 interface AcceptanceMetric { track: string; step_id: string; name: string; numerator: number; denominator: number; success_rate: number; threshold: number; passed: boolean; evidence: string; }
 interface ApiDashboard { active_versions: StrategyCard[]; knowledge: KnowledgeDoc[]; acceptance_metrics: AcceptanceMetric[]; acceptance_audit?: { overall_success_rate?: number; passed?: boolean }; }
+interface WinStat { wins: number; games: number; win_rate: number | null; wilson_95_ci?: [number, number]; fallback_decisions?: number; invalid_decisions?: number; }
+interface DeltaStat { baseline_win_rate: number | null; current_win_rate: number | null; delta: number | null; baseline_games: number; current_games: number; }
+interface TierSummary {
+  games_completed: number; games_failed: number; completion_rate: number;
+  winner_counts?: Record<string, number>;
+  game_win_rate?: Record<string, WinStat>;
+  team_role_games?: Record<string, WinStat>;
+  role?: Record<string, WinStat>;
+  mbti?: Record<string, WinStat>;
+}
+interface FullVictoryReport {
+  generated_at: string;
+  sources?: Record<string, string>;
+  run_metadata?: { tier_labels?: string[]; mbti_acceptance_label?: string };
+  multi_tier?: {
+    tiers?: Record<string, TierSummary>;
+    tier_deltas?: Record<string, {
+      game_win_rate?: Record<string, DeltaStat>;
+      team_role_games?: Record<string, DeltaStat>;
+      role?: Record<string, DeltaStat>;
+      mbti?: Record<string, DeltaStat>;
+    }>;
+  };
+  multi_tier_source_distribution?: { providers?: Record<string, number>; models?: Record<string, number> };
+  mbti_acceptance?: {
+    games_succeeded: number; games_failed: number; games_requested?: number;
+    player_count?: number; strict_no_fallback?: boolean;
+    llm_decision_total?: number; fallback_decision_total?: number; invalid_decision_total?: number;
+    mbti_stats?: Record<string, WinStat>;
+    role_stats?: Record<string, WinStat>;
+    alignment_stats?: Record<string, WinStat>;
+    mbti_role_stats?: Record<string, WinStat>;
+    mbti_alignment_stats?: Record<string, WinStat>;
+    provider?: string; model?: string; model_pool?: string[];
+  };
+}
 
 /* ── Constants ── */
 const ROLES = ["Seer","Witch","Hunter","Guard","Villager","Werewolf"] as const;
@@ -51,17 +88,49 @@ function bestText(k: KnowledgeDoc): string {
   return k.recommended_action || k.situation_pattern || "";
 }
 
+function pct(value?: number | null): string {
+  return value == null ? "-" : `${(value * 100).toFixed(1)}%`;
+}
+
+function pp(value?: number | null): string {
+  if (value == null) return "-";
+  const n = value * 100;
+  return `${n > 0 ? "+" : ""}${n.toFixed(1)}pp`;
+}
+
+function ci(stat?: WinStat): string {
+  return stat?.wilson_95_ci ? `${pct(stat.wilson_95_ci[0])} - ${pct(stat.wilson_95_ci[1])}` : "-";
+}
+
+function statEntries(stats?: Record<string, WinStat>, limit?: number) {
+  const rows = Object.entries(stats || {}).sort((a, b) => {
+    const rateDelta = (b[1].win_rate ?? -1) - (a[1].win_rate ?? -1);
+    return rateDelta || b[1].games - a[1].games || a[0].localeCompare(b[0]);
+  });
+  return typeof limit === "number" ? rows.slice(0, limit) : rows;
+}
+
+function compactModelName(name: string): string {
+  return name.replace(/^deepseek:/, "").replace(/^doubao:/, "").replace(/^dsv4flash:/, "");
+}
+
 export default function EvolutionPage() {
   const { language } = useAppContext();
   const t = (zh: string, en: string) => language === "zh" ? zh : en;
   const [api, setApi] = useState<ApiDashboard | null>(null);
-  const [tab, setTab] = useState<"mbti"|"perrole"|"cards"|"knowledge"|"accept">("mbti");
+  const [report, setReport] = useState<FullVictoryReport | null>(null);
+  const [tab, setTab] = useState<"experiment"|"mbti"|"perrole"|"cards"|"knowledge"|"accept">("experiment");
   const [loading, setLoading] = useState(true);
+  const [reportLoading, setReportLoading] = useState(true);
   const [expandedCard, setExpandedCard] = useState<string | null>(null);
 
   useEffect(() => { (async () => {
-    try { const r = await fetch(apiUrl("/api/evolution/dashboard")); if (r.ok) setApi(await r.json()); } catch {}
+    try { const r = await fetch(apiUrl("/api/evolution/dashboard")); if (r.ok) setApi(await r.json()); } catch { setApi(null); }
     finally { setLoading(false); }
+  })(); }, []);
+  useEffect(() => { (async () => {
+    try { const r = await fetch("/experiments/full_victory_report.json", { cache: "no-store" }); if (r.ok) setReport(await r.json()); } catch { setReport(null); }
+    finally { setReportLoading(false); }
   })(); }, []);
 
   const cards = (api?.active_versions || []).filter(c => c.status === "active");
@@ -81,6 +150,7 @@ export default function EvolutionPage() {
   }, [knowledge]);
 
   const tabDefs = [
+    ["experiment", "完整实验", "Full Runs"],
     ["mbti", "MBTI×角色", "MBTI×Role"],
     ["perrole", "单角色 Track C", "Per-Role TC"],
     ["cards", "策略卡片", "Cards"],
@@ -92,7 +162,7 @@ export default function EvolutionPage() {
     <main className="min-h-screen px-5 py-6" style={{ background: "var(--color-bg)" }}>
       <div className="mx-auto max-w-7xl space-y-5">
         <header className="flex flex-wrap items-center justify-between gap-3 pb-2 border-b" style={{ borderColor: "var(--color-border)" }}>
-          <div><h1 className="text-2xl font-bold text-textPrimary">{t("策略进化", "Strategy Evolution")}</h1><p className="text-xs text-text-sub mt-0.5">7P · strict · v4-flash · hybrid_role_mbti_global</p></div>
+          <div><h1 className="text-2xl font-bold text-textPrimary">{t("策略进化", "Strategy Evolution")}</h1><p className="text-xs text-text-sub mt-0.5">7P · strict · v4-flash · hybrid_role_mbti_global · {report?.generated_at?.slice(0, 10) || t("报告加载中", "loading report")}</p></div>
           <Link href="/" className="rounded border px-3 py-1.5 text-sm text-textPrimary" style={{ borderColor: "var(--color-border)" }}>{t("大厅", "Lobby")}</Link>
         </header>
         <div className="flex gap-1 overflow-x-auto pb-1">
@@ -102,8 +172,11 @@ export default function EvolutionPage() {
           ))}
         </div>
 
+        {/* Full experiment report */}
+        {tab === "experiment" && <ExperimentReportTab t={t} report={report} loading={reportLoading} />}
+
         {/* MBTI × Role */}
-        {tab === "mbti" && <MBTIRoleTab t={t} />}
+        {tab === "mbti" && <MBTIRoleTab t={t} report={report} loading={reportLoading} />}
 
         {/* Per-Role Track C */}
         {tab === "perrole" && <PerRoleTab t={t} roles={ROLES as unknown as string[]} roleLabels={ROLE_LABELS} roleColors={ROLE_COLORS} roleStats={roleStats} />}
@@ -123,18 +196,142 @@ export default function EvolutionPage() {
 
 /* ── Sub-components ── */
 
-function MBTIRoleTab({ t }: { t: (zh:string,en:string)=>string }) {
+function ExperimentReportTab({ t, report, loading }: { t: (zh:string,en:string)=>string; report: FullVictoryReport | null; loading: boolean }) {
+  if (loading) return <p className="text-sm text-text-sub px-3">{t("实验报告加载中...", "Loading experiment report...")}</p>;
+  if (!report) return <p className="text-sm text-text-sub px-3">{t("未找到完整实验报告", "Full experiment report not found")}</p>;
+
+  const tierLabels: Record<string, string> = {
+    baseline: t("Baseline", "Baseline"),
+    anti_only: t("仅反模式", "Anti only"),
+    trackc_only: t("仅 Track C", "Track C only"),
+    both: t("B + C", "B + C"),
+  };
+  const tierOrder = ["baseline", "anti_only", "trackc_only", "both"];
+  const tiers = report.multi_tier?.tiers || {};
+  const deltas = report.multi_tier?.tier_deltas || {};
+  const mbti = report.mbti_acceptance;
+  const providerRows = Object.entries(report.multi_tier_source_distribution?.providers || {}).sort((a, b) => b[1] - a[1]);
+  const modelRows = Object.entries(report.multi_tier_source_distribution?.models || {}).sort((a, b) => b[1] - a[1]);
+  const mbtiCount = Object.keys(mbti?.mbti_stats || {}).length;
+  const mbtiRoleCount = Object.keys(mbti?.mbti_role_stats || {}).length;
+  const mbtiAlignCount = Object.keys(mbti?.mbti_alignment_stats || {}).length;
+  const minMbtiGames = Math.min(...Object.values(mbti?.mbti_stats || {}).map(s => s.games));
+
+  return (
+    <div className="space-y-5">
+      <section className="rounded-lg border p-5" style={{ borderColor:"var(--color-border)", background:"var(--color-card)" }}>
+        <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
+          <div>
+            <h2 className="text-base font-semibold text-textPrimary">{t("完整对局实验总览", "Full Game Run Overview")}</h2>
+            <p className="text-xs text-text-sub mt-1">{t("四层策略实验 + 16 MBTI 接受度批次，严格无 fallback/invalid 决策。", "Four strategy tiers plus 16-MBTI acceptance batch with strict zero fallback/invalid decisions.")}</p>
+          </div>
+          <div className="flex flex-wrap gap-2 text-xs">
+            <a className="rounded border px-3 py-1.5 text-textPrimary" style={{ borderColor:"var(--color-border)" }} href="/experiments/full_victory_report.html" target="_blank" rel="noreferrer">{t("打开 HTML 报告", "Open HTML Report")}</a>
+            <a className="rounded border px-3 py-1.5 text-textPrimary" style={{ borderColor:"var(--color-border)" }} href="/experiments/full_victory_report.json" target="_blank" rel="noreferrer">JSON</a>
+          </div>
+        </div>
+        <div className="grid gap-3 md:grid-cols-4">
+          {tierOrder.map(key => {
+            const tier = tiers[key];
+            if (!tier) return null;
+            const wolf = tier.game_win_rate?.wolf;
+            const village = tier.game_win_rate?.village;
+            const wolfDelta = deltas[key]?.game_win_rate?.wolf?.delta;
+            return (
+              <div key={key} className="rounded-lg border p-4" style={{ borderColor:"var(--color-border)", background:"rgba(255,255,255,0.03)" }}>
+                <div className="flex items-center justify-between gap-2">
+                  <h3 className="text-sm font-semibold text-textPrimary">{tierLabels[key] || key}</h3>
+                  <span className="rounded px-2 py-0.5 text-[10px] bg-white/5 text-text-sub">{tier.games_completed}/{tier.games_completed + tier.games_failed}</span>
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                  <div><span className="text-text-sub">{t("狼人胜率", "Wolf WR")}</span><p className="font-mono text-base font-bold text-danger">{pct(wolf?.win_rate)}</p></div>
+                  <div><span className="text-text-sub">{t("好人胜率", "Village WR")}</span><p className="font-mono text-base font-bold text-success">{pct(village?.win_rate)}</p></div>
+                  <div><span className="text-text-sub">{t("失败局", "Failed")}</span><p className="font-mono">{tier.games_failed}</p></div>
+                  <div><span className="text-text-sub">{t("狼胜Δ", "Wolf Δ")}</span><p className={`font-mono ${wolfDelta != null && wolfDelta >= 0 ? "text-danger" : "text-success"}`}>{key === "baseline" ? "-" : pp(wolfDelta)}</p></div>
+                </div>
+                <p className="mt-3 text-[10px] text-text-sub">{t("狼人 CI", "Wolf CI")}: {ci(wolf)}</p>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="rounded-lg border p-5" style={{ borderColor:"var(--color-border)", background:"var(--color-card)" }}>
+        <h2 className="text-base font-semibold text-textPrimary mb-3">{t("MBTI 接受度覆盖", "MBTI Acceptance Coverage")}</h2>
+        <div className="grid gap-3 md:grid-cols-5">
+          {[
+            [t("成功对局", "Succeeded"), mbti?.games_succeeded ?? 0],
+            [t("失败对局", "Failed"), mbti?.games_failed ?? 0],
+            [t("MBTI 类型", "MBTI Types"), mbtiCount],
+            [t("MBTI×角色", "MBTI×Role"), mbtiRoleCount],
+            [t("MBTI×阵营", "MBTI×Alignment"), mbtiAlignCount],
+          ].map(([label, value]) => (
+            <div key={label} className="rounded border p-3" style={{ borderColor:"var(--color-border)", background:"rgba(255,255,255,0.025)" }}>
+              <p className="text-[10px] text-text-sub">{label}</p>
+              <p className="mt-1 font-mono text-lg font-bold text-textPrimary">{value}</p>
+            </div>
+          ))}
+        </div>
+        <div className="mt-3 grid gap-3 md:grid-cols-4 text-xs">
+          <div><span className="text-text-sub">{t("每 MBTI 最少成功局", "Min games per MBTI")}</span><p className="font-mono">{Number.isFinite(minMbtiGames) ? minMbtiGames : "-"}</p></div>
+          <div><span className="text-text-sub">LLM decisions</span><p className="font-mono">{mbti?.llm_decision_total?.toLocaleString() || "-"}</p></div>
+          <div><span className="text-text-sub">fallback</span><p className="font-mono text-success">{mbti?.fallback_decision_total ?? "-"}</p></div>
+          <div><span className="text-text-sub">invalid</span><p className="font-mono text-success">{mbti?.invalid_decision_total ?? "-"}</p></div>
+        </div>
+      </section>
+
+      <section className="grid gap-5 lg:grid-cols-2">
+        <div className="rounded-lg border p-5" style={{ borderColor:"var(--color-border)", background:"var(--color-card)" }}>
+          <h2 className="text-base font-semibold text-textPrimary mb-3">{t("MBTI 胜率 Top 8", "Top 8 MBTI Win Rates")}</h2>
+          <div className="space-y-2">
+            {statEntries(mbti?.mbti_stats, 8).map(([name, stat]) => (
+              <div key={name} className="grid grid-cols-[4rem_1fr_4rem] items-center gap-3 text-xs">
+                <span className="font-semibold">{name}</span>
+                <div className="h-2 rounded-full bg-white/8"><div className="h-full rounded-full bg-success" style={{ width: `${Math.max(2, (stat.win_rate || 0) * 100)}%` }} /></div>
+                <span className="font-mono text-right">{stat.wins}/{stat.games} · {pct(stat.win_rate)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="rounded-lg border p-5" style={{ borderColor:"var(--color-border)", background:"var(--color-card)" }}>
+          <h2 className="text-base font-semibold text-textPrimary mb-3">{t("模型与供应商来源", "Model and Provider Sources")}</h2>
+          <div className="grid gap-4 md:grid-cols-2">
+            <div>
+              <p className="text-xs font-semibold text-text-sub mb-2">{t("供应商", "Providers")}</p>
+              <div className="space-y-1.5">{providerRows.map(([name, count]) => <div key={name} className="flex justify-between gap-3 text-xs"><span>{name}</span><span className="font-mono">{count}</span></div>)}</div>
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-text-sub mb-2">{t("模型", "Models")}</p>
+              <div className="space-y-1.5">{modelRows.map(([name, count]) => <div key={name} className="flex justify-between gap-3 text-xs"><span className="truncate">{compactModelName(name)}</span><span className="font-mono">{count}</span></div>)}</div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function MBTIRoleTab({ t, report, loading }: { t: (zh:string,en:string)=>string; report: FullVictoryReport | null; loading: boolean }) {
+  const reportStats = report?.mbti_acceptance?.mbti_role_stats;
+  const reportRows = Object.entries(reportStats || {}).map(([key, stat]) => {
+    const [mbti, role] = key.split("+");
+    return { mbti, role, stat };
+  }).filter(row => row.mbti && row.role);
+  const mbtis = reportRows.length ? Array.from(new Set(reportRows.map(row => row.mbti))).sort() : Array.from(new Set(MBTI_ROLE_DELTA.map(d=>d.mbti))).sort();
+  const statMap = new Map(reportRows.map(row => [`${row.mbti}+${row.role}`, row.stat]));
+
   return (
     <section className="rounded-lg border p-5" style={{ borderColor:"var(--color-border)", background:"var(--color-card)" }}>
-      <h2 className="text-base font-semibold text-textPrimary mb-3">{t("MBTI × 角色 胜率变化", "MBTI × Role Win Rate Δ")}</h2>
-      <p className="text-xs text-text-sub mb-3">{t("both vs baseline，颜色深度 = |Δ|，检索策略: hybrid_role_mbti_global", "both vs baseline, color depth = |Δ|, retrieval: hybrid_role_mbti_global")}</p>
+      <h2 className="text-base font-semibold text-textPrimary mb-3">{t("MBTI × 角色 对局结果", "MBTI × Role Game Results")}</h2>
+      <p className="text-xs text-text-sub mb-3">{reportRows.length ? t("使用完整 MBTI 接受度批次的真实分层胜率；每格显示 wins/games 和胜率。", "Using real stratified win rates from the full MBTI acceptance batch; each cell shows wins/games and win rate.") : t("真实报告加载前使用旧版 both vs baseline Δ 作为占位。", "Using legacy both-vs-baseline deltas while the report loads.")}</p>
+      {loading && <p className="mb-3 text-xs text-text-sub">{t("报告加载中...", "Loading report...")}</p>}
       <div className="overflow-x-auto">
         <table className="w-full text-xs">
-          <thead><tr className="border-b" style={{ borderColor:"var(--color-border)" }}><th className="py-1.5 text-left font-semibold w-16">MBTI</th>{ROLES.map(r=><th key={r} className="py-1.5 text-center font-semibold w-22">{ROLE_LABELS[r]||r}</th>)}</tr></thead>
-          <tbody>{Array.from(new Set(MBTI_ROLE_DELTA.map(d=>d.mbti))).sort().map(mbti=>{const es=MBTI_ROLE_DELTA.filter(d=>d.mbti===mbti);return(<tr key={mbti} className="border-b" style={{borderColor:"var(--color-border)"}}><td className="py-1 font-medium">{mbti}</td>{ROLES.map(role=>{const e=es.find(d=>d.role===role);if(!e)return <td key={role} className="py-1 text-center text-text-sub/20">-</td>;const bg=e.delta>30?"rgba(16,185,129,0.18)":e.delta>0?"rgba(16,185,129,0.07)":e.delta>-30?"rgba(239,68,68,0.07)":"rgba(239,68,68,0.15)";return(<td key={role} className="py-1 text-center rounded" style={{background:bg}}><span className="font-mono font-semibold text-xs" style={{color:e.delta>0?"var(--color-success)":"var(--color-danger)"}}>{e.delta>0?"+":""}{e.delta.toFixed(0)}pp</span><span className="block text-[9px] text-text-sub/50">n={e.nB}+{e.nBoth}</span></td>)})}</tr>)})}</tbody>
+          <thead><tr className="border-b" style={{ borderColor:"var(--color-border)" }}><th className="py-1.5 text-left font-semibold w-16">MBTI</th>{ROLES.map(r=><th key={r} className="py-1.5 text-center font-semibold w-24">{ROLE_LABELS[r]||r}</th>)}</tr></thead>
+          <tbody>{mbtis.map(mbti=>{const legacy=MBTI_ROLE_DELTA.filter(d=>d.mbti===mbti);return(<tr key={mbti} className="border-b" style={{borderColor:"var(--color-border)"}}><td className="py-1 font-medium">{mbti}</td>{ROLES.map(role=>{const stat=statMap.get(`${mbti}+${role}`);if(stat){const bg=(stat.win_rate || 0)>=0.6?"rgba(16,185,129,0.18)":(stat.win_rate || 0)>=0.4?"rgba(96,165,250,0.10)":"rgba(239,68,68,0.12)";return(<td key={role} className="py-1 text-center rounded" style={{background:bg}}><span className="font-mono font-semibold text-xs">{stat.wins}/{stat.games}</span><span className="block text-[9px] text-text-sub/60">{pct(stat.win_rate)}</span></td>)}const e=legacy.find(d=>d.role===role);if(!e)return <td key={role} className="py-1 text-center text-text-sub/20">-</td>;const bg=e.delta>30?"rgba(16,185,129,0.18)":e.delta>0?"rgba(16,185,129,0.07)":e.delta>-30?"rgba(239,68,68,0.07)":"rgba(239,68,68,0.15)";return(<td key={role} className="py-1 text-center rounded" style={{background:bg}}><span className="font-mono font-semibold text-xs" style={{color:e.delta>0?"var(--color-success)":"var(--color-danger)"}}>{e.delta>0?"+":""}{e.delta.toFixed(0)}pp</span><span className="block text-[9px] text-text-sub/50">n={e.nB}+{e.nBoth}</span></td>)})}</tr>)})}</tbody>
         </table>
       </div>
-      <div className="flex items-center gap-4 mt-3 text-[10px] text-text-sub"><span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded bg-emerald-500/30"/> +Δ = both better</span><span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded bg-red-500/30"/> -Δ = baseline better</span></div>
+      <div className="flex items-center gap-4 mt-3 text-[10px] text-text-sub"><span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded bg-emerald-500/30"/> {t("高胜率", "High win rate")}</span><span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded bg-red-500/30"/> {t("低胜率", "Low win rate")}</span></div>
     </section>
   );
 }
@@ -166,7 +363,7 @@ function PerRoleTab({ t, roles, roleLabels, roleColors, roleStats }: any) {
   );
 }
 
-function CardsTab({ t, loading, godCards, wolfCards, villagerCards, roleStats, roleLabels, roleColors, expandedCard, setExpandedCard }: any) {
+function CardsTab({ t, loading, godCards, wolfCards, villagerCards, roleStats, roleLabels, expandedCard, setExpandedCard }: any) {
   if (loading) return <p className="text-sm text-text-sub px-3">{t("加载中...","Loading...")}</p>;
   if (godCards.length===0 && wolfCards.length===0) return <p className="text-sm text-text-sub px-3">{t("暂无策略卡片","No cards")}</p>;
   const groups = [

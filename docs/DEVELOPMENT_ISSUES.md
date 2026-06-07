@@ -376,6 +376,14 @@ updated: 2026-06-03
 - **涉及文件 / 模块**：`backend/engine/game.py`、`frontend/lib/gameApi.ts`、`frontend/lib/eventFilter.ts`、`frontend/hooks/useGamePageController.ts`、`frontend/hooks/useGameDerivedState.ts`、`frontend/hooks/useVoteDisplay.ts`、`frontend/app/page.tsx`、`frontend/app/room/[id]/play/page.tsx`、`frontend/components/game/BottomDialogueDock.tsx`、`frontend/components/game/EventItem.tsx`、`frontend/components/game/BadgePanel.tsx`、`frontend/components/game/_speech/DayEventBlock.tsx`、`tests/test_engine.py`
 - **教训**：当前发言打字机、历史日志归档、公开信息隔离是三个独立边界，不能只在其中一层“看起来隐藏”；普通观众视角必须从请求源头使用 public snapshot，夜间公开日志只能包含主持人可播报的完成状态。
 
+### 问题 B23：进化页未展示完整实验报告
+- **发生时间 / Session**：2026-06-07 ｜ Codex
+- **现象**：补跑后的完整实验报告已经生成在 `data/experiment` 和 `docs/experiments`，但 `/evolution` 仍只显示旧的硬编码 MBTI×角色 delta 和后端 dashboard 数据，用户无法在前端看到完整四层对局、MBTI 覆盖、模型来源和报告入口；首次生产构建还暴露 `KnowledgeDoc` 类型缺少 `evidence_summary/rationale` 字段。
+- **根因**：实验产物没有进入 Next `public` 或 API surface，client page 无法直接读取仓库根目录下的数据文件；`frontend/app/evolution/page.tsx` 的展示模型停留在旧静态表，未接入 `full_victory_report.json`；既有 dev server 对新增 `public/experiments` 目录未立即生效，需新实例或重启后才能 200。
+- **解决方案**：把完整报告 JSON/HTML 发布到 `frontend/public/experiments/`；`/evolution` 新增“完整实验”首个 tab，前端 `fetch("/experiments/full_victory_report.json")` 后展示四层策略对局胜率、失败数、wolf delta、MBTI 接受度覆盖、fallback/invalid 审计、供应商/模型分布，并提供 HTML/JSON 入口；MBTI×角色 tab 改为优先使用真实 `mbti_role_stats`，报告未加载时才使用旧占位；补齐 `KnowledgeDoc` 可选字段并通过 lint/build。
+- **涉及文件 / 模块**：`frontend/app/evolution/page.tsx`、`frontend/public/experiments/full_victory_report.json`、`frontend/public/experiments/full_victory_report.html`
+- **教训**：离线实验报告只有放进前端可访问的 public/API surface 才算可展示；新增 public 静态目录后要用新 dev server 或重启验证，不能只看磁盘文件存在。
+
 ---
 
 ## §C. Agent / LLM 行为

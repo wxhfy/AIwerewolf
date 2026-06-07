@@ -11,15 +11,15 @@ services:
   # PostgreSQL 15
   # ------------------------------------------------------------------
   postgres:
-    image: postgres:16-alpine
-    container_name: werewolf-pg
+    image: ${POSTGRES_IMAGE:-postgres:16-alpine}
+    container_name: ${POSTGRES_CONTAINER_NAME:-werewolf-pg}
     restart: unless-stopped
     environment:
-      POSTGRES_USER: werewolf
-      POSTGRES_PASSWORD: wolf_secret_2026
-      POSTGRES_DB: werewolf
+      POSTGRES_USER: ${POSTGRES_USER:-werewolf}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-wolf_secret_2026}
+      POSTGRES_DB: ${POSTGRES_DB:-werewolf}
     ports:
-      - "5433:5432"
+      - "${POSTGRES_PORT:-5433}:5432"
     volumes:
       - werewolf-pg-data:/var/lib/postgresql/data
       - ./backend/db/migrations:/docker-entrypoint-initdb.d:ro
@@ -38,13 +38,13 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: werewolf-backend
+    container_name: ${BACKEND_CONTAINER_NAME:-werewolf-backend}
     restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql+psycopg2://werewolf:wolf_secret_2026@postgres:5432/werewolf
+      DATABASE_URL: ${COMPOSE_DATABASE_URL:-postgresql+psycopg2://werewolf:wolf_secret_2026@postgres:5432/werewolf}
       LLM_PROVIDER: ${LLM_PROVIDER:-deepseek}
       DOUBAO_API_KEY: ${DOUBAO_API_KEY:-}
       DOUBAO_BASE_URL: ${DOUBAO_BASE_URL:-https://ark.cn-beijing.volces.com/api/v3}
@@ -56,6 +56,8 @@ services:
       AIWEREWOLF_STRICT_MODE: ${AIWEREWOLF_STRICT_MODE:-true}
       ALLOW_FALLBACK: ${ALLOW_FALLBACK:-false}
       AUTO_MIGRATE: "true"
+    expose:
+      - "${BACKEND_CONTAINER_PORT:-8000}"
     networks:
       - werewolf-net
 
@@ -66,13 +68,16 @@ services:
     build:
       context: .
       dockerfile: frontend/Dockerfile
-    container_name: werewolf-frontend
+    container_name: ${FRONTEND_CONTAINER_NAME:-werewolf-frontend}
     restart: unless-stopped
     depends_on:
       - backend
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost/api}
       NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-ws://localhost/ws}
+      PORT: ${FRONTEND_CONTAINER_PORT:-3001}
+    expose:
+      - "${FRONTEND_CONTAINER_PORT:-3001}"
     networks:
       - werewolf-net
 
@@ -81,7 +86,7 @@ services:
   # ------------------------------------------------------------------
   nginx:
     image: nginx:1.27-alpine
-    container_name: werewolf-nginx
+    container_name: ${NGINX_CONTAINER_NAME:-werewolf-nginx}
     restart: unless-stopped
     depends_on:
       - backend
@@ -100,20 +105,20 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: werewolf-dev-backend
+    container_name: ${DEV_BACKEND_CONTAINER_NAME:-werewolf-dev-backend}
     profiles: ["dev"]
     restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql+psycopg2://werewolf:wolf_secret_2026@postgres:5432/werewolf
+      DATABASE_URL: ${COMPOSE_DATABASE_URL:-postgresql+psycopg2://werewolf:wolf_secret_2026@postgres:5432/werewolf}
       LLM_PROVIDER: ${LLM_PROVIDER:-deepseek}
       DOUBAO_API_KEY: ${DOUBAO_API_KEY:-}
       AIWEREWOLF_STRICT_MODE: "true"
       AUTO_MIGRATE: "true"
     ports:
-      - "8000:8000"
+      - "${BACKEND_PORT:-8000}:8000"
     volumes:
       - ./backend:/app/backend
       - ./configs:/app/configs
@@ -124,16 +129,20 @@ services:
 
   dev-frontend:
     image: node:20-alpine
-    container_name: werewolf-dev-frontend
+    container_name: ${DEV_FRONTEND_CONTAINER_NAME:-werewolf-dev-frontend}
     profiles: ["dev"]
     restart: unless-stopped
     depends_on:
       - dev-backend
     working_dir: /app
     ports:
-      - "3001:3001"
+      - "${FRONTEND_PORT:-3001}:3001"
     volumes:
       - ./frontend:/app
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost/api}
+      NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-ws://localhost/ws}
+      PORT: ${FRONTEND_CONTAINER_PORT:-3001}
     command: sh -c "npm install --legacy-peer-deps && npm run dev"
     networks:
       - werewolf-net
