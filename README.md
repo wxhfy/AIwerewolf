@@ -12,7 +12,7 @@
 
 ## 项目概述
 
-每个 AI 玩家拥有独立的 MBTI 人格、角色技能和认知架构，在严格信息隔离下进行推理、对话和决策。赛后通过 LLM Judge 复盘，提取策略知识沉淀到知识库，回流到下一代 Agent。
+每个 AI 玩家拥有独立的 MBTI 人格、角色技能和认知架构，在严格信息隔离下进行推理、对话和决策。支持真人 vs AI 混战模式。赛后通过 LLM Judge 复盘，提取策略知识沉淀到知识库，回流到下一代 Agent。
 
 ### 三层架构
 
@@ -149,10 +149,11 @@ ruff format --check backend/ scripts/ tests/ configs/
 
 | 文档 | 说明 |
 |------|------|
-| [`backend_acceptance_criteria.md`](docs/backend_acceptance_criteria.md) | B/C 验收标准 |
-| [`OPTIMIZATION_BENCHMARK.md`](docs/OPTIMIZATION_BENCHMARK.md) | API 调用优化效果基准 |
+| [`prd.md`](docs/prd.md) | 产品需求规格（V2.0） |
+| [`PROJECT_MODULE_DESIGN.md`](docs/PROJECT_MODULE_DESIGN.md) | 核心模块设计 |
 | [`DATA_FLOW.md`](docs/DATA_FLOW.md) | 端到端数据流 |
-| [`prd.md`](docs/prd.md) | 产品需求文档 |
+| [`OPTIMIZATION_BENCHMARK.md`](docs/OPTIMIZATION_BENCHMARK.md) | API 调用优化基准 |
+| [`backend_acceptance_criteria.md`](docs/backend_acceptance_criteria.md) | B/C 验收标准 |
 
 ---
 
