@@ -9,7 +9,6 @@ import { cn } from "@/lib/utils";
 import { MentionText } from "@/components/game/MentionText";
 
 interface BottomDialogueDockProps {
-  events: GameEvent[];
   players: Player[];
   currentChat?: GameEvent | null;
   pendingPlayerId?: string;
@@ -51,9 +50,8 @@ export function BottomDialogueDock({
 }: BottomDialogueDockProps) {
   const latestChat = useMemo(() => {
     if (!currentChat) return null;
-    if (!isDaySpeechPhase(currentChat.phase || phase)) return null;
     return currentChat;
-  }, [currentChat, phase]);
+  }, [currentChat]);
 
   if (!latestChat && !pendingPlayerName) return null;
   if (!latestChat && !isDaySpeechPhase(phase)) return null;
@@ -125,12 +123,12 @@ export function BottomDialogueDock({
             </span>
           </div>
 
-          <p className="min-h-[3.4rem] text-xl leading-relaxed text-textPrimary">
+          <div className="min-h-[3.4rem] whitespace-pre-wrap break-words text-xl leading-relaxed text-textPrimary">
             <MentionText text={shownText} players={players} />
             {latestChat && !finished && (
               <span className="ml-1 inline-block h-[1em] w-0.5 animate-pulse align-middle bg-primary" />
             )}
-          </p>
+          </div>
         </div>
       </div>
     </section>

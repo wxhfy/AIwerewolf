@@ -58,6 +58,20 @@ export function isMergedChatSegment(
 }
 
 /**
+ * Whether this chat event should block timeline reveal / bottom typewriter.
+ * Multi-segment speeches intentionally block one segment at a time; older
+ * same-actor same-phase events that are not explicit segments may still be
+ * collapsed into the previous bubble.
+ */
+export function isRevealBlockingChat(
+  event: GameEvent,
+  prevActor: string,
+  prevPhase: string,
+): boolean {
+  return event.type === EventType.CHAT_MESSAGE && !isMergedChatSegment(event, prevActor, prevPhase);
+}
+
+/**
  * Iterates CHAT_MESSAGE events, skipping merged segments.
  * After a non-chat event, prevActor/prevPhase are reset.
  *
@@ -73,7 +87,7 @@ export function forEachVisibleChat(
   for (let i = 0; i < events.length; i++) {
     const e = events[i];
     if (e.type === EventType.CHAT_MESSAGE) {
-      if (isMergedChatSegment(e, prevActor, prevPhase)) continue;
+      if (!isRevealBlockingChat(e, prevActor, prevPhase)) continue;
       prevActor = (e.payload as any)?.actor_id || "";
       prevPhase = e.phase || "";
       const shouldStop = onSegment(e, i);

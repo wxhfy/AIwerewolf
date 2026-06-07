@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React from "react";
 import { GameEvent, EventType, Player, Language } from "@/types";
 import { useAppContext } from "@/context/AppContext";
 import { t, tPhase, format } from "@/lib/i18n";
@@ -27,17 +27,9 @@ const stripColor: Record<string, string> = {
 };
 
 function VoteReasoning({ text }: { text: string }) {
-  const [open, setOpen] = useState(false);
-  const short = text.slice(0, 60);
-  const needsToggle = text.length > 80;
   return (
-    <p className="text-xs text-text-sub mt-1 leading-snug">
-      {open || !needsToggle ? text : `${short}...`}
-      {needsToggle && (
-        <button onClick={() => setOpen(!open)} className="ml-1 text-primary hover:underline text-[10px]">
-          {open ? "收起" : "展开"}
-        </button>
-      )}
+    <p className="mt-1 whitespace-pre-wrap break-words text-xs leading-snug text-text-sub">
+      {text}
     </p>
   );
 }
@@ -56,6 +48,10 @@ function nightCompletionLabel(phase: string, language: Language): string {
     NIGHT_SEER_ACTION: "Seer",
   };
   return (language === Language.ZH ? zh[phase] : en[phase]) || tPhase(phase, language);
+}
+
+function isNightSubphase(phase: string): boolean {
+  return phase.startsWith("NIGHT_") && phase !== "NIGHT_START" && phase !== "NIGHT_RESOLVE";
 }
 
 export function EventItem({ event, index = 0, players = [] }: EventItemProps) {
@@ -155,9 +151,9 @@ export function EventItem({ event, index = 0, players = [] }: EventItemProps) {
     }
 
     if (event.type === EventType.NIGHT_ACTION) {
-      if (p.message === "行动完毕") {
-        const phase = (p.phase || event.phase || "") as string;
-        const phaseText = nightCompletionLabel(phase, language);
+      const eventPhase = (p.phase || event.phase || "") as string;
+      if (p.message === "行动完毕" || (viewMode !== "moderator" && isNightSubphase(eventPhase))) {
+        const phaseText = nightCompletionLabel(eventPhase, language);
         return (
           <span className="text-xs text-text-sub">
             {language === "zh"

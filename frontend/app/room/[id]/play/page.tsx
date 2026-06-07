@@ -12,6 +12,7 @@ import { PhaseOverlayCoordinator } from "@/components/game/PhaseOverlayCoordinat
 import { DayNightBlinkTransition } from "@/components/game/DayNightBlinkTransition";
 import { ThinkingBubble } from "@/components/game/ThinkingBubble";
 import { VotePanel } from "@/components/game/VotePanel";
+import { BottomDialogueDock } from "@/components/game/BottomDialogueDock";
 import { BackgroundMusic } from "@/components/game/BackgroundMusic";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { useGamePageController } from "@/hooks/useGamePageController";
@@ -265,6 +266,17 @@ export default function GamePage() {
             </div>
           )}
           {/* VoteResultPanel is now inline in EventTimeline (part of chat narrative flow) */}
+
+          <BottomDialogueDock
+            players={gameState?.players || []}
+            currentChat={controller.currentDialogueChat}
+            pendingPlayerId={derived.pendingInput?.player_id || undefined}
+            pendingPlayerName={derived.pendingInput?.player_name || undefined}
+            phase={gameState?.phase}
+            language={language}
+            isLocked={isLocked}
+            onChatComplete={controller.onChatComplete}
+          />
 
           {/* ═══ AI mode: ActionPanel ═══ */}
           {!isHuman && isGlobalView && derived.pendingInput && (

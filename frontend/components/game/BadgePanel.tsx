@@ -3,7 +3,7 @@
 import React from "react";
 import { GameState, Language } from "@/types";
 import { cn } from "@/lib/utils";
-import { isMergedChatSegment } from "@/lib/eventFilter";
+import { isRevealBlockingChat } from "@/lib/eventFilter";
 
 interface BadgePanelProps {
   gameState: GameState;
@@ -37,7 +37,7 @@ export function BadgePanel({ gameState, language, activeSpeakerId, displayPhase,
   for (let i = 0; i < (gameState.events || []).length; i++) {
     const e = gameState.events[i];
     if (e.type === "CHAT_MESSAGE") {
-      if (isMergedChatSegment(e, prevActor, prevPhase)) continue;
+      if (!isRevealBlockingChat(e, prevActor, prevPhase)) continue;
       prevActor = (e.payload as any)?.actor_id || "";
       prevPhase = e.phase || "";
       if (!completedIds.has(e.id)) {

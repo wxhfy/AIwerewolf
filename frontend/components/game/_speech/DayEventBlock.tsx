@@ -69,6 +69,16 @@ function mergeConsecutiveChats(events: GameEvent[]): GameEvent[] {
   return merged;
 }
 
+function isNightActionDetail(event: GameEvent, viewMode: ViewMode): boolean {
+  if (viewMode === ViewMode.MODERATOR) return false;
+  if (event.type !== EventType.NIGHT_ACTION) return false;
+  const eventPhase = event.phase || (event.payload as any)?.phase || "";
+  if (!eventPhase.startsWith("NIGHT_") || eventPhase === "NIGHT_START" || eventPhase === "NIGHT_RESOLVE") {
+    return false;
+  }
+  return (event.payload as any)?.message !== "行动完毕";
+}
+
 // ── VoteResultInline ──────────────────────────────────────────────────
 
 function VoteResultInline({ votes, players, language }: {
@@ -87,20 +97,15 @@ function VoteResultInline({ votes, players, language }: {
 
 export function DayEventBlock({
   day, events, language, viewMode, isHumanMode, humanSeat,
-  completedIds: _completedIds, onChatComplete, hideDayHeaders, dayVotes, players,
+  completedIds, onChatComplete, hideDayHeaders, dayVotes, players,
   currentDay, speakerState,
 }: DayEventBlockProps) {
   const rawEvents = events.filter(event =>
     event.type !== EventType.PRIVATE_INFO &&
     (viewMode === ViewMode.MODERATOR || event.visibility !== "private") &&
     !isRedundantPhaseAnnouncement(event) &&
-    // 观众视角只看夜间完成摘要；全局视角保留狼人夜间行动细节。
-    !(
-      viewMode !== ViewMode.MODERATOR &&
-      event.phase === "NIGHT_WOLF_ACTION" &&
-      event.type === EventType.NIGHT_ACTION &&
-      (event.payload as any)?.message !== "行动完毕"
-    ) &&
+    // 观众视角只看夜间完成摘要；全局视角保留夜间行动细节。
+    !isNightActionDetail(event, viewMode) &&
     // 过滤投票放逐的 PLAYER_DIED 事件，统一在遗言后渲染一次确认
     !(event.type === EventType.PLAYER_DIED && (event.payload as any)?.reason === "vote")
   );
@@ -112,12 +117,14 @@ export function DayEventBlock({
 
   if (timelineEvents.length === 0) return null;
 
-  const visibleEvents = timelineEvents;
+  const visibleEvents = timelineEvents.filter(
+    (event) => event.type !== EventType.CHAT_MESSAGE || completedIds.has(event.id),
+  );
 
   // Vote result cutoff: show before LAST_WORDS / HUNTER_SHOOT / BADGE_TRANSFER
-  let voteCutoff = timelineEvents.length;
-  for (let i = 0; i < timelineEvents.length; i++) {
-    const ph = timelineEvents[i].phase || "";
+  let voteCutoff = visibleEvents.length;
+  for (let i = 0; i < visibleEvents.length; i++) {
+    const ph = visibleEvents[i].phase || "";
     if (ph === "DAY_LAST_WORDS" || ph === "HUNTER_SHOOT" || ph === "BADGE_TRANSFER") { voteCutoff = i; break; }
   }
   const voteResultReady = true;

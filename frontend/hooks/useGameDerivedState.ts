@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { Alignment, EventType, GameEvent, GameState, Phase } from "@/types";
+import { isRevealBlockingChat } from "@/lib/eventFilter";
 
 /**
  * 夜间阶段 → 对应角色列表。
@@ -53,7 +54,7 @@ export function useGameDerivedState(gameState: GameState | null, humanSeat: numb
       if (e.type === EventType.CHAT_MESSAGE) {
         const actor = (e.payload as any)?.actor_id || "";
         const ph = e.phase || "";
-        if (actor === prevActor && ph === prevPhase) continue; // merged segment
+        if (!isRevealBlockingChat(e, prevActor, prevPhase)) continue;
         prevActor = actor;
         prevPhase = ph;
         if (!completedIds?.has(e.id)) {
