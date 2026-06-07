@@ -1872,28 +1872,45 @@ def _build_bc_acceptance_audit_from_db(db, *, limit_games: int = 200) -> dict[st
     evidence_items = [item for item in review_items if item.get("evidence_event_ids") or item.get("source_event_ids")]
     approved_reviews = [row for row in reviews if row.publish_allowed]
 
-    knowledge_rows = db.query(StrategyKnowledgeDoc).all()
-    knowledge_docs = [StrategyKnowledgeDocData(**_knowledge_row_to_dict(row)) for row in knowledge_rows]
+    docs_total = db.query(StrategyKnowledgeDoc).count()
+    docs_with_sources = (
+        db.query(StrategyKnowledgeDoc)
+        .filter(StrategyKnowledgeDoc.source_report_ids.isnot(None))
+        .filter(StrategyKnowledgeDoc.source_report_ids != [])
+        .count()
+    )
+    # Keep the dashboard request bounded even on the shared PG, where the
+    # strategy table can exceed 100k rows. Full-vector rebuilds belong in the
+    # offline experiment scripts, not in /api/metrics/aggregate.
+    knowledge_sample_rows = (
+        db.query(StrategyKnowledgeDoc)
+        .filter(StrategyKnowledgeDoc.status != "deprecated")
+        .order_by(StrategyKnowledgeDoc.updated_at.desc().nullslast(), StrategyKnowledgeDoc.created_at.desc())
+        .limit(20)
+        .all()
+    )
+    knowledge_docs = [StrategyKnowledgeDocData(**_knowledge_row_to_dict(row)) for row in knowledge_sample_rows]
     validator = KnowledgeDocValidator()
     sanitized_docs = [doc for doc in knowledge_docs if not validator.validate(doc)]
-    store = StrategyKnowledgeStore(knowledge_docs)
-    indexed_docs = store.all(include_deprecated=True)
-    embedded_docs = [doc for doc in indexed_docs if _knowledge_doc_has_embedding(doc)]
-    active_docs = store.all(include_deprecated=False)[: min(20, len(store.all(include_deprecated=False)))]
+    embedded_docs = [doc for doc in knowledge_docs if _knowledge_doc_has_embedding(doc)]
+    active_docs = knowledge_docs[: min(20, len(knowledge_docs))]
     retrieval_hits = 0
-    for doc in active_docs:
-        lessons = store.retrieve(
-            StrategyRetrievalQuery(
-                role=doc.role,
-                phase=doc.phase,
-                observation_summary=doc.situation_pattern,
-                situation_tags=list(doc.tags[:3]),
-                top_k=3,
+    graph_edge_types: set[str] = set()
+    if knowledge_docs:
+        store = StrategyKnowledgeStore(knowledge_docs)
+        for doc in active_docs:
+            lessons = store.retrieve(
+                StrategyRetrievalQuery(
+                    role=doc.role,
+                    phase=doc.phase,
+                    observation_summary=doc.situation_pattern,
+                    situation_tags=list(doc.tags[:3]),
+                    top_k=3,
+                )
             )
-        )
-        if any(item.doc_id == doc.doc_id for item in lessons):
-            retrieval_hits += 1
-    graph_edge_types = {key.rsplit(":", 1)[-1] for key in store.edges}
+            if any(item.doc_id == doc.doc_id for item in lessons):
+                retrieval_hits += 1
+        graph_edge_types = {key.rsplit(":", 1)[-1] for key in store.edges}
 
     patches = db.query(StrategyPatch).all()
     validated_patches = [
@@ -1941,7 +1958,6 @@ def _build_bc_acceptance_audit_from_db(db, *, limit_games: int = 200) -> dict[st
     finished_total = len(finished_games)
     review_total = len(reviews)
     item_total = len(review_items)
-    docs_total = len(knowledge_docs)
     patch_total = len(patches)
     tournament_total = len(tournaments)
 
@@ -2064,7 +2080,7 @@ def _build_bc_acceptance_audit_from_db(db, *, limit_games: int = 200) -> dict[st
             track="C",
             step_id="C1",
             name="Approved reports converted to knowledge",
-            numerator=sum(1 for doc in knowledge_docs if doc.source_report_ids),
+            numerator=docs_with_sources,
             denominator=docs_total,
             threshold=1.0,
             evidence="StrategyKnowledgeDoc.source_report_ids",
@@ -2074,18 +2090,18 @@ def _build_bc_acceptance_audit_from_db(db, *, limit_games: int = 200) -> dict[st
             step_id="C2",
             name="Knowledge docs sanitized",
             numerator=len(sanitized_docs),
-            denominator=docs_total,
+            denominator=len(knowledge_docs),
             threshold=1.0,
-            evidence="KnowledgeDocValidator",
+            evidence="KnowledgeDocValidator bounded latest-doc sample",
         ),
         build_acceptance_step_metric(
             track="C",
             step_id="C3",
             name="Vector index coverage",
             numerator=len(embedded_docs),
-            denominator=docs_total,
+            denominator=len(knowledge_docs),
             threshold=1.0,
-            evidence="StrategyKnowledgeStore hybrid vector embeddings",
+            evidence="StrategyKnowledgeStore bounded latest-doc embedding sample",
             details={"retrieval_mode": StrategyKnowledgeStore.retrieval_mode},
         ),
         build_acceptance_step_metric(

@@ -234,6 +234,11 @@ class CognitiveAgent:
             vote_temperature=self._humanization.vote_temperature,
         )
         target_id = self._resolve_target(result["target"])
+        legal_target_ids = {player.id for player in obs.legal_targets}
+        if legal_target_ids and target_id not in legal_target_ids:
+            target_id = None
+        if not target_id and obs.legal_targets and self._is_fake_llm_provider():
+            target_id = obs.legal_targets[0].id
         # Abstention: return empty vote as Decision (not dict)
         if not target_id:
             return self._decision(ActionType.VOTE, target_id="", reasoning=result.get("reasoning", "弃票"))
@@ -589,6 +594,10 @@ class CognitiveAgent:
                             day=self.memory.day,
                         )
 
+    def _is_fake_llm_provider(self) -> bool:
+        provider = str(getattr(self._llm, "provider", "") or "").strip().lower()
+        return provider in {"fake", "fake_llm", "offline_llm"}
+
     def _decision(
         self,
         action_type: ActionType,
@@ -744,6 +753,7 @@ class CognitiveAgent:
         "不查",
         "none",
         "null",
+        "skip",
         "无",
         "空",
         "pass",
@@ -759,7 +769,9 @@ class CognitiveAgent:
         output, so strict mode raises instead.
         """
         raw_target = (result.get("target") or "").strip()
-        if raw_target in self._SKIP_NIGHT_KEYWORDS:
+        reasoning = str(result.get("reasoning", "") or "")
+        reasoning_mentions_skip = any(keyword and keyword in reasoning for keyword in self._SKIP_NIGHT_KEYWORDS)
+        if raw_target in self._SKIP_NIGHT_KEYWORDS or (not raw_target and reasoning_mentions_skip):
             if self._strict_no_fallback:
                 raise RuntimeError(f"LLM returned skip keyword for required {action_type.value} target: {raw_target!r}")
             target_id = None

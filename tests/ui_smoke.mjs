@@ -153,7 +153,9 @@ try {
   await htmlPage.close();
 
   await page.goto(`http://127.0.0.1:${frontendPort}/?lang=zh`, { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "EN" }).click();
+  await page.getByRole("button", { name: "设置" }).click();
+  await page.getByRole("button", { name: /EN|English/ }).click();
+  await page.getByRole("button", { name: /Save|保存/ }).click();
   await page.getByText("Game Mode").waitFor();
   await page.getByRole("button", { name: "Start AI Match" }).waitFor();
 

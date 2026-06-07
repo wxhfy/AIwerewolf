@@ -114,6 +114,11 @@ class WerewolfGame:
         strategy_bias: dict[str, list[str]] | None = None,
         strategy_bias_by_role: dict[str, dict[str, list[str]]] | None = None,
         sampled_personas: list[dict] | None = None,
+        persona_sampler: Callable[[int, int | None], list[dict] | None] | None = None,
+        on_game_start: Callable[[GameState], None] | None = None,
+        on_game_end: Callable[[GameState], None] | None = None,
+        on_decisions_flush: Callable[[list[dict]], int] | None = None,
+        on_post_game: Callable[[GameState], None] | None = None,
         phase_delay_ms: float = 0,
     ):
         self.rng = Random(seed)
@@ -139,6 +144,11 @@ class WerewolfGame:
         self.human_action_buffer: dict[str, list[Decision]] = {}
         self.interrupt_phase_cycle = False
         self.phase_delay_ms = phase_delay_ms
+        self.persona_sampler = persona_sampler
+        self.on_game_start = on_game_start
+        self.on_game_end = on_game_end
+        self.on_decisions_flush = on_decisions_flush
+        self.on_post_game = on_post_game
 
         # Task 2: Deferred DB write — buffer all decisions in memory, flush at game end.
         self._pending_decisions: list[dict] = []
@@ -159,7 +169,7 @@ class WerewolfGame:
         self._shared_lock: _threading.RLock = _threading.RLock()
         # Agent 独占锁：保护并发 _batch_ask 时的 agent.update() 和决策调用
         self._agent_locks: dict[str, _threading.RLock] = {}
-        sampled_personas = sampled_personas or self._sample_personas_from_db(len(self.state.players), seed)
+        sampled_personas = sampled_personas or self._sample_personas(len(self.state.players), seed)
         if not sampled_personas:
             # DB unavailable — shuffle in-memory PERSONA_POOL per seed so
             # each MBTI plays different roles across games (not name-bound).
@@ -195,17 +205,16 @@ class WerewolfGame:
             )
         )
 
-    @staticmethod
-    def _sample_personas_from_db(count: int, seed: int | None) -> list[dict] | None:
-        """Try to pull a random persona roster from the DB.
+    def _sample_personas(self, count: int, seed: int | None) -> list[dict] | None:
+        """Try the injected persona sampler, then let the in-memory pool take over.
 
         Returns None on any failure so the in-repo PERSONA_POOL takes over —
-        DB sampling is an enhancement, never a hard requirement.
+        external sampling is an enhancement, never a hard requirement.
         """
+        if self.persona_sampler is None:
+            return None
         try:
-            from backend.db.persona_db import sample_personas
-
-            return sample_personas(count, seed=seed)
+            return self.persona_sampler(count, seed)
         except Exception:
             return None
 
@@ -382,14 +391,7 @@ class WerewolfGame:
     def play_until_blocked(self) -> GameState:
         if not self.state.events:
             self.initialize()
-            try:
-                from backend.db.persist import save_game_start
-
-                save_game_start(self.state)
-            except Exception:
-                import logging
-
-                logging.getLogger(__name__).warning("save_game_start failed (non-fatal, game continues)", exc_info=True)
+            self._emit_game_start()
         self.state.pending_input = None
         self.interrupt_phase_cycle = False
         try:
@@ -440,33 +442,9 @@ class WerewolfGame:
                 agent.finish(self.state.winner.value if self.state.winner else None)
             # Task 2: Flush buffered decisions to DB before final save_game_end
             self.flush_decisions_to_db()
-            try:
-                from backend.db.persist import save_game_end
-
-                save_game_end(self.state)
-            except Exception:
-                import logging
-
-                logging.getLogger(__name__).warning("save_game_end failed (non-fatal)", exc_info=True)
+            self._emit_game_end()
             # Track B→C: score decisions + extract knowledge (post-game, has ground truth)
-            try:
-                from backend.eval.post_game import run_post_game_scoring
-
-                n = run_post_game_scoring(self.state, str(self.state.id))
-                import logging
-
-                if n > 0:
-                    logging.getLogger(__name__).info(
-                        f"Post-game scoring: {n} knowledge lessons extracted for game {self.state.id}"
-                    )
-                elif os.getenv("REQUIRE_POST_GAME_SCORING", "").lower() == "true":
-                    logging.getLogger(__name__).error("STRICT FAIL: Post-game scoring produced 0 lessons")
-            except Exception:
-                if os.getenv("REQUIRE_POST_GAME_SCORING", "").lower() == "true":
-                    raise  # fail fast in strict mode
-                import logging
-
-                logging.getLogger(__name__).warning("Post-game scoring failed (non-fatal)", exc_info=True)
+            self._run_post_game_hook()
         return self.state
 
     def submit_human_action(self, payload: dict[str, object]) -> GameState:
@@ -1684,24 +1662,50 @@ class WerewolfGame:
             },
         )
 
-    def flush_decisions_to_db(self) -> int:
-        """Batch-insert all buffered decisions to PostgreSQL at game end.
+    def _emit_game_start(self) -> None:
+        if self.on_game_start is None:
+            return
+        try:
+            self.on_game_start(self.state)
+        except Exception:
+            logger.warning("on_game_start hook failed (non-fatal, game continues)", exc_info=True)
 
-        Uses the existing persist.save_decisions_batch() for bulk insert.
+    def _emit_game_end(self) -> None:
+        if self.on_game_end is None:
+            return
+        try:
+            self.on_game_end(self.state)
+        except Exception:
+            logger.warning("on_game_end hook failed (non-fatal)", exc_info=True)
+
+    def _run_post_game_hook(self) -> None:
+        if self.on_post_game is None:
+            return
+        try:
+            self.on_post_game(self.state)
+        except Exception:
+            if os.getenv("REQUIRE_POST_GAME_SCORING", "").lower() == "true":
+                raise
+            logger.warning("Post-game hook failed (non-fatal)", exc_info=True)
+
+    def flush_decisions_to_db(self) -> int:
+        """Flush all buffered decisions through the injected persistence hook.
+
         Exception-safe: wraps in try/except so a DB failure never crashes the game.
         Returns the number of decisions flushed.
         """
         if self._decisions_flushed or not self._pending_decisions:
             return 0
-        try:
-            from backend.db.persist import save_decisions_batch
-
-            count = save_decisions_batch(self._pending_decisions)
+        if self.on_decisions_flush is None:
             self._decisions_flushed = True
-            logger.info(f"Flushed {count} decisions to DB for game {self.state.id}")
+            return 0
+        try:
+            count = self.on_decisions_flush(self._pending_decisions)
+            self._decisions_flushed = True
+            logger.info(f"Flushed {count} decisions for game {self.state.id}")
             return count
         except Exception:
-            logger.exception("Failed to flush decisions to DB (non-fatal)")
+            logger.exception("Failed to flush decisions (non-fatal)")
             return 0
 
     def _check_win(self) -> bool:
@@ -1776,10 +1780,46 @@ class WerewolfGame:
         decision: Decision,
         detail: str,
     ) -> None:
+        self._mark_decision_invalid(player, request, decision, detail)
         raise RuntimeError(
             f"Invalid LLM decision in {request}: player={player.id} "
             f"action={decision.action_type.value} target={decision.target_id!r}; {detail}"
         )
+
+    def _mark_decision_invalid(
+        self,
+        player: Player,
+        request: str,
+        decision: Decision,
+        detail: str,
+    ) -> None:
+        """Mark an already-recorded LLM decision invalid before strict mode raises."""
+        error_type = f"invalid_llm_decision: {detail}"
+        for record in reversed(self.state.decision_records):
+            if (
+                record.player_id == player.id
+                and record.day == self.state.day
+                and record.phase == self.state.phase.value
+                and record.request == request
+                and record.parsed_action.get("action_type") == decision.action_type.value
+                and record.parsed_action.get("target_id") == decision.target_id
+            ):
+                record.is_valid = False
+                record.error_type = error_type
+                break
+        for row in reversed(self._pending_decisions):
+            parsed = row.get("parsed_action", {})
+            if (
+                row.get("player_id") == player.id
+                and row.get("day") == self.state.day
+                and row.get("phase") == self.state.phase.value
+                and row.get("request") == request
+                and parsed.get("action_type") == decision.action_type.value
+                and parsed.get("target_id") == decision.target_id
+            ):
+                row["is_valid"] = False
+                row["error_type"] = error_type
+                break
 
     def _alive_role(self, role: Role) -> Player | None:
         return next((player for player in self.state.alive_players if player.role == role), None)

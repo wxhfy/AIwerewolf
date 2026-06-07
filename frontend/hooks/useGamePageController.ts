@@ -116,6 +116,26 @@ export function useGamePageController(roomId: string) {
     setCompletedTick((n) => n + 1);
   }, []);
 
+  const currentDialogueChat = useMemo(() => {
+    const events = gameState?.events;
+    if (!events) return null;
+
+    let prevActor = "";
+    let prevPhase = "";
+    for (const event of events) {
+      if (event.type !== EventType.CHAT_MESSAGE) {
+        prevActor = "";
+        prevPhase = "";
+        continue;
+      }
+      if (isMergedChatSegment(event, prevActor, prevPhase)) continue;
+      prevActor = (event.payload as any)?.actor_id || "";
+      prevPhase = event.phase || "";
+      if (!completedIdsRef.current.has(event.id)) return event;
+    }
+    return null;
+  }, [gameState?.events, completedTick]);
+
   const sessionKey = roomId;
   const phase = usePhaseTransition(sessionKey, gameState, Boolean(gameState?.winner));
   const scroll = useAutoScroll(gameState?.events?.length);
@@ -285,6 +305,46 @@ export function useGamePageController(roomId: string) {
     return placeholderPlayers(from, to, language, humanSeat);
   }
 
+  function exportGameRecord() {
+    const state = latestGameStateRef.current;
+    if (!state || typeof window === "undefined") return;
+
+    const payload = {
+      exported_at: new Date().toISOString(),
+      export_scope: viewMode === ViewMode.MODERATOR ? "global_view_snapshot" : "audience_view_snapshot",
+      game: {
+        id: state.id,
+        room_id: roomId,
+        seed,
+        day: state.day,
+        phase: state.phase,
+        winner: state.winner ?? null,
+        alive_count: state.alive_count ?? state.players.filter((player) => player.alive).length,
+      },
+      players: state.players,
+      events: state.events,
+      votes: state.votes,
+      vote_history: state.vote_history,
+      day_history: state.day_history,
+      badge: state.badge ?? null,
+      night_actions: state.night_actions ?? null,
+      decision_records: state.decision_records ?? [],
+      daily_summaries: state.daily_summaries,
+      daily_summary_facts: state.daily_summary_facts,
+    };
+
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const suffix = new Date().toISOString().replace(/[:.]/g, "-");
+    link.href = url;
+    link.download = `ai-werewolf-game-${state.id || roomId}-${suffix}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
+
   // ── Phase timeout: force-complete stuck CHAT_MESSAGE events ──────
   // 当 phaseTimeoutTick 变化时，把超时时刻的阻塞阶段未完成 CHAT_MESSAGE 强制完成
   useEffect(() => {
@@ -387,12 +447,14 @@ export function useGamePageController(roomId: string) {
     runGame,
     startHumanGame,
     handleHumanAction,
+    exportGameRecord,
     placeholder,
     fetchError,
     retryRoom,
     displayPhase,
     completedIdsRef,
     onChatComplete,
+    currentDialogueChat,
     voteDisplay,
     // Blink transition passthrough
     isBlinking: phase.isBlinking,

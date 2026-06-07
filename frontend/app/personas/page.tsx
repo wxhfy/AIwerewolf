@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 
 /* ── Constants ─────────────────────────────────────────────────── */
@@ -73,7 +72,7 @@ export default function PersonasPage() {
       <header className="flex items-center justify-between border-b border-border/30 bg-cardBackground/60 backdrop-blur-sm px-6 py-4">
         <div>
           <div className="flex items-center gap-4">
-            <Link href="/" className="text-sm text-text-sub/60 hover:text-primary transition">← 大厅</Link>
+            <a href="/" className="text-sm text-text-sub/60 hover:text-primary transition">← 大厅</a>
             <h1 className="font-display text-xl font-bold text-primary tracking-wide">角色库</h1>
           </div>
           <p className="mt-0.5 pl-[72px] text-xs text-text-sub/60">

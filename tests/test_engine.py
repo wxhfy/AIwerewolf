@@ -4,6 +4,8 @@ from backend.engine.game import WerewolfGame
 from backend.engine.models import ActionType
 from backend.engine.models import Alignment
 from backend.engine.models import Decision
+from backend.engine.models import EventType
+from backend.engine.models import PendingInput
 from backend.engine.models import Phase
 from backend.engine.models import Player
 from backend.engine.models import Role
@@ -130,12 +132,16 @@ def test_llm_invalid_badge_vote_raises_instead_of_fallback() -> None:
 
     def invalid_batch(players, request, call_fn):
         assert request == "BADGE_ELECTION"
-        return [
+        decisions = [
             Decision(
                 player.id, ActionType.VOTE, target_id="P3", reasoning="not a candidate", metadata={"source": "llm"}
             )
             for player in players
         ]
+        for player, decision in zip(players, decisions):
+            view = game.visibility.for_player(game.state, player.id)
+            game._record_decision(player, request, view.__dict__, decision)
+        return decisions
 
     game._batch_ask = invalid_batch  # type: ignore[assignment]
 
@@ -143,6 +149,12 @@ def test_llm_invalid_badge_vote_raises_instead_of_fallback() -> None:
         game._badge_election_phase()
 
     assert not any(event.payload.get("agent_fallback") for event in game.state.events)
+    assert game.state.decision_records
+    invalid_records = [record for record in game.state.decision_records if not record.is_valid]
+    assert len(invalid_records) == 1
+    assert invalid_records[0].player_id == "P2"
+    assert invalid_records[0].error_type
+    assert "badge candidates" in invalid_records[0].error_type
 
 
 def test_llm_empty_day_speech_raises_instead_of_skipping() -> None:
@@ -197,6 +209,97 @@ def test_human_pending_input_options_match_legal_targets() -> None:
     witch_pending = game._build_pending_input(witch, "WITCH")
     assert witch_pending.can_skip is True
     assert "V1" not in {option["id"] for option in witch_pending.options}
+
+
+def test_public_snapshot_redacts_night_pending_input_details() -> None:
+    game = WerewolfGame(seed=7, player_count=7)
+    game.initialize()
+    guard = next(player for player in game.state.players if player.role == Role.GUARD)
+    game.state.phase = Phase.NIGHT_GUARD_ACTION
+    game.state.pending_input = PendingInput(
+        player_id=guard.id,
+        player_name=guard.name,
+        seat=guard.seat,
+        request="GUARD",
+        phase=Phase.NIGHT_GUARD_ACTION.value,
+        action_type="guard",
+        prompt="守卫请选择今晚守护目标",
+        options=[{"id": "P1", "seat": 1, "name": "Player 1", "alive": True}],
+        can_skip=True,
+        placeholder="选择守护目标",
+    )
+
+    public_snapshot = game.state.snapshot(show_private=False)
+    private_snapshot = game.state.snapshot(show_private=True)
+
+    assert public_snapshot["pending_input"] == {
+        "player_id": "",
+        "player_name": "夜晚行动",
+        "seat": 0,
+        "request": "NIGHT_ACTION",
+        "phase": Phase.NIGHT_START.value,
+        "action_type": "night_action",
+        "prompt": "行动完毕",
+        "options": [],
+        "can_skip": False,
+        "placeholder": None,
+    }
+    assert private_snapshot["pending_input"]["request"] == "GUARD"
+    assert private_snapshot["pending_input"]["action_type"] == "guard"
+    assert private_snapshot["pending_input"]["options"]
+
+
+def test_public_snapshot_redacts_night_subphase_events() -> None:
+    game = WerewolfGame(seed=7, player_count=7)
+    game.initialize()
+    game.state.phase = Phase.NIGHT_SEER_ACTION
+    game._set_phase(Phase.NIGHT_SEER_ACTION)
+
+    public_snapshot = game.state.snapshot(show_private=False)
+    private_snapshot = game.state.snapshot(show_private=True)
+
+    assert public_snapshot["phase"] == Phase.NIGHT_START.value
+    assert private_snapshot["phase"] == Phase.NIGHT_SEER_ACTION.value
+    assert all(
+        event["phase"] in {Phase.NIGHT_START.value, Phase.NIGHT_RESOLVE.value}
+        for event in public_snapshot["events"]
+        if event["phase"].startswith("NIGHT_")
+    )
+    assert all(
+        event["payload"].get("phase") in {None, Phase.NIGHT_START.value, Phase.NIGHT_RESOLVE.value}
+        for event in public_snapshot["events"]
+        if str(event["payload"].get("phase", "")).startswith("NIGHT_")
+    )
+
+
+def test_public_snapshot_redacts_night_action_payload() -> None:
+    game = WerewolfGame(seed=7, player_count=7)
+    game.initialize()
+    guard = next(player for player in game.state.players if player.role == Role.GUARD)
+    target = next(player for player in game.state.players if player.id != guard.id)
+    game.state.phase = Phase.NIGHT_GUARD_ACTION
+    game._log(
+        EventType.NIGHT_ACTION,
+        "public",
+        {
+            "actor_id": guard.id,
+            "actor_name": guard.name,
+            "action_type": "guard",
+            "target_id": target.id,
+            "target": target.public_dict(),
+            "reasoning": "守护关键神职",
+        },
+    )
+
+    public_event = game.state.snapshot(show_private=False)["events"][-1]
+    private_event = game.state.snapshot(show_private=True)["events"][-1]
+
+    assert public_event["phase"] == Phase.NIGHT_START.value
+    assert public_event["payload"] == {"message": "行动完毕"}
+    assert private_event["phase"] == Phase.NIGHT_GUARD_ACTION.value
+    assert private_event["payload"]["actor_id"] == guard.id
+    assert private_event["payload"]["target_id"] == target.id
+    assert private_event["payload"]["reasoning"] == "守护关键神职"
 
 
 def test_day_vote_tie_enters_pk_and_resolves() -> None:

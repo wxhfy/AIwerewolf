@@ -187,7 +187,20 @@ def play_game_payload(
     configure_experiment_env()
     started = time.perf_counter()
     game = WerewolfGame(seed=seed, player_count=player_count)
-    state = game.play()
+    try:
+        state = game.play()
+    except Exception as exc:
+        state = game.state
+        payload = build_game_metrics_payload(state, started)
+        payload["error"] = str(exc)
+        payload["error_type"] = type(exc).__name__
+        payload["traceback"] = traceback_tail()
+        return payload
+    return build_game_metrics_payload(state, started)
+
+
+def build_game_metrics_payload(state: Any, started: float) -> dict[str, Any]:
+    """Build serializable game metrics from completed or failed game state."""
     winner = state.winner.value if hasattr(state.winner, "value") else str(state.winner)
     decisions = list(getattr(state, "decision_records", []) or [])
     fallback_decisions = sum(1 for record in decisions if record_is_fallback(record))

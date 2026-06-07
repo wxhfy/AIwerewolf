@@ -1247,8 +1247,12 @@ class AgentLoop:
                 or ""
             )
             result["target"] = str(raw_target)
-            if not result["target"] and obs is not None:
-                result["target"] = self._extract_named_legal_target(json.dumps(data, ensure_ascii=False), obs)
+            if obs is not None:
+                target_text = json.dumps(data, ensure_ascii=False)
+                if result["target"]:
+                    target_text = f"{result['target']}\n{target_text}"
+                legal_target = self._extract_named_legal_target(target_text, obs)
+                result["target"] = legal_target
             result["reasoning"] = str(data.get("reasoning") or data.get("reason") or "")
         return result
 
