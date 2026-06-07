@@ -718,9 +718,13 @@ class AgentLoop:
                     "type": "string",
                     "description": "简短说明发言重点和依据。",
                 },
+                "tentative_vote": {
+                    "type": "string",
+                    "description": "你目前倾向投票放逐谁？用'X号:名字'格式。如果发言中提到了明确的投票倾向就填，否则留空。仅用于加速后续投票，投票阶段可以改。",
+                },
             }
             required = ["speech", "reasoning"]
-            description = "提交本次发言的最终决策。"
+            description = "提交本次发言的最终决策。可选给出暂定投票倾向。"
         else:
             properties = {
                 "target": {

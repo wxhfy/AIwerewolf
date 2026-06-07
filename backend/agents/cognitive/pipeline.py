@@ -69,6 +69,7 @@ class Pipeline:
         self._retrieval_policy = retrieval_policy
         self._player_id = player_id
         self._cached_analysis: str = ""
+        self._tentative_vote: Dict[str, str] = {}  # {target, reasoning} from speech for vote reuse
 
     # ================================================================
     # Public API (called by CognitiveAgent)
@@ -114,6 +115,10 @@ class Pipeline:
         """Single LLM call for special actions (shoot, boom, badge transfer)."""
         return self._call_legacy(self._system_prompt, user_prompt, max_tokens=max_tokens)
 
+    def get_tentative_vote(self) -> Dict[str, str]:
+        """Return the tentative vote captured from the last speech (Plan A optimisation)."""
+        return dict(self._tentative_vote)
+
     # ================================================================
     # Agent Loop (new)
     # ================================================================
@@ -145,6 +150,12 @@ class Pipeline:
         speech = result.get("speech", "")
         reasoning = result.get("reasoning", "")
         self._cached_analysis = reasoning
+        # ── Optimisation: capture tentative vote from speech for vote-phase reuse ──
+        tentative = result.get("tentative_vote", "")
+        if tentative and isinstance(tentative, str):
+            self._tentative_vote = {"raw": tentative}
+        else:
+            self._tentative_vote = {}
         return {"speech": speech, "reasoning": reasoning}
 
     def _run_loop_vote(

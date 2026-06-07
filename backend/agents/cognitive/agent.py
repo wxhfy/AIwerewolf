@@ -228,13 +228,40 @@ class CognitiveAgent:
 
     def vote(self) -> Decision:
         obs = self._observe()
+        legal_target_ids = {player.id for player in obs.legal_targets}
+
+        # ── Optimisation: skip LLM when there is only one legal target ──
+        if len(legal_target_ids) == 1:
+            only_target_id = next(iter(legal_target_ids))
+            only_target = obs.legal_targets[0]
+            reasoning = f"唯一合法目标 {only_target.seat}号:{only_target.name}，无需LLM决策"
+            self.memory.add_action("vote", only_target_id, f"投{only_target_id}", reasoning)
+            self._detect_speech_vote_mismatch()
+            active = self.memory.planner.get_active(self.memory.day, self.memory.phase)
+            if active and "VOTE" in active.target_phase:
+                self.memory.planner.mark_executed(self.memory.day, self.memory.phase)
+            return self._decision(ActionType.VOTE, target_id=only_target_id, reasoning=reasoning)
+
+        # ── Optimisation: reuse tentative_vote from speech if nothing changed ──
+        tentative = self._pipeline.get_tentative_vote()
+        if tentative and tentative.get("raw"):
+            tentative_target = self._resolve_target(tentative["raw"])
+            if tentative_target and tentative_target in legal_target_ids:
+                if not self._has_meaningful_new_info_since_speech(obs):
+                    reasoning = f"发言立场未变: 投{tentative_target}（" + tentative["raw"] + "）"
+                    self.memory.add_action("vote", tentative_target, f"投{tentative_target}", reasoning)
+                    self._detect_speech_vote_mismatch()
+                    active = self.memory.planner.get_active(self.memory.day, self.memory.phase)
+                    if active and "VOTE" in active.target_phase:
+                        self.memory.planner.mark_executed(self.memory.day, self.memory.phase)
+                    return self._decision(ActionType.VOTE, target_id=tentative_target, reasoning=reasoning)
+
         result = self._pipeline.run_vote(
             obs,
             self.memory,
             vote_temperature=self._humanization.vote_temperature,
         )
         target_id = self._resolve_target(result["target"])
-        legal_target_ids = {player.id for player in obs.legal_targets}
         if legal_target_ids and target_id not in legal_target_ids:
             target_id = None
         if not target_id and obs.legal_targets and self._is_fake_llm_provider():
@@ -280,10 +307,20 @@ class CognitiveAgent:
                     self._wolf_team_view = None
 
         obs = self._observe()
+        legal_target_ids = {player.id for player in obs.legal_targets}
+
+        # ── Optimisation: skip LLM when there is only one legal target ──
+        if len(legal_target_ids) == 1:
+            only_target = obs.legal_targets[0]
+            reasoning = f"唯一合法击杀目标 {only_target.seat}号:{only_target.name}，无需LLM决策"
+            return self._night_decision(
+                {"target": only_target.id, "reasoning": reasoning}, ActionType.ATTACK
+            )
+
         extra = self._build_wolf_extra()
         result = self._pipeline.run_night(obs, self.memory, extra)
 
-        # Mark strategic intent as executed if this is the target phase
+        # Mark strategic intent as executed if this was the target phase
         active = self.memory.planner.get_active(self.memory.day, self.memory.phase)
         if active and "NIGHT" in active.target_phase and "WOLF" in active.target_phase:
             self.memory.planner.mark_executed(self.memory.day, self.memory.phase)
@@ -292,6 +329,16 @@ class CognitiveAgent:
 
     def divine(self) -> Decision:
         obs = self._observe()
+        legal_target_ids = {player.id for player in obs.legal_targets}
+
+        # ── Optimisation: skip LLM when there is only one legal target ──
+        if len(legal_target_ids) == 1:
+            only_target = obs.legal_targets[0]
+            reasoning = f"唯一合法查验目标 {only_target.seat}号:{only_target.name}，无需LLM决策"
+            return self._night_decision(
+                {"target": only_target.id, "reasoning": reasoning}, ActionType.DIVINE
+            )
+
         result = self._pipeline.run_night(obs, self.memory)
         return self._night_decision(result, ActionType.DIVINE)
 
@@ -302,6 +349,18 @@ class CognitiveAgent:
         else:
             extra = "第一晚守护，没有历史限制。"
         obs = self._observe()
+        legal_target_ids = {player.id for player in obs.legal_targets}
+
+        # ── Optimisation: skip LLM when there is only one legal target ──
+        if len(legal_target_ids) == 1:
+            only_target = obs.legal_targets[0]
+            reasoning = f"唯一合法守护目标 {only_target.seat}号:{only_target.name}，无需LLM决策"
+            self._guard_history.append(only_target.id)
+            self.memory.role_state.setdefault("protections", []).append(f"D{self.memory.day}: {only_target.id}")
+            return self._night_decision(
+                {"target": only_target.id, "reasoning": reasoning}, ActionType.GUARD
+            )
+
         result = self._pipeline.run_night(obs, self.memory, extra)
         if result["target"]:
             self._guard_history.append(result["target"])
@@ -309,6 +368,10 @@ class CognitiveAgent:
         return self._night_decision(result, ActionType.GUARD)
 
     def witch_act(self, victim_id: Optional[str]) -> List[Decision]:
+        # ── Optimisation: skip LLM when no potions available ──
+        if self._witch_save_used and self._witch_poison_used:
+            return [self._decision(ActionType.SKIP, reasoning="双药已用，无需LLM决策")]
+
         lines = []
         if self._witch_save_used:
             lines.append("解药已使用")
@@ -597,6 +660,59 @@ class CognitiveAgent:
     def _is_fake_llm_provider(self) -> bool:
         provider = str(getattr(self._llm, "provider", "") or "").strip().lower()
         return provider in {"fake", "fake_llm", "offline_llm"}
+
+    def _has_meaningful_new_info_since_speech(self, obs) -> bool:
+        """Check if there are meaningful new events since this agent's last speech.
+
+        Returns True if there's a reason to re-evaluate the vote (new role claims,
+        being accused, etc.). Returns False when it's safe to reuse the tentative vote.
+
+        Used by Plan A optimisation (speech→vote skip).
+        """
+        my_speeches = [
+            s for s in obs.speeches if s.player_id == self.player_id
+        ]
+        if not my_speeches:
+            # Agent hasn't spoken yet this day → must call LLM
+            return True
+        my_last_speech = my_speeches[-1]
+
+        # Check for speeches AFTER this agent's last speech
+        later_speeches = [
+            s for s in obs.speeches
+            if s.player_id != self.player_id
+            and obs.speeches.index(s) > obs.speeches.index(my_last_speech)
+        ]
+
+        for speech in later_speeches:
+            content = speech.content.lower()
+            # Someone claimed a power role (预言家/女巫/守卫/猎人/白痴)
+            for role_claim_kw in [
+                "我是预言家", "我是女巫", "我是守卫", "我是猎人", "我是白痴",
+                "我跳预言家", "我起跳", "查了", "查验", "查杀",
+            ]:
+                if role_claim_kw in content:
+                    return True
+            # Someone accused this agent specifically
+            my_name = self.player_name.lower()
+            if my_name and my_name in content:
+                for accuse_kw in ["是狼", "查杀", "怀疑", "投", "出"]:
+                    if accuse_kw in content:
+                        return True
+            # Major event: self-explosion, badge transfer, etc.
+            for event_kw in ["自爆", "翻牌"]:
+                if event_kw in content:
+                    return True
+
+        # Check for new role claims from belief tracker
+        for claim in getattr(obs, "role_claims", []) or []:
+            if (
+                claim.player_name != self.player_name
+                and "预言家" in str(getattr(claim, "claimed_role", "") or "")
+            ):
+                return True
+
+        return False
 
     def _decision(
         self,
