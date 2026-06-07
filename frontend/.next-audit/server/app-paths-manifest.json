@@ -1,0 +1,10 @@
+{
+  "/_not-found/page": "app/_not-found/page.js",
+  "/evolution/page": "app/evolution/page.js",
+  "/games/[id]/report/page": "app/games/[id]/report/page.js",
+  "/page": "app/page.js",
+  "/room/[id]/human/page": "app/room/[id]/human/page.js",
+  "/personas/page": "app/personas/page.js",
+  "/room/[id]/play/page": "app/room/[id]/play/page.js",
+  "/eval/dashboard/page": "app/eval/dashboard/page.js"
+}

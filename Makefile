@@ -7,9 +7,26 @@
 # ============================================================================
 
 PYTHON  ?= python
-PORT    ?= 8000
+ENV_FILE ?= .env
+APP_HOST ?= $(shell sed -n 's/^APP_HOST=//p' $(ENV_FILE) 2>/dev/null | tail -1)
+APP_HOST := $(or $(APP_HOST),0.0.0.0)
+BACKEND_PORT ?= $(shell sed -n 's/^BACKEND_PORT=//p' $(ENV_FILE) 2>/dev/null | tail -1)
+BACKEND_PORT := $(or $(BACKEND_PORT),8000)
+FRONTEND_PORT ?= $(shell sed -n 's/^FRONTEND_PORT=//p' $(ENV_FILE) 2>/dev/null | tail -1)
+FRONTEND_PORT := $(or $(FRONTEND_PORT),3001)
+POSTGRES_PORT ?= $(shell sed -n 's/^POSTGRES_PORT=//p' $(ENV_FILE) 2>/dev/null | tail -1)
+POSTGRES_PORT := $(or $(POSTGRES_PORT),5433)
+POSTGRES_USER ?= $(shell sed -n 's/^POSTGRES_USER=//p' $(ENV_FILE) 2>/dev/null | tail -1)
+POSTGRES_USER := $(or $(POSTGRES_USER),werewolf)
+POSTGRES_PASSWORD ?= $(shell sed -n 's/^POSTGRES_PASSWORD=//p' $(ENV_FILE) 2>/dev/null | tail -1)
+POSTGRES_PASSWORD := $(or $(POSTGRES_PASSWORD),wolf_secret_2026)
+POSTGRES_DB ?= $(shell sed -n 's/^POSTGRES_DB=//p' $(ENV_FILE) 2>/dev/null | tail -1)
+POSTGRES_DB := $(or $(POSTGRES_DB),werewolf)
+NGINX_PORT ?= $(shell sed -n 's/^NGINX_PORT=//p' $(ENV_FILE) 2>/dev/null | tail -1)
+NGINX_PORT := $(or $(NGINX_PORT),80)
+PORT    ?= $(BACKEND_PORT)
 SEED    ?= 7
-COMPOSE := docker compose
+COMPOSE := docker compose --env-file $(ENV_FILE)
 
 # ------------------------------------------------------------------
 # 🚀  One-command Deploy
@@ -23,9 +40,9 @@ deploy: .env
 	$(COMPOSE) up -d --build --wait
 	@echo ""
 	@echo "✅  Deploy complete!"
-	@echo "    Frontend : http://localhost"
-	@echo "    API      : http://localhost/api"
-	@echo "    Swagger  : http://localhost/api/docs"
+	@echo "    Frontend : http://localhost:$(NGINX_PORT)"
+	@echo "    API      : http://localhost:$(NGINX_PORT)/api"
+	@echo "    Swagger  : http://localhost:$(NGINX_PORT)/api/docs"
 
 deploy-dev: .env
 	@echo "🐺  AI Werewolf — Dev Deploy (hot-reload)"
@@ -33,8 +50,8 @@ deploy-dev: .env
 	$(COMPOSE) --profile dev up -d --build
 	@echo ""
 	@echo "✅  Dev deploy complete!"
-	@echo "    Backend  : http://localhost:8000"
-	@echo "    Frontend : http://localhost:3001"
+	@echo "    Backend  : http://localhost:$(BACKEND_PORT)"
+	@echo "    Frontend : http://localhost:$(FRONTEND_PORT)"
 
 deploy-down:
 	$(COMPOSE) down -v
@@ -57,6 +74,9 @@ install:
 
 dev:
 	$(PYTHON) -m uvicorn backend.app:app --host 0.0.0.0 --port $(PORT) --reload
+
+frontend-dev:
+	cd frontend && PORT=$(FRONTEND_PORT) npm run dev
 
 demo:
 	$(PYTHON) -m backend.run_demo --seed $(SEED)
@@ -87,16 +107,16 @@ format:
 db-up:
 	docker start werewolf-pg 2>/dev/null || \
 	docker run -d --name werewolf-pg --restart unless-stopped \
-	  -e POSTGRES_USER=werewolf -e POSTGRES_PASSWORD=wolf_secret_2026 \
-	  -e POSTGRES_DB=werewolf \
-	  -p 5433:5432 -v werewolf-pg-data:/var/lib/postgresql/data \
+	  -e POSTGRES_USER=$(POSTGRES_USER) -e POSTGRES_PASSWORD=$(POSTGRES_PASSWORD) \
+	  -e POSTGRES_DB=$(POSTGRES_DB) \
+	  -p $(POSTGRES_PORT):5432 -v werewolf-pg-data:/var/lib/postgresql/data \
 	  postgres:16-alpine
 
 db-down:
 	docker stop werewolf-pg || true
 
 db-shell:
-	docker exec -it werewolf-pg psql -U werewolf -d werewolf
+	docker exec -it werewolf-pg psql -U $(POSTGRES_USER) -d $(POSTGRES_DB)
 
 db-init:
 	$(PYTHON) -c "from backend.db.database import init_db; init_db(); print('Schema created')"
@@ -137,6 +157,7 @@ help:
 	@echo "🛠  Development"
 	@echo "  make install         — pip install + npm install"
 	@echo "  make dev             — start FastAPI (reload, port $(PORT))"
+	@echo "  make frontend-dev    — start Next.js (port $(FRONTEND_PORT))"
 	@echo "  make demo            — one offline AI vs AI game (seed=$(SEED))"
 	@echo ""
 	@echo "🧪  Testing"
