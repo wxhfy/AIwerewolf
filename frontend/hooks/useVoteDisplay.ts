@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import { GameState } from "@/types";
-import { isMergedChatSegment } from "@/lib/eventFilter";
+import { isRevealBlockingChat } from "@/lib/eventFilter";
 
 export type VoteDisplayMode =
   | { type: "HIDDEN" }
@@ -52,7 +52,7 @@ export function useVoteDisplay(
     for (let i = 0; i < events.length; i++) {
       const e = events[i];
       if (e.type === "CHAT_MESSAGE") {
-        if (isMergedChatSegment(e, prevActor, prevPhase)) continue;
+        if (!isRevealBlockingChat(e, prevActor, prevPhase)) continue;
         prevActor = (e.payload as any)?.actor_id || "";
         prevPhase = e.phase || "";
         if (!completedIds.has(e.id)) {

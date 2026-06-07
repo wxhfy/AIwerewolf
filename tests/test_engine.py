@@ -181,6 +181,71 @@ def test_llm_empty_day_speech_raises_instead_of_skipping() -> None:
     assert not any(event.type.value == "CHAT_MESSAGE" for event in game.state.events)
 
 
+def test_public_snapshot_hides_specific_night_actions() -> None:
+    players = [
+        Player(id="G1", seat=1, name="Guard", role=Role.GUARD, alignment=Alignment.VILLAGE),
+        Player(id="S1", seat=2, name="Seer", role=Role.SEER, alignment=Alignment.VILLAGE),
+        Player(id="W1", seat=3, name="Wolf", role=Role.WEREWOLF, alignment=Alignment.WOLF),
+        Player(id="V1", seat=4, name="Villager", role=Role.VILLAGER, alignment=Alignment.VILLAGE),
+    ]
+    game = WerewolfGame(players=players, agents={p.id: object() for p in players}, seed=7)
+    game.state.day = 1
+
+    def scripted_ask(player, request, call, many=False):
+        if request == "GUARD":
+            return Decision(player.id, ActionType.GUARD, target_id="G1", reasoning="guard self")
+        if request == "DIVINE":
+            return Decision(player.id, ActionType.DIVINE, target_id="W1", reasoning="check wolf")
+        raise AssertionError(request)
+
+    game._ask = scripted_ask  # type: ignore[assignment]
+    game._guard_phase()
+    game._seer_phase()
+
+    public_night_actions = [
+        event
+        for event in game.state.public_dict()["events"]
+        if event["type"] == "NIGHT_ACTION" and str(event["phase"]).startswith("NIGHT_")
+    ]
+    private_night_actions = [
+        event
+        for event in game.state.moderator_dict()["events"]
+        if event["type"] == "NIGHT_ACTION" and event["visibility"] == "private"
+    ]
+
+    assert public_night_actions
+    assert {event["payload"].get("action_type") for event in private_night_actions} >= {"guard", "divine"}
+    for event in public_night_actions:
+        assert event["payload"] == {"message": "行动完毕", "phase": event["phase"]}
+        assert "actor_name" not in event["payload"]
+        assert "target" not in event["payload"]
+        assert "reasoning" not in event["payload"]
+
+
+def test_emit_speech_sanitizes_internal_planning_and_preserves_segments() -> None:
+    players = [
+        Player(id="P1", seat=1, name="A", role=Role.SEER, alignment=Alignment.VILLAGE),
+        Player(id="P2", seat=2, name="B", role=Role.WEREWOLF, alignment=Alignment.WOLF),
+        Player(id="P3", seat=3, name="C", role=Role.VILLAGER, alignment=Alignment.VILLAGE),
+    ]
+    game = WerewolfGame(players=players, agents={p.id: object() for p in players}, seed=17)
+    game.state.day = 1
+    game.state.phase = Phase.DAY_SPEECH
+    decision = Decision(
+        "P1",
+        ActionType.TALK,
+        speech="好的，我分析清楚了局势。现在我是唯一跳预言家的，无人对跳。\n\n让我看看投票的详细信息。\n\n我今天先报查验：2号是查杀。大家投票不要分散。",
+        metadata={"source": "llm"},
+    )
+
+    game._emit_speech(players[0], decision, {})
+    speeches = [event.payload["speech"] for event in game.state.events if event.type == EventType.CHAT_MESSAGE]
+
+    assert speeches == ["我今天先报查验：2号是查杀。大家投票不要分散。"]
+    assert "分析清楚" not in "\n".join(speeches)
+    assert "让我看看" not in "\n".join(speeches)
+
+
 def test_human_pending_input_options_match_legal_targets() -> None:
     players = [
         Player(id="W1", seat=1, name="WolfOne", role=Role.WEREWOLF, alignment=Alignment.WOLF),

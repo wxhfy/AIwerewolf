@@ -7,7 +7,7 @@ import { fetchRoom, startRoom, submitHumanAction } from "@/lib/gameApi";
 import { apiUrl } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { placeholderPlayers } from "@/lib/gameView";
-import { isMergedChatSegment } from "@/lib/eventFilter";
+import { isRevealBlockingChat } from "@/lib/eventFilter";
 import { EventType, Player, ViewMode } from "@/types";
 import { useAutoScroll } from "@/hooks/useAutoScroll";
 import { useGameDerivedState } from "@/hooks/useGameDerivedState";
@@ -116,30 +116,6 @@ export function useGamePageController(roomId: string) {
     setCompletedTick((n) => n + 1);
   }, []);
 
-  useEffect(() => {
-    const events = gameState?.events;
-    if (!events) return;
-
-    let changed = false;
-    let prevActor = "";
-    let prevPhase = "";
-    for (const event of events) {
-      if (event.type !== EventType.CHAT_MESSAGE) {
-        prevActor = "";
-        prevPhase = "";
-        continue;
-      }
-      if (isMergedChatSegment(event, prevActor, prevPhase)) continue;
-      prevActor = (event.payload as any)?.actor_id || "";
-      prevPhase = event.phase || "";
-      if (!completedIdsRef.current.has(event.id)) {
-        completedIdsRef.current.add(event.id);
-        changed = true;
-      }
-    }
-    if (changed) setCompletedTick((n) => n + 1);
-  }, [gameState?.events]);
-
   const currentDialogueChat = useMemo(() => {
     const events = gameState?.events;
     if (!events) return null;
@@ -152,7 +128,7 @@ export function useGamePageController(roomId: string) {
         prevPhase = "";
         continue;
       }
-      if (isMergedChatSegment(event, prevActor, prevPhase)) continue;
+      if (!isRevealBlockingChat(event, prevActor, prevPhase)) continue;
       prevActor = (event.payload as any)?.actor_id || "";
       prevPhase = event.phase || "";
       if (!completedIdsRef.current.has(event.id)) return event;
@@ -296,7 +272,7 @@ export function useGamePageController(roomId: string) {
     setStatusTitle(t("statusStreaming", language));
     setGameState(null);
     try {
-      const snapshot = await startRoom(roomId);
+      const snapshot = await startRoom(roomId, viewMode === ViewMode.MODERATOR);
       setGameState(snapshot);
       if (snapshot.winner) {
         setIsPlaying(false);
@@ -392,10 +368,8 @@ export function useGamePageController(roomId: string) {
   // chat messages from the previous phase have been fully typed out.
   // 游戏结束后直接返回真实阶段，不再追踪打字机进度。
   //
-  // ⚠️  合并段跳过：EventTimeline.mergeConsecutiveChats 会把同玩家同 phase 的
-  // 连续 CHAT_MESSAGE 合并成一个气泡（只保留第一个 segment 的 ID）。
-  // completedIds 里只有第一个 segment 的 ID，后续 segment 永远不会被标记完成。
-  // 因此 displayPhase 必须在遍历时跳过这些合并段，否则会被第二段永久阻塞。
+  // Explicit multi-segment speeches block one segment at a time; legacy
+  // same-actor same-phase chat events may still be visually merged and skipped.
   const displayPhase = useMemo(() => {
     const events = gameState?.events;
     if (!events) return gameState?.phase;
@@ -409,7 +383,7 @@ export function useGamePageController(roomId: string) {
     let blockingPhase: string | undefined;
     for (const e of events) {
       if (e.type === EventType.CHAT_MESSAGE) {
-        if (isMergedChatSegment(e, prevActor, prevPhase)) continue;
+        if (!isRevealBlockingChat(e, prevActor, prevPhase)) continue;
         prevActor = (e.payload as any)?.actor_id || "";
         prevPhase = e.phase || "";
         if (!completed.has(e.id)) {

@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import queue
+import re
 from collections import Counter
 from random import Random
 from typing import Any
@@ -12,6 +13,20 @@ from typing import Callable
 from uuid import uuid4
 
 logger = logging.getLogger(__name__)
+
+_SENTENCE_RE = re.compile(r"[^。！？!?；;\n]+[。！？!?；;]?")
+_SPEECH_META_MARKERS = (
+    "我分析清楚了局势",
+    "我已经分析清楚",
+    "我需要发言",
+    "需要发言巩固",
+    "让我看看",
+    "我先看看",
+    "现在轮到我发言",
+    "轮到我发言",
+    "我应该",
+    "我会发言",
+)
 
 from backend.agents.base import Agent
 from backend.agents.characters import build_character_roster
@@ -87,6 +102,80 @@ def _phase_already_past(current: Phase, target: Phase) -> bool:
         Phase.GAME_END: 20,
     }
     return _ORDER.get(current, 0) > _ORDER.get(target, 0)
+
+
+def _strip_public_speech_artifacts(text: str) -> str:
+    """Remove common LLM planning wrappers from text shown as public speech."""
+    cleaned = str(text or "").strip()
+    if not cleaned:
+        return ""
+
+    if cleaned.startswith("```"):
+        lines = cleaned.splitlines()
+        if lines and lines[-1].strip() == "```":
+            lines = lines[1:-1]
+        else:
+            lines = lines[1:]
+        cleaned = "\n".join(lines).strip()
+
+    for prefix in ("发言：", "发言:", "我说：", "我说:", "公开发言：", "公开发言:", "speech：", "speech:"):
+        if cleaned.lower().startswith(prefix.lower()):
+            cleaned = cleaned[len(prefix) :].strip()
+
+    if (cleaned.startswith('"') and cleaned.endswith('"')) or (cleaned.startswith("'") and cleaned.endswith("'")):
+        cleaned = cleaned[1:-1].strip()
+    if cleaned.startswith("“") and cleaned.endswith("”"):
+        cleaned = cleaned[1:-1].strip()
+
+    lines = [line.strip() for line in cleaned.replace("\r\n", "\n").split("\n")]
+    kept: list[str] = []
+    for line in lines:
+        if not line:
+            if kept and kept[-1]:
+                kept.append("")
+            continue
+        normalized = line.strip(" -_*#")
+        if any(marker in normalized for marker in _SPEECH_META_MARKERS):
+            continue
+        if normalized.startswith(("好的，", "好的,", "好，")) and any(
+            marker in normalized for marker in ("分析", "局势", "现在我是", "需要")
+        ):
+            continue
+        if normalized.startswith(("思考：", "思考:", "分析：", "分析:", "推理：", "推理:")):
+            continue
+        kept.append(line)
+
+    cleaned = "\n".join(kept).strip()
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    return cleaned
+
+
+def _split_public_speech_segment(text: str, max_chars: int = 140) -> list[str]:
+    cleaned = _strip_public_speech_artifacts(text)
+    if not cleaned:
+        return []
+    paragraphs = [part.strip() for part in re.split(r"\n{2,}", cleaned) if part.strip()]
+    if not paragraphs:
+        paragraphs = [cleaned]
+    segments: list[str] = []
+    for paragraph in paragraphs:
+        if len(paragraph) <= max_chars:
+            segments.append(paragraph)
+            continue
+        buffer = ""
+        sentences = [match.group(0).strip() for match in _SENTENCE_RE.finditer(paragraph) if match.group(0).strip()]
+        if not sentences:
+            segments.append(paragraph)
+            continue
+        for sentence in sentences:
+            if buffer and len(buffer) + len(sentence) > max_chars:
+                segments.append(buffer.strip())
+                buffer = sentence
+            else:
+                buffer += sentence
+        if buffer.strip():
+            segments.append(buffer.strip())
+    return segments
 
 
 class GamePaused(RuntimeError):
@@ -708,7 +797,7 @@ class WerewolfGame:
         with self._shared_lock:
             self.state.night_actions.guard_target_id = decision.target_id
             self.state.night_actions.last_guard_target_id = decision.target_id
-        self._log_decision(decision, "public", {"target_id": decision.target_id})
+        self._log_decision(decision, "private", {"target_id": decision.target_id}, [guard.id])
         self._log_night_phase_completed(Phase.NIGHT_GUARD_ACTION)
         self._mark_phase_done(Phase.NIGHT_GUARD_ACTION)
 
@@ -841,7 +930,7 @@ class WerewolfGame:
                     with self._shared_lock:
                         self.state.abilities.witch_heal_used = True
                         self.state.night_actions.witch_save = True
-                    self._log_decision(decision, "public", {"target_id": decision.target_id})
+                    self._log_decision(decision, "private", {"target_id": decision.target_id}, [witch.id])
                 else:
                     if self._requires_strict_llm_decision(witch, decision):
                         self._raise_invalid_llm_decision(
@@ -866,7 +955,7 @@ class WerewolfGame:
                     with self._shared_lock:
                         self.state.abilities.witch_poison_used = True
                         self.state.night_actions.witch_poison_target_id = decision.target_id
-                    self._log_decision(decision, "public", {"target_id": decision.target_id})
+                    self._log_decision(decision, "private", {"target_id": decision.target_id}, [witch.id])
                 else:
                     if self._requires_strict_llm_decision(witch, decision):
                         self._raise_invalid_llm_decision(
@@ -877,7 +966,7 @@ class WerewolfGame:
                         )
                     logger.warning(f"Witch {witch.name} poison rejected: validator failed")
             elif decision.action_type == ActionType.SKIP:
-                self._log_decision(decision, "public", {"skipped": True})
+                self._log_decision(decision, "private", {"skipped": True}, [witch.id])
             elif self._requires_strict_llm_decision(witch, decision):
                 self._raise_invalid_llm_decision(
                     witch,
@@ -919,7 +1008,7 @@ class WerewolfGame:
         with self._shared_lock:
             self.state.night_actions.seer_target_id = target.id
             self.state.night_actions.seer_result = result
-        self._log_decision(decision, "public", {"target_id": target.id}, [seer.id])
+        self._log_decision(decision, "private", {"target_id": target.id}, [seer.id])
         self._log(EventType.PRIVATE_INFO, "private", result, visible_to=[seer.id])
         self._log_night_phase_completed(Phase.NIGHT_SEER_ACTION)
         self._mark_phase_done(Phase.NIGHT_SEER_ACTION)
@@ -1269,9 +1358,14 @@ class WerewolfGame:
         """Emit CHAT_MESSAGE events. Uses pre-parsed segments from metadata if available."""
         raw_segments = decision.metadata.get("segments")
         if raw_segments and isinstance(raw_segments, list) and len(raw_segments) > 0:
-            segments = [str(s) for s in raw_segments]
+            source_segments = [str(s) for s in raw_segments]
         else:
-            segments = [decision.speech or ""]
+            source_segments = [decision.speech or ""]
+        segments: list[str] = []
+        for source in source_segments:
+            segments.extend(_split_public_speech_segment(source))
+        if not segments:
+            segments = ["过。"]
         for i, segment in enumerate(segments):
             payload = {
                 "actor_id": player.id,

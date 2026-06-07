@@ -137,7 +137,7 @@ export default function LobbyPage() {
     try {
       const room = await createRoom({ seed, playerCount, agentType: AgentType.LLM, mode, humanSeat });
       setCreatedRoom(room);
-      if (mode === "ai") setPrepareSnapshot(await prepareRoom(room.id));
+      if (mode === "ai") setPrepareSnapshot(await prepareRoom(room.id, viewMode === ViewMode.MODERATOR));
       setShowModal(true);
     } catch (e) { setError(getErrorMessage(e, "创建房间失败")); }
     finally { setIsCreating(false); }
@@ -155,7 +155,7 @@ export default function LobbyPage() {
     if (!createdRoom) return;
     setIsStarting(true); setError("");
     try {
-      setGameState(prepareSnapshot ?? await prepareRoom(createdRoom.id));
+      setGameState(prepareSnapshot ?? await prepareRoom(createdRoom.id, viewMode === ViewMode.MODERATOR));
       const gamePath = mode === "human"
         ? `/room/${createdRoom.id}/human?human_seat=${humanSeat}&mode=human`
         : `/room/${createdRoom.id}/play?mode=ai`;

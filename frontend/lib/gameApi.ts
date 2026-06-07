@@ -50,14 +50,14 @@ export async function createRoom({ seed, playerCount, agentType, mode, humanSeat
   return parseJson<RoomRecord>(response);
 }
 
-export async function prepareRoom(roomId: string): Promise<GameState> {
-  const response = await fetchWithTimeout(apiUrl(`/api/rooms/${roomId}/prepare?show_private=true`), { method: "POST" });
+export async function prepareRoom(roomId: string, showPrivate = false): Promise<GameState> {
+  const response = await fetchWithTimeout(apiUrl(`/api/rooms/${roomId}/prepare?show_private=${showPrivate ? "true" : "false"}`), { method: "POST" });
   if (!response.ok) throw new Error(`Prepare failed (${response.status})`);
   return parseJson<GameState>(response);
 }
 
-export async function startRoom(roomId: string): Promise<GameState> {
-  const response = await fetchWithTimeout(apiUrl(`/api/rooms/${roomId}/start?show_private=true`), { method: "POST" });
+export async function startRoom(roomId: string, showPrivate = false): Promise<GameState> {
+  const response = await fetchWithTimeout(apiUrl(`/api/rooms/${roomId}/start?show_private=${showPrivate ? "true" : "false"}`), { method: "POST" });
   if (!response.ok) throw new Error(`Start failed (${response.status})`);
   return parseJson<GameState>(response);
 }

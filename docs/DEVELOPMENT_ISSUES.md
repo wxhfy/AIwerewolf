@@ -368,6 +368,14 @@ updated: 2026-06-03
 - **涉及文件 / 模块**：`tests/ui_smoke.mjs`、`frontend/app/page.tsx`、`frontend/components/SettingsModal.tsx`。
 - **教训**：端到端测试要验证真实用户路径；当 UI 控制入口被收敛到设置页时，smoke 不能继续依赖旧的快捷按钮。
 
+### 问题 B22：底部打字机丢失 + 日志分段和公开夜晚泄露
+- **发生时间 / Session**：2026-06-07 ｜ Codex goal continuation
+- **现象**：用户反馈底部大聊天气泡消失，打字机和分段没有体现在底部发言里；日志中多段发言挤在同一个大块里，而不是每段一个小气泡；普通观众视角仍能看到“某某守护/查验/用药了谁”以及行动理由；白天发言偶发空缺，并出现“好的，我分析清楚了局势 / 让我看看投票信息”这类内部规划句和文本截断。
+- **根因**：前端 `completedIds` reveal 队列曾被改成收到 `CHAT_MESSAGE` 后立即完成，导致底部 `BottomDialogueDock` 不再承担打字机播放；多个派生点对 `segment_total > 1` 的处理不一致，部分地方仍把分段当作可合并或可跳过事件；观众视角的准备/开始接口固定请求 `show_private=true`，即使渲染层过滤也已经拿到全量事件；后端夜间守卫/女巫/预言家的具体行动用 public `NIGHT_ACTION` 记录；公开发言输出缺少引擎层兜底清洗，LLM raw/free-text 路径可能把内部计划句写进 `CHAT_MESSAGE`；投票理由 UI 仍有 `slice(0, 60)` 的硬截断。
+- **解决方案**：恢复底部 `BottomDialogueDock` 为当前未完成发言段的唯一打字机入口，日志只归档 `completedIds` 中已播完的发言；新增 `isRevealBlockingChat()` 统一控制多段发言 reveal，显式多段逐段阻塞，旧式连续同人同阶段发言才允许合并；日志里每个 `segment_total > 1` 段保留独立小气泡；`prepareRoom/startRoom` 按当前 `viewMode` 传 `show_private`，普通观众从接口层不拿 private 快照；夜间守卫/女巫/预言家的具体行动改为 private 事件，public 只保留“行动完毕”摘要；引擎 `_emit_speech()` 增加公开发言清洗和再切段，过滤常见内部规划句并兜底为“过。”；移除投票理由硬截断，改为完整换行展示。
+- **涉及文件 / 模块**：`backend/engine/game.py`、`frontend/lib/gameApi.ts`、`frontend/lib/eventFilter.ts`、`frontend/hooks/useGamePageController.ts`、`frontend/hooks/useGameDerivedState.ts`、`frontend/hooks/useVoteDisplay.ts`、`frontend/app/page.tsx`、`frontend/app/room/[id]/play/page.tsx`、`frontend/components/game/BottomDialogueDock.tsx`、`frontend/components/game/EventItem.tsx`、`frontend/components/game/BadgePanel.tsx`、`frontend/components/game/_speech/DayEventBlock.tsx`、`tests/test_engine.py`
+- **教训**：当前发言打字机、历史日志归档、公开信息隔离是三个独立边界，不能只在其中一层“看起来隐藏”；普通观众视角必须从请求源头使用 public snapshot，夜间公开日志只能包含主持人可播报的完成状态。
+
 ---
 
 ## §C. Agent / LLM 行为
@@ -1050,6 +1058,14 @@ updated: 2026-06-03
 - **解决方案**：对局页移除右上角视角切换和底部常驻发言 dock；日志直接完整显示已产生发言，不做打字机；public 夜间动作保留非敏感职业阶段用于“完成任务”提示；音乐按钮放右下角。
 - **涉及文件 / 模块**：`frontend/app/room/[id]/play/page.tsx`、`frontend/components/game/GameHeader.tsx`、`frontend/components/game/EventItem.tsx`、`backend/engine/models.py`
 - **教训**：对局页不要混入设置页职责；“日志”和“当前发言”是不同层级，公开夜晚必须只给结果级叙事。
+
+### 底部打字机与日志分段边界
+- **发生时间 / Session**：2026-06-07 ｜ Codex goal continuation
+- **现象**：用户纠正：底部大聊天气泡不能消失，打字机和分段都要体现在底部打字机里；日志里分段应每段一个小气泡，不能全部挤成一块；普通观众视角不能看到守护/查验/用药的具体目标和理由；发言里不能出现“我分析清楚了局势 / 让我看看投票”这类内部规划句，也不能截断。
+- **根因**：这是对上一轮“移除底部 dock、日志直接完整显示”的方向纠正，说明当前 Demo 的正确叙事模型应是：当前发言在底部逐段播放，播放完成后才归档到上方日志；日志是历史记录，但历史记录仍要保持分段小气泡。
+- **解决方案**：底部 `BottomDialogueDock` 作为当前发言唯一打字机入口；多段发言按 segment 逐段进入底部，完成后进入上方日志；普通观众接口和事件都只拿 public 信息；日志不截断投票理由和发言段。
+- **涉及文件 / 模块**：`frontend/components/game/BottomDialogueDock.tsx`、`frontend/components/game/_speech/DayEventBlock.tsx`、`frontend/lib/eventFilter.ts`、`backend/engine/game.py`
+- **教训**：用户对底部大气泡的要求是硬偏好，不是可选视觉方案；不要再把“移除底部打字机”当作简化路径。
 
 ### 关于规则正确性
 - **猎人死亡 → 开枪、遗言环节、信息隔离**一个都不能漏。
