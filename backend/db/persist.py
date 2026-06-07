@@ -1006,11 +1006,19 @@ def _upsert_strategy_knowledge_rows(db, docs: list[StrategyKnowledgeDocData]) ->
         if not action:
             continue
 
+        # Reject low-quality (noise from reflection/generic summaries)
+        if (doc.quality_score or 0) < 0.70:
+            continue
+
         # Reject English-only entries (no CJK characters)
         if not any("一" <= c <= "鿿" for c in action):
             continue
 
-        # Reject raw player records (contain player names in situation)
+        # Reject raw per-game summaries (not abstract strategies)
+        if "视角发现的规律" in sit or "完成了" in action or "本局作为" in action:
+            continue
+
+        # Reject raw player records
         if "对局教训" in sit or "对局总结" in sit:
             continue
 
