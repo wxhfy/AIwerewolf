@@ -18,15 +18,7 @@ interface KnowledgeDoc {
   doc_id: string; role: string; phase: string; doc_type: string;
   quality_score: number; usage_count: number; success_count: number; failure_count: number;
   status: string; recommended_action: string; situation_pattern: string;
-  rationale: string; evidence_summary: string; trigger_conditions: string[];
   confidence_tier: string;
-}
-
-interface Tournament {
-  tournament_id: string; baseline_version: string; candidate_version: string;
-  status: string; decision?: { action?: string };
-  comparison?: { candidate_camp_win_rate?: number; baseline_camp_win_rate?: number;
-    candidate_target_role_avg_score?: number; candidate_critical_mistakes_per_game?: number; };
 }
 
 interface AcceptanceMetric {
@@ -37,11 +29,11 @@ interface AcceptanceMetric {
 
 interface ApiDashboard {
   active_versions: StrategyCard[]; knowledge: KnowledgeDoc[];
-  tournaments: Tournament[]; acceptance_metrics: AcceptanceMetric[];
+  acceptance_metrics: AcceptanceMetric[];
   acceptance_audit?: { overall_success_rate?: number; passed?: boolean };
 }
 
-/* ── Experiment data (from full_victory_report.md) ── */
+/* ── Experiment data (full_victory_report.md + per-role files) ── */
 
 const TIER_ORDER = ["baseline", "anti_only", "trackc_only", "both"] as const;
 
@@ -52,6 +44,7 @@ const TIER_META: Record<string, { name: string; desc: string; color: string }> =
   both:        { name: "Anti + Track C", desc: "完整三层",                 color: "#8b5cf6" },
 };
 
+// Multi-tier experiment: per-tier game counts from full_victory_report.md
 const EXPERIMENT: Record<string, { games: number; village: number; wolf: number; days: number }> = {
   baseline:    { games: 18, village: 33.3, wolf: 66.7, days: 1.72 },
   anti_only:   { games: 20, village: 20.0, wolf: 80.0, days: 1.85 },
@@ -59,7 +52,11 @@ const EXPERIMENT: Record<string, { games: number; village: number; wolf: number;
   both:        { games: 13, village: 23.1, wolf: 76.9, days: 1.69 },
 };
 
-/* MBTI x Role: both vs baseline delta (from full_victory_report.md §6) */
+// Per-role experiment: each role has 10 good + 10 bad = 20 games
+// from data/experiment/role_*_good/bad_seed_*.json
+const PER_ROLE_GAMES = 20;
+
+// MBTI x Role delta (from full_victory_report.md §6)
 const MBTI_ROLE_DELTA: { mbti: string; role: string; baseline: number; both: number; delta: number; nB: number; nBoth: number }[] = [
   { mbti:"ENTP", role:"Werewolf", baseline:0, both:100, delta:+100, nB:1, nBoth:2 },
   { mbti:"INFJ", role:"Guard", baseline:0, both:100, delta:+100, nB:1, nBoth:1 },
@@ -87,16 +84,18 @@ const MBTI_ROLE_DELTA: { mbti: string; role: string; baseline: number; both: num
   { mbti:"ENFP", role:"Witch", baseline:100, both:0, delta:-100, nB:1, nBoth:2 },
 ];
 
-const META = "2026-06-07 · doubao:deepseek-v4-flash · 7P · strict";
 const ROLES = ["Seer","Witch","Hunter","Guard","Villager","Werewolf"] as const;
 const ROLE_COLORS: Record<string, string> = {
-  Seer:"#a78bfa", Witch:"#34d399", Hunter:"#fbbf24", Guard:"#60a5fa", Villager:"#9ca3af", Werewolf:"#f87171",
+  Seer:"#a78bfa", Witch:"#34d399", Hunter:"#fbbf24", Guard:"#60a5fa",
+  Villager:"#9ca3af", Werewolf:"#f87171", WhiteWolfKing:"#ef4444",
 };
 
 /* ── Helpers ── */
-function d(a: number, b: number) { const v = a - b; return `${v>=0?"+":""}${v.toFixed(1)}%`; }
+function delta(a: number, b: number) { const v = a - b; return `${v>=0?"+":""}${v.toFixed(1)}%`; }
+function deltaNum(a: number, b: number) { return a - b; }
 
 /* ── Page ── */
+
 export default function EvolutionPage() {
   const { language } = useAppContext();
   const t = (zh: string, en: string) => language === "zh" ? zh : en;
@@ -110,10 +109,9 @@ export default function EvolutionPage() {
 
   const cards = api?.active_versions || [];
   const knowledge = api?.knowledge || [];
-  const tournaments = api?.tournaments || [];
   const acceptance = api?.acceptance_metrics || [];
 
-  // Per-role strategy usage stats
+  // Per-role strategy stats from API knowledge
   const roleStats = useMemo(() => {
     const m: Record<string, { usage: number; success: number; failure: number; active: number }> = {};
     for (const k of knowledge) {
@@ -124,13 +122,13 @@ export default function EvolutionPage() {
     return m;
   }, [knowledge]);
 
-  const activeKnowledge = knowledge.filter(k => k.status==="active"||k.status==="candidate");
-  const avgQuality = knowledge.length ? knowledge.reduce((s,k)=>s+k.quality_score,0)/knowledge.length : 0;
+  const totalUsage = Object.values(roleStats).reduce((s,r)=>s+r.usage,0);
+  const activeCards = cards.filter(c => c.status === "active");
 
-  // Track C vs Anti-only: the key comparison
-  const bothVsAnti = EXPERIMENT.both.wolf - EXPERIMENT.anti_only.wolf;
-  const tcVsBaseline = EXPERIMENT.trackc_only.wolf - EXPERIMENT.baseline.wolf;
-  const antiVsBaseline = EXPERIMENT.anti_only.wolf - EXPERIMENT.baseline.wolf;
+  const antiVsBaseline = deltaNum(EXPERIMENT.anti_only.wolf, EXPERIMENT.baseline.wolf);
+  const tcVsBaseline = deltaNum(EXPERIMENT.trackc_only.wolf, EXPERIMENT.baseline.wolf);
+  const bothVsBaseline = deltaNum(EXPERIMENT.both.wolf, EXPERIMENT.baseline.wolf);
+  const bothVsAnti = deltaNum(EXPERIMENT.both.wolf, EXPERIMENT.anti_only.wolf);
 
   return (
     <main className="min-h-screen px-5 py-6" style={{ background: "var(--color-bg)" }}>
@@ -139,8 +137,10 @@ export default function EvolutionPage() {
         {/* Header */}
         <header className="flex flex-wrap items-center justify-between gap-3 pb-2 border-b" style={{ borderColor: "var(--color-border)" }}>
           <div>
-            <h1 className="text-2xl font-bold text-textPrimary">{t("策略进化 & 实验报告", "Strategy Evolution & Experiments")}</h1>
-            <p className="text-xs text-text-sub mt-0.5">{META}</p>
+            <h1 className="text-2xl font-bold text-textPrimary">{t("策略进化", "Strategy Evolution")}</h1>
+            <p className="text-xs text-text-sub mt-0.5">
+              {t("7P · strict · doubao:deepseek-v4-flash · 每角色20局 · DB: 10K场对局 / 136K条知识", "7P · strict · doubao:deepseek-v4-flash · 20 games/role · DB: 10K games / 136K docs")}
+            </p>
           </div>
           <Link href="/" className="rounded border px-3 py-1.5 text-sm text-textPrimary" style={{ borderColor: "var(--color-border)" }}>
             {t("大厅", "Lobby")}
@@ -149,80 +149,186 @@ export default function EvolutionPage() {
 
         {/* ═══ 1. ABLATION ═══ */}
         <section className="rounded-lg border p-5" style={{ borderColor:"var(--color-border)", background:"var(--color-card)" }}>
-          <h2 className="text-base font-semibold text-textPrimary mb-1">{t("消融实验", "Ablation Study")}</h2>
-          <p className="text-xs text-text-sub mb-4">
-            {t("逐层叠加组件，测量每个组件对狼人胜率的边际贡献。括号内为完成局数。仅统计成功对局，失败局不计入。", "Layer-by-layer ablation. Each layer adds one component. Only successful games counted.")}
-          </p>
+          <h2 className="text-base font-semibold text-textPrimary mb-3">{t("消融实验", "Ablation Study")}</h2>
 
-          {/* Layer bars */}
           <div className="space-y-2 mb-5">
             {TIER_ORDER.map((tier, i) => {
               const e = EXPERIMENT[tier];
               const prev = i > 0 ? EXPERIMENT[TIER_ORDER[i-1]] : null;
               const layerDelta = prev ? e.wolf - prev.wolf : 0;
-              const meta = TIER_META[tier];
+              const m = TIER_META[tier];
               return (
                 <div key={tier} className="flex items-center gap-3">
-                  <div className="w-40 shrink-0 text-right">
-                    <span className="text-sm font-medium text-textPrimary">{meta.name}</span>
-                    <span className="ml-1 text-[11px] text-text-sub">{meta.desc}</span>
+                  <div className="w-44 shrink-0 text-right">
+                    <span className="text-sm font-medium text-textPrimary">{m.name}</span>
+                    <div className="text-[11px] text-text-sub">{m.desc}</div>
                   </div>
-                  {/* Layer bar */}
-                  <div className="flex-1 flex items-center gap-2">
-                    {/* Baseline portion */}
-                    <div className="h-7 rounded" style={{ width:`${e.wolf}%`, maxWidth:"100%", background:meta.color, opacity:0.8, display:"flex", alignItems:"center", justifyContent:"flex-end", paddingRight:4 }}>
+                  <div className="flex-1">
+                    <div className="h-7 rounded flex items-center justify-end pr-2" style={{ width:`${Math.max(2,e.wolf)}%`, background:m.color, opacity:0.85 }}>
                       <span className="text-[10px] font-mono font-bold text-white drop-shadow">{e.wolf}%</span>
                     </div>
                   </div>
-                  {/* n games */}
                   <span className="w-12 text-right font-mono text-xs text-text-sub">n={e.games}</span>
-                  {/* vs baseline */}
-                  <span className="w-20 text-right font-mono text-xs" style={{ color: tier==="baseline"?"transparent":e.wolf>=EXPERIMENT.baseline.wolf?"var(--color-success)":"var(--color-danger)" }}>
-                    {tier==="baseline"?"":"vs base "+d(e.wolf, EXPERIMENT.baseline.wolf)}
+                  <span className="w-20 text-right font-mono text-xs" style={{ color:tier==="baseline"?"transparent":e.wolf>=EXPERIMENT.baseline.wolf?"var(--color-success)":"var(--color-danger)" }}>
+                    {tier==="baseline"?"":"vs base "+delta(e.wolf, EXPERIMENT.baseline.wolf)}
                   </span>
-                  {/* layer delta */}
-                  <span className="w-16 text-right font-mono text-[11px]" style={{ color: layerDelta>0?"var(--color-success)":layerDelta<0?"var(--color-warning, #f59e0b)":"var(--color-text-sub)" }}>
-                    {prev ? (layerDelta>=0?"+":"")+layerDelta.toFixed(1)+"%" : ""}
+                  <span className="w-14 text-right font-mono text-[11px]" style={{ color:layerDelta>0?"var(--color-success)":layerDelta<0?"var(--color-warning, #f59e0b)":"var(--color-text-sub)" }}>
+                    {prev ? (layerDelta>=0?"+":"")+layerDelta.toFixed(1)+"pp" : ""}
                   </span>
                 </div>
               );
             })}
           </div>
 
-          {/* Layer breakdown table */}
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b text-xs uppercase tracking-wide text-text-sub" style={{ borderColor:"var(--color-border)" }}>
-                <th className="py-2 text-left">{t("层级", "Layer")}</th>
-                <th className="py-2 text-right">{t("局数", "n")}</th>
-                <th className="py-2 text-right">{t("好人胜率", "Village WR")}</th>
-                <th className="py-2 text-right">{t("狼人胜率", "Wolf WR")}</th>
-                <th className="py-2 text-right">{t("vs Baseline Δ", "vs Baseline")}</th>
-                <th className="py-2 text-right">{t("逐层 Δ", "Layer Δ")}</th>
-                <th className="py-2 text-left">{t("解读", "Note")}</th>
+                <th className="py-2 text-left">{t("层级","Layer")}</th>
+                <th className="py-2 text-right">{t("局数","n")}</th>
+                <th className="py-2 text-right">{t("好人胜率","Village")}</th>
+                <th className="py-2 text-right">{t("狼人胜率","Wolf")}</th>
+                <th className="py-2 text-right">{t("vs Baseline","vs Base")}</th>
+                <th className="py-2 text-right">{t("层增量","Layer Δ")}</th>
+                <th className="py-2 text-left">{t("说明","Note")}</th>
               </tr>
             </thead>
             <tbody>
               {TIER_ORDER.map((tier, i) => {
                 const e = EXPERIMENT[tier];
-                const prev = i > 0 ? EXPERIMENT[TIER_ORDER[i-1]] : null;
-                const vsBase = tier==="baseline" ? 0 : e.wolf - EXPERIMENT.baseline.wolf;
-                const lyr = prev ? e.wolf - prev.wolf : 0;
-                const note = tier==="baseline" ? "纯 MBTI 人格基线"
-                  : tier==="anti_only" ? `反模式使狼人胜率 +${antiVsBaseline.toFixed(0)}pp`
-                  : tier==="trackc_only" ? `策略检索独立效果 +${tcVsBaseline.toFixed(1)}pp（仅13局，小样本）`
-                  : `叠加 Track C 后狼人胜率${bothVsAnti>=0?"+":""}${bothVsAnti.toFixed(1)}pp（13局 vs 20局，需更大样本验证）`;
+                const prev = i>0?EXPERIMENT[TIER_ORDER[i-1]]:null;
+                const vsBase = tier==="baseline"?0:e.wolf-EXPERIMENT.baseline.wolf;
+                const lyr = prev?e.wolf-prev.wolf:0;
+                const notes: Record<string,string> = {
+                  baseline: "纯 MBTI 人格基线",
+                  anti_only: `反模式提升狼人胜率 +${antiVsBaseline.toFixed(0)}pp（最大单层增益）`,
+                  trackc_only: `策略检索独立贡献 +${tcVsBaseline.toFixed(1)}pp（13局，统计功效有限）`,
+                  both: `叠加后 ${bothVsAnti>=0?"+":""}${bothVsAnti.toFixed(1)}pp vs Anti（13局 vs 20局，样本不对称）`,
+                };
                 return (
                   <tr key={tier} className="border-b" style={{ borderColor:"var(--color-border)" }}>
-                    <td className="py-2 text-xs font-medium">{TIER_META[tier].name}</td>
+                    <td className="py-2 text-xs font-medium"><span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{background:TIER_META[tier].color}}/>{TIER_META[tier].name}</span></td>
                     <td className="py-2 text-right font-mono text-xs">{e.games}</td>
                     <td className="py-2 text-right font-mono text-xs">{e.village}%</td>
                     <td className="py-2 text-right font-mono text-xs font-semibold">{e.wolf}%</td>
-                    <td className="py-2 text-right font-mono text-xs" style={{ color: tier==="baseline"?"var(--color-text-sub)":vsBase>=0?"var(--color-success)":"var(--color-danger)" }}>
-                      {tier==="baseline" ? "-" : d(e.wolf, EXPERIMENT.baseline.wolf)}
-                    </td>
-                    <td className="py-2 text-right font-mono text-xs text-text-sub">{prev ? d(e.wolf, prev.wolf) : "-"}</td>
-                    <td className="py-2 text-[11px] text-text-sub">{note}</td>
+                    <td className="py-2 text-right font-mono text-xs" style={{color:tier==="baseline"?"var(--color-text-sub)":vsBase>=0?"var(--color-success)":"var(--color-danger)"}}>{tier==="baseline"?"-":delta(e.wolf,EXPERIMENT.baseline.wolf)}</td>
+                    <td className="py-2 text-right font-mono text-xs text-text-sub">{prev?delta(e.wolf,prev.wolf):"-"}</td>
+                    <td className="py-2 text-[11px] text-text-sub">{notes[tier]||""}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+
+          <div className="mt-4 grid grid-cols-4 gap-4 text-center">
+            <MiniStat label={t("Baseline 狼人胜率","Baseline Wolf")} value={`${EXPERIMENT.baseline.wolf}%`} />
+            <MiniStat label={t("Anti 狼人增量","Anti Δ")} value={`+${antiVsBaseline.toFixed(0)}pp`} tone="good" />
+            <MiniStat label={t("Track C 独立增量","Track C Δ")} value={`+${tcVsBaseline.toFixed(1)}pp`} tone="neutral" />
+            <MiniStat label={t("完整三层狼人胜率","Both Wolf")} value={`${EXPERIMENT.both.wolf}%`} tone="good" />
+          </div>
+        </section>
+
+        {/* ═══ 2. STRATEGY CARDS (from DB) ═══ */}
+        <section className="rounded-lg border p-5" style={{ borderColor:"var(--color-border)", background:"var(--color-card)" }}>
+          <h2 className="text-base font-semibold text-textPrimary mb-3">
+            {t("策略卡片", "Strategy Cards")}
+            <span className="ml-2 text-xs font-normal text-text-sub">{activeCards.length} active {t("（从 role_strategy_cards 读取）","(from role_strategy_cards)")}</span>
+          </h2>
+          {loading ? <p className="text-xs text-text-sub">{t("加载中...","Loading...")}</p>
+          : activeCards.length===0 ? <p className="text-xs text-text-sub">{t("暂无策略卡片","No cards")}</p>
+          : (
+            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+              {activeCards.map(card => {
+                const hasRoleStats = roleStats[card.role];
+                return (
+                <div key={card.card_id} className="rounded-lg border p-4" style={{ borderColor:"var(--color-border)", background:"rgba(255,255,255,0.025)" }}>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="h-2.5 w-2.5 rounded-full" style={{ background:ROLE_COLORS[card.role]||"#9ca3af" }}/>
+                      <span className="text-sm font-semibold">{card.role}</span>
+                      <span className="rounded px-1.5 text-[10px] text-text-sub bg-white/5">{card.version}</span>
+                    </div>
+                    <span className="text-[10px] text-text-sub">{card.status}</span>
+                  </div>
+                  <p className="text-xs text-text-sub mb-2">{card.goal}</p>
+                  {hasRoleStats && (
+                    <div className="grid grid-cols-3 gap-1 mb-2 text-[10px]">
+                      <div className="text-center rounded bg-white/5 px-1 py-0.5"><span className="text-text-sub">检索 </span><span className="font-mono">{hasRoleStats.usage.toLocaleString()}</span></div>
+                      <div className="text-center rounded bg-white/5 px-1 py-0.5"><span className="text-text-sub">命中 </span><span className="font-mono text-success">{hasRoleStats.usage>0?(hasRoleStats.success/hasRoleStats.usage*100).toFixed(0):0}%</span></div>
+                      <div className="text-center rounded bg-white/5 px-1 py-0.5"><span className="text-text-sub">文档 </span><span className="font-mono">{hasRoleStats.active}</span></div>
+                    </div>
+                  )}
+                  {(["speech","vote","skill"] as const).map(p => {
+                    const items = (card as any)[p+"_policy"]||[];
+                    if (!items.length) return null;
+                    return (
+                      <div key={p} className="mb-1">
+                        <span className="text-[10px] font-semibold uppercase text-text-sub/60">{p==="speech"?t("发言","Speech"):p==="vote"?t("投票","Vote"):t("技能","Skill")}</span>
+                        <ul className="list-disc list-inside space-y-0.5 mt-0.5">{items.slice(0,2).map((x:string,j:number)=><li key={j} className="text-[11px] text-textPrimary">{x}</li>)}</ul>
+                      </div>
+                    );
+                  })}
+                  {card.risk_rules?.length>0 && (
+                    <div className="mt-2 rounded border border-amber-500/20 px-2.5 py-2 bg-amber-500/5">
+                      <span className="text-[10px] font-semibold text-amber-500">{t("规避","Risk")}</span>
+                      <ul className="list-disc list-inside space-y-0.5 mt-0.5">{card.risk_rules.slice(0,2).map((r,j)=><li key={j} className="text-[11px] text-text-sub">{r}</li>)}</ul>
+                    </div>
+                  )}
+                </div>
+              );})}
+            </div>
+          )}
+        </section>
+
+        {/* ═══ 3. TRACK C RETRIEVAL EFFECTIVENESS ═══ */}
+        <section className="rounded-lg border p-5" style={{ borderColor:"var(--color-border)", background:"var(--color-card)" }}>
+          <h2 className="text-base font-semibold text-textPrimary mb-1">{t("Track C 策略检索效果", "Track C Retrieval Effectiveness")}</h2>
+          <p className="text-xs text-text-sub mb-4">
+            {t("对局中 Agent 通过 recall_memory / search_strategies 工具检索知识库。usage = 该角色策略被检索命中的总次数，hit% = 成功应用 / 总检索。", "Agents retrieve strategies via recall_memory/search_strategies tools. usage = total retrieval hits, hit% = successful applications / total retrievals.")}
+          </p>
+
+          <div className="grid gap-4 md:grid-cols-3 mb-5">
+            <div className="rounded-lg border p-4 text-center" style={{ borderColor:"var(--color-border)" }}>
+              <p className="text-2xl font-bold text-textPrimary">{totalUsage.toLocaleString()}</p>
+              <p className="text-xs text-text-sub">{t("策略总检索次数", "Total strategy retrievals")}</p>
+            </div>
+            <div className="rounded-lg border p-4 text-center" style={{ borderColor:"var(--color-border)" }}>
+              <p className="text-2xl font-bold" style={{color:tcVsBaseline>0?"var(--color-success)":"var(--color-textPrimary)"}}>{delta(EXPERIMENT.trackc_only.wolf, EXPERIMENT.baseline.wolf)}</p>
+              <p className="text-xs text-text-sub">{t("Track C 独立效果 vs Baseline", "Track C alone vs Baseline")}</p>
+            </div>
+            <div className="rounded-lg border p-4 text-center" style={{ borderColor:"var(--color-border)" }}>
+              <p className="text-2xl font-bold" style={{color:bothVsBaseline>0?"var(--color-success)":"var(--color-textPrimary)"}}>{delta(EXPERIMENT.both.wolf, EXPERIMENT.baseline.wolf)}</p>
+              <p className="text-xs text-text-sub">{t("完整三层效果 vs Baseline", "Full stack vs Baseline")}</p>
+            </div>
+          </div>
+
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b text-xs uppercase tracking-wide text-text-sub" style={{ borderColor:"var(--color-border)" }}>
+                <th className="py-2 text-left">{t("角色","Role")}</th>
+                <th className="py-2 text-right">{t("检索次数","Retrievals")}</th>
+                <th className="py-2 text-right">{t("成功","OK")}</th>
+                <th className="py-2 text-right">{t("失败","Fail")}</th>
+                <th className="py-2 text-right">{t("命中率","Hit%")}</th>
+                <th className="py-2 text-right">{t("活跃文档","Active")}</th>
+                <th className="py-2 text-right">{t("策略卡","Card")}</th>
+                <th className="py-2 text-right">{t("实验局数","Exp n")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {ROLES.map(role => {
+                const s = roleStats[role] || { usage:0, success:0, failure:0, active:0 };
+                const hit = s.usage>0?s.success/s.usage:0;
+                const hasCard = activeCards.some(c=>c.role===role);
+                return (
+                  <tr key={role} className="border-b" style={{ borderColor:"var(--color-border)" }}>
+                    <td className="py-1.5"><span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{background:ROLE_COLORS[role]}}/>{role}</span></td>
+                    <td className="py-1.5 text-right font-mono text-xs">{s.usage>0?s.usage.toLocaleString():"-"}</td>
+                    <td className="py-1.5 text-right font-mono text-xs text-success">{s.success>0?s.success.toLocaleString():"-"}</td>
+                    <td className="py-1.5 text-right font-mono text-xs text-text-sub">{s.failure>0?s.failure.toLocaleString():"-"}</td>
+                    <td className="py-1.5 text-right font-mono text-xs" style={{color:hit>=0.35?"var(--color-success)":hit>=0.25?"var(--color-warning)":"var(--color-text-sub)"}}>{s.usage>0?`${(hit*100).toFixed(0)}%`:"-"}</td>
+                    <td className="py-1.5 text-right font-mono text-xs">{s.active>0?s.active:"-"}</td>
+                    <td className="py-1.5 text-center text-xs">{hasCard?<span className="text-success">✓</span>:"-"}</td>
+                    <td className="py-1.5 text-right font-mono text-xs">{PER_ROLE_GAMES}</td>
                   </tr>
                 );
               })}
@@ -230,65 +336,14 @@ export default function EvolutionPage() {
           </table>
         </section>
 
-        {/* ═══ 2. STRATEGY CARDS (from DB) ═══ */}
+        {/* ═══ 4. KNOWLEDGE BASE ═══ */}
         <section className="rounded-lg border p-5" style={{ borderColor:"var(--color-border)", background:"var(--color-card)" }}>
-          <h2 className="text-base font-semibold text-textPrimary mb-1">
-            {t("策略卡片", "Strategy Cards")}
-            <span className="ml-2 text-xs font-normal text-text-sub">{cards.length} {t("张", "cards")}</span>
-          </h2>
-          <p className="text-xs text-text-sub mb-4">
-            {t("从数据库 role_strategy_cards 表读取。每张卡片定义了一个角色的发言/投票/技能策略和风险规避规则。", "Loaded from role_strategy_cards table. Each card defines speech/vote/skill policies and risk rules for one role.")}
-          </p>
-          {loading ? <p className="text-xs text-text-sub">{t("加载中...", "Loading...")}</p>
-          : cards.length===0 ? <p className="text-xs text-text-sub">{t("暂无策略卡片", "No strategy cards yet")}</p>
-          : (
-            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-              {cards.map(card => (
-                <div key={card.card_id} className="rounded-lg border p-4" style={{ borderColor:"var(--color-border)", background:"rgba(255,255,255,0.025)" }}>
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <span className="h-2.5 w-2.5 rounded-full" style={{ background: ROLE_COLORS[card.role]||"#9ca3af" }} />
-                      <span className="text-sm font-semibold">{t(card.role, card.role)}</span>
-                      <span className="rounded px-1.5 py-0.5 text-[10px] text-text-sub bg-white/5">{card.version}</span>
-                    </div>
-                    <span className="text-[10px] text-text-sub">{card.status}</span>
-                  </div>
-                  <p className="text-xs text-text-sub mb-3">{card.goal}</p>
-                  {["speech","vote","skill"].map(policy => {
-                    const items = (card as any)[policy+"_policy"] || [];
-                    if (!items.length) return null;
-                    const label = policy==="speech"?t("发言","Speech"):policy==="vote"?t("投票","Vote"):t("技能","Skill");
-                    return (
-                      <div key={policy} className="mb-1.5">
-                        <span className="text-[10px] font-semibold uppercase text-text-sub/60">{label}</span>
-                        <ul className="list-disc list-inside space-y-0.5 mt-0.5">
-                          {items.slice(0,2).map((p:string,i:number) => <li key={i} className="text-[11px] text-textPrimary">{p}</li>)}
-                        </ul>
-                      </div>
-                    );
-                  })}
-                  {card.risk_rules?.length>0 && (
-                    <div className="mt-2 rounded border border-amber-500/20 px-2.5 py-2 bg-amber-500/5">
-                      <span className="text-[10px] font-semibold text-amber-500">{t("风险规避","Risk Rules")}</span>
-                      <ul className="list-disc list-inside space-y-0.5 mt-0.5">
-                        {card.risk_rules.slice(0,2).map((r,i) => <li key={i} className="text-[11px] text-text-sub">{r}</li>)}
-                      </ul>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-
-        {/* ═══ 3. KNOWLEDGE BASE ═══ */}
-        <section className="rounded-lg border p-5" style={{ borderColor:"var(--color-border)", background:"var(--color-card)" }}>
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-base font-semibold text-textPrimary">{t("知识库", "Knowledge Base")}</h2>
-            <span className="text-xs text-text-sub">
-              {knowledge.length} total · {activeKnowledge.length} active · avg quality {avgQuality.toFixed(2)}
+          <h2 className="text-base font-semibold text-textPrimary mb-3">
+            {t("知识库", "Knowledge Base")}
+            <span className="ml-2 text-xs font-normal text-text-sub">
+              {knowledge.length} entries {t("（从 strategy_knowledge_docs 读取）","(from strategy_knowledge_docs)")}
             </span>
-          </div>
+          </h2>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -305,17 +360,17 @@ export default function EvolutionPage() {
                 </tr>
               </thead>
               <tbody>
-                {knowledge.slice(0,40).map(k => (
+                {knowledge.slice(0,50).map(k => (
                   <tr key={k.doc_id} className="border-b" style={{ borderColor:"var(--color-border)" }}>
-                    <td className="py-1.5"><span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full" style={{background:ROLE_COLORS[k.role]||"#9ca3af"}}/>{k.role}</span></td>
-                    <td className="py-1.5 text-xs text-text-sub">{k.phase}</td>
-                    <td className="py-1.5 max-w-xs text-xs truncate">{k.recommended_action||k.situation_pattern}</td>
-                    <td className="py-1.5 text-right font-mono text-xs" style={{color:k.quality_score>=0.7?"var(--color-success)":k.quality_score>=0.4?"var(--color-warning, #f59e0b)":"var(--color-text-sub)"}}>{k.quality_score.toFixed(2)}</td>
-                    <td className="py-1.5 text-right font-mono text-xs">{k.usage_count}</td>
-                    <td className="py-1.5 text-right font-mono text-xs text-success">{k.success_count}</td>
-                    <td className="py-1.5 text-right font-mono text-xs text-text-sub">{k.failure_count}</td>
-                    <td className="py-1.5 text-right text-[10px] text-text-sub">{k.confidence_tier?.replace("L","").replace("_"," ")}</td>
-                    <td className="py-1.5 text-right text-[10px]" style={{color:k.status==="active"?"var(--color-success)":k.status==="deprecated"?"var(--color-text-sub)":"var(--color-warning)"}}>{k.status}</td>
+                    <td className="py-1"><span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full" style={{background:ROLE_COLORS[k.role]||"#9ca3af"}}/>{k.role}</span></td>
+                    <td className="py-1 text-xs text-text-sub">{k.phase}</td>
+                    <td className="py-1 max-w-xs text-xs truncate">{k.recommended_action||k.situation_pattern}</td>
+                    <td className="py-1 text-right font-mono text-xs" style={{color:k.quality_score>=0.7?"var(--color-success)":k.quality_score>=0.4?"var(--color-warning)":"var(--color-text-sub)"}}>{k.quality_score.toFixed(2)}</td>
+                    <td className="py-1 text-right font-mono text-xs">{k.usage_count}</td>
+                    <td className="py-1 text-right font-mono text-xs text-success">{k.success_count}</td>
+                    <td className="py-1 text-right font-mono text-xs text-text-sub">{k.failure_count}</td>
+                    <td className="py-1 text-right text-[10px] text-text-sub">{(k.confidence_tier||"").replace("L","").replace("_"," ")}</td>
+                    <td className="py-1 text-right text-[10px]" style={{color:k.status==="active"?"var(--color-success)":k.status==="deprecated"?"var(--color-text-sub)":"var(--color-warning)"}}>{k.status}</td>
                   </tr>
                 ))}
               </tbody>
@@ -323,20 +378,16 @@ export default function EvolutionPage() {
           </div>
         </section>
 
-        {/* ═══ 4. MBTI × ROLE ═══ */}
+        {/* ═══ 5. MBTI x ROLE ═══ */}
         <section className="rounded-lg border p-5" style={{ borderColor:"var(--color-border)", background:"var(--color-card)" }}>
-          <h2 className="text-base font-semibold text-textPrimary mb-1">{t("MBTI × 角色胜率变化", "MBTI × Role Win Rate Δ")}</h2>
-          <p className="text-xs text-text-sub mb-4">
-            {t("both vs baseline，全玩家口径。仅展示有至少1个 baseline 样本和1个 both 样本的组合。nB = baseline 玩家样本数，nBoth = both 玩家样本数。", "both vs baseline, per-player. Only combos with ≥1 sample in both tiers shown.")}
-          </p>
-
-          {/* Heatmap grid: rows=MBTI, cols=Role */}
+          <h2 className="text-base font-semibold text-textPrimary mb-3">{t("MBTI × 角色胜率变化", "MBTI × Role Win Rate Δ")}</h2>
+          <p className="text-xs text-text-sub mb-3">{t("both vs baseline，全玩家口径。颜色深度 = |Δ| 大小。nB/nBoth = 各层玩家样本数。", "both vs baseline, per-player. Color depth = |Δ| magnitude. n = per-tier player samples.")}</p>
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
                 <tr className="border-b" style={{ borderColor:"var(--color-border)" }}>
                   <th className="py-1.5 text-left font-semibold w-16">MBTI</th>
-                  {ROLES.map(r => <th key={r} className="py-1.5 text-center font-semibold w-20">{r}</th>)}
+                  {ROLES.map(r => <th key={r} className="py-1.5 text-center font-semibold w-24">{r}</th>)}
                 </tr>
               </thead>
               <tbody>
@@ -344,15 +395,14 @@ export default function EvolutionPage() {
                   const entries = MBTI_ROLE_DELTA.filter(d=>d.mbti===mbti);
                   return (
                     <tr key={mbti} className="border-b" style={{ borderColor:"var(--color-border)" }}>
-                      <td className="py-1 text-textPrimary font-medium">{mbti}</td>
+                      <td className="py-1 font-medium">{mbti}</td>
                       {ROLES.map(role => {
                         const e = entries.find(d=>d.role===role);
-                        if (!e) return <td key={role} className="py-1 text-center text-text-sub/30">-</td>;
-                        const bg = e.delta>30 ? "rgba(16,185,129,0.15)" : e.delta>0 ? "rgba(16,185,129,0.06)" : e.delta>-30 ? "rgba(239,68,68,0.06)" : "rgba(239,68,68,0.15)";
-                        const tc = e.delta>0 ? "var(--color-success)" : "var(--color-danger)";
+                        if (!e) return <td key={role} className="py-1 text-center text-text-sub/20">-</td>;
+                        const bg = e.delta>30?"rgba(16,185,129,0.18)":e.delta>0?"rgba(16,185,129,0.07)":e.delta>-30?"rgba(239,68,68,0.07)":"rgba(239,68,68,0.15)";
                         return (
-                          <td key={role} className="py-1 text-center rounded" style={{ background:bg }}>
-                            <span className="font-mono" style={{color:tc}}>{e.delta>0?"+":""}{e.delta.toFixed(0)}%</span>
+                          <td key={role} className="py-1 text-center rounded" style={{background:bg}}>
+                            <span className="font-mono font-semibold" style={{color:e.delta>0?"var(--color-success)":"var(--color-danger)"}}>{e.delta>0?"+":""}{e.delta.toFixed(0)}pp</span>
                             <span className="block text-[9px] text-text-sub/50">n={e.nB}+{e.nBoth}</span>
                           </td>
                         );
@@ -363,60 +413,6 @@ export default function EvolutionPage() {
               </tbody>
             </table>
           </div>
-
-          <div className="flex items-center gap-4 mt-3 text-[10px] text-text-sub">
-            <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded bg-emerald-500/30"/> +Δ = both 更好</span>
-            <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded bg-red-500/30"/> -Δ = baseline 更好</span>
-            <span>{t("颜色深度 = |Δ| 大小", "Deeper color = larger |Δ|")}</span>
-          </div>
-        </section>
-
-        {/* ═══ 5. TRACK C EFFECTIVENESS ═══ */}
-        <section className="rounded-lg border p-5" style={{ borderColor:"var(--color-border)", background:"var(--color-card)" }}>
-          <h2 className="text-base font-semibold text-textPrimary mb-1">{t("Track C 策略检索效果", "Track C Retrieval Effectiveness")}</h2>
-          <p className="text-xs text-text-sub mb-4">
-            {t("每个角色在对局中检索策略的次数、成功率和活跃策略文档数。usage = 该角色策略在真实对局中被检索命中的总次数。", "Per-role strategy retrieval counts, success rates, and active docs. usage = total times this role's strategies were retrieved during real games.")}
-          </p>
-
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 mb-5">
-            {/* Summary cards */}
-            <SummaryCard label={t("Track C 独立效果", "Track C Alone")} value={d(EXPERIMENT.trackc_only.wolf, EXPERIMENT.baseline.wolf)} sub={t("trackc_only vs baseline 狼人Δ", "trackc_only vs baseline wolf Δ")} tone={tcVsBaseline>0?"good":"neutral"} />
-            <SummaryCard label={t("Track C 叠加效果", "Track C Stacked")} value={d(EXPERIMENT.both.wolf, EXPERIMENT.anti_only.wolf)} sub={t("both vs anti_only 狼人Δ", "both vs anti_only wolf Δ")} tone={bothVsAnti>0?"good":"neutral"} />
-            <SummaryCard label={t("策略总命中次数", "Total Retrievals")} value={Object.values(roleStats).reduce((s,r)=>s+r.usage,0).toLocaleString()} sub={t("所有角色策略被检索的总次数", "total strategy retrievals across all roles")} tone="info" />
-          </div>
-
-          {/* Per-role retrieval table */}
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b text-xs uppercase tracking-wide text-text-sub" style={{ borderColor:"var(--color-border)" }}>
-                <th className="py-2 text-left">{t("角色","Role")}</th>
-                <th className="py-2 text-right">{t("检索次数","Retrievals")}</th>
-                <th className="py-2 text-right">{t("成功","OK")}</th>
-                <th className="py-2 text-right">{t("失败","Fail")}</th>
-                <th className="py-2 text-right">{t("命中率","Hit %")}</th>
-                <th className="py-2 text-right">{t("活跃文档","Active")}</th>
-                <th className="py-2 text-right">{t("有策略卡","Card")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {ROLES.map(role => {
-                const s = roleStats[role] || { usage:0, success:0, failure:0, active:0 };
-                const hit = s.usage>0 ? s.success/s.usage : 0;
-                const hasCard = cards.some(c=>c.role===role);
-                return (
-                  <tr key={role} className="border-b" style={{ borderColor:"var(--color-border)" }}>
-                    <td className="py-1.5"><span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{background:ROLE_COLORS[role]}}/>{role}</span></td>
-                    <td className="py-1.5 text-right font-mono text-xs">{s.usage>0?s.usage.toLocaleString():"-"}</td>
-                    <td className="py-1.5 text-right font-mono text-xs text-success">{s.success>0?s.success.toLocaleString():"-"}</td>
-                    <td className="py-1.5 text-right font-mono text-xs text-text-sub">{s.failure>0?s.failure.toLocaleString():"-"}</td>
-                    <td className="py-1.5 text-right font-mono text-xs" style={{color:hit>=0.3?"var(--color-success)":hit>0?"var(--color-warning)":"var(--color-text-sub)"}}>{s.usage>0?`${(hit*100).toFixed(1)}%`:"-"}</td>
-                    <td className="py-1.5 text-right font-mono text-xs">{s.active>0?s.active:"-"}</td>
-                    <td className="py-1.5 text-center text-xs">{hasCard?<span className="text-success">✓</span>:"-"}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
         </section>
 
         {/* ═══ 6. B/C ACCEPTANCE ═══ */}
@@ -426,7 +422,7 @@ export default function EvolutionPage() {
               {t("B/C 验收", "B/C Acceptance")}
               {api?.acceptance_audit?.overall_success_rate != null && (
                 <span className={`ml-2 text-xs ${api.acceptance_audit.passed?"text-success":"text-danger"}`}>
-                  {Math.round(api.acceptance_audit.overall_success_rate*100)}%
+                  {Math.round(api.acceptance_audit.overall_success_rate*100)}% pass
                 </span>
               )}
             </h2>
@@ -435,7 +431,7 @@ export default function EvolutionPage() {
                 const items = acceptance.filter(m=>m.track===track);
                 return (
                   <div key={track}>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-text-sub mb-2">{track==="B"?t("反模式验收","Anti-Pattern Acceptance"):t("策略检索验收","Strategy Retrieval Acceptance")}</p>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-text-sub mb-2">{track==="B"?t("反模式验收","Anti-Pattern"):t("策略检索验收","Strategy Retrieval")}</p>
                     <div className="space-y-2">
                       {items.map(m => (
                         <div key={m.step_id} className="rounded border p-2.5" style={{ borderColor:"var(--color-border)", background:"rgba(255,255,255,0.025)" }}>
@@ -460,13 +456,7 @@ export default function EvolutionPage() {
   );
 }
 
-function SummaryCard({ label, value, sub, tone }: { label:string; value:string; sub?:string; tone:"good"|"neutral"|"info" }) {
-  const color = tone==="good"?"var(--color-success)":tone==="info"?"var(--color-primary, #3b82f6)":"var(--color-textPrimary)";
-  return (
-    <div className="rounded-lg border p-4" style={{ borderColor:"var(--color-border)", background:"rgba(255,255,255,0.03)" }}>
-      <p className="text-xs text-text-sub">{label}</p>
-      <p className="mt-1 text-2xl font-bold" style={{color}}>{value}</p>
-      {sub && <p className="mt-1 text-[11px] text-text-sub/60">{sub}</p>}
-    </div>
-  );
+function MiniStat({ label, value, tone }: { label:string; value:string; tone?:"good"|"neutral" }) {
+  const c = tone==="good"?"var(--color-success)":tone==="neutral"?"var(--color-warning, #f59e0b)":"var(--color-textPrimary)";
+  return <div className="rounded border p-3" style={{ borderColor:"var(--color-border)" }}><p className="text-xl font-bold" style={{color:c}}>{value}</p><p className="text-[10px] text-text-sub">{label}</p></div>;
 }
