@@ -173,3 +173,19 @@ role_distribution:
 win_conditions:
   village_wins_when: all_wolves_dead
   wolf_wins_when: wolves_equal_or_exceed_village
+  max_day_night_cycles: 20           # Draw after 20 full day-night cycles
+
+# ============================================================
+# Phase Timeouts (seconds, for mixed human-AI games)
+# ============================================================
+phase_timeouts:
+  guard_choose: 20
+  wolf_discuss_kill: 60
+  seer_check: 20
+  witch_action: 25
+  hunter_shoot: 20
+  speech_per_player: 90
+  vote: 30
+  pk_speech_per_player: 60
+  pk_vote: 30
+  wolf_internal_vote_collect: 30

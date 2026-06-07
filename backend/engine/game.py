@@ -196,7 +196,7 @@ class WerewolfGame:
         players: list[Player] | None = None,
         agents: dict[str, Agent] | None = None,
         seed: int | None = None,
-        max_days: int = 8,
+        max_days: int = 20,
         player_count: int = 10,
         observer: Callable[[GameState], None] | None = None,
         strategy_version: str | None = None,

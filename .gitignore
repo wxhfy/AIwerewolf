@@ -246,6 +246,7 @@ frontend/photos/
 
 # Reference repos (local-only, not part of the project source)
 references/
+.gitmodules
 
 # Experiment outputs (local-only, not for repo)
 frontend/public/experiments/
@@ -254,6 +255,7 @@ docs/html_plan/
 
 # Internal dev docs (local-only)
 docs/archive/
+docs/DEVELOPMENT_ISSUES.md
 docs/PROJECT_CLOSURE_FACTS.json
 docs/PROJECT_DESIGN_HISTORY.md
 docs/PROJECT_FINAL_FACTS.json

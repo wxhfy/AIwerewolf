@@ -294,7 +294,7 @@ class GameState:
     daily_summary_facts: dict[int, list[dict[str, Any]]] = field(default_factory=dict)
     phase_done: dict[int, list[str]] = field(default_factory=dict)
     winner: Alignment | None = None
-    max_days: int = 8
+    max_days: int = 20
 
     @property
     def alive_players(self) -> list[Player]:

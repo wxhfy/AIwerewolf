@@ -26,6 +26,7 @@ from langchain_core.messages import BaseMessage
 from langchain_core.runnables import Runnable
 
 from backend.agents.cognitive.agent import CognitiveAgent
+from backend.agents.cognitive.degradation import get_degradation_heuristic
 from backend.agents.cognitive.profiles import MindTraits
 from backend.agents.cognitive.profiles import PersonaTraits
 from backend.agents.cognitive.profiles import Profile
@@ -103,6 +104,11 @@ def create_cognitive_agent(
     if mind is not None:
         profile.mind = mind
 
+    # Degradation heuristic (role-based fallback when LLM fails)
+    strict = os.getenv("AIWEREWOLF_STRICT_MODE", "true").lower() in ("true", "1", "yes")
+    alignment = "wolf" if role.lower() in ("werewolf", "whitewolfking") else "village"
+    fallback = get_degradation_heuristic(role, alignment)
+
     return CognitiveAgent(
         player_id=player_id,
         role=role,
@@ -111,6 +117,8 @@ def create_cognitive_agent(
         player_seat=player_seat,
         profile=profile,
         strategy_bias=strategy_bias,
+        fallback_heuristic=fallback,
+        strict_no_fallback=strict,
     )
 
 
@@ -333,6 +341,11 @@ def create_cognitive_agent_with_character(
             table_presence=m.table_presence,
         )
 
+    # Degradation heuristic
+    strict = os.getenv("AIWEREWOLF_STRICT_MODE", "true").lower() in ("true", "1", "yes")
+    alignment = "wolf" if role.lower() in ("werewolf", "whitewolfking") else "village"
+    fallback = get_degradation_heuristic(role, alignment)
+
     return CognitiveAgent(
         player_id=player_id,
         role=role,
@@ -341,5 +354,7 @@ def create_cognitive_agent_with_character(
         player_seat=player_seat,
         profile=profile,
         strategy_bias=strategy_bias,
+        fallback_heuristic=fallback,
+        strict_no_fallback=strict,
         retrieval_policy=retrieval_policy,
     )
