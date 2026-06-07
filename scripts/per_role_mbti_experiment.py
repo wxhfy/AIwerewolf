@@ -68,7 +68,14 @@ def run_one(seed: int, track_c: bool) -> dict:
     character_map = {p.id: roster[p.id] for p in players if p.id in roster}
     agents = create_agents(players, {"type": "llm", "seed": seed, "character_map": character_map})
     game = WerewolfGame(players=players, agents=agents, seed=seed, max_days=4)
-    state = game.play()
+
+    try:
+        state = game.play()
+    except RuntimeError as e:
+        # Strict mode kills game on invalid LLM decision — skip this seed
+        msg = str(e)[:100]
+        print(f"  seed={seed} GAME_ERROR: {msg}")
+        return {"seed": seed, "winner": "error", "day": 0, "players": [], "track_c": track_c, "error": msg}
 
     per_player = []
     for p in state.players:
@@ -91,20 +98,21 @@ def main():
     n = args.games
 
     all_players = []
+    skipped = 0
     for mode, track_c in [("Baseline", False), ("Track C", True)]:
         label = "Track C ON" if track_c else "Track C OFF"
         print(f"\n{'='*60}\n  {label} ({n} games, MBTI-balanced)\n{'='*60}")
         for s in range(1, n + 1):
             t0 = time.time()
-            try:
-                result = run_one(s, track_c)
-                elapsed = time.time() - t0
-                players = result["players"]
-                all_players.extend(players)
-                wins = sum(1 for p in players if p["won"])
-                print(f"  seed={s:>3} {result['winner']:<8} d={result['day']} won={wins}/{len(players)} {elapsed:.0f}s")
-            except Exception as e:
-                print(f"  seed={s:>3} FAILED: {e}")
+            result = run_one(s, track_c)
+            elapsed = time.time() - t0
+            players = result["players"]
+            if result.get("winner") == "error":
+                skipped += 1
+                continue
+            all_players.extend(players)
+            wins = sum(1 for p in players if p["won"])
+            print(f"  seed={s:>3} {result['winner']:<8} d={result['day']} won={wins}/{len(players)} {elapsed:.0f}s")
 
     os.makedirs("data/experiment", exist_ok=True)
     with open(args.output, "w") as f:
