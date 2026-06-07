@@ -78,10 +78,7 @@ AIwerewolf/
 │   ├── DATA_FLOW.md       # 端到端数据流
 │   ├── backend_acceptance_criteria.md  # 验收标准
 │   ├── PROJECT_MODULE_DESIGN.md  # 核心模块设计
-│   ├── PROJECT_FINAL_FACTS.json   # 结项数据
-│   ├── PROJECT_CLOSURE_FACTS.json # 结项快照
-│   ├── experiments/       # 实验报告
-│   └── archive/           # 归档（含REFERENCE.md等早期文档）
+│   └── experiments/       # 实验报告
 ├── backend/
 │   ├── engine/            # 游戏引擎
 │   ├── agents/            # AI Agent

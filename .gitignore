@@ -251,7 +251,15 @@ references/
 frontend/public/experiments/
 docs/experiments/
 docs/html_plan/
+
+# Internal dev docs (local-only)
 docs/archive/
+docs/PROJECT_CLOSURE_FACTS.json
+docs/PROJECT_DESIGN_HISTORY.md
+docs/PROJECT_FINAL_FACTS.json
+docs/PROJECT_FINAL_REPORT_DRAFT.md
+docs/track_b_open_data_sources_manifest.yaml
+docs/assets/closure/
 TODO.md
 
 # Planning docs (transient)
