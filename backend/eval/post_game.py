@@ -187,6 +187,17 @@ def run_post_game_scoring(game_state: Any, game_id: str) -> int:
     # 9. Store lessons as candidate docs
     stored = store_lessons_to_db(all_lessons)
     logger.info(f"Post-game knowledge: {stored} lessons stored for game {game_id}")
+
+    # 10. Promote candidates → active (quality + cluster + prune)
+    if stored > 0:
+        try:
+            from backend.eval.knowledge_abstractor import promote_after_store
+
+            promoted = promote_after_store()
+            logger.info(f"Post-game promotion: {promoted} candidates promoted to active")
+        except Exception:
+            logger.debug("Promotion skipped (non-critical)", exc_info=True)
+
     return stored
 
 

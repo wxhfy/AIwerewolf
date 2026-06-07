@@ -415,3 +415,93 @@ def store_lessons_to_db(
         raise
     finally:
         db.close()
+
+
+def promote_after_store() -> int:
+    """Promote candidates to active after new lessons are stored.
+
+    Runs the standard 3-step promotion pipeline:
+    1. quality  — promote candidates with quality_score ≥ 0.85
+    2. cluster  — promote top-5 per (role, doc_type) cluster, quality ≥ 0.75
+    3. prune    — cap active docs per (role, doc_type) at 30
+
+    Called from post_game.py after each game's lessons are stored.
+    Returns total number of candidates promoted.
+    """
+    import logging
+    from collections import defaultdict
+
+    from backend.db.database import SessionLocal
+    from backend.db.persist import StrategyKnowledgeDoc
+
+    logger = logging.getLogger(__name__)
+    db = SessionLocal()
+    promoted_total = 0
+
+    try:
+        # ── Step 1: quality promo (q ≥ 0.90) ──
+        quality_threshold = 0.85
+        rows = (
+            db.query(StrategyKnowledgeDoc)
+            .filter(
+                StrategyKnowledgeDoc.status == "candidate",
+                StrategyKnowledgeDoc.quality_score >= quality_threshold,
+            )
+            .all()
+        )
+        for row in rows:
+            row.status = "active"
+            promoted_total += 1
+
+        # ── Step 2: cluster promo (top-5 per role/doc_type, q ≥ 0.75) ──
+        cluster_threshold = 0.75
+        top_n = 5
+        rows = (
+            db.query(StrategyKnowledgeDoc)
+            .filter(
+                StrategyKnowledgeDoc.status == "candidate",
+                StrategyKnowledgeDoc.quality_score >= cluster_threshold,
+            )
+            .order_by(StrategyKnowledgeDoc.quality_score.desc())
+            .all()
+        )
+        groups: dict[tuple[str, str], list] = defaultdict(list)
+        for row in rows:
+            key = (row.role, row.doc_type or "unknown")
+            groups[key].append(row)
+        for key, group in groups.items():
+            for row in sorted(group, key=lambda r: r.quality_score, reverse=True)[:top_n]:
+                if row.status == "candidate":
+                    row.status = "active"
+                    promoted_total += 1
+
+        # ── Step 3: prune (cap active per role/doc_type at 20) ──
+        cap = 20
+        active_rows = (
+            db.query(StrategyKnowledgeDoc)
+            .filter(StrategyKnowledgeDoc.status == "active")
+            .order_by(StrategyKnowledgeDoc.quality_score.desc())
+            .all()
+        )
+        active_groups: dict[tuple[str, str], list] = defaultdict(list)
+        for row in active_rows:
+            key = (row.role, row.doc_type or "unknown")
+            active_groups[key].append(row)
+        for key, group in active_groups.items():
+            if len(group) > cap:
+                # Demote lowest-quality excess to candidate
+                excess = sorted(group, key=lambda r: r.quality_score)[: len(group) - cap]
+                for row in excess:
+                    row.status = "candidate"
+
+        db.commit()
+
+        if promoted_total > 0:
+            logger.info("promote_after_store: %d candidates → active", promoted_total)
+        return promoted_total
+    except Exception:
+        db.rollback()
+        logger.warning("promote_after_store failed", exc_info=True)
+        return 0
+    finally:
+        db.close()
