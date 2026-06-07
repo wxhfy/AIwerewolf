@@ -72,6 +72,9 @@ def _spec_for_provider(provider: str, model: str) -> dict[str, str] | None:
     elif provider in {"mimo", "local_mimo"}:
         api_key = os.getenv("MIMO_API_KEY", "local").strip()
         base_url = os.getenv("MIMO_BASE_URL", "").strip()
+    elif provider == "anthropic":
+        api_key = os.getenv("ANTHROPIC_AUTH_TOKEN", "").strip()
+        base_url = os.getenv("ANTHROPIC_BASE_URL", "https://api.anthropic.com").strip()
     elif provider in {"weapi", "weapi_pw"}:
         api_key = os.getenv("WEAPI_API_KEY", "").strip()
         base_url = os.getenv("WEAPI_BASE_URL", "https://weapi.pw").strip()

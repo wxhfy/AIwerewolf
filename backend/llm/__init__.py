@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from typing import Any
 
+from backend.llm.anthropic_client import AnthropicClient
 from backend.llm.deepseek import DeepSeekClient
 from backend.llm.deepseek import KeyFallbackClient
 from backend.llm.deepseek import create_key_fallback_client
@@ -224,9 +225,24 @@ def create_client(provider: str | None = None, **kwargs) -> Any:
         )
         client.provider = "weapi"
         return client
+    elif provider == "anthropic":
+        # Anthropic-format API (Messages endpoint) — used by ARK coding / Anthropic SDK
+        api_key = kwargs.pop("api_key", None) or os.getenv("ANTHROPIC_AUTH_TOKEN", "")
+        base_url = kwargs.pop("base_url", None) or os.getenv("ANTHROPIC_BASE_URL", "https://api.anthropic.com")
+        model = kwargs.pop("model", None) or os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-6")
+        if not api_key:
+            return _UnavailableLLMClient(provider="anthropic", model=model, base_url=base_url)
+        client = AnthropicClient(
+            api_key=api_key,
+            base_url=base_url,
+            model=model,
+            **kwargs,
+        )
+        client.provider = "anthropic"
+        return client
     else:
         raise ValueError(
-            f"Unknown LLM provider: {provider}. Supported: doubao, deepseek, dsv4flash, ark, mimo, weapi, fake"
+            f"Unknown LLM provider: {provider}. Supported: doubao, deepseek, dsv4flash, ark, mimo, weapi, anthropic"
         )
 
 
