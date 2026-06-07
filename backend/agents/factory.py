@@ -52,6 +52,8 @@ def _resolve_pool_specs(config: dict[str, Any]) -> list[dict[str, str]]:
 def _spec_for_provider(provider: str, model: str) -> dict[str, str] | None:
     """Resolve (api_key, base_url) for a given provider and model."""
     if provider in {"fake", "fake_llm", "offline_llm"}:
+        if os.getenv("_TEST_ALLOW_FAKE_LLM") != "true":
+            return None  # fake provider is test-only — refuse in production
         return {
             "provider": "fake",
             "api_key": "",
@@ -116,8 +118,7 @@ def _create_llm_runnable(
     if getattr(client, "available", True) is False:
         raise RuntimeError(
             f"LLM provider {getattr(client, 'provider', provider) or provider or 'default'} "
-            "is unavailable. LLM-only games refuse heuristic fallback; configure an API key "
-            "or set LLM_PROVIDER=fake for local tests."
+            "is unavailable. LLM-only games refuse heuristic fallback; configure an API key."
         )
     return create_llm_from_client(client)
 

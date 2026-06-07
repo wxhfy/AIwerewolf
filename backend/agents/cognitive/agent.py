@@ -264,8 +264,6 @@ class CognitiveAgent:
         target_id = self._resolve_target(result["target"])
         if legal_target_ids and target_id not in legal_target_ids:
             target_id = None
-        if not target_id and obs.legal_targets and self._is_fake_llm_provider():
-            target_id = obs.legal_targets[0].id
         # Abstention: return empty vote as Decision (not dict)
         if not target_id:
             return self._decision(ActionType.VOTE, target_id="", reasoning=result.get("reasoning", "弃票"))
@@ -656,10 +654,6 @@ class CognitiveAgent:
                             vote_target=vote_target,
                             day=self.memory.day,
                         )
-
-    def _is_fake_llm_provider(self) -> bool:
-        provider = str(getattr(self._llm, "provider", "") or "").strip().lower()
-        return provider in {"fake", "fake_llm", "offline_llm"}
 
     def _has_meaningful_new_info_since_speech(self, obs) -> bool:
         """Check if there are meaningful new events since this agent's last speech.

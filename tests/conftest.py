@@ -21,6 +21,7 @@ def _use_local_strategy_retrieval_in_tests(monkeypatch: pytest.MonkeyPatch) -> N
 @pytest.fixture(autouse=True)
 def _use_fake_llm_agents_in_tests(monkeypatch: pytest.MonkeyPatch) -> None:
     """Tests default to local LLM-compatible agents without external API cost."""
+    monkeypatch.setenv("_TEST_ALLOW_FAKE_LLM", "true")
     monkeypatch.setenv("LLM_PROVIDER", "fake")
     monkeypatch.setenv("AIWEREWOLF_DEFAULT_AGENT_TYPE", "llm")
     monkeypatch.setenv("MODEL_POOL", "fake:fake-llm")
