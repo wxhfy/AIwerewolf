@@ -30,7 +30,7 @@ const BUTTON_TEXT: Record<string, (l: Language) => string> = {
   TALK: (l) => l === "zh" ? "发送" : "Send",
 };
 
-export function ActionPanel({ pendingInput, onAction, language, votes, players }: ActionPanelProps) {
+export function ActionPanel({ pendingInput, onAction, language, players }: ActionPanelProps) {
   const pi = pendingInput;
   if (!pi) return null;
 

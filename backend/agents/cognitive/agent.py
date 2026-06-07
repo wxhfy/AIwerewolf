@@ -182,22 +182,30 @@ class CognitiveAgent:
         is_first = today_chat_count == 0
         is_last_words = self._view.phase == "DAY_LAST_WORDS"
 
-        raw = self._pipeline.run_speech(obs, self.memory, is_first, is_last_words)
+        result = self._pipeline.run_speech(obs, self.memory, is_first, is_last_words)
+        raw = result.get("speech", "")
+        reasoning = result.get("reasoning", "")
 
-        # Parse multi-bubble speech
+        # Parse multi-bubble speech. LLM-only mode must not synthesize a
+        # replacement utterance locally; an empty or unusable model response is
+        # an acceptance failure.
         segments = parse_json_array(raw)
         if not segments or (len(segments) == 1 and len(segments[0]) < 3):
             import logging
 
             _logger = logging.getLogger(__name__)
             _logger.warning(
-                f"Speech parse fallback for {self.player_name}({self._profile.role}): "
-                f"raw_len={len(raw)}, segments_parsed={len(segments) if segments else 0}"
+                "LLM speech unusable for %s(%s): raw_len=%s, segments_parsed=%s",
+                self.player_name,
+                self._profile.role,
+                len(raw),
+                len(segments) if segments else 0,
             )
-            speech = raw.strip()[:500] or "我暂时没有更多信息，先听大家发言。"
-            segments = [speech]
+            raise RuntimeError(f"LLM speech response is empty or too short for {self.player_name}")
+        if not str(reasoning or "").strip():
+            raise RuntimeError(f"LLM speech decision missing reasoning for {self.player_name}")
 
-        self.memory.add_action("speech", None, segments[0], "")
+        self.memory.add_action("speech", None, segments[0], reasoning)
         self.memory.remember_opening(segments)
         self._today_speech_count += len(segments)
 
@@ -212,6 +220,7 @@ class CognitiveAgent:
         return self._decision(
             ActionType.TALK,
             speech="\n".join(segments),
+            reasoning=reasoning,
             metadata={"segments": segments, "segment_count": len(segments)},
         )
 
@@ -310,33 +319,71 @@ class CognitiveAgent:
                 lines.append(f"今晚被刀的是: {victim.get('seat', '?')}号:{victim.get('name', '')}")
 
         obs = self._observe()
-        result = self._pipeline.run_night(obs, self.memory, "\n".join(lines))
-
-        decisions = []
+        targets = [f"{p.seat}号:{p.name}" for p in obs.alive if p.id != self.player_id]
+        prompt = (
+            format_observation(obs)
+            + "\n\n"
+            + "\n".join(lines)
+            + "\n\n你是女巫，请决定本晚是否用药。"
+            + "\n规则：一晚最多使用一瓶药；如果 save=true，poison_target 必须为 null。"
+            + "\n如果不用药，输出 save=false 且 poison_target=null。"
+            + f"\n可毒目标: {', '.join(targets) if targets else '无'}"
+            + '\n只输出 JSON 对象：{"reasoning": "理由", "save": false, "poison_target": null}'
+        )
+        raw = self._pipeline.direct_call(prompt, max_tokens=360)
         try:
-            m = re.search(r"\{[^}]+\}", result.get("reasoning", ""))
-            if m:
-                data = json.loads(m.group())
-                save = data.get("save", False)
-                poison = data.get("poison_target")
+            data = self._parse_witch_json(raw)
+        except ValueError:
+            if self._strict_no_fallback:
+                raise
+            return [self._decision(ActionType.SKIP, reasoning="女巫输出解析失败")]
 
-                if save and not self._witch_save_used and victim_id:
-                    self._witch_save_used = True
-                    self.memory.role_state["save_used"] = True
-                    decisions.append(self._decision(ActionType.WITCH_SAVE, target_id=victim_id))
+        reasoning = str(data.get("reasoning") or "").strip()
+        if not reasoning:
+            raise RuntimeError("LLM witch decision missing reasoning")
+        save = bool(data.get("save"))
+        poison = data.get("poison_target")
+        poison_text = "" if poison is None else str(poison).strip()
+        no_poison = poison_text.lower() in {"", "none", "null", "无", "不用", "不毒", "跳过"}
 
-                if poison and not self._witch_poison_used:
-                    poison_id = self._resolve_target(poison)
-                    if poison_id:
-                        self._witch_poison_used = True
-                        decisions.append(self._decision(ActionType.WITCH_POISON, target_id=poison_id))
-        except (json.JSONDecodeError, KeyError):
-            pass
+        if save and not victim_id:
+            raise RuntimeError("LLM witch decision requested save without wolf victim")
+        if save and self._witch_save_used:
+            raise RuntimeError("LLM witch decision requested already-used antidote")
+        if poison_text and not no_poison and self._witch_poison_used:
+            raise RuntimeError("LLM witch decision requested already-used poison")
+        if save and poison_text and not no_poison:
+            raise RuntimeError("LLM witch decision attempted to use antidote and poison in one night")
 
-        if not decisions:
-            decisions.append(self._decision(ActionType.SKIP, reasoning="不用药"))
+        decisions: list[Decision] = []
+        if save and victim_id:
+            self._witch_save_used = True
+            self.memory.role_state["save_used"] = True
+            decisions.append(self._decision(ActionType.WITCH_SAVE, target_id=victim_id, reasoning=reasoning))
+        elif poison_text and not no_poison:
+            poison_id = self._resolve_target(poison_text)
+            if not poison_id:
+                raise RuntimeError(f"LLM returned unresolved poison target: {poison_text!r}")
+            self._witch_poison_used = True
+            decisions.append(self._decision(ActionType.WITCH_POISON, target_id=poison_id, reasoning=reasoning))
+        else:
+            decisions.append(self._decision(ActionType.SKIP, reasoning=reasoning))
 
         return decisions
+
+    @staticmethod
+    def _parse_witch_json(text: str) -> dict[str, Any]:
+        start = text.find("{")
+        end = text.rfind("}")
+        if start < 0 or end <= start:
+            raise ValueError(f"LLM witch decision did not contain JSON: {text[:120]!r}")
+        try:
+            data = json.loads(text[start : end + 1])
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"LLM witch decision JSON invalid: {text[:120]!r}") from exc
+        if not isinstance(data, dict):
+            raise ValueError("LLM witch decision JSON must be an object")
+        return data
 
     def shoot(self) -> Decision:
         obs = self._observe()
@@ -352,14 +399,10 @@ class CognitiveAgent:
         if not target_id:
             parsed_target = str(parsed.get("target", "")).strip().lower()
             is_explicit_no_action = parsed_target in ("none", "null", "无", "空", "弃票", "弃权", "abstain", "pass", "跳过", "不行动")
-            if self._strict_no_fallback and not is_explicit_no_action:
-                raise RuntimeError(f"LLM returned unresolved shoot target: {parsed['target']!r}")
-            # Fallback: pick first alive player (excluding self)
-            for p in self._view.players:
-                if p.get("alive") and p.get("id") != self.player_id:
-                    target_id = p.get("id", "")
-                    break
-            target_id = target_id or (self._view.players[0]["id"] if self._view.players else None)
+            if self._strict_no_fallback:
+                detail = "explicit no-action is not legal for hunter shoot" if is_explicit_no_action else "unresolved target"
+                raise RuntimeError(f"LLM returned invalid shoot target ({detail}): {parsed['target']!r}")
+            target_id = None
         return self._decision(ActionType.SHOOT, target_id=target_id, reasoning=parsed["reasoning"])
 
     def boom(self, targets: list[str] | None = None) -> Decision:
@@ -392,9 +435,10 @@ class CognitiveAgent:
             )
 
         target_id = self._resolve_target(raw_target)
-        if not target_id and self._strict_no_fallback:
-            raise RuntimeError(f"LLM returned unresolved boom target: {raw_target!r}")
-        target_id = target_id or (self._view.players[0]["id"] if self._view.players else None)
+        if not target_id:
+            if self._strict_no_fallback:
+                raise RuntimeError(f"LLM returned unresolved boom target: {raw_target!r}")
+            target_id = None
         return self._decision(
             ActionType.BOOM,
             target_id=target_id,
@@ -417,9 +461,10 @@ class CognitiveAgent:
         result = self._pipeline.direct_call(prompt)
         parsed = parse_json_target(result)
         target_id = self._resolve_target(parsed["target"])
-        if not target_id and self._strict_no_fallback:
-            raise RuntimeError(f"LLM returned unresolved badge target: {parsed['target']!r}")
-        target_id = target_id or (candidates[0] if candidates else None)
+        if not target_id:
+            if self._strict_no_fallback:
+                raise RuntimeError(f"LLM returned unresolved badge target: {parsed['target']!r}")
+            target_id = None
         return self._decision(ActionType.VOTE, target_id=target_id, reasoning=parsed["reasoning"])
 
     def finish(self, winner: Optional[str]) -> None:
@@ -709,42 +754,21 @@ class CognitiveAgent:
     def _night_decision(self, result: Dict[str, str], action_type: ActionType) -> Decision:
         """Create a Decision for a night action.
 
-        Handles strategic skip keywords (空守, 不救, etc.) by mapping them
-        to self-target for Guard and first-alive for other roles.
+        LLM-only mode requires a legal target for night actions that the engine
+        requests. Local target synthesis would hide empty or invalid model
+        output, so strict mode raises instead.
         """
         raw_target = (result.get("target") or "").strip()
         if raw_target in self._SKIP_NIGHT_KEYWORDS:
-            import logging
-
-            _logger = logging.getLogger(__name__)
-            _logger.info(
-                f"Night skip keyword '{raw_target}' from {self.player_name}({self._profile.role}) "
-                f"for {action_type.value} — picking fallback target"
-            )
-            # Prefer self for Guard; first alive for others
-            if action_type == ActionType.GUARD:
-                target_id = self.player_id
-            else:
-                target_id = ""
-                for p in self._view.players:
-                    if p.get("alive"):
-                        target_id = p.get("id", "")
-                        break
+            if self._strict_no_fallback:
+                raise RuntimeError(f"LLM returned skip keyword for required {action_type.value} target: {raw_target!r}")
+            target_id = None
         else:
             target_id = self._resolve_target(raw_target)
 
         if not target_id:
-            # Agent chose no target or returned invalid target — pick a fallback alive player
-            no_action_terms = ("none", "null", "无", "空", "弃票", "弃权", "abstain", "pass", "跳过", "不行动")
-            is_explicit_no_action = result.get("target", "").strip().lower() in no_action_terms
-            if self._strict_no_fallback and not is_explicit_no_action:
+            if self._strict_no_fallback:
                 raise RuntimeError(f"LLM returned unresolved {action_type.value} target: {result['target']!r}")
-            for p in self._view.players:
-                if p.get("alive") and p.get("id") != self.player_id:
-                    target_id = p.get("id", "")
-                    break
-            if not target_id:
-                target_id = self.player_id  # last resort: self
 
         return self._decision(action_type, target_id=target_id, reasoning=result.get("reasoning", ""))
 

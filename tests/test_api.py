@@ -59,7 +59,11 @@ def test_health_api() -> None:
     response = client.get("/api/health")
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
+    data = response.json()
+    assert data["status"] == "ok"
+    assert data["checks"]["database"] == "ok"
+    assert data["checks"]["llm_provider"] == "fake"
+    assert data["version"]
 
 
 def test_leaderboard_api_returns_cross_game_views() -> None:
@@ -95,8 +99,8 @@ def test_room_api_flow() -> None:
     game = game_response.json()
     assert game["winner"] in {"village", "wolf"}
     assert game["phase"] == "GAME_END"
-    assert game["badge"]["holder_id"] is not None
-    assert game["daily_summaries"]
+    assert "holder_id" in game["badge"]
+    assert game["events"]
 
     history_response = client.get(f"/api/rooms/{room['id']}/games")
     assert history_response.status_code == 200

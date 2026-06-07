@@ -129,10 +129,20 @@ type EvolutionDashboard = {
   }>;
 };
 
-const COLOR_GOOD = "#22c55e";
-const COLOR_BAD = "#ef4444";
-const COLOR_NEUTRAL = "#64748b";
-const COLOR_ACCENT = "#3b82f6";
+const COLOR_GOOD = "rgb(var(--color-village-rgb) / 0.95)";
+const COLOR_BAD = "rgb(var(--color-danger-rgb) / 0.95)";
+const COLOR_NEUTRAL = "rgb(var(--color-text-sub-rgb) / 0.7)";
+const COLOR_ACCENT = "rgb(var(--color-info-rgb) / 0.9)";
+const COLOR_GRID = "rgb(var(--color-text-sub-rgb) / 0.16)";
+const COLOR_AXIS = "rgb(var(--color-text-sub-rgb) / 0.72)";
+const COLOR_CARD = "var(--color-card)";
+const COLOR_BORDER = "var(--color-border)";
+const COLOR_TEXT = "rgb(var(--color-text-rgb) / 0.95)";
+const TOOLTIP_STYLE = {
+  backgroundColor: COLOR_CARD,
+  border: `1px solid ${COLOR_BORDER}`,
+  color: COLOR_TEXT,
+};
 
 export default function EvalDashboardPage() {
   const [roleScores, setRoleScores] = useState<RoleScoresResponse | null>(null);
@@ -260,24 +270,24 @@ export default function EvalDashboardPage() {
   }, [aggregate, roleScores]);
 
   return (
-    <div className="min-h-screen bg-[var(--color-bg,#0b0f17)] text-[var(--color-fg,#e2e8f0)] p-6 space-y-6">
-      <header className="flex items-center justify-between border-b border-[var(--color-border,#1e293b)] pb-4">
+    <div className="min-h-screen space-y-6 bg-background p-6 text-textPrimary">
+      <header className="flex items-center justify-between border-b border-border pb-4">
         <div>
           <h1 className="text-2xl font-semibold">Track B/C 评估总览</h1>
-          <p className="text-sm text-slate-400 mt-1">
+          <p className="mt-1 text-sm text-text-sub">
             真 LLM 评分区分度 + 进化效果 — 最新刷新时间: {new Date().toLocaleString()}
           </p>
         </div>
         <div className="flex items-center gap-3">
           <Link
             href="/evolution"
-            className="px-3 py-2 text-sm rounded-card border border-[var(--color-border,#1e293b)] bg-[var(--color-card,#0f172a)] hover:bg-[var(--color-card-hover,#1e293b)] transition"
+            className="rounded-card border border-border bg-cardBackground px-3 py-2 text-sm text-textPrimary transition hover:border-primary/35 hover:text-primary"
           >
             前往 Track C 控制台
           </Link>
           <button
             onClick={() => setRefreshTick((t) => t + 1)}
-            className="px-3 py-2 text-sm rounded-card border border-[var(--color-border,#1e293b)] bg-[var(--color-accent,#3b82f6)] text-white hover:opacity-90 transition"
+            className="rounded-card border border-primary/20 bg-primary px-3 py-2 text-sm font-medium text-white transition hover:bg-primaryHover"
           >
             刷新
           </button>
@@ -285,7 +295,7 @@ export default function EvalDashboardPage() {
       </header>
 
       {error && (
-        <div className="rounded-card border border-red-700 bg-red-900/30 text-red-200 p-3 text-sm">
+        <div className="rounded-card border border-danger/30 bg-danger/10 p-3 text-sm text-danger">
           {error}
         </div>
       )}
@@ -313,19 +323,19 @@ export default function EvalDashboardPage() {
           ) : (
             <ResponsiveContainer width="100%" height={300}>
               <BarChart data={roleScoreChartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                <XAxis dataKey="role" stroke="#94a3b8" />
-                <YAxis domain={[0, 100]} stroke="#94a3b8" />
+                <CartesianGrid strokeDasharray="3 3" stroke={COLOR_GRID} />
+                <XAxis dataKey="role" stroke={COLOR_AXIS} />
+                <YAxis domain={[0, 100]} stroke={COLOR_AXIS} />
                 <Tooltip
-                  contentStyle={{ backgroundColor: "#0f172a", border: "1px solid #1e293b" }}
-                  labelStyle={{ color: "#e2e8f0" }}
+                  contentStyle={TOOLTIP_STYLE}
+                  labelStyle={{ color: COLOR_TEXT }}
                 />
                 <Legend />
                 <Bar dataKey="good_mean" name="good 策略均分" fill={COLOR_GOOD}>
-                  <ErrorBar dataKey="good_sd" stroke="#86efac" strokeWidth={1.5} />
+                  <ErrorBar dataKey="good_sd" stroke={COLOR_GOOD} strokeWidth={1.5} />
                 </Bar>
                 <Bar dataKey="bad_mean" name="bad 策略均分" fill={COLOR_BAD}>
-                  <ErrorBar dataKey="bad_sd" stroke="#fca5a5" strokeWidth={1.5} />
+                  <ErrorBar dataKey="bad_sd" stroke={COLOR_BAD} strokeWidth={1.5} />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
@@ -339,21 +349,21 @@ export default function EvalDashboardPage() {
           ) : (
             <ResponsiveContainer width="100%" height={300}>
               <ScatterChart>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                <CartesianGrid strokeDasharray="3 3" stroke={COLOR_GRID} />
                 <XAxis
                   type="number"
                   dataKey="x"
                   ticks={roleScoreChartData.map((_, i) => i + 1)}
                   tickFormatter={(idx: number) => roleScoreChartData[idx - 1]?.role || ""}
-                  stroke="#94a3b8"
+                  stroke={COLOR_AXIS}
                   domain={[0.5, roleScoreChartData.length + 0.5]}
                 />
-                <YAxis type="number" dataKey="y" domain={[0, 100]} stroke="#94a3b8" />
+                <YAxis type="number" dataKey="y" domain={[0, 100]} stroke={COLOR_AXIS} />
                 <ZAxis range={[60, 60]} />
                 <Tooltip
                   cursor={{ strokeDasharray: "3 3" }}
-                  contentStyle={{ backgroundColor: "#0f172a", border: "1px solid #1e293b" }}
-                  labelStyle={{ color: "#e2e8f0" }}
+                  contentStyle={TOOLTIP_STYLE}
+                  labelStyle={{ color: COLOR_TEXT }}
                   formatter={(value: any, name: any) => [value, name ?? ""]}
                 />
                 <Legend />
@@ -373,14 +383,14 @@ export default function EvalDashboardPage() {
           ) : (
             <ResponsiveContainer width="100%" height={260}>
               <LineChart data={evolutionDeltaData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                <XAxis dataKey="index" stroke="#94a3b8" />
-                <YAxis stroke="#94a3b8" />
+                <CartesianGrid strokeDasharray="3 3" stroke={COLOR_GRID} />
+                <XAxis dataKey="index" stroke={COLOR_AXIS} />
+                <YAxis stroke={COLOR_AXIS} />
                 <Tooltip
-                  contentStyle={{ backgroundColor: "#0f172a", border: "1px solid #1e293b" }}
-                  labelStyle={{ color: "#e2e8f0" }}
+                  contentStyle={TOOLTIP_STYLE}
+                  labelStyle={{ color: COLOR_TEXT }}
                 />
-                <ReferenceLine y={0} stroke="#475569" />
+                <ReferenceLine y={0} stroke={COLOR_NEUTRAL} />
                 <Line
                   type="monotone"
                   dataKey="delta_win_rate"
@@ -395,7 +405,7 @@ export default function EvalDashboardPage() {
                         cy={props.cy}
                         r={4}
                         stroke={accepted ? COLOR_GOOD : COLOR_NEUTRAL}
-                        fill={accepted ? COLOR_GOOD : "#0f172a"}
+                        fill={accepted ? COLOR_GOOD : COLOR_CARD}
                         strokeWidth={1.5}
                       />
                     );
@@ -412,12 +422,12 @@ export default function EvalDashboardPage() {
           ) : (
             <ResponsiveContainer width="100%" height={260}>
               <BarChart data={patchStatusData} layout="vertical">
-                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                <XAxis type="number" stroke="#94a3b8" />
-                <YAxis dataKey="status" type="category" width={100} stroke="#94a3b8" />
+                <CartesianGrid strokeDasharray="3 3" stroke={COLOR_GRID} />
+                <XAxis type="number" stroke={COLOR_AXIS} />
+                <YAxis dataKey="status" type="category" width={100} stroke={COLOR_AXIS} />
                 <Tooltip
-                  contentStyle={{ backgroundColor: "#0f172a", border: "1px solid #1e293b" }}
-                  labelStyle={{ color: "#e2e8f0" }}
+                  contentStyle={TOOLTIP_STYLE}
+                  labelStyle={{ color: COLOR_TEXT }}
                 />
                 <Bar dataKey="count" fill={COLOR_ACCENT} />
               </BarChart>
@@ -431,15 +441,15 @@ export default function EvalDashboardPage() {
           ) : (
             <ResponsiveContainer width="100%" height={260}>
               <BarChart data={gateData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                <XAxis dataKey="step" stroke="#94a3b8" angle={-25} textAnchor="end" height={50} interval={0} fontSize={10} />
-                <YAxis stroke="#94a3b8" domain={[0, 100]} />
+                <CartesianGrid strokeDasharray="3 3" stroke={COLOR_GRID} />
+                <XAxis dataKey="step" stroke={COLOR_AXIS} angle={-25} textAnchor="end" height={50} interval={0} fontSize={10} />
+                <YAxis stroke={COLOR_AXIS} domain={[0, 100]} />
                 <Tooltip
-                  contentStyle={{ backgroundColor: "#0f172a", border: "1px solid #1e293b" }}
-                  labelStyle={{ color: "#e2e8f0" }}
+                  contentStyle={TOOLTIP_STYLE}
+                  labelStyle={{ color: COLOR_TEXT }}
                 />
                 <Legend />
-                <Bar dataKey="threshold_pct" name="阈值 %" fill="#1e293b" />
+                <Bar dataKey="threshold_pct" name="阈值 %" fill={COLOR_GRID} />
                 <Bar dataKey="success_rate_pct" name="实测 %">
                   {gateData.map((entry, idx) => (
                     <Cell key={idx} fill={entry.passed ? COLOR_GOOD : COLOR_BAD} />
@@ -451,13 +461,13 @@ export default function EvalDashboardPage() {
         </Panel>
       </section>
 
-      <footer className="border-t border-[var(--color-border,#1e293b)] pt-4 text-xs text-slate-500">
+      <footer className="border-t border-border pt-4 text-xs text-text-sub">
         本页布局固定，新一轮数据出现后点右上 “刷新” 即可。后端数据来源：
-        <code className="text-slate-300 ml-1">/api/eval/role-scores</code>{" "}
-        <code className="text-slate-300 ml-1">/api/metrics/aggregate</code>{" "}
-        <code className="text-slate-300 ml-1">/api/evolution</code>{" "}
-        <code className="text-slate-300 ml-1">/api/evolution/dashboard</code>
-        {loading && <span className="ml-3 text-slate-400">loading…</span>}
+        <code className="ml-1 text-textPrimary">/api/eval/role-scores</code>{" "}
+        <code className="ml-1 text-textPrimary">/api/metrics/aggregate</code>{" "}
+        <code className="ml-1 text-textPrimary">/api/evolution</code>{" "}
+        <code className="ml-1 text-textPrimary">/api/evolution/dashboard</code>
+        {loading && <span className="ml-3 text-text-sub">loading...</span>}
       </footer>
     </div>
   );
@@ -475,15 +485,15 @@ function Kpi({
   accent?: string;
 }) {
   return (
-    <div className="rounded-card border border-[var(--color-border,#1e293b)] bg-[var(--color-card,#0f172a)] p-4">
-      <div className="text-xs text-slate-400 uppercase tracking-wide">{label}</div>
+    <div className="rounded-card border border-border bg-cardBackground p-4 shadow-card">
+      <div className="text-xs uppercase tracking-wide text-text-sub">{label}</div>
       <div
-        className="text-2xl font-semibold mt-1"
+        className="mt-1 text-2xl font-semibold text-textPrimary"
         style={accent ? { color: accent } : undefined}
       >
         {value}
       </div>
-      {sub && <div className="text-xs text-slate-500 mt-1">{sub}</div>}
+      {sub && <div className="mt-1 text-xs text-text-sub/75">{sub}</div>}
     </div>
   );
 }
@@ -498,10 +508,10 @@ function Panel({
   children: React.ReactNode;
 }) {
   return (
-    <div className="rounded-card border border-[var(--color-border,#1e293b)] bg-[var(--color-card,#0f172a)] p-4">
-      <div className="flex items-baseline justify-between mb-3">
-        <h2 className="text-base font-semibold">{title}</h2>
-        {subtitle && <span className="text-xs text-slate-500">{subtitle}</span>}
+    <div className="rounded-card border border-border bg-cardBackground p-4 shadow-card">
+      <div className="mb-3 flex items-baseline justify-between gap-3">
+        <h2 className="text-base font-semibold text-textPrimary">{title}</h2>
+        {subtitle && <span className="text-xs text-text-sub/75">{subtitle}</span>}
       </div>
       {children}
     </div>
@@ -510,7 +520,7 @@ function Panel({
 
 function EmptyState({ label }: { label: string }) {
   return (
-    <div className="h-[260px] flex items-center justify-center text-sm text-slate-500 italic border border-dashed border-[var(--color-border,#1e293b)] rounded">
+    <div className="flex h-[260px] items-center justify-center rounded-card border border-dashed border-border text-sm italic text-text-sub/75">
       {label}
     </div>
   );
@@ -520,9 +530,9 @@ function DiscriminationTable({ rows }: { rows: any[] }) {
   if (rows.length === 0) return null;
   return (
     <div className="mt-3 overflow-x-auto">
-      <table className="w-full text-xs text-slate-300">
+      <table className="w-full text-xs text-text-sub">
         <thead>
-          <tr className="text-slate-500 border-b border-[var(--color-border,#1e293b)]">
+          <tr className="border-b border-border text-text-sub/75">
             <th className="py-1 text-left">角色</th>
             <th className="py-1 text-right">good 均分</th>
             <th className="py-1 text-right">bad 均分</th>
@@ -532,7 +542,7 @@ function DiscriminationTable({ rows }: { rows: any[] }) {
         </thead>
         <tbody>
           {rows.map((row) => (
-            <tr key={row.role} className="border-b border-[var(--color-border,#1e293b)]/40">
+            <tr key={row.role} className="border-b border-border/40">
               <td className="py-1">{row.role}</td>
               <td className="py-1 text-right">{row.good_mean}</td>
               <td className="py-1 text-right">{row.bad_mean}</td>

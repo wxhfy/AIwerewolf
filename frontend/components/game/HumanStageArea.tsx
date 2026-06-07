@@ -21,7 +21,7 @@ const StagePlaceholder = () => (
   </div>
 );
 
-export const HumanStageArea = React.memo(function HumanStageArea({ display, players, votes }: HumanStageAreaProps) {
+export const HumanStageArea = React.memo(function HumanStageArea({ display }: HumanStageAreaProps) {
   const d = display;
   if (!d.phase) return <StagePlaceholder />;
 

@@ -2,7 +2,7 @@
 
 import React, { useCallback, useRef } from "react";
 import { EventType, GameEvent, Language, Player } from "@/types";
-import { t, tPhase, format } from "@/lib/i18n";
+import { t, tPhase } from "@/lib/i18n";
 import { normalizeSpeechContent } from "@/lib/eventFilter";
 import { ChatBubble } from "@/components/game/ChatBubble";
 import { EventItem } from "@/components/game/EventItem";
@@ -80,7 +80,7 @@ function systemMessage(event: GameEvent, language: Language) {
 
 export function TimelineEvent({
   event, index, language, isHumanMode, humanSeat,
-  players, animateChat, onChatComplete, isLatest,
+  players, animateChat, onChatComplete,
 }: TimelineEventProps) {
   const onChatCompleteRef = useRef(onChatComplete);
   onChatCompleteRef.current = onChatComplete;
@@ -151,6 +151,7 @@ export function TimelineEvent({
         isSpeaking={animateChat && hasContent}
         animate={animateChat && hasContent}
         onTypewriterComplete={hasContent ? handleTypewriterComplete : undefined}
+        players={players}
       />
     );
   }

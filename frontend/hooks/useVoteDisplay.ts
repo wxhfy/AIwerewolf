@@ -65,7 +65,6 @@ export function useVoteDisplay(
       }
     }
     return events.slice(0, cutoff);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gameState?.events, completedTick]);
 
   // ── Badge vote tally (from revealed events) ──

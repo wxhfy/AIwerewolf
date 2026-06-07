@@ -29,7 +29,7 @@ updated: 2026-05-22
 
 ## 二、当前 REST 路由清单
 
-> 摘自 `backend/app.py`(2026-05-22 版本)。改路由就改这张表。
+> 摘自 `backend/app.py`(2026-06-07 版本)。改路由就改这张表。
 
 ### 健康检查
 
@@ -47,6 +47,7 @@ updated: 2026-05-22
 | GET | `/api/rooms/{room_id}/games` | — | 该房间历史对局 |
 | GET | `/api/rooms/{room_id}/snapshot` | `?show_private=bool` | 该房间最新快照 |
 | POST | `/api/rooms/{room_id}/games` | `seed`, `show_private`, ... | 在房间内创建新对局 |
+| POST | `/api/rooms/{room_id}/prepare` | `?show_private=bool` | 创建并初始化房间内对局壳，返回 SETUP/角色预览快照，不推进完整对局 |
 | POST | `/api/rooms/{room_id}/start` | `seed`, `show_private`, ... | 开始对局(同步阻塞返回最终结果) |
 | POST | `/api/rooms/{room_id}/action` | `payload` (Human 决策) | 提交人类玩家行动 |
 
@@ -57,6 +58,12 @@ updated: 2026-05-22
 | POST | `/api/games` | `seed`, `show_private`, `agent_type`, `human_seat`, `player_count`, `rule_pack_id` | 直接创建对局(无房间) |
 | GET | `/api/games` | — | 列出活跃对局 |
 | GET | `/api/games/{game_id}` | `?show_private=bool` | 获取对局快照 |
+| GET | `/api/replay/{game_id}` | `?show_private=bool` | 获取 DB 持久化回放 payload |
+| GET | `/api/games/{game_id}/metrics` | — | 获取单局 Track B 多维指标 |
+| GET | `/api/games/{game_id}/runtime_metrics` | — | 获取单局运行时指标（延迟、tokens、有效决策等） |
+| GET | `/api/games/{game_id}/reviews` | — | 获取复盘报告聚合 payload |
+| GET | `/api/games/{game_id}/reviews/html` | — | 获取复盘 HTML，`text/html` |
+| GET | `/api/games/{game_id}/reviews.md` | `?download=bool` | 获取复盘 Markdown，可下载 |
 
 ### 历史(History,DB 持久化)
 
@@ -65,10 +72,22 @@ updated: 2026-05-22
 | GET | `/api/history` | `?limit=int` | 列出 DB 中的历史对局 |
 | GET | `/api/history/{game_id}` | — | 获取历史对局摘要 |
 
+### Track B 评测 / Leaderboard
+
+| Method | Path | Body / Query | 说明 |
+|--------|------|--------------|------|
+| GET | `/api/metrics/aggregate` | `limit_games` | 跨局聚合指标，含 B/C acceptance 摘要 |
+| GET | `/api/leaderboard` | `role`, `limit` | 聚合 leaderboard |
+| GET | `/api/leaderboard/role_matrix` | `limit_games`, `llm_only`, `since_iso` | 按 agent/role 聚合胜率矩阵 |
+| GET | `/api/strategy/attribution` | `limit_games`, `llm_only`, `since_iso`, `top_k` | 策略知识检索使用与归因 |
+| GET | `/api/eval/role-scores` | `role` | 读取角色评分区分实验结果 |
+
 ### Track C 自进化
 
 | Method | Path | Body / Query | 说明 |
 |--------|------|--------------|------|
+| GET | `/api/agents` | — | 查询 Agent version 列表 |
+| POST | `/api/agents` | `{name, agent_type, model_name, prompt_version, config, parent_version_id?, notes?}` | 注册 Agent version |
 | GET | `/api/evolution` | `?limit=int` | 进化轮次日志 |
 | GET | `/api/evolution/dashboard` | — | Evolution Dashboard 聚合视图 |
 | POST | `/api/evolution/dream` | `{report_ids?, from_version?}` | 从 ApprovedReviewReport 聚合知识并生成 candidate patch |
@@ -78,6 +97,15 @@ updated: 2026-05-22
 | POST | `/api/strategy/knowledge/{doc_id}/deprecate` | `{reason?}` | 降权/废弃策略知识 |
 | GET | `/api/strategy/cards` | `role?` | 查询 RoleStrategyCard 版本 |
 | POST | `/api/strategy/patches/{patch_id}/apply` | — | 将已校验 patch 应用为 candidate strategy card |
+
+### Persona Library
+
+| Method | Path | Body / Query | 说明 |
+|--------|------|--------------|------|
+| GET | `/api/personas` | — | 查询 persona library |
+| POST | `/api/personas` | persona payload | 新增 persona |
+| PUT | `/api/personas/{name}` | persona payload | 更新 persona |
+| DELETE | `/api/personas/{name}` | — | 软删除 persona |
 
 ### B/C 量化验收字段
 
@@ -110,12 +138,12 @@ updated: 2026-05-22
 
 `GET /api/metrics/aggregate` 在顶层返回同结构 `acceptance` 字段。空样本的 `success_rate=0` 且 `passed=false`，不能把“无数据”当作通过。
 
-### 静态资源
+### 根路径 / 静态资源
 
 | Method | Path | 说明 |
 |--------|------|------|
-| GET | `/` | 返回 `frontend/index.html` |
-| GET | `/static/...` | `frontend/` 目录所有静态文件 |
+| GET | `/` | 后端健康提示 JSON；实际 UI 由 Next.js 前端服务提供 |
+| GET | Next.js app routes | `/`、`/room/{id}/play`、`/games/{id}/report`、`/evolution` 等由 `frontend/` 负责 |
 
 ---
 
@@ -181,7 +209,8 @@ updated: 2026-05-22
 ### 客户端断线 / 重连
 
 - 客户端断线 → 服务端 silent return(`WebSocketDisconnect`)
-- 重连后从 `GET /api/rooms/{room_id}/snapshot` 拉最新状态,**不要**重放历史消息
+- `/ws/rooms/{room_id}` 支持复用 active game；重连后服务端会先推送 room snapshot buffer 中已有快照，再继续接 live frames
+- `GET /api/rooms/{room_id}/snapshot` 仍可作为页面首次进入或非 WebSocket 恢复时的兜底最新状态
 - 重连频率:指数退避 1s → 2s → 4s → ... → 30s(详见 `30-frontend-conventions.md`)
 
 ---

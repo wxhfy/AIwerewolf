@@ -637,6 +637,46 @@ def compute_offline_score(m: PolicyMetrics) -> float:
     )
 
 
+def build_effect_summary(
+    metrics: Dict[str, PolicyMetrics],
+    scores: Dict[str, float],
+    *,
+    baseline_policy: str = "global_only",
+) -> Dict[str, Any]:
+    """Build policy effects relative to a stable baseline policy."""
+    if baseline_policy not in metrics and metrics:
+        baseline_policy = sorted(metrics)[0]
+    baseline = metrics.get(baseline_policy)
+    baseline_score = scores.get(baseline_policy, 0.0)
+    effects: Dict[str, Any] = {}
+    for policy_name, metric in metrics.items():
+        effects[policy_name] = {
+            "baseline_policy": baseline_policy,
+            "score": round(scores.get(policy_name, 0.0), 4),
+            "score_delta": round(scores.get(policy_name, 0.0) - baseline_score, 4),
+            "precision_at_3": round(metric.precision_at_3, 4),
+            "precision_at_3_delta": round(
+                metric.precision_at_3 - (baseline.precision_at_3 if baseline else 0.0), 4
+            ),
+            "ndcg_at_5": round(metric.ndcg_at_5, 4),
+            "ndcg_at_5_delta": round(metric.ndcg_at_5 - (baseline.ndcg_at_5 if baseline else 0.0), 4),
+            "coverage_rate": round(metric.coverage_rate, 4),
+            "coverage_rate_delta": round(
+                metric.coverage_rate - (baseline.coverage_rate if baseline else 0.0), 4
+            ),
+            "avg_relevance": round(metric.avg_relevance, 4),
+            "avg_relevance_delta": round(
+                metric.avg_relevance - (baseline.avg_relevance if baseline else 0.0), 4
+            ),
+            "n_empty": metric.n_empty,
+        }
+    return {
+        "baseline_policy": baseline_policy,
+        "best_by_score": max(scores.items(), key=lambda item: item[1])[0] if scores else "",
+        "effects": effects,
+    }
+
+
 # ================================================================
 # Main Evaluation
 # ================================================================
@@ -743,6 +783,7 @@ def run_evaluation(output_dir: str = "outputs/retrieval_policy_eval") -> Dict[st
         scores[pname] = compute_offline_score(m)
 
     ranked = sorted(scores.items(), key=lambda x: -x[1])
+    effect_summary = build_effect_summary(all_policy_metrics, scores)
 
     # ================================================================
     # Save results
@@ -754,6 +795,7 @@ def run_evaluation(output_dir: str = "outputs/retrieval_policy_eval") -> Dict[st
         "retriever_size": retriever.size,
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "ranked_policies": [{"policy": p, "offline_score": round(s, 4)} for p, s in ranked],
+        "effect_summary": effect_summary,
         "metrics": {
             pname: {
                 "policy": pname,
@@ -806,6 +848,10 @@ def run_evaluation(output_dir: str = "outputs/retrieval_policy_eval") -> Dict[st
         "LatencyP50ms",
         "LatencyP95ms",
         "OfflineScore",
+        "DeltaScoreVsBaseline",
+        "DeltaP@3VsBaseline",
+        "DeltaNDCG@5VsBaseline",
+        "DeltaCoverageVsBaseline",
         "NEmpty",
     ]
     with open(os.path.join(output_dir, "results.csv"), "w") as f:
@@ -831,6 +877,10 @@ def run_evaluation(output_dir: str = "outputs/retrieval_policy_eval") -> Dict[st
                 f"{m.latency_p50_ms:.2f}",
                 f"{m.latency_p95_ms:.2f}",
                 f"{scores[pname]:.4f}",
+                f"{effect_summary['effects'][pname]['score_delta']:.4f}",
+                f"{effect_summary['effects'][pname]['precision_at_3_delta']:.4f}",
+                f"{effect_summary['effects'][pname]['ndcg_at_5_delta']:.4f}",
+                f"{effect_summary['effects'][pname]['coverage_rate_delta']:.4f}",
                 str(m.n_empty),
             ]
             f.write(",".join(row) + "\n")
@@ -841,13 +891,23 @@ def run_evaluation(output_dir: str = "outputs/retrieval_policy_eval") -> Dict[st
             f.write(json.dumps(detail, ensure_ascii=False) + "\n")
 
     # Markdown summary
-    md = _build_markdown_summary(ranked, all_policy_metrics, scores)
+    md = _build_markdown_summary(ranked, all_policy_metrics, scores, effect_summary)
     with open(os.path.join(output_dir, "summary.md"), "w") as f:
         f.write(md)
 
     print(f"\nResults saved to {output_dir}/")
     print("  results.json, results.csv, summary.md, per_query_details.jsonl")
     print(f"\nTop policy: {ranked[0][0]} (score={ranked[0][1]:.4f})")
+    print(f"Baseline policy: {effect_summary['baseline_policy']}")
+    for policy_name, _score in ranked:
+        effect = effect_summary["effects"][policy_name]
+        print(
+            f"  effect {policy_name:35s} "
+            f"ΔScore={effect['score_delta']:+.4f} "
+            f"ΔP@3={effect['precision_at_3_delta']:+.4f} "
+            f"ΔnDCG@5={effect['ndcg_at_5_delta']:+.4f} "
+            f"ΔCoverage={effect['coverage_rate_delta']:+.4f}"
+        )
 
     return results_json
 
@@ -856,6 +916,7 @@ def _build_markdown_summary(
     ranked: List[Tuple[str, float]],
     metrics: Dict[str, PolicyMetrics],
     scores: Dict[str, float],
+    effect_summary: Dict[str, Any],
 ) -> str:
     """Build a human-readable Markdown comparison report."""
     lines = [
@@ -866,16 +927,20 @@ def _build_markdown_summary(
         "",
         "## Policy Ranking (Offline Score)",
         "",
-        "| Rank | Policy | Score | P@3 | nDCG@5 | Coverage | RoleMatch | MBTIMatch | Leak |",
-        "|------|--------|-------|-----|--------|----------|-----------|-----------|------|",
+        f"Baseline for deltas: `{effect_summary['baseline_policy']}`",
+        "",
+        "| Rank | Policy | Score | ΔScore | P@3 | ΔP@3 | nDCG@5 | ΔnDCG@5 | Coverage | ΔCoverage | Leak |",
+        "|------|--------|-------|--------|-----|------|--------|---------|----------|-----------|------|",
     ]
 
     for rank, (pname, score) in enumerate(ranked, 1):
         m = metrics[pname]
+        effect = effect_summary["effects"][pname]
         lines.append(
-            f"| {rank} | `{pname}` | {score:.4f} | {m.precision_at_3:.2f} | {m.ndcg_at_5:.2f} | "
-            f"{m.coverage_rate:.2f} | {m.role_match_rate:.2f} | {m.mbti_match_rate:.2f} | "
-            f"{m.candidate_leakage_count} |"
+            f"| {rank} | `{pname}` | {score:.4f} | {effect['score_delta']:+.4f} | "
+            f"{m.precision_at_3:.2f} | {effect['precision_at_3_delta']:+.2f} | "
+            f"{m.ndcg_at_5:.2f} | {effect['ndcg_at_5_delta']:+.2f} | "
+            f"{m.coverage_rate:.2f} | {effect['coverage_rate_delta']:+.2f} | {m.candidate_leakage_count} |"
         )
 
     lines += [

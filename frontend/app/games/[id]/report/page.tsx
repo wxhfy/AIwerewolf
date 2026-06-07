@@ -21,6 +21,7 @@ export default function GameReportPage() {
   const [meta, setMeta] = useState<ReportMeta | null>(null);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
+  const [pollCount, setPollCount] = useState(0);
 
   // Probe both endpoints with HEAD before rendering — when neither resource
   // exists yet (e.g. PublishedReview not generated) we want to show a clear
@@ -44,10 +45,17 @@ export default function GameReportPage() {
       }
     }
     probe();
+    const timer = window.setInterval(() => {
+      if (cancelled) return;
+      if (meta?.status === "ready") return;
+      setPollCount((count) => count + 1);
+      void probe();
+    }, 3000);
     return () => {
       cancelled = true;
+      window.clearInterval(timer);
     };
-  }, [gameId]);
+  }, [gameId, meta?.status]);
 
   const htmlSrc = apiUrl(`/api/games/${gameId}/reviews/html`);
   const mdHref = apiUrl(`/api/games/${gameId}/reviews.md`);
@@ -104,14 +112,18 @@ export default function GameReportPage() {
 
         {!isLoading && meta?.status === "missing" && (
           <div className="rounded-card border px-4 py-12 text-center text-sm text-text-sub" style={{ borderColor: "var(--color-border)" }}>
+            <div className="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
             <p className="font-semibold text-textPrimary mb-2">
-              {t("暂无复盘报告", "No review yet")}
+              {t("复盘报告生成中", "Generating review")}
             </p>
             <p>
               {t(
-                "本局尚未生成 Track B 复盘。等对局结束并通过验证后会自动生成。",
-                "This game has no published Track B review yet. Reviews are generated after the game ends and passes validation.",
+                "后端正在生成或发布 Track B 复盘。生成完成后页面会自动切换为可查看状态。",
+                "The backend is generating or publishing the Track B review. This page will switch to the report when it is ready.",
               )}
+            </p>
+            <p className="mt-3 text-[11px] text-text-sub/60">
+              {t("轮询次数", "Polls")}: {pollCount}
             </p>
           </div>
         )}

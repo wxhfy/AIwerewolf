@@ -1,0 +1,17 @@
+{
+  "game_id": "f8933174-01f9-409d-8bff-c15c0576761b",
+  "backend": "http://127.0.0.1:8000",
+  "sources": {
+    "strict_report": "outputs/backend_e2e_report.json",
+    "replay_url": "http://127.0.0.1:8000/api/replay/f8933174-01f9-409d-8bff-c15c0576761b?show_private=true",
+    "review_url": "http://127.0.0.1:8000/api/games/f8933174-01f9-409d-8bff-c15c0576761b/reviews/html"
+  },
+  "assets": [
+    "ai-werewolf-icon.svg",
+    "architecture.svg",
+    "play-evaluate-evolve.svg",
+    "database-evidence-chain.svg",
+    "real-game-snapshot.html",
+    "strict-game-review.html"
+  ]
+}

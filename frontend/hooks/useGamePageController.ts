@@ -4,10 +4,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAppContext } from "@/context/AppContext";
 import { fetchRoom, startRoom, submitHumanAction } from "@/lib/gameApi";
+import { apiUrl } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { placeholderPlayers } from "@/lib/gameView";
 import { isMergedChatSegment } from "@/lib/eventFilter";
-import { EventType, Player } from "@/types";
+import { EventType, Player, ViewMode } from "@/types";
 import { useAutoScroll } from "@/hooks/useAutoScroll";
 import { useGameDerivedState } from "@/hooks/useGameDerivedState";
 import { usePhaseTransition } from "@/hooks/usePhaseTransition";
@@ -26,6 +27,8 @@ export function useGamePageController(roomId: string) {
   } = useAppContext();
 
   const [showWinnerPanel, setShowWinnerPanel] = useState(false);
+  const [reportReady, setReportReady] = useState(false);
+  const [reportChecking, setReportChecking] = useState(false);
   const winnerShownRef = useRef(false);
   const winnerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -54,6 +57,39 @@ export function useGamePageController(roomId: string) {
       }
     };
   }, [gameState?.winner]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const gameId = gameState?.id;
+
+    async function checkReportReady() {
+      if (!gameId || !gameState?.winner) {
+        setReportReady(false);
+        setReportChecking(false);
+        return;
+      }
+      setReportChecking(true);
+      try {
+        const response = await fetch(apiUrl(`/api/games/${gameId}/reviews/html`));
+        if (cancelled) return;
+        setReportReady(response.ok);
+        if (!response.ok) {
+          timer = setTimeout(checkReportReady, 3000);
+        }
+      } catch {
+        if (!cancelled) timer = setTimeout(checkReportReady, 3000);
+      } finally {
+        if (!cancelled) setReportChecking(false);
+      }
+    }
+
+    void checkReportReady();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [gameState?.id, gameState?.winner]);
   const [ballPos, setBallPos] = useState<{ x: number; y: number } | null>(null);
   const dragRef = useRef({ dragging: false, startX: 0, startY: 0, origX: 0, origY: 0, moved: false });
   const [statusTitle, setStatusTitle] = useState(gameState?.winner ? t("statusLoaded", language) : t("statusReady", language));
@@ -101,6 +137,7 @@ export function useGamePageController(roomId: string) {
     setStatusTitle,
     getIsBlinking: phase.getIsBlinking,
     bufferSnapshot: phase.bufferSnapshot,
+    showPrivate: viewMode === ViewMode.MODERATOR,
   });
 
   // 眨眼 + settling 结束后，对齐缓冲的最新状态。
@@ -162,7 +199,21 @@ export function useGamePageController(roomId: string) {
     const controller = new AbortController();
     fetchRoom(roomId).then((nextRoom) => {
       if (controller.signal.aborted) return;
-      if (nextRoom) { setRoom(nextRoom); setFetchError(null); }
+      if (nextRoom) {
+        setRoom(nextRoom);
+        setFetchError(null);
+        if (!latestGameStateRef.current && nextRoom.latest_snapshot) {
+          setGameState(nextRoom.latest_snapshot);
+          if (mode === "human") autoStartedRef.current = true;
+          if (nextRoom.latest_snapshot.winner) {
+            setIsPlaying(false);
+            setStatusTitle(t("statusLoaded", language));
+          } else if (nextRoom.latest_snapshot.pending_input) {
+            setIsPlaying(true);
+            setStatusTitle(t("statusStreaming", language));
+          }
+        }
+      }
     }).catch((e) => {
       if (controller.signal.aborted) return;
       setFetchError(String(e?.message || e || "Failed to load room"));
@@ -288,7 +339,6 @@ export function useGamePageController(roomId: string) {
     }
 
     return blockingPhase || gameState?.phase;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gameState?.events, gameState?.phase, gameState?.winner, completedTick, phaseTimeoutTick]);
 
   // ── Phase timeout timer management (side effect, NOT in useMemo) ──
@@ -325,6 +375,8 @@ export function useGamePageController(roomId: string) {
     humanSeat,
     showWinnerPanel,
     setShowWinnerPanel,
+    reportReady,
+    reportChecking,
     ballPos,
     setBallPos,
     dragRef,

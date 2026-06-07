@@ -18,8 +18,6 @@ export interface PhaseAnnouncementState {
 const ANNOUNCE_DISPLAY_MS = 1200;
 // 公告淡出时长
 const ANNOUNCE_FADE_MS = 400;
-// 全黑停顿
-const PAUSE_DURATION_MS = 150;
 
 /**
  * 昼夜转场中央协调器 — v2。

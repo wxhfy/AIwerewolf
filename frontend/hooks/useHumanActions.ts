@@ -16,12 +16,17 @@ interface HumanActionsState {
   submitted: boolean;
   speech: string;
   setSpeech: (s: string) => void;
+  savePotion: boolean;
+  setSavePotion: (v: boolean) => void;
   revealDone: boolean;
   setRevealDone: (v: boolean) => void;
   needsTarget: boolean;
   isSpeech: boolean;
+  isWitch: boolean;
   canSubmit: boolean;
   targetPlayer: Player | undefined;
+  optionIds: Set<string>;
+  submitAction: () => void;
 }
 
 /**
@@ -30,14 +35,17 @@ interface HumanActionsState {
  * 管理：目标选择、发言输入、提交状态、身份揭示计时器。
  */
 export function useHumanActions({
-  gameState, humanSeat, humanDisplay, onSubmit,
+  gameState,
+  onSubmit,
 }: UseHumanActionsOptions): HumanActionsState {
   const [selectedTarget, setSelectedTarget] = useState("");
   const [submitted, setSubmitted] = useState(false);
   const [speech, setSpeech] = useState("");
+  const [savePotion, setSavePotion] = useState(false);
   const [revealDone, setRevealDone] = useState(false);
 
   const pending = gameState?.pending_input;
+  const optionIds = new Set((pending?.options || []).map(option => option.id));
 
   const needsTarget = !!(
     pending &&
@@ -45,21 +53,33 @@ export function useHumanActions({
      (pending.action_type as string) === "special")
   );
   const isSpeech = pending?.action_type === "speech";
-  const canSubmit = !needsTarget || !!selectedTarget;
+  const isWitch = pending?.request === "WITCH";
+  const canSubmit = isSpeech || !needsTarget || !!selectedTarget || Boolean(pending?.can_skip) || (isWitch && savePotion);
   const targetPlayer = gameState?.players?.find(p => p.id === selectedTarget);
+
+  function submitAction() {
+    if (submitted || !canSubmit) return;
+    setSubmitted(true);
+    onSubmit({
+      target_id: needsTarget ? (selectedTarget || null) : null,
+      speech: isSpeech ? (speech.trim() || null) : null,
+      save: isWitch ? savePotion : false,
+    });
+  }
 
   // Reset when pending changes
   useEffect(() => {
     setSelectedTarget("");
     setSubmitted(false);
     setSpeech("");
+    setSavePotion(false);
   }, [pending?.player_id, pending?.request]);
 
   return {
     selectedTarget, setSelectedTarget,
-    submitted, speech, setSpeech,
+    submitted, speech, setSpeech, savePotion, setSavePotion,
     revealDone, setRevealDone,
-    needsTarget, isSpeech: isSpeech || false,
-    canSubmit, targetPlayer,
+    needsTarget, isSpeech: isSpeech || false, isWitch,
+    canSubmit, targetPlayer, optionIds, submitAction,
   };
 }

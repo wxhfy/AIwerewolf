@@ -38,11 +38,18 @@ from backend.agents.cognitive.observe import format_observation
 from backend.agents.cognitive.prompts import build_game_context
 from backend.agents.cognitive.prompts import build_strategy_bias_block
 from backend.agents.cognitive.prompts import get_role_anti_patterns
+from backend.agents.cognitive.retrieval_prod import RetrievalPolicy
 from backend.agents.cognitive.tools import create_tools
 
 logger = logging.getLogger(__name__)
 
-MAX_ITERATIONS = 3
+MAX_TOOL_ROUNDS_BY_ACTION: dict[str, int] = {
+    "speech": 1,
+    "vote": 0,
+    "night": 0,
+}
+MAX_FORMAT_REPAIR_ROUNDS = 1
+DECISION_TOOL_NAME = "submit_decision"
 import threading as _threading
 
 _STRATEGY_LOCK = _threading.Lock()
@@ -82,8 +89,40 @@ _TOOL_PARAM_SCHEMAS: Dict[str, Dict] = {
                 "type": "boolean",
                 "description": "是否包含对局反思文档",
             },
+            "mode": {
+                "type": "string",
+                "enum": ["count", "overview", "content"],
+                "description": "返回模式：count 只统计，overview 只看摘要，content 返回完整策略",
+            },
+            "use_regex": {
+                "type": "boolean",
+                "description": "是否将 keywords 作为 Python 正则表达式处理",
+            },
+            "retrieval_policy": {
+                "type": "string",
+                "enum": [policy.value for policy in RetrievalPolicy],
+                "description": "检索策略范围；未传时使用 Agent 配置的默认策略",
+            },
         },
         "required": ["keywords"],
+    },
+    "submit_decision": {
+        "type": "object",
+        "properties": {
+            "speech": {
+                "type": "string",
+                "description": "发言动作的最终发言；非发言动作留空",
+            },
+            "target": {
+                "type": "string",
+                "description": "投票或夜间动作的最终目标，使用可见的玩家名或座位号；发言动作留空",
+            },
+            "reasoning": {
+                "type": "string",
+                "description": "简短说明做出该决策的依据",
+            },
+        },
+        "required": ["reasoning"],
     },
     "recall_memory": {
         "type": "object",
@@ -211,10 +250,18 @@ class AgentLoop:
               vote:   {"target": str, "reasoning": str}
               night:  {"target": str, "reasoning": str}
         """
-        tools = create_tools(
-            obs, memory, mbti=self._mbti, alignment=_derive_alignment(obs.player_role), player_id=self._player_id
+        all_tools = create_tools(
+            obs,
+            memory,
+            mbti=self._mbti,
+            alignment=_derive_alignment(obs.player_role),
+            player_id=self._player_id,
+            default_retrieval_policy=self._retrieval_policy,
         )
-        tool_schemas = self._tools_to_bind_schemas(tools) if self._supports_bind_tools else None
+        max_tool_rounds = self._max_tool_rounds(cached_analysis)
+        tools = self._select_tools(all_tools, obs) if max_tool_rounds > 0 else {}
+        info_tool_schemas = self._tools_to_bind_schemas(tools) if self._supports_bind_tools and tools else []
+        decision_schema = self._decision_tool_schema()
         context = []  # list of messages for the conversation
         tool_trace: list[dict] = []  # track tool calls for auditing
 
@@ -228,37 +275,58 @@ class AgentLoop:
         context.append(SystemMessage(content=static_system))
         context.append(HumanMessage(content=dynamic_context))
 
-        iteration = 0
-        last_tool_results = False
+        call_count = 0
+        tool_rounds_used = 0
+        repair_rounds_used = 0
+        last_response_preview = ""
         self._accumulated_usage = {}
-        while iteration < MAX_ITERATIONS:
-            iteration += 1
+        active_schemas: list[dict] = []
+        force_tool_name: str | None = None
+        text_repair_mode = False
+        if self._supports_bind_tools:
+            active_schemas = info_tool_schemas + [decision_schema]
+            if not info_tool_schemas:
+                force_tool_name = DECISION_TOOL_NAME
+        elif tools:
+            active_schemas = info_tool_schemas
 
-            response = self._call_llm(context, tool_schemas)
+        while True:
+            call_count += 1
+            response = self._call_llm(context, active_schemas or None, force_tool_name=force_tool_name)
             response_text = response.content if hasattr(response, "content") else str(response)
+            last_response_preview = response_text[:500].replace("\n", "\\n")
 
             # Detect native tool calls for proper ToolMessage handling
             is_native = hasattr(response, "tool_calls") and response.tool_calls
 
+            decision_error = ""
+            if self._supports_bind_tools and not text_repair_mode:
+                decision, decision_error = self._parse_submit_decision(response)
+                if decision:
+                    logger.info("Call %s: submit_decision found (%s)", call_count, list(decision.keys()))
+                    self._inject_tool_trace(decision, tool_trace, obs)
+                    return decision
+
             # Try to parse tool calls (native → text fallback)
             tool_results = self._parse_tool_calls(response, tools)
-            if tool_results:
+            if tool_results and tool_rounds_used < max_tool_rounds:
+                tool_rounds_used += 1
                 logger.info(
-                    f"Iter {iteration}/{MAX_ITERATIONS}: {len(tool_results)} tool call(s) "
+                    f"Call {call_count}: {len(tool_results)} info tool call(s) "
                     f"({'native' if is_native else 'text'}) - "
                     f"{', '.join(t.split(chr(10))[0][:80] for t in tool_results)}"
                 )
 
                 # Record tool trace for auditing
-                tool_names = self._extract_tool_names(response, is_native)
-                tool_keywords = self._extract_tool_keywords(response, is_native)
+                tool_names = self._extract_tool_names(response, is_native, allowed_tool_names=set(tools))
+                tool_keywords = self._extract_tool_keywords(response, is_native, allowed_tool_names=set(tools))
                 for idx, tr in enumerate(tool_results):
                     tname = tool_names[idx] if idx < len(tool_names) else "unknown"
                     # Extract doc_ids from formatted strategy output
                     doc_ids = re.findall(r"\[([\w\-]+)\s+score=", tr) if tname == "search_strategies" else []
                     tool_trace.append(
                         {
-                            "iteration": iteration,
+                            "iteration": tool_rounds_used,
                             "tool": tname,
                             "keywords": tool_keywords.get(tname, []),
                             "doc_ids": doc_ids,
@@ -285,94 +353,75 @@ class AgentLoop:
                 # Add assistant response + tool results to context
                 if is_native:
                     context.append(response)
+                    tool_call_ids = self._extract_tool_call_ids(response, allowed_tool_names=set(tools))
                     for i, tr in enumerate(tool_results):
-                        tc_id = response.tool_calls[i].get("id", f"call_{i}")
+                        tc_id = tool_call_ids[i] if i < len(tool_call_ids) else f"call_{i}"
                         context.append(ToolMessage(content=tr, tool_call_id=tc_id))
                 else:
                     context.append(HumanMessage(content=response_text))
                     for tr in tool_results:
                         context.append(HumanMessage(content=f"[工具结果]\n{tr}"))
 
-                if iteration >= MAX_ITERATIONS:
-                    context.append(
-                        HumanMessage(content="(已是最后一轮工具调用，信息已足够，请直接输出 DECISION 做最终决策。)")
-                    )
-                    last_tool_results = True
+                context.append(HumanMessage(content=self._final_decision_instruction()))
+                if self._supports_bind_tools:
+                    active_schemas = [decision_schema]
+                    force_tool_name = DECISION_TOOL_NAME
                 else:
-                    remaining = MAX_ITERATIONS - iteration
-                    context.append(
-                        HumanMessage(
-                            content=f"(工具结果已返回。还剩 {remaining} 轮工具调用额度。"
-                            "你可以继续调用其他工具获取更多信息，或直接输出 DECISION 做决策。)"
-                        )
-                    )
+                    active_schemas = []
+                    force_tool_name = None
                 continue
 
-            # No tool calls — try to parse decision
-            decision = self._parse_decision(response_text)
-            if decision:
-                keys = list(decision.keys())
-                logger.info(f"Iter {iteration}/{MAX_ITERATIONS}: DECISION found ({keys})")
-                self._inject_tool_trace(decision, tool_trace, obs)
-                return decision
+            if not self._supports_bind_tools or not active_schemas or response_text.strip():
+                decision = self._parse_decision(response_text, obs)
+                if not decision:
+                    decision = self._parse_freeform_decision(response_text, obs)
+                if decision:
+                    keys = list(decision.keys())
+                    logger.info(f"Call {call_count}: DECISION found ({keys})")
+                    self._inject_tool_trace(decision, tool_trace, obs)
+                    return decision
 
-            # Neither tool call nor valid decision — ask LLM to be clearer
+            # Neither info tool call nor valid final decision — ask once for the structured final call.
             preview = response_text[:150].replace("\n", "\\n")
-            logger.info(f"Iter {iteration}/{MAX_ITERATIONS}: no TOOL or DECISION found. Response preview: {preview}...")
-            context.append(HumanMessage(content=response_text))
-            context.append(
-                HumanMessage(
-                    content=(
-                        "你的回复格式不正确。请严格按以下格式之一回复：\n"
-                        "1. TOOL: <工具名>\\nARGUMENTS: <JSON>\\n"
-                        "2. DECISION: <JSON>\\n"
-                        "不要输出其他内容。"
+            logger.info(f"Call {call_count}: no usable final decision found. Response preview: {preview}...")
+            if (
+                self._supports_bind_tools
+                and force_tool_name == DECISION_TOOL_NAME
+                and (not response_text.strip() or decision_error)
+                and repair_rounds_used < MAX_FORMAT_REPAIR_ROUNDS
+            ):
+                repair_rounds_used += 1
+                active_schemas = []
+                force_tool_name = None
+                text_repair_mode = True
+                context.append(
+                    HumanMessage(
+                        content=(
+                            f"上一次 function call 无法形成有效决策：{decision_error or '返回为空'}。"
+                            "现在改用纯文本输出最终决策，"
+                            f"不要调用工具。{self._final_decision_instruction()}"
+                        )
                     )
                 )
-            )
-
-        # Tool results were added in the last iteration — give LLM one more
-        # chance to see the results and produce a DECISION.
-        if last_tool_results:
-            response = self._call_llm(context, tool_schemas)
-            decision = self._parse_decision(response.content if hasattr(response, "content") else str(response))
-            if decision:
-                logger.info(f"Final call: DECISION found ({list(decision.keys())})")
-                self._inject_tool_trace(decision, tool_trace, obs)
-                return decision
-
-        # Last-resort: use the most recent assistant response as the decision.
-        # LLM responses may be stored as HumanMessage during format-correction
-        # feedback, so we check for any non-system message with content.
-        last_text = ""
-        for msg in reversed(context):
-            if hasattr(msg, "content") and msg.content:
-                c = msg.content.strip()
-                if len(c) > 10 and getattr(msg, "type", "") != "system":
-                    last_text = c
-                    break
-        if last_text:
-            # Try to extract JSON from the response
-            import re as _re
-            json_match = _re.search(r'\{[^}]+"speech"\s*:\s*"[^"]+".*\}', last_text)
-            if json_match:
-                try:
-                    data = json.loads(json_match.group())
-                    if self._action_type == "speech":
-                        return {"speech": data.get("speech", last_text[:500]), "reasoning": data.get("reasoning", "")}
-                    return {"target": data.get("target", ""), "reasoning": data.get("reasoning", "")}
-                except json.JSONDecodeError:
-                    pass
-            # Use raw text as decision content
-            if self._action_type == "speech":
-                logger.warning("Using raw response as speech (no DECISION format found)")
-                return {"speech": last_text[:500], "reasoning": "fallback from raw response"}
-            # For vote/night: try to extract a player name as target
-            logger.warning(f"Using raw response for {self._action_type} (no DECISION format found)")
-            return {"target": "", "reasoning": f"fallback: {last_text[:100]}"}
+                continue
+            if response_text:
+                context.append(HumanMessage(content=response_text))
+            if repair_rounds_used >= MAX_FORMAT_REPAIR_ROUNDS and not text_repair_mode:
+                break
+            context.append(HumanMessage(content=self._final_decision_instruction(decision_error)))
+            if self._supports_bind_tools:
+                active_schemas = [decision_schema]
+                force_tool_name = DECISION_TOOL_NAME
+            else:
+                active_schemas = []
+                force_tool_name = None
+                repair_rounds_used += 1
+            continue
 
         raise RuntimeError(
-            f"AgentLoop failed to produce a DECISION after {MAX_ITERATIONS} iterations for action={self._action_type}"
+            "AgentLoop failed to produce a structured decision "
+            f"after {call_count} LLM call(s), tool_rounds={tool_rounds_used}, "
+            f"action={self._action_type}, last_response={last_response_preview!r}"
         )
 
     # ================================================================
@@ -514,17 +563,23 @@ class AgentLoop:
     def _build_initial_user(self, obs: Observation, cached_analysis: str) -> str:
         """Build the first user message that kicks off the thinking loop."""
         if cached_analysis:
-            return f"当前阶段: {obs.phase}。你已有上轮分析结果。直接输出 DECISION。"
+            return f"当前阶段: {obs.phase}。你已有上轮分析结果。直接提交最终决策。"
+        max_tool_rounds = self._max_tool_rounds(cached_analysis)
+        if self._supports_bind_tools:
+            return (
+                f"当前阶段: {obs.phase}。"
+                f"最多调用 {max_tool_rounds} 轮信息工具；信息足够时调用 {DECISION_TOOL_NAME} 提交最终决策。"
+            )
         return (
             f"当前阶段: {obs.phase}。"
             "你可以通过多轮 TOOL 调用收集信息后再做决策。"
             "每轮回复只能选择 TOOL 或 DECISION 之一。"
             "调用工具后系统会返回结果，你可以根据结果继续调用其他工具或直接做决策。"
-            f"最多调用 {MAX_ITERATIONS} 轮工具，之后必须输出 DECISION。"
+            f"最多调用 {max_tool_rounds} 轮工具，之后必须输出 DECISION。"
         )
 
     def _task_for_action(self, role: str = "") -> str:
-        """Return the action-specific task description with anti-pattern fallback."""
+        """Return the action-specific task description with anti-pattern guardrails."""
         tasks = {
             "speech": (
                 "【任务：发言】\n"
@@ -550,16 +605,18 @@ class AgentLoop:
             ),
         }
         base = tasks.get(self._action_type, tasks["speech"])
-        # Inject static anti-patterns as fallback (complements DB-backed Track C block)
         if role and _feature_enabled("COGNITIVE_ENABLE_ANTI_PATTERNS", True):
-            anti = get_role_anti_patterns(role, self._action_type)
-            if anti:
-                return base + "\n" + anti
+            anti_patterns = get_role_anti_patterns(role, self._action_type)
+            if anti_patterns:
+                return base + "\n" + anti_patterns
         return base
 
     def _format_tools(self, tools: Dict[str, Any]) -> str:
         """Format tool descriptions for the system prompt (text fallback mode)."""
-        lines = ["【可用工具】", f"你可以最多调用 {MAX_ITERATIONS} 轮工具。需要信息时，用以下格式调用："]
+        max_tool_rounds = self._max_tool_rounds("")
+        if not tools or max_tool_rounds <= 0:
+            return "【可用工具】\n本动作不暴露信息工具，请直接输出 DECISION。"
+        lines = ["【可用工具】", f"你可以最多调用 {max_tool_rounds} 轮工具。需要信息时，用以下格式调用："]
         lines.append("TOOL: <工具名>")
         lines.append("ARGUMENTS: <JSON>")
         lines.append("")
@@ -571,12 +628,12 @@ class AgentLoop:
 
     def _output_format(self) -> str:
         """Return the output format instruction block."""
+        max_tool_rounds = self._max_tool_rounds("")
         if self._supports_bind_tools:
             fmt = (
                 "【输出格式】\n"
-                "需要信息时，直接调用可用的 function 工具。\n"
-                "收集足够信息后，给出最终决策：\n"
-                "  DECISION: <JSON>\n"
+                "需要信息时，调用可用的信息 function 工具。\n"
+                f"最终决策必须调用 {DECISION_TOOL_NAME} function，不要把最终决策写成普通文本。\n"
             )
         else:
             fmt = (
@@ -589,26 +646,107 @@ class AgentLoop:
                 "  DECISION: <JSON>\n"
             )
         if self._action_type == "speech":
-            fmt += '  例: DECISION: {"speech": "我分析了一下今天的局势...", "reasoning": "..."}\n'
+            if self._supports_bind_tools:
+                fmt += f'  {DECISION_TOOL_NAME} 参数例: {{"speech": "我分析了一下今天的局势...", "reasoning": "..."}}\n'
+            else:
+                fmt += '  例: DECISION: {"speech": "我分析了一下今天的局势...", "reasoning": "..."}\n'
         else:
-            fmt += '  例: DECISION: {"target": "3号", "reasoning": "投票理由..."}\n'
+            if self._supports_bind_tools:
+                fmt += f'  {DECISION_TOOL_NAME} 参数例: {{"target": "3号", "reasoning": "投票理由..."}}\n'
+            else:
+                fmt += '  例: DECISION: {"target": "3号", "reasoning": "投票理由..."}\n'
         if self._supports_bind_tools:
             fmt += (
                 "\n"
                 "注意:\n"
-                "- 可以先调用工具收集信息，再输出 DECISION。\n"
-                f"- 最多可以调用 {MAX_ITERATIONS} 轮工具。\n"
-                f"- 第 {MAX_ITERATIONS} 轮工具结果返回后必须输出 DECISION。"
+                "- 信息工具只用于补充缺失事实，不要为了形式调用工具。\n"
+                f"- 最多可以调用 {max_tool_rounds} 轮信息工具。\n"
+                f"- 工具结果返回后或无需工具时，必须调用 {DECISION_TOOL_NAME}。"
             )
         else:
             fmt += (
                 "\n"
                 "注意:\n"
                 "- 每次回复只能选择 TOOL 或 DECISION 之一，不要同时输出两者。\n"
-                f"- 最多可以调用 {MAX_ITERATIONS} 轮工具，每轮可以调用一个工具。\n"
-                f"- 第 {MAX_ITERATIONS} 轮工具结果返回后必须输出 DECISION。"
+                f"- 最多可以调用 {max_tool_rounds} 轮工具，每轮可以调用一个工具。\n"
+                f"- 第 {max_tool_rounds} 轮工具结果返回后必须输出 DECISION。"
             )
         return fmt
+
+    def _max_tool_rounds(self, cached_analysis: str) -> int:
+        """Return how many information-tool rounds this action may use."""
+        if cached_analysis:
+            return 0
+        default = MAX_TOOL_ROUNDS_BY_ACTION.get(self._action_type, 0)
+        env_name = f"AGENT_MAX_TOOL_ROUNDS_{self._action_type.upper()}"
+        raw = os.getenv(env_name, "").strip()
+        if raw:
+            try:
+                return max(0, int(raw))
+            except ValueError:
+                logger.warning("Invalid %s=%r; using default %s", env_name, raw, default)
+        return max(0, default)
+
+    def _select_tools(self, all_tools: Dict[str, Any], obs: Observation) -> Dict[str, Any]:
+        """Select a narrow information-tool set for the current action.
+
+        Final decisions are submitted through submit_decision, which is not an
+        information tool and is added separately to the native FC schema.
+        """
+        phase = str(getattr(obs, "phase", "") or "").upper()
+        if self._action_type == "speech":
+            names = ["recall_memory", "get_social_info", "search_strategies", "set_strategic_intent"]
+        elif self._action_type == "vote":
+            names = ["recall_memory", "analyze_votes", "get_social_info"]
+        elif self._action_type == "night":
+            names = ["recall_memory"]
+            if "GUARD" in phase or "WITCH" in phase:
+                names.append("check_rules")
+        else:
+            names = []
+        return {name: all_tools[name] for name in names if name in all_tools}
+
+    def _decision_tool_schema(self) -> Dict[str, Any]:
+        """Return the native function schema used for final decisions."""
+        if self._action_type == "speech":
+            properties = {
+                "speech": {
+                    "type": "string",
+                    "description": "最终发言内容，使用中文，直接以玩家身份发言。",
+                },
+                "reasoning": {
+                    "type": "string",
+                    "description": "简短说明发言重点和依据。",
+                },
+            }
+            required = ["speech", "reasoning"]
+            description = "提交本次发言的最终决策。"
+        else:
+            properties = {
+                "target": {
+                    "type": "string",
+                    "description": "最终目标，必须是当前可见且合法的玩家名或座位号。",
+                },
+                "reasoning": {
+                    "type": "string",
+                    "description": "简短说明选择该目标的依据。",
+                },
+            }
+            required = ["target", "reasoning"]
+            description = "提交本次投票或夜晚行动的最终决策。"
+        return {
+            "type": "function",
+            "function": {
+                "name": DECISION_TOOL_NAME,
+                "description": description,
+                "parameters": {
+                    "type": "object",
+                    "properties": properties,
+                    "required": required,
+                    "additionalProperties": False,
+                },
+            },
+        }
 
     # ================================================================
     # Tool Schema Conversion
@@ -648,7 +786,13 @@ class AgentLoop:
     # LLM Call
     # ================================================================
 
-    def _call_llm(self, messages: list, tool_schemas: Optional[List[Dict]] = None):
+    def _call_llm(
+        self,
+        messages: list,
+        tool_schemas: Optional[List[Dict]] = None,
+        *,
+        force_tool_name: str | None = None,
+    ):
         """Call the LLM with the message list. Returns AIMessage for full response access.
 
         When tool_schemas is provided and the LLM supports bind_tools,
@@ -661,14 +805,42 @@ class AgentLoop:
             llm = self._llm.bind_tools(tool_schemas)
         else:
             llm = self._llm
+        kwargs: dict[str, Any] = {}
+        if force_tool_name:
+            kwargs["force_tool_name"] = force_tool_name
+        kwargs["max_tokens"] = self._max_tokens(force_tool_name)
         if self._temperature is not None:
-            resp = llm.invoke(messages, temperature=self._temperature)
-        else:
-            resp = llm.invoke(messages)
+            kwargs["temperature"] = self._temperature
+        try:
+            resp = llm.invoke(messages, **kwargs)
+        except TypeError:
+            try:
+                if self._temperature is not None:
+                    resp = llm.invoke(messages, temperature=self._temperature)
+                else:
+                    resp = llm.invoke(messages)
+            except TypeError:
+                resp = llm.invoke(messages)
 
         # Accumulate token usage from response_metadata
         self._accumulate_usage(resp)
         return resp
+
+    def _max_tokens(self, force_tool_name: str | None) -> int:
+        """Bound completion tokens tightly for faster decisions."""
+        if self._action_type == "speech":
+            default = 768
+            env_name = "AGENT_SPEECH_MAX_TOKENS"
+        else:
+            default = 384 if force_tool_name == DECISION_TOOL_NAME else 512
+            env_name = "AGENT_DECISION_MAX_TOKENS"
+        raw = os.getenv(env_name, "").strip()
+        if raw:
+            try:
+                return max(64, int(raw))
+            except ValueError:
+                logger.warning("Invalid %s=%r; using default %s", env_name, raw, default)
+        return default
 
     def _accumulate_usage(self, resp: Any) -> None:
         """Accumulate token usage from AIMessage.response_metadata across loop iterations."""
@@ -698,6 +870,8 @@ class AgentLoop:
             results = []
             for tc in response.tool_calls:
                 name = tc.get("name", "")
+                if name == DECISION_TOOL_NAME or name not in tools:
+                    continue
                 if isinstance(tc.get("args"), dict):
                     args = tc["args"]
                 else:
@@ -752,19 +926,46 @@ class AgentLoop:
         except Exception as e:
             return f"[{name}] 执行失败: {e}"
 
-    def _extract_tool_names(self, response, is_native: bool) -> list[str]:
+    def _extract_tool_names(
+        self,
+        response,
+        is_native: bool,
+        allowed_tool_names: set[str] | None = None,
+    ) -> list[str]:
         """Extract tool names from an LLM response (native or text)."""
         if is_native and hasattr(response, "tool_calls") and response.tool_calls:
-            return [tc.get("name", "unknown") for tc in response.tool_calls]
+            return [
+                tc.get("name", "unknown")
+                for tc in response.tool_calls
+                if not allowed_tool_names or tc.get("name", "") in allowed_tool_names
+            ]
         text = response.content if hasattr(response, "content") else str(response)
         return [m.group(1) for m in re.finditer(r"TOOL:\s*(\w+)", text, re.IGNORECASE)]
 
-    def _extract_tool_keywords(self, response, is_native: bool) -> dict[str, list[str]]:
+    def _extract_tool_call_ids(self, response, allowed_tool_names: set[str] | None = None) -> list[str]:
+        """Extract native tool call IDs matching executable information tools."""
+        if not hasattr(response, "tool_calls") or not response.tool_calls:
+            return []
+        ids: list[str] = []
+        for tc in response.tool_calls:
+            if allowed_tool_names and tc.get("name", "") not in allowed_tool_names:
+                continue
+            ids.append(tc.get("id", f"call_{len(ids)}"))
+        return ids
+
+    def _extract_tool_keywords(
+        self,
+        response,
+        is_native: bool,
+        allowed_tool_names: set[str] | None = None,
+    ) -> dict[str, list[str]]:
         """Extract keywords per tool name from an LLM response."""
         result: dict[str, list[str]] = {}
         if is_native and hasattr(response, "tool_calls") and response.tool_calls:
             for tc in response.tool_calls:
                 name = tc.get("name", "unknown")
+                if allowed_tool_names and name not in allowed_tool_names:
+                    continue
                 args = tc.get("args", {})
                 if isinstance(args, dict):
                     kw = args.get("keywords", [])
@@ -788,6 +989,65 @@ class AgentLoop:
             except json.JSONDecodeError:
                 pass
         return result
+
+    def _parse_submit_decision(self, response: Any) -> tuple[Optional[Dict[str, str]], str]:
+        """Parse final decision from native submit_decision tool calls."""
+        if not hasattr(response, "tool_calls") or not response.tool_calls:
+            return None, ""
+        for tc in response.tool_calls:
+            if tc.get("name") != DECISION_TOOL_NAME:
+                continue
+            args = tc.get("args", {})
+            if isinstance(args, str):
+                try:
+                    args = json.loads(args)
+                except json.JSONDecodeError:
+                    logger.warning("submit_decision arguments are not valid JSON")
+                    return None, "submit_decision 的 arguments 不是合法 JSON。"
+            if not isinstance(args, dict):
+                return None, "submit_decision 的 arguments 必须是 JSON object。"
+            reasoning = str(args.get("reasoning", "")).strip()
+            if self._action_type == "speech":
+                speech = str(args.get("speech", "")).strip()
+                if speech and reasoning:
+                    return {"speech": speech, "reasoning": reasoning}, ""
+                logger.warning("submit_decision missing speech/reasoning for speech action")
+                missing = []
+                if not speech:
+                    missing.append("speech")
+                if not reasoning:
+                    missing.append("reasoning")
+                return None, f"submit_decision 缺少必填字段: {', '.join(missing)}。"
+            target = str(args.get("target", "")).strip()
+            if target and reasoning:
+                return {"target": target, "reasoning": reasoning}, ""
+            logger.warning("submit_decision missing target/reasoning for %s action", self._action_type)
+            missing = []
+            if not target:
+                missing.append("target")
+            if not reasoning:
+                missing.append("reasoning")
+            return None, f"submit_decision 缺少必填字段: {', '.join(missing)}。"
+        return None, ""
+
+    def _final_decision_instruction(self, previous_error: str = "") -> str:
+        """Instruction used after tool results or format repair."""
+        prefix = f"上一次最终决策格式无效：{previous_error}\n" if previous_error else ""
+        if self._supports_bind_tools:
+            if self._action_type == "speech":
+                return (
+                    prefix
+                    + f"信息已足够。现在不要调用任何信息工具，只调用 {DECISION_TOOL_NAME}，"
+                    "参数必须包含 speech 和 reasoning。"
+                )
+            return (
+                prefix
+                + f"信息已足够。现在不要调用任何信息工具，只调用 {DECISION_TOOL_NAME}，"
+                "参数必须包含 target 和 reasoning。"
+            )
+        if self._action_type == "speech":
+            return prefix + '请直接输出最终决策，格式必须是：DECISION: {"speech": "...", "reasoning": "..."}'
+        return prefix + '请直接输出最终决策，格式必须是：DECISION: {"target": "...", "reasoning": "..."}'
 
     def _inject_tool_trace(self, decision: dict, tool_trace: list[dict], obs: Observation) -> None:
         """Inject tool trace and auto-injected strategy IDs into the decision dict."""
@@ -817,7 +1077,7 @@ class AgentLoop:
                 "usage": usage,
             }
 
-    def _parse_decision(self, response: str) -> Optional[Dict[str, str]]:
+    def _parse_decision(self, response: str, obs: Observation | None = None) -> Optional[Dict[str, str]]:
         """Parse final decision from LLM response.
 
         Expected format:
@@ -871,14 +1131,8 @@ class AgentLoop:
                 json_str = response[start:end] if depth == 0 else response[start:]
                 try:
                     data = json.loads(json_str)
-                    if isinstance(data, dict) and (data.get("speech") or data.get("target")):
-                        result: Dict[str, str] = {}
-                        if self._action_type == "speech":
-                            result["speech"] = data.get("speech", data.get("content", ""))
-                            result["reasoning"] = data.get("reasoning", "")
-                        else:
-                            result["target"] = data.get("target", "")
-                            result["reasoning"] = data.get("reasoning", "")
+                    if isinstance(data, dict) and self._looks_like_decision_data(data):
+                        result = self._decision_from_data(data, response, obs)
                         if any(v for v in result.values()):
                             logger.info(f"No DECISION: marker, but found JSON directly: {list(result.keys())}")
                             return result
@@ -936,18 +1190,113 @@ class AgentLoop:
             return None
 
         result: Dict[str, str] = {}
+        result = self._decision_from_data(data, response, obs, marker_start=marker_match.start())
+        return result if any(v for v in result.values()) else None
+
+    def _looks_like_decision_data(self, data: dict[str, Any]) -> bool:
+        keys = {
+            "speech",
+            "content",
+            "message",
+            "utterance",
+            "target",
+            "target_name",
+            "target_player",
+            "player",
+            "player_name",
+            "vote",
+            "choice",
+            "selected",
+            "reasoning",
+            "reason",
+        }
+        return any(key in data for key in keys)
+
+    def _decision_from_data(
+        self,
+        data: dict[str, Any],
+        source_text: str,
+        obs: Observation | None,
+        *,
+        marker_start: int | None = None,
+    ) -> Dict[str, str]:
+        result: Dict[str, str] = {}
         if self._action_type == "speech":
-            result["speech"] = data.get("speech", data.get("content", ""))
-            result["reasoning"] = data.get("reasoning", "")
+            result["speech"] = str(
+                data.get("speech")
+                or data.get("content")
+                or data.get("message")
+                or data.get("utterance")
+                or ""
+            )
+            result["reasoning"] = str(data.get("reasoning") or data.get("reason") or "")
             if not result["speech"]:
-                text = response[: marker_match.start()].strip()
+                text = source_text[:marker_start].strip() if marker_start is not None else source_text.strip()
                 if len(text) > 10:
                     result["speech"] = text[:500]
         else:
-            result["target"] = data.get("target", "")
-            result["reasoning"] = data.get("reasoning", "")
+            raw_target = (
+                data.get("target")
+                or data.get("target_name")
+                or data.get("target_player")
+                or data.get("player")
+                or data.get("player_name")
+                or data.get("vote")
+                or data.get("choice")
+                or data.get("selected")
+                or ""
+            )
+            result["target"] = str(raw_target)
+            if not result["target"] and obs is not None:
+                result["target"] = self._extract_named_legal_target(json.dumps(data, ensure_ascii=False), obs)
+            result["reasoning"] = str(data.get("reasoning") or data.get("reason") or "")
+        return result
 
-        return result if any(v for v in result.values()) else None
+    def _parse_freeform_decision(self, response: str, obs: Observation) -> Optional[Dict[str, str]]:
+        """Parse a usable decision from real LLM free-form text.
+
+        This is not a heuristic fallback decision. It only converts the model's
+        own text into the strict internal schema, and target actions must name
+        one of the legal targets from the current observation.
+        """
+        text = response.strip()
+        if not text:
+            return None
+        if self._action_type == "speech":
+            cleaned = self._strip_format_noise(text)
+            if len(cleaned) < 4:
+                return None
+            return {"speech": cleaned[:500], "reasoning": "model_freeform_speech"}
+
+        target = self._extract_named_legal_target(text, obs)
+        if not target:
+            return None
+        reasoning = self._strip_format_noise(text)
+        return {"target": target, "reasoning": reasoning[:300] or "model_freeform_target"}
+
+    @staticmethod
+    def _strip_format_noise(text: str) -> str:
+        cleaned = re.sub(r"^\s*(DECISION|ANSWER|最终决策|发言|理由)\s*[:：]\s*", "", text.strip(), flags=re.I)
+        cleaned = re.sub(r"```(?:json)?", "", cleaned).replace("```", "").strip()
+        return cleaned
+
+    @staticmethod
+    def _extract_named_legal_target(text: str, obs: Observation) -> str:
+        candidates = obs.legal_targets or [player for player in obs.alive if player.id != obs.player_id]
+        lowered = text.lower()
+        for player in candidates:
+            name = str(player.name)
+            seat = str(player.seat)
+            patterns = [
+                rf"(?<!\d){re.escape(seat)}\s*号",
+                re.escape(name),
+            ]
+            for pattern in patterns:
+                if re.search(pattern, text, re.IGNORECASE):
+                    return name
+            if name and name.lower() in lowered:
+                return name
+        return ""
 
     @staticmethod
     def _salvage_partial_json(json_str: str) -> Optional[Dict[str, str]]:

@@ -109,6 +109,7 @@ export interface EventPayload {
   action_type?: string;
   message?: string;
   phase?: string;
+  player_id?: string;
   player_name?: string;
   reason?: string;
   reasoning?: string;

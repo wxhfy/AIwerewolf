@@ -31,9 +31,7 @@ export default function EvolutionPage() {
   const { language } = useAppContext();
   const [dashboard, setDashboard] = useState<EvolutionDashboard | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState("");
-  const [cycleSummary, setCycleSummary] = useState<any>(null);
   const t = (zh: string, en: string) => (language === "zh" ? zh : en);
 
   async function loadDashboard() {
@@ -46,26 +44,6 @@ export default function EvolutionPage() {
       setError(err.message || "load failed");
     } finally {
       setIsLoading(false);
-    }
-  }
-
-  async function runCycle() {
-    setIsRunning(true);
-    setError("");
-    try {
-      const response = await fetch(apiUrl("/api/evolution/cycle"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ seeds: Array.from({ length: 20 }, (_, index) => index + 1) }),
-      });
-      if (!response.ok) throw new Error(`cycle ${response.status}`);
-      const payload = await response.json();
-      setCycleSummary(payload.summary);
-      await loadDashboard();
-    } catch (err: any) {
-      setError(err.message || "cycle failed");
-    } finally {
-      setIsRunning(false);
     }
   }
 
@@ -95,31 +73,15 @@ export default function EvolutionPage() {
               {t("返回大厅", "Lobby")}
             </Link>
             <button
-              onClick={runCycle}
-              disabled={isRunning}
-              className="rounded-button bg-primary px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+              onClick={loadDashboard}
+              className="rounded-button bg-primary px-4 py-2 text-sm font-semibold text-white"
             >
-              {isRunning ? t("进化中...", "Running...") : t("运行 20 Seed A/B", "Run 20-Seed A/B")}
+              {t("刷新结果", "Refresh Results")}
             </button>
           </div>
         </header>
 
         {error && <div className="rounded-card border border-danger/40 px-4 py-3 text-sm text-danger">{error}</div>}
-        {cycleSummary && (
-          <section className="grid gap-3 md:grid-cols-4">
-            {[
-              [t("知识条目", "Knowledge"), cycleSummary.knowledge_docs],
-              [t("已校验 Patch", "Validated Patches"), cycleSummary.validated_patches],
-              [t("晋升", "Promoted"), cycleSummary.promoted],
-              [t("回滚", "Rolled Back"), cycleSummary.rolled_back],
-            ].map(([label, value]) => (
-              <div key={String(label)} className="rounded-card border p-4" style={{ background: "var(--color-card)", borderColor: "var(--color-border)" }}>
-                <p className="text-xs text-text-sub">{label}</p>
-                <p className="mt-2 text-2xl font-bold text-textPrimary">{String(value ?? 0)}</p>
-              </div>
-            ))}
-          </section>
-        )}
 
         {isLoading ? (
           <p className="text-text-sub">{t("加载中...", "Loading...")}</p>

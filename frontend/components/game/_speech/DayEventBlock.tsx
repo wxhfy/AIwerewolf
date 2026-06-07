@@ -1,12 +1,11 @@
 "use client";
 
 import React, { useEffect, useRef } from "react";
-import { EventType, GameEvent, Language, ViewMode, Player, NightActions, JsonRecord } from "@/types";
+import { EventType, GameEvent, Language, ViewMode, Player, NightActions } from "@/types";
 import { t, format } from "@/lib/i18n";
 import { TimelineEvent } from "./TimelineEvent";
 import { ChatBubble } from "@/components/game/ChatBubble";
 import { VoteResultPanel } from "@/components/game/VoteResultPanel";
-import { isMergedChatSegment } from "@/lib/eventFilter";
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -264,7 +263,7 @@ export function DayEventBlock({
               break;
             }
           }
-          const showWolf = day > 0 && (day <= (currentDay ?? day)) && !isTransitioning && wolfInsertAt > 0;
+          const showWolf = viewMode === ViewMode.MODERATOR && day > 0 && (day <= (currentDay ?? day)) && !isTransitioning && wolfInsertAt > 0;
           const wolfEntries = showWolf
             ? buildWolfDeliberation(day, nightActions, decisionRecords, players || [], language)
             : [];
@@ -322,6 +321,7 @@ export function DayEventBlock({
                   isOwn={isHumanMode && thinkingPlayer.seat === humanSeat}
                   isSpeaking={false}
                   animate={false}
+                  players={players}
                 />
               );
             }

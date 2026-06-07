@@ -111,15 +111,25 @@ def _speech_tag(content: dict) -> str:
 def save_game_start(state: GameState, model_name: str = "", prompt_version: str = "v1") -> Game:
     db = SessionLocal()
     try:
-        game = Game(
-            id=state.id,
-            status="running",
-            current_day=0,
-            current_phase="SETUP",
-            seed=str(getattr(state, "seed", "")),
-            started_at=_now(),
-        )
-        db.add(game)
+        game = db.query(Game).filter(Game.id == state.id).first()
+        if game is None:
+            game = Game(
+                id=state.id,
+                status="running",
+                current_day=state.day,
+                current_phase=state.phase.value,
+                seed=str(getattr(state, "seed", "")),
+                started_at=_now(),
+            )
+            db.add(game)
+            db.flush()
+        else:
+            game.status = "running" if game.status != "finished" else game.status
+            game.current_day = state.day
+            game.current_phase = state.phase.value
+            if not game.started_at:
+                game.started_at = _now()
+            db.query(Player).filter(Player.game_id == state.id).delete()
         for p in state.players:
             db.add(
                 Player(
@@ -928,7 +938,6 @@ def _knowledge_row_to_dict(row: StrategyKnowledgeDoc) -> dict[str, Any]:
         "doc_type": row.doc_type,
         "role": row.role,
         "phase": row.phase,
-        "source_game_id": (row.source_report_ids[0] if row.source_report_ids else None),
         "persona_scope": row.persona_scope,
         "situation_pattern": row.situation_pattern,
         "trigger_conditions": row.trigger_conditions or [],
@@ -1470,11 +1479,22 @@ def get_evolution_dashboard() -> dict[str, Any]:
     try:
         patches = db.query(StrategyPatch).order_by(StrategyPatch.created_at.desc()).limit(20).all()
         tournaments = db.query(EvolutionTournament).order_by(EvolutionTournament.created_at.desc()).limit(20).all()
-        acceptance_audit = _build_bc_acceptance_audit_from_db(db, limit_games=200)
+        active_versions = (
+            db.query(RoleStrategyCard)
+            .order_by(RoleStrategyCard.role, RoleStrategyCard.created_at.desc())
+            .all()
+        )
+        knowledge = (
+            db.query(StrategyKnowledgeDoc)
+            .order_by(StrategyKnowledgeDoc.quality_score.desc(), StrategyKnowledgeDoc.updated_at.desc())
+            .limit(50)
+            .all()
+        )
+        acceptance_audit = _lightweight_bc_acceptance_summary(db)
         return _clean(
             {
-                "active_versions": list_role_strategy_cards(),
-                "knowledge": list_strategy_knowledge(limit=50),
+                "active_versions": [_role_card_to_dict(row) for row in active_versions],
+                "knowledge": [_knowledge_row_to_dict(row) for row in knowledge],
                 "patches": [
                     {
                         "patch_id": row.id,
@@ -1508,6 +1528,69 @@ def get_evolution_dashboard() -> dict[str, Any]:
         )
     finally:
         db.close()
+
+
+def _lightweight_bc_acceptance_summary(db) -> dict[str, Any]:
+    """Return fast dashboard acceptance status without running full audit.
+
+    The full B/C audit builds retrieval stores and scans historical artifacts;
+    that belongs in explicit acceptance commands, not the dashboard first paint.
+    """
+    finished_games = db.query(sa_func.count(Game.id)).filter(Game.status == "finished").scalar() or 0
+    reviews = db.query(sa_func.count(PublishedReview.id)).scalar() or 0
+    knowledge_docs = db.query(sa_func.count(StrategyKnowledgeDoc.id)).scalar() or 0
+    tournaments = db.query(sa_func.count(EvolutionTournament.id)).scalar() or 0
+    metrics = [
+        build_acceptance_step_metric(
+            track="B",
+            step_id="B-summary",
+            name="Finished games available",
+            numerator=min(int(finished_games), 1),
+            denominator=1,
+            threshold=1.0,
+            evidence="games.status == finished",
+            details={"count": int(finished_games)},
+        ),
+        build_acceptance_step_metric(
+            track="B",
+            step_id="B-review-summary",
+            name="Published reviews available",
+            numerator=min(int(reviews), 1),
+            denominator=1,
+            threshold=1.0,
+            evidence="published_reviews rows",
+            details={"count": int(reviews)},
+        ),
+        build_acceptance_step_metric(
+            track="C",
+            step_id="C-knowledge-summary",
+            name="Strategy knowledge available",
+            numerator=min(int(knowledge_docs), 1),
+            denominator=1,
+            threshold=1.0,
+            evidence="strategy_knowledge_docs rows",
+            details={"count": int(knowledge_docs)},
+        ),
+        build_acceptance_step_metric(
+            track="C",
+            step_id="C-tournament-summary",
+            name="Evolution tournaments available",
+            numerator=min(int(tournaments), 1),
+            denominator=1,
+            threshold=1.0,
+            evidence="evolution_tournaments rows",
+            details={"count": int(tournaments)},
+        ),
+    ]
+    metrics_payload = [asdict(item) for item in metrics]
+    passed = all(item.passed for item in metrics)
+    return {
+        "generated_at": _now().isoformat(),
+        "overall_success_rate": sum(float(item["success_rate"]) for item in metrics_payload) / max(len(metrics_payload), 1),
+        "passed": passed,
+        "metrics": metrics_payload,
+        "mode": "dashboard_summary",
+    }
 
 
 def list_agent_versions() -> list[dict]:

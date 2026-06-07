@@ -15,6 +15,7 @@ from backend.agents.cognitive.observe import observe
 from backend.agents.cognitive.reflect import Reflector
 from backend.agents.cognitive.reflect import reflections_to_knowledge_docs
 from backend.engine.game import WerewolfGame
+from backend.engine.models import ActionType
 from backend.engine.models import EventType
 from backend.engine.models import Phase
 from backend.engine.rules import build_players
@@ -91,6 +92,132 @@ class NonDecisionLLM:
         return AIMessage(content="我还需要继续想想，但没有按格式输出。")
 
 
+class BadWitchLLM:
+    def invoke(self, messages, **kwargs):
+        return AIMessage(content="今晚我再想想，不输出结构化 JSON。")
+
+
+class EmptySpeechLLM:
+    def invoke(self, messages, **kwargs):
+        return AIMessage(content='DECISION: {"speech": "", "reasoning": "empty speech"}')
+
+
+class InvalidDirectTargetLLM:
+    def invoke(self, messages, **kwargs):
+        return AIMessage(content='{"target": "不存在的玩家", "reasoning": "invalid target"}')
+
+
+class SkipNightTargetLLM:
+    def invoke(self, messages, **kwargs):
+        return AIMessage(content='DECISION: {"target": "跳过", "reasoning": "skip required target"}')
+
+
+class NativeDecisionLLM:
+    """Fake native function-calling LLM that records bound tools and choices."""
+
+    def __init__(self, bound_tools: list[dict] | None = None, calls: list[dict] | None = None) -> None:
+        self.bound_tools = bound_tools or []
+        self.calls = calls if calls is not None else []
+
+    def bind_tools(self, tool_schemas: list[dict]) -> "NativeDecisionLLM":
+        return NativeDecisionLLM(tool_schemas, self.calls)
+
+    def invoke(self, messages, **kwargs):
+        text = "\n".join(str(getattr(message, "content", message)) for message in messages)
+        tool_names = [
+            str((schema.get("function") or {}).get("name") or "")
+            for schema in self.bound_tools
+            if isinstance(schema, dict)
+        ]
+        self.calls.append(
+            {
+                "tool_names": tool_names,
+                "force_tool_name": kwargs.get("force_tool_name"),
+                "max_tokens": kwargs.get("max_tokens"),
+                "text": text,
+            }
+        )
+
+        if kwargs.get("force_tool_name") == "submit_decision" or tool_names == ["submit_decision"]:
+            if "【任务：发言】" in text:
+                args = {"speech": "我先按公开信息发言，重点观察2号的站边。", "reasoning": "native final speech"}
+            else:
+                args = {"target": "Bob", "reasoning": "native final target"}
+            return AIMessage(
+                content="",
+                tool_calls=[{"id": "call_decision", "name": "submit_decision", "args": args}],
+            )
+
+        assert "recall_memory" in tool_names
+        return AIMessage(
+            content="",
+            tool_calls=[{"id": "call_memory", "name": "recall_memory", "args": {"filter": "all"}}],
+        )
+
+
+class EmptyNativeThenTextDecisionLLM:
+    """Native function-call attempt returns empty, then text repair succeeds."""
+
+    def __init__(self, bound_tools: list[dict] | None = None, calls: list[dict] | None = None) -> None:
+        self.bound_tools = bound_tools or []
+        self.calls = calls if calls is not None else []
+
+    def bind_tools(self, tool_schemas: list[dict]) -> "EmptyNativeThenTextDecisionLLM":
+        return EmptyNativeThenTextDecisionLLM(tool_schemas, self.calls)
+
+    def invoke(self, messages, **kwargs):
+        text = "\n".join(str(getattr(message, "content", message)) for message in messages)
+        tool_names = [
+            str((schema.get("function") or {}).get("name") or "")
+            for schema in self.bound_tools
+            if isinstance(schema, dict)
+        ]
+        self.calls.append(
+            {
+                "tool_names": tool_names,
+                "force_tool_name": kwargs.get("force_tool_name"),
+                "text": text,
+            }
+        )
+        if kwargs.get("force_tool_name") == "submit_decision":
+            return AIMessage(content="")
+        return AIMessage(content='DECISION: {"target": "Bob", "reasoning": "text repair target"}')
+
+
+class InvalidNativeArgsThenTextDecisionLLM:
+    """Native submit_decision has missing args, then text repair succeeds."""
+
+    def __init__(self, bound_tools: list[dict] | None = None, calls: list[dict] | None = None) -> None:
+        self.bound_tools = bound_tools or []
+        self.calls = calls if calls is not None else []
+
+    def bind_tools(self, tool_schemas: list[dict]) -> "InvalidNativeArgsThenTextDecisionLLM":
+        return InvalidNativeArgsThenTextDecisionLLM(tool_schemas, self.calls)
+
+    def invoke(self, messages, **kwargs):
+        text = "\n".join(str(getattr(message, "content", message)) for message in messages)
+        tool_names = [
+            str((schema.get("function") or {}).get("name") or "")
+            for schema in self.bound_tools
+            if isinstance(schema, dict)
+        ]
+        self.calls.append(
+            {
+                "tool_names": tool_names,
+                "force_tool_name": kwargs.get("force_tool_name"),
+                "text": text,
+            }
+        )
+        if kwargs.get("force_tool_name") == "submit_decision" or "submit_decision" in tool_names:
+            return AIMessage(
+                content="",
+                tool_calls=[{"id": "call_bad", "name": "submit_decision", "args": {"speech": ""}}],
+            )
+        return AIMessage(
+            content='DECISION: {"speech": "我用文本格式补交最终发言。", "reasoning": "text repair speech"}'
+        )
+
+
 class MalformedReflectionLLM:
     def invoke(self, messages):
         return AIMessage(content='DECISION: {"target": "2号", "reasoning": "not a reflection"}')
@@ -111,8 +238,275 @@ def test_agent_loop_raises_when_llm_never_outputs_decision() -> None:
     )
     loop = AgentLoop(NonDecisionLLM(), "system prompt", action_type="vote")
 
-    with pytest.raises(RuntimeError, match="failed to produce a DECISION"):
+    with pytest.raises(RuntimeError, match="failed to produce a structured decision"):
         loop.run(obs, Memory("P1", "Villager"))
+
+
+def test_agent_loop_native_fc_uses_info_tool_then_forces_submit_decision() -> None:
+    obs = Observation(
+        player_id="P1",
+        player_name="Alice",
+        player_seat=1,
+        player_role="Villager",
+        day=1,
+        phase="DAY_SPEECH",
+        alive=[
+            PlayerInfo(id="P1", name="Alice", seat=1, alive=True),
+            PlayerInfo(id="P2", name="Bob", seat=2, alive=True),
+        ],
+    )
+    llm = NativeDecisionLLM()
+    loop = AgentLoop(llm, "system prompt", action_type="speech", player_id="P1")
+
+    decision = loop.run(obs, Memory("P1", "Villager"))
+
+    assert decision["speech"]
+    assert decision["reasoning"] == "native final speech"
+    assert len(llm.calls) == 2
+    assert "recall_memory" in llm.calls[0]["tool_names"]
+    assert "submit_decision" in llm.calls[0]["tool_names"]
+    assert llm.calls[0]["force_tool_name"] is None
+    assert llm.calls[1]["tool_names"] == ["submit_decision"]
+    assert llm.calls[1]["force_tool_name"] == "submit_decision"
+    assert decision["_tool_trace"][0]["tool"] == "recall_memory"
+
+
+@pytest.mark.parametrize("action_type,phase", [("vote", "DAY_VOTE"), ("night", "NIGHT_WOLF_ACTION")])
+def test_agent_loop_vote_and_night_default_directly_force_submit_decision(action_type: str, phase: str) -> None:
+    obs = Observation(
+        player_id="P1",
+        player_name="Alice",
+        player_seat=1,
+        player_role="Werewolf" if action_type == "night" else "Villager",
+        day=1,
+        phase=phase,
+        alive=[
+            PlayerInfo(id="P1", name="Alice", seat=1, alive=True),
+            PlayerInfo(id="P2", name="Bob", seat=2, alive=True),
+        ],
+    )
+    llm = NativeDecisionLLM()
+    loop = AgentLoop(llm, "system prompt", action_type=action_type, player_id="P1")
+
+    decision = loop.run(obs, Memory("P1", obs.player_role))
+
+    assert decision["target"] == "Bob"
+    assert decision["reasoning"] == "native final target"
+    assert len(llm.calls) == 1
+    assert llm.calls[0]["tool_names"] == ["submit_decision"]
+    assert llm.calls[0]["force_tool_name"] == "submit_decision"
+
+
+def test_agent_loop_repairs_empty_native_submit_decision_with_text_decision() -> None:
+    obs = Observation(
+        player_id="P1",
+        player_name="Alice",
+        player_seat=1,
+        player_role="Villager",
+        day=1,
+        phase="DAY_VOTE",
+        alive=[
+            PlayerInfo(id="P1", name="Alice", seat=1, alive=True),
+            PlayerInfo(id="P2", name="Bob", seat=2, alive=True),
+        ],
+    )
+    llm = EmptyNativeThenTextDecisionLLM()
+    loop = AgentLoop(llm, "system prompt", action_type="vote", player_id="P1")
+
+    decision = loop.run(obs, Memory("P1", "Villager"))
+
+    assert decision["target"] == "Bob"
+    assert decision["reasoning"] == "text repair target"
+    assert len(llm.calls) == 2
+    assert llm.calls[0]["force_tool_name"] == "submit_decision"
+    assert llm.calls[1]["force_tool_name"] is None
+    assert llm.calls[1]["tool_names"] == []
+
+
+def test_agent_loop_repairs_invalid_native_submit_args_with_text_decision() -> None:
+    obs = Observation(
+        player_id="P1",
+        player_name="Alice",
+        player_seat=1,
+        player_role="Villager",
+        day=1,
+        phase="DAY_SPEECH",
+        alive=[
+            PlayerInfo(id="P1", name="Alice", seat=1, alive=True),
+            PlayerInfo(id="P2", name="Bob", seat=2, alive=True),
+        ],
+    )
+    llm = InvalidNativeArgsThenTextDecisionLLM()
+    loop = AgentLoop(llm, "system prompt", action_type="speech", player_id="P1")
+
+    decision = loop.run(obs, Memory("P1", "Villager"))
+
+    assert decision["speech"] == "我用文本格式补交最终发言。"
+    assert decision["reasoning"] == "text repair speech"
+    assert len(llm.calls) == 3
+    assert llm.calls[-1]["force_tool_name"] is None
+    assert llm.calls[-1]["tool_names"] == []
+
+
+def test_cognitive_agent_talk_preserves_native_fc_reasoning() -> None:
+    view = PlayerView(
+        player_id="P1",
+        day=1,
+        phase="DAY_SPEECH",
+        self_player={"id": "P1", "name": "Alice", "seat": 1, "role": "Villager", "alive": True},
+        players=[
+            {"id": "P1", "name": "Alice", "seat": 1, "role": "Villager", "alive": True},
+            {"id": "P2", "name": "Bob", "seat": 2, "alive": True},
+        ],
+        public_events=[],
+        private_events=[],
+        known_wolves=[],
+        observations=[],
+    )
+    agent = create_cognitive_agent_with_character(
+        player_id="P1",
+        role="Villager",
+        llm=NativeDecisionLLM(),
+        player_name="Alice",
+        player_seat=1,
+        character=None,
+    )
+    agent.initialize(view, {})
+    agent.update(view, "TALK")
+
+    decision = agent.talk()
+
+    assert decision.action_type == ActionType.TALK
+    assert decision.speech
+    assert decision.reasoning == "native final speech"
+    assert agent.memory.actions[-1].reasoning == "native final speech"
+
+
+def test_cognitive_agent_empty_speech_raises_in_strict_mode() -> None:
+    view = PlayerView(
+        player_id="P1",
+        day=1,
+        phase="DAY_SPEECH",
+        self_player={"id": "P1", "name": "Alice", "seat": 1, "role": "Villager", "alive": True},
+        players=[
+            {"id": "P1", "name": "Alice", "seat": 1, "role": "Villager", "alive": True},
+            {"id": "P2", "name": "Bob", "seat": 2, "alive": True},
+        ],
+        public_events=[],
+        private_events=[],
+        known_wolves=[],
+        observations=[],
+    )
+    agent = create_cognitive_agent_with_character(
+        player_id="P1",
+        role="Villager",
+        llm=EmptySpeechLLM(),
+        player_name="Alice",
+        player_seat=1,
+        character=None,
+    )
+    agent.initialize(view, {})
+    agent.update(view, "TALK")
+
+    with pytest.raises(RuntimeError, match="speech response is empty or too short"):
+        agent.talk()
+
+
+def test_cognitive_agent_required_night_skip_raises_in_strict_mode() -> None:
+    view = PlayerView(
+        player_id="P1",
+        day=1,
+        phase="NIGHT_GUARD_ACTION",
+        self_player={"id": "P1", "name": "Guard", "seat": 1, "role": "Guard", "alive": True},
+        players=[
+            {"id": "P1", "name": "Guard", "seat": 1, "role": "Guard", "alive": True},
+            {"id": "P2", "name": "Bob", "seat": 2, "alive": True},
+        ],
+        public_events=[],
+        private_events=[],
+        known_wolves=[],
+        observations=[],
+        legal_targets=[
+            {"id": "P1", "name": "Guard", "seat": 1, "alive": True},
+            {"id": "P2", "name": "Bob", "seat": 2, "alive": True},
+        ],
+    )
+    agent = create_cognitive_agent_with_character(
+        player_id="P1",
+        role="Guard",
+        llm=SkipNightTargetLLM(),
+        player_name="Guard",
+        player_seat=1,
+        character=None,
+    )
+    agent.initialize(view, {})
+    agent.update(view, "GUARD")
+
+    with pytest.raises(RuntimeError, match="skip keyword"):
+        agent.guard()
+
+
+def test_cognitive_agent_witch_invalid_json_raises_in_strict_mode() -> None:
+    view = PlayerView(
+        player_id="P1",
+        day=1,
+        phase="NIGHT_WITCH_ACTION",
+        self_player={"id": "P1", "name": "Witch", "seat": 1, "role": "Witch", "alive": True},
+        players=[
+            {"id": "P1", "name": "Witch", "seat": 1, "role": "Witch", "alive": True},
+            {"id": "P2", "name": "Victim", "seat": 2, "alive": True},
+            {"id": "P3", "name": "Target", "seat": 3, "alive": True},
+        ],
+        public_events=[],
+        private_events=[],
+        known_wolves=[],
+        observations=[],
+        legal_targets=[{"id": "P2", "name": "Victim", "seat": 2, "alive": True}],
+    )
+    agent = create_cognitive_agent_with_character(
+        player_id="P1",
+        role="Witch",
+        llm=BadWitchLLM(),
+        player_name="Witch",
+        player_seat=1,
+        character=None,
+    )
+    agent.initialize(view, {})
+    agent.update(view, "WITCH")
+
+    with pytest.raises(ValueError, match="did not contain JSON"):
+        agent.witch_act("P2")
+
+
+def test_cognitive_agent_direct_action_invalid_target_raises_in_strict_mode() -> None:
+    view = PlayerView(
+        player_id="P1",
+        day=1,
+        phase="HUNTER_SHOOT",
+        self_player={"id": "P1", "name": "Hunter", "seat": 1, "role": "Hunter", "alive": False},
+        players=[
+            {"id": "P1", "name": "Hunter", "seat": 1, "role": "Hunter", "alive": False},
+            {"id": "P2", "name": "Bob", "seat": 2, "alive": True},
+        ],
+        public_events=[],
+        private_events=[],
+        known_wolves=[],
+        observations=[],
+        legal_targets=[{"id": "P2", "name": "Bob", "seat": 2, "alive": True}],
+    )
+    agent = create_cognitive_agent_with_character(
+        player_id="P1",
+        role="Hunter",
+        llm=InvalidDirectTargetLLM(),
+        player_name="Hunter",
+        player_seat=1,
+        character=None,
+    )
+    agent.initialize(view, {})
+    agent.update(view, "SHOOT")
+
+    with pytest.raises(RuntimeError, match="invalid shoot target"):
+        agent.shoot()
 
 
 def test_reflector_malformed_output_still_produces_knowledge_docs() -> None:

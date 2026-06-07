@@ -24,9 +24,9 @@ def http_get(url: str) -> tuple[int, str]:
         return int(response.status), response.read().decode("utf-8")
 
 
-def http_post(url: str) -> tuple[int, str]:
+def http_post(url: str, timeout: float = 90.0) -> tuple[int, str]:
     request = urllib.request.Request(url, method="POST")
-    with urllib.request.urlopen(request, timeout=30) as response:
+    with urllib.request.urlopen(request, timeout=timeout) as response:
         return int(response.status), response.read().decode("utf-8")
 
 
@@ -62,6 +62,8 @@ def main() -> int:
     env["PYTHONPATH"] = str(ROOT)
     env["LLM_PROVIDER"] = "fake"
     env["AIWEREWOLF_DEFAULT_AGENT_TYPE"] = "llm"
+    env["MODEL_POOL"] = "fake:fake-llm"
+    env["DOUBAO_MODEL_POOL"] = "fake:fake-llm"
     server = subprocess.Popen(
         [sys.executable, "-m", "uvicorn", "backend.app:app", "--host", "127.0.0.1", "--port", str(port)],
         cwd=str(ROOT),

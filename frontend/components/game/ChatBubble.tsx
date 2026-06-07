@@ -2,9 +2,10 @@
 
 import React, { memo } from "react";
 import { cn } from "@/lib/utils";
-import { useTypewriter } from "@/hooks/useTypewriter";
 import { SpeechCard } from "@/components/game/_speech/SpeechCard";
 import { PhasePlaque } from "@/components/game/_speech/PhasePlaque";
+import { MentionText } from "@/components/game/MentionText";
+import { Player } from "@/types";
 
 interface ChatBubbleProps {
   speakerName: string;
@@ -20,24 +21,20 @@ interface ChatBubbleProps {
   isSpeaking?: boolean;
   animate?: boolean;
   onTypewriterComplete?: () => void;
+  players?: Player[];
 }
 
 export const ChatBubble = memo(function ChatBubble({
   speakerName, seat, content, phaseLabel,
   isOwn = false, isSystem = false, isSpeaking = false,
   eventType, eventPhase,
-  animate = false, onTypewriterComplete,
+  onTypewriterComplete,
+  players,
 }: ChatBubbleProps) {
-  const shouldAnimate = animate && !isSystem && !!content;
-  const { displayedText, finished } = useTypewriter(content, {
-    enabled: shouldAnimate,
-    charsPerSecond: 35,
-    onComplete: onTypewriterComplete,
-  });
-
-  const isQueueManaged = onTypewriterComplete !== undefined;
-  const displayContent = isQueueManaged ? displayedText : (shouldAnimate ? displayedText : content);
-  const showCursor = isQueueManaged && !finished;
+  React.useEffect(() => {
+    if (!isSystem) onTypewriterComplete?.();
+  }, [isSystem, onTypewriterComplete]);
+  const displayContent = content.trim();
 
   // System / phase messages → PhasePlaque with ceremony
   if (isSystem) {
@@ -53,18 +50,13 @@ export const ChatBubble = memo(function ChatBubble({
       seat={seat}
       name={speakerName}
       isSpeaking={isSpeaking}
-      headerRight={isSpeaking ? "发言中" : (phaseLabel || undefined)}
+      headerRight={phaseLabel || undefined}
       className={cn(isOwn && "opacity-90")}
     >
       {displayContent ? (
-        <span className="text-textPrimary">
-          {displayContent}
-          {showCursor && (
-            <span className="inline-block w-0.5 h-[1em] bg-primary align-middle ml-0.5 animate-pulse" />
-          )}
-        </span>
+        <MentionText text={displayContent} players={players} className="text-textPrimary" />
       ) : (
-        <span className="text-text-sub/40 italic">{" "}</span>
+        <span className="text-text-sub/60">{phaseLabel || "记录已生成"}</span>
       )}
     </SpeechCard>
   );

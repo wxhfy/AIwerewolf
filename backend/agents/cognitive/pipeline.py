@@ -80,11 +80,12 @@ class Pipeline:
         memory: Memory,
         is_first_speaker: bool = False,
         is_last_words: bool = False,
-    ) -> str:
+    ) -> Dict[str, str]:
         """Generate speech via agent loop (or legacy chain)."""
         if self._use_agent_loop:
             return self._run_loop_speech(obs, memory, is_first_speaker, is_last_words)
-        return self._run_legacy_speech(obs, memory, is_first_speaker, is_last_words)
+        speech = self._run_legacy_speech(obs, memory, is_first_speaker, is_last_words)
+        return {"speech": speech, "reasoning": ""}
 
     def run_vote(
         self,
@@ -123,7 +124,7 @@ class Pipeline:
         memory: Memory,
         is_first: bool,
         is_last: bool,
-    ) -> str:
+    ) -> Dict[str, str]:
         extra_parts = []
         if is_first:
             extra_parts.append("你是本阶段第一个发言的人")
@@ -142,8 +143,9 @@ class Pipeline:
         )
         result = loop.run(obs, memory, extra_context=extra)
         speech = result.get("speech", "")
-        self._cached_analysis = result.get("reasoning", "")
-        return speech
+        reasoning = result.get("reasoning", "")
+        self._cached_analysis = reasoning
+        return {"speech": speech, "reasoning": reasoning}
 
     def _run_loop_vote(
         self,
@@ -252,17 +254,19 @@ class Pipeline:
         system: str,
         user: str,
         max_tokens: int = 500,
-        max_retries: int = 2,
+        max_retries: int = 0,
     ) -> str:
         last_error: Exception | None = None
         for _attempt in range(max_retries + 1):
             try:
-                resp = self._llm.invoke(
-                    [
-                        SystemMessage(content=system),
-                        HumanMessage(content=user),
-                    ]
-                )
+                messages = [
+                    SystemMessage(content=system),
+                    HumanMessage(content=user),
+                ]
+                try:
+                    resp = self._llm.invoke(messages, max_tokens=max_tokens)
+                except TypeError:
+                    resp = self._llm.invoke(messages)
                 content = resp.content.strip()
                 if content and len(content) > 10:
                     return content

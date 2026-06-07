@@ -2,7 +2,6 @@
 
 import React, { useMemo } from "react";
 import { Language, Player } from "@/types";
-import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 interface VotePanelProps {
@@ -13,7 +12,7 @@ interface VotePanelProps {
 }
 
 export function VotePanel({ votes, players, language, phase }: VotePanelProps) {
-  const { alivePlayers, votedCount, totalVoters, percent, voteEntries, waitingPlayers } = useMemo(() => {
+  const { votedCount, totalVoters, percent, voteEntries, waitingPlayers } = useMemo(() => {
     const alive = players.filter((p) => p.alive);
     const ids = Object.keys(votes);
     const totalVoters = alive.length;
@@ -31,7 +30,7 @@ export function VotePanel({ votes, players, language, phase }: VotePanelProps) {
     }
 
     const waiting = alive.filter((p) => !ids.includes(p.id));
-    return { alivePlayers: alive, votedCount, totalVoters, percent, voteEntries: entries, waitingPlayers: waiting };
+    return { votedCount, totalVoters, percent, voteEntries: entries, waitingPlayers: waiting };
   }, [votes, players]);
 
   const isBadgeVote = phase.includes("BADGE") || phase.includes("ELECTION");
@@ -41,29 +40,29 @@ export function VotePanel({ votes, players, language, phase }: VotePanelProps) {
   const isZh = language === "zh";
 
   return (
-    <div className="mx-4 mt-3 rounded-2xl bg-white/95 shadow-xl shadow-black/10 overflow-hidden">
+    <div className="overflow-hidden rounded-xl border border-border bg-cardBackground/95 shadow-float backdrop-blur" data-phase-aware>
       {/* ── Header ── */}
-      <div className="flex items-center justify-between px-5 py-3.5 bg-accent/8">
+      <div className="flex items-center justify-between px-4 py-2.5 bg-accent/10">
         <div className="flex items-center gap-2.5">
-          <span className="text-xl">🗳️</span>
-          <span className="text-base font-bold text-accent tracking-wide">{title}</span>
+          <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-accent/15 text-base">🗳️</span>
+          <span className="text-sm font-bold text-primary tracking-wide">{title}</span>
         </div>
         <div className="flex items-center gap-2">
           <span className={cn(
-            "text-lg font-bold tabular-nums",
-            votedCount === totalVoters ? "text-emerald-600" : "text-accent"
+            "text-base font-bold tabular-nums",
+            votedCount === totalVoters ? "text-success" : "text-primary"
           )}>
-            {votedCount}<span className="text-sm font-normal text-gray-400">/{totalVoters}</span>
+            {votedCount}<span className="text-xs font-normal text-text-sub">/{totalVoters}</span>
           </span>
         </div>
       </div>
 
       {/* ── Progress bar ── */}
-      <div className="h-1.5 bg-gray-100">
+      <div className="h-1 bg-border/20">
         <div
           className={cn(
             "h-full transition-all duration-500 ease-out rounded-r-sm",
-            percent >= 100 ? "bg-emerald-500" : "bg-accent"
+            percent >= 100 ? "bg-success" : "bg-primary"
           )}
           style={{ width: `${Math.max(percent, votedCount > 0 ? 3 : 0)}%` }}
         />
@@ -71,26 +70,26 @@ export function VotePanel({ votes, players, language, phase }: VotePanelProps) {
 
       {/* ── Vote cards ── */}
       {voteEntries.length > 0 && (
-        <div className="px-5 py-3.5 flex flex-wrap gap-2.5">
+        <div className="flex flex-wrap gap-2 px-4 py-2.5">
           {voteEntries.map(({ voter, target }) => (
             <div
               key={voter.id}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-accent/8 text-sm font-medium shadow-sm"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 bg-background/70 px-2.5 py-1.5 text-xs font-medium"
             >
-              <span className="flex items-center justify-center w-7 h-7 rounded-full bg-accent text-white text-xs font-bold shadow">
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-white">
                 {voter.seat}
               </span>
-              <span className="text-gray-800">{voter.name}</span>
-              <span className="text-accent/50 mx-0.5">→</span>
+              <span className="text-textPrimary">{voter.name}</span>
+              <span className="mx-0.5 text-primary/50">→</span>
               {target ? (
                 <>
-                  <span className="flex items-center justify-center w-7 h-7 rounded-full bg-red-500 text-white text-xs font-bold shadow">
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-danger text-[10px] font-bold text-white">
                     {target.seat}
                   </span>
-                  <span className="text-red-600 font-semibold">{target.name}</span>
+                  <span className="font-semibold text-danger">{target.name}</span>
                 </>
               ) : (
-                <span className="text-gray-400 italic text-xs">{isZh ? "弃权" : "Skip"}</span>
+                <span className="text-text-sub italic">{isZh ? "弃权" : "Skip"}</span>
               )}
             </div>
           ))}
@@ -99,12 +98,12 @@ export function VotePanel({ votes, players, language, phase }: VotePanelProps) {
 
       {/* ── Waiting players ── */}
       {waitingPlayers.length > 0 && (
-        <div className="px-5 py-2.5 bg-gray-50/80">
-          <span className="text-xs text-gray-400">{isZh ? "⏳ 等待: " : "⏳ Waiting: "}</span>
+        <div className="border-t border-border/40 bg-background/45 px-4 py-2">
+          <span className="text-xs text-text-sub/70">{isZh ? "等待: " : "Waiting: "}</span>
           {waitingPlayers.map((p, i) => (
-            <span key={p.id} className="text-xs text-gray-500">
+            <span key={p.id} className="text-xs text-text-sub">
               {i > 0 && " · "}
-              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-gray-200 text-[10px] font-bold mr-0.5 text-gray-500">{p.seat}</span>
+              <span className="mr-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-border/40 text-[10px] font-bold text-text-sub">{p.seat}</span>
               {p.name}
             </span>
           ))}

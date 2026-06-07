@@ -99,9 +99,16 @@ def create_game(
     player_count: int = 10,
     rule_pack_id: str = "wolfcha-default",
 ):
-    game = _build_game(
-        seed=seed, agent_type=agent_type, human_seat=human_seat, player_count=player_count, rule_pack_id=rule_pack_id
-    )
+    try:
+        game = _build_game(
+            seed=seed,
+            agent_type=agent_type,
+            human_seat=human_seat,
+            player_count=player_count,
+            rule_pack_id=rule_pack_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     if human_seat is not None:
         state = game.play_until_blocked()
         _rooms.games[state.id] = state
@@ -650,6 +657,14 @@ def prepare_room_game(room_id: str, show_private: bool = False):
 
     game.observer = _observer
     game.initialize()
+    try:
+        from backend.db.persist import save_game_start
+
+        save_game_start(game.state)
+    except Exception:
+        import logging
+
+        logging.getLogger(__name__).warning("save_game_start failed during room prepare", exc_info=True)
     snapshot = game.state.snapshot(show_private=show_private)
     _rooms.record_snapshot(room_id, snapshot)
     return snapshot
@@ -916,7 +931,10 @@ async def room_ws(websocket: WebSocket, room_id: str) -> None:
             )
             final = state.snapshot(show_private=show_private)
             room = _rooms.record_game(room_id, state, final)
-            await websocket.send_json({"type": "complete", "state": final, "room": room.to_dict()})
+            try:
+                await websocket.send_json({"type": "complete", "state": final, "room": room.to_dict()})
+            except (RuntimeError, WebSocketDisconnect):
+                return
     except WebSocketDisconnect:
         return
 

@@ -76,9 +76,10 @@ class Visibility:
             include_self = True
         elif state.phase == Phase.DAY_VOTE and state.pk_targets:
             target_ids = set(state.pk_targets)
+        elif state.phase == Phase.NIGHT_WOLF_ACTION:
+            target_ids = {target.id for target in state.alive_players if target.alignment != Alignment.WOLF}
         elif state.phase in {
             Phase.DAY_VOTE,
-            Phase.NIGHT_WOLF_ACTION,
             Phase.NIGHT_SEER_ACTION,
             Phase.HUNTER_SHOOT,
             Phase.WHITE_WOLF_KING_BOOM,

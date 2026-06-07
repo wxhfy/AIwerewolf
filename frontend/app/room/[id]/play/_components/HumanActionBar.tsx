@@ -10,6 +10,8 @@ interface HumanActionBarProps {
   canSubmit: boolean;
   speech: string;
   setSpeech: (s: string) => void;
+  savePotion: boolean;
+  setSavePotion: (v: boolean) => void;
   selectedTarget: string;
   selectedPlayer: Player | undefined;
   setSelectedTarget: (id: string) => void;
@@ -24,6 +26,8 @@ export function HumanActionBar({
   canSubmit,
   speech,
   setSpeech,
+  savePotion,
+  setSavePotion,
   selectedPlayer,
   setSelectedTarget,
   onSubmit,
@@ -64,26 +68,47 @@ export function HumanActionBar({
   // ── Target selection mode ──
   return (
     <div className="border-t border-border bg-cardBackground px-4 py-2">
-      <div className="flex items-center justify-between">
-        <span className="text-xs text-text-sub truncate">
-          {pending?.prompt || (needsTarget
-            ? (lang === "zh" ? "点击玩家卡片投票 / 轮到你了" : "Tap player cards to vote / Your turn")
-            : "")}
-        </span>
-        <div className="flex items-center gap-2 shrink-0">
-          {selectedPlayer && (
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-xs text-text-sub">
+            {pending?.prompt || (needsTarget
+              ? (lang === "zh" ? "点击玩家卡片选择合法目标" : "Tap a legal player card")
+              : "")}
+          </p>
+          {pending?.request === "WITCH" && (
+            <label className="mt-1 inline-flex items-center gap-2 text-xs text-textPrimary">
+              <input
+                type="checkbox"
+                checked={savePotion}
+                onChange={(e) => setSavePotion(e.target.checked)}
+                className="h-4 w-4 rounded"
+              />
+              {lang === "zh" ? "使用解药救人" : "Use antidote"}
+            </label>
+          )}
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          {selectedPlayer ? (
             <>
-              <span className="text-xs text-primary font-medium">
-                {lang === "zh" ? "你选择投票给" : "Voting for"}{" "}
-                {selectedPlayer.seat}号 {selectedPlayer.name}
+              <span className="text-xs font-medium text-primary">
+                {lang === "zh" ? "已选择" : "Selected"} {selectedPlayer.seat}号 {selectedPlayer.name}
               </span>
-              <button
-                onClick={() => setSelectedTarget("")}
-                className="text-[11px] text-text-sub/60 hover:text-text-sub"
-              >
+              <button onClick={() => setSelectedTarget("")} className="text-[11px] text-text-sub/60 hover:text-text-sub">
                 {lang === "zh" ? "取消" : "Cancel"}
               </button>
             </>
+          ) : (
+            <span className="text-xs text-text-sub/60">
+              {pending?.can_skip ? (lang === "zh" ? "可跳过" : "Skippable") : (lang === "zh" ? "未选择目标" : "No target")}
+            </span>
+          )}
+          {pending?.can_skip && (
+            <button
+              onClick={() => { setSelectedTarget(""); onSubmit(); }}
+              className="text-[11px] text-text-sub/60 hover:text-text-sub"
+            >
+              {lang === "zh" ? "跳过" : "Skip"}
+            </button>
           )}
           <Button onClick={onSubmit} disabled={!canSubmit} size="sm">
             {pending?.request === "DIVINE"

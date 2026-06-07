@@ -142,6 +142,38 @@ updated: 2026-06-03
 - **涉及文件 / 模块**：`backend/engine/game.py`、`backend/engine/visibility.py`、`backend/agents/cognitive/observe.py`、`backend/agents/cognitive/agent_loop.py`、`backend/llm/__init__.py`、`tests/test_engine.py`、`tests/test_cognitive_offline.py`
 - **教训**：LLM-only 不只是“调用了 LLM”，还必须做到非法输出不能被引擎改写；合法动作集合必须进入最终 agent input 和审计记录。
 
+### 问题 A12：狼人刀人与猎人开枪被当成发言校验
+- **发生时间 / Session**：2026-06-06 ｜ Codex
+- **现象**：`backend.run_demo --seed 7` 在 fake LLM 下失败，日志显示 `Invalid LLM decision in WOLF_TEAM_VOTE`，合法狼人 `attack` 目标被判非法；同类风险也存在于猎人 `shoot`。
+- **根因**：`_wolf_phase` / `_hunter_shoot` 对目标动作复用了 `_valid_talk_decision()`，该函数只允许 `TALK/SKIP`，导致夜间刀人和猎人开枪这种带目标动作被错误拒绝。
+- **解决方案**：对应阶段改回使用 `ActionValidator.validate(self.state, decision)`，让 `ATTACK/SHOOT` 走动作类型自己的合法性规则。
+- **涉及文件 / 模块**：`backend/engine/game.py`
+- **教训**：阶段校验不能为了复用而跨动作类型套用；发言动作和目标动作必须走不同 validator 入口。
+
+### 问题 A13：快速终局未生成每日摘要
+- **发生时间 / Session**：2026-06-07 ｜ Codex
+- **现象**：`python scripts/e2e_smoke.py` 在 7P fake LLM 对局中失败于 `assert data["daily_summaries"]`；手工检查 payload 显示对局在 `DAY_LAST_WORDS` 后直接 `GAME_END`，但 `daily_summaries` / `daily_summary_facts` 为空。
+- **根因**：`_check_win()` 直接设置 winner 并写入 `GAME_END` 事件，随后调度器进入 `GAME_END`；这条快速终局路径绕过了 `_day_resolve()` 末尾的 `_refresh_day_summary()`。`max_days_reached` 终局分支也有同类漏刷风险。
+- **解决方案**：在 `_check_win()` 写入 `GAME_END` 后立即 `_refresh_day_summary()`；`max_days_reached` 分支同样刷新当天摘要，确保任意终局路径都带可复盘摘要。
+- **涉及文件 / 模块**：`backend/engine/game.py`、`scripts/e2e_smoke.py`
+- **教训**：终局事件本身也是日总结素材；摘要刷新不能只挂在普通白天结算尾部，所有直接胜负判定路径都要补齐。
+
+### 问题 A14：离线 demo 的 PK 重投票选到旧目标
+- **发生时间 / Session**：2026-06-07 ｜ Codex goal continuation
+- **现象**：`python -m backend.run_demo --seed 7` 在 fake LLM 下进入 PK 重投票后崩溃：`Invalid LLM decision in VOTE ... vote target is invalid or outside PK targets`。目标来自普通投票阶段旧候选，不在当前 PK 双方里。
+- **根因**：AgentLoop 的 vote prompt 可能同时包含“上一轮分析”和当前观察，离线 fake LLM 测试替身用 `re.search("合法目标")` 只取第一段合法目标，导致 PK 重投票被旧普通投票候选污染。引擎严格 LLM 校验本身是正确的，不能把真实非法票静默 fallback。
+- **解决方案**：`backend/llm/__init__.py` 的 `_FakeLLMClient._target_from_prompt()` 改为收集所有 `合法目标` 段并使用最后一段，即当前动作候选集合；新增 `test_fake_llm_uses_latest_legal_targets_for_pk_revote` 回归测试。
+- **涉及文件 / 模块**：`backend/llm/__init__.py`、`tests/test_llm_config.py`
+- **教训**：测试替身也要遵守真实 prompt 的多段上下文形态；当“当前状态”可能重复出现时，动作候选必须以最新观察为准。
+
+### 问题 A15：共享 DB 玩家 ID 碰撞导致复盘页 404
+- **发生时间 / Session**：2026-06-07 ｜ Codex goal continuation
+- **现象**：`node tests/ui_smoke.mjs` 真实浏览器流程在复盘页等待 iframe 超时；后端日志显示 `save_game_start failed`，根错误是 `players_pkey` 唯一键冲突，随后 `agent_decisions_game_id_fkey` 失败，`/api/games/{id}/reviews/html` 与 `.md` 返回 404。
+- **根因**：引擎玩家 ID 使用 `P{seat}-{uuid4().hex[:6]}`，只有 24-bit 随机空间；共享 PG 长期累积 smoke/demo 数据后，跨局玩家 ID 可以撞到旧数据。`players.id` 是全局主键，任何碰撞都会让整局 `games`/`players` 持久化事务失败，进而无法生成 PublishedReview。
+- **解决方案**：`backend/engine/rules.py` 将玩家 ID 后缀扩到 12 位 hex，保持 `P座位-随机后缀` 形态但把随机空间扩大到 48-bit；验证 `test_game_plays_to_winner`、`test_room_api_flow`、PK fake LLM 回归测试通过。
+- **涉及文件 / 模块**：`backend/engine/rules.py`、`backend/db/models.py`、`backend/db/persist.py`、`tests/ui_smoke.mjs`
+- **教训**：任何会落库为全局主键的“短随机 ID”都不能按单局唯一来设计；共享测试库会把低概率碰撞放大成前端端到端失败。
+
 ## §B. 前端 / UI 渲染
 
 ### 问题 B1：UI 卡在「正在生成对局」不动
@@ -295,6 +327,14 @@ updated: 2026-06-03
 - **效果**:7/7 玩家全部 routed 到课题 ep-20260514115354-k4jz4;live API ping 返回 "OK";126 tests passed。
 - **涉及文件 / 模块**:`.env`、`backend/agents/factory.py`。
 - **教训**:**配置项的"自动行为"必须可关**。我之前在 _resolve_pool_specs 里硬塞 fallback 是"防御性设计",但等用户想反过来时——只用 primary、不用 fallback——这个隐式行为反而要先拆。pool 的边界应该完全由 DOUBAO_MODEL_POOL 显式声明,fallback 字段只承担"备用配置记录"语义,不参与运行时决策,除非 LLMAgent 显式实现 retry-with-fallback。
+
+### 问题 B19：首页语言切换被旧 Settings 状态回滚
+- **发生时间 / Session**：2026-06-06 ｜ Codex
+- **现象**：Playwright 点击首页 `EN` 后，页面没有稳定切到英文，smoke 等待英文文案超时；用户看到的效果是语言按钮可点但状态会被旧设置拉回。
+- **根因**：首页 `language` 来自全局 AppContext，但 `gameSettings.language` 仍保留旧值；同步 effect 每次发现两者不一致就把全局语言改回 settings 里的语言。
+- **解决方案**：URL `?lang=` 初始化时写入 `gameSettings`；语言切换按钮同时更新持久化 settings 和 AppContext，避免两个状态源互相覆盖。
+- **涉及文件 / 模块**：`frontend/app/page.tsx`、`tests/ui_smoke.mjs`
+- **教训**：同一 UI 状态不能由两个源头各自写入；若必须保留持久化 settings，显式用户操作要同步更新所有状态源。
 
 ---
 
@@ -501,6 +541,7 @@ updated: 2026-06-03
 - **解决方案**：删除 `_ROLE_ANTI_PATTERNS` 与 `get_role_anti_patterns()`，`build_think_prompt()` 只接收外部 `strategy_text/strategy_bias`；`AgentLoop` 新增独立 `【策略层：Track C 复盘知识】` 块，只从已发布策略知识库检索经验后注入；新增分层测试防止硬策略短语回流到非策略层。
 - **涉及文件 / 模块**：`backend/agents/cognitive/prompts.py`、`backend/agents/cognitive/agent_loop.py`、`tests/test_prompt_layering.py`
 - **教训**：Track C 反馈闭环不能靠代码里写死角色打法；反例、建议、避免项都必须经过策略层和可审计知识库进入 Prompt。
+- **修正（2026-06-06）**：用户明确纠正“anti-pattern 还是保留，确保不会犯低级错误”。当前处理改为保留 `get_role_anti_patterns()` 并在 `AgentLoop._task_for_action()` 中作为低级错误护栏注入；检索策略实验单独评估 retrieval 质量，不把 anti-pattern 当作检索命中来源。后续写策略实验报告时要显式区分“anti-pattern guardrail”和“RAG/retrieval strategy”。
 
 ### 问题 C25：Prompt 构造期重检索拖慢 LLM-only 对局
 - **发生时间 / Session**：2026-06-04 ｜ Codex
@@ -509,6 +550,63 @@ updated: 2026-06-03
 - **解决方案**：改为轻量 SQL 读取 `list_strategy_knowledge(role, phase, status="active", limit=3)`，不足时补 role-only active 文档；增加短 TTL 进程缓存 `TRACK_C_AUTO_RETRIEVAL_CACHE_SECONDS`，保持策略层注入可用但不拖垮对局推进。
 - **涉及文件 / 模块**：`backend/agents/cognitive/agent_loop.py`、`backend/db/persist.py`、`tests/test_prompt_layering.py`
 - **教训**：自进化知识进入在线决策时必须控制延迟边界；在线 Prompt 拼装只读已经沉淀的轻量结果，重排序和候选生成留给 Track C 离线链路。
+
+### 问题 C26：检索策略评估被 fallback 污染
+- **发生时间 / Session**：2026-06-06 ｜ Codex
+- **现象**：评估 `same_role_same_mbti`、`global_only` 等检索策略时，工具层在空结果后可能回退到旧 TF-IDF 检索，导致“严格策略为空”的事实被补齐结果掩盖；主评估脚本的 `--judge llm` 仍是占位，无法证明策略是否被真实 LLM 裁判认可。
+- **根因**：`search_strategies()` 把 production retrieval 和 legacy TF-IDF fallback 混在同一条路径；策略过滤后空结果没有作为有效实验信号保留。同时缺少一个可复跑的 LLM judge 脚本来独立评分每个 query 的候选策略文档。
+- **解决方案**：非 `global_only` 策略命中为空时直接返回“未找到匹配策略”，不再落到 legacy TF-IDF；新增 `scripts/evaluate_retrieval_policies_llm_judge.py`，按 query 汇总所有 policy 的 top-5 文档、去重后一次性让 LLM 打 0-3 相关性分，并输出 `results.json / results.csv / summary.md / per_query_judgments.jsonl`。
+- **涉及文件 / 模块**：`backend/agents/cognitive/tools.py`、`tests/test_retrieval_policy.py`、`scripts/evaluate_retrieval_policies_llm_judge.py`
+- **教训**：检索策略实验必须保留“空结果/低覆盖”这个负信号；fallback 是线上可用性手段，不应污染离线策略比较。
+
+### 问题 C27：真实 LLM 工具调用空响应中断实验
+- **发生时间 / Session**：2026-06-06 ｜ Codex
+- **现象**：追加正式 7P multi-tier 实验时，多个 seed 在 `speech` / `vote` 阶段失败，错误集中为 `AgentLoop failed to produce a structured decision ... last_response=''`；失败局在 strict no fallback 模式下被正确计入 error，没有被启发式掩盖。
+- **根因**：OpenAI-compatible native function calling 偶发返回空 `content` 且没有 `tool_calls`。`AgentLoop` 在强制 `submit_decision` 时只接受 native tool call，遇到空响应只再请求一次同样的 function call，仍为空就中断；切到纯文本修复时又因 `_supports_bind_tools=True` 跳过了文本 `DECISION` 解析。
+- **解决方案**：`AgentLoop` 在强制 `submit_decision` 返回空时，下一轮改为纯文本 `DECISION: {...}` 修复指令，并允许该纯文本响应进入 `_parse_decision()` / `_parse_freeform_decision()`；新增离线单测模拟“native 空响应 → 文本 DECISION 成功”。同时修正 MBTI append summary 与最终报告对累计 JSONL 的统计口径。
+- **修正（2026-06-06）**：正式复验时又出现 `submit_decision missing speech/reasoning`，即 native tool call 存在但参数缺必填字段。已把这类 `decision_error` 也纳入同一条纯文本 `DECISION` 修复路径，并允许 native 模式下有文本内容时直接解析文本决策。
+- **涉及文件 / 模块**：`backend/agents/cognitive/agent_loop.py`、`tests/test_cognitive_offline.py`、`scripts/mbti_acceptance_batch.py`、`scripts/full_victory_report.py`
+- **教训**：strict LLM-only 不等于只接受一种 API 表达形式；只要最终动作仍来自同一个 LLM 响应，就可以从 native tool-call 降级为文本结构化输出，但绝不能改为 heuristic 代决策。
+
+### 问题 C28：anti-pattern 护栏再次混入玩法优先级
+- **发生时间 / Session**：2026-06-07 ｜ Codex
+- **现象**：全量 `python -m pytest tests/ -x -q` 失败于 `tests/test_prompt_layering.py::test_agent_loop_task_layer_has_no_role_hard_strategy`，提示 `AgentLoop` 基础任务层仍包含“刀人优先级：预言家 > 女巫 > 猎人 > 守卫 > 村民”。
+- **根因**：C24 后续修正要求保留 anti-pattern 护栏，但当前 `_ROLE_ANTI_PATTERNS` 同时包含两类内容：一类是合法目标、信息边界、不能编造结果等低级错误护栏；另一类是刀口优先级、跟随预言家、狼队统一冲票等玩法策略。后者仍会污染非策略层。
+- **解决方案**：保留 `get_role_anti_patterns()`，但把条目收敛为“合法目标 / 信息边界 / 不编造私有结果 / 不选择狼队友 / 不同夜连续守护”等规则与低级错误约束；删除“刀人优先级”“狼队统一冲票”“跟随预言家”“首夜优先守护”等策略性短语。
+- **涉及文件 / 模块**：`backend/agents/cognitive/prompts.py`、`tests/test_prompt_layering.py`
+- **教训**：anti-pattern 可以保留，但必须只当安全护栏；具体玩法、优先级和战术仍只能从策略层或可审计知识库进入 Prompt。
+
+### 问题 C27：v4flash tool_choice 与 thinking 冲突
+- **发生时间 / Session**：2026-06-06 ｜ Codex
+- **现象**：切到 `deepseek-v4-flash` 加速实验后，LLM judge 可正常输出 JSON，但真实 7 人对局的 native function calling 报 400：`Thinking mode does not support this tool_choice`。
+- **根因**：DeepSeek v4 flash 默认启用 thinking mode；当请求带 `tools/tool_choice` 时，省略 `thinking` 会触发默认 thinking，而传布尔 `false` 也会被拒绝。该接口要求对象形态 `{"type":"disabled"}`。
+- **解决方案**：在 `DeepSeekClient` 中统一归一化 thinking payload：有工具调用且模型/URL 属于 DeepSeek family 时发送 `thinking={"type":"disabled"}`；无工具调用且需要推理时才发送 `thinking={"type":"enabled"}`。真实 tool call smoke 返回 `tool_calls=1`，7 人完整 LLM 对局复测 131.1 秒结束。
+- **涉及文件 / 模块**：`backend/llm/deepseek.py`、`tests/test_llm_config.py`
+- **教训**：同是 OpenAI-compatible API，也要处理 provider-specific 扩展字段；function calling 与 thinking/reasoning 不能靠布尔值通吃。
+
+### 问题 C28：WEAPI 完整对局批量 502
+- **发生时间 / Session**：2026-06-06 ｜ Codex
+- **现象**：`weapi:gpt-5.5` 最小健康检查成功，但 7P formal MBTI 批次在完整对局负载下 16/16 失败，错误集中为远端 `HTTP 502`。
+- **根因**：短 prompt health check 不能代表长上下文、多轮狼人杀对局和并发子进程负载；WEAPI 在正式实验压力下出现上游网关/模型服务不稳定。
+- **解决方案**：保留 WEAPI 失败原始记录，不将失败批次包装成成功；正式实验切换到火山引擎 `dsv4flash:deepseek-v4-flash`，所有报告写明 provider/model/runtime 配置；实验脚本继续默认拒绝 offline fake LLM。
+- **涉及文件 / 模块**：`scripts/multi_tier_experiment.py`、`scripts/mbti_acceptance_batch.py`、`data/health/mbti_acceptance_formal_weapi_7p_mbti_16x1.*`
+- **教训**：正式验收必须跑完整对局负载；health check 只能证明 key/base/model 可连通，不能证明 provider 能承载实验。
+
+### 问题 C29：v4flash 文本模式空 content
+- **发生时间 / Session**：2026-06-06 ｜ Codex
+- **现象**：关闭 native function calling 后，`dsv4flash` 7P 探针仍偶发 `AgentLoop failed ... action=vote, last_response=''`；开启 native FC 时也出现 `submit_decision` 缺 `speech/reasoning`。
+- **根因**：认知 Agent wrapper 只在 tools 存在时传 `thinking=False`，普通文本调用仍可能走 reasoning-only 路径；底层 client 对无工具请求没有把 `thinking=False` 规范化为 deepseek-family 需要的对象形态。
+- **解决方案**：`_ToolCallingRunnable.invoke()` 对所有认知 Agent 请求都传 `thinking=False`；`DeepSeekClient._normalize_thinking_payload()` 在 deepseek-family 无工具文本模式下发送 `{"type":"disabled"}` 并移除 `reasoning_effort`；补充 no-tools/tools 两条单测。之后 7P 单局探针 50 次 LLM 决策、fallback=0、invalid=0。
+- **涉及文件 / 模块**：`backend/agents/cognitive/factory.py`、`backend/llm/deepseek.py`、`tests/test_llm_config.py`
+- **教训**：真实模型的“完整 LLM”验收不仅要发出请求，还要保证最终答案落在可解析字段；reasoning-only 输出在狼人杀决策链路里等价于失败。
+
+### 问题 C30：LLM-only 被本地补决策掩盖
+- **发生时间 / Session**：2026-06-06 ｜ Codex
+- **现象**：用户要求“从头到尾 review agent 架构，确保正常对局，llm only，不要 fallback/长超时/空响应”。审查发现 `CognitiveAgent.talk()` 在 LLM 空发言时会本地补“我暂时没有更多信息”，`shoot/boom/transfer_badge/_night_decision` 会在无效目标时本地选第一个存活玩家；引擎发言阶段只用 `ActionValidator`，空 `speech` 的 `TALK` 仍可被当作合法事件写入；`scripts/llm_game_smoke.py` 还可能选到第 1 夜直接结束的 seed，未覆盖白天发言/投票。
+- **根因**：稳定性处理和验收逻辑混在一起：Agent 层把“模型无输出/非法输出”转换成本地默认动作，引擎层没有统一非空发言校验，smoke 只检查有无 LLM talk/vote 事件且固定 seed，不检查 `DecisionAudit` 的 fallback/invalid/empty speech；同时 LLM timeout 可被环境变量放大，违背对局内 12 秒上限。
+- **解决方案**：严格模式下空发言、缺 reasoning、无效夜间目标、猎人/白狼王/警徽目标无法解析全部抛错；引擎新增 `_valid_talk_decision()` 并用于警徽发言、自由发言、警长归票、PK、遗言；LLM 席位无效发言/投票/技能动作直接 `RuntimeError`，不再构造 fallback 投票；`DeepSeekClient` read timeout 上限固定 12 秒，Agent 工厂固定 `max_retries=0`；`llm_game_smoke.py` 改为扫描可覆盖白天流程的 seed，并同时检查事件和 `DecisionAudit`：fallback=0、invalid=0、empty speech=0、LLM 决策记录存在。
+- **涉及文件 / 模块**：`backend/agents/cognitive/agent.py`、`backend/engine/game.py`、`backend/agents/factory.py`、`backend/agents/cognitive/factory.py`、`backend/llm/deepseek.py`、`scripts/llm_game_smoke.py`、`tests/test_cognitive_offline.py`、`tests/test_engine.py`、`tests/test_llm_config.py`
+- **教训**：LLM-only 验收必须“失败显性化”，不能靠本地补一句、补目标或默认投票把模型错误包装成完整对局；完整对局 smoke 必须覆盖白天发言/投票，并从事件与审计记录双层证明无 fallback、无空响应、无非法决策。
 
 ## §D. 数据库 / 持久化
 
@@ -585,6 +683,14 @@ updated: 2026-06-03
 - **涉及文件 / 模块**：`scripts/run_full_llm_pipeline.py`、`backend/db/persist.py`、`backend/eval/review.py`
 - **教训**：全链路验收不能只看内存对象通过；只要下一阶段从数据库读，就必须在阶段边界显式落库并校验样本数一致。
 
+### 问题 D10：Prepared game 先写决策后写 games 导致外键失败
+- **发生时间 / Session**：2026-06-06 ｜ Codex
+- **现象**：真实浏览器 smoke 从首页开始 AI 对局后，后端打印 `agent_decisions_game_id_fkey` 外键错误，随后复盘 HTML 一度 404。
+- **根因**：`/prepare` 已经 `initialize()` 并产生事件，但没有调用 `save_game_start()`；之后 WebSocket 进入 `game.play()` 时发现已有 events，跳过 `play_until_blocked()` 里的首次 `save_game_start()`，最终 `flush_decisions_to_db()` 在 `games` 父行不存在时先插入 `agent_decisions`。
+- **解决方案**：`save_game_start()` 改成幂等 upsert 风格，并在 `/api/rooms/{id}/prepare` 初始化后立即保存 game/player 起始行；重复 prepare/start 不再主键冲突。
+- **涉及文件 / 模块**：`backend/app.py`、`backend/db/persist.py`
+- **教训**：prepared/running/finished 三段生命周期必须共用同一个持久化起点；任何子表写入前都要保证父 `games` 行已存在。
+
 ## §E. WebSocket / 实时通信
 
 ### 问题 E1：对局中途「大家都不动了」（卡死）
@@ -649,6 +755,14 @@ updated: 2026-06-03
 - **解决方案**：用当前解释器重新运行 `scripts/train_speech_semantic_scorer.py`，从 open speech samples 重训并重导出 `speech_act_classifier_v0.pkl`；单测复跑通过。
 - **涉及文件 / 模块**：`models/open_data/speech_act_classifier_v0.pkl`、`scripts/train_speech_semantic_scorer.py`、`tests/test_track_b_speech_semantic_scorer.py`
 - **教训**：pickle 模型 artifact 不是跨环境稳定格式；如果要随仓库保存，就要在目标 Python/numpy/sklearn 环境下重导出，或改成显式版本化的可迁移格式。
+
+### 问题 F7：Next dev/build 共用 `.next` 导致缓存损坏
+- **发生时间 / Session**：2026-06-06 ｜ Codex
+- **现象**：一边跑 UI smoke 的 `next dev`，一边跑 `next build`，出现 `Cannot find module './819.js'`、`PageNotFoundError: Cannot find module for page: /evolution` 等随机构建错误。
+- **根因**：多个 Next 进程同时读写同一个 `.next` 缓存目录；测试脚本还曾在 Next 进程收尾时删除 dist 目录，造成 webpack cache ENOENT 噪音。
+- **解决方案**：`next.config.js` 支持 `NEXT_DIST_DIR`；UI smoke 固定使用 `.next-smoke`，构建验证使用 `.next-build-verify`，`tsconfig.json` 显式 include 这两个类型目录；不在 smoke finally 中删除正在收尾的 Next 缓存。
+- **涉及文件 / 模块**：`frontend/next.config.js`、`frontend/tsconfig.json`、`tests/ui_smoke.mjs`
+- **教训**：E2E/dev/build 不能共享 Next distDir；清理生成目录要放在进程完全退出且验证结束之后。
 
 ---
 
@@ -773,6 +887,46 @@ updated: 2026-06-03
 - **涉及文件 / 模块**：`scripts/e2e_smoke.py`、`backend/app.py`、`tests/test_api.py`
 - **教训**：验收脚本不要隐式依赖 API 默认值；如果断言 7 人局，请求里必须显式写 `player_count=7`。
 
+### 问题 H11：UI smoke 断言长期落后当前文案和入口
+- **发生时间 / Session**：2026-06-06 ｜ Codex
+- **现象**：真实 UI 已改为 `Start AI Match` / `Start Human Match`、复盘页独立为 `/games/{id}/report`，但 smoke 仍等待旧 `Start Game`、旧内嵌 Track B 文案，导致验证失败不能反映真实产品状态。
+- **根因**：UI 文案和路由迭代后，smoke 没有同步升级为“操作当前真实控件 + 检查关键页面能力”的模式。
+- **解决方案**：smoke 改为：进化看板检查首屏面板；已结束房间检查 `Game Over/View Review`；复盘页检查 iframe 和后端 HTML/SVG；首页按当前 `Start AI Match` / 真人模式按钮走真实操作流。
+- **涉及文件 / 模块**：`tests/ui_smoke.mjs`
+- **教训**：E2E smoke 应断言用户关键能力，不要绑定过时营销文案；按钮名可变时优先围绕当前可见角色/流程验证。
+
+### 问题 H12：E2E smoke 继承外部真实模型池
+- **发生时间 / Session**：2026-06-07 ｜ Codex
+- **现象**：`python scripts/e2e_smoke.py` 偶发 500 或 30 秒超时；同一路径手工加 `MODEL_POOL=fake:fake-llm` 后可稳定完成。`node tests/ui_smoke.mjs` 启动的后端也需要固定 fake LLM-compatible 配置。
+- **根因**：脚本只设置了 `LLM_PROVIDER=fake`，但本机环境存在 `MODEL_POOL=deepseek:deepseek-v4-flash`。`create_agents()` 优先使用模型池，导致本地 smoke 继承真实模型池；同步 POST 超时也仍按旧 30 秒，对当前 LLM-compatible fake 完整对局偏低。
+- **解决方案**：`scripts/e2e_smoke.py` 与 `tests/ui_smoke.mjs` 显式设置 `MODEL_POOL=fake:fake-llm` / `DOUBAO_MODEL_POOL=fake:fake-llm`；e2e POST 超时提高到 90 秒；UI smoke 支持 `PYTHON` / `NEXT_DIST_DIR` 覆盖，避免环境和构建目录漂移。
+- **涉及文件 / 模块**：`scripts/e2e_smoke.py`、`tests/ui_smoke.mjs`
+- **教训**：本地 smoke 可以用 fake LLM，但必须完整钉住 provider 和 model pool；只设置 provider 不足以隔离外部 `.env` / shell 配置。
+
+### 问题 H13：UI smoke 等待旧事件标题
+- **发生时间 / Session**：2026-06-07 ｜ Codex
+- **现象**：Playwright 已经进入实时 AI 房间，页面实际显示 `Game started`、阶段流、发言、`Exile Vote` 和底部 `Dialogue`，但 smoke 仍在等待旧标题 `Events`，最终 `page.waitForFunction` 超时。
+- **根因**：对局页 UI 已改成沉浸式时间线和底部发言栏，不再保证存在显式 `Events` 标题；smoke 断言仍绑定旧 UI 文案。
+- **解决方案**：实时房间断言改为检查当前真实可见的时间线/对话能力：`Game started` / `对局开始`、`Exile Vote` / `放逐投票`、`Dialogue` / `当前发言`、终局复盘入口等。
+- **涉及文件 / 模块**：`tests/ui_smoke.mjs`、`frontend/app/room/[id]/play/page.tsx`
+- **教训**：UI smoke 应验证用户能看到对局推进和关键操作结果，而不是固定等待一个可被设计迭代删除的栏目标题。
+
+### 问题 H14：API 契约文档落后当前 FastAPI 路由
+- **发生时间 / Session**：2026-06-07 ｜ Codex
+- **现象**：审查 `backend/app.py` 路由清单时发现 `skills/50-api-contract.md` 仍停留在 2026-05-22 版本，缺少 reviews、runtime metrics、leaderboard role matrix、strategy attribution、agents、personas、rooms prepare 等当前已上线端点；静态资源说明也仍写老的 `frontend/index.html`。
+- **根因**：前后端和 Track B/C 端点迭代时没有同步维护契约文档，导致规范的“单一事实来源”失效。
+- **解决方案**：将 `skills/50-api-contract.md` 的 REST 清单、根路径说明和 WebSocket 重连行为同步到当前 `backend/app.py` 实现。
+- **涉及文件 / 模块**：`backend/app.py`、`skills/50-api-contract.md`
+- **教训**：每次新增/调整对外路由都必须同 PR 更新契约；否则后续审查会以过期规范为依据，跨端联调风险上升。
+
+### 问题 H13：实验报告误读旧内容
+- **发生时间 / Session**：2026-06-07 ｜ Codex
+- **现象**：重建 `docs/experiments/full_victory_report.md` 后，紧接着并行读取报告时看到了旧的生成时间和旧完成局数；同时直接跑 `pytest` 命令曾走到缺 `langchain_core` 的环境，而 `python -m pytest` 使用的 conda Python 依赖齐全。
+- **根因**：报告生成和报告读取被放进并行工具调用，读取命令可能早于写入完成；`pytest` 可执行文件和 `python` 所在环境不一致。
+- **解决方案**：报告重建、读取、校验改为顺序执行；验证命令统一使用 `python -m pytest`。同时在 `scripts/full_victory_report.py` 中从原始 JSONL 完成局统计 provider/model 分布，避免 append 补跑后只展示最后一次 `summary.json` 的 provider。
+- **涉及文件 / 模块**：`scripts/full_victory_report.py`、`tests/test_full_victory_report.py`、`docs/experiments/full_victory_report.md`
+- **教训**：生成物写入和读取不能并行；实验报告要以原始 JSONL 行为权威来源，环境验证命令要绑定同一个 Python 解释器。
+
 ---
 
 ## §I. 用户反复强调或纠正的偏好（沉淀）
@@ -789,6 +943,9 @@ updated: 2026-06-03
 - **【2026-06-03 纠正】所有对局都必须是 LLM-only，不要启发式** —— 即使是本地 smoke / A-B tournament / human mixed room，AI 席位也必须走 LLM-compatible Agent；离线测试只能用 `LLM_PROVIDER=fake` 这种 LLM 接口 stub，不能用 `HeuristicAgent` 代替。
 - **【2026-06-03 纠正】只有策略层可以教玩法** —— persona/角色性格层只描述表达和性格；role/system 层只描述职业目标、能力、规则和信息边界；“什么时候该做什么、优先级、跳身份、刀口、归票”等必须只出现在策略层。
 - **【2026-06-03 纠正】MBTI 覆盖必须是 16×20 局** —— “每个 MBTI 跑 20 局”不能用“总共 20 局且角色覆盖”代替；正式验收至少应跑 16 种 MBTI × 20 局 = 320 局，并按 MBTI 输出 game_count / win_rate / fallback / invalid / 入库统计。
+- **【2026-06-06 纠正】anti-pattern 要保留** —— anti-pattern 是防低级错误护栏，不应因为检索策略实验而删除；报告里把它和 RAG/retrieval 效果分开说明。
+- **【2026-06-06 纠正】实验不计代价但要用最小可行局加速** —— 当前运行时最小支持人数是 7 人（`WOLFCHA_ROLE_CONFIGS` 支持 7-12），检索/LLM smoke 优先用 7P，不能误说 6P。
+- **【2026-06-06 纠正】API 可以切换，优先选更快更稳的** —— WEAPI/gpt-5.5 可用但裁判实验出现 502；v4flash 小样本和完整裁判更快更稳时应切到 v4flash，并记录 provider/model。
 - **豆包 embedding 必须用 endpoint ID** —— `doubao-embedding-vision` Model ID 在个人 API 下可能 404；正式 RAG 验收必须配置 embedding 专用 `DOUBAO_EMBEDDING_ENDPOINT=ep-...`。
 
 ### 关于 UI / UX
@@ -797,6 +954,22 @@ updated: 2026-06-03
 - **进入游戏即开始** —— 从 lobby 点开始 → play 页自动开局，不要再点一次。
 - **发言/投票需要 `@N号:名字` 格式标注 + 显示时间**（人类玩家可读性硬要求）。
 - **后端是真权威** —— localStorage / sessionStorage 只能做"秒开缓存"，所有恢复路径以后端 snapshot 为准。
+
+### 前端 Demo 视角和设置边界
+- **发生时间 / Session**：2026-06-06 ｜ Codex
+- **现象**：用户强调当前只是 Demo，但前端不能显得像直播、调试器、后台管理、论文实验混在同一页；Seed 过于高级，应放进设置页；前端需要放 API Key 和调用模型配置；本轮尽量只改前端，不动后端。
+- **根因**：大厅曾把复现实验用 Seed 暴露在主创建流程里；普通观众 / 全局视角的命名和内容边界不够明确；模型调用配置缺少统一入口，容易把配置项散到对局页或后端改动里。
+- **解决方案**：把默认视角、语言、Seed、Provider、模型名称、Base URL、API Key 收敛到设置弹窗；大厅只保留对局模式、人数、真人座位和开始按钮；普通观众隐藏身份、夜间行动、决策记录和全局 ActionPanel；全局视角才展示隐藏信息和系统决策；新增 `docs/frontend-demo-design.md` 固化页面边界。
+- **涉及文件 / 模块**：`frontend/app/page.tsx`、`frontend/components/SettingsModal.tsx`、`frontend/components/game/LobbyConfigCard.tsx`、`frontend/app/room/[id]/play/page.tsx`、`frontend/app/room/[id]/play/_components/AIStatusBar.tsx`、`frontend/components/game/GameHeader.tsx`、`frontend/components/game/_speech/DayEventBlock.tsx`、`docs/frontend-demo-design.md`
+- **教训**：Demo 的配置入口也要有信息架构；普通观众只看公开叙事，全局视角才看隐藏身份和决策解释，高级参数不要放在创建主流程里。
+
+### 对局页底部发言与公开视角边界
+- **发生时间 / Session**：2026-06-06 ｜ Codex
+- **现象**：用户指出前端存在角色对话截断、空白气泡、打字机位置错误；日志不应承载逐字发言，只应展示对局记录。用户同时强调普通观众视角不能看到神职/玩家内心想法，投票系统应固定在明确位置，复盘报告生成时前端要显示生成中，进化页只展示后端已有结果，不应由前端触发 20 seed。
+- **根因**：`ChatBubble` 同时承担日志展示与打字机播放，导致日志 reveal 队列和当前发言播放耦合；对局页 `useRoomStream` 默认 `show_private=true`；投票进度原本在中间滚动日志上方，视觉层级不稳定；复盘页只显示 missing，没有持续等待语义；进化页暴露了 `/api/evolution/cycle` 的 20 seed 触发按钮。
+- **解决方案**：新增底部 `BottomDialogueDock` 承载当前发言打字机，日志 `ChatBubble` 改为直接展示完整记录并支持 `@N号` mention chip；新增 `MentionText`；投票进度移动到日志与底部大气泡之间的固定行动条；WebSocket `show_private` 跟随全局视角，观众视角默认不请求 private；复盘按钮和复盘页轮询显示“生成中”；进化页取消 20 seed 运行按钮，仅刷新展示后端结果；新增默认开启的 BGM 组件。
+- **涉及文件 / 模块**：`frontend/app/room/[id]/play/page.tsx`、`frontend/components/game/BottomDialogueDock.tsx`、`frontend/components/game/MentionText.tsx`、`frontend/components/game/ChatBubble.tsx`、`frontend/components/game/VotePanel.tsx`、`frontend/hooks/useRoomStream.ts`、`frontend/hooks/useGamePageController.ts`、`frontend/app/games/[id]/report/page.tsx`、`frontend/app/evolution/page.tsx`
+- **教训**：对局页要区分“公开记录流”和“当前戏剧化发言”；观众视角从请求源头就不能拿 private 数据，不能只靠前端隐藏；运行昂贵实验的按钮不应出现在演示前台。
 
 ### 关于规则正确性
 - **猎人死亡 → 开枪、遗言环节、信息隔离**一个都不能漏。

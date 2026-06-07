@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from typing import Any
 
@@ -22,6 +23,7 @@ _DEFAULT_DOUBAO_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3"
 _DEFAULT_DOUBAO_MODEL = "Doubao-Seed-2.0-pro"
 _DEFAULT_ARK_BASE_URL = "https://ark.cn-beijing.volces.com/api/coding/v1"
 _DEFAULT_PROVIDER = "dsv4flash"
+_DEFAULT_WEAPI_BASE_URL = "https://weapi.pw/v1"
 
 # Multi-model pool: "provider:model" entries, comma-separated
 # Supports: doubao, dsv4flash, ark (generic Ark API), deepseek, mimo
@@ -37,7 +39,7 @@ class _UnavailableLLMClient:
         self.provider = provider
         self.model = model
         self.base_url = base_url
-        self.timeout = 300.0  # 5分钟超时
+        self.timeout = 12.0
         self.available = False
 
     def chat_sync(self, *args, **kwargs):
@@ -54,7 +56,7 @@ class _FakeLLMClient:
         self.provider = "fake"
         self.model = model
         self.base_url = "local://fake-llm"
-        self.timeout = 300.0
+        self.timeout = 12.0
         self.available = True
         self.call_count = 0
 
@@ -62,6 +64,14 @@ class _FakeLLMClient:
         self.call_count += 1
         text = "\n".join(str(message.get("content", "")) for message in messages)
         target = self._target_from_prompt(text)
+        tools = kwargs.get("tools") or []
+        tool_choice = kwargs.get("tool_choice")
+        forced_tool = self._forced_tool_name(tool_choice)
+        tool_names = [str((tool.get("function") or {}).get("name") or "") for tool in tools if isinstance(tool, dict)]
+        if forced_tool == "submit_decision" or ("submit_decision" in tool_names and tool_names == ["submit_decision"]):
+            return self._tool_call_response("submit_decision", self._decision_args(text, target))
+        if tools and "submit_decision" in tool_names and "recall_memory" in tool_names and "【任务：发言】" in text:
+            return self._tool_call_response("recall_memory", {"filter": "all", "target_player": ""})
         if "=== 复盘任务 ===" in text or '"what_worked"' in text:
             content = json.dumps(
                 {
@@ -108,13 +118,63 @@ class _FakeLLMClient:
         return self.chat_sync(messages, **kwargs)
 
     @staticmethod
+    def _forced_tool_name(tool_choice: Any) -> str:
+        if not isinstance(tool_choice, dict):
+            return ""
+        fn = tool_choice.get("function")
+        if isinstance(fn, dict):
+            return str(fn.get("name") or "")
+        return ""
+
+    @staticmethod
+    def _tool_call_response(name: str, args: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "choices": [
+                {
+                    "finish_reason": "tool_calls",
+                    "message": {
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "id": f"fake_call_{name}",
+                                "type": "function",
+                                "function": {
+                                    "name": name,
+                                    "arguments": json.dumps(args, ensure_ascii=False),
+                                },
+                            }
+                        ],
+                    },
+                }
+            ],
+            "_latency_ms": 0,
+            "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+        }
+
+    @staticmethod
+    def _decision_args(text: str, target: str) -> dict[str, str]:
+        if "【任务：发言】" in text:
+            seer_target = _FakeLLMClient._seer_strategy_target(text)
+            speech = (
+                f"我是预言家，我的查验结果指向 {seer_target} 是狼人，今天先把票压到 {seer_target}。"
+                if seer_target
+                else f"我先按公开信息发言，重点观察 {target} 的站边和票型。"
+            )
+            return {"speech": speech, "reasoning": "fake LLM native-FC speech decision"}
+        return {"target": target, "reasoning": "fake LLM native-FC target decision"}
+
+    @staticmethod
     def _target_from_prompt(text: str) -> str:
         self_match = re.search(r"你是\s+@?\d+号[:：]([^，,\n]+)", text)
         self_name = self_match.group(1).strip() if self_match else ""
         seer_target = _FakeLLMClient._seer_strategy_target(text)
-        legal_match = re.search(r"合法目标[:：]\s*([^\n]+)", text)
-        if legal_match:
-            legal_names = [name.strip() for name in re.findall(r"@?\d+号[:：]([^，,\n]+)", legal_match.group(1))]
+        legal_matches = re.findall(r"合法目标[:：]\s*([^\n]+)", text)
+        if legal_matches:
+            # AgentLoop prompts can contain cached analysis plus the current
+            # observation. Use the latest legal-target block so a PK re-vote
+            # cannot be polluted by stale regular-vote context.
+            legal_names = [name.strip() for name in re.findall(r"@?\d+号[:：]([^，,\n]+)", legal_matches[-1])]
             if seer_target and seer_target in legal_names:
                 return seer_target
             pressure_target = _FakeLLMClient._public_pressure_target(text, legal_names)
@@ -162,17 +222,35 @@ def create_client(provider: str | None = None, **kwargs) -> Any:
     - doubao: 方舟 doubao-seed 2.0 pro & code (primary)
     - deepseek: DeepSeek v4 Flash (fallback)
     - mimo: local OpenAI-compatible endpoint configured by MIMO_BASE_URL
+    - weapi: OpenAI-compatible endpoint at https://weapi.pw/v1
     - fake: deterministic local LLM-compatible client for tests
     """
     import os
 
     load_env_file()
+    kwargs = dict(kwargs)
+    if "max_retries" not in kwargs:
+        max_retries_raw = os.getenv("LLM_MAX_RETRIES", "").strip()
+        if max_retries_raw:
+            try:
+                kwargs["max_retries"] = max(0, int(max_retries_raw))
+            except ValueError:
+                pass
+    if "timeout" not in kwargs:
+        timeout_raw = os.getenv("LLM_TIMEOUT_SECONDS", "").strip()
+        if timeout_raw:
+            try:
+                kwargs["timeout"] = max(0.1, float(timeout_raw))
+            except ValueError:
+                pass
     explicit_model = kwargs.get("model")
     explicit_base_url = kwargs.get("base_url")
     if provider is None:
         if explicit_base_url:
             base_url = str(explicit_base_url).lower()
-            if "deepseek" in base_url:
+            if "weapi" in base_url:
+                provider = "weapi"
+            elif "deepseek" in base_url:
                 provider = "deepseek"
             elif "mimo" in base_url:
                 provider = "mimo"
@@ -180,7 +258,9 @@ def create_client(provider: str | None = None, **kwargs) -> Any:
                 provider = "doubao"
         if provider is None and explicit_model:
             model_name = str(explicit_model).lower()
-            if "deepseek" in model_name:
+            if model_name.startswith("gpt-5.5") or model_name == "gpt-5.5":
+                provider = "weapi"
+            elif "deepseek" in model_name:
                 provider = "deepseek"
             elif "mimo" in model_name:
                 provider = "mimo"
@@ -188,6 +268,7 @@ def create_client(provider: str | None = None, **kwargs) -> Any:
                 provider = "doubao"
         if provider is None:
             provider = os.getenv("LLM_PROVIDER", _DEFAULT_PROVIDER)
+    provider = str(provider).strip().lower()
 
     if provider in {"fake", "fake_llm", "offline_llm"}:
         model = kwargs.pop("model", None) or os.getenv("FAKE_LLM_MODEL", "fake-llm")
@@ -289,5 +370,29 @@ def create_client(provider: str | None = None, **kwargs) -> Any:
         )
         client.provider = "mimo"
         return client
+    elif provider in {"weapi", "weapi_pw"}:
+        api_key = kwargs.pop("api_key", None) or os.getenv("WEAPI_API_KEY", "")
+        raw_base_url = kwargs.pop("base_url", None) or os.getenv("WEAPI_BASE_URL", _DEFAULT_WEAPI_BASE_URL)
+        base_url = _normalize_openai_compatible_base_url(str(raw_base_url))
+        model = kwargs.pop("model", None) or os.getenv("WEAPI_MODEL", "gpt-5.5")
+        if not api_key:
+            return _UnavailableLLMClient(provider="weapi", model=model, base_url=base_url)
+        client = DeepSeekClient(
+            api_key=api_key,
+            base_url=base_url,
+            model=model,
+            **kwargs,
+        )
+        client.provider = "weapi"
+        return client
     else:
-        raise ValueError(f"Unknown LLM provider: {provider}. Supported: doubao, deepseek, dsv4flash, ark, mimo, fake")
+        raise ValueError(
+            f"Unknown LLM provider: {provider}. Supported: doubao, deepseek, dsv4flash, ark, mimo, weapi, fake"
+        )
+
+
+def _normalize_openai_compatible_base_url(base_url: str) -> str:
+    stripped = base_url.rstrip("/")
+    if stripped.endswith("/v1"):
+        return stripped
+    return f"{stripped}/v1"

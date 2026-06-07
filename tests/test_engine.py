@@ -78,6 +78,22 @@ def test_werewolf_knows_only_wolves() -> None:
             assert "role" not in player
 
 
+def test_werewolf_night_legal_targets_exclude_wolves() -> None:
+    players = [
+        Player(id="P1", seat=1, name="WolfA", role=Role.WEREWOLF, alignment=Alignment.WOLF),
+        Player(id="P2", seat=2, name="WolfB", role=Role.WEREWOLF, alignment=Alignment.WOLF),
+        Player(id="P3", seat=3, name="Seer", role=Role.SEER, alignment=Alignment.VILLAGE),
+        Player(id="P4", seat=4, name="Villager", role=Role.VILLAGER, alignment=Alignment.VILLAGE),
+    ]
+    game = WerewolfGame(players=players, agents={p.id: object() for p in players}, seed=13)
+    game.state.phase = Phase.NIGHT_WOLF_ACTION
+
+    view = Visibility().for_player(game.state, "P1")
+
+    assert {target["id"] for target in view.legal_targets} == {"P3", "P4"}
+    assert all(target["id"] not in {"P1", "P2"} for target in view.legal_targets)
+
+
 def test_llm_invalid_day_vote_raises_instead_of_fallback() -> None:
     players = [
         Player(id="P1", seat=1, name="A", role=Role.VILLAGER, alignment=Alignment.VILLAGE),
@@ -127,6 +143,60 @@ def test_llm_invalid_badge_vote_raises_instead_of_fallback() -> None:
         game._badge_election_phase()
 
     assert not any(event.payload.get("agent_fallback") for event in game.state.events)
+
+
+def test_llm_empty_day_speech_raises_instead_of_skipping() -> None:
+    players = [
+        Player(id="P1", seat=1, name="A", role=Role.VILLAGER, alignment=Alignment.VILLAGE),
+        Player(id="P2", seat=2, name="B", role=Role.WEREWOLF, alignment=Alignment.WOLF),
+        Player(id="P3", seat=3, name="C", role=Role.SEER, alignment=Alignment.VILLAGE),
+    ]
+    game = WerewolfGame(players=players, agents={p.id: object() for p in players}, seed=13)
+    game.state.day = 1
+
+    def empty_speech_batch(players, request, call_fn):
+        assert request == "TALK"
+        return [
+            Decision(player.id, ActionType.TALK, speech="", reasoning="empty", metadata={"source": "llm"})
+            for player in players
+        ]
+
+    game._batch_ask = empty_speech_batch  # type: ignore[assignment]
+
+    with pytest.raises(RuntimeError, match="Invalid LLM decision in TALK"):
+        game._speech_phase()
+
+    assert not any(event.type.value == "CHAT_MESSAGE" for event in game.state.events)
+
+
+def test_human_pending_input_options_match_legal_targets() -> None:
+    players = [
+        Player(id="W1", seat=1, name="WolfOne", role=Role.WEREWOLF, alignment=Alignment.WOLF),
+        Player(id="W2", seat=2, name="WolfTwo", role=Role.WHITE_WOLF_KING, alignment=Alignment.WOLF),
+        Player(id="G1", seat=3, name="GuardOne", role=Role.GUARD, alignment=Alignment.VILLAGE),
+        Player(id="S1", seat=4, name="SeerOne", role=Role.SEER, alignment=Alignment.VILLAGE),
+        Player(id="V1", seat=5, name="VillagerOne", role=Role.VILLAGER, alignment=Alignment.VILLAGE),
+    ]
+    game = WerewolfGame(players=players, seed=12)
+    game.state.day = 1
+    game.state.badge.candidates = ["G1", "S1"]
+    game.state.night_actions.last_guard_target_id = "S1"
+    game.state.night_actions.wolf_target_id = "V1"
+
+    badge_pending = game._build_pending_input(game.state.player("V1"), "BADGE_ELECTION")
+    assert {option["id"] for option in badge_pending.options} == {"G1", "S1"}
+
+    wolf_pending = game._build_pending_input(game.state.player("W1"), "ATTACK")
+    assert {option["id"] for option in wolf_pending.options} == {"G1", "S1", "V1"}
+
+    guard_pending = game._build_pending_input(game.state.player("G1"), "GUARD")
+    assert "S1" not in {option["id"] for option in guard_pending.options}
+
+    witch = Player(id="C1", seat=6, name="WitchOne", role=Role.WITCH, alignment=Alignment.VILLAGE)
+    game.state.players.append(witch)
+    witch_pending = game._build_pending_input(witch, "WITCH")
+    assert witch_pending.can_skip is True
+    assert "V1" not in {option["id"] for option in witch_pending.options}
 
 
 def test_day_vote_tie_enters_pk_and_resolves() -> None:
@@ -280,3 +350,25 @@ def test_wolf_phase_has_private_discussion_vote_and_tally() -> None:
     wolf_view = Visibility().for_player(game.state, "W1")
     wolf_private_kinds = {event["payload"].get("kind") for event in wolf_view.private_events}
     assert "wolf_attack_tally" in wolf_private_kinds
+
+
+def test_actor_sequence_strict_llm_handler_error_is_not_masked_by_nameerror() -> None:
+    players = [
+        Player(
+            id="W1",
+            seat=1,
+            name="WolfOne",
+            role=Role.WEREWOLF,
+            alignment=Alignment.WOLF,
+            agent_type="llm",
+        ),
+        Player(id="V1", seat=2, name="VillagerOne", role=Role.VILLAGER, alignment=Alignment.VILLAGE),
+    ]
+    game = WerewolfGame(players=players, agents={p.id: object() for p in players}, seed=33)
+    game.state.phase = Phase.NIGHT_WOLF_ACTION
+
+    def failing_handler(player: Player) -> None:
+        raise RuntimeError("remote read timeout")
+
+    with pytest.raises(RuntimeError, match="remote read timeout"):
+        game._run_actor_sequence(Phase.NIGHT_WOLF_ACTION, [players[0]], failing_handler)

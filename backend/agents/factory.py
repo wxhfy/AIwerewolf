@@ -70,6 +70,9 @@ def _spec_for_provider(provider: str, model: str) -> dict[str, str] | None:
     elif provider in {"mimo", "local_mimo"}:
         api_key = os.getenv("MIMO_API_KEY", "local").strip()
         base_url = os.getenv("MIMO_BASE_URL", "").strip()
+    elif provider in {"weapi", "weapi_pw"}:
+        api_key = os.getenv("WEAPI_API_KEY", "").strip()
+        base_url = os.getenv("WEAPI_BASE_URL", "https://weapi.pw").strip()
     else:
         api_key = os.getenv("DOUBAO_API_KEY", "").strip()
         base_url = os.getenv("DOUBAO_BASE_URL", "").strip()
@@ -78,7 +81,7 @@ def _spec_for_provider(provider: str, model: str) -> dict[str, str] | None:
         return None
 
     return {
-        "provider": provider,
+        "provider": "weapi" if provider == "weapi_pw" else provider,
         "api_key": api_key,
         "base_url": base_url,
         "model": model,
@@ -94,11 +97,21 @@ def _create_llm_runnable(
     """Create a LangChain Runnable wrapping an LLM client for CognitiveAgent."""
     from backend.llm import create_client as create_llm_client
 
+    client_kwargs: dict[str, Any] = {
+        "model": model,
+        "api_key": api_key,
+        "base_url": base_url,
+    }
+    timeout_override = os.getenv("LLM_TIMEOUT_SECONDS", "").strip()
+    if timeout_override:
+        client_kwargs["timeout"] = max(0.1, float(timeout_override))
+    max_retries_override = os.getenv("LLM_MAX_RETRIES", "").strip()
+    if max_retries_override:
+        client_kwargs["max_retries"] = max(0, int(max_retries_override))
+
     client = create_llm_client(
         provider=provider,
-        model=model,
-        api_key=api_key,
-        base_url=base_url,
+        **{key: value for key, value in client_kwargs.items() if value is not None},
     )
     if getattr(client, "available", True) is False:
         raise RuntimeError(
@@ -106,11 +119,6 @@ def _create_llm_runnable(
             "is unavailable. LLM-only games refuse heuristic fallback; configure an API key "
             "or set LLM_PROVIDER=fake for local tests."
         )
-    # Keep client's built-in timeout (httpx.Timeout: connect=5s, read=600s).
-    # Only override if LLM_TIMEOUT_SECONDS is explicitly set.
-    timeout_override = os.getenv("LLM_TIMEOUT_SECONDS", "")
-    if timeout_override:
-        client.timeout = float(timeout_override)
     return create_llm_from_client(client)
 
 
@@ -123,6 +131,24 @@ def _normalize_agent_type(agent_type: str | None) -> str:
     raise ValueError(f"Unsupported agent_type={agent_type!r}; only llm is allowed for AI seats")
 
 
+def _resolve_retrieval_policy(config: dict[str, Any]) -> str:
+    """Resolve the default cognitive retrieval policy for game agents."""
+    return str(
+        config.get("retrieval_policy")
+        or os.getenv("AIWEREWOLF_RETRIEVAL_POLICY", "")
+        or "hybrid_role_mbti_global"
+    ).strip()
+
+
+def _has_explicit_llm_binding(config: dict[str, Any]) -> bool:
+    """True when a player config pins its provider/model/client endpoint.
+
+    A pinned provider must not be mixed with MODEL_POOL credentials. Otherwise
+    the metadata can say "doubao" while requests are sent to another endpoint.
+    """
+    return any(config.get(key) for key in ("provider", "model", "api_key", "base_url"))
+
+
 def create_agents(players: list[Player], agent_config: dict[str, Any] | None = None) -> dict[str, Agent]:
     """Create LLM-backed agents for each AI seat."""
     config = agent_config or {}
@@ -132,6 +158,7 @@ def create_agents(players: list[Player], agent_config: dict[str, Any] | None = N
     character_map = config.get("character_map") or {}
     role_models = config.get("role_models") or {}
     strategy_bias = config.get("strategy_bias") or {}
+    default_retrieval_policy = _resolve_retrieval_policy(config)
     pool_specs = _resolve_pool_specs(config)
     pool_rng = random.Random(seed) if pool_specs else None
     agents: dict[str, Agent] = {}
@@ -154,13 +181,12 @@ def create_agents(players: list[Player], agent_config: dict[str, Any] | None = N
         api_key_override = player_config.get("api_key")
         base_url_override = player_config.get("base_url")
 
-        if not model_override and pool_rng is not None and pool_specs:
+        if not _has_explicit_llm_binding(player_config) and pool_rng is not None and pool_specs:
             spec = pool_rng.choice(pool_specs)
             model_override = spec["model"]
             api_key_override = spec["api_key"]
             base_url_override = spec["base_url"]
-            if not forced_provider:
-                forced_provider = spec.get("provider", "dsv4flash")
+            forced_provider = spec.get("provider", "dsv4flash")
 
         player.model_name = str(model_override or "")
 
@@ -179,7 +205,7 @@ def create_agents(players: list[Player], agent_config: dict[str, Any] | None = N
             player_seat=player.seat,
             character=character,
             strategy_bias=player_config.get("strategy_bias") or strategy_bias,
-            retrieval_policy=config.get("retrieval_policy", ""),
+            retrieval_policy=str(player_config.get("retrieval_policy") or default_retrieval_policy),
         )
 
     return agents

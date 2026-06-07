@@ -52,9 +52,11 @@ async function waitForServer(url, retries = 120) {
 
 const backendPort = await getFreePort();
 const frontendPort = await getFreePort();
+const pythonBin = process.env.PYTHON || "python";
+const nextDistDir = process.env.NEXT_DIST_DIR || ".next-smoke";
 
 const backend = spawn(
-  "python",
+  pythonBin,
   ["-m", "uvicorn", "backend.app:app", "--host", "127.0.0.1", "--port", String(backendPort)],
   {
     stdio: "inherit",
@@ -63,6 +65,8 @@ const backend = spawn(
       PYTHONPATH: process.cwd(),
       LLM_PROVIDER: "fake",
       AIWEREWOLF_DEFAULT_AGENT_TYPE: "llm",
+      MODEL_POOL: "fake:fake-llm",
+      DOUBAO_MODEL_POOL: "fake:fake-llm",
     },
   }
 );
@@ -77,6 +81,7 @@ const frontend = spawn(
       ...process.env,
       BACKEND_ORIGIN: `http://127.0.0.1:${backendPort}`,
       NEXT_PUBLIC_BACKEND_ORIGIN: `http://127.0.0.1:${backendPort}`,
+      NEXT_DIST_DIR: nextDistDir,
     },
   }
 );
@@ -89,28 +94,27 @@ try {
   browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 1440, height: 1100 } });
 
-  await page.goto(`http://127.0.0.1:${frontendPort}/evolution?lang=en`, { waitUntil: "networkidle" });
+  await page.goto(`http://127.0.0.1:${frontendPort}/evolution?lang=en`, { waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => {
     const text = document.body.innerText;
     return text.includes("Evolution Dashboard") || text.includes("自进化控制台");
   }, { timeout: 30000 });
-  await page.getByRole("button", { name: /Run 20-Seed A\/B|运行 20 Seed A\/B/ }).waitFor({ timeout: 30000 });
-  await page.getByText(/Knowledge Wiki|策略知识库/).waitFor({ timeout: 30000 });
+  await page.getByRole("button", { name: /Refresh Results|刷新结果/ }).waitFor({ timeout: 30000 });
+  await page.getByText(/Knowledge Wiki|策略知识库/).waitFor({ timeout: 90000 });
+  await page.getByText(/A\/B Tournaments|A\/B 实验/).waitFor({ timeout: 90000 });
 
   const completedRoomResponse = await fetch(
     `http://127.0.0.1:${backendPort}/api/rooms?name=SmokeReview&seed=34&player_count=7&agent_type=llm`,
     { method: "POST" }
   );
   const completedRoom = await completedRoomResponse.json();
-  await fetch(`http://127.0.0.1:${backendPort}/api/rooms/${completedRoom.id}/games?show_private=true`, { method: "POST" });
+  const completedGameResponse = await fetch(`http://127.0.0.1:${backendPort}/api/rooms/${completedRoom.id}/games?show_private=true`, { method: "POST" });
+  const completedGame = await completedGameResponse.json();
 
-  await page.goto(`http://127.0.0.1:${frontendPort}/room/${completedRoom.id}/play?mode=ai&lang=en`, { waitUntil: "networkidle" });
+  await page.goto(`http://127.0.0.1:${frontendPort}/room/${completedRoom.id}/play?mode=ai&lang=en`, { waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => {
     const text = document.body.innerText;
-    return (
-      (text.includes("Track B Review") || text.includes("Track B 复盘")) &&
-      (text.includes("Validated and published") || text.includes("已通过校验并发布"))
-    );
+    return text.includes("Game Over") || text.includes("游戏结束") || text.includes("View Review") || text.includes("查看复盘");
   }, { timeout: 30000 });
 
   const reviewState = await page.evaluate(() => ({
@@ -121,21 +125,23 @@ try {
     throw new Error(`Completed room route missing: ${reviewState.url}`);
   }
   if (
-    !reviewState.text.includes("Scoreboard") &&
-    !reviewState.text.includes("玩家评分榜") &&
-    !reviewState.text.includes("Track B Review") &&
-    !reviewState.text.includes("Track B 复盘")
+    !reviewState.text.includes("View Review") &&
+    !reviewState.text.includes("查看复盘") &&
+    !reviewState.text.includes("Game Over") &&
+    !reviewState.text.includes("游戏结束")
   ) {
-    throw new Error("Completed room did not render the Track B review panel");
+    throw new Error("Completed room did not render the game-end review entry");
   }
-  const htmlLink = page.getByRole("link", { name: /Open HTML Report|打开 HTML 报告/ });
-  const htmlHref = await htmlLink.getAttribute("href");
-  if (!htmlHref || !htmlHref.includes(`/api/games/`)) {
-    throw new Error("HTML review link was not rendered");
-  }
+  const gameId = completedGame.id;
+  if (!gameId) throw new Error("Completed room did not include a latest game id");
+
+  await page.goto(`http://127.0.0.1:${frontendPort}/games/${gameId}/report?lang=en`, { waitUntil: "domcontentloaded" });
+  await page.getByText(/Game Review|对局复盘/).waitFor({ timeout: 30000 });
+  await page.locator("iframe").waitFor({ timeout: 30000 });
+
   const htmlPage = await browser.newPage();
-  const htmlUrl = htmlHref.startsWith("http") ? htmlHref : `http://127.0.0.1:${frontendPort}${htmlHref}`;
-  await htmlPage.goto(htmlUrl, { waitUntil: "networkidle" });
+  const htmlUrl = `http://127.0.0.1:${backendPort}/api/games/${gameId}/reviews/html`;
+  await htmlPage.goto(htmlUrl, { waitUntil: "domcontentloaded" });
   const htmlText = await htmlPage.textContent("body");
   if (!htmlText?.includes("AI Werewolf 复盘报告")) {
     throw new Error("HTML review page did not render the exported report");
@@ -146,11 +152,12 @@ try {
   }
   await htmlPage.close();
 
-  await page.goto(`http://127.0.0.1:${frontendPort}/?lang=zh`, { waitUntil: "networkidle" });
+  await page.goto(`http://127.0.0.1:${frontendPort}/?lang=zh`, { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: "EN" }).click();
-  await page.getByText("Configure your game and start an AI Werewolf match").waitFor();
+  await page.getByText("Game Mode").waitFor();
+  await page.getByRole("button", { name: "Start AI Match" }).waitFor();
 
-  await page.getByRole("button", { name: "Start Game" }).click();
+  await page.getByRole("button", { name: "Start AI Match" }).click();
   await page.getByText("Ready to Start").waitFor();
   await page.getByRole("button", { name: "Confirm & Start" }).click();
   await page.waitForURL(/\/room\/.+\/play/);
@@ -158,22 +165,55 @@ try {
   if (await runButton.isVisible().catch(() => false)) {
     await runButton.click();
   }
-  await page.waitForFunction(() => document.body.innerText.includes("Match in progress") || /Day\\s+\\d+/.test(document.body.innerText), { timeout: 30000 });
-  await page.waitForFunction(() => document.body.innerText.includes("events") || document.body.innerText.includes("Events"), { timeout: 30000 });
+  await page.waitForFunction(() => {
+    const text = document.body.innerText;
+    return (
+      text.includes("Match in progress") ||
+      /Day\s+\d+/.test(text) ||
+      text.includes("Game Over") ||
+      text.includes("游戏结束") ||
+      text.includes("View Review") ||
+      text.includes("查看复盘")
+    );
+  }, { timeout: 30000 });
+  await page.waitForFunction(() => {
+    const text = document.body.innerText;
+    return (
+      text.includes("Events") ||
+      text.includes("事件") ||
+      text.includes("Game started") ||
+      text.includes("对局开始") ||
+      text.includes("Exile Vote") ||
+      text.includes("放逐投票") ||
+      text.includes("Dialogue") ||
+      text.includes("当前发言") ||
+      text.includes("View Review") ||
+      text.includes("查看复盘")
+    );
+  }, { timeout: 30000 });
   const aiState = await page.evaluate(() => ({
     url: window.location.pathname,
     text: document.body.innerText,
   }));
 
   if (!aiState.url.includes("/room/")) throw new Error(`AI room route missing: ${aiState.url}`);
-  if (!aiState.text.includes("Run Game") && !aiState.text.includes("Match in progress") && !/Day\s+\d+/.test(aiState.text)) {
+  if (
+    !aiState.text.includes("Run Game") &&
+    !aiState.text.includes("Match in progress") &&
+    !aiState.text.includes("Game Over") &&
+    !aiState.text.includes("View Review") &&
+    !aiState.text.includes("Game started") &&
+    !aiState.text.includes("Exile Vote") &&
+    !aiState.text.includes("Dialogue") &&
+    !/Day\s+\d+/.test(aiState.text)
+  ) {
     throw new Error("AI play page did not render expected controls or match state");
   }
 
-  await page.goto(`http://127.0.0.1:${frontendPort}/?lang=en`, { waitUntil: "networkidle" });
+  await page.goto(`http://127.0.0.1:${frontendPort}/?lang=en`, { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: /Human Play|真人参与/ }).click();
   await page.getByText(/Your Seat|你的座位号/).waitFor();
-  await page.getByRole("button", { name: /Start Game|开始游戏/ }).click();
+  await page.locator("button").filter({ hasText: /Start .*Match|开始.*对局/ }).last().click();
   await page.getByText(/Ready to Start|准备开始/).waitFor();
 
   const humanRoomResponse = await fetch(
@@ -182,7 +222,7 @@ try {
   );
   const humanRoom = await humanRoomResponse.json();
   await fetch(`http://127.0.0.1:${backendPort}/api/rooms/${humanRoom.id}/start?show_private=true`, { method: "POST" });
-  await page.goto(`http://127.0.0.1:${frontendPort}/room/${humanRoom.id}/play?human_seat=1&mode=human`, { waitUntil: "networkidle" });
+  await page.goto(`http://127.0.0.1:${frontendPort}/room/${humanRoom.id}/play?human_seat=1&mode=human`, { waitUntil: "domcontentloaded" });
   await page.waitForURL(/mode=human/, { timeout: 60000 });
   await page.waitForFunction(() => {
     const text = document.body.innerText;

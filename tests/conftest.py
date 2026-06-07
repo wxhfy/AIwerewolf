@@ -1,6 +1,13 @@
 from __future__ import annotations
 
+import os
+
 import pytest
+
+os.environ.setdefault("LLM_PROVIDER", "fake")
+os.environ.setdefault("AIWEREWOLF_DEFAULT_AGENT_TYPE", "llm")
+os.environ["MODEL_POOL"] = "fake:fake-llm"
+os.environ["DOUBAO_MODEL_POOL"] = "fake:fake-llm"
 
 
 @pytest.fixture(autouse=True)
@@ -16,3 +23,20 @@ def _use_fake_llm_agents_in_tests(monkeypatch: pytest.MonkeyPatch) -> None:
     """Tests default to local LLM-compatible agents without external API cost."""
     monkeypatch.setenv("LLM_PROVIDER", "fake")
     monkeypatch.setenv("AIWEREWOLF_DEFAULT_AGENT_TYPE", "llm")
+    monkeypatch.setenv("MODEL_POOL", "fake:fake-llm")
+    monkeypatch.setenv("DOUBAO_MODEL_POOL", "fake:fake-llm")
+    for key in (
+        "DOUBAO_MODEL",
+        "DOUBAO_ENDPOINT",
+        "DOUBAO_BASE_URL",
+        "ARK_BASE_URL",
+        "DSV4FLASH_MODEL",
+        "DSV4FLASH_BASE_URL",
+        "DEEPSEEK_MODEL",
+        "DEEPSEEK_BASE_URL",
+        "WEAPI_MODEL",
+        "WEAPI_BASE_URL",
+        "MIMO_MODEL",
+        "MIMO_BASE_URL",
+    ):
+        monkeypatch.delenv(key, raising=False)

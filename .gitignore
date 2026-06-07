@@ -250,6 +250,21 @@ plans/
 # AI tooling caches (large, local-only)
 .claude/
 .codegraph/
+.agents/
+
+# Next.js build variants
+.next-visual-check/
+
+# Skills cache (tracked via skills/locks/ instead)
+skills/gsap-*
+
+# Screenshot / binary assets (large, not source)
+docs/assets/closure/screenshots/
+
+# Frontend static media (large)
+frontend/pho/
+frontend/public/audio/
+frontend/public/images/
 
 # Local backups
 backups/

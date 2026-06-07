@@ -20,6 +20,7 @@ interface UseRoomStreamOptions {
   getIsBlinking?: () => boolean;
   /** 眨眼转场期间缓冲快照（只保留最新一份） */
   bufferSnapshot?: (state: GameState) => void;
+  showPrivate?: boolean;
 }
 
 export function useRoomStream({
@@ -35,6 +36,7 @@ export function useRoomStream({
   setStatusTitle,
   getIsBlinking,
   bufferSnapshot,
+  showPrivate = false,
 }: UseRoomStreamOptions) {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectAttemptRef = useRef(0);
@@ -74,7 +76,7 @@ export function useRoomStream({
         action: "start",
         seed,
         agent_type: agentType,
-        show_private: true,
+        show_private: showPrivate,
         delay_ms: speed,
       } satisfies WebSocketRequest));
     };

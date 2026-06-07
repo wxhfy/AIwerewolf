@@ -19,6 +19,8 @@ interface GameEndPanelProps {
   onBallMove: (position: { x: number; y: number }) => void;
   onLobby: () => void;
   onReport?: () => void;
+  reportReady?: boolean;
+  reportChecking?: boolean;
 }
 
 function TrophyIcon({ className, size }: { className?: string; size: number }) {
@@ -38,9 +40,10 @@ function winReasonText(winner: Alignment, language: Language): string {
 
 export function GameEndPanel({
   winner, day, aliveCount, eventCount, language, showPanel, ballPos, dragRef, onOpen, onClose, onBallMove, onLobby, onReport,
+  reportReady = true,
+  reportChecking = false,
 }: GameEndPanelProps) {
   const isVillageWinner = winner === Alignment.VILLAGE;
-  const winnerLabel = isVillageWinner ? t("village", language) : t("wolf", language);
   const winTitle = isVillageWinner ? t("villageWins", language) : t("wolvesWin", language);
   const reason = winReasonText(winner, language);
   const winnerColor = isVillageWinner ? "text-success" : "text-danger";
@@ -123,8 +126,10 @@ export function GameEndPanel({
 
             <div className="flex flex-col gap-2">
               {onReport && (
-                <Button onClick={onReport} className="w-full">
-                  {t("viewReview", language)}
+                <Button onClick={onReport} disabled={!reportReady} className="w-full">
+                  {!reportReady || reportChecking
+                    ? language === "zh" ? "复盘生成中..." : "Generating Review..."
+                    : t("viewReview", language)}
                 </Button>
               )}
               <div className="flex gap-2">

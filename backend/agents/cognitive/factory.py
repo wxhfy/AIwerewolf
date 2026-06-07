@@ -73,8 +73,17 @@ def create_cognitive_agent(
         if llm_provider:
             from backend.llm import create_client
 
-            client = create_client(provider=llm_provider, model=llm_model or None)
-            client.timeout = float(os.getenv("LLM_TIMEOUT_SECONDS", "12"))
+            client_kwargs: Dict[str, Any] = {"model": llm_model or None}
+            timeout_override = os.getenv("LLM_TIMEOUT_SECONDS", "").strip()
+            if timeout_override:
+                client_kwargs["timeout"] = max(0.1, float(timeout_override))
+            max_retries_override = os.getenv("LLM_MAX_RETRIES", "").strip()
+            if max_retries_override:
+                client_kwargs["max_retries"] = max(0, int(max_retries_override))
+            client = create_client(
+                provider=llm_provider,
+                **{key: value for key, value in client_kwargs.items() if value is not None},
+            )
             llm = create_llm_from_client(client)
         else:
             raise ValueError("create_cognitive_agent: must provide either llm (Runnable) or llm_provider (string)")
@@ -166,16 +175,25 @@ class _ToolCallingRunnable(Runnable):
             api_messages.append(entry)
 
         # Build call parameters explicitly (avoid **payload issues with httpx serialization)
-        max_tokens = kwargs.get("max_tokens", 2048)
+        max_tokens = kwargs.get("max_tokens", 768)
         temperature = kwargs.get("temperature", 0.7)
         tools = self._tool_schemas if self._tool_schemas else None
+        force_tool_name = str(kwargs.get("force_tool_name") or "")
+
+        call_kwargs: Dict[str, Any] = {"thinking": False}
+        if tools:
+            call_kwargs["tools"] = tools
+            call_kwargs["tool_choice"] = (
+                {"type": "function", "function": {"name": force_tool_name}}
+                if force_tool_name
+                else "auto"
+            )
 
         resp = self._client.chat_sync(
             messages=api_messages,
             max_tokens=max_tokens,
             temperature=temperature,
-            tools=tools,
-            tool_choice="auto" if tools else None,
+            **call_kwargs,
         )
 
         # Parse response
@@ -225,6 +243,7 @@ class _ToolCallingRunnable(Runnable):
         # Also capture model info and latency
         response_metadata["model"] = resp.get("model", self.model)
         response_metadata["latency_ms"] = resp.get("_latency_ms")
+        response_metadata["finish_reason"] = choice.get("finish_reason")
 
         if tool_calls:
             return AIMessage(content=content, tool_calls=tool_calls, response_metadata=response_metadata)

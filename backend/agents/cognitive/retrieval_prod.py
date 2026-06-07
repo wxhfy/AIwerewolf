@@ -250,6 +250,34 @@ def _safe_str(val: Any) -> str:
     return str(val) if val else ""
 
 
+def _normalize_doc_for_policy(doc: Dict[str, Any]) -> Dict[str, Any]:
+    """Ensure a strategy doc has policy scope fields."""
+    normalized = dict(doc)
+    persona_scope = _safe_str(normalized.get("persona_scope", ""))
+    role = _safe_str(normalized.get("role", "global")) or "global"
+    phase = _safe_str(normalized.get("phase", "global")) or "global"
+    persona_role = _parse_role_from_persona_scope(persona_scope)
+    role_scope = _safe_str(normalized.get("role_scope") or persona_role or role)
+    normalized["role"] = role
+    normalized["phase"] = phase
+    normalized["role_scope"] = role_scope
+    normalized["mbti_scope"] = _safe_str(
+        normalized.get("mbti_scope") or _parse_mbti_from_persona_scope(persona_scope)
+    ).upper()
+    normalized["alignment_scope"] = _safe_str(
+        normalized.get("alignment_scope") or _derive_alignment_from_role(role_scope)
+    )
+    normalized["phase_scope"] = _safe_str(
+        normalized.get("phase_scope") or ("" if phase.lower() == "global" else phase)
+    )
+    normalized["action_scope"] = _safe_str(normalized.get("action_scope", ""))
+    normalized["source_game_id"] = _safe_str(normalized.get("source_game_id", ""))
+    normalized["source_decision_id"] = _safe_str(normalized.get("source_decision_id", ""))
+    normalized["status"] = _safe_str(normalized.get("status", normalized.get("doc_type", "")))
+    normalized["quality"] = float(normalized.get("quality", 0.8) or 0.8)
+    return normalized
+
+
 # ================================================================
 # Policy Filtering Logic
 # ================================================================
@@ -314,7 +342,7 @@ def filter_by_policy(
 def _filter_global(docs: List[Dict]) -> Dict[str, List[Dict]]:
     bucket: List[Dict] = []
     for d in docs:
-        role = _safe_str(d.get("role", "")).lower().strip()
+        role = _safe_str(d.get("role_scope", d.get("role", ""))).lower().strip()
         if role in ("global", "any", ""):
             bucket.append(d)
     bucket.sort(key=lambda d: d.get("quality", 0), reverse=True)
@@ -338,8 +366,8 @@ def _filter_same_role(docs: List[Dict], role_key: str) -> Dict[str, List[Dict]]:
         return _filter_global(docs)
     bucket: List[Dict] = []
     for d in docs:
-        doc_role = _safe_str(d.get("role", "")).lower().strip()
-        if doc_role == role_key or doc_role in ("global", "any", ""):
+        doc_role = _safe_str(d.get("role_scope", d.get("role", ""))).lower().strip()
+        if doc_role == role_key:
             bucket.append(d)
     bucket.sort(key=lambda d: d.get("quality", 0), reverse=True)
     return {"same_role_all_mbti": bucket}
@@ -352,7 +380,7 @@ def _filter_same_role_mbti(docs: List[Dict], role_key: str, mbti_key: str) -> Di
         return _filter_same_role(docs, role_key)
     bucket: List[Dict] = []
     for d in docs:
-        doc_role = _safe_str(d.get("role", "")).lower().strip()
+        doc_role = _safe_str(d.get("role_scope", d.get("role", ""))).lower().strip()
         doc_mbti = _safe_str(d.get("mbti_scope", "")).upper().strip()
         if doc_role == role_key and doc_mbti == mbti_key:
             bucket.append(d)
@@ -368,12 +396,12 @@ def _filter_hybrid(docs: List[Dict], role_key: str, mbti_key: str) -> Dict[str, 
         "global": [],
     }
     for d in docs:
-        doc_role = _safe_str(d.get("role", "")).lower().strip()
+        doc_role = _safe_str(d.get("role_scope", d.get("role", ""))).lower().strip()
         doc_mbti = _safe_str(d.get("mbti_scope", "")).upper().strip()
 
         if role_key and doc_role == role_key and mbti_key and doc_mbti == mbti_key:
             buckets["same_role_same_mbti"].append(d)
-        elif role_key and (doc_role == role_key or doc_role in ("global", "any", "")):
+        elif role_key and doc_role == role_key and (not mbti_key or doc_mbti != mbti_key):
             buckets["same_role_all_mbti"].append(d)
         elif doc_role in ("global", "any", ""):
             buckets["global"].append(d)
@@ -398,7 +426,7 @@ def _filter_hybrid_phase(
         "global": [],
     }
     for d in docs:
-        doc_role = _safe_str(d.get("role", "")).lower().strip()
+        doc_role = _safe_str(d.get("role_scope", d.get("role", ""))).lower().strip()
         doc_mbti = _safe_str(d.get("mbti_scope", "")).upper().strip()
         doc_phase = _safe_str(d.get("phase_scope", d.get("phase", ""))).lower().strip()
         doc_align = _safe_str(d.get("alignment_scope", "")).lower().strip()
@@ -412,7 +440,7 @@ def _filter_hybrid_phase(
             and (doc_phase == phase_key or not doc_phase)
         ):
             buckets["same_role_same_mbti_same_phase"].append(d)
-        elif role_key and (doc_role == role_key or doc_role in ("global", "any", "")):
+        elif role_key and doc_role == role_key and (not mbti_key or doc_mbti != mbti_key):
             buckets["same_role_all_mbti"].append(d)
         elif align_key and (doc_align == align_key or not doc_align):
             buckets["same_alignment_all_mbti"].append(d)
@@ -434,11 +462,10 @@ def _fill_from_buckets(
     ratios: Dict[str, int] | None = None,
     quality_threshold: float = _DEFAULT_QUALITY_THRESHOLD,
 ) -> Tuple[List[Dict], Dict[str, Any]]:
-    """Fill k results from priority buckets, applying ratios + quality threshold.
+    """Fill k results from priority buckets, applying strict fallback order.
 
-    Phase 1: Fill 1:1:1 from each bucket (only docs >= quality_threshold).
-    Phase 2: Underfilled slots → fill from same_role → global in priority order.
-    Phase 3: Still under → take best available regardless of threshold.
+    Higher-priority buckets are exhausted before lower-priority buckets. This
+    preserves policy semantics: global docs are fallback, not peers of role docs.
     All phases apply doc_id dedup.
 
     Returns (results, trace_dict).
@@ -447,23 +474,16 @@ def _fill_from_buckets(
         ratios = _DEFAULT_HYBRID_BUCKET_RATIOS
 
     bucket_names = list(buckets.keys())
-    total_ratio = sum(ratios.get(bn, 0) for bn in bucket_names)
-    if total_ratio == 0:
-        ratios = dict.fromkeys(bucket_names, 1)
-        total_ratio = len(bucket_names)
-
     results: List[Dict] = []
     seen_ids: set = set()
-    used_from_bucket: Dict[str, int] = {}
+    used_from_bucket: Dict[str, int] = {bucket_name: 0 for bucket_name in bucket_names}
     underfilled: List[str] = []
 
-    # Phase 1: fill 1:1:1 with quality threshold
+    # Phase 1: fill by priority with quality threshold.
     for bucket_name in bucket_names:
-        target = max(1, int(k * ratios.get(bucket_name, 1) / total_ratio))
         bucket_docs = buckets.get(bucket_name, [])
-        taken = 0
         for doc in bucket_docs:
-            if taken >= target:
+            if len(results) >= k:
                 break
             doc_id = str(doc.get("doc_id", ""))
             if doc_id in seen_ids:
@@ -472,31 +492,11 @@ def _fill_from_buckets(
                 continue  # skip low-quality, don't count as taken
             seen_ids.add(doc_id)
             results.append(doc)
-            taken += 1
-        used_from_bucket[bucket_name] = taken
-        if taken < target:
+            used_from_bucket[bucket_name] += 1
+        if not bucket_docs or used_from_bucket[bucket_name] == 0:
             underfilled.append(bucket_name)
 
-    # Phase 2: underfilled → fill from same_role → global in priority order
-    if len(results) < k and underfilled:
-        fill_order = bucket_names  # already in priority order
-        for bucket_name in fill_order:
-            if len(results) >= k:
-                break
-            bucket_docs = buckets.get(bucket_name, [])
-            for doc in bucket_docs:
-                if len(results) >= k:
-                    break
-                doc_id = str(doc.get("doc_id", ""))
-                if doc_id in seen_ids:
-                    continue
-                if doc.get("quality", 0) < quality_threshold:
-                    continue
-                seen_ids.add(doc_id)
-                results.append(doc)
-                used_from_bucket[bucket_name] += 1
-
-    # Phase 3: still under k → take best available, drop quality threshold
+    # Phase 2: still under k → take best available, drop quality threshold.
     if len(results) < k:
         for bucket_name in bucket_names:
             if len(results) >= k:
@@ -589,6 +589,7 @@ class StrategyRetriever:
         from rank_bm25 import BM25Okapi
 
         t0 = time.perf_counter()
+        self._docs = [_normalize_doc_for_policy(d) for d in self._docs]
 
         # 1. Build inverted index (for keyword grep)
         for i, d in enumerate(self._docs):
@@ -664,8 +665,7 @@ class StrategyRetriever:
         if retrieval_policy != RetrievalPolicy.GLOBAL_ONLY and results:
             buckets = filter_by_policy(results, retrieval_policy, agent_context)
             filled, _ = _fill_from_buckets(buckets, k)
-            if filled:
-                results = filled
+            results = filled
 
         if output_mode == "overview":
             return [
@@ -752,11 +752,6 @@ class StrategyRetriever:
         # Fill from buckets with appropriate ratios
         filled, bucket_trace = _fill_from_buckets(buckets, k)
 
-        # If no results from policy, fall back to BM25 unfiltered
-        if not filled and retrieval_policy != RetrievalPolicy.GLOBAL_ONLY:
-            filled = candidates[:k]
-            bucket_trace = {"fallback": "policy_empty", "buckets_used": {}}
-
         # Build result dicts
         def _build_result(doc: Dict, rank: int, bucket_name: str) -> Dict[str, str]:
             result = {
@@ -781,14 +776,15 @@ class StrategyRetriever:
             }
             return result
 
+        bucket_by_identity = {
+            id(doc): bucket_name
+            for bucket_name, bucket_docs in buckets.items()
+            for doc in bucket_docs
+        }
         results = []
         for rank, doc in enumerate(filled, 1):
-            # Determine which bucket this doc came from
-            bucket_name = "unknown"
-            for bn, bdocs in buckets.items():
-                if doc in bdocs:
-                    bucket_name = bn
-                    break
+            # Determine which bucket this doc came from.
+            bucket_name = bucket_by_identity.get(id(doc), "unknown")
             result = _build_result(doc, rank, bucket_name)
             if output_mode == "overview":
                 result = {

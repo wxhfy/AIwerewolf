@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="AI Werewolf icon">
+  <defs>
+    <linearGradient id="bg" x1="80" x2="944" y1="80" y2="944" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#2b1f48"/>
+      <stop offset="0.55" stop-color="#53385f"/>
+      <stop offset="1" stop-color="#9c5d2c"/>
+    </linearGradient>
+    <linearGradient id="moon" x1="260" x2="760" y1="170" y2="760" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#fffaf3"/>
+      <stop offset="1" stop-color="#f0d8b6"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="24" stdDeviation="28" flood-color="#1b1228" flood-opacity="0.38"/>
+    </filter>
+  </defs>
+  <rect width="1024" height="1024" rx="224" fill="url(#bg)"/>
+  <circle cx="512" cy="476" r="282" fill="url(#moon)" opacity="0.96" filter="url(#shadow)"/>
+  <path d="M295 526c40-106 91-179 154-220l34 101c19-4 39-4 58 0l34-101c64 42 114 115 154 220 26 68-4 165-78 214-38 25-83 38-139 38s-101-13-139-38c-74-49-104-146-78-214Z" fill="#2b1f48"/>
+  <path d="M390 541c45-42 91-63 138-63s93 21 138 63c-30 77-74 116-138 116s-108-39-138-116Z" fill="#fffaf3" opacity="0.94"/>
+  <circle cx="438" cy="542" r="30" fill="#9f3f3f"/>
+  <circle cx="586" cy="542" r="30" fill="#9f3f3f"/>
+  <path d="M500 583h24l-12 19-12-19Z" fill="#2b1f48"/>
+  <path d="M447 653c45 30 85 30 130 0" fill="none" stroke="#2b1f48" stroke-width="24" stroke-linecap="round"/>
+  <path d="M247 814h530" stroke="#f6c27a" stroke-width="34" stroke-linecap="round"/>
+  <path d="M319 814c35-58 72-88 111-88 35 0 64 21 82 64 18-43 47-64 82-64 39 0 76 30 111 88" fill="none" stroke="#fffaf3" stroke-width="28" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

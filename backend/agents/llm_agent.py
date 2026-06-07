@@ -76,14 +76,13 @@ class LLMAgent(Agent):
             client_kwargs["api_key"] = api_key
         if base_url is not None:
             client_kwargs["base_url"] = base_url
+        timeout_override = os.getenv("LLM_TIMEOUT_SECONDS", "").strip()
+        if timeout_override:
+            client_kwargs["timeout"] = max(0.1, float(timeout_override))
+        max_retries_override = os.getenv("LLM_MAX_RETRIES", "").strip()
+        if max_retries_override:
+            client_kwargs["max_retries"] = max(0, int(max_retries_override))
         self.client = create_client(provider=self.provider, **client_kwargs)
-        # DeepSeek-v4-flash uses built-in chain-of-thought; combined with
-        # 600-1000 token responses this can take 8–20s end-to-end, and on
-        # slow links the second attempt is another 8s on top. 120s gives
-        # the retry chain enough headroom to never time out under normal
-        # conditions; the engine's snapshot drain runs in parallel so the
-        # UI stays responsive while we wait.
-        self.client.timeout = 300.0  # 5分钟超时
         self.fallback = HeuristicAgent(player_id, seed=seed, character=character)
         self.character = character
         self.strategy_bias = {key: list(value) for key, value in (strategy_bias or {}).items() if value}

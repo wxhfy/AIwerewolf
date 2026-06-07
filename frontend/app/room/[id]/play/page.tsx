@@ -12,6 +12,8 @@ import { PhaseOverlayCoordinator } from "@/components/game/PhaseOverlayCoordinat
 import { DayNightBlinkTransition } from "@/components/game/DayNightBlinkTransition";
 import { ThinkingBubble } from "@/components/game/ThinkingBubble";
 import { VotePanel } from "@/components/game/VotePanel";
+import { BottomDialogueDock } from "@/components/game/BottomDialogueDock";
+import { BackgroundMusic } from "@/components/game/BackgroundMusic";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { useGamePageController } from "@/hooks/useGamePageController";
 import { useHumanDisplayState } from "@/hooks/useHumanDisplayState";
@@ -20,7 +22,7 @@ import { AIStatusBar } from "./_components/AIStatusBar";
 import { HumanStatusBar } from "./_components/HumanStatusBar";
 import { HumanActionBar, SubmittedIndicator } from "./_components/HumanActionBar";
 import { RoleRevealOverlay } from "./_components/RoleRevealOverlay";
-import type { Player } from "@/types";
+import { ViewMode, type Player } from "@/types";
 
 export default function GamePage() {
   const params = useParams<{ id: string }>();
@@ -31,6 +33,7 @@ export default function GamePage() {
   const controller = useGamePageController(params.id);
   const { gameState, derived, phase, scroll, voteDisplay } = controller;
   const language = controller.language;
+  const isGlobalView = controller.viewMode === ViewMode.MODERATOR;
 
   const isEndPhase = phase.visualPhaseGroup === "end" || Boolean(gameState?.winner);
   const showNightOverlay = phase.isVisualNight && !isEndPhase;
@@ -54,13 +57,19 @@ export default function GamePage() {
     humanSeat: controller.humanSeat,
     wolfTeammates: derived.wolfTeammates,
     spokenInPhase: derived.spokenInPhase,
-    nightRoleInfo: derived.nightRoleInfo,
+    nightRoleInfo: isGlobalView ? derived.nightRoleInfo : null,
     currentPhase: gameState?.phase,
     speakerState: derived.speakerState,
     // Human mode: make cards selectable when choosing target
     selectable: isHuman && humanActions.needsTarget && !humanActions.submitted,
+    selectableIds: humanActions.optionIds,
     selectedTargetId: humanActions.selectedTarget,
-    onSelectTarget: isHuman ? humanActions.setSelectedTarget : undefined,
+    onSelectTarget: isHuman
+      ? (id: string) => {
+          if (humanActions.optionIds.size > 0 && !humanActions.optionIds.has(id)) return;
+          humanActions.setSelectedTarget(id);
+        }
+      : undefined,
   };
 
   // ── Player list helpers ───────────────────────────────────────────
@@ -83,6 +92,7 @@ export default function GamePage() {
         onOpenComplete={controller.onBlinkOpenComplete}
       />
       <PhaseOverlayCoordinator phaseAnnouncement={phase.phaseAnnouncement} />
+      <BackgroundMusic language={language} />
 
       {/* ── Fetch error ── */}
       {controller.fetchError && (
@@ -131,9 +141,13 @@ export default function GamePage() {
         humanSeat={controller.humanSeat}
         wolfTeammates={derived.wolfTeammates}
         spokenInPhase={derived.spokenInPhase}
-        nightRoleInfo={derived.nightRoleInfo}
+        nightRoleInfo={isGlobalView ? derived.nightRoleInfo : null}
         currentPhase={gameState?.phase}
         speakerState={derived.speakerState}
+        selectable={railBase.selectable}
+        selectableIds={railBase.selectableIds}
+        selectedTargetId={railBase.selectedTargetId}
+        onSelectTarget={railBase.onSelectTarget}
       />
 
       {/* ── Main 3-column layout ── */}
@@ -160,6 +174,7 @@ export default function GamePage() {
               gameState={gameState}
               derived={derived}
               language={language}
+              viewMode={controller.viewMode}
             />
           )}
 
@@ -173,17 +188,6 @@ export default function GamePage() {
               completedIds={controller.completedIdsRef.current}
             />
           )}
-
-          {/* ═══ Vote display: centralized via useVoteDisplay ═══ */}
-          {voteDisplay.mode.type === "LIVE_VOTING" && Object.keys(voteDisplay.mode.votes).length > 0 && (
-            <VotePanel
-              votes={voteDisplay.mode.votes}
-              players={gameState!.players}
-              language={language}
-              phase={voteDisplay.mode.phase}
-            />
-          )}
-          {/* VoteResultPanel is now inline in EventTimeline (part of chat narrative flow) */}
 
           {/* ═══ Event timeline (scrollable) ═══ */}
           <div
@@ -204,8 +208,8 @@ export default function GamePage() {
                   hideDayHeaders={isHuman}
                   dayVotes={gameState?.vote_history as Record<number, Record<string, string>> | undefined}
                   players={gameState?.players}
-                  nightActions={gameState?.night_actions}
-                  decisionRecords={gameState?.decision_records as any}
+                  nightActions={isGlobalView ? gameState?.night_actions : null}
+                  decisionRecords={isGlobalView ? gameState?.decision_records as any : null}
                   isTransitioning={controller.isTransitioning}
                   currentDay={gameState?.day}
                   speakerState={derived.speakerState}
@@ -254,8 +258,31 @@ export default function GamePage() {
             )}
           </div>
 
+          {/* ═══ Current phase action strip: vote progress is fixed outside log ═══ */}
+          {voteDisplay.mode.type === "LIVE_VOTING" && Object.keys(voteDisplay.mode.votes).length > 0 && (
+            <div className="shrink-0 px-4 pb-2">
+              <VotePanel
+                votes={voteDisplay.mode.votes}
+                players={gameState!.players}
+                language={language}
+                phase={voteDisplay.mode.phase}
+              />
+            </div>
+          )}
+          {/* VoteResultPanel is now inline in EventTimeline (part of chat narrative flow) */}
+
+          <BottomDialogueDock
+            events={gameState?.events || []}
+            players={gameState?.players || []}
+            pendingPlayerId={derived.pendingInput?.player_id || undefined}
+            pendingPlayerName={derived.pendingInput?.player_name || undefined}
+            phase={gameState?.phase}
+            language={language}
+            isLocked={isLocked}
+          />
+
           {/* ═══ AI mode: ActionPanel ═══ */}
-          {!isHuman && derived.pendingInput && (
+          {!isHuman && isGlobalView && derived.pendingInput && (
             <ActionPanel
               pendingInput={derived.pendingInput}
               onAction={controller.handleHumanAction}
@@ -274,17 +301,12 @@ export default function GamePage() {
               canSubmit={humanActions.canSubmit}
               speech={humanActions.speech}
               setSpeech={humanActions.setSpeech}
+              savePotion={humanActions.savePotion}
+              setSavePotion={humanActions.setSavePotion}
               selectedTarget={humanActions.selectedTarget}
               selectedPlayer={humanActions.targetPlayer as Player | undefined}
               setSelectedTarget={humanActions.setSelectedTarget}
-              onSubmit={() => {
-                if (humanActions.submitted) return;
-                controller.handleHumanAction({
-                  target_id: humanActions.needsTarget ? (humanActions.selectedTarget || null) : null,
-                  speech: humanActions.isSpeech ? (humanActions.speech.trim() || null) : null,
-                  save: false,
-                });
-              }}
+              onSubmit={humanActions.submitAction}
               language={language}
             />
           )}
@@ -332,6 +354,8 @@ export default function GamePage() {
           onBallMove={controller.setBallPos}
           onLobby={() => controller.router.push("/")}
           onReport={gameState.id ? () => controller.router.push(`/games/${gameState.id}/report`) : undefined}
+          reportReady={controller.reportReady}
+          reportChecking={controller.reportChecking}
         />
       )}
     </div>

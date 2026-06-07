@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { tRole } from "@/lib/i18n";
 import type { Language } from "@/types";
 
@@ -17,10 +17,16 @@ interface RoleRevealOverlayProps {
 export function RoleRevealOverlay({
   role, alignment, seat, name, wolfTeammates, language, onRevealed,
 }: RoleRevealOverlayProps) {
+  const onRevealedRef = useRef(onRevealed);
+
   useEffect(() => {
-    const t = setTimeout(() => onRevealed(), 3000);
-    return () => clearTimeout(t);
+    onRevealedRef.current = onRevealed;
   }, [onRevealed]);
+
+  useEffect(() => {
+    const t = setTimeout(() => onRevealedRef.current(), 3000);
+    return () => clearTimeout(t);
+  }, []);
 
   return (
     <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[200] pointer-events-none">

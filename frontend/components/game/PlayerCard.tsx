@@ -45,7 +45,6 @@ export function PlayerCard({
 }: PlayerCardProps) {
   const { viewMode, language } = useAppContext();
   const [roleRevealed, setRoleRevealed] = useState(true);
-  const isPublic = viewMode !== "moderator";
 
   const isDead = !player.alive;
   const isWolf = player.alignment === Alignment.WOLF;

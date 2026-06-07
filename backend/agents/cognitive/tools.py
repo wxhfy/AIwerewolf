@@ -25,6 +25,7 @@ def create_tools(
     mbti: str = "",
     alignment: str = "",
     player_id: str = "",
+    default_retrieval_policy: str = "",
 ) -> Dict[str, Any]:
     """Create tool implementations bound to current Observation and Memory.
 
@@ -73,17 +74,20 @@ def create_tools(
 
         Set include_reflections=False to exclude post-game reflections.
         """
+        policy = None
         try:
             from backend.agents.cognitive.retrieval_prod import RetrievalPolicy
             from backend.agents.cognitive.retrieval_prod import retrieve_strategies_prod
 
-            # Parse policy from string if provided
-            policy = RetrievalPolicy.GLOBAL_ONLY
-            if retrieval_policy:
-                try:
-                    policy = RetrievalPolicy(retrieval_policy)
-                except ValueError:
-                    policy = RetrievalPolicy.GLOBAL_ONLY
+            policy_raw = (
+                retrieval_policy
+                or default_retrieval_policy
+                or os.getenv("AIWEREWOLF_RETRIEVAL_POLICY", "hybrid_role_mbti_global")
+            )
+            try:
+                policy = RetrievalPolicy(policy_raw)
+            except ValueError:
+                policy = RetrievalPolicy.HYBRID_ROLE_MBTI_GLOBAL
 
             results = retrieve_strategies_prod(
                 obs.player_role,
@@ -108,6 +112,11 @@ def create_tools(
         if not results:
             if os.getenv("ALLOW_FALLBACK", "true").lower() == "false":
                 return "(未找到匹配的策略 — 尝试调整搜索关键词)"
+            if policy is not None:
+                from backend.agents.cognitive.retrieval_prod import RetrievalPolicy
+
+                if policy != RetrievalPolicy.GLOBAL_ONLY:
+                    return "(未找到匹配的策略 — 尝试调整搜索关键词)"
             # Fallback to TF-IDF (PostgreSQL-independent)
             results = retrieve_tfidf(
                 obs.player_role,

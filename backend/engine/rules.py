@@ -192,7 +192,7 @@ def build_players(
         spec = ROLE_SPECS[role]
         players.append(
             Player(
-                id=f"P{index}-{uuid4().hex[:6]}",
+                id=f"P{index}-{uuid4().hex[:12]}",
                 seat=index,
                 name=names[index - 1],
                 role=role,

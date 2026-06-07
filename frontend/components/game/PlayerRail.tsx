@@ -21,6 +21,7 @@ interface PlayerRailProps {
   currentPhase?: string;
   /** Target selection mode — when true, cards are clickable to select */
   selectable?: boolean;
+  selectableIds?: Set<string>;
   selectedTargetId?: string;
   onSelectTarget?: (id: string) => void;
   /** 统一发言状态 */
@@ -31,7 +32,7 @@ export function PlayerRail({
   players, fallbackPlayers, pendingPlayerId, activeSpeakerId,
   sheriffId, badgeCandidateSet, isHumanMode, humanSeat,
   wolfTeammates, side, spokenInPhase, nightRoleInfo, currentPhase,
-  selectable, selectedTargetId, onSelectTarget, speakerState,
+  selectable, selectableIds, selectedTargetId, onSelectTarget, speakerState,
 }: PlayerRailProps) {
   const visiblePlayers = players.length > 0 ? players : fallbackPlayers;
   // 公开视角下用 pendingActorId 匹配（不泄露角色），主持视角下用角色匹配
@@ -70,7 +71,12 @@ export function PlayerRail({
           showOwnRole={isHumanMode && player.seat === humanSeat}
           wolfTeammates={isHumanMode && player.seat === humanSeat ? wolfTeammates : undefined}
           hasSpoken={spokenInPhase.has(player.id)}
-          selectable={selectable && player.alive && player.id !== (pendingPlayerId || activeSpeakerId || "")}
+          selectable={
+            selectable &&
+            player.alive &&
+            player.id !== (pendingPlayerId || activeSpeakerId || "") &&
+            (!selectableIds || selectableIds.has(player.id))
+          }
           isTarget={selectedTargetId === player.id}
           onSelectTarget={onSelectTarget ? () => onSelectTarget(player.id) : undefined}
         />
@@ -85,7 +91,7 @@ export function MobilePlayerRail({
   players, fallbackPlayers, pendingPlayerId, activeSpeakerId,
   sheriffId, badgeCandidateSet, isHumanMode, humanSeat,
   wolfTeammates, spokenInPhase, nightRoleInfo, currentPhase,
-  selectable, selectedTargetId, onSelectTarget, speakerState,
+  selectable, selectableIds, selectedTargetId, onSelectTarget, speakerState,
 }: MobilePlayerRailProps) {
   const visiblePlayers = players.length > 0 ? players : fallbackPlayers;
   // 公开视角下用 pendingActorId 匹配（不泄露角色），主持视角下用角色匹配
@@ -124,7 +130,12 @@ export function MobilePlayerRail({
             showOwnRole={isHumanMode && player.seat === humanSeat}
             wolfTeammates={isHumanMode && player.seat === humanSeat ? wolfTeammates : undefined}
             hasSpoken={spokenInPhase.has(player.id)}
-            selectable={selectable && player.alive && player.id !== (pendingPlayerId || activeSpeakerId || "")}
+            selectable={
+              selectable &&
+              player.alive &&
+              player.id !== (pendingPlayerId || activeSpeakerId || "") &&
+              (!selectableIds || selectableIds.has(player.id))
+            }
             isTarget={selectedTargetId === player.id}
             onSelectTarget={onSelectTarget ? () => onSelectTarget(player.id) : undefined}
           />

@@ -6,17 +6,16 @@ import { Button } from "@/components/ui/Button";
 
 interface LobbyConfigCardProps {
   language: Language; playerCount: number; mode: "ai" | "human";
-  humanSeat: number; seed: number; isCreating: boolean; error: string;
+  humanSeat: number; isCreating: boolean; error: string;
   onPlayerCountChange: (value: number) => void;
   onModeChange: (mode: "ai" | "human") => void;
   onHumanSeatChange: (seat: number) => void;
-  onSeedChange: (seed: number) => void;
   onCreateRoom: () => void;
 }
 
 export function LobbyConfigCard(props: LobbyConfigCardProps) {
-  const { language, playerCount, mode, humanSeat, seed, isCreating, error,
-    onPlayerCountChange, onModeChange, onHumanSeatChange, onSeedChange, onCreateRoom } = props;
+  const { language, playerCount, mode, humanSeat, isCreating, error,
+    onPlayerCountChange, onModeChange, onHumanSeatChange, onCreateRoom } = props;
 
   const isAi = mode === "ai";
 
@@ -75,22 +74,6 @@ export function LobbyConfigCard(props: LobbyConfigCardProps) {
               {seat}
             </button>
           ))}
-        </div>
-      </div>
-
-      {/* Seed */}
-      <div>
-        <label className="block text-xs font-medium text-text-sub/60 uppercase tracking-wider">{t("seed", language)}</label>
-        <p className="text-[11px] text-text-sub/40 mt-0.5 mb-1.5">
-          {language === "zh" ? "相同 seed 可复现同一局对战" : "Same seed reproduces the same match"}
-        </p>
-        <div className="flex gap-2">
-          <input type="number" value={seed} onChange={(e) => onSeedChange(Number(e.target.value) || 0)}
-            className="h-11 flex-1 rounded-lg border border-border/40 bg-background px-3.5 text-sm text-textPrimary focus:border-primary/40 focus:ring-1 focus:ring-primary/20 outline-none transition-all font-mono tracking-wider" />
-          <button onClick={() => onSeedChange(Math.floor(Math.random() * 1000))}
-            className="h-11 px-4 rounded-lg border border-border/40 text-xs text-text-sub/60 hover:text-primary hover:border-primary/30 transition-all shrink-0">
-            {language === "zh" ? "随机" : "Random"}
-          </button>
         </div>
       </div>
 

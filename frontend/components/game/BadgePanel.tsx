@@ -2,7 +2,6 @@
 
 import React from "react";
 import { GameState, Language } from "@/types";
-import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { isMergedChatSegment } from "@/lib/eventFilter";
 

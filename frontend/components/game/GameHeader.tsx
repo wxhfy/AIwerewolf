@@ -52,9 +52,14 @@ export function GameHeader({
         </span>
       </div>
       <div className="flex items-center gap-2">
-        <div className="flex overflow-hidden rounded-button border border-border">
-          <button onClick={() => onViewModeChange(ViewMode.PUBLIC)} className={`px-2 py-1 text-xs font-medium ${viewMode === ViewMode.PUBLIC ? "bg-primary text-white" : "bg-transparent text-text-sub"}`}>{t("public", language)}</button>
-          <button onClick={() => onViewModeChange(ViewMode.MODERATOR)} className={`px-2 py-1 text-xs font-medium ${viewMode === ViewMode.MODERATOR ? "bg-primary text-white" : "bg-transparent text-text-sub"}`}>{t("private", language)}</button>
+        <div className="hidden items-center text-[11px] text-text-sub/70 lg:flex">
+          {viewMode === ViewMode.PUBLIC
+            ? (language === Language.ZH ? "只看公开进程" : "Public flow")
+            : (language === Language.ZH ? "含隐藏信息" : "Hidden info")}
+        </div>
+        <div className="flex overflow-hidden rounded-button border border-border bg-background/40">
+          <button onClick={() => onViewModeChange(ViewMode.PUBLIC)} className={`px-3 py-1.5 text-xs font-medium transition-colors ${viewMode === ViewMode.PUBLIC ? "bg-primary text-white" : "bg-transparent text-text-sub hover:text-textPrimary"}`}>{t("public", language)}</button>
+          <button onClick={() => onViewModeChange(ViewMode.MODERATOR)} className={`px-3 py-1.5 text-xs font-medium transition-colors ${viewMode === ViewMode.MODERATOR ? "bg-primary text-white" : "bg-transparent text-text-sub hover:text-textPrimary"}`}>{t("private", language)}</button>
         </div>
         {canRun && !isHumanMode && <Button size="sm" onClick={onRun}>{t("run", language)}</Button>}
         {canRun && isHumanMode && <Button size="sm" onClick={onStartHuman}>{t("run", language)}</Button>}
