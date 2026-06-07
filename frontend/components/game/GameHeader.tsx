@@ -17,7 +17,6 @@ interface GameHeaderProps {
   onRun: () => void;
   onStartHuman: () => void;
   onViewModeChange: (mode: ViewMode) => void;
-  onLanguageChange: (language: Language) => void;
 }
 
 export function GameHeader({
@@ -32,7 +31,6 @@ export function GameHeader({
   onRun,
   onStartHuman,
   onViewModeChange,
-  onLanguageChange,
 }: GameHeaderProps) {
   return (
     <header className="relative z-10 flex flex-wrap items-center gap-3 border-b border-border bg-cardBackground px-4 py-2.5 md:px-6" data-phase-aware>
@@ -63,10 +61,6 @@ export function GameHeader({
         </div>
         {canRun && !isHumanMode && <Button size="sm" onClick={onRun}>{t("run", language)}</Button>}
         {canRun && isHumanMode && <Button size="sm" onClick={onStartHuman}>{t("run", language)}</Button>}
-        <div className="flex overflow-hidden rounded-button border border-border">
-          <button onClick={() => onLanguageChange(Language.ZH)} className={`px-2 py-1 text-xs font-medium ${language === Language.ZH ? "bg-primary text-white" : "bg-transparent text-text-sub"}`}>中</button>
-          <button onClick={() => onLanguageChange(Language.EN)} className={`px-2 py-1 text-xs font-medium ${language === Language.EN ? "bg-primary text-white" : "bg-transparent text-text-sub"}`}>EN</button>
-        </div>
       </div>
     </header>
   );

@@ -206,16 +206,17 @@ export function DayEventBlock({
 
   if (timelineEvents.length === 0) return null;
 
-  // Reveal index: block at first uncompleted CHAT_MESSAGE (only blocks chat events)
-  let revealIndex = timelineEvents.length;
+  // Archive cutoff: the bottom dialogue dock owns the active speech.
+  // Timeline only shows CHAT_MESSAGE events after the dock has completed them.
+  let archiveCutoff = timelineEvents.length;
   for (let i = 0; i < timelineEvents.length; i++) {
     if (timelineEvents[i].type === EventType.CHAT_MESSAGE && !completedIds.has(timelineEvents[i].id)) {
-      revealIndex = i; break;
+      archiveCutoff = i; break;
     }
   }
-  const visibleEvents = timelineEvents.slice(0, revealIndex + 1);
-  // System events after revealIndex (deaths, hunter shoot, etc.) should render immediately
-  const pendingSystemEvents = timelineEvents.slice(revealIndex + 1).filter(e =>
+  const visibleEvents = timelineEvents.slice(0, archiveCutoff);
+  // System events after archiveCutoff (deaths, hunter shoot, etc.) should render immediately
+  const pendingSystemEvents = timelineEvents.slice(archiveCutoff).filter(e =>
     e.type !== EventType.CHAT_MESSAGE && e.type !== EventType.VOTE_CAST
   );
 
@@ -225,15 +226,7 @@ export function DayEventBlock({
     const ph = timelineEvents[i].phase || "";
     if (ph === "DAY_LAST_WORDS" || ph === "HUNTER_SHOOT" || ph === "BADGE_TRANSFER") { voteCutoff = i; break; }
   }
-  const voteResultReady = revealIndex >= voteCutoff;
-
-  // Only the first uncompleted bubble animates
-  let animatingFound = false;
-  function shouldAnimateChat(eventId: string): boolean {
-    if (animatingFound || completedIds.has(eventId)) return false;
-    animatingFound = true;
-    return true;
-  }
+  const voteResultReady = archiveCutoff >= voteCutoff;
 
   return (
     <div className="mb-5">
@@ -278,7 +271,7 @@ export function DayEventBlock({
                 key={evt.id || i} event={evt} index={i}
                 language={language} isHumanMode={isHumanMode} humanSeat={humanSeat}
                 players={players}
-                animateChat={evt.type === EventType.CHAT_MESSAGE ? shouldAnimateChat(evt.id) : false}
+                animateChat={false}
                 onChatComplete={onChatComplete} isLatest={false}
               />
             );
@@ -352,10 +345,9 @@ export function DayEventBlock({
             key={event.id || index} event={event} index={index + voteCutoff}
             language={language} isHumanMode={isHumanMode} humanSeat={humanSeat}
             players={players}
-            animateChat={event.type === EventType.CHAT_MESSAGE ? shouldAnimateChat(event.id) : false}
+            animateChat={false}
             onChatComplete={onChatComplete}
-            isLatest={revealIndex < timelineEvents.length && (index + voteCutoff) === visibleEvents.length - 1
-              && event.type === EventType.CHAT_MESSAGE && !completedIds.has(event.id)}
+            isLatest={false}
           />
         ))}
 
@@ -366,7 +358,7 @@ export function DayEventBlock({
           const hasLastWords = timelineEvents.some(e => e.phase === "DAY_LAST_WORDS");
           if (!hasLastWords) return null;
           const lastWordsIdx = timelineEvents.findIndex(e => e.phase === "DAY_LAST_WORDS");
-          if (revealIndex <= lastWordsIdx) return null; // not yet revealed
+          if (archiveCutoff <= lastWordsIdx) return null; // not yet archived
           // Find top vote getter
           const tally: Record<string, number> = {};
           for (const targetId of Object.values(dayVotes)) {

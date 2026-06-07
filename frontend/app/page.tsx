@@ -13,6 +13,7 @@ import { AnimatedWerewolfBackground } from "@/components/game/AnimatedWerewolfBa
 import { LobbyConfigCard } from "@/components/game/LobbyConfigCard";
 import { PrepareModal } from "@/components/game/PrepareModal";
 import { SettingsModal, GameSettings } from "@/components/SettingsModal";
+import { BackgroundMusic } from "@/components/game/BackgroundMusic";
 
 if (typeof window !== "undefined") {
   gsap.registerPlugin(useGSAP);
@@ -101,11 +102,6 @@ export default function LobbyPage() {
     setSeed(newSettings.seed);
   };
 
-  const handleLanguageChange = (nextLanguage: Language) => {
-    persistGameSettings({ ...gameSettings, language: nextLanguage });
-    setLanguage(nextLanguage);
-  };
-
   const [playerCount, setPlayerCount] = useState(7);
   const [mode, setMode] = useState<"ai" | "human">("ai");
   const [humanSeat, setHumanSeat] = useState(1);
@@ -170,9 +166,10 @@ export default function LobbyPage() {
   return (
     <div ref={pageRef} className="relative min-h-screen flex flex-col items-center justify-start overflow-x-hidden overflow-y-auto bg-background px-4 pb-8 pt-24 sm:justify-center sm:px-6 sm:pt-20">
       <AnimatedWerewolfBackground />
+      <BackgroundMusic language={language} />
 
       {/* ── Top nav ────────────────────────────────────────────── */}
-      <div className="absolute left-3 right-3 top-4 z-20 flex flex-wrap items-center justify-end gap-2 sm:left-auto sm:right-4 sm:flex-nowrap">
+      <div className="absolute left-3 right-16 top-4 z-20 flex flex-wrap items-center justify-end gap-2 sm:left-auto sm:right-16 sm:flex-nowrap">
         <Link href="/personas" className="px-3 py-1.5 text-xs font-medium rounded-button border border-border/40 text-text-sub/70 hover:text-primary hover:border-primary/50 transition-colors backdrop-blur-sm">
           {language === "zh" ? "角色库" : "Personas"}
         </Link>
@@ -189,10 +186,6 @@ export default function LobbyPage() {
           </svg>
           {language === "zh" ? "设置" : "Settings"}
         </button>
-        <div className="flex overflow-hidden rounded-button border border-border/40 backdrop-blur-sm">
-          <button onClick={() => handleLanguageChange(Language.ZH)} className={`px-3 py-1.5 text-xs font-medium transition-colors ${language === "zh" ? "bg-primary text-white" : "bg-transparent text-text-sub/70 hover:text-textPrimary"}`}>中文</button>
-          <button onClick={() => handleLanguageChange(Language.EN)} className={`px-3 py-1.5 text-xs font-medium transition-colors ${language === "en" ? "bg-primary text-white" : "bg-transparent text-text-sub/70 hover:text-textPrimary"}`}>EN</button>
-        </div>
       </div>
 
       {/* ── Brand — stable height, no jump on mode switch ────────── */}

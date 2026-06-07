@@ -126,7 +126,6 @@ export default function GamePage() {
         onRun={controller.runGame}
         onStartHuman={controller.startHumanGame}
         onViewModeChange={controller.setViewMode}
-        onLanguageChange={controller.setLanguage}
       />
 
       {/* ── Mobile player rail ── */}
@@ -274,11 +273,13 @@ export default function GamePage() {
           <BottomDialogueDock
             events={gameState?.events || []}
             players={gameState?.players || []}
+            currentChat={controller.currentDialogueChat}
             pendingPlayerId={derived.pendingInput?.player_id || undefined}
             pendingPlayerName={derived.pendingInput?.player_name || undefined}
             phase={gameState?.phase}
             language={language}
             isLocked={isLocked}
+            onChatComplete={controller.onChatComplete}
           />
 
           {/* ═══ AI mode: ActionPanel ═══ */}
@@ -354,6 +355,7 @@ export default function GamePage() {
           onBallMove={controller.setBallPos}
           onLobby={() => controller.router.push("/")}
           onReport={gameState.id ? () => controller.router.push(`/games/${gameState.id}/report`) : undefined}
+          onExport={() => controller.exportGameRecord()}
           reportReady={controller.reportReady}
           reportChecking={controller.reportChecking}
         />

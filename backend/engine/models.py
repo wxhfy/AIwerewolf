@@ -312,10 +312,10 @@ class GameState:
     def public_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
-            "phase": self.phase.value,
+            "phase": self._public_phase(),
             "day": self.day,
             "players": [player.public_dict() for player in self.players],
-            "events": [event.to_dict() for event in self.events if event.visibility == "public"],
+            "events": [self._public_event_dict(event) for event in self.events if event.visibility == "public"],
             "votes": dict(self.votes),
             "vote_history": dict(self.vote_history),
             "day_history": dict(self.day_history),
@@ -333,9 +333,53 @@ class GameState:
             "current_speaker_id": self.current_speaker_id,
             "pk_targets": list(self.pk_targets),
             "pk_source": self.pk_source,
-            "pending_input": self.pending_input.to_dict() if self.pending_input else None,
+            "pending_input": self._public_pending_input(),
             "winner": self.winner.value if self.winner else None,
         }
+
+    def _public_phase(self) -> str:
+        if self.phase.value.startswith("NIGHT_") and self.phase not in {Phase.NIGHT_START, Phase.NIGHT_RESOLVE}:
+            return Phase.NIGHT_START.value
+        return self.phase.value
+
+    def _public_event_dict(self, event: GameEvent) -> dict[str, Any]:
+        data = event.to_dict()
+        phase = str(data.get("phase") or "")
+        is_night_subphase = phase.startswith("NIGHT_") and phase not in {
+            Phase.NIGHT_START.value,
+            Phase.NIGHT_RESOLVE.value,
+        }
+        if is_night_subphase:
+            data["phase"] = Phase.NIGHT_START.value
+        payload = data.get("payload")
+        if isinstance(payload, dict):
+            payload_phase = str(payload.get("phase") or "")
+            if payload_phase.startswith("NIGHT_") and payload_phase not in {
+                Phase.NIGHT_START.value,
+                Phase.NIGHT_RESOLVE.value,
+            }:
+                data["payload"] = {**payload, "phase": Phase.NIGHT_START.value}
+            if is_night_subphase and data.get("type") == EventType.NIGHT_ACTION.value:
+                data["payload"] = {"message": "行动完毕"}
+        return data
+
+    def _public_pending_input(self) -> dict[str, Any] | None:
+        if not self.pending_input:
+            return None
+        if self.phase.value.startswith("NIGHT_"):
+            return {
+                "player_id": "",
+                "player_name": "夜晚行动",
+                "seat": 0,
+                "request": "NIGHT_ACTION",
+                "phase": Phase.NIGHT_START.value,
+                "action_type": "night_action",
+                "prompt": "行动完毕",
+                "options": [],
+                "can_skip": False,
+                "placeholder": None,
+            }
+        return self.pending_input.to_dict()
 
     def snapshot(self, *, show_private: bool = False) -> dict[str, Any]:
         data = self.moderator_dict() if show_private else self.public_dict()
@@ -349,8 +393,10 @@ class GameState:
 
     def moderator_dict(self) -> dict[str, Any]:
         data = self.public_dict()
+        data["phase"] = self.phase.value
         data["players"] = [player.private_dict() for player in self.players]
         data["events"] = [event.to_dict() for event in self.events]
+        data["pending_input"] = self.pending_input.to_dict() if self.pending_input else None
         data["night_actions"] = {
             "guard_target_id": self.night_actions.guard_target_id,
             "last_guard_target_id": self.night_actions.last_guard_target_id,

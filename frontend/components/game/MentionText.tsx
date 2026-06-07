@@ -10,16 +10,6 @@ interface MentionTextProps {
   className?: string;
 }
 
-function PlayerAvatar({ player }: { player: Player }) {
-  const initials = player.name?.slice(0, 1) || String(player.seat);
-
-  return (
-    <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-info/15 text-[9px] font-bold text-info ring-1 ring-info/20">
-      {initials}
-    </span>
-  );
-}
-
 export function MentionText({ text, players = [], className }: MentionTextProps) {
   const parts: React.ReactNode[] = [];
   const regex = /@?(\d{1,2})号/g;
@@ -37,11 +27,10 @@ export function MentionText({ text, players = [], className }: MentionTextProps)
     parts.push(
       <span
         key={`${match.index}-${seat}`}
-        className="mx-0.5 inline-flex items-center gap-1 align-baseline text-[0.92em] font-semibold text-info"
+        className="mx-0.5 inline align-baseline font-semibold text-info"
         title={player ? `${seat}号 ${player.name}` : `${seat}号`}
       >
-        {player && <PlayerAvatar player={player} />}
-        <span>@{seat}号</span>
+        @{seat}号
       </span>,
     );
 

@@ -32,6 +32,47 @@ app.add_middleware(
 _rooms = RoomManager()
 
 
+def _sample_personas(count: int, seed: int | None) -> list[dict] | None:
+    from backend.db.persona_db import sample_personas
+
+    return sample_personas(count, seed=seed)
+
+
+def _save_game_start(state: GameState) -> None:
+    from backend.db.persist import save_game_start
+
+    save_game_start(state)
+
+
+def _save_game_end(state: GameState) -> None:
+    from backend.db.persist import save_game_end
+
+    save_game_end(state)
+
+
+def _save_decisions(decisions: list[dict]) -> int:
+    from backend.db.persist import save_decisions_batch
+
+    return save_decisions_batch(decisions)
+
+
+def _run_post_game_scoring(state: GameState) -> None:
+    import logging
+    import os
+
+    from backend.eval.post_game import run_post_game_scoring
+
+    count = run_post_game_scoring(state, str(state.id))
+    if count > 0:
+        logging.getLogger(__name__).info(
+            "Post-game scoring: %s knowledge lessons extracted for game %s",
+            count,
+            state.id,
+        )
+    elif os.getenv("REQUIRE_POST_GAME_SCORING", "").lower() == "true":
+        logging.getLogger(__name__).error("STRICT FAIL: Post-game scoring produced 0 lessons")
+
+
 @app.on_event("startup")
 def _initialize_database() -> None:
     try:
@@ -75,7 +116,16 @@ def _build_game(
     rule_pack_id: str = "wolfcha-default",
     phase_delay_ms: float = 0,
 ) -> WerewolfGame:
-    game = WerewolfGame(seed=seed, player_count=player_count, phase_delay_ms=phase_delay_ms)
+    game = WerewolfGame(
+        seed=seed,
+        player_count=player_count,
+        phase_delay_ms=phase_delay_ms,
+        persona_sampler=_sample_personas,
+        on_game_start=_save_game_start,
+        on_game_end=_save_game_end,
+        on_decisions_flush=_save_decisions,
+        on_post_game=_run_post_game_scoring,
+    )
     game.attach_agents(
         create_agents(
             game.state.players,
@@ -605,7 +655,7 @@ def create_room_game(room_id: str, show_private: bool = False):
     if room.human_seat is not None:
         _rooms.set_active_game(room_id, game)
         state = game.play_until_blocked()
-        snapshot = state.snapshot(show_private=show_private)
+        snapshot = state.snapshot(show_private=True)
         _rooms.record_snapshot(room_id, snapshot)
         if state.winner is not None:
             _rooms.record_game(room_id, state, snapshot)
@@ -685,9 +735,9 @@ def start_or_resume_room_game(room_id: str, show_private: bool = False):
             player_count=room.player_count,
             rule_pack_id=room.rule_pack_id,
         )
-        _rooms.set_active_game(room_id, game)
+    _rooms.set_active_game(room_id, game)
     state = game.play_until_blocked()
-    snapshot = state.snapshot(show_private=show_private)
+    snapshot = state.snapshot(show_private=show_private or room.human_seat is not None)
     _rooms.record_snapshot(room_id, snapshot)
     if state.winner is not None:
         _rooms.record_game(room_id, state, snapshot)
@@ -706,7 +756,11 @@ def submit_room_action(room_id: str, payload: Dict[str, Any], show_private: bool
         state = game.submit_human_action(payload)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
-    snapshot = state.snapshot(show_private=show_private)
+    try:
+        room = _rooms.get_room(room_id)
+    except KeyError:
+        room = None
+    snapshot = state.snapshot(show_private=show_private or (room is not None and room.human_seat is not None))
     _rooms.record_snapshot(room_id, snapshot)
     if state.winner is not None:
         _rooms.record_game(room_id, state, snapshot)

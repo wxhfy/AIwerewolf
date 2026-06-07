@@ -11,11 +11,13 @@ import { MentionText } from "@/components/game/MentionText";
 interface BottomDialogueDockProps {
   events: GameEvent[];
   players: Player[];
+  currentChat?: GameEvent | null;
   pendingPlayerId?: string;
   pendingPlayerName?: string;
   phase?: string;
   language: Language;
   isLocked?: boolean;
+  onChatComplete?: (eventId: string) => void;
 }
 
 function getPlayerInitial(player?: Player, fallback?: string) {
@@ -30,13 +32,16 @@ function getPhaseHint(phase: string | undefined, language: Language) {
 export function BottomDialogueDock({
   events,
   players,
+  currentChat,
   pendingPlayerId,
   pendingPlayerName,
   phase,
   language,
   isLocked,
+  onChatComplete,
 }: BottomDialogueDockProps) {
   const latestChat = useMemo(() => {
+    if (currentChat) return currentChat;
     for (let index = events.length - 1; index >= 0; index--) {
       const event = events[index];
       if (event.type === EventType.CHAT_MESSAGE) return event;
@@ -63,6 +68,7 @@ export function BottomDialogueDock({
     enabled: Boolean(latestChat) && !isLocked,
     charsPerSecond: 38,
     maxDurationMs: 9000,
+    onComplete: latestChat ? () => onChatComplete?.(latestChat.id) : undefined,
   });
 
   const shownText = latestChat ? displayedText || "" : text;

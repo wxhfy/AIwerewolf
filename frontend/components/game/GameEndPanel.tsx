@@ -19,6 +19,7 @@ interface GameEndPanelProps {
   onBallMove: (position: { x: number; y: number }) => void;
   onLobby: () => void;
   onReport?: () => void;
+  onExport?: () => void;
   reportReady?: boolean;
   reportChecking?: boolean;
 }
@@ -39,7 +40,7 @@ function winReasonText(winner: Alignment, language: Language): string {
 }
 
 export function GameEndPanel({
-  winner, day, aliveCount, eventCount, language, showPanel, ballPos, dragRef, onOpen, onClose, onBallMove, onLobby, onReport,
+  winner, day, aliveCount, eventCount, language, showPanel, ballPos, dragRef, onOpen, onClose, onBallMove, onLobby, onReport, onExport,
   reportReady = true,
   reportChecking = false,
 }: GameEndPanelProps) {
@@ -130,6 +131,11 @@ export function GameEndPanel({
                   {!reportReady || reportChecking
                     ? language === "zh" ? "复盘生成中..." : "Generating Review..."
                     : t("viewReview", language)}
+                </Button>
+              )}
+              {onExport && (
+                <Button variant="secondary" onClick={onExport} className="w-full">
+                  {t("exportGameRecord", language)}
                 </Button>
               )}
               <div className="flex gap-2">

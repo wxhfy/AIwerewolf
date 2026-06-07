@@ -174,6 +174,14 @@ updated: 2026-06-03
 - **涉及文件 / 模块**：`backend/engine/rules.py`、`backend/db/models.py`、`backend/db/persist.py`、`tests/ui_smoke.mjs`
 - **教训**：任何会落库为全局主键的“短随机 ID”都不能按单局唯一来设计；共享测试库会把低概率碰撞放大成前端端到端失败。
 
+### 问题 A16：严格失败丢失 invalid 审计
+- **发生时间 / Session**：2026-06-07 ｜ Codex goal continuation
+- **现象**：真实 LLM multi-tier 实验中出现 `Invalid LLM decision in BADGE_ELECTION/WOLF_TEAM_VOTE` 等严格模式失败，但外层 JSONL 失败行的 `invalid_decisions` 仍是 0；报告只能看到 `ChildProcessError`，无法量化模型非法决策数量。
+- **根因**：引擎在 `_raise_invalid_llm_decision()` 里直接抛异常，未把已经记录的 `DecisionAudit` 回写成 `is_valid=False`；同时 `scripts/multi_tier_experiment.py` 的单局子进程失败后只返回错误字符串，丢掉了当前 `GameState` 中已累计的决策审计。
+- **解决方案**：`backend/engine/game.py` 在抛严格错误前调用 `_mark_decision_invalid()`，同步更新 `state.decision_records` 与待 flush 决策；`scripts/multi_tier_experiment.py` 在单局内部捕获异常，仍从当前 state 生成 `decisions/llm_decisions/fallback_decisions/invalid_decisions` 指标再交给外层标失败。
+- **涉及文件 / 模块**：`backend/engine/game.py`、`scripts/multi_tier_experiment.py`、`tests/test_engine.py`
+- **教训**：严格模式可以中止对局，但不能中止审计；失败局也要携带可量化指标，否则实验报告会把模型错误误分类成纯工程失败。
+
 ## §B. 前端 / UI 渲染
 
 ### 问题 B1：UI 卡在「正在生成对局」不动
@@ -335,6 +343,22 @@ updated: 2026-06-03
 - **解决方案**：URL `?lang=` 初始化时写入 `gameSettings`；语言切换按钮同时更新持久化 settings 和 AppContext，避免两个状态源互相覆盖。
 - **涉及文件 / 模块**：`frontend/app/page.tsx`、`tests/ui_smoke.mjs`
 - **教训**：同一 UI 状态不能由两个源头各自写入；若必须保留持久化 settings，显式用户操作要同步更新所有状态源。
+
+### 问题 B20：对局页发言归档与公开夜晚脱敏不彻底
+- **发生时间 / Session**：2026-06-07 ｜ Codex
+- **现象**：用户指出首页进入也要有音乐但应是右上角音乐图标；语言切换已经在设置里，外层和游戏页右上角不应重复出现；角色发言应该先在下方大气泡逐段展示，展示完再进入上方游戏日志；`@N号` 蓝色文本与正文不齐平；终局弹窗缺整局对局记录导出；普通观众视角仍能看出夜晚具体角色流程或想法；角色库返回首页时动画加载失败。
+- **根因**：`BottomDialogueDock` 只取最新 `CHAT_MESSAGE`，上方 `DayEventBlock` 同时渲染未完成发言并依赖 `ChatBubble` 的副作用完成回调，导致发言可能一次性进入日志；音乐按钮是文字按钮且只挂在游戏页；语言切换入口同时存在于设置、首页和游戏页 Header；`MentionText` 的 inline-flex 头像改变了 baseline；公开快照虽过滤 private events，但 `public_dict()` 仍暴露夜晚子阶段和夜晚 `pending_input` 的 request/prompt/options；角色库用 Next `Link` 返回首页时可能复用客户端状态，GSAP 背景动画没有完整重建。
+- **解决方案**：音乐组件改为右上角图标按钮并在首页挂载；移除首页和游戏页 Header 的外层语言切换，只保留设置弹窗；新增 `currentDialogueChat` 队列，底部大气泡完成打字后才标记 `completedIds`，上方日志只归档已完成发言；`ChatBubble` 去掉渲染即完成的副作用；`MentionText` 改为普通 inline 蓝色文本；终局弹窗新增 `exportGameRecord()` JSON 导出；`GameState.public_dict()` 对夜晚子阶段和夜晚 `pending_input` 做公开脱敏，`moderator_dict()` 恢复完整全局视角；角色库返回大厅改为普通 `<a href="/">` 触发完整页面加载。
+- **涉及文件 / 模块**：`frontend/app/page.tsx`、`frontend/app/personas/page.tsx`、`frontend/app/room/[id]/play/page.tsx`、`frontend/app/room/[id]/play/_components/AIStatusBar.tsx`、`frontend/components/game/BackgroundMusic.tsx`、`frontend/components/game/BottomDialogueDock.tsx`、`frontend/components/game/ChatBubble.tsx`、`frontend/components/game/GameEndPanel.tsx`、`frontend/components/game/GameHeader.tsx`、`frontend/components/game/MentionText.tsx`、`frontend/components/game/_speech/DayEventBlock.tsx`、`frontend/hooks/useGamePageController.ts`、`frontend/lib/i18n.ts`、`backend/engine/models.py`、`tests/test_engine.py`
+- **教训**：当前发言播放和历史日志归档必须是两个状态机；普通观众视角的信息隔离要在后端快照层完成，不能只靠前端隐藏；设置类入口要单一，避免用户看到重复控制。
+
+### 问题 B21：UI smoke 仍点击已移除的顶部语言按钮
+- **发生时间 / Session**：2026-06-07 ｜ Codex
+- **现象**：Playwright 真实浏览器 smoke 在首页步骤报 `locator.click: Timeout 30000ms exceeded`，等待 `getByRole('button', { name: 'EN' })`；页面实际已按用户偏好把语言切换收进“设置”弹窗，顶部不再存在 `EN` 按钮。
+- **根因**：前端 UI 信息架构更新后，`tests/ui_smoke.mjs` 仍保留旧导航栏语言按钮路径，测试没有跟随真实用户操作路径更新。
+- **解决方案**：把 smoke 改为先点击“设置”，再在设置弹窗中选择 `EN|English` 并保存，随后继续验证英文大厅、AI 对局和真人模式。
+- **涉及文件 / 模块**：`tests/ui_smoke.mjs`、`frontend/app/page.tsx`、`frontend/components/SettingsModal.tsx`。
+- **教训**：端到端测试要验证真实用户路径；当 UI 控制入口被收敛到设置页时，smoke 不能继续依赖旧的快捷按钮。
 
 ---
 
@@ -608,6 +632,14 @@ updated: 2026-06-03
 - **涉及文件 / 模块**：`backend/agents/cognitive/agent.py`、`backend/engine/game.py`、`backend/agents/factory.py`、`backend/agents/cognitive/factory.py`、`backend/llm/deepseek.py`、`scripts/llm_game_smoke.py`、`tests/test_cognitive_offline.py`、`tests/test_engine.py`、`tests/test_llm_config.py`
 - **教训**：LLM-only 验收必须“失败显性化”，不能靠本地补一句、补目标或默认投票把模型错误包装成完整对局；完整对局 smoke 必须覆盖白天发言/投票，并从事件与审计记录双层证明无 fallback、无空响应、无非法决策。
 
+### 问题 C31：夜间 skip 语义被误报为 unresolved target
+- **发生时间 / Session**：2026-06-07 ｜ Codex
+- **现象**：全量 `python -m pytest tests/ -q` 仅剩 1 个失败：`test_cognitive_agent_required_night_skip_raises_in_strict_mode` 期望 strict mode 报 `skip keyword`，实际报 `LLM returned unresolved guard target: ''`。
+- **根因**：fake LLM 返回 `{"target": "跳过", "reasoning": "skip required target"}` 后，pipeline 解析结果的 `target` 变成空字符串，skip 语义只保留在 reasoning；同时 `_SKIP_NIGHT_KEYWORDS` 漏了英文 `skip`，导致 `_night_decision()` 走 unresolved target 分支。
+- **解决方案**：夜间必需目标校验在 `target` 为空时也检查 reasoning 是否包含 skip 关键词，并把 `skip` 加入 `_SKIP_NIGHT_KEYWORDS`；strict mode 仍显性抛错，但错误分类保持为 `skip keyword`。
+- **涉及文件 / 模块**：`backend/agents/cognitive/agent.py`、`tests/test_cognitive_offline.py`
+- **教训**：LLM 输出的同一语义可能落在 target 或 reasoning 字段；strict-mode 错误分类要保留语义信息，不能把明确“跳过”误归类为普通解析失败。
+
 ## §D. 数据库 / 持久化
 
 ### 问题 D1：以为在用 PostgreSQL，其实是 SQLite
@@ -690,6 +722,14 @@ updated: 2026-06-03
 - **解决方案**：`save_game_start()` 改成幂等 upsert 风格，并在 `/api/rooms/{id}/prepare` 初始化后立即保存 game/player 起始行；重复 prepare/start 不再主键冲突。
 - **涉及文件 / 模块**：`backend/app.py`、`backend/db/persist.py`
 - **教训**：prepared/running/finished 三段生命周期必须共用同一个持久化起点；任何子表写入前都要保证父 `games` 行已存在。
+
+### 问题 D11：aggregate 扫全量知识库导致超时
+- **发生时间 / Session**：2026-06-07 ｜ Codex
+- **现象**：`tests/test_api.py::test_runtime_metrics_and_aggregate_endpoints` 单独运行 90 秒超时；分段计时显示创建对局约 1.9s、`/runtime_metrics` 约 0.04s，但 `/api/metrics/aggregate?limit_games=20` 卡住。共享 PostgreSQL 中已有约 10k games、249k decisions、107k strategy knowledge docs。
+- **根因**：`get_aggregate_metrics()` 虽然对 games 使用 `limit_games`，但 B/C acceptance 审计中 `db.query(StrategyKnowledgeDoc).all()` 会加载全表知识文档，并构建 `StrategyKnowledgeStore` 做检索探针；这让 dashboard 请求承担了离线实验级别的全量索引成本。
+- **解决方案**：把聚合审计改为 SQL 计数 + 最多 20 条最新非 deprecated 知识文档样本；C1 用 `source_report_ids` SQL 计数，C2/C3/C4/C5 只对有界样本做 sanitizer / embedding / retrieval / graph edge 探针。复测 `/api/metrics/aggregate?limit_games=20` 约 3.4s 返回，相关 API 测试通过。
+- **涉及文件 / 模块**：`backend/db/persist.py`、`tests/test_api.py`
+- **教训**：面向前端 dashboard 的聚合接口必须有查询上限；全量向量索引或知识库重建应放在离线脚本里，不能挂在普通 HTTP 请求路径上。
 
 ## §E. WebSocket / 实时通信
 
@@ -970,6 +1010,14 @@ updated: 2026-06-03
 - **解决方案**：新增底部 `BottomDialogueDock` 承载当前发言打字机，日志 `ChatBubble` 改为直接展示完整记录并支持 `@N号` mention chip；新增 `MentionText`；投票进度移动到日志与底部大气泡之间的固定行动条；WebSocket `show_private` 跟随全局视角，观众视角默认不请求 private；复盘按钮和复盘页轮询显示“生成中”；进化页取消 20 seed 运行按钮，仅刷新展示后端结果；新增默认开启的 BGM 组件。
 - **涉及文件 / 模块**：`frontend/app/room/[id]/play/page.tsx`、`frontend/components/game/BottomDialogueDock.tsx`、`frontend/components/game/MentionText.tsx`、`frontend/components/game/ChatBubble.tsx`、`frontend/components/game/VotePanel.tsx`、`frontend/hooks/useRoomStream.ts`、`frontend/hooks/useGamePageController.ts`、`frontend/app/games/[id]/report/page.tsx`、`frontend/app/evolution/page.tsx`
 - **教训**：对局页要区分“公开记录流”和“当前戏剧化发言”；观众视角从请求源头就不能拿 private 数据，不能只靠前端隐藏；运行昂贵实验的按钮不应出现在演示前台。
+
+### 对局页控制入口和发言归档
+- **发生时间 / Session**：2026-06-07 ｜ Codex
+- **现象**：用户再次强调音乐应在进入页面时出现且使用右上角图标；语言切换只应在设置里；角色发言要一段一段先在底部大气泡展示，完成后再进入上方日志；普通观众夜晚不能看到具体角色行动或想法；终局弹窗要能导出整局对局记录。
+- **根因**：这是对 Demo 观战台信息架构的稳定偏好，不只是单个样式 bug。重复控制、未归档发言和公开夜晚细节都会让非技术观众误解页面边界。
+- **解决方案**：前端只保留设置弹窗语言入口；底部发言负责播放、上方日志负责归档；公开夜晚统一展示“行动完毕/等待天亮”，全局视角才展示完整夜间行动；终局提供 JSON 导出。
+- **涉及文件 / 模块**：`frontend/` 对局页与 `backend/engine/models.py`
+- **教训**：Demo UI 的信息边界要比调试页面更克制，公开观众只看叙事结果，全局视角才看系统细节。
 
 ### 关于规则正确性
 - **猎人死亡 → 开枪、遗言环节、信息隔离**一个都不能漏。

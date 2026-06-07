@@ -16,8 +16,8 @@ export function AIStatusBar({ gameState, derived, language, viewMode }: AIStatus
   const isAudienceNight = viewMode === ViewMode.PUBLIC && Boolean(gameState?.phase?.startsWith("NIGHT_"));
   const { statusTitle, actionText } = isAudienceNight
     ? {
-        statusTitle: language === "zh" ? "夜晚行动中" : "Night actions",
-        actionText: language === "zh" ? "隐藏身份与夜间目标" : "roles and targets hidden",
+        statusTitle: language === "zh" ? "夜晚行动完毕" : "Night actions complete",
+        actionText: language === "zh" ? "等待天亮公布结果" : "waiting for daybreak results",
       }
     : deriveStatusText(gameState, language, derived.speakerState);
 

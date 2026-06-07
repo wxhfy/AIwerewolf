@@ -28,12 +28,8 @@ export const ChatBubble = memo(function ChatBubble({
   speakerName, seat, content, phaseLabel,
   isOwn = false, isSystem = false, isSpeaking = false,
   eventType, eventPhase,
-  onTypewriterComplete,
   players,
 }: ChatBubbleProps) {
-  React.useEffect(() => {
-    if (!isSystem) onTypewriterComplete?.();
-  }, [isSystem, onTypewriterComplete]);
   const displayContent = content.trim();
 
   // System / phase messages → PhasePlaque with ceremony
