@@ -194,7 +194,7 @@ StrategyKnowledgeDoc (持久化知识)
 | `ScoredStep` 覆盖率 | 27/27 (100%) | 所有决策都被评分 |
 | `source_event_ids` 贯通 | 100% | 知识文档回链到原始事件 |
 | `source_game_ids` 贯通 | 100% | 知识文档回链到来源对局 |
-| Active 池零污染 | 1065→1065 (delta=0) | strict mode 验证通过 |
+| Active 池零污染 | 935→935 (delta=0) | strict mode 验证通过 |
 
 ---
 
@@ -205,7 +205,7 @@ StrategyKnowledgeDoc (持久化知识)
 ```
 $ python scripts/run_backend_full_strict.py
 Game edbde010 | 7 players | 1 day | Village wins | 1553s
-Active pool: 1065 → 1065 (delta=0)
+Active pool: 935 → 935 (delta=0)
 Candidate pool: +194
 Knowledge lessons: 99
 STRICT MODE: PASSED

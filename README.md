@@ -3,9 +3,9 @@
 多智能体狼人杀 — 对战 · 复盘 · 进化
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Python](https://img.shields.io/badge/python-3.12-blue)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/python-3.8+-blue)](https://www.python.org/)
 [![CI](https://img.shields.io/badge/CI-lint%20%2B%20test-brightgreen)](.github/workflows/ci.yml)
-[![PostgreSQL](https://img.shields.io/badge/db-PostgreSQL%2015-336791?logo=postgresql)](https://www.postgresql.org/)
+[![PostgreSQL](https://img.shields.io/badge/db-PostgreSQL%2016-336791?logo=postgresql)](https://www.postgresql.org/)
 [![Next.js](https://img.shields.io/badge/frontend-Next.js%2014-black?logo=next.js)](https://nextjs.org/)
 
 ---
@@ -39,7 +39,7 @@ docker run -d --name werewolf-pg \
   -e POSTGRES_USER=werewolf \
   -e POSTGRES_PASSWORD=wolf_secret_2026 \
   -e POSTGRES_DB=werewolf \
-  -p 5433:5432 postgres:15
+  -p 5433:5432 postgres:16-alpine
 
 # 4. 启动后端
 make dev
@@ -66,9 +66,9 @@ python scripts/run_experiment.py --games 12
 
 | 层 | 技术 |
 |------|------|
-| 后端 | Python 3.12 · FastAPI · WebSocket · LangChain |
-| 前端 | Next.js 14 · React 19 · Tailwind CSS |
-| 数据库 | PostgreSQL 15（Docker，端口 5433） |
+| 后端 | Python 3.8+ · FastAPI · WebSocket |
+| 前端 | Next.js 14 · React 18 · Tailwind CSS |
+| 数据库 | PostgreSQL 16（Docker，端口 5433） |
 | LLM | Anthropic-format 端点：DeepSeek V4 Pro/Flash via `api.deepseek.com/anthropic` |
 | 检索 | BM25 + 倒排索引 · Agent 工具调用 |
 | 评测 | LLM Judge Panel · 反事实推演 |
@@ -118,8 +118,11 @@ AIwerewolf/
 |------|------|------|
 | 大厅 | `/` | 创建对局、进入房间 |
 | 对局观战 | `/room/[id]/play` | 实时观战，主持/观众视角切换 |
+| 人类玩家 | `/room/[id]/human` | 人类玩家操作面板 |
 | 策略进化 | `/evolution` | 消融实验、策略卡片、知识库、B/C 验收 |
 | 评测仪表盘 | `/eval/dashboard` | 单局报告、对局统计 |
+| 单局复盘 | `/games/[id]/report` | 完整复盘报告 |
+| 人格管理 | `/personas` | MBTI 人格配置 |
 
 ---
 
