@@ -49,20 +49,23 @@ def run_one(seed: int, track_c: bool) -> dict:
     from backend.engine.rules import build_players
     from backend.agents.factory import create_agents
     from backend.engine.game import WerewolfGame
-    from backend.agents.characters import build_character_roster
+    from backend.agents.characters import build_character_roster, Character
 
     players = build_players(seed=seed)
     mbti_map = assign_mbti_balanced(seed, players)
 
-    # Override persona assignments for controlled MBTI coverage
-    character_map = {}
+    # Build character roster normally, then override MBTI
+    roster = build_character_roster(seed=seed, players=players)
     for p in players:
-        if p.is_ai:
-            character_map[p.id] = {
-                "role": p.role,
-                "persona": {"mbti": mbti_map[p.id]},
-            }
+        if p.is_ai and p.id in roster:
+            target_mbti = mbti_map[p.id]
+            char = roster[p.id]
+            if hasattr(char, 'persona') and char.persona:
+                char.persona.mbti = target_mbti
+            if hasattr(char, 'profile') and char.profile:
+                char.profile.mbti = target_mbti
 
+    character_map = {p.id: roster[p.id] for p in players if p.id in roster}
     agents = create_agents(players, {"type": "llm", "seed": seed, "character_map": character_map})
     game = WerewolfGame(players=players, agents=agents, seed=seed, max_days=4)
     state = game.play()
