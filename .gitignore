@@ -272,3 +272,15 @@ backups/
 # Root-level experiment/result JSON artifacts
 /*.json
 outputs/
+
+# Screenshots
+*.png
+
+# Claude Code worktrees (stale)
+.claude/worktrees/
+
+# Old DB backup
+data/werewolf.db.bak
+
+# Agent skill caches
+.agents/
