@@ -251,6 +251,8 @@ references/
 frontend/public/experiments/
 docs/experiments/
 docs/html_plan/
+docs/archive/
+TODO.md
 
 # Planning docs (transient)
 plans/

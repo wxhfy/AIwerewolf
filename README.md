@@ -150,11 +150,9 @@ ruff format --check backend/ scripts/ tests/ configs/
 | 文档 | 说明 |
 |------|------|
 | [`backend_acceptance_criteria.md`](docs/backend_acceptance_criteria.md) | B/C 验收标准 |
-| [`DEVELOPMENT_ISSUES.md`](docs/DEVELOPMENT_ISSUES.md) | 开发问题追踪与教训 |
-| [`DATA_FLOW.md`](docs/DATA_FLOW.md) | 端到端数据流 |
 | [`OPTIMIZATION_BENCHMARK.md`](docs/OPTIMIZATION_BENCHMARK.md) | API 调用优化效果基准 |
+| [`DATA_FLOW.md`](docs/DATA_FLOW.md) | 端到端数据流 |
 | [`prd.md`](docs/prd.md) | 产品需求文档 |
-| [`experiments/`](docs/experiments/) | 实验报告（多层级胜率、Track C 验收） |
 
 ---
 
