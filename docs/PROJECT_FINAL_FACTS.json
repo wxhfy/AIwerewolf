@@ -192,7 +192,7 @@
       ],
       "evidence": [
         "backend/db/models.py",
-        "PostgreSQL 快照：2026-06-07 13:55:01 UTC，22 张表，250603 条 agent_decisions"
+        "PostgreSQL 快照：2026-06-07 13:55:01 UTC，23 张表，250603 条 agent_decisions"
       ],
       "status": "当前数据库可查询。",
       "limitations": [
@@ -423,7 +423,7 @@
     "real_metrics": [
       {
         "metric": "PostgreSQL table count",
-        "value": 22,
+        "value": 23,
         "source": "PostgreSQL full query, docker exec werewolf-pg, 2026-06-07 13:55:01 UTC"
       },
       {

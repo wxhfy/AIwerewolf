@@ -399,7 +399,7 @@
   },
   "database": {
     "available": true,
-    "table_count": 22,
+    "table_count": 23,
     "core_tables": [
       "games",
       "players",

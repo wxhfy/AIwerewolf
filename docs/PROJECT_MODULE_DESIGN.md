@@ -214,7 +214,7 @@
 
 **设计收益**：可审计、可复盘、可统计、可做实验分析、支撑 Track B/C。
 
-**验收方式**：strict preflight；PostgreSQL 查询。当前快照：22 张表、`agent_decisions=250603`，来源：PostgreSQL 查询，2026-06-07 13:55:01 UTC。
+**验收方式**：strict preflight；PostgreSQL 查询。当前快照：23 张表、`agent_decisions=250603`，来源：PostgreSQL 查询，2026-06-07 13:55:01 UTC。
 
 **当前限制**：数据库包含历史和运行中数据；正式指标需按 experiment_id / provider / strict 标记过滤。
 
