@@ -1060,10 +1060,10 @@ def _upsert_strategy_knowledge_rows(db, docs: list[StrategyKnowledgeDocData]) ->
             existing.confidence = max(existing.confidence or 0, doc.confidence or 0)
             existing.updated_at = doc.updated_at if doc.updated_at else existing.updated_at
 
-            # Promotion: ≥3 source games + confidence ≥ 0.90 → active
-            # Also use explicit promote.py pipeline for quality/cluster/feedback/prune
-            if existing.status == "candidate" and total_games >= 3 and (existing.confidence or 0) >= 0.90:
-                existing.status = "active"
+            # Note: promotion from candidate → active is handled explicitly
+            # via scripts/promote.py (quality/cluster/feedback/prune modes).
+            # New entries always start as candidate; cross-game dedup still
+            # merges quality scores and source IDs for future promotion decisions.
 
             saved.append(_knowledge_row_to_dict(existing))
         else:
