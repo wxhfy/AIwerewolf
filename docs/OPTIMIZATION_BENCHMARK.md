@@ -102,7 +102,7 @@
 
 ```bash
 LLM_PROVIDER=anthropic
-ANTHROPIC_AUTH_TOKEN=sk-...
+ANTHROPIC_AUTH_TOKEN=<your-api-key>
 ANTHROPIC_BASE_URL=https://api.deepseek.com/anthropic
 ANTHROPIC_MODEL=deepseek-v4-flash
 

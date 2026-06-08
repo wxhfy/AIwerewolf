@@ -1,6 +1,8 @@
 # AI Werewolf — 端到端数据流 & 证据链
 
 > 2026-06-05 | 验证: STRICT MODE PASSED | 全链路贯通
+>
+> 口径说明（2026-06-08）：本文主体记录 2026-06-05 strict run 的证据链快照。当前代码侧协议以 `backend/engine/models.py`、`backend/db/models.py`、`skills/40-agent-development.md`、`skills/50-api-contract.md` 为准；当前 ORM 映射为 20 张核心表，历史实验数据库可能含额外实验/快照表。
 
 ---
 
@@ -19,13 +21,13 @@
 │   parsed_action._tool_trace: [{tool, query, results}]                │
 │   parsed_action._auto_injected_strategies: [strategy_doc_ids]        │
 │   raw_output: LLM 原始输出                                            │
-│   decision: {speech, vote_target, skill_target}                      │
+│   decision: {speech, target_id/action payload by action_type}         │
 │   model / tokens_used / latency_ms                                   │
 └──────────────┬──────────────────────────────────────────────────────┘
                │
                ▼
 ┌──────────────────────────────────────────────────────────────────────┐
-│ PHASE 2: 赛后评分 (Track B)                                            │
+│ PHASE 2: 赛后复盘分析 (Track B)                                               │
 │                                                                      │
 │ post_game.py / track_b.py                                            │
 │   │  PerStepScorer.score_all(decisions, state, speech_acts)           │
@@ -35,13 +37,13 @@
 │   │    talk: speech_act stance + risk_flags + grounded_event_ids      │
 │   │    night: action_type match against target role                   │
 │   │                                                                  │
-│   ├── Tier 2 light LLM (12%):                                        │
+│   ├── Tier 2 light LLM review (12%):                                 │
 │   │    ambiguous decisions (correctness ∈ [0.25, 0.75])               │
-│   │    → single Judge LLM → light_llm_score / 10.0                    │
+│   │    → single LLM review → light_llm_score / 10.0                   │
 │   │                                                                  │
 │   └── Tier 3 heavy LLM (3%):                                         │
 │       high-impact + ambiguous (impact > 0.5)                          │
-│       → 3-judge panel with trimmed mean + Critic review               │
+│       → 3-review panel with trimmed mean + Critic review              │
 │       → heavy_llm_score / 10.0 + judge_agreement (std)                │
 │                                                                      │
 │   ▼                                                                  │
@@ -157,7 +159,7 @@ AgentDecision (Agent 决策记录)
   decision: {vote_target: "player_3"}
        │
        ▼
-DecisionScore (Track B 评分)
+DecisionScore (Track B 决策质量记录)
   decision_id: "dec_xyz789"
   correctness: 0.85
   scoring_tier: "deterministic"
@@ -191,7 +193,7 @@ StrategyKnowledgeDoc (持久化知识)
 | 指标 | 值 | 说明 |
 |------|-----|------|
 | `agent_decisions` 含 tool_trace | 26/27 (96.3%) | 每条决策带完整工具调用追踪 |
-| `ScoredStep` 覆盖率 | 27/27 (100%) | 所有决策都被评分 |
+| `ScoredStep` 覆盖率 | 27/27 (100%) | 所有决策均进入复盘链路 |
 | `source_event_ids` 贯通 | 100% | 知识文档回链到原始事件 |
 | `source_game_ids` 贯通 | 100% | 知识文档回链到来源对局 |
 | Active 池零污染 | 935→935 (delta=0) | strict mode 验证通过 |
@@ -215,20 +217,20 @@ STRICT MODE: PASSED
 
 | 模块 | 状态 | 关键指标 |
 |------|------|----------|
-| DB | ✅ | 21 表, FK 约束完整 |
+| DB | ✅ | 历史 strict run 表结构通过；当前代码口径为 20 张核心 ORM 表 |
 | LLM | ✅ | doubao-seed-2.0-pro OK |
 | Game Engine | ✅ | 全流程跑通, 无跳过/死循环 |
 | Agent Decision | ✅ | 26/27 带完整工具追踪 |
 | Information Isolation | ✅ | 92/92 边界检查通过 |
 | Strategy Retrieval | ✅ | Agent search < 500ms, 4-filter 正确 |
-| Track B Scoring | ✅ | 100% 覆盖率, 三级级联正确 |
+| Track B Review | ✅ | 100% 覆盖率, 三级复核链路正确 |
 | Track B Review | ✅ | PublishedReview approved |
 | Track C Knowledge | ✅ | 99 lessons, candidate 写入正确 |
 | Track C Evolution | ⚠️ | Promote 逻辑正确, 待更多对局验证 |
 | Experiment | ✅ | 4 tier 各 ≥ 12 局, Bootstrap 95% CI |
 | Preflight | ✅ | 7/7 项预检通过 |
-| Error Handling | ✅ | 降级链 + SAVEPOINT + 幂等守卫 |
+| Error Handling | ✅ | LLM strict/no-fallback 路径 + SAVEPOINT + 幂等守卫 |
 
 ---
 
-*由小爪整理 (๑•̀ㅂ•́)و✧*
+*历史 strict run 证据链快照；当前接口以代码和 skills/50-api-contract.md 为准。*

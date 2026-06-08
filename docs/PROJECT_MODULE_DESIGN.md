@@ -66,7 +66,7 @@
 | 狼队视图 | 仅狼人阵营可见队友身份 |
 | legal_targets | 将合法目标显式给 Agent，减少非法输出 |
 
-**设计收益**：防止上帝视角；让推理更接近真实玩家；为赛后评分提供“当时可见事实”边界。
+**设计收益**：防止上帝视角；让推理更接近真实玩家；为赛后复盘提供“当时可见事实”边界。
 
 **验收方式**：`scripts/verify_visibility_strict.py`；`docs/backend_acceptance_criteria.md` 记录 92 项边界检查通过。
 
@@ -188,7 +188,7 @@
 
 | 输入 | 输出 |
 |---|---|
-| 对局运行记录、Agent 决策、评分、复盘、知识、反馈 | games、players、events、decisions、evaluations、reviews、knowledge docs |
+| 对局运行记录、Agent 决策、复盘指标、知识、反馈 | games、players、events、decisions、evaluations、reviews、knowledge docs |
 
 **内部流程**：
 
@@ -207,20 +207,20 @@
 | `game_events` | 事件流 |
 | `game_snapshots` | 主持视角与公开视角快照 |
 | `agent_decisions` | 决策审计 |
-| `evaluations` | 评分记录 |
+| `evaluations` | 决策质量与复盘指标记录 |
 | `published_reviews` | 复盘报告 |
 | `strategy_knowledge_docs` | 策略知识 |
 | `knowledge_usage_feedback` | 策略使用反馈 |
 
 **设计收益**：可审计、可复盘、可统计、可做实验分析、支撑 Track B/C。
 
-**验收方式**：strict preflight；PostgreSQL 查询。当前快照：23 张表、`agent_decisions=250603`，来源：PostgreSQL 查询，2026-06-07 13:55:01 UTC。
+**验收方式**：strict preflight；PostgreSQL 查询。当前 PostgreSQL 快照显示 public base tables 为 22，`agent_decisions=250603`，来源：PostgreSQL 查询，2026-06-07 13:55:01 UTC。
 
 **当前限制**：数据库包含历史和运行中数据；正式指标需按 experiment_id / provider / strict 标记过滤。
 
 ## 7. PerStepScorer
 
-**模块定位**：Track B 逐步决策评分器。
+**模块定位**：Track B 逐步复盘分析器。
 
 **输入输出**：
 
@@ -321,4 +321,3 @@
 **验收方式**：前端代码存在，`docs/assets/closure/screenshots/` 有结项展示截图。
 
 **当前限制**：本轮未重新跑 Playwright 视觉验收；WebSocket 延迟和公开/主持视角切换需专项验证。
-

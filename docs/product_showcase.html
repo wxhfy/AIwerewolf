@@ -220,16 +220,16 @@
         <path d="M21 12.8A8.5 8.5 0 1 1 11.2 3a6.6 6.6 0 0 0 9.8 9.8Z" fill="#e2a44c" opacity="0.92"/>
       </svg>
       <h1><span class="en">Play · Evaluate · Evolve</span>多智能体狼人杀研究平台</h1>
-      <p class="lede">每个 AI 玩家拥有独立的 <b>MBTI 人格 + 角色技能 + 可检索策略知识</b>，在<b>严格信息隔离</b>下推理、发言与投票；一局结束后由 <b>LLM 评审团</b>复盘打分，从对局中提炼策略知识沉淀入库，<b>回流</b>给下一代 Agent，形成自进化闭环。</p>
+      <p class="lede">每个 AI 玩家拥有独立的 <b>MBTI 人格 + 角色技能 + 可检索策略知识</b>，在<b>严格信息隔离</b>下推理、发言与投票；一局结束后由 <b>复盘分析系统</b>定位关键决策，从对局中提炼策略知识沉淀入库，<b>回流</b>给下一代 Agent，形成自进化闭环。</p>
       <div class="trio">
         <div class="t"><div class="k">Play · 对战</div><h3>多 Agent 博弈</h3><p>游戏引擎 + 认知 Agent + 实时观战</p></div>
-        <div class="t"><div class="k">Evaluate · 复盘</div><h3>量化评估每一步</h3><p>LLM Judge 评审团 + 多维打分 + 验收门</p></div>
+        <div class="t"><div class="k">Evaluate · 复盘</div><h3>解释关键决策</h3><p>LLM 复核 + 证据链 + 反事实建议</p></div>
         <div class="t"><div class="k">Evolve · 进化</div><h3>策略知识回流</h3><p>知识提炼 → 知识库 → Agent 版本 → 晋级</p></div>
       </div>
       <div class="statstrip">
         <div class="s"><b>~50k</b><span>后端代码行</span></div>
-        <div class="s"><b>354</b><span>测试用例</span></div>
-        <div class="s"><b>23</b><span>PostgreSQL 表</span></div>
+        <div class="s"><b>~397</b><span>pytest 测试函数</span></div>
+        <div class="s"><b>20</b><span>核心 ORM 表</span></div>
         <div class="s"><b>100%</b><span>严格模式 LLM 决策率</span></div>
         <div class="s"><b>92/92</b><span>信息隔离边界检查</span></div>
       </div>
@@ -243,7 +243,7 @@
         <thead><tr><th>主线</th><th>含义</th><th>对应能力</th></tr></thead>
         <tbody>
           <tr><td><b style="color:var(--accent)">对战 Play</b></td><td>多 Agent 在完整规则下博弈</td><td>游戏引擎 + 认知 Agent + 实时观战</td></tr>
-          <tr><td><b style="color:var(--teal)">复盘 Evaluate</b></td><td>量化评估每个玩家每一步的质量</td><td>LLM Judge 评审团 + 多维打分 + 验收门</td></tr>
+          <tr><td><b style="color:var(--teal)">复盘 Evaluate</b></td><td>解释每个玩家关键行动的质量</td><td>LLM 复核 + 证据链 + 反事实建议</td></tr>
           <tr><td><b style="color:var(--good)">进化 Evolve</b></td><td>把复盘结论变成更强的策略</td><td>知识提炼 → 知识库 → Agent 版本 → 晋级</td></tr>
         </tbody>
       </table>
@@ -310,7 +310,7 @@
 
       <div class="card">
         <h3>认知 Agent <span class="loc">Observe → Think → Act</span></h3>
-        <div class="role">每个 AI 玩家的"大脑"，承载项目 70% 的能力评分。</div>
+        <div class="role">每个 AI 玩家的"大脑"，连接玩家视图、角色策略、历史记忆和最终行动。</div>
         <dl class="why">
           <dt>设计动机</dt><dd>经典 AIWolf 接口把"思考"当黑箱；我们要一个思考过程本身就<b>结构化、可观测、可复盘</b>的 Agent，于是重构成显式的"观察→思考→行动→反思"循环。</dd>
           <dt class="amber">为什么这么设计</dt><dd>给 Agent 配<b>信念 + 量化人格 + 记忆 + 社会模型</b>的内部状态，而非每次裸调 LLM（避免金鱼记忆、人格漂移）；思考阶段用<b>有限轮次的工具调用</b>按需检索，而非把海量知识无差别塞进上下文。</dd>
@@ -319,12 +319,12 @@
       </div>
 
       <div class="card">
-        <h3>评测体系 Track B <span class="loc">量化每一步</span></h3>
-        <div class="role">客观回答"这一步打得好还是烂"，并生成结构化复盘。</div>
+        <h3>复盘分析 Track B <span class="loc">解释每一步</span></h3>
+        <div class="role">分析关键发言、投票和技能行动，并生成结构化复盘。</div>
         <dl class="why">
-          <dt>设计动机</dt><dd>参考 WereWolfPlus 的多模型评测，但碰到现实矛盾：LLM 当裁判最准，却又慢又贵，全用评审团做不了规模实验。</dd>
-          <dt class="amber">为什么这么设计</dt><dd>按"影响力 × 模糊度"做<b>三级打分级联</b>：~85% 规则判定（零成本）、~12% 轻量 LLM、~3% 评审团（3 评委 + Critic + 截尾均值）。贵的算力只花在"既关键又难判"的决策上。</dd>
-          <dt class="good">好处</dt><dd>在可接受成本下拿到接近"全评审团"的质量；实测对赢家/输家的区分达<b>大效应量</b>（见设计历程阶段 4）。</dd>
+          <dt>设计动机</dt><dd>只看胜负无法解释关键转折；复杂决策需要 LLM 复核，但每一步都走重分析流程成本过高。</dd>
+          <dt class="amber">为什么这么设计</dt><dd>按"影响力 × 模糊度"做<b>三级分析级联</b>：~85% 规则判定（零成本）、~12% 轻量 LLM、~3% 多路复核（多路 LLM + Critic + 截尾均值）。重分析只用于"既关键又难判"的决策。</dd>
+          <dt class="good">好处</dt><dd>在可接受成本下生成足够细的复盘证据；历史离线实验对赢家/输家的区分达<b>大效应量</b>（见设计历程阶段 4）。</dd>
         </dl>
       </div>
 
@@ -343,7 +343,7 @@
           <h3>LLM 接入层</h3>
           <dl class="why">
             <dt class="amber">为什么</dt><dd>一套接口适配 Anthropic / OpenAI 双格式，提供商 `.env` 可切；另备一个 <b>fake 假模型</b>。</dd>
-            <dt class="good">好处</dt><dd>换模型、做多模型对比时业务零改动；用假模型可离线、可重复跑 354 个测试。</dd>
+            <dt class="good">好处</dt><dd>换模型、做多模型对比时业务零改动；用假模型可离线、可重复跑约 397 个 pytest 测试函数。</dd>
           </dl>
         </div>
         <div class="card" style="margin:0">
@@ -420,7 +420,7 @@
             <div class="st-head"><span class="st-no">STAGE 3</span><h4>Agentic 检索 + 检索策略优化 ⭐</h4></div>
             <p class="mot"><b>动机：</b>全塞 prompt 又贵又不精准，需"按需检索"并找到最优检索约束。<b>改动：</b>改为工具调用按需检索；在 26 查询 / 924 文档上对比 6 种检索策略。</p>
             <div class="effect">
-              <div class="et">效果（离线 / LLM-judge 弱标注评估；源已随仓库清理移除，在线 A/B 待补） <span class="badge arch">离线·归档</span></div>
+              <div class="et">效果（离线 / LLM 复核弱标注；源已随仓库清理移除，在线 A/B 待补） <span class="badge arch">离线·归档</span></div>
               <div class="ba">
                 <div class="lab"><span class="nm">P@3（相关性）</span><span class="delta">+0.47</span></div>
                 <div class="bars"><div class="bbar" style="width:9.6%"></div><div class="abar" style="width:56.4%"></div></div>
@@ -442,10 +442,10 @@
 
         <div class="stage t">
           <div class="card">
-            <div class="st-head"><span class="st-no">STAGE 4</span><h4>评测体系：三级打分级联 + 评审团</h4></div>
-            <p class="mot"><b>动机：</b>全用评审团太贵；又必须真正区分好坏。<b>改动：</b>85% 规则 / 12% 轻量 LLM / 3% 评审团（3 评委 + Critic + 截尾均值）。</p>
+            <div class="st-head"><span class="st-no">STAGE 4</span><h4>复盘分析：三级分析级联 + 多路复核</h4></div>
+            <p class="mot"><b>动机：</b>全用重 LLM 流程太贵；关键决策又必须给出可信解释。<b>改动：</b>85% 规则 / 12% 轻量 LLM / 3% 多路复核（多路 LLM + Critic + 截尾均值）。</p>
             <div class="effect">
-              <div class="et">效果（Phase-0 旧规则打分器·源已归档，56 局/392 打分） <span class="badge arch">归档·待在线验证</span></div>
+              <div class="et">效果（Phase-0 旧规则分析器·源已归档，56 局/392 条决策） <span class="badge arch">归档·待在线验证</span></div>
               <p style="font-size:13px;color:var(--muted);margin:0 0 8px">赢家 vs 输家分数判别效应量 Cohen's d（虚线为"大效应"阈值 0.8，六角色全部 p&lt;0.0001）：</p>
               <div class="bar-row"><span class="lab">Werewolf</span><div class="track"><div class="fill" style="width:92%"></div><div class="thresh" style="left:26.7%"><span>d=0.8</span></div></div><span class="val">2.76</span></div>
               <div class="bar-row"><span class="lab">Villager</span><div class="track"><div class="fill" style="width:78%"></div><div class="thresh" style="left:26.7%"></div></div><span class="val">2.35</span></div>
@@ -453,7 +453,7 @@
               <div class="bar-row"><span class="lab">Guard</span><div class="track"><div class="fill" style="width:75%"></div><div class="thresh" style="left:26.7%"></div></div><span class="val">2.26</span></div>
               <div class="bar-row"><span class="lab">Witch</span><div class="track"><div class="fill teal" style="width:62%"></div><div class="thresh" style="left:26.7%"></div></div><span class="val">1.86</span></div>
               <div class="bar-row"><span class="lab">Seer</span><div class="track"><div class="fill teal" style="width:42%"></div><div class="thresh" style="left:26.7%"></div></div><span class="val">1.26</span></div>
-              <p style="font-size:12.5px;color:var(--faint);margin:8px 0 0">→ 只对 3% 决策动用昂贵评审团，打分仍能以大效应量区分胜负方——"省而不废"。</p>
+              <p style="font-size:12.5px;color:var(--faint);margin:8px 0 0">→ 只对少量关键决策启用重分析流程，仍能保留可解释的胜负差异信号。</p>
             </div>
           </div>
         </div>
@@ -507,7 +507,7 @@
 
       </div>
 
-      <div class="note" style="margin-top:8px"><b>横向小结：</b>真正经过实测验证有效的是<b>检索约束、打分判别力、信息隔离、严格对局稳定性</b>这几步；而"分层认知 / 知识回流对净胜率的增益"仍需扩样本 A/B 验证（已如实标注）——这正是后续补充实验要填的坑。</div>
+      <div class="note" style="margin-top:8px"><b>横向小结：</b>真正经过实测验证有效的是<b>检索约束、复盘指标判别力、信息隔离、严格对局稳定性</b>这几步；而"分层认知 / 知识回流对净胜率的增益"仍需扩样本 A/B 验证（已如实标注）——这正是后续补充实验要填的坑。</div>
     </section>
 
     <!-- 6 实测成果 -->
@@ -519,12 +519,12 @@
         <div class="kpi"><b class="green">92/92</b><span>信息隔离边界检查通过</span></div>
         <div class="kpi"><b class="green">20/20</b><span>批量对局完成率（seeds 300–319）</span></div>
         <div class="kpi"><b class="green">0</b><span>活跃知识池污染（约 99 lessons/局）</span></div>
-        <div class="kpi"><b>23</b><span>PostgreSQL 表（25 万+ 决策）</span></div>
+        <div class="kpi"><b>20</b><span>核心 ORM 表（历史快照 25 万+ 决策）</span></div>
         <div class="kpi"><b>edbde010</b><span>结项验收局（7P / 村民胜 / 1553s）</span></div>
-        <div class="kpi"><b>354</b><span>测试用例（支持无 API 离线）</span></div>
+        <div class="kpi"><b>~397</b><span>pytest 测试函数（支持无 API 离线）</span></div>
         <div class="kpi"><b>~1100</b><span>行问题闭环记录</span></div>
       </div>
-      <p style="font-size:13px;color:var(--faint);margin:12px 0 0">早期 / 离线证据（源已归档，在线验证待补）：检索 P@3 0.096→0.564、打分判别 Cohen's d 1.26–2.76。<code>PROJECT_FINAL_FACTS.json</code> 已将其在线有效性列为 needs_experiment。</p>
+      <p style="font-size:13px;color:var(--faint);margin:12px 0 0">早期 / 离线证据（源已归档，在线验证待补）：检索 P@3 0.096→0.564、复盘指标判别 Cohen's d 1.26–2.76。<code>PROJECT_FINAL_FACTS.json</code> 已将其在线有效性列为 needs_experiment。</p>
     </section>
 
     <!-- 7 路线图 -->
@@ -537,7 +537,7 @@
             <li>完整游戏引擎（十几个阶段、信息隔离）</li>
             <li>认知 Agent（OTA + 工具调用 + 信念/人格/记忆）</li>
             <li>32 个 MBTI 人格 · 狼队协同</li>
-            <li>LLM 评审团 + 三级打分 + Track B 复盘发布</li>
+            <li>LLM 复核 + 三级分析 + Track B 复盘发布</li>
             <li>知识提炼与回流闭环（L0–L4 + 4 重过滤）</li>
             <li>全栈观战 UI + 断线重连</li>
           </ul>
@@ -562,7 +562,7 @@
       <p class="lead">设计阶段系统研究过的开源工作。遵循"理解设计、自己重写、不复制代码、不引入 GPL"原则，列出各自的具体借鉴点。</p>
       <ol class="refs">
         <li><span class="rn">wolfcha</span><span class="p0">P0</span><span class="src">AI 狼人杀产品标杆（1 真人 vs N AI，双层扮演）。借鉴：多阶段 Phase 模型、Persona/MBTI 人格生成、纯函数式游戏逻辑、前端产品形态。<br/><span class="url">github.com/oil-oil/wolfcha</span></span></li>
-        <li><span class="rn">WereWolfPlus</span><span class="p0">P0</span><span class="src">多模型评测框架（YAML 配置化批量对战）。借鉴：分层 Prompt 模板、按动作组织的提示工程、评测指标体系、GameView 式信息隔离。<br/><span class="url">github.com/Char-lotte-Xia/WereWolfPlus</span></span></li>
+        <li><span class="rn">WereWolfPlus</span><span class="p0">P0</span><span class="src">多模型对比框架（YAML 配置化批量对战）。借鉴：分层 Prompt 模板、按动作组织的提示工程、对比指标体系、GameView 式信息隔离。<br/><span class="url">github.com/Char-lotte-Xia/WereWolfPlus</span></span></li>
         <li><span class="rn">AIWolfPy</span><span class="p0">P0</span><span class="src">AIWolf 比赛平台 Python SDK。借鉴：Agent 生命周期与标准化决策接口（我们在此基础上重构为 Observe–Think–Act）。<br/><span class="url">github.com/aiwolf/AIWolfPy</span></span></li>
         <li><span class="rn">AIWolfSharp</span><span class="p0">P0</span><span class="src">AIWolf 的 C# 完整实现（Server/Client 分离）。借鉴：标准化 IPlayer 接口与 GameInfo 富状态数据结构。<br/><span class="url">github.com/AIWolfSharp/AIWolfSharp</span></span></li>
         <li><span class="rn">xiong35/werewolf</span><span class="p0">P0</span><span class="src">线下面杀辅助全栈产品（Socket.IO + 前后端分离）。借鉴：实时通信架构、房间系统、事件表、断线重连、getPublic() 式公开信息投影。<br/><span class="url">github.com/xiong35/werewolf</span></span></li>
@@ -574,7 +574,7 @@
         <li><span class="rn">ReAct / Tool-Calling / Building Effective Agents</span><span class="src">推理中调用工具、观察结果后再决策 → 对应 AgentLoop 与工具体系。<span class="badge todo" style="margin-left:6px">正式引用待补</span></span></li>
         <li><span class="rn">Reflexion / Voyager</span><span class="src">将失败经验抽象为可复用记忆 / 技能 → 对应 Track C 知识提炼与回流。<span class="badge todo" style="margin-left:6px">正式引用待补</span></span></li>
         <li><span class="rn">RAG / BM25 / 信息检索</span><span class="src">用检索把外部知识注入上下文 → 对应 StrategyRetriever。<span class="badge todo" style="margin-left:6px">正式引用待补</span></span></li>
-        <li><span class="rn">LLM-as-a-Judge / 多评委评审</span><span class="src">用单 / 多评委评价复杂决策质量 → 对应 PerStepScorer 与评审团。<span class="badge todo" style="margin-left:6px">正式引用待补</span></span></li>
+        <li><span class="rn">LLM-as-a-Judge / 多路复核</span><span class="src">用单路 / 多路模型评价复杂决策质量 → 对应 PerStepScorer 与复盘复核流程。<span class="badge todo" style="margin-left:6px">正式引用待补</span></span></li>
       </ol>
 
       <footer>
