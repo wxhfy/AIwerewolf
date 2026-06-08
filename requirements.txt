@@ -6,3 +6,4 @@ pytest-timeout>=2.3
 sqlalchemy>=2.0
 psycopg2-binary>=2.9
 langchain-core>=0.2
+numpy>=1.26
