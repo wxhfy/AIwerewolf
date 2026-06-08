@@ -79,28 +79,29 @@ class AbstractedLesson:
     def to_pg_dict(self) -> Dict[str, Any]:
         """Convert to dict matching strategy_knowledge_docs table schema.
 
-        All list/dict fields are serialized to JSON strings so psycopg2
-        inserts them correctly into jsonb columns.
+        SQLAlchemy JSON columns accept native list/dict values here; keeping
+        them native also matches StrategyKnowledgeDocData's dataclass contract.
         """
-        import json as _json
-
         return {
+            "doc_id": f"{self.source_game_id}:{self.source_step_id}:{self.source_type}",
             "doc_type": "per_step_lesson",
             "role": self.target_role,
             "phase": self.phase,
             "persona_scope": self.target_persona_scope or None,
             "situation_pattern": self.situation_pattern,
-            "trigger_conditions": _json.dumps(self.trigger_conditions, ensure_ascii=False),
+            "trigger_conditions": list(self.trigger_conditions),
             "recommended_action": self.recommended_action,
             "avoid_action": self.avoid_action or None,
             "rationale": self.rationale,
             "quality_score": self.quality_score,
             "confidence": self.confidence,
-            "source_report_ids": _json.dumps([self.source_game_id], ensure_ascii=False),
-            "source_item_ids": _json.dumps([self.source_step_id], ensure_ascii=False),
-            "source_event_ids": _json.dumps(self.source_event_ids, ensure_ascii=False),
+            "source_report_ids": [self.source_game_id],
+            "source_item_ids": [self.source_step_id],
+            "source_event_ids": list(self.source_event_ids),
+            "counterfactual_ids": [],
+            "expected_metric_effects": [],
             "evidence_summary": self.evidence_summary,
-            "tags": _json.dumps(self.tags, ensure_ascii=False),
+            "tags": list(self.tags),
             "status": "candidate",
             "experiment_id": self.experiment_id or None,
             "source_game_id": self.source_game_id,
@@ -379,11 +380,10 @@ def store_lessons_to_db(
         return 0
 
     import logging
-    import os as _os
 
     from backend.db.database import SessionLocal
-    from backend.db.persist import _upsert_strategy_knowledge_rows
     from backend.db.persist import StrategyKnowledgeDocData
+    from backend.db.persist import _upsert_strategy_knowledge_rows
 
     logger = logging.getLogger(__name__)
 
@@ -393,6 +393,7 @@ def store_lessons_to_db(
         d = lesson.to_pg_dict()
         # Remove keys not in StrategyKnowledgeDocData
         d.pop("game_id", None)
+        d.pop("source_game_id", None)
         d.pop("id", None)  # Let upsert dedup by content, not UUID
         docs.append(StrategyKnowledgeDocData(**d))
 

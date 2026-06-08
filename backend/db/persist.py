@@ -932,6 +932,14 @@ def save_published_review(state: GameState) -> dict[str, Any]:
         db.close()
 
 
+def _to_iso(value: Any) -> str | None:
+    if value is None:
+        return None
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return str(value)
+
+
 def _knowledge_row_to_dict(row: StrategyKnowledgeDoc) -> dict[str, Any]:
     return {
         "doc_id": row.id,
@@ -957,8 +965,9 @@ def _knowledge_row_to_dict(row: StrategyKnowledgeDoc) -> dict[str, Any]:
         "failure_count": row.failure_count or 0,
         "status": row.status,
         "tags": row.tags or [],
-        "created_at": row.created_at.isoformat() if row.created_at else None,
-        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+        "experiment_id": getattr(row, "experiment_id", None),
+        "created_at": _to_iso(row.created_at),
+        "updated_at": _to_iso(row.updated_at),
         # L0-L4 Confidence Tier
         "confidence_tier": row.confidence_tier or "L3_strategic",
         "judge_agreement": row.judge_agreement,
@@ -1058,7 +1067,7 @@ def _upsert_strategy_knowledge_rows(db, docs: list[StrategyKnowledgeDocData]) ->
             existing.source_item_ids = merged_sources  # align with reports
             existing.source_event_ids = list(set((existing.source_event_ids or []) + (doc.source_event_ids or [])))
             existing.confidence = max(existing.confidence or 0, doc.confidence or 0)
-            existing.updated_at = doc.updated_at if doc.updated_at else existing.updated_at
+            existing.updated_at = _now()
 
             # Note: promotion from candidate → active is handled explicitly
             # via scripts/promote.py (quality/cluster/feedback/prune modes).
@@ -1093,6 +1102,8 @@ def _upsert_strategy_knowledge_rows(db, docs: list[StrategyKnowledgeDocData]) ->
             # Start as candidate; promotion happens above when 3+ games confirm
             row.status = "candidate"
             row.tags = doc.tags or []
+            if hasattr(row, "experiment_id"):
+                row.experiment_id = getattr(doc, "experiment_id", None)
 
             row.confidence_tier = getattr(doc, "confidence_tier", None) or "L3_strategic"
             row.judge_agreement = getattr(doc, "judge_agreement", None)
@@ -1579,7 +1590,7 @@ def get_evolution_dashboard() -> dict[str, Any]:
             if not any("一" <= c <= "鿿" for c in action):
                 continue
             # Skip raw player records (contain player names in situation)
-            sit = (row.situation_pattern or "")
+            sit = row.situation_pattern or ""
             if "对局教训" in sit or "对局总结" in sit:
                 continue
             key = (row.role, action[:80])

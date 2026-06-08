@@ -188,6 +188,7 @@ class StrategyKnowledgeDoc:
     neutral_count: int = 0
     status: str = "candidate"
     tags: list[str] = field(default_factory=list)
+    experiment_id: str | None = None
     embedding: list[float] = field(default_factory=list)
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     updated_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
