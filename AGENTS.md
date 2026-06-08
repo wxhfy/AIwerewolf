@@ -1,199 +1,286 @@
 # AGENTS.md — AI Werewolf 项目
 
 > **项目根目录**: `/home/fyh0106/AIwerewolf/`
-> **参考仓库**: `/home/fyh0106/AIwerewolf/references/`
+> **参考仓库**: `/home/fyh0106/AIwerewolf/references/`（local-only，不进入 GitHub）
 
-## 项目运行模式（**最高优先级，覆盖 skills/ 中的多人协作规则**）
+## 项目运行模式（最高优先级，覆盖 skills/ 中的多人协作规则）
 
 **当前阶段：单人开发**（owner: wxhfy / 付一涵）。
 
-- AI 可在用户授权后**直接 `git push` 到 main**：**无需** PR、**无需** review、**无需** 2 人 approve；merge / rebase / squash / cherry-pick 可自主决定。
-- 仍保留的护栏（**任何阶段都不放松**）：
-  1. 修改"重灾区"文件（`backend/engine/*`、`backend/protocols/schemas.py`、`backend/db/models.py`、`CLAUDE.md`、`AGENTS.md`、`SKILLS.md`、`skills/*`）前用一句话告知用户范围；
-  2. 不得 `git push --force` 到 main；
+- AI 可在用户授权后直接 `git push` 到 `main`：无需 PR、无需 review、无需 2 人 approve；merge / rebase / squash / cherry-pick 可自主决定。
+- 仍保留的护栏（任何阶段都不放松）：
+  1. 修改重灾区文件（`backend/engine/*`、`backend/protocols/schemas.py`、`backend/db/models.py`、`CLAUDE.md`、`AGENTS.md`、`SKILLS.md`、`skills/*`）前用一句话告知用户范围；
+  2. 不得 `git push --force` 到 `main`；
   3. 不得跳过 hook（`--no-verify` / `--no-gpg-sign`）；
   4. 不得把 API Key、`.env`、Prompt 全文写进 commit / PR / 代码注释；
   5. commit message 仍走 Conventional Commits（`feat / fix / docs / chore / refactor / test / perf`）。
-- **当团队规模 ≥ 2 时本段失效**，恢复 `skills/10-git-workflow.md` §一 / §三 / §七 与 `skills/70-ai-collaboration.md` §四的多人 PR 规则。
+- 当团队规模 >= 2 时本段失效，恢复 `skills/10-git-workflow.md` 和 `skills/70-ai-collaboration.md` 的多人 PR 规则。
 
 > 本段显式覆盖：
-> - `skills/10-git-workflow.md` §一"main 受保护、禁止直推"
-> - `skills/10-git-workflow.md` §三"至少 1 人 approve" + 重灾区"2 人 approve"
-> - `skills/10-git-workflow.md` §七"禁止 AI 直接 `git push` 到 main"
-> - `skills/70-ai-collaboration.md` §四"AI 必须先问人 → `git push origin main`"
+> - `skills/10-git-workflow.md` §一 “main 受保护、禁止直推”
+> - `skills/10-git-workflow.md` §三 “至少 1 人 approve” + 重灾区 “2 人 approve”
+> - `skills/10-git-workflow.md` §七 “禁止 AI 直接 git push 到 main”
+> - `skills/70-ai-collaboration.md` §四 “AI 必须先问人 -> git push origin main”
 
 ---
 
-## AI 助手开工指引（**必读**）
+## AI 助手开工指引（必读）
 
-接到任务后，按下面顺序读，缺一不可：
+接到任务后，按下面顺序读：
 
 1. **本文件（AGENTS.md）** — 项目速查
 2. **`SKILLS.md`** — 狼人杀业务知识 + 参考仓库
-3. **`skills/README.md`** → 进入 **团队协作规范** 索引：
-   - `skills/00-team-overview.md` — **全员必读**：三人横向分工、决策权
-   - `skills/10-git-workflow.md` — **全员必读**：分支 / Commit / PR / Review
-   - `skills/70-ai-collaboration.md` — **必读**：你（AI）必须遵守的红线
-   - 改后端代码：`skills/20-backend-conventions.md`
-   - 改前端代码：`skills/30-frontend-conventions.md`
+3. **`skills/README.md`** — 团队协作规范索引
+4. 按任务类型继续读：
+   - 改后端：`skills/20-backend-conventions.md`
+   - 改前端：`skills/30-frontend-conventions.md`
    - 改 Agent：`skills/40-agent-development.md`
-   - 改 API / Schema：`skills/50-api-contract.md`（任何跨前后端必读）
+   - 改 API / Schema：`skills/50-api-contract.md`
    - 写测试：`skills/60-testing-ci.md`
+   - 任何 AI 直接改代码：`skills/70-ai-collaboration.md`
 
-**铁律**：动代码前必须查对应 skills/ 文件；跨模块改动必须先列计划让人类确认。
-**披露**：PR 描述里必须说明哪些代码由 AI 生成（详见 `skills/70`）。
+**铁律**：动代码前必须查对应 `skills/` 文件；跨模块改动必须先列计划让人类确认。
 
-> 本文件与 `CLAUDE.md` **内容等价**，仅入口名不同（Claude Code 读 `CLAUDE.md`，Codex 通常读本文件）。改一份要同步改另一份。
+> 本文件与 `CLAUDE.md` 内容等价，仅入口名不同（Claude Code 读 `CLAUDE.md`，Codex 通常读本文件）。改一份要同步改另一份。
 
 ---
 
-## 项目概述
+## 当前项目概述
 
-AI 狼人杀多智能体对战系统 — 多 Agent 在信息不对称下协作/对抗。每个 Agent 扮演狼人杀角色（狼人、预言家、女巫等），拥有独立目标、策略和行动空间。
+AI Werewolf 是一个多智能体狼人杀研究平台：AI 玩家在严格信息隔离下完成狼人杀对局，并通过赛后复盘分析、复盘报告、策略知识抽取和检索回流形成 Play -> Evaluate -> Evolve 闭环。
 
-## 技术栈
+当前实现已经不只是 MVP：
 
-- **后端**: Python（FastAPI + asyncio）+ WebSocket
-- **前端**: Next.js + TypeScript + Tailwind CSS
-- **AI**: LLM API 多模型接入
-- **配置**: YAML
+- **Play**：`WerewolfGame` 引擎支持 7-12 人配置、警徽、PK、遗言、猎人开枪、白狼王自爆、真人混战。
+- **Agent**：AI 席位默认且强制使用 LLM-compatible `CognitiveAgent`；`agent_type=heuristic` 会被拒绝。离线测试用 `_TEST_ALLOW_FAKE_LLM=true LLM_PROVIDER=fake`。
+- **Evaluate**：Track B 生成逐步复盘分析、复盘报告、runtime metrics、leaderboard。
+- **Evolve**：Track C 抽取策略知识、维护 strategy cards / patches / knowledge usage feedback。
+- **Frontend**：Next.js 14 + React 18 的大厅、对局页、真人操作页、复盘仪表盘、人格页、单局报告页；Track C 通过后端 API、脚本和报告材料呈现。
 
-## 项目结构
+## 技术栈（当前实现）
+
+| 层 | 当前实现 |
+|---|---|
+| 后端 | Python 3.8+ / FastAPI / WebSocket |
+| 游戏引擎 | dataclass + Enum 纯逻辑，入口 `backend/engine/game.py` |
+| Agent | `backend/agents/cognitive/` 的 `CognitiveAgent` + `HumanAgent` |
+| LLM | `backend.llm.create_client()`，支持 `doubao` / `dsv4flash` / `ark` / `deepseek` / `anthropic` / `weapi` / `mimo` / test-only `fake` |
+| DB | SQLAlchemy；`DATABASE_URL` 存在时 PostgreSQL，否则 SQLite fallback |
+| 前端 | Next.js 14.2.32 / React 18.2 / TypeScript 5 / Tailwind 3.4 |
+| 配置 | YAML (`configs/`) + `.env`（不入库） |
+| 测试/CI | pytest + ruff；`.github/workflows/ci.yml` 已存在 |
+
+## 当前项目结构
 
 ```
 AIwerewolf/
-├── CLAUDE.md / AGENTS.md  # Agent 指令文件（等价，入口名不同）
-├── SKILLS.md              # 完整开发手册
-├── README.md
-├── docs/
-│   ├── prd.md             # 产品需求规格
-│   ├── DATA_FLOW.md       # 端到端数据流
-│   ├── PROJECT_MODULE_DESIGN.md  # 核心模块设计
-│   └── experiments/       # 实验报告
+├── AGENTS.md / CLAUDE.md       # AI 入口说明（内容等价）
+├── SKILLS.md                   # 狼人杀业务知识和参考仓库说明
+├── README.md                   # GitHub 首页说明
+├── REQUIREMENTS.md             # 项目需求与设计目标
 ├── backend/
-│   ├── engine/            # 游戏引擎 (状态机/规则/裁决)
-│   ├── agents/            # AI Agent (角色/策略/记忆)
-│   ├── protocols/         # WebSocket/API 协议
-│   ├── eval/              # 评测系统
-│   ├── llm/               # LLM 客户端
-│   └── db/                # ORM + 持久化
-├── frontend/              # 观战 UI
-├── scripts/               # 实验/评测/验证脚本
-├── tests/                 # 测试套件
-├── configs/               # YAML 配置文件
-├── skills/                # 开发规范与协作手册
-├── data/                  # 实验数据
-├── models/                # 本地模型
-├── nginx/                 # 反向代理
-└── references/            # 参考仓库（local-only，.gitignore）
+│   ├── app.py                  # FastAPI / REST / WebSocket 入口
+│   ├── engine/                 # 游戏引擎、规则、状态、Visibility
+│   ├── engine/roles/           # RoleRegistry，角色元数据单一事实来源
+│   ├── agents/                 # Agent 协议、HumanAgent、legacy agent、认知 agent
+│   ├── agents/cognitive/       # CognitiveAgent、AgentLoop、Memory、Retrieval
+│   ├── protocols/              # Room schema / RoomManager
+│   ├── db/                     # SQLAlchemy models + persist/persona DB
+│   ├── eval/                   # Track B/C 复盘分析、知识进化、open-data 适配
+│   ├── llm/                    # LLM 客户端封装
+│   └── ops/                    # preflight 等运维检查
+├── frontend/
+│   ├── app/                    # App Router: /, /room/[id]/play, /human, /eval/dashboard, /personas, /games/[id]/report
+│   ├── components/             # UI 和 game 组件
+│   ├── hooks/                  # 对局流、真人操作、展示派生状态
+│   ├── lib/                    # API、i18n、展示派生工具
+│   └── types/index.ts          # 后端契约 TS 镜像
+├── scripts/                    # 实验、smoke、报告生成、迁移、验证脚本
+├── tests/                      # pytest + Playwright smoke
+├── configs/                    # 规则、策略和实验配置
+├── docs/                       # 正式文档、报告、轻量图表资产
+├── skills/                     # 协作和代码规范
+├── nginx/                      # Docker 反向代理
+└── references/                 # 本地参考仓库，.gitignore 排除
 ```
+
+## GitHub 干净度约定
+
+应进入 GitHub：
+
+- 源码：`backend/`、`frontend/`、`scripts/`、`tests/`、`configs/`
+- 正式文档：根目录 README/需求/变更日志、`docs/*.md`、小型 SVG/HTML 展示资产
+- CI/部署配置：`.github/`、`Dockerfile`、`docker-compose.yml`、`nginx/`
+
+不应进入 GitHub：
+
+- `.env`、真实 API Key、本地数据库、日志、备份、`.venv`
+- `data/`、`models/`、`references/`
+- `frontend/.next*`、`node_modules/`、大体积图片/音频/截图、实验输出 JSONL
+
+提交前至少跑：
+
+```bash
+git status --short --ignored
+git ls-files | rg '(^|/)(\\.env|__pycache__|node_modules|\\.next|data/|models/|references/|\\.db|\\.log|\\.jsonl$)'
+```
+
+---
+
+## 游戏规则与当前实现
+
+### 可玩角色与模板角色
+
+`backend/engine/models.py` 的 `Role` enum 当前包含：
+
+- 可玩并可进入 7-12P 配置：`Villager`、`Werewolf`、`WhiteWolfKing`、`Seer`、`Witch`、`Hunter`、`Guard`、`Idiot`
+- 模板角色（registry / prompt / i18n 已有，默认 `playable=False`，不会进入 7-12P 配置）：`Cupid`、`BigBadWolf`、`WolfCub`、`WolfKing`、`Knight`、`Elder`
+
+角色元数据单一事实来源：`backend/engine/roles/`。新增角色必须同步 `Role` enum、RoleRegistry、Agent playbook/profile/prompt、前端 `types/index.ts` 和 i18n；若设为可玩，还要补引擎阶段和测试。
+
+### 当前 Phase 清单
+
+```
+SETUP
+NIGHT_START
+NIGHT_GUARD_ACTION
+NIGHT_WOLF_ACTION
+NIGHT_WITCH_ACTION
+NIGHT_SEER_ACTION
+NIGHT_RESOLVE
+DAY_START
+DAY_BADGE_SIGNUP
+DAY_BADGE_SPEECH
+DAY_BADGE_ELECTION
+DAY_PK_SPEECH
+DAY_LAST_WORDS
+DAY_SPEECH
+DAY_SHERIFF_CLOSING
+DAY_VOTE
+DAY_RESOLVE
+BADGE_TRANSFER
+HUNTER_SHOOT
+WHITE_WOLF_KING_BOOM
+GAME_END
+```
+
+### 胜负条件（以代码为准）
+
+- 好人胜：所有狼人死亡。
+- 狼人胜：狼人数 >= 存活好人数；或所有神职死亡；或所有村民死亡。
+- `max_days` 达到上限时，当前代码将 `winner` 设为 `wolf`，reason 为 `max_days_reached`。
+
+### 关键展示规则
+
+- `show_private=false` 时，夜间子阶段会在 public snapshot 中折叠为 `NIGHT_START`，夜间具体行动 payload 会脱敏。
+- `night_actions.wolf_votes` 是狼队个体初始目标，不一定等于最终刀口；前端展示最终刀口应以 `night_actions.wolf_target_id` 为准。
+- 公开视角不应请求或缓存 private snapshot；前端只是渲染，信息隔离必须在后端完成。
+
+---
+
+## Agent 协议（当前代码）
+
+源文件：`backend/agents/base.py`、`backend/engine/models.py`。
+
+```python
+class Agent(Protocol):
+    player_id: str
+
+    def initialize(self, view: PlayerView, game_setting: dict) -> None: ...
+    def update(self, view: PlayerView, request: str) -> None: ...
+    def day_start(self) -> None: ...
+    def talk(self) -> Decision: ...
+    def vote(self) -> Decision: ...
+    def attack(self) -> Decision: ...
+    def divine(self) -> Decision: ...
+    def guard(self) -> Decision: ...
+    def witch_act(self, victim_id: str | None) -> list[Decision]: ...
+    def shoot(self) -> Decision: ...
+    def boom(self) -> Decision: ...
+    def transfer_badge(self, candidates: list[str]) -> Decision: ...
+    def finish(self, winner: str | None) -> None: ...
+```
+
+`Decision` 当前字段：
+
+```python
+@dataclass
+class Decision:
+    actor_id: str
+    action_type: ActionType
+    target_id: str | None = None
+    speech: str | None = None
+    reasoning: str = ""
+    metadata: dict[str, Any] = field(default_factory=dict)
+```
+
+`ActionType` 当前值：
+
+```
+talk, vote, attack, divine, guard, witch_save, witch_poison, shoot, boom, skip
+```
+
+---
+
+## API / 前端速查
+
+后端默认：
+
+```bash
+make dev
+# http://localhost:8000/docs
+```
+
+前端默认：
+
+```bash
+cd frontend
+npm install --legacy-peer-deps
+npm run dev
+# http://localhost:3001
+```
+
+核心路由：
+
+- REST：`/api/health`、`/api/rooms`、`/api/games`、`/api/replay/{game_id}`、`/api/games/{game_id}/reviews*`、`/api/leaderboard*`、`/api/evolution*`、`/api/strategy/*`、`/api/personas`
+- WebSocket：`/ws/games`、`/ws/rooms/{room_id}`
+- 前端：`/`、`/room/[id]/play`、`/room/[id]/human`、`/eval/dashboard`、`/games/[id]/report`、`/personas`
+
+---
 
 ## 参考仓库速查
 
-> **注意**：参考仓库为 local-only，不在 GitHub 仓库中。需手动克隆到 `references/` 目录。
-
 | 优先级 | 仓库 | 目录名 | 核心价值 |
-|--------|------|--------|----------|
-| #1 | oil-oil/wolfcha | `wolfcha/` | AI狼人杀产品、22个Phase、双层扮演、Persona系统 |
-| #2 | xiong35/werewolf | `xiong35-werewolf/` | 前后端架构、WebSocket、房间系统、断线重连 |
-| #3 | Char-lotte-Xia/WereWolfPlus | `WereWolfPlus/` | 多模型评测、18种Prompt模板、批量对局 |
-| #4 | aiwolf/AIWolfPy | `AIWolfPy/` | Python Agent接口规范、9方法生命周期 |
-| #5 | AIWolfSharp/AIWolfSharp | `AIWolfSharp/` | Server/Client分离、IPlayer接口 |
-| #6 | lycan-city/werewolf-brain | `werewolf-brain/` | 60+角色库、权重平衡、42步夜晚序列 |
-| #7 | open-mafia/open_mafia_engine | `open_mafia_engine/` | Python事件驱动引擎 |
-| #8 | JamesCraster/OpenWerewolf | `OpenWerewolf/` | 在线多人房间/大厅 |
-| #9 | AlecM33/Werewolf | `AlecM33-Werewolf/` | 主持工具 (⚠️GPL-3.0) |
-| #10 | lykoss/lykos | `lykos/` | Python IRC Bot、复杂角色 |
+|---|---|---|---|
+| #1 | oil-oil/wolfcha | `wolfcha/` | 产品形态、Phase、Persona |
+| #2 | xiong35/werewolf | `xiong35-werewolf/` | 房间、WebSocket、断线重连 |
+| #3 | Char-lotte-Xia/WereWolfPlus | `WereWolfPlus/` | Prompt 模板、多模型对比 |
+| #4 | aiwolf/AIWolfPy | `AIWolfPy/` | Agent 生命周期 |
+| #5 | AIWolfSharp/AIWolfSharp | `AIWolfSharp/` | Server/Client 分离接口 |
+| #6 | lycan-city/werewolf-brain | `werewolf-brain/` | 角色库、夜晚序列 |
+| #7 | open-mafia/open_mafia_engine | `open_mafia_engine/` | 事件驱动引擎 |
+| #8 | JamesCraster/OpenWerewolf | `OpenWerewolf/` | 在线房间/大厅 |
+| #9 | AlecM33/Werewolf | `AlecM33-Werewolf/` | 主持工具参考，GPL-3.0 不可复制 |
+| #10 | lykoss/lykos | `lykos/` | 复杂角色 Bot |
 
-### 最关键的3个文件 (相对路径)
+最常用参考文件：
 
-1. `AIwerewolf/references/WereWolfPlus/agent_manager/prompts/werewolf_prompt.py`
-   - 完整Prompt模板: 18种动作 × 多角色 × JSON Schema
-   - 包含: GAME规则→STATE状态→OBSERVATIONS→角色策略→输出格式
-   
-2. `AIwerewolf/references/wolfcha/src/types/game.ts`
-   - Phase枚举(22个阶段)、Player类型、Persona系统定义
-   
-3. `AIwerewolf/references/AIWolfPy/aiwolfpy/agentproxy.py`
-   - Agent接口: initialize→update→dayStart→{talk/vote/attack/divine/guard}→finish
+1. `references/WereWolfPlus/agent_manager/prompts/werewolf_prompt.py`
+2. `references/wolfcha/src/types/game.ts`
+3. `references/AIWolfPy/aiwolfpy/agentproxy.py`
 
-## 狼人杀核心规则
+---
 
-### 角色
-基础6角色: Villager / Werewolf / Seer / Witch / Hunter / Guard
-扩展: Idiot / WhiteWolfKing / Cupid / BigBadWolf 等60+(见werewolf-brain)
+## 常用验证命令
 
-### 阶段流转
-```
-夜晚: NIGHT_START → NIGHT_GUARD_ACTION（守卫+狼+预言家并行）→ NIGHT_WITCH_ACTION → NIGHT_RESOLVE
-白天: DAY_START → BADGE_SIGNUP → BADGE_SPEECH → BADGE_ELECTION → DAY_SPEECH → SHERIFF_CLOSING → VOTE → DAY_RESOLVE
-特殊: HUNTER_SHOOT / WHITE_WOLF_KING_BOOM / BADGE_TRANSFER / DAY_LAST_WORDS / DAY_PK_SPEECH / GAME_END
+```bash
+make lint
+make test
+python -m backend.run_demo --seed 7
+python scripts/e2e_smoke.py
+python scripts/verify_visibility_strict.py
+_TEST_ALLOW_FAKE_LLM=true LLM_PROVIDER=fake python -m pytest tests/test_api.py tests/test_cognitive_offline.py -q
+cd frontend && npm run build
 ```
 
-### 胜负条件
-- 好人胜: 所有狼人被投票出局
-- 狼人胜: 狼人数量 ≥ 存活好人数量
-
-## 自研核心模块
-
-| 模块 | 职责 |
-|------|------|
-| GameState | 完整游戏状态(阶段/轮次/玩家/角色/投票记录) |
-| PhaseMachine | 阶段流转引擎(超时/跳过/转换) |
-| ActionValidator | 行动合法性校验 |
-| ResolutionEngine | 行动结算(按优先级: 守护→刀人→用药→查验→判定死亡) |
-| Visibility | 信息隔离层(每个Agent只看角色允许的信息) |
-| AgentDecision | 统一决策输出(reasoning+action_type+target+speech) |
-| EventLog | 结构化游戏事件(round/phase/timestamp/actor/targets/public/private) |
-
-## Agent 接口契约
-
-```python
-class Agent:
-    def initialize(base_info, game_setting)  # 初始化
-    def update(base_info, diff_data, request) # 增量更新
-    def dayStart()                            # 天亮
-    def talk() -> str                         # 公开发言
-    def whisper() -> str                      # 狼人私语
-    def vote() -> int                         # 投票放逐
-    def attack() -> int                       # 狼人刀人
-    def divine() -> int                       # 预言家查验
-    def guard() -> int                        # 守卫守护
-    def finish()                              # 对局结束
-```
-
-## Prompt 分层结构
-
-```
-GAME规则(固定) → STATE状态(轮次/角色/存活) → OBSERVATIONS私有观察 → DEBATE本轮发言 → 角色策略指引 → JSON Schema输出
-```
-
-## 开发约定
-
-- Python type hints 必须
-- 配置用 YAML
-- 日志用结构化 JSON
-- 严格信息隔离: 每个Agent只能看角色允许的信息
-- 参考仓库代码理解设计后重写，不直接复制
-- GPL许可证的代码不可用(AlecM33/Werewolf, GreyWolfDev/Werewolf)
-
-## 开发路线
-
-1. **MVP**: GameState + PhaseMachine + 6人CLI对战 + EventLog
-2. **Agent**: 标准化接口 + LLM集成 + 信息隔离
-3. **产品化**: WebSocket + 前端UI + 房间系统
-4. **进阶**: 评测体系 + Leaderboard + 自进化
-
-## 排查指南
-
-| 问题 | 去哪里看 |
-|------|----------|
-| Agent接口怎么写? | `AIwerewolf/references/AIWolfPy/aiwolfpy/agentproxy.py` |
-| Prompt模板? | `AIwerewolf/references/WereWolfPlus/agent_manager/prompts/werewolf_prompt.py` |
-| 角色定义和平衡? | `AIwerewolf/references/werewolf-brain/src/data/cards.json` |
-| 夜晚动作顺序? | `AIwerewolf/references/werewolf-brain/src/data/sequence.json` |
-| 阶段怎么设计? | `AIwerewolf/references/wolfcha/src/types/game.ts` |
-| 信息隔离怎么做? | `AIwerewolf/references/xiong35-werewolf/werewolf-backend/src/models/PlayerModel.ts` (getPublic方法) |
-| WebSocket事件定义? | `AIwerewolf/references/xiong35-werewolf/werewolf-frontend/shared/WSEvents.ts` |
-| 评测指标? | `AIwerewolf/references/WereWolfPlus/agent_eval/agent_eval.py` |
-| 事件驱动架构? | `AIwerewolf/references/open_mafia_engine/open_mafia_engine/core/` |
+全量真实 LLM / Track B/C 验证可能耗时且消耗 API；运行前确认 `.env` 和 provider。

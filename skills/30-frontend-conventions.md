@@ -2,8 +2,8 @@
 name: frontend-conventions
 description: Next.js 14 App Router + React 18 + TypeScript 5 + Tailwind 3 前端开发规范
 audience: claude, codex, human
-version: 2.1.0
-updated: 2026-05-22
+version: 2.2.0
+updated: 2026-06-08
 ---
 
 # 前端开发规范
@@ -39,12 +39,11 @@ updated: 2026-05-22
 | TypeScript | 5.x | strict mode |
 | Tailwind CSS | 3.4.x | utility-first 样式 |
 | `clsx` + `tailwind-merge` | latest | 条件类名拼接（用 `cn()` helper） |
+| `motion` / `gsap` | package.json 当前版本 | 动效与阶段过场，新增动效优先复用现有封装 |
+| `recharts` | package.json 当前版本 | 复盘和进化图表 |
 | Node | ≥ 18（开发用 v24） | 运行环境 |
 
-`frontend/package.json` 是单一事实来源。**新增依赖必须**：
-- PR 描述写出"为什么不能用现有依赖完成"
-- 群里 +1 才合
-- 优先用 zero-runtime 工具（如 `clsx` 这种），避免引入大库
+`frontend/package.json` 是单一事实来源。**新增依赖必须**写清楚为什么不能复用现有依赖；优先用 zero-runtime 或已存在的 `motion` / `gsap` / `recharts`，避免再引入大库。
 
 **禁止**：
 - 加 jQuery / Lodash / Moment / RxJS / Redux / MobX
@@ -59,16 +58,24 @@ updated: 2026-05-22
 frontend/
 ├── app/                    # Next.js App Router
 │   ├── layout.tsx          # 根布局（字体 / 全局 Provider）
-│   ├── page.tsx            # /（观战台主页）
+│   ├── page.tsx            # /（大厅）
+│   ├── room/[id]/play/     # 对局观战
+│   ├── room/[id]/human/    # 真人玩家操作页
+│   ├── eval/dashboard/     # 复盘仪表盘
+│   ├── personas/           # 人格管理
+│   ├── games/[id]/report/  # 单局复盘报告
 │   └── globals.css         # Tailwind base + 极少全局规则
 ├── components/
 │   ├── ui/                 # 通用元件（Badge / Button / Card 等）
 │   └── game/               # 业务组件（PhaseBanner / PlayerCard / EventItem / DayBlock）
+├── hooks/                  # useRoomStream / useHumanActions / 展示派生状态
 ├── lib/
+│   ├── api.ts              # REST/WS base 与 API helper
+│   ├── gameApi.ts          # 游戏/房间 API helper
 │   ├── i18n.ts             # 翻译字典 + useI18n hook
 │   └── utils.ts            # cn() 等工具
 ├── context/
-│   └── AppContext.tsx      # 全局状态（语言 / 视角 / 当前对局快照 / WS 连接）
+│   └── AppContext.tsx      # 全局 UI 偏好与房间/对局视角状态
 ├── types/
 │   └── index.ts            # 后端契约的 TS 镜像（Phase / Role / GameEvent / ...）
 ├── tailwind.config.ts      # 主题 token（颜色 / 字体 / borderRadius）
@@ -198,8 +205,9 @@ function Badge({ variant = "phase", children }: BadgeProps) { ... }
 当前架构：单一 `AppContext` 提供：
 - `lang` / `setLang`（语言）
 - `showPrivate` / `setShowPrivate`（视角）
-- `snapshot` / `setSnapshot`（当前对局快照）
-- `ws`（WebSocket 实例）
+- 全局 UI 偏好与当前房间/对局视角状态
+
+实时流和复杂页面状态优先抽到 `hooks/`（例如 `useRoomStream`、`useGamePageController`、`useHumanActions`），不要把所有业务状态继续塞进 Context。
 
 ### 不要引入 Redux / Zustand / Jotai
 
@@ -210,7 +218,7 @@ function Badge({ variant = "phase", children }: BadgeProps) { ... }
 跨多个组件复用的状态/副作用逻辑 → 抽 hook：
 
 ```ts
-// lib/useGameStream.ts
+// hooks/useRoomStream.ts
 export function useGameStream(roomId: string) {
   const [snapshot, setSnapshot] = useState<GameState | null>(null);
   useEffect(() => {
@@ -362,7 +370,7 @@ function GameStream({ roomId }: { roomId: string }) {
 ```bash
 cd frontend
 npm install --legacy-peer-deps     # eslint 版本与 next 有 peer 冲突,加这个 flag
-npm run dev                        # 起在 :3001（同机有人占就改 -p 3002）
+npm run dev                        # 默认 :3001；同机有人占用时 PORT=3002 npm run dev
 ```
 
 后端：`uvicorn :8000` 提供 API + WS。前端 dev server `:3001` 通过 `next.config.js` 的 rewrites/proxy 转发 `/api/*` 和 `/ws/*` 到后端（如未配，需要 fetch 写绝对 URL 或在 client 用 `NEXT_PUBLIC_API_BASE`）。
@@ -412,4 +420,4 @@ npm run start      # 起 next start，:3001
 
 ---
 
-*Version 2.1.0 — 2026-05-22 — vanilla 三件套已删除,Next.js 是唯一前端。v2.0 (并行过渡期版) 和 v1 (vanilla) 规范保留在 git 历史。*
+*Version 2.2.0 — 2026-06-08 — 同步当前路由、hooks/lib 结构和依赖。*

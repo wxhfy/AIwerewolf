@@ -2,8 +2,8 @@
 name: backend-conventions
 description: Python / FastAPI / dataclass / Enum / Protocol / DB / LLM 层代码规范
 audience: claude, codex, human
-version: 1.0.0
-updated: 2026-05-22
+version: 2.0.0
+updated: 2026-06-08
 ---
 
 # 后端开发规范
@@ -45,17 +45,20 @@ backend/
 │   ├── phases.py        # 阶段处理器
 │   ├── phase_manager.py # 阶段流转
 │   ├── actions.py       # 行动注册与校验
-│   ├── rules.py         # 角色配置
+│   ├── rules.py         # 规则配置装配
+│   ├── roles/           # RoleRegistry 与角色元数据
 │   ├── visibility.py    # 信息隔离 PlayerView
 │   ├── config.py        # YAML 配置加载
 │   └── summary.py       # 每日总结生成
 ├── agents/              # Agent 实现（见 40-agent-development.md）
+│   └── cognitive/       # CognitiveAgent、AgentLoop、Memory、Retrieval
 ├── protocols/           # 对外协议（HTTP / WebSocket）
 │   ├── schemas.py       # 请求/响应 dataclass
 │   └── rooms.py         # 房间管理
 ├── db/                  # DB 持久化（sqlalchemy）
 ├── llm/                 # LLM 客户端封装
-└── eval/                # 评测与复盘
+├── eval/                # 复盘分析、报告、策略进化
+└── ops/                 # preflight / runtime 运维检查
 ```
 
 ### 跨层依赖规则
@@ -173,7 +176,7 @@ def create_game(
     show_private: bool = False,
     agent_type: str = "llm",
     human_seat: int | None = None,
-    player_count: int = 7,
+    player_count: int = 10,
     rule_pack_id: str = "wolfcha-default",
 ):
     ...
@@ -294,14 +297,21 @@ make db-migrate    # 等价 python scripts/migrate_sqlite_to_pg.py
 
 ## 九、LLM 层
 
-- 统一封装在 `backend/llm/`
-- **绝对禁止** 在 `agents/llm_agent.py` 之外直接 import OpenAI/方舟 SDK
-- Prompt 模板放在 `backend/agents/prompts.py`，**不要散落在 LLM 调用处**
+- 统一封装在 `backend/llm/`，入口是 `backend.llm.create_client()`
+- **绝对禁止**在业务代码里直接 import OpenAI/方舟/Anthropic SDK；统一通过 `backend/llm/` 适配层
+- Prompt 构造集中在 `backend/agents/` 与 `backend/agents/cognitive/` 的对应模块，**不要散落在 LLM 调用处**
 - API Key 通过 `backend/llm/env.py` 读 `.env`，**永远不进代码、不进 commit**
 
-### LLM 调用失败的降级策略
+### LLM 调用失败策略
 
-LLM 超时 / 报错时，Agent 必须能给出**确定性的 fallback**（启发式动作 / 随机合法动作），让游戏不卡死。详见 `40-agent-development.md`。
+正式对局 AI 席位是 LLM-only：
+
+- `create_agents(agent_type="heuristic")` 应抛 `ValueError`。
+- `LLM_PROVIDER=fake` 只能在 `_TEST_ALLOW_FAKE_LLM=true` 的测试环境使用。
+- `AIWEREWOLF_STRICT_MODE=true`、`ALLOW_FALLBACK=false` 是正式实验默认语义；LLM 超时、解析失败或非法目标应暴露为 invalid/failure，而不是静默改成启发式动作。
+- Native tool-call 空响应后的同一 LLM 文本修复不算 heuristic fallback；它仍然必须来自 LLM 输出。
+
+详见 `40-agent-development.md`。
 
 ---
 
@@ -363,7 +373,7 @@ class Agent(Protocol):
 - [ ] Enum 都 `(str, Enum)` 继承
 - [ ] dataclass 用了 `field(default_factory=...)` 而非可变默认值
 - [ ] 路由 URL 名词化、`/api/` 前缀
-- [ ] LLM 调用有 fallback
+- [ ] 正式对局没有 heuristic fallback；测试 fake LLM 有显式 `_TEST_ALLOW_FAKE_LLM=true`
 - [ ] 注释没有"AI 自动生成"/"由 Claude 添加"等无意义信息
 - [ ] 没有把 API Key、Prompt 文件全文塞进代码
 
@@ -371,4 +381,4 @@ class Agent(Protocol):
 
 ---
 
-*Version 1.0.0 — 2026-05-22 — 初始建立。*
+*Version 2.0.0 — 2026-06-08 — 同步 LLM-only、当前目录和 CI 约定。*

@@ -1,24 +1,26 @@
 ---
 name: agent-development
-description: Agent Protocol / Decision 契约 / 信息隔离 / Prompt 模板 / LLM 调用降级
+description: Agent Protocol / Decision 契约 / 信息隔离 / CognitiveAgent / LLM-only 规则
 audience: claude, codex, human
-version: 1.0.0
-updated: 2026-05-22
+version: 2.0.0
+updated: 2026-06-08
 ---
 
 # Agent 开发规范
 
 > 适用范围：`backend/agents/` 目录。
-> 当前已有 Agent：`HeuristicAgent`（规则启发式）、`LLMAgent`（LLM + 启发式降级）、`HumanAgent`（人类输入）。
-> Prompt 模板：`backend/agents/prompts.py`；角色画像：`backend/agents/profiles.py`、`characters.py`。
+> 当前对局 AI 席位默认且强制使用 LLM-compatible `CognitiveAgent`；`agent_type=heuristic` 会被 `backend/agents/factory.py` 拒绝。`HeuristicAgent` 和 legacy `LLMAgent` 仍可作为单元测试、历史兼容或调试参考，但不能作为正式对局 AI 席位。
 
 ---
 
 ## 一、Agent Protocol 接口（不可破坏）
 
+单一事实来源：`backend/agents/base.py`。
+
 ```python
 class Agent(Protocol):
     player_id: str
+
     def initialize(self, view: PlayerView, game_setting: dict) -> None: ...
     def update(self, view: PlayerView, request: str) -> None: ...
     def day_start(self) -> None: ...
@@ -30,216 +32,216 @@ class Agent(Protocol):
     def witch_act(self, victim_id: str | None) -> list[Decision]: ...
     def shoot(self) -> Decision: ...
     def boom(self) -> Decision: ...
+    def transfer_badge(self, candidates: list[str]) -> Decision: ...
     def finish(self, winner: str | None) -> None: ...
 ```
 
-**改这里要触发跨模块连锁反应**（引擎主循环 + 全部 Agent 子类 + 测试）。
-任何新增 / 删除 / 改签名的 PR：
+改这里会触发跨模块连锁反应：引擎主循环、`HumanAgent`、`CognitiveAgent`、legacy agents、前端真人操作、测试和文档都要同步。
 
-1. 必须在群里事前通知
-2. 必须在 `skills/50-api-contract.md` 里更新 "内部 Agent 协议" 段
-3. 必须 2 人 approve（见 `10-git-workflow.md` 重灾区表）
+新增 / 删除 / 改签名必须：
 
-**新增 Agent 类型**：实现 Protocol 即可，**不要继承**（duck typing）。
+1. 事前说明影响面；
+2. 同步更新 `skills/50-api-contract.md` 的内部协议段；
+3. 增加或修正对应测试；
+4. 在单人模式下仍按重灾区谨慎处理。
+
+新增 Agent 类型时实现 Protocol 即可，不要求继承公共基类。
 
 ---
 
 ## 二、Decision 返回契约
 
+单一事实来源：`backend/engine/models.py`。
+
 ```python
 @dataclass
 class Decision:
-    player_id: str           # 必填，必须等于 self.player_id
-    action: ActionType       # talk / vote / attack / ... / skip
-    target: str | None       # 目标玩家 id；无目标用 None
-    speech: str | None       # 发言文本（talk 时必填，其他时可选）
-    reasoning: str           # 推理过程（评测复盘必看，必填非空）
-    save: bool | None        # 仅 witch_act 用：是否用解药
+    actor_id: str
+    action_type: ActionType
+    target_id: str | None = None
+    speech: str | None = None
+    reasoning: str = ""
+    metadata: dict[str, Any] = field(default_factory=dict)
 ```
 
-### 必须保证
+### 字段要求
 
-| 字段 | 检查 |
-|------|------|
-| `player_id` | 等于 `self.player_id`，不能伪造别人 |
-| `action` | 必须是当前 Phase 允许的动作（引擎会再校验，但 Agent 自己也要校验） |
-| `target` | 若需要目标，必须是**当前存活**的玩家 id |
-| `speech` | `talk` / `last_words` 时必填，<= 3000 字 |
-| `reasoning` | 永远非空，至少一句话；用于评测复盘 |
+| 字段 | 要求 |
+|---|---|
+| `actor_id` | 必须等于 `self.player_id`，不能伪造其他玩家 |
+| `action_type` | 必须是当前 Phase 允许的动作 |
+| `target_id` | 需要目标时必须是合法玩家 id；无目标用 `None` |
+| `speech` | `talk` / 遗言 / 警长总结等发言动作必须非空；不要包含 system prompt 或私有推理全文 |
+| `reasoning` | 必填非空，供 `DecisionAudit`、Track B/C 复盘和调试使用 |
+| `metadata` | 只放结构化审计信息，如 `segments`、`source`、`fallback`、`tool_trace`、`retrieved_doc_ids` |
+
+### 当前 ActionType
+
+```
+talk, vote, attack, divine, guard, witch_save, witch_poison, shoot, boom, skip
+```
 
 ### 反例
 
 ```python
-# 错：返回了死人当目标
-Decision(player_id=self.player_id, action=ActionType.VOTE, target="dead_player_id", ...)
+# 错：旧字段名，当前 Decision 不接受 player_id/action/target/save
+Decision(player_id=self.player_id, action=ActionType.VOTE, target="P1", save=False)
 
-# 错：reasoning 留空
-Decision(..., reasoning="")
+# 错：reasoning 为空
+Decision(actor_id=self.player_id, action_type=ActionType.VOTE, target_id="P1", reasoning="")
 
-# 错：speech 包含 system prompt 内容（LLM 复读）
-Decision(..., speech="你是狼人杀中的预言家。我决定查验...")
+# 错：把提示词或私有规划写进公开 speech
+Decision(actor_id=self.player_id, action_type=ActionType.TALK, speech="你是狼人杀中的预言家。我的隐藏计划是...", reasoning="...")
 ```
 
 ---
 
 ## 三、信息隔离（铁律）
 
-Agent **只能**从 `view: PlayerView` 读取信息：
+Agent 只能从 `view: PlayerView` 读取当前允许看到的信息。单一事实来源：`backend/engine/visibility.py`。
+
+`PlayerView` 当前包含：
 
 ```python
 @dataclass(frozen=True)
 class PlayerView:
+    game_id: str
     player_id: str
     day: int
     phase: str
-    self_player: dict           # 自己的全部信息
-    players: list[dict]         # 其他玩家：仅 public_dict()，狼人间可见 private_dict()
-    public_events: list[dict]   # 全局公开事件
-    private_events: list[dict]  # 仅本 Agent 可见的事件
-    known_wolves: list[dict]    # 仅狼人非空
-    observations: list[str]     # 提炼后的观察文字
+    self_player: dict[str, Any]
+    players: list[dict[str, Any]]
+    public_events: list[dict[str, Any]]
+    private_events: list[dict[str, Any]]
+    known_wolves: list[dict[str, Any]]
+    observations: list[str]
+    legal_targets: dict[str, list[dict[str, Any]]]
 ```
 
-### 红线
+红线：
 
-- **禁止** Agent 接收 `GameState` 全局状态
-- **禁止** Agent 在内部偷偷 import `from backend.engine.game import ...` 反查信息
-- **禁止** Agent 与 Agent 之间直接通信（狼队私聊也走 `private_events`）
-- **禁止** LLM Prompt 里塞入 `PlayerView` 之外的数据
+- 禁止 Agent 接收或缓存完整 `GameState`。
+- 禁止 Agent 通过 import 引擎或 DB 反查当前局隐藏信息。
+- 狼队协作也必须走 `PlayerView` / `private_events` / 合法 wolf team view。
+- Prompt 中不得加入 `PlayerView` 外的当前局私密信息。
+- 给 `PlayerView` 加字段时必须先从 Visibility 层定义可见性，并补 `tests/test_visibility_final_agent_input.py` 或相关测试。
 
-### Visibility 层规则（实现侧）
+公开视角规则：
 
-- `visibility.py` 的 `for_player` 是唯一信息分发口
-- 新增私有信息 → 在 `GameEvent` 里加 `visibility="private"` + `visible_to=[...player_ids]`
-- 公开信息 → `visibility="public"`
-- **不要**给 PlayerView 加新字段而不过 Visibility 层
+- `show_private=false` 时，夜间子阶段和夜间行动细节会在 `GameState.public_dict()` 中脱敏。
+- 前端不能拿 private snapshot 后再自己过滤来冒充公开视角。
 
 ---
 
-## 四、Prompt 模板组织
+## 四、CognitiveAgent 组织
+
+当前主路径：
 
 ```
-backend/agents/
-├── prompts.py        # 唯一的 Prompt 文件
-│   ├── GAME_RULES                  # 全局规则（固定）
-│   ├── ROLE_SYSTEM_PROMPTS         # 各角色 system prompt
-│   ├── ACTION_STRATEGIES           # 各动作策略指引
-│   └── OUTPUT_FORMATS              # 各动作 JSON Schema
-├── profiles.py       # ROLE_PROFILES 角色画像（背景设定）
-├── characters.py     # AI 人格（MBTI 风格）
-├── playbooks.py      # build_role_brief：拼装角色简报
-└── llm_agent.py      # LLM 调用 + 解析 + 降级
+backend/agents/cognitive/
+├── agent.py              # CognitiveAgent，Protocol 适配层
+├── agent_loop.py         # 工具调用式决策循环
+├── observe.py            # PlayerView -> Observation / BeliefTracker
+├── memory.py             # Memory / Planner / role state
+├── social_model.py       # trust / suspicion / deception signals
+├── prompts.py            # Cognitive prompt 组装
+├── retrieval_prod.py     # Track C strategy retrieval
+├── tools.py              # search_strategies / recall_memory / check_rules / ...
+├── wolf_team.py          # 狼队合法可见协作信息
+└── strategies/           # 分角色策略骨架
 ```
 
-### Prompt 分层结构（来自 WereWolfPlus）
+认知流程：
 
 ```
-SYSTEM:    GAME_RULES + ROLE_SYSTEM_PROMPTS[role] + character persona
-USER:      STATE (day/phase/alive) + OBSERVATIONS + ACTION_STRATEGY + OUTPUT_FORMAT
+PlayerView -> Observation -> Memory/Belief/SocialModel/Planner
+           -> AgentLoop(tools + LLM)
+           -> Decision
+           -> WerewolfGame 校验/结算/审计
 ```
 
-### 修改 Prompt 的 PR 要求
-
-- **PR 描述必须贴对比**：改前/改后的 LLM 实际输出（至少 2 种角色 × 2 种 seed）
-- 改 `GAME_RULES` 或 `ROLE_SYSTEM_PROMPTS` → 重灾区，2 人 approve
-- 改单个 `ACTION_STRATEGIES[role]` → 1 人 approve
-- **不要**在 Prompt 里硬编码玩家名 / seat —— 用占位符 `{player_name}` / `{seat}`
-
-### Prompt 禁止内容
-
-- 任何 API Key / 真实接口地址（连示例都不行）
-- 推理"作弊"提示（如告诉狼人查验结果）
-- 与 `visibility.py` 不一致的信息（如告诉村民"你能看到所有人身份"）
-- 给 LLM 看其他玩家私有的 `reasoning` 字段
+Agent 只输出意图，绝不直接修改 `GameState`。
 
 ---
 
-## 五、LLM 调用与降级
+## 五、Prompt 与策略层
 
-### LLM-only 对局的设计
+当前项目采用三层语义：
 
-```python
-class CognitiveAgent(Agent):
-    """LLM-backed agent; failures raise in game mode."""
-
-    def __init__(self, ...):
-        self.client = create_client(provider=..., model=...)
-        self.client.timeout = 12.0
+```
+Persona / MBTI：说话风格、认知习惯、风险偏好
+Role：身份、技能、胜利条件、反模式
+Strategy：从 Track C knowledge / strategy cards 检索出的打法建议
 ```
 
-**核心约定**：
+注意：
 
-1. 对局中的 AI 席位必须走 LLM-compatible Agent（真实 LLM 或 `LLM_PROVIDER=fake` 测试 stub）
-2. LLM 调用超时 / 报错 / 输出非法 JSON → **抛错或标记失败**，不得切到 `HeuristicAgent`
-3. timeout 上限 **12 秒**，不要无脑加长
-4. 必须缓存 `system prompt`（前缀缓存）以省 token
-5. `temperature` 默认 `0.4`，狼人/女巫等需要创造性的 ≤ 0.7
-
-### Fallback 触发条件
-
-| 触发场景 | 行为 |
-|----------|------|
-| LLM 调用 timeout / 异常 | 记录错误并让本局 / 本轮验收失败 |
-| LLM 返回非 JSON | 记录解析错误，不发布为 ApprovedReviewReport |
-| LLM 返回的 target 不在合法范围 | 记录 invalid decision，不得用 heuristic 替换 |
-| LLM 返回的 action 与 phase 不匹配 | 记录 invalid decision，不得用 heuristic 替换 |
-
-### LLM 调用规范
-
-- 用 `backend/llm/create_client()` 统一接口，**不要**自己 `import openai`
-- API Key 走 `backend/llm/env.py` 读 `.env`，**永远**不进代码
-- 单次调用 `max_tokens` 显式设置（如 `520` 用于发言），不要默认无上限
-- 同一个动作的 LLM 调用**只调一次**——不要循环重试，失败就 fallback
+- 角色层只能描述“身份和能力”，不要塞硬玩法。
+- 策略层才能教“怎么玩”，并且要带来源、适用条件和可见性过滤。
+- Prompt 不得硬编码真实 API 地址、API Key、玩家隐藏身份或当前局上帝视角。
+- 公开发言必须经过引擎层清洗和分段逻辑，不能把内部计划句发布到 `CHAT_MESSAGE`。
 
 ---
 
-## 六、HumanAgent
+## 六、LLM-only 与失败处理
 
-`HumanAgent` 用于 AI + Human 混合对局：
+核心约定：
 
-- 不调 LLM，等前端用户输入
-- `talk()` / `vote()` 等 block 等待，引擎通过 WebSocket 推 `await_human_input` 事件
-- 前端 POST `human_input` API 把决策塞回来
-- **不需要**实现 fallback——人类不响应就一直等（前端有超时提示）
+1. 正式对局 AI 席位必须走 LLM-compatible agent：真实 LLM 或 test-only `LLM_PROVIDER=fake`。
+2. `agent_type=heuristic` 在 `create_agents()` 中会抛 `ValueError`。
+3. `_TEST_ALLOW_FAKE_LLM=true` 是唯一允许 fake provider 的测试入口；生产或正式实验不得开启。
+4. `AIWEREWOLF_STRICT_MODE=true` 是默认口径：LLM 失败、空发言、非法目标、非法动作应抛错或记录 invalid，不得悄悄改为启发式代决策。
+5. 某些“解析修复”（例如 native tool-call 空响应后要求同一个 LLM 用文本 `DECISION: {...}` 修复）不算 heuristic fallback；它仍然必须来自 LLM 响应。
+
+审计字段：
+
+- `DecisionAudit.is_valid`
+- `DecisionAudit.error_type`
+- `DecisionAudit.fallback_used`
+- `DecisionAudit.fallback_reason`
+- `DecisionAudit.raw_output`
+- `DecisionAudit.parsed_action`
+- `DecisionAudit.metadata`
+
+正式实验结论必须能证明 `fallback_count=0` 或说明 fallback 样本已剔除。
 
 ---
 
-## 七、新增 Agent 类型流程
+## 七、HumanAgent
 
-1. 在 `backend/agents/` 新建文件，如 `random_agent.py`
-2. 实现 Protocol 的全部 13 个方法
-3. 在 `backend/agents/factory.py` 的 `create_agents()` 注册新 `agent_type`
-4. 在 `tests/test_engine.py` 加一个跑通的测试
-5. 在 `backend/app.py` / 前端 select 列表里曝光新类型
-6. PR 描述里说明：这个 Agent 何时用、与其他 Agent 的差异、典型胜率
+`HumanAgent` 用于真人混战：
+
+- 不调 LLM；
+- 引擎通过 `pending_input` 暂停等待；
+- 前端通过 `POST /api/rooms/{room_id}/action` 提交 `{action, target, speech}`；
+- 后端把 payload 转成当前 human seat 对应玩家的 `Decision`；
+- 人类不响应时由前端提示，后端不应伪造人类选择。
 
 ---
 
-## 八、Prompt 工程经验提示
+## 八、新增 Agent / 修改 Agent 的流程
 
-| 经验 | 来源 |
-|------|------|
-| **角色 + 阵营双层 prompt**：先给角色规则，再给阵营策略 | WereWolfPlus |
-| **JSON Output 用 Schema 约束**：用 `"action": "talk", "target": "...", ...` 固定格式 | WereWolfPlus |
-| **System Prompt 缓存**：前缀稳定，仅 USER 部分变 | 省 token |
-| **观察去重**：相同信息只塞一次，否则 LLM 会复读 | 实战 |
-| **明确禁止**：在 prompt 里写"禁止 X"比"请 Y"更有效 | LLM 通病 |
-| **fallback 留痕**：失败时存 `last_error` 供复盘 | 评测必需 |
+1. 先读 `backend/agents/base.py`、`backend/engine/models.py`、`backend/engine/visibility.py` 和本文件。
+2. 明确新 Agent 是否允许正式对局使用；若是 AI 席位，必须 LLM-compatible。
+3. 实现 Protocol 全部方法，尤其不要漏 `transfer_badge()`。
+4. 在 `backend/agents/factory.py` 注册或显式拒绝 `agent_type`。
+5. 增加测试：至少覆盖初始化、一次发言、一次投票、一次夜间动作、失败路径。
+6. 如影响前端选项或 API 参数，同步 `frontend/types/index.ts`、i18n 和 `skills/50-api-contract.md`。
 
 ---
 
 ## 九、AI 改 Agent 的红线
 
-- [ ] 没有破坏 Agent Protocol 接口
-- [ ] Decision 字段齐全，`reasoning` 非空
-- [ ] 仅从 `view: PlayerView` 读信息
-- [ ] LLM 调用有 fallback
-- [ ] Prompt 修改有对比输出
-- [ ] 没有把 API Key / Prompt 全文塞进 commit
-- [ ] 没有在 Prompt 里写"作弊"信息
+- [ ] 不破坏 Agent Protocol 和 Decision 字段名。
+- [ ] 不让 AI 席位绕过 LLM-only 约束。
+- [ ] 不吞掉 LLM 失败并伪造“正常决策”。
+- [ ] 不把当前局 private 信息越权写入 Prompt。
+- [ ] 不把其他玩家 private reasoning 给当前 Agent。
+- [ ] 不把 Prompt 全文、API Key、`.env` 写进代码或 commit。
+- [ ] 改 Prompt / Strategy 必须提供验证方式或样例输出。
 
 详见 `70-ai-collaboration.md`。
 
 ---
 
-*Version 1.0.0 — 2026-05-22 — 初始建立。*
+*Version 2.0.0 — 2026-06-08 — 同步当前 CognitiveAgent / LLM-only / Decision 字段实现。*

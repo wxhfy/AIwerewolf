@@ -1,78 +1,70 @@
 ---
 name: testing-ci
-description: pytest 组织、smoke 测试、PR 必过项、本地自检命令
+description: pytest 组织、smoke 测试、CI、本地自检命令
 audience: claude, codex, human
-version: 1.0.0
-updated: 2026-05-22
+version: 2.0.0
+updated: 2026-06-08
 ---
 
 # 测试与 CI 规范
 
-> 当前已有测试:
-> - `tests/test_engine.py` — 引擎单元测试
-> - `tests/test_api.py` — FastAPI 路由测试
-> - `tests/test_llm_config.py` — LLM 配置测试
-> - `tests/ui_smoke.mjs` — Playwright UI smoke(Node ESM)
-> - `scripts/e2e_smoke.py` — 端到端 smoke
+> 当前审计快照（2026-06-08）：`tests/` 下有 39 个 `test_*.py` 文件，约 397 个 pytest 测试函数；CI 已配置在 `.github/workflows/ci.yml`。
 
 ---
 
-## 一、测试金字塔(目标)
+## 一、测试分层
 
 ```
-       ▲  UI smoke(慢、脆、贵)
-      ▲ ▲ E2E API smoke
+       ▲  UI smoke / Playwright（慢，手动或发布前跑）
+      ▲ ▲ E2E API smoke（跨层）
      ▲ ▲ ▲ FastAPI 路由测试
-    ▲ ▲ ▲ ▲ 引擎单元测试(快、稳、便宜)
+    ▲ ▲ ▲ ▲ 引擎 / Agent / DB / Eval 单元测试
 ```
 
-**60% 引擎单元测试 + 30% API 测试 + 10% smoke** 是合理比例。
-新功能首选单元测试,只有跨层逻辑才上 smoke。
+新功能优先补单元测试；只有跨后端、前端、数据库或 WebSocket 的流程才补 smoke。
 
 ---
 
-## 二、目录结构
+## 二、目录与命名
 
 ```
 tests/
-├── test_engine.py        # 引擎核心:Phase、Visibility、Resolution
-├── test_api.py           # FastAPI 路由
-├── test_llm_config.py    # LLM 客户端配置
-├── ui_smoke.mjs          # Playwright(Node ESM)
-└── __init__.py           # (按需添加)
+├── test_*.py                 # pytest 单元/集成测试
+├── helpers/                  # 测试辅助对象
+└── ui_smoke.mjs              # Playwright UI smoke
 
 scripts/
-├── e2e_smoke.py          # 端到端 HTTP smoke
-├── llm_agent_smoke.py    # 单 Agent LLM 烟雾测试
-├── llm_game_smoke.py     # 完整 LLM 对局 smoke
-└── human_smoke.py        # 人类玩家流程
+├── e2e_smoke.py              # HTTP smoke
+├── llm_agent_smoke.py        # 单 Agent LLM smoke
+├── llm_game_smoke.py         # 完整对局 smoke
+└── human_smoke.py            # 真人玩家流程 smoke
 ```
 
-### 命名约定
-
-- 测试文件:`test_<module>.py`
-- 测试函数:`test_<scenario>_<expected>()`,如 `test_game_plays_to_winner`
-- smoke 脚本:`<purpose>_smoke.py` / `<purpose>_smoke.mjs`
-
-### 反例
-
-- `test1.py` / `mytest.py`(无意义命名)
-- `tests/test_helpers.py`(辅助函数应在被测模块旁边)
-- `test_*` 函数没断言(空跑 ≠ 测试)
+- 测试文件：`test_<module>.py`
+- 测试函数：`test_<scenario>_<expected>()`
+- smoke 脚本：`<purpose>_smoke.py` / `<purpose>_smoke.mjs`
+- 辅助 fixture 放在 `tests/conftest.py` 或 `tests/helpers/`
 
 ---
 
-## 三、写单元测试的规则
+## 三、单元测试规则
 
-### 引擎测试必备模式
+1. 对局相关测试必须固定 `seed`，避免随机红。
+2. 断言要具体，不写 `assert True` 或只检查“没有异常”。
+3. 一个测试只验证一个意图。
+4. 引擎关键路径可以遍历多个 seed。
+5. 改动 bugfix 时必须补能复现该 bug 的测试。
+6. 不在 CI 路径调用真实 LLM；CI 使用 test-only fake LLM。
+
+示例：
 
 ```python
 def test_visibility_hides_roles_from_villager() -> None:
-    game = WerewolfGame(seed=3)
-    state = game.state
+    game = WerewolfGame(seed=3, player_count=7)
     game.initialize()
-    villager = next(p for p in state.players if p.role == Role.VILLAGER)
-    view = Visibility().for_player(state, villager.id)
+    villager = next(p for p in game.state.players if p.role == Role.VILLAGER)
+
+    view = Visibility().for_player(game.state, villager.id)
 
     for player in view.players:
         if player["id"] == villager.id:
@@ -82,181 +74,162 @@ def test_visibility_hides_roles_from_villager() -> None:
             assert "alignment" not in player
 ```
 
-**要点**:
+---
 
-1. **始终给 `seed`**:对局必须可复现,不允许随机失败
-2. **断言要具体**:`assert state.winner is not None` 还行,但更好的是 `assert state.winner in {"village", "wolf"}`
-3. **一个测试一个意图**:不要在一个函数里塞 10 个不相关断言
-4. **遍历多 seed**:关键测试要 `for seed in range(1, 8): ...`
+## 四、LLM 与 Agent 测试
 
-### Mock 与 Fixture
+正式对局 AI 席位只能走 LLM-compatible `CognitiveAgent`：
 
-- **绝对禁止** mock LLM 调用做"假绿"测试
-- `LLMAgent` 测试用真实 fallback 路径(关掉网络或拨非法 API)
-- 需要复用 fixture 时,在 `tests/conftest.py`(目前未建)集中定义
+- `agent_type=heuristic` 应被拒绝。
+- CI / 本地离线测试使用 `LLM_PROVIDER=fake`，且必须显式设置 `_TEST_ALLOW_FAKE_LLM=true`。
+- fake LLM 只能用于测试和 smoke，不得作为正式实验或产品结论证据。
+- strict 实验要求 `fallback_count=0`；若出现 fallback/invalid，样本必须标记或剔除。
+
+推荐环境：
+
+```bash
+_TEST_ALLOW_FAKE_LLM=true \
+LLM_PROVIDER=fake \
+AIWEREWOLF_STRICT_MODE=true \
+ALLOW_FALLBACK=false \
+python -m pytest tests/ -q --timeout=120
+```
 
 ---
 
-## 四、FastAPI 路由测试
+## 五、FastAPI 路由测试
 
-使用 `TestClient`(starlette):
+使用 `fastapi.testclient.TestClient`：
 
 ```python
 from fastapi.testclient import TestClient
 from backend.app import app
 
-def test_create_game_returns_winner():
+
+def test_health_ok() -> None:
     client = TestClient(app)
-    res = client.post("/api/games?seed=7&agent_type=llm")
+    res = client.get("/api/health")
     assert res.status_code == 200
-    body = res.json()
-    assert body["winner"] in {"village", "wolf"}
+    assert res.json()["status"] == "ok"
 ```
 
-**注意**:
+路由变更必须同步：
 
-- CI / 本地 smoke 用 `LLM_PROVIDER=fake` + `agent_type="llm"`；不得用 `agent_type="heuristic"` 代替对局
-- 路由变更要在 `test_api.py` 同步加测试
-- 错误路径(404 / 400)也要覆盖
-
----
-
-## 五、Smoke 测试
-
-### E2E HTTP smoke(`scripts/e2e_smoke.py`)
-
-- 自动起 uvicorn → 调一遍核心 API → 断言响应 → 关闭
-- 用于 **PR 前手跑** 或 **答辩前总体验证**
-- 不在 PR CI 跑(慢)
-
-### UI Smoke(`tests/ui_smoke.mjs`)
-
-- Playwright 起浏览器 → 模拟点击 → 截图 / 断言
-- 改前端的 PR **必须本地跑通后再提**
-- 当前依赖 Node + Playwright:`node tests/ui_smoke.mjs`(需先 `npx playwright install chromium`)
+- `skills/50-api-contract.md`
+- `frontend/types/index.ts` 或前端调用点（如契约被前端使用）
+- 对应 `tests/test_api*.py`
 
 ---
 
-## 六、PR 必过项
+## 六、Smoke 测试
 
-每个 PR 在合并前**必须**:
-
-| 检查 | 命令 |
-|------|------|
-| 单元测试全绿 | `pytest tests/ -x` |
-| Demo 跑通 | `python -m backend.run_demo --seed 7` |
-| 改了前端要手测 | 浏览器实际点一遍(`30-frontend-conventions.md` 第八节) |
-| 改了 API 要 e2e | `python scripts/e2e_smoke.py` |
-| 改了 Agent 要 LLM smoke | `python scripts/llm_agent_smoke.py`(成本看着办) |
-
-**Reviewer 必检**:
-
-- [ ] PR 描述里的"测试方式"清单全部勾选
-- [ ] 改动如果是 bugfix,**必须**有覆盖该 bug 的新增测试
-- [ ] 新增依赖必须在 `requirements.txt` 登记
-
----
-
-## 七、本地自检命令(贴在 README 也行)
+常用命令：
 
 ```bash
-# 快速跑全部 pytest
-pytest tests/ -x -v
-
-# 跑单个测试
-pytest tests/test_engine.py::test_game_plays_to_winner -v
-
-# 启动 demo
-python -m backend.run_demo --seed 7
-
-# 启动 web,浏览器看
-uvicorn backend.app:app --reload --host 0.0.0.0 --port 8000
-
-# E2E HTTP smoke(自起服务)
+# 后端 HTTP smoke
 python scripts/e2e_smoke.py
 
-# UI smoke(需先装 playwright)
-npx playwright install chromium  # 一次性
-node tests/ui_smoke.mjs
-
-# LLM 相关 smoke(需 .env 里有 API Key)
+# 单 Agent LLM smoke（需要真实 key，或明确 fake 环境）
 python scripts/llm_agent_smoke.py
-python scripts/llm_game_smoke.py
+
+# 完整对局 smoke（真实 LLM 成本较高）
+python scripts/llm_game_smoke.py --seed 1 --max-seed 1
+
+# UI smoke（需先安装浏览器）
+cd frontend
+npx playwright install chromium
+node ../tests/ui_smoke.mjs
+```
+
+改前端页面、WebSocket、房间流或真人操作时，至少跑一次浏览器手测；发布前再跑 UI smoke。
+
+---
+
+## 七、本地自检命令
+
+```bash
+# Python lint
+ruff check backend/ scripts/ tests/ configs/
+ruff format --check backend/ scripts/ tests/ configs/
+
+# 全量 pytest（离线 fake LLM）
+_TEST_ALLOW_FAKE_LLM=true LLM_PROVIDER=fake python -m pytest tests/ -q --timeout=120
+
+# 单文件/单测试
+python -m pytest tests/test_api.py -q
+python -m pytest tests/test_engine.py::test_game_plays_to_winner -q
+
+# 后端服务
+uvicorn backend.app:app --reload --host 0.0.0.0 --port 8000
+
+# 前端
+cd frontend
+npm install
+npm run lint
+npm run build
+npm run dev
 ```
 
 ---
 
-## 八、CI(若尚未配置,建议清单)
+## 八、CI
 
-> 当前未发现 `.github/workflows/`。建议配置后写本节,以下是参考:
+当前 CI 文件：`.github/workflows/ci.yml`
+
+CI 必须做两件事：
+
+1. `ruff check` + `ruff format --check`
+2. `python -m pytest tests/ -q --timeout=120`
+
+CI 不应该：
+
+- 调真实 LLM API。
+- 因为缺真实 key 就吞掉 pytest 失败。
+- 跑大体积实验、Playwright 截图或真实模型批量对局。
+
+CI 应该显式设置：
 
 ```yaml
-# .github/workflows/test.yml(建议)
-name: tests
-on: [push, pull_request]
-jobs:
-  pytest:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with: { python-version: "3.11" }
-      - run: pip install -r requirements.txt
-      - run: pytest tests/ -x -v
+_TEST_ALLOW_FAKE_LLM: "true"
+LLM_PROVIDER: fake
+AIWEREWOLF_STRICT_MODE: "true"
+ALLOW_FALLBACK: "false"
 ```
-
-**不要在 CI 跑**:
-
-- LLM 真实调用(费钱、不稳；CI 用 fake LLM stub)
-- UI smoke(慢,需要 headless 浏览器额外配置)
-
-**可以在 CI 跑**:
-
-- pytest 全套(纯 Python,fake LLM)
-- e2e_smoke.py(纯 HTTP,fake LLM)
-- mypy / ruff / black(若引入)
 
 ---
 
 ## 九、覆盖率目标
 
-| 模块 | 覆盖率目标 |
-|------|------------|
-| `engine/` | ≥ 80%(核心) |
-| `agents/heuristic.py` | ≥ 70% |
-| `agents/llm_agent.py` | ≥ 50%(主要测 fallback 路径) |
-| `protocols/` | ≥ 70% |
-| `db/` | ≥ 50% |
-| `frontend/` | 不做硬性要求,有 UI smoke 即可 |
-
-不强制覆盖率门槛(项目周期短),但 PR 描述里出现"无测试"的改动要被质疑。
+| 模块 | 目标 |
+|------|------|
+| `backend/engine/` | 核心规则、阶段、结算、Visibility 必须有高覆盖 |
+| `backend/agents/cognitive/` | AgentLoop、工具、解析、strict/no-fallback 路径重点覆盖 |
+| `backend/protocols/` | 房间、真人输入、WebSocket snapshot 覆盖核心路径 |
+| `backend/db/` | 初始化、写入、查询、幂等与失败容忍覆盖关键路径 |
+| `backend/eval/` | scorer、review、knowledge lifecycle 覆盖业务不变量 |
+| `frontend/` | 不设硬覆盖率门槛，但关键页面需 lint/build 和 smoke |
 
 ---
 
-## 十、答辩前总体验证
+## 十、答辩 / 发布前 Checklist
 
-冻结期(2026-06-08 起)之前,跑完整 checklist:
-
-- [ ] `pytest tests/` 全绿
-- [ ] `python scripts/e2e_smoke.py` 通过
-- [ ] `node tests/ui_smoke.mjs` 通过
-- [ ] `python scripts/llm_game_smoke.py` 跑通完整一局(7P / 9P / 12P 各 1 次)
-- [ ] 浏览器手测 AI vs AI + AI + Human + 主持视角 + 中英文切换
-- [ ] DB 持久化:跑 3 局后查 `/api/history`,数据完整
+- [ ] `ruff check backend/ scripts/ tests/ configs/`
+- [ ] `ruff format --check backend/ scripts/ tests/ configs/`
+- [ ] `_TEST_ALLOW_FAKE_LLM=true LLM_PROVIDER=fake python -m pytest tests/ -q --timeout=120`
+- [ ] `python scripts/e2e_smoke.py`
+- [ ] `cd frontend && npm run lint && npm run build`
+- [ ] 浏览器手测：AI vs AI、AI + Human、主持视角、公开视角、中英文切换
+- [ ] DB 持久化：跑局后 `/api/history`、`/api/replay/{game_id}` 可查
+- [ ] `git status --short --ignored` 无应入库的大文件、日志、密钥、缓存
 
 ---
 
-## 十一、AI 写测试的红线
+## 十一、AI 写测试红线
 
-- [ ] 不 mock LLM 让测试假绿
-- [ ] 不写"空断言"测试(`assert True`)
-- [ ] 不在 CI 路径上跑真实 LLM 调用
-- [ ] 测试有 seed,可复现
-- [ ] 改了引擎 / 路由 / Agent 都补对应测试
-- [ ] 不 disable 失败的测试,要 fix 或开 issue
+- [ ] 不 mock 真实 LLM 结果来制造“假绿”；测试用 fake LLM 必须显式 test-only。
+- [ ] 不写空断言。
+- [ ] 不在 CI 真实扣费。
+- [ ] 不禁用失败测试；要修复或明确记录为外部依赖问题。
+- [ ] 不把 `.env`、API key、prompt 全文写入测试快照。
 
 详见 `70-ai-collaboration.md`。
-
----
-
-*Version 1.0.0 — 2026-05-22 — 初始建立。*

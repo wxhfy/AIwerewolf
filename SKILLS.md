@@ -2,7 +2,7 @@
 
 > 本文档是给 AI Agent（Claude Code → CLAUDE.md / Codex → AGENTS.md / 其他）的开发速查手册。
 > 当 Agent 接到狼人杀相关开发任务时，**先读本文档**了解全局背景和参考资源。
-> 正式需求文档：`REQUIREMENTS.md`
+> 项目需求与设计目标：`REQUIREMENTS.md`
 
 **项目根目录**: `/home/fyh0106/AIwerewolf/`
 **参考仓库目录**: `/home/fyh0106/AIwerewolf/references/`
@@ -19,7 +19,6 @@
 | 开发周期 | **2026.05.20 — 2026.06.10**（21 天） |
 | 答辩时间 | 2026.06.11 — 2026.06.20 |
 | 可用模型 | **方舟 doubao-seed 2.0 pro & code**（项目组统一提供 API Key，不得外泄） |
-| 奖金 | 卓越项目 2 万元 + 优秀奖若干 |
 
 ### 目标
 做一个能自主完成一局狼人杀的 Agent Team：
@@ -40,33 +39,24 @@
 | 5 | 前端界面 | 至少支持观战模式 |
 | 6 | 进阶课题 | 满足对应方向的具体要求 |
 
-### 进阶方向（三选一）
+### 研究方向
 
-| 方向 | 核心 | 满分标准 |
+| 方向 | 核心 | 项目落点 |
 |------|------|----------|
-| **A. 通用 Agent** | Agent 自演化 | 以"玩狼人杀"为目标，自主演化出可运行 Agent Team |
-| **B. 评测+复盘** | 多维量化评测 | 精准定位失误 + Leaderboard 区分不同模型/版本能力 |
-| **C. 自进化 Agent** | 迭代提升胜率 | 终局 vs 初始 20 局胜率显著提升，版本可回溯 |
+| **A. 通用 Agent** | Agent 自演化 | 可作为长期方向，不是当前主线 |
+| **B. 复盘分析** | 多维决策质量分析 | 定位关键失误，生成报告和 Leaderboard |
+| **C. 自进化 Agent** | 迭代提升策略 | 将复盘结论沉淀为可检索策略知识 |
 
-> **建议选 B（评测+复盘）或 C（自进化）**。A（通用 Agent）跟做狼人杀游戏不是一个范畴，不选。B 与参考最契合、确定性高；C 出彩但需大量对局时间。
+> 当前项目主线是 B + C 的组合：先把每一步决策复盘清楚，再把高光和失误抽象为下一局可用的策略知识。
 
-### 评分权重（100 分制）
+### 架构设计重点
 
-| 维度 | 权重 | 关键 |
-|------|------|------|
-| 单 Agent 能力（Prompt 工程） | **20%** | Prompt 精细度、角色策略差异、CoT/few-shot、推理链路 |
-| 多 Agent 协作 | **20%** | 上下文管理、技能调度抽象、博弈行为（归票/伪装/站队） |
-| 工程完整度 | **30%** | 对局正确性、信息隔离、前端体验、日志、代码质量 |
-| 进阶课题 | **30%** | 依所选方向评定 |
-| **Agent 相关合计 70%，工程 30%** | | |
-
-### 加分项
-1. 策略深度 — 博弈策略设计，角色行为差异显著
-2. 工程超预期 — 错误处理、并发、监控等生产级能力
-3. 前端出色 — 动画、状态可视化，非技术人员能看懂
-4. 可扩展架构 — 加新角色/规则改动量小
-5. 人机交互 — 真人可加入与 Agent 混合博弈
-6. 进阶独创性 — 方案有新意且效果可验证
+1. **规则引擎主控**：Agent 只输出意图，阶段、技能、胜负由 `WerewolfGame` 裁决。
+2. **严格信息隔离**：完整真相在 `GameState`，Agent 只接收 `PlayerView`。
+3. **角色化 Agent**：人格、身份、策略知识分层，避免所有角色共用一套行为。
+4. **可扩展角色架构**：新增角色优先走 RoleRegistry、Phase、Action、Skill 分层。
+5. **可解释复盘**：GameEvent、AgentDecision、PublishedReview 形成可回放证据链。
+6. **人机混战**：HumanAgent 与 AI Agent 共用同一套房间和阶段推进机制。
 
 ---
 
@@ -90,11 +80,12 @@
 
 > API Key 由项目组统一提供，**不得外泄、不得用于非挑战开发**。
 
-**封装客户端**: `backend/llm/deepseek.py`（统一接口，可切换后端）
+**封装入口**: `backend.llm.create_client()`（统一接口，可切换 provider）
 
 ```python
-from backend.llm.deepseek import DeepSeekClient
-client = DeepSeekClient(api_key="<your-doubao-key>", base_url="<doubao-endpoint>")
+from backend.llm import create_client
+
+client = create_client()  # reads LLM_PROVIDER and provider-specific keys from .env
 ```
 
 ### 备用模型：DeepSeek v4 Flash
@@ -147,10 +138,10 @@ curl https://api.deepseek.com/chat/completions \
   - `werewolf-backend/src/handlers/http/gameActHandlers/` — 每个游戏动作独立 handler
 
 #### #3 WereWolfPlus (`references/WereWolfPlus/`)
-**多模型评测框架** — YAML 配置化对战，批量并行评测
+**多模型对比框架** — YAML 配置化对战，批量并行对比
 - 每阵营可配置不同 LLM 模型
 - 完整 Prompt 模板（18 种动作 × 多种角色）
-- 评测指标：胜率/IRP/KSR/VSS/角色 KPI
+- 对比指标：胜率/IRP/KSR/VSS/角色 KPI
 - **最有价值文件**：
   - `agent_manager/prompts/werewolf_prompt.py` — **最重要！** Google 品质的完整 Prompt 模板
   - `games/werewolf/werewolf_env.py` — Gym 风格的 WereWolfEnv
@@ -331,29 +322,35 @@ class GameState:
 | 村民 | 仅公开信息（发言、投票、死亡公告） |
 | 猎人 | 同村民 + 被毒死时不能开枪 |
 
-### 5.6 AgentDecision Schema
+### 5.6 Decision Schema
 ```python
-class AgentDecision(BaseModel):
+@dataclass
+class Decision:
     """Agent 的统一决策输出"""
-    reasoning: str                # 推理过程
-    action_type: ActionType       # 行动类型
-    target: int | None            # 目标玩家 seat
-    speech: str | None            # 发言内容（TALK/WHISPER 时）
-    vote_target: int | None       # 投票目标
+    actor_id: str                 # 行动者 player id
+    action_type: ActionType       # TALK / VOTE / ATTACK / DIVINE / GUARD / ...
+    target_id: str | None = None  # 目标 player id
+    speech: str | None = None     # 发言内容
+    reasoning: str = ""           # 推理摘要
+    metadata: dict = field(default_factory=dict)
 ```
 
 ### 5.7 EventLog Schema
 ```python
-class GameEvent(BaseModel):
+@dataclass
+class GameEvent:
     """结构化游戏事件"""
-    round: int                    # 轮次
+    id: str                       # 事件 id
+    seq: int                      # 单局递增序号
+    day: int                      # 天数
     phase: Phase                  # 阶段
     timestamp: float              # 时间戳
-    event_type: str               # 事件类型
-    actor: int | None             # 行动者 seat
-    targets: list[int]            # 目标
-    public_data: dict             # 公开数据
-    private_data: dict            # 仅特定角色可见数据
+    type: EventType               # 事件类型
+    actor_id: str | None          # 行动者 player id
+    target_ids: list[str]         # 目标 player ids
+    payload: dict                 # 结构化事件内容
+    visibility: str               # public / private / werewolf_team
+    visible_to: list[str]         # 私有可见玩家列表
 ```
 
 ---
@@ -420,7 +417,7 @@ JSON Schema 输出格式
 - [ ] 历史对局回放
 
 ### Phase 4：进阶
-- [ ] 评测体系（胜率/IRP/KSR/VSS）
+- [ ] 复盘分析体系（胜率/IRP/KSR/VSS）
 - [ ] 批量对局 + Leaderboard
 - [ ] 自进化循环
 
@@ -449,7 +446,7 @@ JSON Schema 输出格式
 ### Q: WebSocket 事件怎么定义？
 → `references/xiong35-werewolf/werewolf-frontend/shared/WSEvents.ts`
 
-### Q: 评测指标有哪些？
+### Q: 对比指标有哪些？
 → `references/WereWolfPlus/games/werewolf/metrics.py`（如存在）或 `agent_eval/agent_eval.py`
 
 ---
