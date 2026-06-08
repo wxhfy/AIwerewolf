@@ -30,7 +30,7 @@ from backend.agents.cognitive.profiles import PersonaTraits
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_CONN = "postgresql://werewolf:wolf_secret_2026@127.0.0.1:5433/werewolf"
+_DEFAULT_CONN = "postgresql://werewolf:werewolf_dev_password@127.0.0.1:5433/werewolf"
 
 
 # ============================================================

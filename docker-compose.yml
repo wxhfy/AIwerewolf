@@ -16,7 +16,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-werewolf}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-wolf_secret_2026}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-werewolf_dev_password}
       POSTGRES_DB: ${POSTGRES_DB:-werewolf}
     ports:
       - "${POSTGRES_PORT:-5433}:5432"
@@ -44,7 +44,7 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: ${COMPOSE_DATABASE_URL:-postgresql+psycopg2://werewolf:wolf_secret_2026@postgres:5432/werewolf}
+      DATABASE_URL: ${COMPOSE_DATABASE_URL:-postgresql+psycopg2://werewolf:werewolf_dev_password@postgres:5432/werewolf}
       LLM_PROVIDER: ${LLM_PROVIDER:-deepseek}
       DOUBAO_API_KEY: ${DOUBAO_API_KEY:-}
       DOUBAO_BASE_URL: ${DOUBAO_BASE_URL:-https://ark.cn-beijing.volces.com/api/v3}
@@ -112,7 +112,7 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: ${COMPOSE_DATABASE_URL:-postgresql+psycopg2://werewolf:wolf_secret_2026@postgres:5432/werewolf}
+      DATABASE_URL: ${COMPOSE_DATABASE_URL:-postgresql+psycopg2://werewolf:werewolf_dev_password@postgres:5432/werewolf}
       LLM_PROVIDER: ${LLM_PROVIDER:-deepseek}
       DOUBAO_API_KEY: ${DOUBAO_API_KEY:-}
       AIWEREWOLF_STRICT_MODE: "true"

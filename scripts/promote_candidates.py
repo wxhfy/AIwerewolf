@@ -30,7 +30,7 @@ sys.path.insert(0, ROOT)
 # DB configuration — must be set BEFORE importing backend modules so that
 # init_db() / SessionLocal pick up the correct URL.
 # ---------------------------------------------------------------------------
-DB_URL = "postgresql://werewolf:wolf_secret_2026@127.0.0.1:5433/werewolf"
+DB_URL = "postgresql://werewolf:werewolf_dev_password@127.0.0.1:5433/werewolf"
 os.environ["DATABASE_URL"] = DB_URL
 
 # ---------------------------------------------------------------------------

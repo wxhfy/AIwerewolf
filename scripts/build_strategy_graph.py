@@ -31,7 +31,7 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-DB_URL = "postgresql://werewolf:wolf_secret_2026@127.0.0.1:5433/werewolf"
+DB_URL = "postgresql://werewolf:werewolf_dev_password@127.0.0.1:5433/werewolf"
 os.environ.setdefault("DATABASE_URL", DB_URL)
 
 from backend.llm import create_client  # noqa: E402

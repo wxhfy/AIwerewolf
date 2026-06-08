@@ -29,7 +29,7 @@ import psycopg2
 
 from backend.engine.game import WerewolfGame
 
-DB_URL = "postgresql://werewolf:wolf_secret_2026@127.0.0.1:5433/werewolf"
+DB_URL = "postgresql://werewolf:werewolf_dev_password@127.0.0.1:5433/werewolf"
 OUTPUT_DIR = ROOT / "outputs"
 PER_GAME_TIMEOUT_SECONDS = 45 * 60  # 45 minutes per game
 COOLDOWN_SECONDS = 30  # pause between games to avoid API rate limiting

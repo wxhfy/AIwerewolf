@@ -11,7 +11,7 @@ import psycopg2
 
 sys.path.insert(0, ".")
 
-CONN_STR = "postgresql://werewolf:wolf_secret_2026@127.0.0.1:5433/werewolf"
+CONN_STR = "postgresql://werewolf:werewolf_dev_password@127.0.0.1:5433/werewolf"
 
 TEST_QUERIES = [
     {

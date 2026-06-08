@@ -46,7 +46,7 @@ os.environ.setdefault("DB_POOL_SIZE", "5")
 os.environ.setdefault("DB_MAX_OVERFLOW", "5")
 
 # DATABASE_URL (the code hardcodes a fallback; set it explicitly)
-_DB_URL = os.getenv("DATABASE_URL", "postgresql://werewolf:wolf_secret_2026@127.0.0.1:5433/werewolf")
+_DB_URL = os.getenv("DATABASE_URL", "postgresql://werewolf:werewolf_dev_password@127.0.0.1:5433/werewolf")
 os.environ["DATABASE_URL"] = _DB_URL
 
 # ── Logging ─────────────────────────────────────────────────────
