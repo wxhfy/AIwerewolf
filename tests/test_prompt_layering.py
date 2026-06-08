@@ -81,7 +81,7 @@ def test_think_prompt_uses_role_boundaries_not_role_tactics() -> None:
 
 
 def test_agent_loop_task_layer_has_no_role_hard_strategy(monkeypatch) -> None:
-    monkeypatch.setattr(agent_loop_module, "_retrieve_track_c_strategy_lessons", lambda obs, action: [])
+    monkeypatch.setattr(agent_loop_module, "_retrieve_track_c_strategy_lessons", lambda obs, action, **kwargs: [])
     obs = Observation(
         player_id="P1",
         player_name="Alice",
@@ -110,7 +110,7 @@ def test_agent_loop_task_layer_has_no_role_hard_strategy(monkeypatch) -> None:
 
 
 def test_agent_loop_places_forced_strategy_only_in_strategy_layer(monkeypatch) -> None:
-    monkeypatch.setattr(agent_loop_module, "_retrieve_track_c_strategy_lessons", lambda obs, action: [])
+    monkeypatch.setattr(agent_loop_module, "_retrieve_track_c_strategy_lessons", lambda obs, action, **kwargs: [])
     obs = Observation(
         player_id="P1",
         player_name="Alice",
@@ -139,9 +139,10 @@ def test_agent_loop_places_forced_strategy_only_in_strategy_layer(monkeypatch) -
 
 
 def test_track_c_lessons_enter_strategy_layer_only(monkeypatch) -> None:
-    def fake_retrieve(obs, action):
+    def fake_retrieve(obs, action, **kwargs):
         assert obs.player_role == "Seer"
         assert action == "vote"
+        assert kwargs["mbti"] == "INTJ"
         return [
             {
                 "doc_id": "doc-track-c-seer",
@@ -170,6 +171,7 @@ def test_track_c_lessons_enter_strategy_layer_only(monkeypatch) -> None:
         llm=object(),
         system_prompt="【身份与性格】只介绍角色边界。",
         action_type="vote",
+        mbti="INTJ",
     )
 
     prompt = loop._build_system_text(obs, Memory("P1", "Seer"), create_tools(obs, Memory("P1", "Seer")), "", "")
@@ -211,13 +213,181 @@ def test_track_c_auto_retrieval_uses_precision_policy(monkeypatch) -> None:
         alive=[PlayerInfo(id="P1", name="Alice", seat=1, alive=True)],
     )
 
-    lessons = agent_loop_module._retrieve_track_c_strategy_lessons(obs, "vote")
+    lessons = agent_loop_module._retrieve_track_c_strategy_lessons(obs, "vote", mbti="INTJ")
 
     assert lessons[0]["doc_id"] == "doc-prod-seer"
     assert captured["kwargs"]["retrieval_policy"].value == "hybrid_role_alignment_phase"
+    assert captured["kwargs"]["mbti"] == "INTJ"
     assert captured["kwargs"]["alignment"] == "village"
     assert "预言家" in captured["kwargs"]["keywords"]
     assert "投票" in captured["kwargs"]["keywords"]
+
+
+def test_track_c_auto_retrieval_filters_unverified_and_persona_mismatch(monkeypatch) -> None:
+    def fake_prod_retrieve(*args, **kwargs):
+        return [
+            {
+                "doc_id": "candidate-doc",
+                "quality": 0.99,
+                "situation": "Seer vote",
+                "strategy": "Candidate knowledge should not enter runtime prompt.",
+                "doc_type": "accepted_patch",
+                "status": "candidate",
+            },
+            {
+                "doc_id": "wrong-mbti-doc",
+                "quality": 0.95,
+                "situation": "Seer vote",
+                "strategy": "ESFJ-specific advice should not be injected for INTJ.",
+                "doc_type": "accepted_patch",
+                "status": "active",
+                "persona_scope": "mbti:ESFJ+role:Seer",
+            },
+            {
+                "doc_id": "safe-doc",
+                "quality": 0.92,
+                "situation": "Seer vote",
+                "strategy": "Turn public claims and votes into a concise voting reason.",
+                "doc_type": "accepted_patch",
+                "status": "active",
+                "persona_scope": "mbti:INTJ+role:Seer",
+            },
+        ]
+
+    monkeypatch.setattr("backend.agents.cognitive.retrieval_prod.retrieve_strategies_prod", fake_prod_retrieve)
+    agent_loop_module._TRACK_C_RETRIEVAL_CACHE.clear()
+    obs = Observation(
+        player_id="P1",
+        player_name="Alice",
+        player_seat=1,
+        player_role="Seer",
+        day=1,
+        phase="DAY_VOTE",
+        alive=[PlayerInfo(id="P1", name="Alice", seat=1, alive=True)],
+    )
+
+    lessons = agent_loop_module._retrieve_track_c_strategy_lessons(obs, "vote", mbti="INTJ")
+
+    assert [lesson["doc_id"] for lesson in lessons] == ["safe-doc"]
+
+
+def test_track_c_auto_retrieval_blocks_reflection_and_unobservable_cues(monkeypatch) -> None:
+    def fake_prod_retrieve(*args, **kwargs):
+        return [
+            {
+                "doc_id": "reflection-doc",
+                "quality": 0.96,
+                "situation": "Seer vote",
+                "strategy": "Use this reflection as direct advice.",
+                "doc_type": "reflection",
+                "status": "active",
+                "persona_scope": "mbti:INTJ+role:Seer",
+            },
+            {
+                "doc_id": "unobservable-doc",
+                "quality": 0.94,
+                "situation": "Seer vote",
+                "strategy": "Read eye contact and body language before voting.",
+                "doc_type": "accepted_patch",
+                "status": "active",
+                "persona_scope": "mbti:INTJ+role:Seer",
+            },
+            {
+                "doc_id": "safe-doc",
+                "quality": 0.91,
+                "situation": "Seer vote",
+                "strategy": "Base the vote on public speech contradictions and vote records.",
+                "doc_type": "accepted_patch",
+                "status": "active",
+                "persona_scope": "mbti:INTJ+role:Seer",
+            },
+        ]
+
+    monkeypatch.setattr("backend.agents.cognitive.retrieval_prod.retrieve_strategies_prod", fake_prod_retrieve)
+    agent_loop_module._TRACK_C_RETRIEVAL_CACHE.clear()
+    obs = Observation(
+        player_id="P1",
+        player_name="Alice",
+        player_seat=1,
+        player_role="Seer",
+        day=1,
+        phase="DAY_VOTE",
+        alive=[PlayerInfo(id="P1", name="Alice", seat=1, alive=True)],
+    )
+
+    lessons = agent_loop_module._retrieve_track_c_strategy_lessons(obs, "vote", mbti="INTJ")
+
+    assert [lesson["doc_id"] for lesson in lessons] == ["safe-doc"]
+
+
+def test_track_c_auto_retrieval_cache_is_mbti_aware(monkeypatch) -> None:
+    calls = []
+
+    def fake_prod_retrieve(*args, **kwargs):
+        calls.append(kwargs["mbti"])
+        return [
+            {
+                "doc_id": f"safe-{kwargs['mbti']}",
+                "quality": 0.91,
+                "situation": "Seer vote",
+                "strategy": "Use public voting evidence.",
+                "doc_type": "accepted_patch",
+                "status": "active",
+                "persona_scope": f"mbti:{kwargs['mbti']}+role:Seer",
+            }
+        ]
+
+    monkeypatch.setenv("TRACK_C_AUTO_RETRIEVAL_CACHE_SECONDS", "120")
+    monkeypatch.setattr("backend.agents.cognitive.retrieval_prod.retrieve_strategies_prod", fake_prod_retrieve)
+    agent_loop_module._TRACK_C_RETRIEVAL_CACHE.clear()
+    obs = Observation(
+        player_id="P1",
+        player_name="Alice",
+        player_seat=1,
+        player_role="Seer",
+        day=1,
+        phase="DAY_VOTE",
+        alive=[PlayerInfo(id="P1", name="Alice", seat=1, alive=True)],
+    )
+
+    intj_lessons = agent_loop_module._retrieve_track_c_strategy_lessons(obs, "vote", mbti="INTJ")
+    esfj_lessons = agent_loop_module._retrieve_track_c_strategy_lessons(obs, "vote", mbti="ESFJ")
+
+    assert [lesson["doc_id"] for lesson in intj_lessons] == ["safe-INTJ"]
+    assert [lesson["doc_id"] for lesson in esfj_lessons] == ["safe-ESFJ"]
+    assert calls == ["INTJ", "ESFJ"]
+
+
+def test_track_c_auto_retrieval_clears_stale_usage_trace_when_filtered(monkeypatch) -> None:
+    def fake_prod_retrieve(*args, **kwargs):
+        return [
+            {
+                "doc_id": "candidate-doc",
+                "quality": 0.99,
+                "situation": "Seer vote",
+                "strategy": "Candidate knowledge should not be injected.",
+                "doc_type": "accepted_patch",
+                "status": "candidate",
+            }
+        ]
+
+    monkeypatch.setattr("backend.agents.cognitive.retrieval_prod.retrieve_strategies_prod", fake_prod_retrieve)
+    agent_loop_module._TRACK_C_RETRIEVAL_CACHE.clear()
+    agent_loop_module._LAST_RETRIEVED_STRATEGIES["P1"] = [{"doc_id": "old-doc"}]
+    obs = Observation(
+        player_id="P1",
+        player_name="Alice",
+        player_seat=1,
+        player_role="Seer",
+        day=1,
+        phase="DAY_VOTE",
+        alive=[PlayerInfo(id="P1", name="Alice", seat=1, alive=True)],
+    )
+
+    lessons = agent_loop_module._retrieve_track_c_strategy_lessons(obs, "vote", mbti="INTJ")
+
+    assert lessons == []
+    assert "P1" not in agent_loop_module._LAST_RETRIEVED_STRATEGIES
 
 
 def test_rules_tool_answers_mechanics_without_recommendation() -> None:

@@ -105,6 +105,7 @@ class AbstractedLesson:
             "status": "candidate",
             "experiment_id": self.experiment_id or None,
             "source_game_id": self.source_game_id,
+            "source_decision_id": self.source_step_id,
         }
 
 
@@ -391,9 +392,8 @@ def store_lessons_to_db(
     docs: list[StrategyKnowledgeDocData] = []
     for lesson in lessons:
         d = lesson.to_pg_dict()
-        # Remove keys not in StrategyKnowledgeDocData
+        # Remove legacy keys not in StrategyKnowledgeDocData.
         d.pop("game_id", None)
-        d.pop("source_game_id", None)
         d.pop("id", None)  # Let upsert dedup by content, not UUID
         docs.append(StrategyKnowledgeDocData(**d))
 
@@ -432,6 +432,8 @@ def promote_after_store() -> int:
     import logging
     from collections import defaultdict
 
+    from sqlalchemy import or_
+
     from backend.db.database import SessionLocal
     from backend.db.persist import StrategyKnowledgeDoc
 
@@ -447,6 +449,10 @@ def promote_after_store() -> int:
             .filter(
                 StrategyKnowledgeDoc.status == "candidate",
                 StrategyKnowledgeDoc.quality_score >= quality_threshold,
+                or_(
+                    StrategyKnowledgeDoc.doc_type.is_(None),
+                    ~StrategyKnowledgeDoc.doc_type.ilike("reflection%"),
+                ),
             )
             .all()
         )
@@ -462,6 +468,10 @@ def promote_after_store() -> int:
             .filter(
                 StrategyKnowledgeDoc.status == "candidate",
                 StrategyKnowledgeDoc.quality_score >= cluster_threshold,
+                or_(
+                    StrategyKnowledgeDoc.doc_type.is_(None),
+                    ~StrategyKnowledgeDoc.doc_type.ilike("reflection%"),
+                ),
             )
             .order_by(StrategyKnowledgeDoc.quality_score.desc())
             .all()

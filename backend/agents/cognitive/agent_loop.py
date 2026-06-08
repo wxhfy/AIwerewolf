@@ -53,7 +53,7 @@ DECISION_TOOL_NAME = "submit_decision"
 import threading as _threading
 
 _STRATEGY_LOCK = _threading.Lock()
-_TRACK_C_RETRIEVAL_CACHE: dict[tuple[str, str, str], tuple[float, list[dict[str, Any]]]] = {}
+_TRACK_C_RETRIEVAL_CACHE: dict[tuple[str, str, str, str, str, str], tuple[float, list[dict[str, Any]]]] = {}
 _LAST_RETRIEVED_STRATEGIES: dict = {}
 _LAST_LOOP_TRACE: dict = {}
 
@@ -477,7 +477,13 @@ class AgentLoop:
 
         track_c_strategy_text = ""
         if _feature_enabled("COGNITIVE_ENABLE_TRACK_C", True):
-            track_c_strategy_text = _build_track_c_strategy_block(obs, self._action_type)
+            track_c_strategy_text = _build_track_c_strategy_block(
+                obs,
+                self._action_type,
+                mbti=self._mbti,
+                alignment=_derive_alignment(role),
+                retrieval_policy=self._retrieval_policy,
+            )
         if track_c_strategy_text:
             blocks.append(track_c_strategy_text)
 
@@ -548,7 +554,13 @@ class AgentLoop:
             )
         track_c_strategy_text = ""
         if _feature_enabled("COGNITIVE_ENABLE_TRACK_C", True):
-            track_c_strategy_text = _build_track_c_strategy_block(obs, self._action_type)
+            track_c_strategy_text = _build_track_c_strategy_block(
+                obs,
+                self._action_type,
+                mbti=self._mbti,
+                alignment=_derive_alignment(str(getattr(obs, "player_role", "") or "")),
+                retrieval_policy=self._retrieval_policy,
+            )
         if track_c_strategy_text:
             blocks.append(track_c_strategy_text)
         return "\n\n".join(blocks)
@@ -1327,20 +1339,33 @@ class AgentLoop:
         return result if result else None
 
 
-def _build_track_c_strategy_block(obs: Observation, action_type: str) -> str:
+def _build_track_c_strategy_block(
+    obs: Observation,
+    action_type: str,
+    *,
+    mbti: str = "",
+    alignment: str = "",
+    retrieval_policy: str = "",
+) -> str:
     """Format DB-backed Track C lessons for the strategy layer.
 
     This is intentionally separate from role/persona/task prompts: it may
     contain gameplay advice, but only when the knowledge store returns approved
     lessons from prior reviews.
     """
-    lessons = _retrieve_track_c_strategy_lessons(obs, action_type)
+    lessons = _retrieve_track_c_strategy_lessons(
+        obs,
+        action_type,
+        mbti=mbti,
+        alignment=alignment,
+        retrieval_policy=retrieval_policy,
+    )
     if not lessons:
         return ""
 
     lines = [
         "【策略层：Track C 复盘知识】",
-        "以下内容来自已发布复盘/策略知识库，只能作为一般玩法经验；不能当成本局隐藏身份事实。",
+        "以下内容来自已发布复盘/策略知识库，并已通过运行时安全过滤；只能作为一般玩法经验，不能当成本局隐藏身份事实。",
     ]
     for index, item in enumerate(lessons[:3], start=1):
         doc_id = str(item.get("doc_id") or item.get("id") or f"lesson-{index}")
@@ -1377,7 +1402,14 @@ def _build_track_c_strategy_block(obs: Observation, action_type: str) -> str:
     return "\n".join(lines) if len(lines) > 2 else ""
 
 
-def _retrieve_track_c_strategy_lessons(obs: Observation, action_type: str) -> list[dict[str, Any]]:
+def _retrieve_track_c_strategy_lessons(
+    obs: Observation,
+    action_type: str,
+    *,
+    mbti: str = "",
+    alignment: str = "",
+    retrieval_policy: str = "",
+) -> list[dict[str, Any]]:
     """Retrieve Track C lessons without making prompt construction fragile."""
     try:
         from backend.agents.cognitive.retrieval_prod import RetrievalPolicy
@@ -1385,28 +1417,39 @@ def _retrieve_track_c_strategy_lessons(obs: Observation, action_type: str) -> li
 
         phase = str(getattr(obs, "phase", "") or "")
         role = str(getattr(obs, "player_role", "") or "")
+        player_id = str(getattr(obs, "player_id", "") or "")
         action = _strategy_query_action(action_type)
+        mbti_key = _normalize_mbti(mbti)
+        alignment_key = (alignment or _derive_alignment(role)).lower().strip()
+        policy_raw = (
+            os.getenv("TRACK_C_AUTO_RETRIEVAL_POLICY", "").strip()
+            or retrieval_policy
+            or "hybrid_role_alignment_phase"
+        )
+        try:
+            policy = RetrievalPolicy(policy_raw)
+        except ValueError:
+            policy = RetrievalPolicy.HYBRID_ROLE_ALIGNMENT_PHASE
         cache_ttl = float(os.getenv("TRACK_C_AUTO_RETRIEVAL_CACHE_SECONDS", "120") or 0)
-        cache_key = (role, phase, action)
+        limit = int(os.getenv("TRACK_C_AUTO_RETRIEVAL_LIMIT", "3") or "3")
+        fetch_limit = max(limit * 3, limit)
+        cache_key = (role, phase, action, mbti_key, alignment_key, policy.value)
         if cache_ttl > 0:
             cached = _TRACK_C_RETRIEVAL_CACHE.get(cache_key)
             now = time.monotonic()
             if cached and now - cached[0] <= cache_ttl:
                 return [dict(row) for row in cached[1]]
-        policy_raw = os.getenv("TRACK_C_AUTO_RETRIEVAL_POLICY", "hybrid_role_alignment_phase")
-        try:
-            policy = RetrievalPolicy(policy_raw)
-        except ValueError:
-            policy = RetrievalPolicy.HYBRID_ROLE_ALIGNMENT_PHASE
         keywords = _track_c_auto_keywords(role, phase, action)
         rows = retrieve_strategies_prod(
             role=role,
             phase=phase,
             keywords=keywords,
-            limit=int(os.getenv("TRACK_C_AUTO_RETRIEVAL_LIMIT", "3") or "3"),
+            limit=fetch_limit,
             output_mode="content",
             retrieval_policy=policy,
-            alignment=_derive_alignment(role),
+            mbti=mbti_key,
+            alignment=alignment_key,
+            player_id=player_id,
             action_type=action,
         )
         if not rows and _feature_enabled("TRACK_C_LEGACY_AUTO_INJECT_FALLBACK", False):
@@ -1416,8 +1459,13 @@ def _retrieve_track_c_strategy_lessons(obs: Observation, action_type: str) -> li
                 role=role,
                 phase=phase,
                 status="active",
-                limit=int(os.getenv("TRACK_C_AUTO_RETRIEVAL_LIMIT", "3") or "3"),
+                limit=fetch_limit,
             )
+        rows = [
+            row
+            for row in rows
+            if isinstance(row, dict) and _track_c_row_safe_for_runtime(row, role, mbti_key, alignment_key)
+        ][:limit]
         lessons = [
             _normalize_strategy_row(row, index) for index, row in enumerate(rows, start=1) if isinstance(row, dict)
         ]
@@ -1427,12 +1475,144 @@ def _retrieve_track_c_strategy_lessons(obs: Observation, action_type: str) -> li
             player_id = str(getattr(obs, "player_id", "") or "")
             with _STRATEGY_LOCK:
                 _LAST_RETRIEVED_STRATEGIES[player_id] = lessons
-        elif os.getenv("REQUIRE_STRATEGY_USAGE_TRACE", "").lower() == "true":
-            logger.error("STRICT FAIL: Track C auto-retrieval returned no strategies")
+        else:
+            if player_id:
+                with _STRATEGY_LOCK:
+                    _LAST_RETRIEVED_STRATEGIES.pop(player_id, None)
+            if os.getenv("REQUIRE_STRATEGY_USAGE_TRACE", "").lower() == "true":
+                logger.error("STRICT FAIL: Track C auto-retrieval returned no strategies")
         return lessons
     except Exception as exc:
         logger.debug("Track C strategy retrieval skipped: %s", exc)
         return []
+
+
+_UNOBSERVABLE_TRACK_C_PATTERNS = (
+    "眼神",
+    "表情",
+    "肢体",
+    "手势",
+    "语气变化",
+    "声音颤抖",
+    "情绪温度",
+    "氛围",
+    "微表情",
+    "现实桌游",
+    "场外",
+    "私下交流",
+    "座位姿态",
+    "深层动机",
+    "eye contact",
+    "facial expression",
+    "body language",
+    "micro-expression",
+    "nonverbal",
+    "offline cue",
+    "out-of-game",
+)
+_ABSOLUTE_TRACK_C_PATTERNS = (
+    "永远",
+    "无论如何",
+    "无论任何",
+    "固定投",
+    "must always",
+    "always vote",
+    "never reveal",
+)
+
+
+def _track_c_row_safe_for_runtime(row: dict[str, Any], role: str, mbti: str, alignment: str) -> bool:
+    """Final safety gate before auto-injecting Track C knowledge into prompts."""
+    status = str(row.get("status", "active") or "active").lower().strip()
+    if status != "active":
+        return False
+
+    doc_type = str(row.get("doc_type", "") or "").lower().strip()
+    if doc_type.startswith("reflection") and not _feature_enabled("TRACK_C_RUNTIME_ALLOW_REFLECTIONS", False):
+        return False
+
+    quality = _track_c_row_quality(row)
+    min_quality = float(os.getenv("TRACK_C_RUNTIME_MIN_QUALITY", "0.72") or "0.72")
+    if doc_type.startswith("reflection"):
+        min_quality = max(min_quality, 0.85)
+    if quality is not None and quality < min_quality:
+        return False
+
+    if bool(row.get("contains_current_game_private_info", False)):
+        return False
+
+    visibility_scope = str(row.get("visibility_scope", "") or "").lower().strip()
+    if visibility_scope in {"private", "hidden", "god", "omniscient"}:
+        return False
+    if visibility_scope in {"wolf", "wolf_team", "wolves"} and alignment != "wolf":
+        return False
+
+    row_mbti = _extract_track_c_mbti_scope(row)
+    if row_mbti and row_mbti != mbti:
+        return False
+
+    row_role = _extract_track_c_role_scope(row)
+    role_key = role.lower().strip()
+    if row_role and row_role not in {"global", "any"} and role_key and row_role != role_key:
+        return False
+
+    text = " ".join(
+        str(row.get(key, "") or "")
+        for key in (
+            "trigger",
+            "situation",
+            "situation_pattern",
+            "recommendation",
+            "strategy",
+            "recommended_action",
+            "avoid_action",
+            "rationale",
+            "evidence_summary",
+        )
+    ).lower()
+    if any(pattern in text for pattern in _UNOBSERVABLE_TRACK_C_PATTERNS):
+        return False
+    if any(pattern in text for pattern in _ABSOLUTE_TRACK_C_PATTERNS):
+        return False
+
+    return True
+
+
+def _track_c_row_quality(row: dict[str, Any]) -> float | None:
+    for key in ("quality_score", "quality", "score"):
+        raw = row.get(key)
+        if raw in (None, ""):
+            continue
+        try:
+            return float(raw)
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def _normalize_mbti(mbti: str) -> str:
+    value = str(mbti or "").upper().strip()
+    return value if re.fullmatch(r"[IE][NS][FT][JP]", value) else ""
+
+
+def _extract_track_c_mbti_scope(row: dict[str, Any]) -> str:
+    raw = str(row.get("mbti_scope", "") or "").upper().strip()
+    if re.fullmatch(r"[IE][NS][FT][JP]", raw):
+        return raw
+    persona_scope = str(row.get("persona_scope", "") or "")
+    match = re.search(r"mbti:([A-Za-z]{4})", persona_scope)
+    if match:
+        return _normalize_mbti(match.group(1))
+    return _normalize_mbti(persona_scope)
+
+
+def _extract_track_c_role_scope(row: dict[str, Any]) -> str:
+    raw = str(row.get("role_scope") or row.get("role") or "").lower().strip()
+    if raw:
+        return raw
+    persona_scope = str(row.get("persona_scope", "") or "")
+    match = re.search(r"role:([A-Za-z_]+)", persona_scope)
+    return match.group(1).lower().strip() if match else ""
 
 
 def _strategy_query_action(action_type: str) -> str:
@@ -1489,4 +1669,11 @@ def _normalize_strategy_row(row: dict[str, Any], index: int) -> dict[str, Any]:
         "doc_type": row.get("doc_type", ""),
         "status": row.get("status", ""),
         "quality_score": row.get("quality_score", row.get("quality", "")),
+        "bucket": row.get("bucket", ""),
+        "retrieval_policy": row.get("retrieval_policy", ""),
+        "persona_scope": row.get("persona_scope", ""),
+        "mbti_scope": row.get("mbti_scope", ""),
+        "role_scope": row.get("role_scope", row.get("role", "")),
+        "alignment_scope": row.get("alignment_scope", ""),
+        "phase_scope": row.get("phase_scope", row.get("phase", "")),
     }

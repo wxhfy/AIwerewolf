@@ -434,9 +434,9 @@ def _filter_hybrid(docs: List[Dict], role_key: str, mbti_key: str) -> Dict[str, 
 
         if role_key and doc_role == role_key and mbti_key and doc_mbti == mbti_key:
             buckets["same_role_same_mbti"].append(d)
-        elif role_key and doc_role == role_key and (not mbti_key or doc_mbti != mbti_key):
+        elif role_key and doc_role == role_key and _allow_role_generic_or_cross_mbti(doc_mbti):
             buckets["same_role_all_mbti"].append(d)
-        elif doc_role in ("global", "any", ""):
+        elif doc_role in ("global", "any", "") and _allow_role_generic_or_cross_mbti(doc_mbti):
             buckets["global"].append(d)
 
     for bucket in buckets.values():
@@ -473,16 +473,32 @@ def _filter_hybrid_phase(
             and (doc_phase == phase_key or not doc_phase)
         ):
             buckets["same_role_same_mbti_same_phase"].append(d)
-        elif role_key and doc_role == role_key and (not mbti_key or doc_mbti != mbti_key):
+        elif role_key and doc_role == role_key and _allow_role_generic_or_cross_mbti(doc_mbti):
             buckets["same_role_all_mbti"].append(d)
-        elif align_key and (doc_align == align_key or not doc_align):
+        elif (
+            doc_role not in {"global", "any", ""}
+            and align_key
+            and (doc_align == align_key or not doc_align)
+            and _allow_role_generic_or_cross_mbti(doc_mbti)
+        ):
             buckets["same_alignment_all_mbti"].append(d)
-        elif doc_role in ("global", "any", ""):
+        elif doc_role in ("global", "any", "") and _allow_role_generic_or_cross_mbti(doc_mbti):
             buckets["global"].append(d)
 
     for bucket in buckets.values():
         bucket.sort(key=lambda d: d.get("quality", 0), reverse=True)
     return buckets
+
+
+def _allow_role_generic_or_cross_mbti(doc_mbti: str) -> bool:
+    """Allow role fallback docs without importing another MBTI by default.
+
+    Cross-MBTI fill is useful for ablations, but risky for the default Track C
+    loop because a high-scoring lesson can encode another persona's play style.
+    """
+    if not doc_mbti:
+        return True
+    return os.getenv("TRACK_C_ALLOW_CROSS_MBTI_ROLE_FILL", "").lower() in {"1", "true", "yes", "on"}
 
 
 # Quality floor for bucket filling — docs below this threshold are skipped.

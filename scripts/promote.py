@@ -3,8 +3,10 @@
 
 Modes:
   quality    — Promote candidates with quality_score >= threshold to active,
-               deprecate those below deprecation_threshold.
+               deprecate those below deprecation_threshold. Reflection docs
+               are skipped unless --allow-reflections is set.
   cluster    — KMeans cluster candidates by (role, doc_type), promote Top-N per cluster.
+               Reflection docs are skipped unless --allow-reflections is set.
   feedback   — Promote based on knowledge_usage_feedback success rates.
   prune      — Cap active docs per (role, doc_type), demote excess to candidate.
 
@@ -32,7 +34,13 @@ DB_URL = DEFAULT_DB_URL
 
 
 # --- Quality mode ---
-def promote_by_quality(conn, quality_threshold: float, deprecation_threshold: float, dry_run: bool) -> dict:
+def promote_by_quality(
+    conn,
+    quality_threshold: float,
+    deprecation_threshold: float,
+    dry_run: bool,
+    allow_reflections: bool = False,
+) -> dict:
     """Promote candidates with quality >= threshold to active, deprecate those < deprecation."""
     cur = conn.cursor()
     cur.execute(
@@ -42,6 +50,9 @@ def promote_by_quality(conn, quality_threshold: float, deprecation_threshold: fl
 
     promoted, deprecated, skipped = 0, 0, 0
     for doc in candidates:
+        if _is_reflection_doc(doc) and not allow_reflections:
+            skipped += 1
+            continue
         qs = float(doc.get("quality_score", 0) or 0)
         if qs >= quality_threshold:
             if not dry_run:
@@ -65,7 +76,13 @@ def promote_by_quality(conn, quality_threshold: float, deprecation_threshold: fl
 
 
 # --- Cluster mode ---
-def promote_by_cluster(conn, top_n: int, quality_threshold: float, dry_run: bool) -> dict:
+def promote_by_cluster(
+    conn,
+    top_n: int,
+    quality_threshold: float,
+    dry_run: bool,
+    allow_reflections: bool = False,
+) -> dict:
     """KMeans cluster candidates by (role, doc_type), promote Top-N per cluster."""
     cur = conn.cursor()
     cur.execute(
@@ -77,6 +94,8 @@ def promote_by_cluster(conn, top_n: int, quality_threshold: float, dry_run: bool
     # Group by (role, doc_type)
     groups = defaultdict(list)
     for doc in candidates:
+        if _is_reflection_doc(doc) and not allow_reflections:
+            continue
         key = (doc.get("role", "global"), doc.get("doc_type", "unknown"))
         groups[key].append(doc)
 
@@ -94,6 +113,10 @@ def promote_by_cluster(conn, top_n: int, quality_threshold: float, dry_run: bool
         conn.commit()
     cur.close()
     return {"promoted": promoted, "clusters": len(groups), "total_candidates": len(candidates)}
+
+
+def _is_reflection_doc(doc: dict) -> bool:
+    return str(doc.get("doc_type") or "").lower().startswith("reflection")
 
 
 # --- Feedback mode ---
@@ -183,6 +206,7 @@ def main():
     p.add_argument("--top-n", type=int, default=3)
     p.add_argument("--min-usage", type=int, default=5)
     p.add_argument("--feedback-score", type=float, default=0.7)
+    p.add_argument("--allow-reflections", action="store_true")
     p.add_argument("--dry-run", action="store_true", default=True)
     p.add_argument("--apply", dest="dry_run", action="store_false")
     args = p.parse_args()
@@ -192,8 +216,20 @@ def main():
     conn = psycopg2.connect(DB_URL)
 
     mode_fns = {
-        "quality": lambda: promote_by_quality(conn, args.quality_threshold, args.deprecation_threshold, args.dry_run),
-        "cluster": lambda: promote_by_cluster(conn, args.top_n, args.quality_threshold, args.dry_run),
+        "quality": lambda: promote_by_quality(
+            conn,
+            args.quality_threshold,
+            args.deprecation_threshold,
+            args.dry_run,
+            args.allow_reflections,
+        ),
+        "cluster": lambda: promote_by_cluster(
+            conn,
+            args.top_n,
+            args.quality_threshold,
+            args.dry_run,
+            args.allow_reflections,
+        ),
         "feedback": lambda: promote_by_feedback(conn, args.min_usage, args.feedback_score, args.dry_run),
         "prune": lambda: prune_active(conn, args.dry_run),
     }
