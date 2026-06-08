@@ -285,6 +285,7 @@ export type WebSocketMessage =
   | { type: "status"; status: string; seed?: number; agent_type?: string }
   | { type: "snapshot"; state: GameState; room_id?: string }
   | { type: "complete"; state?: GameState; room?: RoomRecord }
+  | { type: "paused"; state?: GameState; room?: RoomRecord }
   | { type: "room"; room: RoomRecord }
   | { type: "error"; message: string }
   | { type: "stream_token"; player_id: string; player_name: string; delta: string; finish_reason?: string | null };

@@ -266,6 +266,10 @@ def test_human_pending_input_options_match_legal_targets() -> None:
     wolf_pending = game._build_pending_input(game.state.player("W1"), "ATTACK")
     assert {option["id"] for option in wolf_pending.options} == {"G1", "S1", "V1"}
 
+    wolf_vote_pending = game._build_pending_input(game.state.player("W1"), "WOLF_TEAM_VOTE")
+    assert wolf_vote_pending.action_type == "night_action"
+    assert {option["id"] for option in wolf_vote_pending.options} == {"G1", "S1", "V1"}
+
     guard_pending = game._build_pending_input(game.state.player("G1"), "GUARD")
     assert "S1" not in {option["id"] for option in guard_pending.options}
 

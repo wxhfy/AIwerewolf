@@ -37,7 +37,8 @@
     ".next-smoke/types/**/*.ts",
     ".next-build-verify/types/**/*.ts",
     ".next-visual-check/types/**/*.ts",
-    ".next-probe/types/**/*.ts"
+    ".next-probe/types/**/*.ts",
+    ".next-human-probe/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

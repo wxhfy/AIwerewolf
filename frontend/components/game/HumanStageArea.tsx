@@ -29,7 +29,7 @@ export const HumanStageArea = React.memo(function HumanStageArea({ display }: Hu
   const icon = d.isNight ? (NIGHT_ICONS[p] || "🌙") : p.includes("SPEECH") ? "🗣️" : p.includes("VOTE") ? "🗳️" : d.isOver ? "🏆" : "☀️";
 
   return (
-    <div className="px-5 py-6">
+    <div className="px-5 py-6" data-testid="human-stage-area">
       {/* Icon + brief hint only — phase title is in top bar */}
       <div className="text-center">
         <p className="text-5xl mb-3">{icon}</p>

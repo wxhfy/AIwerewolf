@@ -791,6 +791,47 @@ def submit_room_action(room_id: str, payload: Dict[str, Any], show_private: bool
     return snapshot
 
 
+@app.post("/api/rooms/{room_id}/pause")
+def pause_room_game(room_id: str):
+    try:
+        game = _rooms.get_active_game(room_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Room not found")
+    if game is None or game.state.winner is not None:
+        raise HTTPException(status_code=409, detail="No running game")
+    game.pause()
+    room = _rooms.set_room_status(room_id, "paused")
+    return {"room_id": room_id, "paused": True, "status": room.status}
+
+
+@app.post("/api/rooms/{room_id}/resume")
+def resume_room_game(room_id: str):
+    try:
+        game = _rooms.get_active_game(room_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Room not found")
+    if game is None or game.state.winner is not None:
+        raise HTTPException(status_code=409, detail="No running game")
+    game.resume()
+    room = _rooms.set_room_status(room_id, "running")
+    return {"room_id": room_id, "paused": False, "status": room.status}
+
+
+@app.get("/api/rooms/{room_id}/control-status")
+def room_control_status(room_id: str):
+    try:
+        room = _rooms.get_room(room_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Room not found")
+    game = _rooms.get_active_game(room_id)
+    return {
+        "room_id": room_id,
+        "status": room.status,
+        "paused": bool(game is not None and getattr(game, "is_paused", False)),
+        "running": bool(game is not None and game.state.winner is None),
+    }
+
+
 async def stream_game(
     websocket: WebSocket,
     seed: int,
@@ -1008,6 +1049,22 @@ async def room_ws(websocket: WebSocket, room_id: str) -> None:
                 delay_ms=delay_ms,
             )
             final = state.snapshot(show_private=show_private)
+            if state.winner is None:
+                if getattr(_rooms.get_active_game(room_id), "is_paused", False):
+                    _rooms.record_snapshot(room_id, final)
+                    room = _rooms.set_room_status(room_id, "paused")
+                    try:
+                        await websocket.send_json({"type": "paused", "state": final, "room": room.to_dict()})
+                    except (RuntimeError, WebSocketDisconnect):
+                        return
+                else:
+                    _rooms.record_snapshot(room_id, final)
+                    _rooms.set_room_status(room_id, "running")
+                    try:
+                        await websocket.send_json({"type": "snapshot", "state": final, "room_id": room_id})
+                    except (RuntimeError, WebSocketDisconnect):
+                        return
+                continue
             room = _rooms.record_game(room_id, state, final)
             try:
                 await websocket.send_json({"type": "complete", "state": final, "room": room.to_dict()})

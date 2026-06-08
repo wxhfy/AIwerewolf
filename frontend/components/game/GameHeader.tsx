@@ -13,9 +13,13 @@ interface GameHeaderProps {
   viewMode: ViewMode;
   isVisualNight: boolean;
   isHumanMode: boolean;
+  isPlaying: boolean;
+  isPaused: boolean;
   canRun: boolean;
   onRun: () => void;
   onStartHuman: () => void;
+  onPause: () => void;
+  onResume: () => void;
 }
 
 export function GameHeader({
@@ -26,10 +30,16 @@ export function GameHeader({
   viewMode,
   isVisualNight,
   isHumanMode,
+  isPlaying,
+  isPaused,
   canRun,
   onRun,
   onStartHuman,
+  onPause,
+  onResume,
 }: GameHeaderProps) {
+  const canControlAiGame = !isHumanMode && !winner && viewMode === ViewMode.MODERATOR;
+
   return (
     <header className="relative z-10 flex flex-wrap items-center gap-3 border-b border-border bg-cardBackground px-4 py-2.5 md:px-6" data-phase-aware>
       <div className="flex items-center gap-3">
@@ -53,6 +63,19 @@ export function GameHeader({
             ? (language === Language.ZH ? "只看公开进程" : "Public flow")
             : (language === Language.ZH ? "含隐藏信息" : "Hidden info")}
         </div>
+        {canControlAiGame && (isPlaying || isPaused) && (
+          <Button
+            data-testid="global-pause-toggle"
+            size="sm"
+            variant="ghost"
+            onClick={isPaused ? onResume : onPause}
+            aria-pressed={isPaused}
+          >
+            {isPaused
+              ? (language === Language.ZH ? "继续" : "Resume")
+              : (language === Language.ZH ? "暂停" : "Pause")}
+          </Button>
+        )}
         {canRun && !isHumanMode && <Button size="sm" onClick={onRun}>{t("run", language)}</Button>}
         {canRun && isHumanMode && <Button size="sm" onClick={onStartHuman}>{t("run", language)}</Button>}
       </div>

@@ -16,6 +16,7 @@ interface HumanActionBarProps {
   selectedPlayer: Player | undefined;
   setSelectedTarget: (id: string) => void;
   onSubmit: () => void;
+  onSkip: () => void;
   language: string;
 }
 
@@ -31,21 +32,23 @@ export function HumanActionBar({
   selectedPlayer,
   setSelectedTarget,
   onSubmit,
+  onSkip,
   language,
 }: HumanActionBarProps) {
   const lang = language as "zh" | "en";
 
   if (isSpeech) {
     return (
-      <div className="border-t border-border bg-cardBackground px-4 py-2">
+      <div className="border-t border-border bg-cardBackground px-4 py-2" data-testid="human-action-bar">
         <div className="flex items-end gap-2">
           <textarea
+            data-testid="human-speech-input"
             value={speech}
             onChange={(e) => setSpeech(e.target.value)}
             placeholder={pending?.placeholder || (lang === "zh" ? "输入发言..." : "Type your speech...")}
             className="flex-1 h-20 resize-none rounded-lg border border-border bg-background px-3 py-3 text-sm text-textPrimary placeholder:text-text-sub/40"
           />
-          <Button onClick={onSubmit} size="sm">
+          <Button data-testid="human-submit-button" onClick={onSubmit} size="sm">
             {pending?.request === "BADGE_SPEECH"
               ? (lang === "zh" ? "提交竞选发言" : "Submit Speech")
               : pending?.request === "LAST_WORDS"
@@ -54,6 +57,7 @@ export function HumanActionBar({
           </Button>
           {pending?.request === "BADGE_SPEECH" && (
             <button
+              data-testid="human-skip-button"
               onClick={() => { setSpeech(""); onSubmit(); }}
               className="text-[11px] text-text-sub/60 hover:text-text-sub shrink-0"
             >
@@ -67,7 +71,7 @@ export function HumanActionBar({
 
   // ── Target selection mode ──
   return (
-    <div className="border-t border-border bg-cardBackground px-4 py-2">
+    <div className="border-t border-border bg-cardBackground px-4 py-2" data-testid="human-action-bar">
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <p className="truncate text-xs text-text-sub">
@@ -104,16 +108,17 @@ export function HumanActionBar({
           )}
           {pending?.can_skip && (
             <button
-              onClick={() => { setSelectedTarget(""); onSubmit(); }}
+              data-testid="human-skip-button"
+              onClick={() => { setSelectedTarget(""); onSkip(); }}
               className="text-[11px] text-text-sub/60 hover:text-text-sub"
             >
               {lang === "zh" ? "跳过" : "Skip"}
             </button>
           )}
-          <Button onClick={onSubmit} disabled={!canSubmit} size="sm">
+          <Button data-testid="human-submit-button" onClick={onSubmit} disabled={!canSubmit} size="sm">
             {pending?.request === "DIVINE"
               ? (lang === "zh" ? "确认查验" : "Confirm Divine")
-              : pending?.request === "ATTACK"
+              : pending?.request === "ATTACK" || pending?.request === "WOLF_TEAM_VOTE"
               ? (lang === "zh" ? "确认击杀" : "Confirm Attack")
               : pending?.request === "GUARD"
               ? (lang === "zh" ? "确认守护" : "Confirm Guard")
@@ -134,7 +139,7 @@ export function HumanActionBar({
 /** Submitted state indicator — shown after human submits, waiting for phase advance */
 export function SubmittedIndicator({ language }: { language: string }) {
   return (
-    <div className="border-t border-border bg-cardBackground px-4 py-2 flex items-center gap-2 text-xs text-text-sub">
+    <div data-testid="human-submitted-indicator" className="border-t border-border bg-cardBackground px-4 py-2 flex items-center gap-2 text-xs text-text-sub">
       <span className="h-3 w-3 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
       {language === "zh" ? "已提交，等待阶段推进" : "Submitted, waiting for phase advance"}
     </div>

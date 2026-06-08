@@ -27,7 +27,7 @@ export function HumanStatusBar({ display, displayPhase, language, speakerState }
   const lang = language as "zh" | "en";
 
   return (
-    <div className="flex items-center gap-3 border-b border-border bg-cardBackground px-5 py-2.5 text-base font-medium">
+    <div data-testid="human-status-bar" className="flex items-center gap-3 border-b border-border bg-cardBackground px-5 py-2.5 text-base font-medium">
       <span className="font-semibold text-textPrimary">
         {display.cycle} · {phaseLabel}
       </span>

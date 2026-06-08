@@ -282,6 +282,7 @@ plans/
 .next-probe/
 .next-real-ui-probe/
 .next-smoke/
+.next-human-probe/
 
 # Skills cache (tracked via skills/locks/ instead)
 skills/gsap-*

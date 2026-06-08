@@ -256,6 +256,9 @@ class WerewolfGame:
         self.play_done: _threading.Event = _threading.Event()
         self._play_start_lock: _threading.Lock = _threading.Lock()
         self._shared_lock: _threading.RLock = _threading.RLock()
+        self._pause_event: _threading.Event = _threading.Event()
+        self._pause_event.set()
+        self.is_paused: bool = False
         # Agent 独占锁：保护并发 _batch_ask 时的 agent.update() 和决策调用
         self._agent_locks: dict[str, _threading.RLock] = {}
         sampled_personas = sampled_personas or self._sample_personas(len(self.state.players), seed)
@@ -479,11 +482,13 @@ class WerewolfGame:
             self._play_started = True
         try:
             while self.state.winner is None:
+                self.wait_if_paused()
                 self.play_until_blocked()
                 if self.state.pending_input is not None:
                     raise RuntimeError(
                         "Human input required; use play_until_blocked/submit_human_action for mixed games."
                     )
+                self.wait_if_paused()
             return self.state
         except Exception:
             # Task 2: Crash-safe — flush pending decisions even on game crash
@@ -494,6 +499,17 @@ class WerewolfGame:
             raise
         finally:
             self.play_done.set()
+
+    def pause(self) -> None:
+        self.is_paused = True
+        self._pause_event.clear()
+
+    def resume(self) -> None:
+        self.is_paused = False
+        self._pause_event.set()
+
+    def wait_if_paused(self) -> None:
+        self._pause_event.wait()
 
     def play_until_blocked(self) -> GameState:
         if not self.state.events:
@@ -537,6 +553,7 @@ class WerewolfGame:
                     self.phase_manager.run(Phase.DAY_START, self)
                 if self.state.pending_input is not None or self._check_win():
                     break
+                self.wait_if_paused()
         except GamePaused:
             return self.state
         if self.state.winner is None and self.state.day >= self.state.max_days:
@@ -1688,7 +1705,7 @@ class WerewolfGame:
                     player.id, ActionType.VOTE, target_id=target_id, reasoning=reasoning, metadata={"source": "human"}
                 )
             ]
-        if pending.request == "ATTACK":
+        if pending.request in {"ATTACK", "WOLF_TEAM_VOTE"}:
             return [
                 Decision(
                     player.id, ActionType.ATTACK, target_id=target_id, reasoning=reasoning, metadata={"source": "human"}
@@ -2224,7 +2241,7 @@ class WerewolfGame:
                     if target.id in candidate_ids and target.id != player.id
                 ]
             prompt = f"轮到 {player.name} 选择投票目标。"
-        elif request == "ATTACK":
+        elif request in {"ATTACK", "WOLF_TEAM_VOTE"}:
             action_type = "night_action"
             option_players = [target for target in option_players if target.alignment != Alignment.WOLF]
             prompt = f"轮到 {player.name} 选择夜袭目标。"

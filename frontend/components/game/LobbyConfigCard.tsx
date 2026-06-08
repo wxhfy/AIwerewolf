@@ -34,7 +34,7 @@ export function LobbyConfigCard(props: LobbyConfigCardProps) {
         <label className="block text-xs font-medium text-text-sub/60 mb-2.5 uppercase tracking-wider min-h-[1em]">{t("gameMode", language)}</label>
         <div className="flex rounded-lg border border-border/40 p-0.5 bg-border/5">
           {(["ai", "human"] as const).map((m) => (
-            <button key={m} onClick={() => onModeChange(m)}
+            <button key={m} data-testid={`mode-${m}-button`} onClick={() => onModeChange(m)}
               className={`flex-1 py-2.5 text-sm font-medium rounded-md transition-all duration-200 ${
                 mode === m ? "bg-primary text-white shadow-[0_2px_8px_rgba(183,131,63,0.3)]" : "text-text-sub/60 hover:text-textPrimary"
               }`}>
@@ -67,6 +67,7 @@ export function LobbyConfigCard(props: LobbyConfigCardProps) {
         <div className="grid grid-cols-6 gap-1.5">
           {Array.from({ length: playerCount }, (_, i) => i + 1).map((seat) => (
             <button key={seat} onClick={() => onHumanSeatChange(seat)}
+              data-testid={`human-seat-${seat}-button`}
               className={`py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${
                 humanSeat === seat ? "bg-primary/15 text-primary border border-primary/30 ring-1 ring-primary/20"
                 : "text-text-sub/50 border border-transparent hover:text-textPrimary hover:bg-primary/5"

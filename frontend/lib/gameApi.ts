@@ -83,3 +83,15 @@ export async function submitHumanAction(roomId: string, data: HumanActionPayload
   if (!response.ok) throw new Error("Action failed");
   return parseJson<GameState>(response);
 }
+
+export async function pauseRoom(roomId: string): Promise<{ paused: boolean; status: string }> {
+  const response = await fetchWithTimeout(apiUrl(`/api/rooms/${roomId}/pause`), { method: "POST" });
+  if (!response.ok) throw new Error(`Pause failed (${response.status})`);
+  return parseJson<{ paused: boolean; status: string }>(response);
+}
+
+export async function resumeRoom(roomId: string): Promise<{ paused: boolean; status: string }> {
+  const response = await fetchWithTimeout(apiUrl(`/api/rooms/${roomId}/resume`), { method: "POST" });
+  if (!response.ok) throw new Error(`Resume failed (${response.status})`);
+  return parseJson<{ paused: boolean; status: string }>(response);
+}
