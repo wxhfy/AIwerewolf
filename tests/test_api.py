@@ -27,6 +27,14 @@ def test_create_game_api() -> None:
     assert review["suspicion_matrix"]
     assert review["html_report"]
 
+    status_response = client.get(f"/api/games/{data['id']}/reviews/status")
+    assert status_response.status_code == 200
+    status = status_response.json()
+    assert status["status"] == "ready"
+    assert status["hasHtml"] is True
+    assert status["hasMarkdown"] is True
+    assert status["publishAllowed"] is True
+
     metrics_response = client.get(f"/api/games/{data['id']}/metrics")
     assert metrics_response.status_code == 200
     metrics = metrics_response.json()

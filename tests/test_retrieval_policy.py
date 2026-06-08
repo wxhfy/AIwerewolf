@@ -145,6 +145,57 @@ def test_hybrid_policy_uses_role_generic_docs_without_cross_mbti() -> None:
     assert results[1]["bucket"] == "same_role_all_mbti"
 
 
+def test_hybrid_policy_prefers_validated_canonical_later_strategy_version() -> None:
+    retriever = StrategyRetriever()
+    assert (
+        retriever.build_from_docs(
+            [
+                {
+                    "doc_id": "seer-v1",
+                    "situation": "查杀 表水 预言家",
+                    "strategy": "旧版预言家查杀表水策略",
+                    "role": "Seer",
+                    "phase": "DAY_SPEECH",
+                    "quality": 0.95,
+                    "confidence": 0.85,
+                    "knowledge_epoch": 1,
+                    "doc_version": "seer_v1",
+                    "maturity": "refined",
+                    "validated_at": "2026-05-20T00:00:00+00:00",
+                },
+                {
+                    "doc_id": "seer-v3",
+                    "situation": "查杀 表水 预言家",
+                    "strategy": "新版预言家查杀表水策略",
+                    "role": "Seer",
+                    "phase": "DAY_SPEECH",
+                    "quality": 0.90,
+                    "confidence": 0.88,
+                    "knowledge_epoch": 3,
+                    "doc_version": "seer_v3",
+                    "maturity": "canonical",
+                    "validated_at": "2026-06-08T00:00:00+00:00",
+                },
+            ]
+        )
+        == 2
+    )
+
+    results = retriever.search_with_keywords(
+        ["查杀"],
+        role="Seer",
+        phase="DAY_SPEECH",
+        k=2,
+        retrieval_policy=RetrievalPolicy.SAME_ROLE_ALL_MBTI,
+        agent_context=_ctx("INTJ"),
+    )
+
+    assert [item["doc_id"] for item in results] == ["seer-v3", "seer-v1"]
+    assert results[0]["maturity"] == "canonical"
+    assert results[0]["knowledge_epoch"] == 3
+    assert results[0]["strategy_rank_score"] > results[1]["strategy_rank_score"]
+
+
 def test_hybrid_alignment_phase_rejects_cross_mbti_alignment_fill() -> None:
     retriever = StrategyRetriever()
     assert (

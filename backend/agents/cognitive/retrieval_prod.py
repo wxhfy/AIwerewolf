@@ -30,6 +30,8 @@ import os
 import re as _stdlib_re
 from dataclasses import dataclass
 from dataclasses import field
+from datetime import datetime
+from datetime import timezone
 from enum import Enum
 from typing import Any
 from typing import Dict
@@ -285,6 +287,91 @@ def _safe_str(val: Any) -> str:
     return str(val) if val else ""
 
 
+def _parse_ts(value: Any) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
+def _recency_factor(value: Any) -> float:
+    parsed = _parse_ts(value)
+    if parsed is None:
+        return 1.0
+    delta_days = max(0.0, (datetime.now(timezone.utc) - parsed).total_seconds() / 86400.0)
+    return float(np.exp(-delta_days / 14.0))
+
+
+def _strategy_rank_score(doc: Dict[str, Any]) -> float:
+    quality = float(doc.get("quality", doc.get("quality_score", 0.8)) or 0.8)
+    confidence = float(doc.get("confidence", 0.7) or 0.7)
+    usage_count = float(doc.get("usage_count", doc.get("used_count", 0)) or 0)
+    success_count = float(doc.get("success_count", 0) or 0)
+    usage_rate = (success_count + 3.0) / (usage_count + 6.0)
+    maturity_bonus = {"raw": 0.0, "refined": 0.06, "canonical": 0.12}.get(
+        _safe_str(doc.get("maturity", "raw")).lower(),
+        0.0,
+    )
+    validation_bonus = 0.08 if doc.get("validated_at") or doc.get("validated_on") else 0.0
+    epoch_bonus = min(0.08, max(0, int(doc.get("knowledge_epoch", 0) or 0)) * 0.01)
+    recency = _recency_factor(doc.get("validated_at") or doc.get("updated_at") or doc.get("created_at"))
+    contradiction_penalty = 0.12 if int(doc.get("contradiction_count", 0) or 0) > 0 else 0.0
+    return round(
+        0.42 * quality
+        + 0.20 * confidence
+        + 0.12 * usage_rate
+        + 0.08 * recency
+        + maturity_bonus
+        + validation_bonus
+        + epoch_bonus
+        - contradiction_penalty,
+        4,
+    )
+
+
+def _doc_sort_key(doc: Dict[str, Any]) -> tuple[float, float, int, str]:
+    return (
+        float(doc.get("strategy_rank_score", _strategy_rank_score(doc)) or 0.0),
+        float(doc.get("quality", 0.0) or 0.0),
+        int(doc.get("knowledge_epoch", 0) or 0),
+        _safe_str(doc.get("doc_id", "")),
+    )
+
+
+def _result_from_doc(doc: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "doc_id": doc.get("doc_id", ""),
+        "situation": doc.get("situation", ""),
+        "strategy": doc.get("strategy", ""),
+        "rationale": doc.get("rationale", ""),
+        "role": doc.get("role", "global"),
+        "phase": doc.get("phase", "global"),
+        "role_scope": doc.get("role_scope", doc.get("role", "")),
+        "mbti_scope": doc.get("mbti_scope", ""),
+        "alignment_scope": doc.get("alignment_scope", ""),
+        "phase_scope": doc.get("phase_scope", ""),
+        "action_scope": doc.get("action_scope", ""),
+        "quality": doc.get("quality", 0.8),
+        "confidence": doc.get("confidence", 0.7),
+        "doc_type": doc.get("doc_type", ""),
+        "strategy_rank_score": doc.get("strategy_rank_score", _strategy_rank_score(doc)),
+        "knowledge_epoch": doc.get("knowledge_epoch", 0),
+        "doc_version": doc.get("doc_version", "v1"),
+        "version_group": doc.get("version_group", ""),
+        "maturity": doc.get("maturity", "raw"),
+        "supersedes_doc_ids": list(doc.get("supersedes_doc_ids") or []),
+        "validated_at": doc.get("validated_at", ""),
+        "source_game_id": doc.get("source_game_id", ""),
+        "source_decision_id": doc.get("source_decision_id", ""),
+        "status": doc.get("status", "active"),
+    }
+
+
 def _normalize_doc_for_policy(doc: Dict[str, Any]) -> Dict[str, Any]:
     """Ensure a strategy doc has policy scope fields."""
     normalized = dict(doc)
@@ -308,6 +395,13 @@ def _normalize_doc_for_policy(doc: Dict[str, Any]) -> Dict[str, Any]:
     normalized["source_decision_id"] = _safe_str(normalized.get("source_decision_id", ""))
     normalized["status"] = _safe_str(normalized.get("status", normalized.get("doc_type", "")))
     normalized["quality"] = float(normalized.get("quality", 0.8) or 0.8)
+    normalized["confidence"] = float(normalized.get("confidence", 0.7) or 0.7)
+    normalized["knowledge_epoch"] = int(normalized.get("knowledge_epoch", 0) or 0)
+    normalized["doc_version"] = _safe_str(normalized.get("doc_version", "v1")) or "v1"
+    normalized["version_group"] = _safe_str(normalized.get("version_group", ""))
+    normalized["maturity"] = _safe_str(normalized.get("maturity", "raw")) or "raw"
+    normalized["supersedes_doc_ids"] = list(normalized.get("supersedes_doc_ids") or [])
+    normalized["strategy_rank_score"] = _strategy_rank_score(normalized)
     return normalized
 
 
@@ -378,7 +472,7 @@ def _filter_global(docs: List[Dict]) -> Dict[str, List[Dict]]:
         role = _safe_str(d.get("role_scope", d.get("role", ""))).lower().strip()
         if role in ("global", "any", ""):
             bucket.append(d)
-    bucket.sort(key=lambda d: d.get("quality", 0), reverse=True)
+    bucket.sort(key=_doc_sort_key, reverse=True)
     return {"global": bucket}
 
 
@@ -390,7 +484,7 @@ def _filter_self_mbti(docs: List[Dict], mbti_key: str) -> Dict[str, List[Dict]]:
         doc_mbti = _safe_str(d.get("mbti_scope", "")).upper().strip()
         if not doc_mbti or doc_mbti == mbti_key:
             bucket.append(d)
-    bucket.sort(key=lambda d: d.get("quality", 0), reverse=True)
+    bucket.sort(key=_doc_sort_key, reverse=True)
     return {"self_mbti": bucket}
 
 
@@ -402,7 +496,7 @@ def _filter_same_role(docs: List[Dict], role_key: str) -> Dict[str, List[Dict]]:
         doc_role = _safe_str(d.get("role_scope", d.get("role", ""))).lower().strip()
         if doc_role == role_key:
             bucket.append(d)
-    bucket.sort(key=lambda d: d.get("quality", 0), reverse=True)
+    bucket.sort(key=_doc_sort_key, reverse=True)
     return {"same_role_all_mbti": bucket}
 
 
@@ -417,7 +511,7 @@ def _filter_same_role_mbti(docs: List[Dict], role_key: str, mbti_key: str) -> Di
         doc_mbti = _safe_str(d.get("mbti_scope", "")).upper().strip()
         if doc_role == role_key and doc_mbti == mbti_key:
             bucket.append(d)
-    bucket.sort(key=lambda d: d.get("quality", 0), reverse=True)
+    bucket.sort(key=_doc_sort_key, reverse=True)
     return {"same_role_same_mbti": bucket}
 
 
@@ -440,7 +534,7 @@ def _filter_hybrid(docs: List[Dict], role_key: str, mbti_key: str) -> Dict[str, 
             buckets["global"].append(d)
 
     for bucket in buckets.values():
-        bucket.sort(key=lambda d: d.get("quality", 0), reverse=True)
+        bucket.sort(key=_doc_sort_key, reverse=True)
     return buckets
 
 
@@ -486,7 +580,7 @@ def _filter_hybrid_phase(
             buckets["global"].append(d)
 
     for bucket in buckets.values():
-        bucket.sort(key=lambda d: d.get("quality", 0), reverse=True)
+        bucket.sort(key=_doc_sort_key, reverse=True)
     return buckets
 
 
@@ -827,6 +921,13 @@ class StrategyRetriever:
                 "source_decision_id": _safe_str(doc.get("source_decision_id", "")),
                 "status": _safe_str(doc.get("status", "")),
                 "quality_score": doc.get("quality", 0.8),
+                "strategy_rank_score": doc.get("strategy_rank_score", _strategy_rank_score(doc)),
+                "knowledge_epoch": doc.get("knowledge_epoch", 0),
+                "doc_version": _safe_str(doc.get("doc_version", "v1")),
+                "version_group": _safe_str(doc.get("version_group", "")),
+                "maturity": _safe_str(doc.get("maturity", "raw")),
+                "supersedes_doc_ids": list(doc.get("supersedes_doc_ids") or []),
+                "validated_at": _safe_str(doc.get("validated_at", "")),
                 "_bucket_trace": bucket_trace,
             }
             return result
@@ -857,6 +958,10 @@ class StrategyRetriever:
                         "phase_scope",
                         "source_game_id",
                         "status",
+                        "strategy_rank_score",
+                        "knowledge_epoch",
+                        "doc_version",
+                        "maturity",
                     )
                 }
             results.append(result)
@@ -925,16 +1030,7 @@ class StrategyRetriever:
         scores = np.array(scores, dtype=np.float64)
         scores += self._role_bonus(role) + self._phase_bonus(phase)
         idx = np.argsort(scores)[::-1][:k]
-        return [
-            {
-                "doc_id": self._docs[i].get("doc_id", ""),
-                "situation": self._docs[i]["situation"],
-                "strategy": self._docs[i]["strategy"],
-                "quality": self._docs[i]["quality"],
-                "doc_type": self._docs[i].get("doc_type", ""),
-            }
-            for i in idx
-        ]
+        return [_result_from_doc(self._docs[i]) for i in idx]
 
     def _bm25_search_roled(self, query: str, role: str, phase: str, k: int) -> List[Dict]:
         """BM25 search with role-priority filtering.
@@ -987,16 +1083,7 @@ class StrategyRetriever:
                     if len(results) >= k:
                         break
 
-        return [
-            {
-                "doc_id": self._docs[i].get("doc_id", ""),
-                "situation": self._docs[i]["situation"],
-                "strategy": self._docs[i]["strategy"],
-                "quality": self._docs[i]["quality"],
-                "doc_type": self._docs[i].get("doc_type", ""),
-            }
-            for i in results[:k]
-        ]
+        return [_result_from_doc(self._docs[i]) for i in results[:k]]
 
     # ================================================================
     # Internal: Keyword Grep + BM25 Rerank
@@ -1127,16 +1214,7 @@ class StrategyRetriever:
             b_raw[i] = b_raw[i] * 0.7 + rb + pb
 
         top = sorted(candidate_indices, key=lambda i: b_raw[i], reverse=True)[:k]
-        return [
-            {
-                "doc_id": self._docs[i].get("doc_id", ""),
-                "situation": self._docs[i]["situation"],
-                "strategy": self._docs[i]["strategy"],
-                "quality": self._docs[i]["quality"],
-                "doc_type": self._docs[i].get("doc_type", ""),
-            }
-            for i in top
-        ]
+        return [_result_from_doc(self._docs[i]) for i in top]
 
     def _reorder_by_role_priority(self, indices: List[int], role: str) -> List[int]:
         """Reorder doc indices by role priority: same-role > global > other."""
@@ -1308,147 +1386,129 @@ def _load_from_pg(conn_str: str) -> List[Dict]:
     # Untagged docs (no experiment tag) remain visible to all tiers.
     tier_exp_id = os.getenv("TIER_EXPERIMENT_ID", "")
 
-    if tier_exp_id:
-        c.execute("""
-            SELECT id, COALESCE(situation_pattern, ''), COALESCE(recommended_action, ''),
-                   COALESCE(rationale, ''), role, phase, quality_score,
-                   COALESCE(doc_type, ''),
-                   COALESCE(confidence_tier, 'L3_strategic'),
-                   COALESCE(visibility_scope, 'public'),
-                   COALESCE(deidentified, false),
-                   COALESCE(contains_current_game_private_info, false),
-                   COALESCE(persona_scope, ''),
-                   COALESCE(tags, '[]'::jsonb),
-                   source_report_ids,
-                   source_item_ids
-            FROM strategy_knowledge_docs
-            WHERE status = 'active'
-              AND (doc_type != 'reflection' OR quality_score >= 0.85)
-        """)
-    else:
-        c.execute("""
-            SELECT id, COALESCE(situation_pattern, ''), COALESCE(recommended_action, ''),
-                   COALESCE(rationale, ''), role, phase, quality_score,
-                   COALESCE(doc_type, ''),
-                   COALESCE(confidence_tier, 'L3_strategic'),
-                   COALESCE(visibility_scope, 'public'),
-                   COALESCE(deidentified, false),
-                   COALESCE(contains_current_game_private_info, false),
-                   COALESCE(persona_scope, ''),
-                   source_report_ids,
-                   source_item_ids
-            FROM strategy_knowledge_docs
-            WHERE status = 'active'
-              AND (doc_type != 'reflection' OR quality_score >= 0.85)
-        """)
+    c.execute("""
+        SELECT id, COALESCE(situation_pattern, ''), COALESCE(recommended_action, ''),
+               COALESCE(rationale, ''), role, phase, quality_score,
+               COALESCE(doc_type, ''),
+               COALESCE(confidence_tier, 'L3_strategic'),
+               COALESCE(visibility_scope, 'public'),
+               COALESCE(deidentified, false),
+               COALESCE(contains_current_game_private_info, false),
+               COALESCE(persona_scope, ''),
+               COALESCE(tags, '[]'::jsonb),
+               source_report_ids,
+               source_item_ids,
+               COALESCE(confidence, 0.7),
+               COALESCE(usage_count, 0),
+               COALESCE(success_count, 0),
+               COALESCE(failure_count, 0),
+               COALESCE(knowledge_epoch, 0),
+               COALESCE(version_group, ''),
+               COALESCE(doc_version, 'v1'),
+               COALESCE(parent_doc_id, ''),
+               COALESCE(supersedes_doc_ids, '[]'::jsonb),
+               COALESCE(maturity, 'raw'),
+               validated_at,
+               last_used_at,
+               created_at,
+               updated_at,
+               COALESCE(contradiction_count, 0)
+        FROM strategy_knowledge_docs
+        WHERE status = 'active'
+          AND (doc_type != 'reflection' OR quality_score >= 0.85)
+    """)
 
     docs = []
-    if tier_exp_id:
-        import json
+    import json
 
-        for (
-            row_id,
-            sit,
-            rec,
-            rat,
-            role,
-            phase,
-            q,
-            dtype,
-            ctier,
-            vscope,
-            deid,
-            cgpi,
-            persona_scope,
-            raw_tags,
-            raw_src_reports,
-            raw_src_items,
-        ) in c.fetchall():
-            # H6: If a doc has experiment tags but NOT our tier's tag, skip it.
-            tags = json.loads(raw_tags) if isinstance(raw_tags, str) else (raw_tags or [])
-            if any(t.startswith("exp-") for t in tags) and tier_exp_id not in tags:
-                continue
-            # JSONB columns arrive as Python lists; handle both str and list cases
-            src_reports = (
-                list(raw_src_reports or [])
-                if isinstance(raw_src_reports, (list, tuple))
-                else (json.loads(raw_src_reports) if isinstance(raw_src_reports, str) else [])
+    for (
+        row_id,
+        sit,
+        rec,
+        rat,
+        role,
+        phase,
+        q,
+        dtype,
+        ctier,
+        vscope,
+        deid,
+        cgpi,
+        persona_scope,
+        raw_tags,
+        raw_src_reports,
+        raw_src_items,
+        confidence,
+        usage_count,
+        success_count,
+        failure_count,
+        knowledge_epoch,
+        version_group,
+        doc_version,
+        parent_doc_id,
+        raw_supersedes,
+        maturity,
+        validated_at,
+        last_used_at,
+        created_at,
+        updated_at,
+        contradiction_count,
+    ) in c.fetchall():
+        tags = json.loads(raw_tags) if isinstance(raw_tags, str) else (raw_tags or [])
+        if tier_exp_id and any(str(t).startswith("exp-") for t in tags) and tier_exp_id not in tags:
+            continue
+        src_reports = (
+            list(raw_src_reports or [])
+            if isinstance(raw_src_reports, (list, tuple))
+            else (json.loads(raw_src_reports) if isinstance(raw_src_reports, str) else [])
+        )
+        src_items = (
+            list(raw_src_items or [])
+            if isinstance(raw_src_items, (list, tuple))
+            else (json.loads(raw_src_items) if isinstance(raw_src_items, str) else [])
+        )
+        supersedes = (
+            list(raw_supersedes or [])
+            if isinstance(raw_supersedes, (list, tuple))
+            else (json.loads(raw_supersedes) if isinstance(raw_supersedes, str) else [])
+        )
+        docs.append(
+            _build_doc_dict(
+                row_id,
+                sit,
+                rec,
+                rat,
+                role,
+                phase,
+                q,
+                dtype,
+                ctier,
+                vscope,
+                deid,
+                cgpi,
+                persona_scope,
+                src_reports,
+                src_items,
+                confidence=confidence,
+                usage_count=usage_count,
+                success_count=success_count,
+                failure_count=failure_count,
+                knowledge_epoch=knowledge_epoch,
+                version_group=version_group,
+                doc_version=doc_version,
+                parent_doc_id=parent_doc_id,
+                supersedes_doc_ids=supersedes,
+                maturity=maturity,
+                validated_at=validated_at,
+                last_used_at=last_used_at,
+                created_at=created_at,
+                updated_at=updated_at,
+                contradiction_count=contradiction_count,
+                tags=tags,
             )
-            src_items = (
-                list(raw_src_items or [])
-                if isinstance(raw_src_items, (list, tuple))
-                else (json.loads(raw_src_items) if isinstance(raw_src_items, str) else [])
-            )
-            docs.append(
-                _build_doc_dict(
-                    row_id,
-                    sit,
-                    rec,
-                    rat,
-                    role,
-                    phase,
-                    q,
-                    dtype,
-                    ctier,
-                    vscope,
-                    deid,
-                    cgpi,
-                    persona_scope,
-                    src_reports,
-                    src_items,
-                )
-            )
-    else:
-        for (
-            row_id,
-            sit,
-            rec,
-            rat,
-            role,
-            phase,
-            q,
-            dtype,
-            ctier,
-            vscope,
-            deid,
-            cgpi,
-            persona_scope,
-            raw_src_reports,
-            raw_src_items,
-        ) in c.fetchall():
-            import json
-
-            src_reports = (
-                list(raw_src_reports or [])
-                if isinstance(raw_src_reports, (list, tuple))
-                else (json.loads(raw_src_reports) if isinstance(raw_src_reports, str) else [])
-            )
-            src_items = (
-                list(raw_src_items or [])
-                if isinstance(raw_src_items, (list, tuple))
-                else (json.loads(raw_src_items) if isinstance(raw_src_items, str) else [])
-            )
-            docs.append(
-                _build_doc_dict(
-                    row_id,
-                    sit,
-                    rec,
-                    rat,
-                    role,
-                    phase,
-                    q,
-                    dtype,
-                    ctier,
-                    vscope,
-                    deid,
-                    cgpi,
-                    persona_scope,
-                    src_reports,
-                    src_items,
-                )
-            )
+        )
     conn.close()
-    return docs
+    return _drop_superseded_docs(docs)
 
 
 def _build_doc_dict(
@@ -1467,6 +1527,23 @@ def _build_doc_dict(
     persona_scope: str,
     src_reports: list,
     src_items: list,
+    *,
+    confidence: Any = 0.7,
+    usage_count: Any = 0,
+    success_count: Any = 0,
+    failure_count: Any = 0,
+    knowledge_epoch: Any = 0,
+    version_group: str = "",
+    doc_version: str = "v1",
+    parent_doc_id: str = "",
+    supersedes_doc_ids: list | None = None,
+    maturity: str = "raw",
+    validated_at: Any = None,
+    last_used_at: Any = None,
+    created_at: Any = None,
+    updated_at: Any = None,
+    contradiction_count: Any = 0,
+    tags: list | None = None,
 ) -> Dict[str, Any]:
     """Build a normalized doc dict with derived scope fields.
 
@@ -1477,7 +1554,7 @@ def _build_doc_dict(
     mbti_scope = _parse_mbti_from_persona_scope(persona_scope_val)
     persona_role = _parse_role_from_persona_scope(persona_scope_val)
 
-    return {
+    doc = {
         # Core fields
         "doc_id": row_id or "",
         "situation": sit or "",
@@ -1486,6 +1563,7 @@ def _build_doc_dict(
         "role": role or "global",
         "phase": phase or "global",
         "quality": float(q) if q else 0.8,
+        "confidence": float(confidence) if confidence else 0.7,
         "doc_type": dtype or "",
         # Confidence / visibility
         "confidence_tier": ctier or "L3_strategic",
@@ -1504,7 +1582,34 @@ def _build_doc_dict(
         "source_decision_id": src_items[0] if src_items else "",
         # Status tracking
         "status": "active",
+        "usage_count": int(usage_count or 0),
+        "success_count": int(success_count or 0),
+        "failure_count": int(failure_count or 0),
+        "knowledge_epoch": int(knowledge_epoch or 0),
+        "version_group": version_group or "",
+        "doc_version": doc_version or "v1",
+        "parent_doc_id": parent_doc_id or "",
+        "supersedes_doc_ids": list(supersedes_doc_ids or []),
+        "maturity": maturity or "raw",
+        "validated_at": validated_at.isoformat() if hasattr(validated_at, "isoformat") else validated_at,
+        "last_used_at": last_used_at.isoformat() if hasattr(last_used_at, "isoformat") else last_used_at,
+        "created_at": created_at.isoformat() if hasattr(created_at, "isoformat") else created_at,
+        "updated_at": updated_at.isoformat() if hasattr(updated_at, "isoformat") else updated_at,
+        "contradiction_count": int(contradiction_count or 0),
+        "tags": list(tags or []),
     }
+    doc["strategy_rank_score"] = _strategy_rank_score(doc)
+    return doc
+
+
+def _drop_superseded_docs(docs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    superseded = {
+        old_id
+        for doc in docs
+        if _safe_str(doc.get("maturity", "raw")).lower() in {"refined", "canonical"}
+        for old_id in doc.get("supersedes_doc_ids", [])
+    }
+    return [doc for doc in docs if doc.get("doc_id") not in superseded]
 
 
 # ============================================================

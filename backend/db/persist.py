@@ -940,6 +940,20 @@ def _to_iso(value: Any) -> str | None:
     return str(value)
 
 
+def _parse_datetime(value: Any) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
 def _knowledge_row_to_dict(row: StrategyKnowledgeDoc) -> dict[str, Any]:
     return {
         "doc_id": row.id,
@@ -966,6 +980,16 @@ def _knowledge_row_to_dict(row: StrategyKnowledgeDoc) -> dict[str, Any]:
         "status": row.status,
         "tags": row.tags or [],
         "experiment_id": getattr(row, "experiment_id", None),
+        "source_game_id": getattr(row, "source_game_id", None),
+        "source_decision_id": getattr(row, "source_decision_id", None),
+        "knowledge_epoch": getattr(row, "knowledge_epoch", 0) or 0,
+        "version_group": getattr(row, "version_group", None),
+        "doc_version": getattr(row, "doc_version", "v1") or "v1",
+        "parent_doc_id": getattr(row, "parent_doc_id", None),
+        "supersedes_doc_ids": getattr(row, "supersedes_doc_ids", None) or [],
+        "maturity": getattr(row, "maturity", "raw") or "raw",
+        "validated_at": _to_iso(getattr(row, "validated_at", None)),
+        "last_used_at": _to_iso(getattr(row, "last_used_at", None)),
         "created_at": _to_iso(row.created_at),
         "updated_at": _to_iso(row.updated_at),
         # L0-L4 Confidence Tier
@@ -1031,6 +1055,14 @@ def _upsert_strategy_knowledge_rows(db, docs: list[StrategyKnowledgeDocData]) ->
         if "对局教训" in sit or "对局总结" in sit:
             continue
 
+        source_report_ids = list(doc.source_report_ids or [])
+        source_item_ids = list(doc.source_item_ids or [])
+        source_event_ids = list(doc.source_event_ids or [])
+        source_game_id = getattr(doc, "source_game_id", None) or (source_report_ids[0] if source_report_ids else None)
+        source_decision_id = getattr(doc, "source_decision_id", None) or (
+            source_item_ids[0] if source_item_ids else None
+        )
+
         # ── Cross-game dedup key ──
         key = (doc.role, doc.phase or "", action[:100])
 
@@ -1061,12 +1093,31 @@ def _upsert_strategy_knowledge_rows(db, docs: list[StrategyKnowledgeDocData]) ->
                 existing.quality_score = round(
                     (existing.quality_score * existing_games + doc.quality_score * new_games) / total_games, 4
                 )
-            # Union source report IDs (de-duplicate)
-            merged_sources = list(set((existing.source_report_ids or []) + (doc.source_report_ids or [])))
+            # Union source identifiers independently to preserve the evidence chain.
+            merged_sources = sorted(set((existing.source_report_ids or []) + source_report_ids))
+            merged_items = sorted(set((existing.source_item_ids or []) + source_item_ids))
             existing.source_report_ids = merged_sources
-            existing.source_item_ids = merged_sources  # align with reports
-            existing.source_event_ids = list(set((existing.source_event_ids or []) + (doc.source_event_ids or [])))
+            existing.source_item_ids = merged_items
+            existing.source_event_ids = sorted(set((existing.source_event_ids or []) + source_event_ids))
             existing.confidence = max(existing.confidence or 0, doc.confidence or 0)
+            if hasattr(existing, "experiment_id") and not getattr(existing, "experiment_id", None):
+                existing.experiment_id = getattr(doc, "experiment_id", None)
+            if hasattr(existing, "source_game_id") and not getattr(existing, "source_game_id", None):
+                existing.source_game_id = source_game_id
+            if hasattr(existing, "source_decision_id") and not getattr(existing, "source_decision_id", None):
+                existing.source_decision_id = source_decision_id
+            existing.knowledge_epoch = max(
+                int(existing.knowledge_epoch or 0), int(getattr(doc, "knowledge_epoch", 0) or 0)
+            )
+            existing.version_group = existing.version_group or getattr(doc, "version_group", None)
+            existing.doc_version = getattr(doc, "doc_version", None) or existing.doc_version or "v1"
+            existing.parent_doc_id = existing.parent_doc_id or getattr(doc, "parent_doc_id", None)
+            existing.supersedes_doc_ids = sorted(
+                set((existing.supersedes_doc_ids or []) + list(getattr(doc, "supersedes_doc_ids", []) or []))
+            )
+            existing.maturity = getattr(doc, "maturity", None) or existing.maturity or "raw"
+            existing.validated_at = _parse_datetime(getattr(doc, "validated_at", None)) or existing.validated_at
+            existing.last_used_at = _parse_datetime(getattr(doc, "last_used_at", None)) or existing.last_used_at
             existing.updated_at = _now()
 
             # Note: promotion from candidate → active is handled explicitly
@@ -1089,9 +1140,9 @@ def _upsert_strategy_knowledge_rows(db, docs: list[StrategyKnowledgeDocData]) ->
             row.avoid_action = doc.avoid_action
             row.rationale = doc.rationale
             row.evidence_summary = doc.evidence_summary
-            row.source_report_ids = doc.source_report_ids or []
-            row.source_item_ids = doc.source_item_ids or []
-            row.source_event_ids = doc.source_event_ids or []
+            row.source_report_ids = source_report_ids
+            row.source_item_ids = source_item_ids
+            row.source_event_ids = source_event_ids
             row.counterfactual_ids = doc.counterfactual_ids or []
             row.expected_metric_effects = doc.expected_metric_effects or []
             row.quality_score = doc.quality_score
@@ -1104,6 +1155,18 @@ def _upsert_strategy_knowledge_rows(db, docs: list[StrategyKnowledgeDocData]) ->
             row.tags = doc.tags or []
             if hasattr(row, "experiment_id"):
                 row.experiment_id = getattr(doc, "experiment_id", None)
+            if hasattr(row, "source_game_id"):
+                row.source_game_id = source_game_id
+            if hasattr(row, "source_decision_id"):
+                row.source_decision_id = source_decision_id
+            row.knowledge_epoch = int(getattr(doc, "knowledge_epoch", 0) or 0)
+            row.version_group = getattr(doc, "version_group", None)
+            row.doc_version = getattr(doc, "doc_version", None) or "v1"
+            row.parent_doc_id = getattr(doc, "parent_doc_id", None)
+            row.supersedes_doc_ids = list(getattr(doc, "supersedes_doc_ids", []) or [])
+            row.maturity = getattr(doc, "maturity", None) or "raw"
+            row.validated_at = _parse_datetime(getattr(doc, "validated_at", None))
+            row.last_used_at = _parse_datetime(getattr(doc, "last_used_at", None))
 
             row.confidence_tier = getattr(doc, "confidence_tier", None) or "L3_strategic"
             row.judge_agreement = getattr(doc, "judge_agreement", None)
@@ -1135,9 +1198,16 @@ def extract_strategy_knowledge_from_game(game_id: str) -> list[dict[str, Any]]:
     payload = get_review_reports(game_id)
     if not payload or payload.get("status") != "approved":
         return []
-    from backend.eval.review import StrategyKnowledgeExtractor
+    report_payload = payload.get("review_report") or payload
+    report = reconstruct_review_report(report_payload)
+    validation = payload.get("validation_result") or report.metadata.get("validation_result") or {}
+    if validation:
+        report.metadata["validation_result"] = validation
+    if payload.get("publish_allowed") is not None:
+        report.metadata["quality_passed"] = bool(payload.get("publish_allowed"))
+    from backend.eval.evolution import StrategyKnowledgeDocExtractor
 
-    docs = StrategyKnowledgeExtractor().extract(payload)
+    docs = StrategyKnowledgeDocExtractor().extract([report])
     db = SessionLocal()
     try:
         saved = _upsert_strategy_knowledge_rows(db, docs)
@@ -1164,11 +1234,25 @@ def list_strategy_knowledge(
             query = query.filter(StrategyKnowledgeDoc.phase == phase)
         if status:
             query = query.filter(StrategyKnowledgeDoc.status == status)
-        rows = (
-            query.order_by(StrategyKnowledgeDoc.quality_score.desc(), StrategyKnowledgeDoc.updated_at.desc())
-            .limit(limit)
-            .all()
+        rows = query.all()
+        superseded_doc_ids = {
+            old_id
+            for row in rows
+            if (row.status or "") in {"active", "candidate"} and (row.maturity or "raw") in {"refined", "canonical"}
+            for old_id in (row.supersedes_doc_ids or [])
+        }
+        rows = [row for row in rows if row.id not in superseded_doc_ids]
+        maturity_rank = {"canonical": 2, "refined": 1, "raw": 0}
+        rows.sort(
+            key=lambda row: (
+                maturity_rank.get(row.maturity or "raw", 0),
+                int(row.knowledge_epoch or 0),
+                float(row.quality_score or 0.0),
+                row.validated_at or row.updated_at or row.created_at or datetime.min.replace(tzinfo=timezone.utc),
+            ),
+            reverse=True,
         )
+        rows = rows[:limit]
         return _clean([_knowledge_row_to_dict(row) for row in rows])
     finally:
         db.close()
@@ -1255,27 +1339,35 @@ def record_knowledge_usage(payload: dict[str, Any]) -> dict[str, Any]:
     init_db()
     db = SessionLocal()
     try:
+        has_helpful = "helpful" in payload and payload.get("helpful") is not None
+        used = bool(payload.get("used", False))
         row = KnowledgeUsageFeedback(
             game_id=str(payload.get("game_id") or ""),
             decision_id=payload.get("decision_id"),
             player_id=str(payload.get("player_id") or ""),
             knowledge_doc_id=str(payload.get("knowledge_doc_id") or ""),
             retrieved=bool(payload.get("retrieved", True)),
-            used=bool(payload.get("used", False)),
+            used=used,
             decision_outcome=str(payload.get("decision_outcome") or ""),
             score_delta=float(payload.get("score_delta") or 0.0),
-            helpful=bool(payload.get("helpful", False)),
+            helpful=bool(payload.get("helpful", False)) if has_helpful else False,
             extra_metadata=payload.get("metadata") or {},
         )
         db.add(row)
         doc = db.query(StrategyKnowledgeDoc).filter(StrategyKnowledgeDoc.id == row.knowledge_doc_id).first()
         if doc is not None:
-            doc.usage_count = int(doc.usage_count or 0) + 1
-            if row.helpful:
-                doc.success_count = int(doc.success_count or 0) + 1
-            else:
-                doc.failure_count = int(doc.failure_count or 0) + 1
-            if doc.failure_count >= 3 and doc.success_count == 0:
+            if used and has_helpful:
+                doc.usage_count = int(doc.usage_count or 0) + 1
+                if row.helpful:
+                    doc.success_count = int(doc.success_count or 0) + 1
+                else:
+                    doc.failure_count = int(doc.failure_count or 0) + 1
+            should_deprecate = (
+                doc.failure_count >= 3
+                and doc.success_count == 0
+                and (doc.status != "active" or (doc.quality_score or 0) < 0.85)
+            )
+            if should_deprecate:
                 doc.status = "deprecated"
         db.commit()
         return {"id": row.id, "knowledge_doc_id": row.knowledge_doc_id, "helpful": row.helpful}

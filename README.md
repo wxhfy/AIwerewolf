@@ -24,17 +24,29 @@
 | 信息可信 | `GameState` 与 `PlayerView` 分离，隐藏身份和私有事件不会进入 Agent 输入 |
 | 角色可扩展 | RoleRegistry、Phase、Action、Skill 分层，新增角色不需要把规则写进 Prompt |
 | 决策可解释 | GameEvent、AgentDecision、PublishedReview 串起可回放证据链 |
-| 策略可迭代 | 赛后经验沉淀为 StrategyKnowledgeDoc，再由 Retriever 注入下一局；Track C Wiki/Hermes 作为增量架构层承接长期知识编译 |
+| 策略可迭代 | 赛后经验沉淀为版本化 StrategyKnowledgeDoc，经 Retriever 注入下一局；Track C Wiki/Hermes 承接长期知识编译 |
 
 完整架构说明见 [`docs/ARCHITECTURE_DESIGN_GUIDE.md`](docs/ARCHITECTURE_DESIGN_GUIDE.md)。
+
+### 与常见方案的区别
+
+| 常见方案 | 本项目设计 |
+|------|------|
+| 把狼人杀做成单轮 Prompt 或脚本裁判 | 规则引擎主控状态和裁决，Agent 只表达可验证的行动意图 |
+| 直接把全量历史塞给模型 | 公共信息、私有信息、角色技能和历史记忆分层投影，避免身份和夜晚事件泄露 |
+| 角色差异主要依赖 Prompt 文案 | MBTI 人格、角色约束、技能调度和策略检索拆成独立层，行为差异可配置、可测试 |
+| 赛后只输出胜负或自然语言总结 | 对局事件、决策、复盘、反事实和知识回流结构化保存，能追溯到具体回合和行动 |
+| 新策略直接覆盖旧策略 | Track C 使用 raw / refined / canonical 生命周期、版本组和 supersede 关系，优先使用经过验证的后期策略 |
 
 ### 三层架构
 
 ```
 Layer 1  MBTI 人格    →  决定"怎么思考"（认知风格、说话方式）
 Layer 2  Role 身份    →  定义"我是谁"（角色技能、胜利条件、反模式清单）
-Layer 3  Track C 策略 →  教"怎么赢"（Retriever 加载 active 策略；Wiki/Hermes 承接长期知识设计）
+Layer 3  Track C 策略 →  教"怎么赢"（Retriever 加载已验证的版本化策略；Wiki/Hermes 承接长期知识设计）
 ```
+
+Track C 不把每次复盘总结都当作最终策略。新经验先进入 `raw` 候选层，经过复盘验证后提升为 `refined`，稳定策略再沉淀为 `canonical`；后续版本通过 `version_group`、`doc_version` 和 `supersedes_doc_ids` 关联旧策略，使越往后的有效经验更容易被检索到，同时避免未经验证的新总结压过稳定知识。
 
 ---
 
@@ -55,11 +67,14 @@ docker run -d --name werewolf-pg \
   -e POSTGRES_DB=werewolf \
   -p 5433:5432 postgres:16-alpine
 
-# 4. 启动后端
+# 4. 初始化 / 迁移数据库结构
+python scripts/migrate_v2_columns.py
+
+# 5. 启动后端
 make dev
 # → http://localhost:8000/docs
 
-# 5. 启动前端（另开终端）
+# 6. 启动前端（另开终端）
 cd frontend && npm install && npm run dev
 # → http://localhost:3001
 ```

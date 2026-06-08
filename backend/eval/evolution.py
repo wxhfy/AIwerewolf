@@ -189,6 +189,16 @@ class StrategyKnowledgeDoc:
     status: str = "candidate"
     tags: list[str] = field(default_factory=list)
     experiment_id: str | None = None
+    source_game_id: str | None = None
+    source_decision_id: str | None = None
+    knowledge_epoch: int = 0
+    version_group: str | None = None
+    doc_version: str = "v1"
+    parent_doc_id: str | None = None
+    supersedes_doc_ids: list[str] = field(default_factory=list)
+    maturity: str = "raw"  # raw | refined | canonical
+    validated_at: str | None = None
+    last_used_at: str | None = None
     embedding: list[float] = field(default_factory=list)
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     updated_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
@@ -246,6 +256,11 @@ class RetrievedStrategyLesson:
     persona_match: float = 0.0
     quality_score: float = 0.0
     usage_success_rate: float = 0.0
+    version_rank_score: float = 0.0
+    knowledge_epoch: int = 0
+    doc_version: str = "v1"
+    maturity: str = "raw"
+    version_group: str | None = None
     embedding_provider: str = ""
     rerank_provider: str | None = None
 
@@ -520,6 +535,27 @@ def build_bc_acceptance_audit(metrics: Sequence[AcceptanceStepMetric]) -> BCAcce
         overall_success_rate=round(overall, 4),
         passed=bool(metric_list) and all(metric.passed for metric in metric_list),
     )
+
+
+def _parse_iso_datetime(value: str | datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def _infer_version_epoch(version: str | None) -> int:
+    if not version:
+        return 0
+    matches = re.findall(r"v(\d+)", str(version), flags=re.IGNORECASE)
+    return max((int(item) for item in matches), default=0)
 
 
 class EvolutionHook(Protocol):
@@ -1048,13 +1084,20 @@ class StrategyKnowledgeStore:
     def upsert(self, doc: StrategyKnowledgeDoc) -> StrategyKnowledgeDoc:
         now = datetime.now(timezone.utc).isoformat()
         existing = self.docs.get(doc.doc_id)
+        version_group = doc.version_group or self._default_version_group(doc)
+        knowledge_epoch = max(int(doc.knowledge_epoch or 0), int(existing.knowledge_epoch or 0) if existing else 0)
         embedding = list(doc.embedding or self.embedding_provider.embed(self._doc_embedding_text(doc)))
-        stored = replace(doc, embedding=embedding, updated_at=now)
+        stored = replace(
+            doc, embedding=embedding, knowledge_epoch=knowledge_epoch, version_group=version_group, updated_at=now
+        )
         if existing:
             stored.usage_count = existing.usage_count
             stored.success_count = existing.success_count
             stored.failure_count = existing.failure_count
+            stored.retrieval_count = existing.retrieval_count
+            stored.neutral_count = existing.neutral_count
             stored.status = doc.status or existing.status
+            stored.last_used_at = doc.last_used_at or existing.last_used_at
         self.docs[stored.doc_id] = stored
         self._index(stored)
         return stored
@@ -1069,7 +1112,8 @@ class StrategyKnowledgeStore:
         docs = list(self.docs.values())
         if not include_deprecated:
             docs = [doc for doc in docs if doc.status != "deprecated"]
-        return sorted(docs, key=lambda doc: (doc.quality_score, doc.confidence), reverse=True)
+        docs = self._exclude_superseded_docs(docs)
+        return sorted(docs, key=lambda doc: self._ranking_tuple(doc), reverse=True)
 
     def retrieve(self, query: StrategyRetrievalQuery) -> list[RetrievedStrategyLesson]:
         candidates = [
@@ -1080,6 +1124,7 @@ class StrategyKnowledgeStore:
             and self._phase_matches(doc, query)
             and self._metadata_matches(doc, query.metadata_filters)
         ]
+        candidates = self._exclude_superseded_docs(candidates)
         query_embedding = self.embedding_provider.embed(self._query_embedding_text(query))
         bm25_stats = self._bm25_stats(candidates, query)
         scored = [(self._score_components(doc, query, query_embedding, bm25_stats), doc) for doc in candidates]
@@ -1106,6 +1151,11 @@ class StrategyKnowledgeStore:
                 persona_match=round(score["persona_match"], 4),
                 quality_score=round(doc.quality_score, 4),
                 usage_success_rate=round(smoothed_usage_success_rate(doc), 4),
+                version_rank_score=round(score["version_rank_score"], 4),
+                knowledge_epoch=doc.knowledge_epoch,
+                doc_version=doc.doc_version,
+                maturity=doc.maturity,
+                version_group=doc.version_group,
                 embedding_provider=self.embedding_provider.name,
                 rerank_provider=score.get("rerank_provider"),
             )
@@ -1127,7 +1177,10 @@ class StrategyKnowledgeStore:
         doc = self.docs.get(doc_id)
         if doc:
             self.docs[doc_id] = replace(
-                doc, usage_count=doc.usage_count + 1, updated_at=datetime.now(timezone.utc).isoformat()
+                doc,
+                usage_count=doc.usage_count + 1,
+                last_used_at=datetime.now(timezone.utc).isoformat(),
+                updated_at=datetime.now(timezone.utc).isoformat(),
             )
 
     def update_usage(self, doc_id: str, *, helpful: bool) -> None:
@@ -1155,6 +1208,7 @@ class StrategyKnowledgeStore:
             failure_count=failure,
             status=status,
             quality_score=quality,
+            last_used_at=datetime.now(timezone.utc).isoformat(),
             updated_at=datetime.now(timezone.utc).isoformat(),
         )
 
@@ -1224,6 +1278,14 @@ class StrategyKnowledgeStore:
                 row.success_count = doc.success_count
                 row.failure_count = doc.failure_count
                 row.status = doc.status
+                row.knowledge_epoch = doc.knowledge_epoch
+                row.version_group = doc.version_group or self._default_version_group(doc)
+                row.doc_version = doc.doc_version
+                row.parent_doc_id = doc.parent_doc_id
+                row.supersedes_doc_ids = list(doc.supersedes_doc_ids)
+                row.maturity = doc.maturity
+                row.validated_at = _parse_iso_datetime(doc.validated_at)
+                row.last_used_at = _parse_iso_datetime(doc.last_used_at)
                 # H6: Tag docs with TIER_EXPERIMENT_ID for tier isolation in
                 # multi-tier experiments. Retrieval layer filters by this tag.
                 tags = list(doc.tags)
@@ -1296,10 +1358,70 @@ class StrategyKnowledgeStore:
                     failure_count=int(row.get("failure_count", 0)),
                     status=row.get("status", "active"),
                     tags=list(row.get("tags") or []),
+                    knowledge_epoch=int(row.get("knowledge_epoch", 0) or 0),
+                    version_group=row.get("version_group"),
+                    doc_version=row.get("doc_version", "v1") or "v1",
+                    parent_doc_id=row.get("parent_doc_id"),
+                    supersedes_doc_ids=list(row.get("supersedes_doc_ids") or []),
+                    maturity=row.get("maturity", "raw") or "raw",
+                    validated_at=row.get("validated_at"),
+                    last_used_at=row.get("last_used_at"),
                     embedding=list(row.get("embedding") or []),
                 )
             )
         return cls(docs, embedding_provider=embedding_provider)
+
+    def _default_version_group(self, doc: StrategyKnowledgeDoc) -> str:
+        raw = "|".join(
+            [
+                (doc.role or "global").strip().lower(),
+                (doc.phase or "global").strip().lower(),
+                (doc.persona_scope or "any").strip().lower(),
+                re.sub(r"\s+", " ", (doc.situation_pattern or "")[:160]).strip().lower(),
+            ]
+        )
+        digest = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:12]
+        return f"{doc.role or 'global'}:{doc.phase or 'global'}:{digest}"
+
+    def _exclude_superseded_docs(self, docs: Sequence[StrategyKnowledgeDoc]) -> list[StrategyKnowledgeDoc]:
+        superseded = {
+            old_id
+            for doc in docs
+            if doc.status in {"active", "candidate"} and doc.maturity in {"refined", "canonical"}
+            for old_id in doc.supersedes_doc_ids
+        }
+        return [doc for doc in docs if doc.doc_id not in superseded]
+
+    def _ranking_tuple(self, doc: StrategyKnowledgeDoc) -> tuple[float, float, float, int, float, str]:
+        return (
+            self._version_rank_score(doc),
+            doc.quality_score,
+            doc.confidence,
+            doc.knowledge_epoch,
+            StrategyKnowledgeAbstractor._recency_factor(doc.validated_at or doc.updated_at or doc.created_at),
+            doc.doc_id,
+        )
+
+    def _version_rank_score(self, doc: StrategyKnowledgeDoc) -> float:
+        maturity_bonus = {"raw": 0.0, "refined": 0.06, "canonical": 0.12}.get((doc.maturity or "raw").lower(), 0.0)
+        status_bonus = {"candidate": -0.05, "active": 0.0}.get(doc.status, -0.20)
+        validation_bonus = 0.08 if doc.validated_at or doc.validated_on else 0.0
+        epoch_bonus = min(0.08, max(0, doc.knowledge_epoch) * 0.01)
+        recency = StrategyKnowledgeAbstractor._recency_factor(doc.validated_at or doc.updated_at or doc.created_at)
+        usage = smoothed_usage_success_rate(doc)
+        penalty = 0.12 if doc.contradiction_count > 0 else 0.0
+        return round(
+            0.42 * doc.quality_score
+            + 0.20 * doc.confidence
+            + 0.12 * usage
+            + 0.08 * recency
+            + maturity_bonus
+            + validation_bonus
+            + epoch_bonus
+            + status_bonus
+            - penalty,
+            4,
+        )
 
     def _index(self, doc: StrategyKnowledgeDoc) -> None:
         for tag in {doc.role, doc.phase, *doc.tags}:
@@ -1393,17 +1515,19 @@ class StrategyKnowledgeStore:
         )
         usage_rate = smoothed_usage_success_rate(doc)
         recency = StrategyKnowledgeAbstractor._recency_factor(doc.updated_at or doc.created_at)
+        version_rank = self._version_rank_score(doc)
         # Track C §12.5 retrieval formula:
-        # 0.30 role + 0.20 phase + 0.20 situation + 0.10 persona + 0.10 quality
-        # + 0.05 recency + 0.05 usage_success_rate
+        # role/phase/situation/persona keep situational relevance dominant;
+        # quality/usage/recency/version encode the Track C knowledge lifecycle.
         score = (
-            0.30 * role
-            + 0.20 * phase
-            + 0.20 * situation
-            + 0.10 * persona
-            + 0.10 * doc.quality_score
-            + 0.05 * recency
-            + 0.05 * usage_rate
+            0.24 * role
+            + 0.17 * phase
+            + 0.24 * situation
+            + 0.08 * persona
+            + 0.08 * doc.quality_score
+            + 0.06 * version_rank
+            + 0.06 * recency
+            + 0.07 * usage_rate
         )
         return {
             "score": score,
@@ -1417,6 +1541,7 @@ class StrategyKnowledgeStore:
             "persona_match": persona,
             "usage_success_rate": round(usage_rate, 4),
             "recency": recency,
+            "version_rank_score": version_rank,
         }
 
     def _rerank(
@@ -2050,6 +2175,8 @@ def promote_candidates(
                 store.docs[doc.doc_id] = replace(
                     doc,
                     status="active",
+                    maturity="refined" if doc.maturity == "raw" else doc.maturity,
+                    validated_at=doc.validated_at or datetime.now(timezone.utc).isoformat(),
                     updated_at=datetime.now(timezone.utc).isoformat(),
                 )
             promoted += 1
@@ -2238,6 +2365,13 @@ class VersionManager:
             confidence=c,
             status="active",
             tags=[promoted.role, "accepted_patch", promoted.version],
+            knowledge_epoch=max(_infer_version_epoch(promoted.version), _infer_version_epoch(patch.to_version)),
+            version_group=f"{promoted.role}:strategy_card",
+            doc_version=promoted.version,
+            parent_doc_id=patch.source_knowledge_doc_ids[0] if patch.source_knowledge_doc_ids else None,
+            supersedes_doc_ids=list(patch.source_knowledge_doc_ids),
+            maturity="canonical",
+            validated_at=datetime.now(timezone.utc).isoformat(),
             validated_on=validated_on or patch.validated_on,
         )
         self.knowledge_store.upsert(doc)
@@ -2981,59 +3115,68 @@ class DreamJob:
             "rejected_missing_fields": 0,
         }
 
-        # ---- Step 1: Extract from Track B evolution_candidates first ----
+        def _sanitize_and_validate(
+            candidates: Sequence[StrategyKnowledgeDoc], source: str
+        ) -> list[StrategyKnowledgeDoc]:
+            sanitized_docs: list[StrategyKnowledgeDoc] = []
+            for doc in candidates:
+                result = sanitize_knowledge_doc(doc)
+                if not result.safe_for_track_c_learning:
+                    rejected_items.append(
+                        {
+                            "doc_id": doc.doc_id,
+                            "source": source,
+                            "reason": result.unsafe_reason or "unsafe for Track C",
+                            "redactions": result.redactions,
+                        }
+                    )
+                    safety_summary["rejected_leak"] += 1
+                    continue
+                if result.rewrite_applied:
+                    safety_summary["sanitized"] += 1
+                sanitized_docs.append(doc)
+
+            valid: list[StrategyKnowledgeDoc] = []
+            for doc in sanitized_docs:
+                # Must have at least one source report
+                if not doc.source_report_ids:
+                    rejected_items.append(
+                        {
+                            "doc_id": doc.doc_id,
+                            "source": source,
+                            "reason": "missing evidence_refs / source_report_ids",
+                        }
+                    )
+                    safety_summary["rejected_no_evidence"] += 1
+                    continue
+                # Must have at minimum role, recommendation, and some situation pattern
+                if not doc.role or (not doc.situation_pattern and not doc.trigger_conditions):
+                    rejected_items.append(
+                        {
+                            "doc_id": doc.doc_id,
+                            "source": source,
+                            "reason": f"missing required fields: role={doc.role!r} phase={doc.phase!r} pattern={doc.situation_pattern!r}",
+                        }
+                    )
+                    safety_summary["rejected_missing_fields"] += 1
+                    continue
+                # phase defaults to "global" if empty
+                if not doc.phase:
+                    doc.phase = "global"
+                valid.append(doc)
+            return valid
+
+        # ---- Step 1-3: Extract, sanitize, and validate ----
         report_candidates = extract_from_review_reports(reports)
         if report_candidates:
             logger.info(f"Extracted {len(report_candidates)} candidates from Track B ReviewReports")
+            valid_docs = _sanitize_and_validate(report_candidates, "evolution_candidates")
+            if not valid_docs:
+                fallback_candidates = list(self.extractor.extract(reports))
+                valid_docs = _sanitize_and_validate(fallback_candidates, "traditional_extractor")
         else:
-            # Fall back to traditional extraction
             report_candidates = list(self.extractor.extract(reports))
-
-        # ---- Step 2: Sanitize ----
-        sanitized_docs: list[StrategyKnowledgeDoc] = []
-        for doc in report_candidates:
-            result = sanitize_knowledge_doc(doc)
-            if not result.safe_for_track_c_learning:
-                rejected_items.append(
-                    {
-                        "doc_id": doc.doc_id,
-                        "reason": result.unsafe_reason or "unsafe for Track C",
-                        "redactions": result.redactions,
-                    }
-                )
-                safety_summary["rejected_leak"] += 1
-                continue
-            if result.rewrite_applied:
-                safety_summary["sanitized"] += 1
-            sanitized_docs.append(doc)
-
-        # ---- Step 3: Validate ----
-        valid_docs: list[StrategyKnowledgeDoc] = []
-        for doc in sanitized_docs:
-            # Must have at least one source report
-            if not doc.source_report_ids:
-                rejected_items.append(
-                    {
-                        "doc_id": doc.doc_id,
-                        "reason": "missing evidence_refs / source_report_ids",
-                    }
-                )
-                safety_summary["rejected_no_evidence"] += 1
-                continue
-            # Must have at minimum role, recommendation, and some situation pattern
-            if not doc.role or (not doc.situation_pattern and not doc.trigger_conditions):
-                rejected_items.append(
-                    {
-                        "doc_id": doc.doc_id,
-                        "reason": f"missing required fields: role={doc.role!r} phase={doc.phase!r} pattern={doc.situation_pattern!r}",
-                    }
-                )
-                safety_summary["rejected_missing_fields"] += 1
-                continue
-            # phase defaults to "global" if empty
-            if not doc.phase:
-                doc.phase = "global"
-            valid_docs.append(doc)
+            valid_docs = _sanitize_and_validate(report_candidates, "traditional_extractor")
 
         # ---- Step 4: Score and store ----
         for doc in valid_docs:
@@ -3066,13 +3209,10 @@ class DreamJob:
                 # If quality scoring fails, keep existing scores
                 pass
 
-        # If the new pipeline filtered out all docs, fall back to the original extraction
-        if not valid_docs:
-            docs = self.extractor.extract(reports)
-            saved_docs = self.store.upsert_many(docs)
-            valid_docs = list(docs)
-        else:
-            saved_docs = self.store.upsert_many(valid_docs)
+        # If filtering rejects every candidate, stop with an auditable empty
+        # result. Re-running the extractor here would bypass the sanitize/
+        # validate gate and could reintroduce unsafe private-info lessons.
+        saved_docs = self.store.upsert_many(valid_docs) if valid_docs else []
 
         # ---- Step 5: Generate patches ----
         active_cards = {

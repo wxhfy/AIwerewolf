@@ -53,13 +53,11 @@ export function BottomDialogueDock({
     return currentChat;
   }, [currentChat]);
 
-  if (!latestChat && !pendingPlayerName) return null;
-  if (!latestChat && !isDaySpeechPhase(phase)) return null;
-
   const actorId = latestChat?.payload.actor_id || pendingPlayerId || "";
   const player = players.find((item) => item.id === actorId);
   const speakerName = player?.name || latestChat?.payload.actor_name || pendingPlayerName || (language === Language.ZH ? "系统" : "System");
   const speakerSeat = player?.seat;
+  const shouldRender = Boolean(latestChat) || Boolean(pendingPlayerName && isDaySpeechPhase(phase));
   const text = latestChat
     ? normalizeSpeechContent(latestChat.payload.speech, t("speechPass", language))
     : pendingPlayerName
@@ -72,11 +70,13 @@ export function BottomDialogueDock({
 
   const typewriterKey = latestChat?.id || `pending-${pendingPlayerId || phase || "empty"}`;
   const { displayedText, finished } = useTypewriter(text, {
-    enabled: Boolean(latestChat) && !isLocked,
+    enabled: shouldRender && Boolean(latestChat) && !isLocked,
     charsPerSecond: 38,
     maxDurationMs: 9000,
     onComplete: latestChat ? () => onChatComplete?.(latestChat.id) : undefined,
   });
+
+  if (!shouldRender) return null;
 
   const shownText = latestChat ? displayedText || "" : text;
   const isThinking = !latestChat && Boolean(pendingPlayerName);

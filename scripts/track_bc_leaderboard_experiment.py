@@ -104,9 +104,12 @@ FRAMEWORKS: dict[str, FrameworkSpec] = {
         },
         retrieval_policy="global_only",
     ),
-    "anti_only": FrameworkSpec(
-        name="anti_only",
-        description="Static role anti-pattern guardrails only; Track C strategy injection disabled.",
+    "role_guarded_react": FrameworkSpec(
+        name="role_guarded_react",
+        description=(
+            "Role-guarded ReAct agent: basic ReAct plus role-specific anti-pattern guardrails; "
+            "Track C retrieval and post-game reflection disabled."
+        ),
         env={
             "COGNITIVE_ENABLE_TRACK_C": "0",
             "COGNITIVE_ENABLE_ANTI_PATTERNS": "1",
@@ -115,9 +118,26 @@ FRAMEWORKS: dict[str, FrameworkSpec] = {
         },
         retrieval_policy="global_only",
     ),
-    "trackc_only": FrameworkSpec(
-        name="trackc_only",
-        description="Track C strategy retrieval/injection enabled; static anti-pattern guardrails disabled.",
+    "anti_only": FrameworkSpec(
+        name="anti_only",
+        description=(
+            "Backward-compatible alias of role_guarded_react: static role anti-pattern guardrails only; "
+            "Track C strategy injection disabled."
+        ),
+        env={
+            "COGNITIVE_ENABLE_TRACK_C": "0",
+            "COGNITIVE_ENABLE_ANTI_PATTERNS": "1",
+            "COGNITIVE_ENABLE_REFLECTION": "0",
+            "AIWEREWOLF_RETRIEVAL_POLICY": "global_only",
+        },
+        retrieval_policy="global_only",
+    ),
+    "rag_react": FrameworkSpec(
+        name="rag_react",
+        description=(
+            "RAG/ReAct agent: Track C strategy retrieval and prompt injection enabled; "
+            "anti-pattern guardrails and reflection disabled."
+        ),
         env={
             "COGNITIVE_ENABLE_TRACK_C": "1",
             "COGNITIVE_ENABLE_ANTI_PATTERNS": "0",
@@ -126,9 +146,53 @@ FRAMEWORKS: dict[str, FrameworkSpec] = {
         },
         retrieval_policy="hybrid_role_mbti_global",
     ),
-    "cognitive_full": FrameworkSpec(
-        name="cognitive_full",
-        description="Full project framework: Track C strategy layer, anti-pattern guardrails, reflection enabled.",
+    "trackc_only": FrameworkSpec(
+        name="trackc_only",
+        description=(
+            "Backward-compatible alias of rag_react: Track C strategy retrieval/injection enabled; "
+            "static anti-pattern guardrails disabled."
+        ),
+        env={
+            "COGNITIVE_ENABLE_TRACK_C": "1",
+            "COGNITIVE_ENABLE_ANTI_PATTERNS": "0",
+            "COGNITIVE_ENABLE_REFLECTION": "0",
+            "AIWEREWOLF_RETRIEVAL_POLICY": "hybrid_role_mbti_global",
+        },
+        retrieval_policy="hybrid_role_mbti_global",
+    ),
+    "reflexion_react": FrameworkSpec(
+        name="reflexion_react",
+        description=(
+            "Reflexion-style agent: post-game verbal reflection enabled to write future knowledge; "
+            "runtime Track C retrieval and anti-pattern guardrails disabled."
+        ),
+        env={
+            "COGNITIVE_ENABLE_TRACK_C": "0",
+            "COGNITIVE_ENABLE_ANTI_PATTERNS": "0",
+            "COGNITIVE_ENABLE_REFLECTION": "1",
+            "AIWEREWOLF_RETRIEVAL_POLICY": "global_only",
+        },
+        retrieval_policy="global_only",
+    ),
+    "rag_reflexion": FrameworkSpec(
+        name="rag_reflexion",
+        description=(
+            "RAG + Reflexion agent: runtime Track C retrieval plus post-game verbal reflection; "
+            "static anti-pattern guardrails disabled."
+        ),
+        env={
+            "COGNITIVE_ENABLE_TRACK_C": "1",
+            "COGNITIVE_ENABLE_ANTI_PATTERNS": "0",
+            "COGNITIVE_ENABLE_REFLECTION": "1",
+            "AIWEREWOLF_RETRIEVAL_POLICY": "hybrid_role_mbti_global",
+        },
+        retrieval_policy="hybrid_role_mbti_global",
+    ),
+    "full_cognitive": FrameworkSpec(
+        name="full_cognitive",
+        description=(
+            "Full cognitive agent: role guardrails, runtime Track C retrieval, and post-game reflection enabled."
+        ),
         env={
             "COGNITIVE_ENABLE_TRACK_C": "1",
             "COGNITIVE_ENABLE_ANTI_PATTERNS": "1",
@@ -137,6 +201,68 @@ FRAMEWORKS: dict[str, FrameworkSpec] = {
         },
         retrieval_policy="hybrid_role_mbti_global",
     ),
+    "cognitive_full": FrameworkSpec(
+        name="cognitive_full",
+        description=(
+            "Backward-compatible alias of full_cognitive: Track C strategy layer, anti-pattern guardrails, "
+            "reflection enabled."
+        ),
+        env={
+            "COGNITIVE_ENABLE_TRACK_C": "1",
+            "COGNITIVE_ENABLE_ANTI_PATTERNS": "1",
+            "COGNITIVE_ENABLE_REFLECTION": "1",
+            "AIWEREWOLF_RETRIEVAL_POLICY": "hybrid_role_mbti_global",
+        },
+        retrieval_policy="hybrid_role_mbti_global",
+    ),
+}
+
+FRAMEWORK_FAMILY_MAP: dict[str, dict[str, str]] = {
+    "basic_react": {
+        "paper_family": "ReAct",
+        "comparison_role": "ordinary ReAct baseline",
+        "reference": "https://arxiv.org/abs/2210.03629",
+    },
+    "role_guarded_react": {
+        "paper_family": "Role-conditioned guarded agent",
+        "comparison_role": "our role/anti-pattern Agent design",
+        "reference": "internal role strategy and anti-pattern layer",
+    },
+    "anti_only": {
+        "paper_family": "Role-conditioned guarded agent",
+        "comparison_role": "backward-compatible alias of role_guarded_react",
+        "reference": "internal role strategy and anti-pattern layer",
+    },
+    "rag_react": {
+        "paper_family": "RAG/ReAct",
+        "comparison_role": "Track C retrieval-only Agent design",
+        "reference": "internal Track C strategy retrieval",
+    },
+    "trackc_only": {
+        "paper_family": "RAG/ReAct",
+        "comparison_role": "backward-compatible alias of rag_react",
+        "reference": "internal Track C strategy retrieval",
+    },
+    "reflexion_react": {
+        "paper_family": "Reflexion",
+        "comparison_role": "post-game verbal reflection baseline",
+        "reference": "https://arxiv.org/abs/2303.11366",
+    },
+    "rag_reflexion": {
+        "paper_family": "RAG + Reflexion",
+        "comparison_role": "retrieval plus outer-loop reflection without role guardrails",
+        "reference": "https://arxiv.org/abs/2303.11366",
+    },
+    "full_cognitive": {
+        "paper_family": "Role-guarded RAG + Reflexion",
+        "comparison_role": "our complete Agent framework",
+        "reference": "internal full cognitive stack",
+    },
+    "cognitive_full": {
+        "paper_family": "Role-guarded RAG + Reflexion",
+        "comparison_role": "backward-compatible alias of full_cognitive",
+        "reference": "internal full cognitive stack",
+    },
 }
 
 
@@ -761,8 +887,6 @@ def build_architecture_evidence_leaderboard(
     skill_norm = normalize_metric({key: float(row["avg_skill_score"]) for key, row in group_rows.items()})
     win_norm = normalize_metric({key: float(row["win_rate"]) for key, row in group_rows.items()})
     knowledge_norm = normalize_metric({key: float(row["knowledge_hit_rate"]) for key, row in group_rows.items()})
-    seat_norm = normalize_metric({key: float(row["seat_samples"]) for key, row in group_rows.items()})
-
     macro_role_values = {key: float(role_win_rates.get(key, {}).get("macro_role_win_rate", 0.0)) for key in group_rows}
     macro_role_norm = normalize_metric(macro_role_values)
 
@@ -792,7 +916,9 @@ def build_architecture_evidence_leaderboard(
         failed = failure_by_framework.get(framework_name, 0)
         if not completed and not failed:
             completed = int(row.get("seed_count", 0))
-        completion_rate = completed / max(completed + failed, condition_count, 1)
+        external_failure_rate = failed / max(completed + failed, condition_count, 1)
+        attempt_completion_rate = completed / max(completed + failed, condition_count, 1)
+        completion_rate = 1.0 if completed else 0.0
         health = rubric_health_score(row)
         role_coverage = core_role_coverage(row.get("roles", {}))
         rank_score = 1.0
@@ -850,10 +976,8 @@ def build_architecture_evidence_leaderboard(
         )
         engineering_raw = mean_or_zero(
             [
-                clamp(completion_rate),
                 health,
                 role_coverage,
-                seat_norm.get(group_key, 0.0),
                 1.0 if row.get("seat_samples", 0) > 0 else 0.0,
             ]
         )
@@ -893,6 +1017,9 @@ def build_architecture_evidence_leaderboard(
                     "knowledge_hit_rate": row["knowledge_hit_rate"],
                     "fallback_count": row["fallback_count"],
                     "invalid_count": row["invalid_count"],
+                    "external_failed_games": failed,
+                    "external_failure_rate": round(external_failure_rate, 6),
+                    "attempt_completion_rate": round(attempt_completion_rate, 6),
                     "completion_rate": round(completion_rate, 6),
                     "core_role_coverage": round(role_coverage, 6),
                     "track_b_rank_score": round(rank_score, 6),
@@ -1151,7 +1278,11 @@ def run_experiment(
 
     preferred_pair = None
     basic_key = group_key_for_framework("basic_react")
-    full_key = group_key_for_framework("cognitive_full")
+    full_key = (
+        group_key_for_framework("full_cognitive")
+        if any(record["group_key"] == group_key_for_framework("full_cognitive") for record in group_records)
+        else group_key_for_framework("cognitive_full")
+    )
     if axis == "framework" and basic_key in {record["group_key"] for record in group_records}:
         preferred_pair = (basic_key, full_key)
 
@@ -1166,9 +1297,17 @@ def run_experiment(
         "max_days": max_days,
         "model_pool": [spec.label for spec in model_specs],
         "frameworks": [
-            {"name": framework.name, "description": framework.description, "env": dict(framework.env)}
+            {
+                "name": framework.name,
+                "description": framework.description,
+                "env": dict(framework.env),
+                "agent_framework_family": FRAMEWORK_FAMILY_MAP.get(framework.name, {}),
+            }
             for framework in frameworks
         ],
+        "agent_framework_families": {
+            framework.name: FRAMEWORK_FAMILY_MAP.get(framework.name, {}) for framework in frameworks
+        },
         "completed_raw_games": len(raw_game_records),
         "failed_games": len(failures),
         "leaderboard_summary": summarize_leaderboard(
@@ -1266,6 +1405,9 @@ def write_rubric_csv(path: Path, payload: dict[str, Any]) -> None:
         "macro_role_win_rate",
         "knowledge_hit_rate",
         "completion_rate",
+        "attempt_completion_rate",
+        "external_failed_games",
+        "external_failure_rate",
         "fallback_count",
         "invalid_count",
         "core_role_coverage",
@@ -1294,6 +1436,9 @@ def write_rubric_csv(path: Path, payload: dict[str, Any]) -> None:
                 "macro_role_win_rate": signals.get("macro_role_win_rate"),
                 "knowledge_hit_rate": signals.get("knowledge_hit_rate"),
                 "completion_rate": signals.get("completion_rate"),
+                "attempt_completion_rate": signals.get("attempt_completion_rate"),
+                "external_failed_games": signals.get("external_failed_games"),
+                "external_failure_rate": signals.get("external_failure_rate"),
                 "fallback_count": signals.get("fallback_count"),
                 "invalid_count": signals.get("invalid_count"),
                 "core_role_coverage": signals.get("core_role_coverage"),
@@ -1328,12 +1473,41 @@ def render_academic_report(
         f"- Model pool: `{', '.join(summary['model_pool'])}`",
         f"- Completed raw games: `{summary['completed_raw_games']}`",
         f"- Failed games: `{summary['failed_games']}`",
+        "- Scoring note: whole-game run failures such as API/key/subprocess errors are excluded from Agent scores; "
+        "they are reported only as external run-health signals.",
         "",
-        "## Track B Leaderboard",
+        "## Agent Framework 对照矩阵",
         "",
-        "| Rank | Key | Seat Samples | Win Rate | Avg Adjusted Score | Vote | Speech | Skill | Critical Mistakes |",
-        "|---:|---|---:|---:|---:|---:|---:|---:|---:|",
+        "| Framework | Paper-family mapping | Role in comparison | Enabled modules |",
+        "|---|---|---|---|",
     ]
+    for framework in summary.get("frameworks", []):
+        family = framework.get("agent_framework_family", {})
+        env = framework.get("env", {})
+        enabled = []
+        if env.get("COGNITIVE_ENABLE_ANTI_PATTERNS") == "1":
+            enabled.append("role/anti-pattern")
+        if env.get("COGNITIVE_ENABLE_TRACK_C") == "1":
+            enabled.append("Track C retrieval")
+        if env.get("COGNITIVE_ENABLE_REFLECTION") == "1":
+            enabled.append("reflection")
+        if not enabled:
+            enabled.append("none")
+        lines.append(
+            "| "
+            f"`{framework.get('name')}` | {family.get('paper_family', '')} | "
+            f"{family.get('comparison_role', '')} | {', '.join(enabled)} |"
+        )
+
+    lines.extend(
+        [
+            "",
+            "## Track B Leaderboard",
+            "",
+            "| Rank | Key | Seat Samples | Win Rate | Avg Adjusted Score | Vote | Speech | Skill | Critical Mistakes |",
+            "|---:|---|---:|---:|---:|---:|---:|---:|---:|",
+        ]
+    )
     for rank, entry in enumerate(leaderboard_payload.get("entries", []), start=1):
         lines.append(
             "| "
@@ -1352,6 +1526,7 @@ def render_academic_report(
             "该表把同一组实验信号映射到项目架构证据："
             "Agent 决策、多 Agent 协作、工程闭环、复盘与知识回流。"
             "它用于展示架构优势，不替代上方 Track B 原始指标。",
+            "整局失败/API 错误不进入该表主分，只在 Evidence 中作为 external_fail 单独报告。",
             "",
             "| Rank | Key | Total | Single Agent /20 | Multi-Agent /20 | Engineering /30 | Track B/C /30 | Evidence |",
             "|---:|---|---:|---:|---:|---:|---:|---|",
@@ -1365,6 +1540,7 @@ def render_academic_report(
             f"win={signals.get('win_rate')}, "
             f"macro_role={signals.get('macro_role_win_rate')}, "
             f"hit={signals.get('knowledge_hit_rate')}, "
+            f"external_fail={signals.get('external_failure_rate')}, "
             f"fallback={signals.get('fallback_count')}, invalid={signals.get('invalid_count')}"
         )
         lines.append(
@@ -1414,7 +1590,7 @@ def render_academic_report(
                 "",
                 "本实验在相同 seeds、相同角色配置和相同模型池下比较 Agent 框架。"
                 "`basic_react` 保留 LLM 决策能力，但关闭 Track C 策略注入、反模式提示和赛后反思；"
-                "`cognitive_full` 启用完整框架。若 paired delta 或 leaderboard 排名显示稳定增益，"
+                "`full_cognitive`/`cognitive_full` 启用完整框架。若 paired delta 或 leaderboard 排名显示稳定增益，"
                 "则说明 Track C/认知层提供了基础 LLM 推理之外的增量价值，而不是冗余 UI 或冗余工程模块。",
             ]
         )
@@ -1477,8 +1653,11 @@ def main() -> int:
     parser.add_argument("--models", default="", help="Comma-separated provider:model list. Overrides env model pools.")
     parser.add_argument(
         "--frameworks",
-        default="basic_react,cognitive_full",
-        help="Comma-separated framework names. Use cognitive_full for --axis model.",
+        default="basic_react,role_guarded_react,rag_react,reflexion_react,rag_reflexion,full_cognitive",
+        help=(
+            "Comma-separated framework names. Use full_cognitive or cognitive_full for --axis model. "
+            "Backward-compatible names anti_only, trackc_only, cognitive_full remain supported."
+        ),
     )
     parser.add_argument("--games", type=int, default=6, help="Games per framework condition.")
     parser.add_argument("--start-seed", type=int, default=1001)

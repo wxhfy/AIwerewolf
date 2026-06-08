@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAppContext } from "@/context/AppContext";
 import { fetchRoom, startRoom, submitHumanAction } from "@/lib/gameApi";
-import { apiUrl } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { placeholderPlayers } from "@/lib/gameView";
 import { isRevealBlockingChat } from "@/lib/eventFilter";
@@ -12,6 +11,7 @@ import { EventType, Player, ViewMode } from "@/types";
 import { useAutoScroll } from "@/hooks/useAutoScroll";
 import { useGameDerivedState } from "@/hooks/useGameDerivedState";
 import { usePhaseTransition } from "@/hooks/usePhaseTransition";
+import { useReviewStatus } from "@/hooks/useReviewStatus";
 import { useRoomStream } from "@/hooks/useRoomStream";
 import { useVoteDisplay } from "@/hooks/useVoteDisplay";
 
@@ -27,10 +27,11 @@ export function useGamePageController(roomId: string) {
   } = useAppContext();
 
   const [showWinnerPanel, setShowWinnerPanel] = useState(false);
-  const [reportReady, setReportReady] = useState(false);
-  const [reportChecking, setReportChecking] = useState(false);
   const winnerShownRef = useRef(false);
   const winnerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reviewStatus = useReviewStatus(gameState?.id, { enabled: Boolean(gameState?.winner) });
+  const reportReady = reviewStatus.isReady;
+  const reportChecking = reviewStatus.isChecking || (Boolean(gameState?.winner) && reviewStatus.isLoading);
 
   // Auto-open result modal when game ends — delay to let end animation finish first
   useEffect(() => {
@@ -58,38 +59,6 @@ export function useGamePageController(roomId: string) {
     };
   }, [gameState?.winner]);
 
-  useEffect(() => {
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const gameId = gameState?.id;
-
-    async function checkReportReady() {
-      if (!gameId || !gameState?.winner) {
-        setReportReady(false);
-        setReportChecking(false);
-        return;
-      }
-      setReportChecking(true);
-      try {
-        const response = await fetch(apiUrl(`/api/games/${gameId}/reviews/html`));
-        if (cancelled) return;
-        setReportReady(response.ok);
-        if (!response.ok) {
-          timer = setTimeout(checkReportReady, 3000);
-        }
-      } catch {
-        if (!cancelled) timer = setTimeout(checkReportReady, 3000);
-      } finally {
-        if (!cancelled) setReportChecking(false);
-      }
-    }
-
-    void checkReportReady();
-    return () => {
-      cancelled = true;
-      if (timer) clearTimeout(timer);
-    };
-  }, [gameState?.id, gameState?.winner]);
   const [ballPos, setBallPos] = useState<{ x: number; y: number } | null>(null);
   const dragRef = useRef({ dragging: false, startX: 0, startY: 0, origX: 0, origY: 0, moved: false });
   const [statusTitle, setStatusTitle] = useState(gameState?.winner ? t("statusLoaded", language) : t("statusReady", language));

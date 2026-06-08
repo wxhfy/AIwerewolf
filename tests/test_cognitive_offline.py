@@ -107,6 +107,11 @@ class InvalidDirectTargetLLM:
         return AIMessage(content='{"target": "不存在的玩家", "reasoning": "invalid target"}')
 
 
+class InvalidNightTargetLLM:
+    def invoke(self, messages, **kwargs):
+        return AIMessage(content='DECISION: {"target": "狼人队友", "reasoning": "invalid wolf target"}')
+
+
 class SkipNightTargetLLM:
     def invoke(self, messages, **kwargs):
         return AIMessage(content='DECISION: {"target": "跳过", "reasoning": "skip required target"}')
@@ -297,6 +302,31 @@ def test_agent_loop_vote_and_night_default_directly_force_submit_decision(action
     assert llm.calls[0]["force_tool_name"] == "submit_decision"
 
 
+def test_agent_loop_decision_schema_restricts_target_to_legal_targets() -> None:
+    obs = Observation(
+        player_id="P1",
+        player_name="Alice",
+        player_seat=1,
+        player_role="Werewolf",
+        day=1,
+        phase="NIGHT_WOLF_ACTION",
+        alive=[
+            PlayerInfo(id="P1", name="Alice", seat=1, alive=True),
+            PlayerInfo(id="P2", name="WolfB", seat=2, alive=True),
+            PlayerInfo(id="P3", name="Bob", seat=3, alive=True),
+        ],
+        legal_targets=[PlayerInfo(id="P3", name="Bob", seat=3, alive=True)],
+    )
+    loop = AgentLoop(NativeDecisionLLM(), "system prompt", action_type="night", player_id="P1")
+
+    schema = loop._decision_tool_schema(obs)
+
+    target_schema = schema["function"]["parameters"]["properties"]["target"]
+    assert target_schema["enum"] == ["3号", "3号:Bob", "Bob", "P3"]
+    assert "2号" not in target_schema["description"]
+    assert "3号:Bob" in target_schema["description"]
+
+
 def test_agent_loop_repairs_empty_native_submit_decision_with_text_decision() -> None:
     obs = Observation(
         player_id="P1",
@@ -444,6 +474,73 @@ def test_cognitive_agent_required_night_skip_raises_in_strict_mode() -> None:
 
     with pytest.raises(RuntimeError, match="skip keyword"):
         agent.guard()
+
+
+def test_cognitive_agent_required_night_illegal_target_raises_in_strict_mode() -> None:
+    view = PlayerView(
+        player_id="P1",
+        day=1,
+        phase="NIGHT_WOLF_ACTION",
+        self_player={"id": "P1", "name": "WolfA", "seat": 1, "role": "Werewolf", "alive": True},
+        players=[
+            {"id": "P1", "name": "WolfA", "seat": 1, "role": "Werewolf", "alive": True},
+            {"id": "P2", "name": "狼人队友", "seat": 2, "role": "Werewolf", "alive": True},
+            {"id": "P3", "name": "Villager", "seat": 3, "alive": True},
+        ],
+        public_events=[],
+        private_events=[],
+        known_wolves=[{"id": "P2", "name": "狼人队友", "seat": 2, "role": "Werewolf", "alive": True}],
+        observations=[],
+        legal_targets=[
+            {"id": "P3", "name": "Villager", "seat": 3, "alive": True},
+            {"id": "P4", "name": "Guard", "seat": 4, "alive": True},
+        ],
+    )
+    agent = create_cognitive_agent_with_character(
+        player_id="P1",
+        role="Werewolf",
+        llm=InvalidNightTargetLLM(),
+        player_name="WolfA",
+        player_seat=1,
+        character=None,
+    )
+    agent.initialize(view, {})
+    agent.update(view, "ATTACK")
+
+    with pytest.raises(RuntimeError, match="unresolved attack target"):
+        agent.attack()
+
+
+def test_cognitive_agent_night_decision_rejects_resolved_illegal_target() -> None:
+    view = PlayerView(
+        player_id="P1",
+        day=1,
+        phase="NIGHT_WOLF_ACTION",
+        self_player={"id": "P1", "name": "WolfA", "seat": 1, "role": "Werewolf", "alive": True},
+        players=[
+            {"id": "P1", "name": "WolfA", "seat": 1, "role": "Werewolf", "alive": True},
+            {"id": "P2", "name": "狼人队友", "seat": 2, "role": "Werewolf", "alive": True},
+            {"id": "P3", "name": "Villager", "seat": 3, "alive": True},
+        ],
+        public_events=[],
+        private_events=[],
+        known_wolves=[{"id": "P2", "name": "狼人队友", "seat": 2, "role": "Werewolf", "alive": True}],
+        observations=[],
+        legal_targets=[{"id": "P3", "name": "Villager", "seat": 3, "alive": True}],
+    )
+    agent = create_cognitive_agent_with_character(
+        player_id="P1",
+        role="Werewolf",
+        llm=DeterministicCognitiveLLM(),
+        player_name="WolfA",
+        player_seat=1,
+        character=None,
+    )
+    agent.initialize(view, {})
+    agent.update(view, "ATTACK")
+
+    with pytest.raises(RuntimeError, match="illegal attack target"):
+        agent._night_decision({"target": "狼人队友", "reasoning": "illegal teammate target"}, ActionType.ATTACK)
 
 
 def test_cognitive_agent_witch_invalid_json_raises_in_strict_mode() -> None:

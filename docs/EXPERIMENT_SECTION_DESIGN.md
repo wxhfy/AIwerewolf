@@ -132,9 +132,13 @@ python scripts/run_full_llm_pipeline.py --seeds 3001 3002 3003
 | 组名 | 配置 | 用途 |
 |---|---|---|
 | `basic_react` | 关闭 Track C、anti-pattern、reflection；retrieval=`global_only` | 普通 ReAct/基础 LLM baseline |
-| `anti_only` | 只开角色 anti-pattern | 验证静态规则护栏的独立贡献 |
-| `trackc_only` | 只开 Track C 策略检索/注入 | 验证知识回流的独立贡献 |
-| `cognitive_full` | Track C + anti-pattern + reflection + hybrid retrieval | 我们完整框架 |
+| `role_guarded_react` | 只开角色 anti-pattern；关闭 Track C/reflection | 对齐“角色约束/guarded agent”范式，验证 Agent 角色设计贡献 |
+| `rag_react` | 只开 Track C 策略检索/注入；关闭 anti-pattern/reflection | 对齐 RAG/ReAct Agent，验证检索回流贡献 |
+| `reflexion_react` | 只开赛后反思写入；关闭 runtime Track C/anti-pattern | 对齐 Reflexion，验证外循环反思不是 runtime 检索的替代品 |
+| `rag_reflexion` | Track C 检索 + reflection；关闭 anti-pattern | 对齐 RAG + Reflexion，验证检索/反思组合贡献 |
+| `full_cognitive` | Track C + anti-pattern + reflection + hybrid retrieval | 我们完整框架：Role-guarded RAG + Reflexion |
+
+兼容旧实验名：`anti_only` = `role_guarded_react`，`trackc_only` = `rag_react`，`cognitive_full` = `full_cognitive`。论文里建议用新名字展示，避免把 `anti_only` 误解成独立于 Agent 设计之外的模块。
 
 ### 命令
 
@@ -142,7 +146,7 @@ python scripts/run_full_llm_pipeline.py --seeds 3001 3002 3003
 export EXPERIMENT_MODEL_POOL="dsv4flash:deepseek-v4-flash"
 python scripts/track_bc_leaderboard_experiment.py \
   --axis framework \
-  --frameworks basic_react,anti_only,trackc_only,cognitive_full \
+  --frameworks basic_react,role_guarded_react,rag_react,reflexion_react,rag_reflexion,full_cognitive \
   --games 20 \
   --start-seed 4101 \
   --player-count 7 \
@@ -155,7 +159,7 @@ python scripts/track_bc_leaderboard_experiment.py \
 ```bash
 python scripts/track_bc_leaderboard_experiment.py \
   --axis framework \
-  --frameworks basic_react,anti_only,trackc_only,cognitive_full \
+  --frameworks basic_react,role_guarded_react,rag_react,reflexion_react,rag_reflexion,full_cognitive \
   --games 50 \
   --start-seed 5101 \
   --player-count 7 \
@@ -190,7 +194,7 @@ python scripts/track_bc_leaderboard_experiment.py \
 
 ### 展示图表
 
-1. Framework leaderboard bar：x=`basic_react/anti_only/trackc_only/cognitive_full`，y=`adjusted_final_score`。
+1. Framework leaderboard bar：x=`basic_react/role_guarded_react/rag_react/reflexion_react/rag_reflexion/full_cognitive`，y=`adjusted_final_score`。
 2. Paired seed delta slope：每个 seed 从 baseline 到 full 的变化。
 3. Role-normalized radar：vote/speech/skill/survival/deception/detection。
 4. Reliability strip：bootstrap CI + rank stability。
@@ -199,11 +203,12 @@ python scripts/track_bc_leaderboard_experiment.py \
 
 架构展示建议满足至少三条：
 
-- `cognitive_full` 的 adjusted_final_score 高于 `basic_react`。
-- `cognitive_full` 的 paired_delta 为正，bootstrap CI 不完全偏负。
-- `cognitive_full` 的 fallback/invalid 不高于 baseline。
-- `trackc_only` 相对 `basic_react` 有正向过程分或知识命中收益。
-- `anti_only` 能降低明显坏案例或非法/矛盾行为。
+- `full_cognitive` 的 adjusted_final_score 高于 `basic_react`。
+- `full_cognitive` 的 paired_delta 为正，bootstrap CI 不完全偏负。
+- `full_cognitive` 的 fallback/invalid 不高于 baseline。
+- `rag_react` 相对 `basic_react` 有正向过程分、知识命中收益或检索质量收益。
+- `role_guarded_react` 能降低明显坏案例、非法行为或角色反模式。
+- `rag_reflexion` 优于 `rag_react` 或至少提高知识写入/复用指标，证明反思外循环的补充价值。
 
 ## 6. 实验 E2：Agent 设计有效性
 

@@ -19,7 +19,15 @@ Track C is a three-layer system:
 
 1. LLM Wiki compiles post-game evidence into readable strategy knowledge.
 2. Hermes-style evolution proposes candidate strategy patches and validates them.
-3. Runtime retrieval injects only lifecycle-approved and safety-filtered strategies into agents.
+3. Runtime retrieval injects only lifecycle-approved, versioned, and safety-filtered strategies into agents.
+
+Runtime strategy knowledge is versioned:
+
+- `raw`: original post-game lessons or wiki-synced candidates.
+- `refined`: promoted knowledge with enough evidence to use in games.
+- `canonical`: validated accepted patches or long-term strategy cards.
+
+The retriever prefers validated refined/canonical descendants within the same strategy theme, while unvalidated new candidates remain lower priority. Newer knowledge is treated as more refined only after validation.
 
 ## Evidence
 
@@ -36,6 +44,7 @@ No wiki-authored runtime candidates have been approved yet. Existing runtime can
 
 - Wiki content must not bypass information-isolation and lifecycle filtering.
 - Human-edited notes must not be synchronized as `active`; they must start as `candidate`.
+- Superseded old strategy docs should not remain in runtime prompts after a refined/canonical successor is accepted.
 
 ## Open Questions
 

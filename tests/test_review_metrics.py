@@ -36,11 +36,13 @@ from backend.eval.review import export_strategy_knowledge
 
 ALIGNMENT_BY_ROLE = {
     Role.WEREWOLF: Alignment.WOLF,
+    Role.WHITE_WOLF_KING: Alignment.WOLF,
     Role.SEER: Alignment.VILLAGE,
     Role.WITCH: Alignment.VILLAGE,
     Role.HUNTER: Alignment.VILLAGE,
     Role.GUARD: Alignment.VILLAGE,
     Role.VILLAGER: Alignment.VILLAGE,
+    Role.IDIOT: Alignment.VILLAGE,
 }
 
 
@@ -636,6 +638,37 @@ def test_hunter_friendly_fire_generates_skill_counterfactual() -> None:
 
     skill_cases = counterfactuals_by_type(report, "skill")
     assert any("held the shot" in case.alternative_decision for case in skill_cases)
+
+
+def test_white_wolf_king_boom_on_power_role_counts_as_role_task_value() -> None:
+    white_wolf_king = make_player("P1", "WhiteWolfA", Role.WHITE_WOLF_KING, alive=True)
+    seer = make_player("P2", "SeerA", Role.SEER, alive=False)
+    villager = make_player("P3", "VillagerA", Role.VILLAGER, alive=True)
+
+    state = make_state(
+        [white_wolf_king, seer, villager],
+        [
+            GameEvent.create(
+                day=1,
+                phase=Phase.WHITE_WOLF_KING_BOOM,
+                type=EventType.WHITE_WOLF_KING_BOOM,
+                visibility="public",
+                payload={
+                    "actor_id": white_wolf_king.id,
+                    "actor_name": white_wolf_king.name,
+                    "target_id": seer.id,
+                    "target_name": seer.name,
+                },
+            ),
+            make_death(1, seer, "boom"),
+        ],
+        winner=Alignment.WOLF,
+    )
+    metrics = MetricsCalculator().compute(state)
+    score = score_by_name(metrics, "WhiteWolfA")
+
+    assert score.role_task_score >= 0.75
+    assert any("白狼王自爆" in highlight for highlight in score.highlights)
 
 
 def test_seer_hidden_wolf_check_generates_info_release_counterfactual() -> None:

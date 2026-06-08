@@ -2059,7 +2059,7 @@ class MetricsCalculator:
 
     def _skill_score(self, state: GameState, ctx: _PlayerContext) -> float:
         role = ctx.player.role
-        if role == Role.WEREWOLF:
+        if role in {Role.WEREWOLF, Role.WHITE_WOLF_KING}:
             return self._wolf_kill_value(state, ctx)
         if role == Role.SEER:
             checks = [e for e in ctx.private_info_events if e.payload.get("kind") == "seer_result"]
@@ -2100,15 +2100,19 @@ class MetricsCalculator:
         role = ctx.player.role
         highlights: list[str] = []
 
-        if role == Role.WEREWOLF:
+        if role in {Role.WEREWOLF, Role.WHITE_WOLF_KING}:
             deception = self._wolf_deception_score(ctx, state)
             kill_value = self._wolf_kill_value(state, ctx)
+            boom_value = self._white_wolf_king_boom_value(state, ctx) if role == Role.WHITE_WOLF_KING else 0.0
             teammate_votes = self._same_alignment_votes(state, ctx, Alignment.WOLF)
             if vote_score >= 0.8:
                 highlights.append("白天有效推动票型落在好人阵营。")
             if kill_value >= 0.75:
                 highlights.append("夜间刀口成功落在高价值好人目标。")
-            score = 0.35 * deception + 0.25 * survival_score + 0.2 * vote_score + 0.2 * kill_value
+            if boom_value >= 0.8:
+                highlights.append("白狼王自爆带走了高价值好人目标。")
+            ability_value = max(kill_value, boom_value)
+            score = 0.35 * deception + 0.25 * survival_score + 0.2 * vote_score + 0.2 * ability_value
             score -= 0.15 if teammate_votes else 0.0
             return self._clamp(score), highlights
 
@@ -2260,6 +2264,28 @@ class MetricsCalculator:
             if self._died_by_reason(state, target.id, "wolf", event.day):
                 value += 0.1
             values.append(self._clamp(value))
+        return 0.0 if not values else self._clamp(sum(values) / len(values))
+
+    def _white_wolf_king_boom_value(self, state: GameState, ctx: _PlayerContext) -> float:
+        boom_events = [
+            event
+            for event in state.events
+            if event.type == EventType.WHITE_WOLF_KING_BOOM
+            and (event.payload.get("actor_id") == ctx.player.id or event.payload.get("player_id") == ctx.player.id)
+        ]
+        if not boom_events:
+            return 0.0
+        values: list[float] = []
+        for event in boom_events:
+            target = self._target_player(state, event)
+            if target is None:
+                continue
+            if target.alignment == Alignment.WOLF:
+                values.append(0.0)
+            elif target.role.value in self.POWER_ROLES:
+                values.append(1.0)
+            else:
+                values.append(0.65)
         return 0.0 if not values else self._clamp(sum(values) / len(values))
 
     def _wolf_deception_score(self, ctx: _PlayerContext, state: GameState) -> float:

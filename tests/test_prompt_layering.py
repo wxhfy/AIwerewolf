@@ -197,6 +197,7 @@ def test_track_c_auto_retrieval_uses_precision_policy(monkeypatch) -> None:
                 "strategy": "Use public check information to vote.",
                 "doc_type": "accepted_patch",
                 "status": "active",
+                "phase_scope": "DAY_VOTE",
             }
         ]
 
@@ -246,11 +247,12 @@ def test_track_c_auto_retrieval_filters_unverified_and_persona_mismatch(monkeypa
             {
                 "doc_id": "safe-doc",
                 "quality": 0.92,
-                "situation": "Seer vote",
+                "situation": "Seer DAY_VOTE",
                 "strategy": "Turn public claims and votes into a concise voting reason.",
                 "doc_type": "accepted_patch",
                 "status": "active",
                 "persona_scope": "mbti:INTJ+role:Seer",
+                "phase_scope": "DAY_VOTE",
             },
         ]
 
@@ -295,11 +297,12 @@ def test_track_c_auto_retrieval_blocks_reflection_and_unobservable_cues(monkeypa
             {
                 "doc_id": "safe-doc",
                 "quality": 0.91,
-                "situation": "Seer vote",
+                "situation": "Seer DAY_VOTE",
                 "strategy": "Base the vote on public speech contradictions and vote records.",
                 "doc_type": "accepted_patch",
                 "status": "active",
                 "persona_scope": "mbti:INTJ+role:Seer",
+                "phase_scope": "DAY_VOTE",
             },
         ]
 
@@ -334,6 +337,7 @@ def test_track_c_auto_retrieval_cache_is_mbti_aware(monkeypatch) -> None:
                 "doc_type": "accepted_patch",
                 "status": "active",
                 "persona_scope": f"mbti:{kwargs['mbti']}+role:Seer",
+                "phase_scope": "DAY_VOTE",
             }
         ]
 
@@ -356,6 +360,99 @@ def test_track_c_auto_retrieval_cache_is_mbti_aware(monkeypatch) -> None:
     assert [lesson["doc_id"] for lesson in intj_lessons] == ["safe-INTJ"]
     assert [lesson["doc_id"] for lesson in esfj_lessons] == ["safe-ESFJ"]
     assert calls == ["INTJ", "ESFJ"]
+
+
+def test_track_c_auto_retrieval_defaults_to_top1_and_filters_phase_or_history_ids(monkeypatch) -> None:
+    def fake_prod_retrieve(*args, **kwargs):
+        return [
+            {
+                "doc_id": "wrong-phase",
+                "quality": 0.97,
+                "situation": "Seer NIGHT_SEER_ACTION",
+                "strategy": "Choose a night inspection target.",
+                "doc_type": "accepted_patch",
+                "status": "active",
+                "persona_scope": "mbti:INTJ+role:Seer",
+                "phase_scope": "NIGHT_SEER_ACTION",
+            },
+            {
+                "doc_id": "history-seat",
+                "quality": 0.96,
+                "situation": "Seer DAY_VOTE",
+                "strategy": "Vote 3号 because the historical review did so.",
+                "doc_type": "accepted_patch",
+                "status": "active",
+                "persona_scope": "mbti:INTJ+role:Seer",
+                "phase_scope": "DAY_VOTE",
+            },
+            {
+                "doc_id": "safe-high",
+                "quality": 0.93,
+                "situation": "Seer DAY_VOTE",
+                "strategy": "Vote from public contradictions and claim consistency.",
+                "doc_type": "accepted_patch",
+                "status": "active",
+                "persona_scope": "mbti:INTJ+role:Seer",
+                "phase_scope": "DAY_VOTE",
+            },
+            {
+                "doc_id": "safe-second",
+                "quality": 0.92,
+                "situation": "Seer DAY_VOTE",
+                "strategy": "Keep the vote reason concise.",
+                "doc_type": "accepted_patch",
+                "status": "active",
+                "persona_scope": "mbti:INTJ+role:Seer",
+                "phase_scope": "DAY_VOTE",
+            },
+        ]
+
+    monkeypatch.delenv("TRACK_C_AUTO_RETRIEVAL_LIMIT", raising=False)
+    monkeypatch.setattr("backend.agents.cognitive.retrieval_prod.retrieve_strategies_prod", fake_prod_retrieve)
+    agent_loop_module._TRACK_C_RETRIEVAL_CACHE.clear()
+    obs = Observation(
+        player_id="P1",
+        player_name="Alice",
+        player_seat=1,
+        player_role="Seer",
+        day=1,
+        phase="DAY_VOTE",
+        alive=[PlayerInfo(id="P1", name="Alice", seat=1, alive=True)],
+    )
+
+    lessons = agent_loop_module._retrieve_track_c_strategy_lessons(obs, "vote", mbti="INTJ")
+
+    assert [lesson["doc_id"] for lesson in lessons] == ["safe-high"]
+
+
+def test_track_c_strategy_block_marks_lessons_as_optional(monkeypatch) -> None:
+    monkeypatch.setattr(
+        agent_loop_module,
+        "_retrieve_track_c_strategy_lessons",
+        lambda *_args, **_kwargs: [
+            {
+                "doc_id": "safe-high",
+                "trigger": "DAY_VOTE",
+                "recommendation": "Use public contradictions.",
+                "score": 0.93,
+            }
+        ],
+    )
+    obs = Observation(
+        player_id="P1",
+        player_name="Alice",
+        player_seat=1,
+        player_role="Seer",
+        day=1,
+        phase="DAY_VOTE",
+        alive=[PlayerInfo(id="P1", name="Alice", seat=1, alive=True)],
+    )
+
+    block = agent_loop_module._build_track_c_strategy_block(obs, "vote", mbti="INTJ")
+
+    assert "仅作为高置信可选参考" in block
+    assert "必须忽略" in block
+    assert "可参考做法：Use public contradictions." in block
 
 
 def test_track_c_auto_retrieval_clears_stale_usage_trace_when_filtered(monkeypatch) -> None:

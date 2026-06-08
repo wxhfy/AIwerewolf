@@ -1,61 +1,19 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { apiUrl } from "@/lib/api";
 import { useAppContext } from "@/context/AppContext";
-
-interface ReportMeta {
-  hasHtml: boolean;
-  hasMarkdown: boolean;
-  status: string;
-}
+import { useReviewStatus } from "@/hooks/useReviewStatus";
 
 export default function GameReportPage() {
   const params = useParams<{ id: string }>();
   const gameId = params.id;
   const { language } = useAppContext();
   const t = (zh: string, en: string) => (language === "zh" ? zh : en);
-
-  const [meta, setMeta] = useState<ReportMeta | null>(null);
-  const [error, setError] = useState("");
-  const [isLoading, setIsLoading] = useState(true);
-  const [pollCount, setPollCount] = useState(0);
-
-  // Probe both endpoints with HEAD before rendering — when neither resource
-  // exists yet (e.g. PublishedReview not generated) we want to show a clear
-  // empty state instead of an iframe 404 + a broken download button.
-  useEffect(() => {
-    let cancelled = false;
-    async function probe() {
-      try {
-        const [htmlResp, mdResp] = await Promise.all([
-          fetch(apiUrl(`/api/games/${gameId}/reviews/html`), { method: "GET" }),
-          fetch(apiUrl(`/api/games/${gameId}/reviews.md?download=false`), { method: "GET" }),
-        ]);
-        if (cancelled) return;
-        const status = htmlResp.ok || mdResp.ok ? "ready" : "missing";
-        setMeta({ hasHtml: htmlResp.ok, hasMarkdown: mdResp.ok, status });
-      } catch (err: any) {
-        if (cancelled) return;
-        setError(err?.message || "probe failed");
-      } finally {
-        if (!cancelled) setIsLoading(false);
-      }
-    }
-    probe();
-    const timer = window.setInterval(() => {
-      if (cancelled) return;
-      if (meta?.status === "ready") return;
-      setPollCount((count) => count + 1);
-      void probe();
-    }, 3000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [gameId, meta?.status]);
+  const reviewStatus = useReviewStatus(gameId);
+  const meta = reviewStatus.status;
 
   const htmlSrc = apiUrl(`/api/games/${gameId}/reviews/html`);
   const mdHref = apiUrl(`/api/games/${gameId}/reviews.md`);
@@ -79,7 +37,7 @@ export default function GameReportPage() {
             >
               {t("返回大厅", "Lobby")}
             </Link>
-            {meta?.hasMarkdown && (
+            {meta.hasMarkdown && (
               <a
                 href={mdHref}
                 download={`review-${gameId}.md`}
@@ -91,19 +49,19 @@ export default function GameReportPage() {
           </div>
         </header>
 
-        {error && (
+        {reviewStatus.error && (
           <div className="rounded-card border border-danger/40 px-4 py-3 text-sm text-danger">
-            {error}
+            {reviewStatus.error}
           </div>
         )}
 
-        {isLoading && (
+        {reviewStatus.isLoading && (
           <div className="rounded-card border px-4 py-12 text-center text-sm text-text-sub" style={{ borderColor: "var(--color-border)" }}>
             {t("加载复盘报告中...", "Loading review...")}
           </div>
         )}
 
-        {!isLoading && meta?.status === "missing" && (
+        {!reviewStatus.isLoading && meta.status !== "ready" && (
           <div className="rounded-card border px-4 py-12 text-center text-sm text-text-sub" style={{ borderColor: "var(--color-border)" }}>
             <div className="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
             <p className="font-semibold text-textPrimary mb-2">
@@ -116,12 +74,12 @@ export default function GameReportPage() {
               )}
             </p>
             <p className="mt-3 text-[11px] text-text-sub/60">
-              {t("轮询次数", "Polls")}: {pollCount}
+              {t("轮询次数", "Polls")}: {reviewStatus.pollCount}
             </p>
           </div>
         )}
 
-        {!isLoading && meta?.hasHtml && (
+        {!reviewStatus.isLoading && meta.hasHtml && (
           <div className="rounded-card overflow-hidden border bg-cardBackground" style={{ borderColor: "var(--color-border)" }}>
             <iframe
               src={htmlSrc}
@@ -132,7 +90,7 @@ export default function GameReportPage() {
           </div>
         )}
 
-        {!isLoading && !meta?.hasHtml && meta?.hasMarkdown && (
+        {!reviewStatus.isLoading && !meta.hasHtml && meta.hasMarkdown && (
           <div className="rounded-card border px-4 py-6 text-sm text-text-sub" style={{ borderColor: "var(--color-border)" }}>
             <p className="mb-3">
               {t(

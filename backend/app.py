@@ -330,6 +330,30 @@ def game_reviews(game_id: str):
     return payload
 
 
+@app.get("/api/games/{game_id}/reviews/status")
+def game_review_status(game_id: str):
+    """Lightweight readiness probe for post-game review artifacts.
+
+    This endpoint intentionally returns 200 while a review is still being
+    generated, so the frontend can poll without creating browser 404 noise.
+    """
+    from backend.db.persist import get_review_reports
+
+    payload = get_review_reports(game_id) or {}
+    has_html = bool(payload.get("html_report"))
+    has_markdown = bool(str(payload.get("markdown") or "").strip())
+    return {
+        "game_id": game_id,
+        "status": "ready" if has_html or has_markdown else "pending",
+        "hasHtml": has_html,
+        "hasMarkdown": has_markdown,
+        "publishAllowed": bool(payload.get("publish_allowed")),
+        "grade": payload.get("grade"),
+        "score": payload.get("score"),
+        "publishedAt": payload.get("published_at"),
+    }
+
+
 @app.get("/api/games/{game_id}/reviews/html", response_class=HTMLResponse)
 def game_review_html(game_id: str):
     from backend.db.persist import get_review_html
