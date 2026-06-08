@@ -906,8 +906,19 @@ class CognitiveAgent:
         if not target_id:
             if self._strict_no_fallback:
                 raise RuntimeError(f"LLM returned unresolved {action_type.value} target: {result['target']!r}")
+        elif target_id not in self._legal_target_ids():
+            if self._strict_no_fallback:
+                raise RuntimeError(
+                    f"LLM returned illegal {action_type.value} target: {result['target']!r} -> {target_id!r}"
+                )
+            target_id = None
 
         return self._decision(action_type, target_id=target_id, reasoning=result.get("reasoning", ""))
+
+    def _legal_target_ids(self) -> set[str]:
+        if not self._view:
+            return set()
+        return {str(p.get("id", "") or "") for p in getattr(self._view, "legal_targets", []) if p.get("id")}
 
     def _resolve_target(self, name: str) -> Optional[str]:
         """Resolve player name to player id."""
@@ -917,7 +928,13 @@ class CognitiveAgent:
         # No-action keywords: agent explicitly chooses not to act
         if candidate in ("弃票", "弃权", "abstain", "pass", "none", "null", "无", "空", "不行动", "跳过"):
             return None
-        for p in self._view.players:
+        visible_players = list(getattr(self._view, "players", []) or [])
+        legal_players = list(getattr(self._view, "legal_targets", []) or [])
+        by_id = {str(p.get("id", "") or ""): p for p in visible_players}
+        for p in legal_players:
+            player_id = str(p.get("id", "") or "")
+            by_id.setdefault(player_id, p)
+        for p in by_id.values():
             player_name = str(p.get("name", "")).strip()
             player_id = str(p.get("id", "")).strip()
             seat = str(p.get("seat", "")).strip()
@@ -998,6 +1015,7 @@ class CognitiveAgent:
                             "phase": self._view.phase if self._view else "",
                             "role": self.role,
                             "action_type": "auto_injected",
+                            "feedback_stage": "retrieval_trace",
                         },
                     }
                 )

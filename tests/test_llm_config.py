@@ -6,6 +6,7 @@ from langchain_core.messages import HumanMessage
 
 from backend.agents.cognitive.factory import create_llm_from_client
 from backend.agents.factory import _create_llm_runnable
+from backend.agents.factory import _resolve_pool_specs
 from backend.agents.factory import create_agents
 from backend.engine.models import Alignment
 from backend.engine.models import Player
@@ -112,6 +113,115 @@ def test_create_client_infers_weapi_from_base_url(monkeypatch) -> None:
     assert client.provider == "weapi"
     assert client.base_url == "https://weapi.pw/v1"
     assert client.model == "gpt-5.5"
+
+
+def test_create_client_infers_anthropic_messages_from_deepseek_anthropic_url(monkeypatch) -> None:
+    monkeypatch.setattr("backend.llm.load_env_file", lambda *a, **k: None)
+    monkeypatch.delenv("LLM_PROVIDER", raising=False)
+
+    client = create_client(
+        provider=None,
+        api_key="test-key",
+        base_url="https://api.deepseek.com/anthropic",
+        model="deepseek-v4-flash",
+    )
+
+    assert client.provider == "anthropic"
+    assert client.base_url == "https://api.deepseek.com/anthropic"
+    assert client.model == "deepseek-v4-flash"
+    assert client.api_key == "test-key"
+
+
+def test_create_client_anthropic_defaults_to_deepseek_compatible_settings(monkeypatch) -> None:
+    monkeypatch.setattr("backend.llm.load_env_file", lambda *a, **k: None)
+    for var in (
+        "ANTHROPIC_AUTH_TOKEN",
+        "ANTHROPIC_API_KEY",
+        "ANTHROPIC_BASE_URL",
+        "ANTHROPIC_MODEL",
+        "DEEPSEEK_API_KEY",
+        "DEEPSEEK_MODEL",
+        "DEEPSEEK_ANTHROPIC_BASE_URL",
+    ):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "deepseek-compatible-token")
+
+    client = create_client(provider="anthropic")
+
+    assert client.provider == "anthropic"
+    assert client.api_key == "deepseek-compatible-token"
+    assert client.base_url == "https://api.deepseek.com/anthropic"
+    assert client.model == "deepseek-v4-flash"
+
+
+def test_create_client_anthropic_accepts_official_anthropic_api_key(monkeypatch) -> None:
+    monkeypatch.setattr("backend.llm.load_env_file", lambda *a, **k: None)
+    for var in (
+        "ANTHROPIC_AUTH_TOKEN",
+        "ANTHROPIC_API_KEY",
+        "ANTHROPIC_BASE_URL",
+        "ANTHROPIC_MODEL",
+        "DEEPSEEK_API_KEY",
+        "DEEPSEEK_MODEL",
+        "DEEPSEEK_ANTHROPIC_BASE_URL",
+    ):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "official-anthropic-key")
+
+    client = create_client(provider="anthropic")
+
+    assert client.provider == "anthropic"
+    assert client.api_key == "official-anthropic-key"
+    assert client.base_url == "https://api.anthropic.com"
+    assert client.model == "claude-sonnet-4-6"
+
+
+def test_create_client_anthropic_uses_deepseek_api_key_as_fallback(monkeypatch) -> None:
+    monkeypatch.setattr("backend.llm.load_env_file", lambda *a, **k: None)
+    for var in (
+        "ANTHROPIC_AUTH_TOKEN",
+        "ANTHROPIC_API_KEY",
+        "ANTHROPIC_BASE_URL",
+        "ANTHROPIC_MODEL",
+        "DEEPSEEK_API_KEY",
+        "DEEPSEEK_MODEL",
+        "DEEPSEEK_ANTHROPIC_BASE_URL",
+    ):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "deepseek-api-key")
+
+    client = create_client(provider="anthropic")
+
+    assert client.provider == "anthropic"
+    assert client.api_key == "deepseek-api-key"
+    assert client.base_url == "https://api.deepseek.com/anthropic"
+    assert client.model == "deepseek-v4-flash"
+
+
+def test_model_pool_anthropic_uses_deepseek_compatible_defaults(monkeypatch) -> None:
+    for var in (
+        "MODEL_POOL",
+        "DOUBAO_MODEL_POOL",
+        "ANTHROPIC_AUTH_TOKEN",
+        "ANTHROPIC_API_KEY",
+        "DEEPSEEK_API_KEY",
+        "ANTHROPIC_BASE_URL",
+        "DEEPSEEK_ANTHROPIC_BASE_URL",
+    ):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("MODEL_POOL", "anthropic:deepseek-v4-flash")
+    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "deepseek-compatible-token")
+
+    specs = _resolve_pool_specs({})
+
+    assert specs == [
+        {
+            "provider": "anthropic",
+            "api_key": "deepseek-compatible-token",
+            "base_url": "https://api.deepseek.com/anthropic",
+            "model": "deepseek-v4-flash",
+        }
+    ]
 
 
 def test_create_client_env_timeout_and_retries_are_applied(monkeypatch) -> None:

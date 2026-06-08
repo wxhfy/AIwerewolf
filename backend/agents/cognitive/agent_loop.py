@@ -53,7 +53,7 @@ DECISION_TOOL_NAME = "submit_decision"
 import threading as _threading
 
 _STRATEGY_LOCK = _threading.Lock()
-_TRACK_C_RETRIEVAL_CACHE: dict[tuple[str, str, str, str, str, str], tuple[float, list[dict[str, Any]]]] = {}
+_TRACK_C_RETRIEVAL_CACHE: dict[tuple[str, str, str, str, str, str, int, float], tuple[float, list[dict[str, Any]]]] = {}
 _LAST_RETRIEVED_STRATEGIES: dict = {}
 _LAST_LOOP_TRACE: dict = {}
 
@@ -187,6 +187,38 @@ def _derive_alignment(role: str) -> str:
     return "wolf" if role.strip() in _WOLF_ROLES_LOOP else "village"
 
 
+def _legal_target_labels(obs: Observation | None) -> list[str]:
+    if obs is None or not getattr(obs, "legal_targets", None):
+        return []
+    labels: list[str] = []
+    seen: set[str] = set()
+    for player in obs.legal_targets:
+        seat = str(getattr(player, "seat", "") or "").strip()
+        name = str(getattr(player, "name", "") or "").strip()
+        player_id = str(getattr(player, "id", "") or "").strip()
+        candidates = []
+        if seat:
+            candidates.append(f"{seat}号")
+        if seat and name:
+            candidates.append(f"{seat}号:{name}")
+        if name:
+            candidates.append(name)
+        if player_id:
+            candidates.append(player_id)
+        for candidate in candidates:
+            if candidate and candidate not in seen:
+                seen.add(candidate)
+                labels.append(candidate)
+    return labels
+
+
+def _format_legal_target_instruction(obs: Observation | None) -> str:
+    labels = _legal_target_labels(obs)
+    if not labels:
+        return ""
+    return "- 本次合法目标仅限：" + "、".join(labels) + "\n"
+
+
 class AgentLoop:
     """Autonomous tool-calling agent loop for AI Werewolf.
 
@@ -261,7 +293,7 @@ class AgentLoop:
         max_tool_rounds = self._max_tool_rounds(cached_analysis)
         tools = self._select_tools(all_tools, obs) if max_tool_rounds > 0 else {}
         info_tool_schemas = self._tools_to_bind_schemas(tools) if self._supports_bind_tools and tools else []
-        decision_schema = self._decision_tool_schema()
+        decision_schema = self._decision_tool_schema(obs)
         context = []  # list of messages for the conversation
         tool_trace: list[dict] = []  # track tool calls for auditing
 
@@ -473,7 +505,7 @@ class AgentLoop:
         # Action task with role-specific anti-patterns (static fallback)
         # Gameplay advice from Track C goes in the strategy layer below.
         role = str(getattr(obs, "player_role", "") or "")
-        blocks.append(self._task_for_action(role))
+        blocks.append(self._task_for_action(role, obs))
 
         track_c_strategy_text = ""
         if _feature_enabled("COGNITIVE_ENABLE_TRACK_C", True):
@@ -552,6 +584,9 @@ class AgentLoop:
                 f"【上一轮分析】\n{cached_analysis}\n"
                 "(你刚分析过这个局势，直接基于已有判断做决策。如需补充信息可以调用工具。)"
             )
+        legal_target_text = _format_legal_target_instruction(obs)
+        if legal_target_text and self._action_type in {"vote", "night"}:
+            blocks.append("【本次合法目标约束】\n" + legal_target_text.strip())
         track_c_strategy_text = ""
         if _feature_enabled("COGNITIVE_ENABLE_TRACK_C", True):
             track_c_strategy_text = _build_track_c_strategy_block(
@@ -590,8 +625,9 @@ class AgentLoop:
             f"最多调用 {max_tool_rounds} 轮工具，之后必须输出 DECISION。"
         )
 
-    def _task_for_action(self, role: str = "") -> str:
+    def _task_for_action(self, role: str = "", obs: Observation | None = None) -> str:
         """Return the action-specific task description with anti-pattern guardrails."""
+        legal_hint = _format_legal_target_instruction(obs) if obs is not None else ""
         tasks = {
             "speech": (
                 "【任务：发言】\n"
@@ -607,6 +643,7 @@ class AgentLoop:
                 "- 如果当前观察里列出合法目标，只能从合法目标中选择\n"
                 "- 指出你要投谁（target）\n"
                 "- 给出简短的投票理由（reasoning）\n"
+                f"{legal_hint}"
             ),
             "night": (
                 "【任务：夜晚行动】\n"
@@ -614,6 +651,7 @@ class AgentLoop:
                 "- 如果当前观察里列出合法目标，只能从合法目标中选择\n"
                 "- 指出目标（target）\n"
                 "- 给出行动理由（reasoning）\n"
+                f"{legal_hint}"
             ),
         }
         base = tasks.get(self._action_type, tasks["speech"])
@@ -718,7 +756,7 @@ class AgentLoop:
             names = []
         return {name: all_tools[name] for name in names if name in all_tools}
 
-    def _decision_tool_schema(self) -> Dict[str, Any]:
+    def _decision_tool_schema(self, obs: Observation | None = None) -> Dict[str, Any]:
         """Return the native function schema used for final decisions."""
         if self._action_type == "speech":
             properties = {
@@ -738,10 +776,14 @@ class AgentLoop:
             required = ["speech", "reasoning"]
             description = "提交本次发言的最终决策。可选给出暂定投票倾向。"
         else:
+            legal_targets = _legal_target_labels(obs)
+            target_description = "最终目标，必须是当前可见且合法的玩家名或座位号。"
+            if legal_targets:
+                target_description += " 只能从以下值中选择：" + "、".join(legal_targets) + "。"
             properties = {
                 "target": {
                     "type": "string",
-                    "description": "最终目标，必须是当前可见且合法的玩家名或座位号。",
+                    "description": target_description,
                 },
                 "reasoning": {
                     "type": "string",
@@ -750,6 +792,9 @@ class AgentLoop:
             }
             required = ["target", "reasoning"]
             description = "提交本次投票或夜晚行动的最终决策。"
+            if legal_targets:
+                properties["target"]["enum"] = legal_targets
+                description += " target 必须严格使用合法目标枚举中的一个值。"
         return {
             "type": "function",
             "function": {
@@ -1365,7 +1410,8 @@ def _build_track_c_strategy_block(
 
     lines = [
         "【策略层：Track C 复盘知识】",
-        "以下内容来自已发布复盘/策略知识库，并已通过运行时安全过滤；只能作为一般玩法经验，不能当成本局隐藏身份事实。",
+        "以下内容来自已发布复盘/策略知识库，并已通过运行时安全过滤；仅作为高置信可选参考。",
+        "如果它与当前可见事实、角色规则、合法目标或任务约束冲突，必须忽略；不能把历史复盘当作本局隐藏身份事实。",
     ]
     for index, item in enumerate(lessons[:3], start=1):
         doc_id = str(item.get("doc_id") or item.get("id") or f"lesson-{index}")
@@ -1392,7 +1438,7 @@ def _build_track_c_strategy_block(
         if trigger:
             detail_parts.append(f"触发：{trigger}")
         if recommendation:
-            detail_parts.append(f"建议：{recommendation}")
+            detail_parts.append(f"可参考做法：{recommendation}")
         if avoid:
             detail_parts.append(f"避免：{avoid}")
         if rationale:
@@ -1422,18 +1468,22 @@ def _retrieve_track_c_strategy_lessons(
         mbti_key = _normalize_mbti(mbti)
         alignment_key = (alignment or _derive_alignment(role)).lower().strip()
         policy_raw = (
-            os.getenv("TRACK_C_AUTO_RETRIEVAL_POLICY", "").strip()
-            or retrieval_policy
-            or "hybrid_role_alignment_phase"
+            os.getenv("TRACK_C_AUTO_RETRIEVAL_POLICY", "").strip() or retrieval_policy or "hybrid_role_alignment_phase"
         )
         try:
             policy = RetrievalPolicy(policy_raw)
         except ValueError:
             policy = RetrievalPolicy.HYBRID_ROLE_ALIGNMENT_PHASE
         cache_ttl = float(os.getenv("TRACK_C_AUTO_RETRIEVAL_CACHE_SECONDS", "120") or 0)
-        limit = int(os.getenv("TRACK_C_AUTO_RETRIEVAL_LIMIT", "3") or "3")
-        fetch_limit = max(limit * 3, limit)
-        cache_key = (role, phase, action, mbti_key, alignment_key, policy.value)
+        limit = _track_c_env_int("TRACK_C_AUTO_RETRIEVAL_LIMIT", 1, minimum=0)
+        min_quality = _track_c_env_float("TRACK_C_RUNTIME_MIN_QUALITY", 0.82)
+        if limit <= 0:
+            if player_id:
+                with _STRATEGY_LOCK:
+                    _LAST_RETRIEVED_STRATEGIES.pop(player_id, None)
+            return []
+        fetch_limit = _track_c_env_int("TRACK_C_AUTO_RETRIEVAL_FETCH_LIMIT", max(limit * 24, 24), minimum=limit)
+        cache_key = (role, phase, action, mbti_key, alignment_key, policy.value, limit, min_quality)
         if cache_ttl > 0:
             cached = _TRACK_C_RETRIEVAL_CACHE.get(cache_key)
             now = time.monotonic()
@@ -1464,7 +1514,16 @@ def _retrieve_track_c_strategy_lessons(
         rows = [
             row
             for row in rows
-            if isinstance(row, dict) and _track_c_row_safe_for_runtime(row, role, mbti_key, alignment_key)
+            if isinstance(row, dict)
+            and _track_c_row_safe_for_runtime(
+                row,
+                role,
+                mbti_key,
+                alignment_key,
+                phase=phase,
+                action=action,
+                min_quality=min_quality,
+            )
         ][:limit]
         lessons = [
             _normalize_strategy_row(row, index) for index, row in enumerate(rows, start=1) if isinstance(row, dict)
@@ -1519,9 +1578,44 @@ _ABSOLUTE_TRACK_C_PATTERNS = (
     "always vote",
     "never reveal",
 )
+_HISTORICAL_IDENTIFIER_PATTERN = re.compile(
+    r"(?<!\d)(?:\d{1,2}\s*号|P\d+\b|[A-Za-z0-9_-]*-[0-9a-f]{4,})",
+    re.IGNORECASE,
+)
 
 
-def _track_c_row_safe_for_runtime(row: dict[str, Any], role: str, mbti: str, alignment: str) -> bool:
+def _track_c_env_int(name: str, default: int, *, minimum: int = 0) -> int:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return default
+    try:
+        return max(minimum, int(raw))
+    except ValueError:
+        logger.warning("Invalid %s=%r; using default %s", name, raw, default)
+        return default
+
+
+def _track_c_env_float(name: str, default: float) -> float:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        logger.warning("Invalid %s=%r; using default %s", name, raw, default)
+        return default
+
+
+def _track_c_row_safe_for_runtime(
+    row: dict[str, Any],
+    role: str,
+    mbti: str,
+    alignment: str,
+    *,
+    phase: str = "",
+    action: str = "",
+    min_quality: float | None = None,
+) -> bool:
     """Final safety gate before auto-injecting Track C knowledge into prompts."""
     status = str(row.get("status", "active") or "active").lower().strip()
     if status != "active":
@@ -1532,7 +1626,7 @@ def _track_c_row_safe_for_runtime(row: dict[str, Any], role: str, mbti: str, ali
         return False
 
     quality = _track_c_row_quality(row)
-    min_quality = float(os.getenv("TRACK_C_RUNTIME_MIN_QUALITY", "0.72") or "0.72")
+    min_quality = min_quality if min_quality is not None else _track_c_env_float("TRACK_C_RUNTIME_MIN_QUALITY", 0.82)
     if doc_type.startswith("reflection"):
         min_quality = max(min_quality, 0.85)
     if quality is not None and quality < min_quality:
@@ -1556,6 +1650,9 @@ def _track_c_row_safe_for_runtime(row: dict[str, Any], role: str, mbti: str, ali
     if row_role and row_role not in {"global", "any"} and role_key and row_role != role_key:
         return False
 
+    if not _track_c_phase_safe_for_runtime(row, phase, action):
+        return False
+
     text = " ".join(
         str(row.get(key, "") or "")
         for key in (
@@ -1574,6 +1671,8 @@ def _track_c_row_safe_for_runtime(row: dict[str, Any], role: str, mbti: str, ali
         return False
     if any(pattern in text for pattern in _ABSOLUTE_TRACK_C_PATTERNS):
         return False
+    if _HISTORICAL_IDENTIFIER_PATTERN.search(text):
+        return False
 
     return True
 
@@ -1588,6 +1687,43 @@ def _track_c_row_quality(row: dict[str, Any]) -> float | None:
         except (TypeError, ValueError):
             continue
     return None
+
+
+def _track_c_phase_safe_for_runtime(row: dict[str, Any], phase: str, action: str) -> bool:
+    """Avoid injecting stale phase advice into unrelated decisions."""
+    if not _feature_enabled("TRACK_C_RUNTIME_REQUIRE_PHASE_MATCH", True):
+        return True
+    phase_key = str(phase or "").upper().strip()
+    action_key = str(action or "").lower().strip()
+    scopes = {
+        str(row.get(key, "") or "").upper().strip()
+        for key in ("phase_scope", "phase", "applicability_phase")
+        if str(row.get(key, "") or "").strip()
+    }
+    scopes.discard("GLOBAL")
+    scopes.discard("ANY")
+    if scopes:
+        return phase_key in scopes or any(
+            _track_c_phase_action_compatible(scope, phase_key, action_key) for scope in scopes
+        )
+    return _feature_enabled("TRACK_C_RUNTIME_ALLOW_GLOBAL_PHASE", action_key == "talk")
+
+
+def _track_c_phase_action_compatible(scope: str, phase: str, action: str) -> bool:
+    if not scope:
+        return False
+    if scope == phase:
+        return True
+    if action == "talk":
+        return "SPEECH" in scope or "BADGE" in scope
+    if action == "vote":
+        return "VOTE" in scope or "RESOLVE" in scope
+    if action == "night_action":
+        if "NIGHT" in phase and "NIGHT" in scope:
+            return True
+        role_markers = ("WOLF", "SEER", "WITCH", "GUARD", "HUNTER")
+        return any(marker in phase and marker in scope for marker in role_markers)
+    return False
 
 
 def _normalize_mbti(mbti: str) -> str:

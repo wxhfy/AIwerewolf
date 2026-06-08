@@ -214,7 +214,6 @@ docs/CORE_MODULE_QUANTIFICATION_REPORT.md
 docs/FULL_SCORE_TIER_AUDIT.md
 docs/MBTI_TRACK_C_AUXILIARY_ANALYSIS.md
 docs/MBTI_TRACK_C_NEGATIVE_TRANSFER_ANALYSIS.md
-scripts/full_project_real_audit.py
 scripts/quantify_core_modules.py
 
 # PyPI configuration file

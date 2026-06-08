@@ -54,6 +54,7 @@ updated: 2026-06-08
 | GET | `/api/games/{game_id}/metrics` | — | 单局 Track B 多维指标 |
 | GET | `/api/games/{game_id}/runtime_metrics` | — | 单局运行时指标（延迟、tokens、有效决策等） |
 | GET | `/api/games/{game_id}/reviews` | — | 复盘报告聚合 payload |
+| GET | `/api/games/{game_id}/reviews/status` | — | 复盘产物生成状态；总是返回 200，`pending/ready` 用于前端轮询，避免 HTML/MD 资源未生成时产生 404 噪音 |
 | GET | `/api/games/{game_id}/reviews/html` | — | 复盘 HTML，`text/html` |
 | GET | `/api/games/{game_id}/reviews.md` | `download` | 复盘 Markdown；默认 attachment 下载 |
 

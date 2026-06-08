@@ -43,6 +43,18 @@ MIGRATIONS = {
         ("required_public_facts", "JSONB", "'[]'"),
         ("forbidden_public_facts", "JSONB", "'[]'"),
         ("required_private_state", "JSONB", "'[]'"),
+        # Versioned Track C knowledge lifecycle
+        ("experiment_id", "VARCHAR", None),
+        ("source_game_id", "VARCHAR", None),
+        ("source_decision_id", "VARCHAR", None),
+        ("knowledge_epoch", "INTEGER", "0"),
+        ("version_group", "VARCHAR", None),
+        ("doc_version", "VARCHAR", "'v1'"),
+        ("parent_doc_id", "VARCHAR", None),
+        ("supersedes_doc_ids", "JSONB", "'[]'"),
+        ("maturity", "VARCHAR", "'raw'"),
+        ("validated_at", "TIMESTAMP WITH TIME ZONE", None),
+        ("last_used_at", "TIMESTAMP WITH TIME ZONE", None),
     ],
     "agent_decisions": [
         ("candidate_actions", "JSONB", None),
@@ -54,6 +66,14 @@ MIGRATIONS = {
         ("provider", "VARCHAR", None),
     ],
 }
+
+INDEXES = [
+    (
+        "ix_strategy_knowledge_version_rank",
+        "CREATE INDEX IF NOT EXISTS ix_strategy_knowledge_version_rank "
+        "ON strategy_knowledge_docs (version_group, status, maturity, knowledge_epoch)",
+    ),
+]
 
 
 def main():
@@ -72,6 +92,16 @@ def main():
                 except Exception as e:
                     db.rollback()
                     print(f"  ! {col_name}: {e}")
+
+        print("\n=== indexes ===")
+        for index_name, sql in INDEXES:
+            try:
+                db.execute(text(sql))
+                db.commit()
+                print(f"  + {index_name}")
+            except Exception as e:
+                db.rollback()
+                print(f"  ! {index_name}: {e}")
 
         print("\n=== Migration complete ===")
 

@@ -1884,9 +1884,11 @@ def _extract_and_store_knowledge(
         # 1. Check if Track B already extracted knowledge for this game
         conn = psycopg2.connect(DEFAULT_DB_URL)
         c = conn.cursor()
+        import json as _track_c_json
+
         c.execute(
-            "SELECT COUNT(*) FROM strategy_knowledge_docs WHERE source_game_id = %s",
-            (state.id,),
+            "SELECT COUNT(*) FROM strategy_knowledge_docs WHERE source_report_ids @> %s::jsonb",
+            (_track_c_json.dumps([state.id]),),
         )
         existing = c.fetchone()[0]
         c.close()

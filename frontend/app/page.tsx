@@ -178,6 +178,7 @@ export default function LobbyPage() {
           {language === "zh" ? "角色库" : "Personas"}
         </Link>
         <button
+          data-testid="open-settings-button"
           onClick={() => setShowSettings(true)}
           className="px-3 py-1.5 text-xs font-medium rounded-button border border-border/40 text-text-sub/70 hover:text-primary hover:border-primary/50 transition-colors backdrop-blur-sm flex items-center gap-1.5"
         >

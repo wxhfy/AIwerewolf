@@ -11,6 +11,8 @@ from backend.agents.cognitive.factory import create_llm_from_client
 from backend.agents.human_agent import HumanAgent
 from backend.engine.models import Player
 
+_DEFAULT_DEEPSEEK_ANTHROPIC_BASE_URL = "https://api.deepseek.com/anthropic"
+
 
 def _resolve_model_pool(config: dict[str, Any]) -> list[str]:
     """Parse model pool entries from config or env."""
@@ -73,8 +75,16 @@ def _spec_for_provider(provider: str, model: str) -> dict[str, str] | None:
         api_key = os.getenv("MIMO_API_KEY", "local").strip()
         base_url = os.getenv("MIMO_BASE_URL", "").strip()
     elif provider == "anthropic":
-        api_key = os.getenv("ANTHROPIC_AUTH_TOKEN", "").strip()
-        base_url = os.getenv("ANTHROPIC_BASE_URL", "https://api.anthropic.com").strip()
+        api_key = (
+            os.getenv("ANTHROPIC_AUTH_TOKEN", "").strip()
+            or os.getenv("ANTHROPIC_API_KEY", "").strip()
+            or os.getenv("DEEPSEEK_API_KEY", "").strip()
+        )
+        base_url = (
+            os.getenv("ANTHROPIC_BASE_URL", "").strip()
+            or os.getenv("DEEPSEEK_ANTHROPIC_BASE_URL", "").strip()
+            or _DEFAULT_DEEPSEEK_ANTHROPIC_BASE_URL
+        )
     elif provider in {"weapi", "weapi_pw"}:
         api_key = os.getenv("WEAPI_API_KEY", "").strip()
         base_url = os.getenv("WEAPI_BASE_URL", "https://weapi.pw").strip()

@@ -103,6 +103,7 @@
 │   │  experiment_id = TIER_EXPERIMENT_ID                               │
 │   ▼                                                                  │
 │ strategy_knowledge_docs 表 (status=candidate)                          │
+│   maturity=raw | knowledge_epoch | version_group | doc_version          │
 │   27 per_step + 72 reflection = 99 条/局                               │
 └──────────────┬───────────────────────────────────────────────────────┘
                │
@@ -117,6 +118,7 @@
 │ strategy_knowledge_docs (status=active)                                │
 │   L0-L3 可信度 + visibility_scope + applicability_conditions            │
 │   quality_score | times_upvoted | contradiction_count                  │
+│   maturity=refined/canonical | validated_at | supersedes_doc_ids        │
 └──────────────┬───────────────────────────────────────────────────────┘
                │
                ▼
@@ -130,7 +132,9 @@
 │   │    2. visibility_allowed (public/self/wolf/postgame)                │
 │   │    3. leaks_current_game_private_info (no current-game leak)        │
 │   │    4. applicability_matches (role/phase/rule/player_count)          │
-│   │  rerank by quality_score                                           │
+│   │  rerank by relevance + quality + feedback + validated recency      │
+│   │  filter superseded docs; raw candidates cannot outrank validated   │
+│   │  refined/canonical descendants by recency alone                    │
 │   ▼                                                                  │
 │ Agent Prompt — Layer 3 策略层注入                                       │
 │   → 下一局 CognitiveAgent 使用升级后的策略                                │

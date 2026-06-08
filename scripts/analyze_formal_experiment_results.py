@@ -8,8 +8,8 @@ The default mode is intentionally strict:
 * keep Volcengine v4flash rows only;
 * exclude pro, fake, official DeepSeek, and unknown-model rows from formal
   evidence;
-* keep failed rows in completeness/reliability tables, but not win-rate
-  denominators.
+* keep failed rows in external run-health tables, but exclude whole-game
+  failures/API errors from win-rate denominators and Agent architecture scores.
 """
 
 from __future__ import annotations
@@ -192,13 +192,21 @@ def summarize_tiers(rows: Sequence[dict[str, Any]]) -> dict[str, dict[str, Any]]
         macro_role_win_rate = mean([item["win_rate"] for item in role_rates.values()]) if role_rates else 0.0
         wolf_wins = winner_counts.get("wolf", 0)
         village_wins = winner_counts.get("village", 0)
+        attempted_games = len(tier_rows)
+        external_failed_games = len(failed)
+        external_failure_rate = external_failed_games / max(attempted_games, 1)
+        valid_completion_rate = 1.0 if completed else 0.0
         result[tier] = {
             "tier": tier,
             "display_name": TIER_LABEL.get(tier, tier),
-            "rows": len(tier_rows),
+            "rows": attempted_games,
+            "attempted_games": attempted_games,
             "completed_games": len(completed),
-            "failed_games": len(failed),
-            "completion_rate": round(len(completed) / max(len(tier_rows), 1), 6),
+            "failed_games": external_failed_games,
+            "external_failed_games": external_failed_games,
+            "external_failure_rate": round(external_failure_rate, 6),
+            "attempt_completion_rate": round(len(completed) / max(attempted_games, 1), 6),
+            "completion_rate": round(valid_completion_rate, 6),
             "winner_counts": dict(sorted(winner_counts.items())),
             "wolf_win_rate": round(wolf_wins / max(len(completed), 1), 6),
             "village_win_rate": round(village_wins / max(len(completed), 1), 6),
@@ -231,8 +239,12 @@ def build_leaderboard(tiers: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
             {
                 "tier": tier,
                 "display_name": summary["display_name"],
+                "attempted_games": summary["attempted_games"],
                 "completed_games": summary["completed_games"],
                 "failed_games": summary["failed_games"],
+                "external_failed_games": summary["external_failed_games"],
+                "external_failure_rate": summary["external_failure_rate"],
+                "attempt_completion_rate": summary["attempt_completion_rate"],
                 "completion_rate": summary["completion_rate"],
                 "wolf_win_rate": summary["wolf_win_rate"],
                 "village_win_rate": summary["village_win_rate"],
@@ -245,7 +257,7 @@ def build_leaderboard(tiers: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
             }
         )
     entries.sort(
-        key=lambda row: (row["completion_rate"], row["macro_role_win_rate"], row["wolf_win_rate"]), reverse=True
+        key=lambda row: (row["macro_role_win_rate"], row["wolf_win_rate"], row["completed_games"]), reverse=True
     )
     for rank, entry in enumerate(entries, start=1):
         entry["rank"] = rank
@@ -262,11 +274,9 @@ def build_architecture_evidence_leaderboard(
     if not tiers:
         return []
     tier_keys = sorted(tiers)
-    completion_norm = normalize_metric({key: tiers[key]["completion_rate"] for key in tier_keys})
     macro_role_norm = normalize_metric({key: tiers[key]["macro_role_win_rate"] for key in tier_keys})
     wolf_win_norm = normalize_metric({key: tiers[key]["wolf_win_rate"] for key in tier_keys})
     duration_norm = normalize_metric({key: tiers[key]["avg_duration_s"] for key in tier_keys}, higher_is_better=False)
-    seat_norm = normalize_metric({key: tiers[key]["seat_samples"] for key in tier_keys})
     decision_norm = normalize_metric({key: tiers[key]["llm_decisions"] for key in tier_keys})
     rank_by_tier = {row["tier"]: row["rank"] for row in leaderboard}
     n = max(len(leaderboard), 1)
@@ -306,9 +316,8 @@ def build_architecture_evidence_leaderboard(
         )
         engineering_raw = mean_or_zero(
             [
-                completion_norm.get(tier, 0.0),
                 health,
-                seat_norm.get(tier, 0.0),
+                float(row.get("core_role_coverage", 0.0)),
                 duration_norm.get(tier, 0.0),
                 1.0 if row.get("completed_games", 0) > 0 else 0.0,
             ]
@@ -344,6 +353,9 @@ def build_architecture_evidence_leaderboard(
                 "evidence_signals": {
                     "completed_games": row["completed_games"],
                     "failed_games": row["failed_games"],
+                    "external_failed_games": row["external_failed_games"],
+                    "external_failure_rate": row["external_failure_rate"],
+                    "attempt_completion_rate": row["attempt_completion_rate"],
                     "completion_rate": row["completion_rate"],
                     "wolf_win_rate": row["wolf_win_rate"],
                     "village_win_rate": row["village_win_rate"],
@@ -364,7 +376,7 @@ def build_architecture_evidence_leaderboard(
         key=lambda item: (
             item["rubric_total_score"],
             item["rubric_dimensions"]["advanced_bc"],
-            item["evidence_signals"]["completion_rate"],
+            item["evidence_signals"]["completed_games"],
         ),
         reverse=True,
     )
@@ -450,14 +462,16 @@ def render_report(payload: dict[str, Any]) -> str:
             "",
             "## 2. Track B/C Framework Leaderboard",
             "",
-            "| Rank | Tier | Completed | Failed | Completion | Wolf Win | Village Win | Macro Role Win | LLM Decisions | Fallback | Invalid |",
+            "Whole-game failures/API errors are external run-health signals. They are not counted as Agent losses.",
+            "",
+            "| Rank | Tier | Completed | External Failed | External Failure | Wolf Win | Village Win | Macro Role Win | LLM Decisions | Fallback | Invalid |",
             "|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
         ]
     )
     for row in payload["leaderboard"]:
         lines.append(
             f"| {row['rank']} | `{row['tier']}` / {row['display_name']} | {row['completed_games']} | "
-            f"{row['failed_games']} | {fmt_pct(row['completion_rate'])} | {fmt_pct(row['wolf_win_rate'])} | "
+            f"{row['external_failed_games']} | {fmt_pct(row['external_failure_rate'])} | {fmt_pct(row['wolf_win_rate'])} | "
             f"{fmt_pct(row['village_win_rate'])} | {fmt_pct(row['macro_role_win_rate'])} | "
             f"{row['llm_decisions']} | {row['fallback_count']} | {row['invalid_count']} |"
         )
@@ -468,6 +482,7 @@ def render_report(payload: dict[str, Any]) -> str:
             "## 3. Architecture Evidence Leaderboard",
             "",
             "Mapped to project architecture evidence: Agent decision quality, multi-Agent behavior, engineering health, and B/C loop.",
+            "Whole-game failures/API errors are excluded from Agent architecture scores and shown only as external failure.",
             "",
             "| Rank | Tier | Total | Single Agent /20 | Multi-Agent /20 | Engineering /30 | B/C /30 | Key Evidence |",
             "|---:|---|---:|---:|---:|---:|---:|---|",
@@ -477,9 +492,9 @@ def render_report(payload: dict[str, Any]) -> str:
         dims = row["rubric_dimensions"]
         signals = row["evidence_signals"]
         evidence = (
-            f"complete={fmt_pct(signals['completion_rate'])}; "
             f"wolf={fmt_pct(signals['wolf_win_rate'])}; "
             f"macro_role={fmt_pct(signals['macro_role_win_rate'])}; "
+            f"external_fail={fmt_pct(signals['external_failure_rate'])}; "
             f"fallback={signals['fallback_count']}; invalid={signals['invalid_count']}"
         )
         lines.append(
@@ -509,12 +524,12 @@ def render_report(payload: dict[str, Any]) -> str:
             "",
             "- Single Agent: evidence comes from real LLM decisions, role coverage, and no fallback in formal rows. This report does not inspect prompt text directly; use `docs/EXPERIMENT_SECTION_DESIGN.md` and code references for prompt-layer evidence.",
             "- Multi-Agent: evidence comes from role/team outcome, role coverage, paired seeds, and strict information isolation gate. The strongest claim is that the platform supports role-differentiated multi-agent experiments; direct deception/detection scoring still needs the Track B semantic audit output.",
-            "- Engineering: formal rows show real v4flash games with fallback=0; failed rows remain visible in completion-rate penalties. Visibility strict was run separately and passed 92/92.",
-            "- Advanced B/C: Track B/C variants are distinguishable in the leaderboard, but this filtered historical dataset has uneven completion by tier. Treat Track C outcome claims as evidence, not final significance proof.",
+            "- Engineering: formal completed rows show real v4flash games with fallback=0; whole-game failures/API errors are external run-health signals, not Agent losses. Visibility strict was run separately and passed 92/92.",
+            "- Advanced B/C: Track B/C variants are distinguishable in the leaderboard. Treat Track C outcome claims as evidence, not final significance proof, until the balanced target-seat A/B completes.",
             "",
             "## 6. Conclusion Boundary",
             "",
-            "Use this report for the paper/presentation as a formal experiment audit. Do not claim `cognitive_full` is statistically superior unless the 20-seed paired runner completes with balanced completion across all four frameworks. The current evidence is enough to show the leaderboard can distinguish framework versions and that B/C modules are experimentally testable under v4flash.",
+            "Use this report for the paper/presentation as a formal experiment audit. Do not claim `cognitive_full` is statistically superior unless the 20-seed paired runner completes with enough valid paired seeds across frameworks. The current evidence is enough to show the leaderboard can distinguish framework versions and that B/C modules are experimentally testable under v4flash.",
         ]
     )
     return "\n".join(lines) + "\n"
@@ -558,6 +573,7 @@ def main() -> int:
         "tier_summaries": tiers,
         "leaderboard": leaderboard,
         "architecture_evidence_leaderboard": architecture_evidence,
+        "rubric_leaderboard": architecture_evidence,
         "paired_seed_deltas": paired,
         "role_summary": summarize_players(formal_rows, "role"),
         "team_summary": summarize_players(formal_rows, "team"),
@@ -573,8 +589,12 @@ def main() -> int:
             "rank",
             "tier",
             "display_name",
+            "attempted_games",
             "completed_games",
             "failed_games",
+            "external_failed_games",
+            "external_failure_rate",
+            "attempt_completion_rate",
             "completion_rate",
             "wolf_win_rate",
             "village_win_rate",
@@ -610,6 +630,9 @@ def main() -> int:
             "advanced_bc",
             "completed_games",
             "failed_games",
+            "external_failed_games",
+            "external_failure_rate",
+            "attempt_completion_rate",
             "completion_rate",
             "wolf_win_rate",
             "village_win_rate",

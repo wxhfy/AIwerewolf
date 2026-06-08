@@ -517,8 +517,27 @@ def _extract_wolf_dynamic_features(
         # Only check for defending OTHERS, not self
         other_wolf_ids = {wid for wid in known_wolf_ids if wid != player_id}
         defending_teammate = any(wid in speech_text for wid in other_wolf_ids)
-        # Light cut phrases like "不强保" "不硬保" "先按查杀走" indicate GOOD wolf play
-        light_cut = any(kw in speech_text for kw in ["不强保", "不硬保", "按查杀走", "先出", "不保", "切割", "牺牲"])
+        # Light cut phrases indicate GOOD wolf play, not teammate overprotection.
+        light_cut = any(
+            kw in speech_text
+            for kw in [
+                "不强保",
+                "不硬保",
+                "不好硬保",
+                "按查杀走",
+                "先出",
+                "不保",
+                "切割",
+                "牺牲",
+                "强行保",
+                "队友感",
+                "站不住",
+                "无法力挺",
+                "先跟好人走",
+                "跟好人走",
+                "不确定",
+            ]
+        )
         has_evidence = any(
             kw in speech_text.lower()
             for kw in [
@@ -1017,6 +1036,10 @@ def calibrate_decision_quality(
     is_wolf = role in ("Werewolf", "WhiteWolfKing")
 
     feats = extract_features(opportunity)
+    chosen_action = opportunity.get("chosen_action", {})
+    if not isinstance(chosen_action, dict):
+        chosen_action = {}
+    speech_text = str(chosen_action.get("speech", "") or "")
 
     # ---- Soft adjustments based on quantifiable feature values ----
     # Each penalty = feature_weight * feature_value, where feature_value ∈ [0, 1]
@@ -1119,6 +1142,61 @@ def calibrate_decision_quality(
             q = max(0.0, q - penalty)
             reasons.append("lack_of_public_evidence")
             components["evidence_lack_penalty"] = round(penalty, 4)
+
+    # Positive wolf-operation signals keep the evaluator useful when a persisted
+    # q-model cannot be loaded and raw_q falls back to a neutral 0.5.
+    if (
+        is_wolf
+        and op_type == "werewolf_kill"
+        and feats.night_kill_target_value >= 0.75
+        and feats.counterfactual_target_gap <= 0.15
+        and feats.role_goal_conflict_score <= 0.1
+    ):
+        boost = 0.12 * min(1.0, feats.night_kill_target_value)
+        q = min(1.0, q + boost)
+        reasons.append("high_value_kill_target")
+        components["high_value_kill_boost"] = round(boost, 4)
+
+    harmful_clean_speech_terms = [
+        "我们狼",
+        "我狼",
+        "狼队",
+        "狼队友",
+        "昨晚刀",
+        "肯定",
+        "一定",
+        "绝对",
+        "说漏嘴",
+        "不想解释",
+    ]
+    clean_wolf_speech = (
+        is_wolf
+        and op_type in ("speech", "seer_release")
+        and speech_text
+        and feats.wolf_perspective_leak_score <= 0.05
+        and feats.teammate_overprotection <= 0.25
+        and feats.vote_coordination_failure <= 0.05
+        and feats.role_goal_conflict_score <= 0.1
+        and feats.lack_of_public_evidence_support <= 0.1
+        and not any(term in speech_text for term in harmful_clean_speech_terms)
+    )
+    if clean_wolf_speech:
+        boost = 0.10 + 0.04 * max(0.0, feats.speech_grounding_score - 0.4)
+        q = min(1.0, q + boost)
+        reasons.append("clean_wolf_speech")
+        components["clean_wolf_speech_boost"] = round(boost, 4)
+
+    if (
+        is_wolf
+        and op_type == "vote"
+        and feats.target_is_private_confirmed_wolf == 1
+        and feats.vote_coordination_failure <= 0.05
+        and feats.role_goal_conflict_score <= 0.1
+    ):
+        boost = 0.08
+        q = min(1.0, q + boost)
+        reasons.append("strategic_teammate_cut_vote")
+        components["teammate_cut_vote_boost"] = boost
 
     return CalibratedScore(
         raw_model_q=round(raw_q, 4),

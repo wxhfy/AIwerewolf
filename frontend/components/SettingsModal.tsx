@@ -49,6 +49,17 @@ export function SettingsModal({ isOpen, onClose, currentSettings, onSave }: Sett
     }
   }, [isOpen, currentSettings]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   const handleSave = () => {
@@ -114,7 +125,10 @@ export function SettingsModal({ isOpen, onClose, currentSettings, onSave }: Sett
       />
 
       {/* Modal */}
-      <div className="relative w-full max-w-2xl overflow-hidden rounded-card border border-border bg-cardBackground shadow-modal-strong">
+      <div
+        data-testid="settings-modal"
+        className="relative w-full max-w-2xl overflow-hidden rounded-card border border-border bg-cardBackground shadow-modal-strong"
+      >
         {/* Header */}
         <div className="relative border-b border-border bg-background/45 px-6 py-4">
           <h2 className="text-xl font-bold text-primary flex items-center gap-2">

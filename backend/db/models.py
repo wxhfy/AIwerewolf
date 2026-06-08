@@ -360,6 +360,17 @@ class StrategyKnowledgeDoc(Base):
     failure_count = Column(Integer, default=0)
     status = Column(String, default="candidate", index=True)
     tags = Column(JSON, default=list)
+    experiment_id = Column(String, nullable=True, index=True)
+    source_game_id = Column(String, nullable=True, index=True)
+    source_decision_id = Column(String, nullable=True, index=True)
+    knowledge_epoch = Column(Integer, default=0, index=True)
+    version_group = Column(String, nullable=True, index=True)
+    doc_version = Column(String, default="v1")
+    parent_doc_id = Column(String, nullable=True, index=True)
+    supersedes_doc_ids = Column(JSON, default=list)
+    maturity = Column(String, default="raw", index=True)  # raw | refined | canonical
+    validated_at = Column(DateTime, nullable=True, index=True)
+    last_used_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=_utcnow)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
 
@@ -399,6 +410,7 @@ class StrategyKnowledgeDoc(Base):
     __table_args__ = (
         Index("ix_strategy_knowledge_role_phase_status", "role", "phase", "status"),
         Index("ix_strategy_knowledge_tier_scope", "confidence_tier", "visibility_scope"),
+        Index("ix_strategy_knowledge_version_rank", "version_group", "status", "maturity", "knowledge_epoch"),
     )
 
 

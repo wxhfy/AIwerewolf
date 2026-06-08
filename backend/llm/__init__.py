@@ -23,6 +23,10 @@ _DEFAULT_DOUBAO_MODEL = "Doubao-Seed-2.0-pro"
 _DEFAULT_ARK_BASE_URL = "https://ark.cn-beijing.volces.com/api/coding/v1"
 _DEFAULT_PROVIDER = "dsv4flash"
 _DEFAULT_WEAPI_BASE_URL = "https://weapi.pw/v1"
+_DEFAULT_DEEPSEEK_ANTHROPIC_BASE_URL = "https://api.deepseek.com/anthropic"
+_DEFAULT_DEEPSEEK_ANTHROPIC_MODEL = "deepseek-v4-flash"
+_DEFAULT_ANTHROPIC_BASE_URL = "https://api.anthropic.com"
+_DEFAULT_ANTHROPIC_MODEL = "claude-sonnet-4-6"
 
 # Multi-model pool: "provider:model" entries, comma-separated
 # Supports: doubao, dsv4flash, ark (generic Ark API), deepseek, mimo
@@ -82,6 +86,8 @@ def create_client(provider: str | None = None, **kwargs) -> Any:
             base_url = str(explicit_base_url).lower()
             if "weapi" in base_url:
                 provider = "weapi"
+            elif "anthropic" in base_url:
+                provider = "anthropic"
             elif "deepseek" in base_url:
                 provider = "deepseek"
             elif "mimo" in base_url:
@@ -226,10 +232,50 @@ def create_client(provider: str | None = None, **kwargs) -> Any:
         client.provider = "weapi"
         return client
     elif provider == "anthropic":
-        # Anthropic-format API (Messages endpoint) — used by ARK coding / Anthropic SDK
-        api_key = kwargs.pop("api_key", None) or os.getenv("ANTHROPIC_AUTH_TOKEN", "")
-        base_url = kwargs.pop("base_url", None) or os.getenv("ANTHROPIC_BASE_URL", "https://api.anthropic.com")
-        model = kwargs.pop("model", None) or os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-6")
+        # Anthropic-format API (Messages endpoint). The product settings default
+        # to DeepSeek's Anthropic-compatible endpoint, while still accepting the
+        # official Anthropic SDK env var for Claude endpoints.
+        explicit_api_key = kwargs.pop("api_key", None)
+        if explicit_api_key:
+            api_key = str(explicit_api_key).strip()
+            key_source = "explicit"
+        elif os.getenv("ANTHROPIC_AUTH_TOKEN", "").strip():
+            api_key = os.getenv("ANTHROPIC_AUTH_TOKEN", "").strip()
+            key_source = "ANTHROPIC_AUTH_TOKEN"
+        elif os.getenv("ANTHROPIC_API_KEY", "").strip():
+            api_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
+            key_source = "ANTHROPIC_API_KEY"
+        else:
+            api_key = os.getenv("DEEPSEEK_API_KEY", "").strip()
+            key_source = "DEEPSEEK_API_KEY" if api_key else ""
+
+        explicit_base_url = kwargs.pop("base_url", None)
+        if explicit_base_url:
+            base_url = str(explicit_base_url).strip()
+        else:
+            base_url = (
+                os.getenv("ANTHROPIC_BASE_URL", "").strip()
+                or os.getenv("DEEPSEEK_ANTHROPIC_BASE_URL", "").strip()
+                or (
+                    _DEFAULT_ANTHROPIC_BASE_URL
+                    if key_source == "ANTHROPIC_API_KEY"
+                    else _DEFAULT_DEEPSEEK_ANTHROPIC_BASE_URL
+                )
+            )
+
+        deepseek_compatible_endpoint = "deepseek" in base_url.lower()
+        deepseek_compatible_auth = key_source in {"ANTHROPIC_AUTH_TOKEN", "DEEPSEEK_API_KEY", ""}
+        use_deepseek_defaults = deepseek_compatible_endpoint or deepseek_compatible_auth
+
+        explicit_model = kwargs.pop("model", None)
+        if explicit_model:
+            model = str(explicit_model).strip()
+        else:
+            model = (
+                os.getenv("ANTHROPIC_MODEL", "").strip()
+                or (os.getenv("DEEPSEEK_MODEL", "").strip() if use_deepseek_defaults else "")
+                or (_DEFAULT_ANTHROPIC_MODEL if not use_deepseek_defaults else _DEFAULT_DEEPSEEK_ANTHROPIC_MODEL)
+            )
         if not api_key:
             return _UnavailableLLMClient(provider="anthropic", model=model, base_url=base_url)
         client = AnthropicClient(

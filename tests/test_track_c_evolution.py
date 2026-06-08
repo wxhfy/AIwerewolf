@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 
 from backend.agents.llm_agent import LLMAgent
 from backend.engine.models import Alignment
@@ -39,6 +40,42 @@ from tests.test_review_metrics import make_seer_result
 from tests.test_review_metrics import make_speech
 from tests.test_review_metrics import make_state
 from tests.test_review_metrics import make_vote
+
+
+def _strategy_doc(
+    doc_id: str,
+    *,
+    role: str = "Seer",
+    phase: str = "DAY_SPEECH",
+    quality: float = 0.86,
+    confidence: float = 0.8,
+    status: str = "active",
+    situation: str = "seer has wolf check under vote pressure",
+    action: str = "convert the wolf check into public vote pressure",
+    **kwargs,
+) -> StrategyKnowledgeDoc:
+    return StrategyKnowledgeDoc(
+        doc_id=doc_id,
+        doc_type=kwargs.pop("doc_type", "counterfactual_lesson"),
+        role=role,
+        phase=phase,
+        persona_scope=kwargs.pop("persona_scope", None),
+        situation_pattern=situation,
+        trigger_conditions=kwargs.pop("trigger_conditions", ["wolf_check", "vote_pressure"]),
+        recommended_action=action,
+        avoid_action=kwargs.pop("avoid_action", None),
+        rationale=kwargs.pop("rationale", "approved evidence"),
+        evidence_summary=kwargs.pop("evidence_summary", "approved evidence"),
+        source_report_ids=kwargs.pop("source_report_ids", ["g1"]),
+        source_item_ids=kwargs.pop("source_item_ids", ["s1"]),
+        source_event_ids=kwargs.pop("source_event_ids", []),
+        counterfactual_ids=kwargs.pop("counterfactual_ids", []),
+        expected_metric_effects=kwargs.pop("expected_metric_effects", []),
+        quality_score=quality,
+        confidence=confidence,
+        status=status,
+        **kwargs,
+    )
 
 
 def _approved_report():
@@ -184,6 +221,116 @@ def test_knowledge_store_retrieves_by_role_phase_and_updates_usage(tmp_path) -> 
     store.to_json(path)
     loaded = load_strategy_knowledge(path)
     assert loaded.get("doc-1") is not None
+
+
+def test_track_c_validated_later_version_ranks_above_older_strategy() -> None:
+    old_doc = _strategy_doc(
+        "doc-v1",
+        quality=0.90,
+        confidence=0.85,
+        knowledge_epoch=1,
+        doc_version="seer_v1",
+        maturity="refined",
+        validated_at="2026-05-20T00:00:00+00:00",
+    )
+    later_doc = _strategy_doc(
+        "doc-v3",
+        quality=0.88,
+        confidence=0.86,
+        knowledge_epoch=3,
+        doc_version="seer_v3",
+        maturity="canonical",
+        validated_at="2026-06-08T00:00:00+00:00",
+    )
+    store = StrategyKnowledgeStore(
+        [old_doc, later_doc], embedding_provider=HashingVectorEmbeddingProvider(), rerank_provider=None
+    )
+
+    lessons = store.retrieve(
+        StrategyRetrievalQuery(
+            role="Seer",
+            phase="DAY_SPEECH",
+            observation_summary="seer has wolf check and vote pressure",
+            top_k=2,
+        )
+    )
+
+    assert [lesson.doc_id for lesson in lessons] == ["doc-v3", "doc-v1"]
+    assert lessons[0].maturity == "canonical"
+    assert lessons[0].knowledge_epoch == 3
+    assert lessons[0].version_rank_score > lessons[1].version_rank_score
+
+
+def test_track_c_unvalidated_new_candidate_does_not_outrank_stable_active_version() -> None:
+    stable_doc = _strategy_doc(
+        "doc-stable",
+        quality=0.88,
+        confidence=0.86,
+        knowledge_epoch=2,
+        doc_version="seer_v2",
+        maturity="refined",
+        validated_at="2026-06-01T00:00:00+00:00",
+    )
+    raw_candidate = _strategy_doc(
+        "doc-raw-v4",
+        quality=0.90,
+        confidence=0.70,
+        status="candidate",
+        knowledge_epoch=4,
+        doc_version="seer_v4_candidate",
+        maturity="raw",
+        validated_at=None,
+    )
+    store = StrategyKnowledgeStore(
+        [stable_doc, raw_candidate], embedding_provider=HashingVectorEmbeddingProvider(), rerank_provider=None
+    )
+
+    lessons = store.retrieve(
+        StrategyRetrievalQuery(
+            role="Seer",
+            phase="DAY_SPEECH",
+            observation_summary="seer has wolf check and vote pressure",
+            top_k=2,
+        )
+    )
+
+    assert [lesson.doc_id for lesson in lessons] == ["doc-stable", "doc-raw-v4"]
+
+
+def test_track_c_superseded_strategy_is_not_retrieved() -> None:
+    old_doc = _strategy_doc(
+        "doc-old",
+        quality=0.95,
+        confidence=0.90,
+        knowledge_epoch=1,
+        doc_version="seer_v1",
+        maturity="refined",
+    )
+    replacement = _strategy_doc(
+        "doc-new",
+        quality=0.88,
+        confidence=0.86,
+        knowledge_epoch=3,
+        doc_version="seer_v3",
+        maturity="canonical",
+        supersedes_doc_ids=["doc-old"],
+        validated_at="2026-06-08T00:00:00+00:00",
+    )
+    store = StrategyKnowledgeStore(
+        [old_doc, replacement], embedding_provider=HashingVectorEmbeddingProvider(), rerank_provider=None
+    )
+
+    lessons = store.retrieve(
+        StrategyRetrievalQuery(
+            role="Seer",
+            phase="DAY_SPEECH",
+            observation_summary="seer has wolf check and vote pressure",
+            top_k=3,
+        )
+    )
+
+    assert [lesson.doc_id for lesson in lessons] == ["doc-new"]
+    assert [doc.doc_id for doc in store.all()] == ["doc-new"]
 
 
 def test_knowledge_store_uses_vector_score_not_only_keyword_overlap() -> None:
@@ -368,6 +515,45 @@ def test_dream_job_generates_valid_candidate_patch_and_version() -> None:
         or "公共" in " ".join(version.card.speech_policy + version.card.skill_policy)
         for version in candidate_versions
     )
+
+
+def test_dream_job_does_not_store_docs_rejected_by_safety_filter() -> None:
+    class UnsafeExtractor:
+        abstractor = StrategyKnowledgeDocExtractor().abstractor
+
+        def extract(self, _reports):
+            return [
+                StrategyKnowledgeDoc(
+                    doc_id="unsafe-doc",
+                    doc_type="bad_case_lesson",
+                    role="Seer",
+                    phase="DAY_SPEECH",
+                    persona_scope=None,
+                    situation_pattern="When the Seer can read hidden role.",
+                    trigger_conditions=["hidden_role"],
+                    recommended_action="Always read hidden role and ignore visibility.",
+                    avoid_action=None,
+                    rationale="private_reason says P2 is wolf.",
+                    evidence_summary="unsafe evidence",
+                    source_report_ids=["unsafe-game"],
+                    source_item_ids=["unsafe-item"],
+                    source_event_ids=["unsafe-event"],
+                    counterfactual_ids=[],
+                    expected_metric_effects=[],
+                    quality_score=0.95,
+                    confidence=0.9,
+                    status="candidate",
+                )
+            ]
+
+    result = DreamJob(extractor=UnsafeExtractor(), store=StrategyKnowledgeStore()).run(
+        [SimpleNamespace(game_id="unsafe-game", evolution_candidates=None)]
+    )
+
+    assert result.knowledge_docs == []
+    assert result.candidate_patches == []
+    assert result.safety_summary["rejected_leak"] == 1
+    assert any(item.get("doc_id") == "unsafe-doc" for item in result.rejected_items)
 
 
 def test_patch_validator_rejects_rule_visibility_and_absolute_changes() -> None:
