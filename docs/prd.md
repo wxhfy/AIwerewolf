@@ -90,7 +90,7 @@ CognitiveAgent = Observe → Think → Act
   - BeliefTracker：声明/矛盾/投票模式追踪
   - SocialModel：信任/欺骗信号检测
   - Planner：跨阶段战略意图管理
-  - AgentLoop：工具调用式推理循环
+  - AgentLoop：6 工具调用式推理循环 + 结构化决策输出
 ```
 
 ### 2.2 工具系统 (AgentLoop)
@@ -103,7 +103,7 @@ CognitiveAgent = Observe → Think → Act
 | `get_social_info` | 社交信任信息 |
 | `analyze_votes` | 投票模式分析 |
 | `set_strategic_intent` | 跨阶段意图记录 |
-| `submit_decision` | 最终决策提交 |
+| *(强制输出)* | 最终决策结构化输出（非工具调用） |
 
 ### 2.3 三层 Prompt 架构
 
