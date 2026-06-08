@@ -14,8 +14,6 @@ import random
 from dataclasses import dataclass
 from typing import Any
 
-from backend.engine.models import Alignment
-
 
 @dataclass
 class DegradationHeuristic:
@@ -62,9 +60,7 @@ class DegradationHeuristic:
             if alive and not legal_targets:
                 my_id = player_view.get("player_id", "")
                 legal_targets = [
-                    p.get("player_id", p.get("id", ""))
-                    for p in alive
-                    if p.get("player_id", p.get("id", "")) != my_id
+                    p.get("player_id", p.get("id", "")) for p in alive if p.get("player_id", p.get("id", "")) != my_id
                 ]
 
         if not legal_targets:
@@ -91,7 +87,7 @@ class DegradationHeuristic:
         target = random.choice(legal_targets)
         return {
             "kill_target": target,
-            "reasoning": f"[降级] 狼人启发式击杀，随机选择目标。",
+            "reasoning": "[降级] 狼人启发式击杀，随机选择目标。",
         }
 
     def divine(self, player_view: dict | None = None) -> dict[str, Any]:

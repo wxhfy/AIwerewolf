@@ -32,10 +32,10 @@ def run_one(seed: int, track_c: bool) -> dict:
     # Use agent-level retrieval policy
     os.environ["AIWEREWOLF_RETRIEVAL_POLICY"] = "hybrid_role_mbti_global"
 
-    from backend.engine.rules import build_players
+    from backend.agents.characters import build_character_roster
     from backend.agents.factory import create_agents
     from backend.engine.game import WerewolfGame
-    from backend.agents.characters import build_character_roster
+    from backend.engine.rules import build_players
 
     players = build_players(seed=seed)
     roster = build_character_roster(seed=seed, players=players)
@@ -79,7 +79,7 @@ def main():
     all_players = []
     for mode, track_c in [("Baseline", False), ("Track C", True)]:
         label = "TRACK C ON" if track_c else "TRACK C OFF"
-        print(f"\n{'='*50}\n  {label} ({n} games)\n{'='*50}")
+        print(f"\n{'=' * 50}\n  {label} ({n} games)\n{'=' * 50}")
         for s in range(1, n + 1):
             t0 = time.time()
             try:
@@ -88,8 +88,10 @@ def main():
                 players = result["players"]
                 all_players.extend(players)
                 wins = sum(1 for p in players if p["won"])
-                print(f"  seed={s:>3}  winner={result['winner']:<8} day={result['day']}  "
-                      f"players_won={wins}/{len(players)}  {elapsed:.0f}s")
+                print(
+                    f"  seed={s:>3}  winner={result['winner']:<8} day={result['day']}  "
+                    f"players_won={wins}/{len(players)}  {elapsed:.0f}s"
+                )
             except Exception as e:
                 print(f"  seed={s:>3}  FAILED: {e}")
 
@@ -101,9 +103,9 @@ def main():
     print(f"\nSaved {len(all_players)} player records to {args.output}")
 
     # ── Analysis ──
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("  PER-ROLE TRACK C EFFECTIVENESS")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     # Group by (role, track_c)
     by_key: dict[tuple[str, bool], list[bool]] = defaultdict(list)
@@ -139,7 +141,9 @@ def main():
         t_rate = sum(tc_list) / len(tc_list)
         delta = t_rate - b_rate
         if abs(delta) > 0.05:  # only show meaningful deltas
-            print(f"  {mbti:<6s} {role:<14s} {b_rate:>7.1%} {t_rate:>7.1%} {delta:>+6.1%}  {len(base)+len(tc_list):>4d}")
+            print(
+                f"  {mbti:<6s} {role:<14s} {b_rate:>7.1%} {t_rate:>7.1%} {delta:>+6.1%}  {len(base) + len(tc_list):>4d}"
+            )
 
 
 if __name__ == "__main__":

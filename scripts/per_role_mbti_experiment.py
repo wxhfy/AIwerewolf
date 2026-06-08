@@ -26,15 +26,28 @@ os.environ["LLM_PROVIDER"] = "anthropic"
 os.environ["AIWEREWOLF_RETRIEVAL_POLICY"] = "hybrid_role_mbti_global"
 
 ALL_MBTI = [
-    "INTJ","INTP","ENTJ","ENTP","INFJ","INFP","ENFJ","ENFP",
-    "ISTJ","ISFJ","ESTJ","ESFJ","ISTP","ISFP","ESTP","ESFP",
+    "INTJ",
+    "INTP",
+    "ENTJ",
+    "ENTP",
+    "INFJ",
+    "INFP",
+    "ENFJ",
+    "ENFP",
+    "ISTJ",
+    "ISFJ",
+    "ESTJ",
+    "ESFJ",
+    "ISTP",
+    "ISFP",
+    "ESTP",
+    "ESFP",
 ]
-ALL_ROLES = ["Seer","Witch","Hunter","Guard","Villager","Werewolf"]
+ALL_ROLES = ["Seer", "Witch", "Hunter", "Guard", "Villager", "Werewolf"]
 
 
 def assign_mbti_balanced(seed: int, players: list) -> dict[str, str]:
     """Assign MBTI to players using a round-robin to ensure coverage."""
-    rng = seed  # deterministic per seed
     assignments: dict[str, str] = {}
     for i, p in enumerate(players):
         mbti_idx = (seed * 7 + i) % len(ALL_MBTI)
@@ -46,10 +59,10 @@ def run_one(seed: int, track_c: bool) -> dict:
     os.environ["COGNITIVE_ENABLE_TRACK_C"] = "1" if track_c else "0"
     os.environ["COGNITIVE_ENABLE_ANTI_PATTERNS"] = "0"  # isolate Track C effect
 
-    from backend.engine.rules import build_players
+    from backend.agents.characters import build_character_roster
     from backend.agents.factory import create_agents
     from backend.engine.game import WerewolfGame
-    from backend.agents.characters import build_character_roster, Character
+    from backend.engine.rules import build_players
 
     players = build_players(seed=seed)
     mbti_map = assign_mbti_balanced(seed, players)
@@ -60,9 +73,9 @@ def run_one(seed: int, track_c: bool) -> dict:
         if p.is_ai and p.id in roster:
             target_mbti = mbti_map[p.id]
             char = roster[p.id]
-            if hasattr(char, 'persona') and char.persona:
+            if hasattr(char, "persona") and char.persona:
                 char.persona.mbti = target_mbti
-            if hasattr(char, 'profile') and char.profile:
+            if hasattr(char, "profile") and char.profile:
                 char.profile.mbti = target_mbti
 
     character_map = {p.id: roster[p.id] for p in players if p.id in roster}
@@ -81,10 +94,15 @@ def run_one(seed: int, track_c: bool) -> dict:
     for p in state.players:
         is_wolf = p.role in ("Werewolf", "WhiteWolfKing")
         won = (state.winner.value == "wolf" and is_wolf) or (state.winner.value == "village" and not is_wolf)
-        per_player.append({
-            "role": p.role, "mbti": mbti_map.get(p.id, "UNKNOWN"),
-            "won": won, "track_c": track_c, "seed": seed,
-        })
+        per_player.append(
+            {
+                "role": p.role,
+                "mbti": mbti_map.get(p.id, "UNKNOWN"),
+                "won": won,
+                "track_c": track_c,
+                "seed": seed,
+            }
+        )
     return {"seed": seed, "winner": state.winner.value, "day": state.day, "players": per_player, "track_c": track_c}
 
 
@@ -101,7 +119,7 @@ def main():
     skipped = 0
     for mode, track_c in [("Baseline", False), ("Track C", True)]:
         label = "Track C ON" if track_c else "Track C OFF"
-        print(f"\n{'='*60}\n  {label} ({n} games, MBTI-balanced)\n{'='*60}")
+        print(f"\n{'=' * 60}\n  {label} ({n} games, MBTI-balanced)\n{'=' * 60}")
         for s in range(1, n + 1):
             t0 = time.time()
             result = run_one(s, track_c)
@@ -125,9 +143,9 @@ def main():
     for p in all_players:
         by_role_mbti[(p["role"], p["mbti"], p["track_c"])].append(p["won"])
 
-    print(f"\n{'='*80}")
+    print(f"\n{'=' * 80}")
     print("  MBTI × ROLE TRACK C EFFECTIVENESS")
-    print(f"{'='*80}")
+    print(f"{'=' * 80}")
     print(f"\n{'Role':<12s} {'MBTI':<6s} {'Base WR':>8s} {'TC WR':>8s} {'Δ':>7s}  {'n_base':>6s} {'n_tc':>6s}")
     print("-" * 60)
     for role in ALL_ROLES:
@@ -139,16 +157,18 @@ def main():
             b_rate = sum(base) / len(base)
             t_rate = sum(tc) / len(tc)
             delta = t_rate - b_rate
-            print(f"  {role:<12s} {mbti:<6s} {b_rate:>7.1%} {t_rate:>7.1%} {delta:>+6.1%}  {len(base):>6d} {len(tc):>6d}")
+            print(
+                f"  {role:<12s} {mbti:<6s} {b_rate:>7.1%} {t_rate:>7.1%} {delta:>+6.1%}  {len(base):>6d} {len(tc):>6d}"
+            )
 
     # Summary: per-role average Δ
     print(f"\n{'Role':<12s} {'Avg Δ':>7s}  {'Base n':>7s} {'TC n':>7s}")
     print("-" * 40)
     for role in ALL_ROLES:
-        base_all = [p["won"] for p in all_players if p["role"]==role and not p["track_c"]]
-        tc_all = [p["won"] for p in all_players if p["role"]==role and p["track_c"]]
+        base_all = [p["won"] for p in all_players if p["role"] == role and not p["track_c"]]
+        tc_all = [p["won"] for p in all_players if p["role"] == role and p["track_c"]]
         if base_all and tc_all:
-            avg_delta = sum(tc_all)/len(tc_all) - sum(base_all)/len(base_all)
+            avg_delta = sum(tc_all) / len(tc_all) - sum(base_all) / len(base_all)
             print(f"  {role:<12s} {avg_delta:>+6.1%}  {len(base_all):>7d} {len(tc_all):>7d}")
 
 
