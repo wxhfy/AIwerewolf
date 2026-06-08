@@ -1,5 +1,7 @@
 from fastapi.testclient import TestClient
 
+from backend.app import _build_game
+from backend.app import _rooms
 from backend.app import app
 from backend.engine.game import WerewolfGame
 
@@ -149,6 +151,53 @@ def test_human_room_flow_blocks_and_accepts_action() -> None:
     assert action_response.status_code == 200
     resumed_state = action_response.json()
     assert resumed_state["id"] == pending_state["id"]
+
+
+def test_human_wolf_team_vote_uses_target_action() -> None:
+    client = TestClient(app)
+    room_response = client.post("/api/rooms?name=HumanWolf&seed=1&player_count=7&agent_type=llm&human_seat=5")
+    assert room_response.status_code == 200
+    room = room_response.json()
+
+    start_response = client.post(f"/api/rooms/{room['id']}/start")
+    assert start_response.status_code == 200
+    pending_state = start_response.json()
+    pending = pending_state["pending_input"]
+    assert pending is not None
+    assert pending["seat"] == 5
+    assert pending["request"] == "WOLF_TEAM_VOTE"
+    assert pending["action_type"] == "night_action"
+
+    target_id = pending["options"][0]["id"]
+    action_response = client.post(
+        f"/api/rooms/{room['id']}/action",
+        json={"target_id": target_id, "reasoning": "wolf target proposal"},
+    )
+    assert action_response.status_code == 200
+    assert action_response.json()["id"] == pending_state["id"]
+
+
+def test_room_pause_resume_control_api() -> None:
+    client = TestClient(app)
+    room_response = client.post("/api/rooms?name=PauseRoom&seed=23&player_count=7&agent_type=llm")
+    assert room_response.status_code == 200
+    room = room_response.json()
+    game = _build_game(seed=23, agent_type="llm", player_count=7)
+    _rooms.set_active_game(room["id"], game)
+
+    pause_response = client.post(f"/api/rooms/{room['id']}/pause")
+    assert pause_response.status_code == 200
+    assert pause_response.json()["paused"] is True
+
+    status_response = client.get(f"/api/rooms/{room['id']}/control-status")
+    assert status_response.status_code == 200
+    status = status_response.json()
+    assert status["paused"] is True
+    assert status["running"] is True
+
+    resume_response = client.post(f"/api/rooms/{room['id']}/resume")
+    assert resume_response.status_code == 200
+    assert resume_response.json()["paused"] is False
 
 
 def test_runtime_metrics_and_aggregate_endpoints() -> None:

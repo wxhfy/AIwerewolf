@@ -3,11 +3,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAppContext } from "@/context/AppContext";
-import { fetchRoom, startRoom, submitHumanAction } from "@/lib/gameApi";
+import { fetchRoom, pauseRoom, resumeRoom, startRoom, submitHumanAction } from "@/lib/gameApi";
 import { t } from "@/lib/i18n";
 import { placeholderPlayers } from "@/lib/gameView";
 import { isRevealBlockingChat } from "@/lib/eventFilter";
-import { EventType, Player, ViewMode } from "@/types";
+import { EventType, Language, Player, ViewMode } from "@/types";
 import { useAutoScroll } from "@/hooks/useAutoScroll";
 import { useGameDerivedState } from "@/hooks/useGameDerivedState";
 import { usePhaseTransition } from "@/hooks/usePhaseTransition";
@@ -62,6 +62,7 @@ export function useGamePageController(roomId: string) {
   const [ballPos, setBallPos] = useState<{ x: number; y: number } | null>(null);
   const dragRef = useRef({ dragging: false, startX: 0, startY: 0, origX: 0, origY: 0, moved: false });
   const [statusTitle, setStatusTitle] = useState(gameState?.winner ? t("statusLoaded", language) : t("statusReady", language));
+  const [isPaused, setIsPaused] = useState(false);
   const latestGameStateRef = useRef(gameState);
   const autoStartedRef = useRef(false);
   const isHumanMode = mode === "human";
@@ -202,10 +203,16 @@ export function useGamePageController(roomId: string) {
             setStatusTitle(t("statusStreaming", language));
           }
         }
+      } else {
+        setFetchError(t("statusErrorDetail", language));
+        setIsPlaying(false);
+        setStatusTitle(t("statusError", language));
       }
     }).catch((e) => {
       if (controller.signal.aborted) return;
       setFetchError(String(e?.message || e || "Failed to load room"));
+      setIsPlaying(false);
+      setStatusTitle(t("statusError", language));
     });
   }
 
@@ -229,11 +236,44 @@ export function useGamePageController(roomId: string) {
   }, [mode, roomId]);
 
   function runGame() {
+    setIsPaused(false);
     if (mode === "human") {
       startHumanGame();
       return;
     }
     roomStream.runGame();
+  }
+
+  async function pauseGame() {
+    if (mode === "human" || gameState?.winner) return;
+    setFetchError(null);
+    try {
+      await pauseRoom(roomId);
+      setIsPaused(true);
+      setIsPlaying(false);
+      setStatusTitle(language === Language.ZH ? "对局已暂停" : "Match paused");
+    } catch (e) {
+      setFetchError(String((e as any)?.message || e || "Pause failed"));
+      setStatusTitle(t("statusError", language));
+    }
+  }
+
+  async function resumeGame() {
+    if (mode === "human" || gameState?.winner) return;
+    setFetchError(null);
+    try {
+      await resumeRoom(roomId);
+      setIsPaused(false);
+      setIsPlaying(true);
+      setStatusTitle(t("statusStreaming", language));
+      if (!roomStream.isStreamActive()) {
+        roomStream.runGame();
+      }
+    } catch (e) {
+      setFetchError(String((e as any)?.message || e || "Resume failed"));
+      setStatusTitle(t("statusError", language));
+      setIsPlaying(false);
+    }
   }
 
   async function startHumanGame() {
@@ -247,7 +287,8 @@ export function useGamePageController(roomId: string) {
         setIsPlaying(false);
         setStatusTitle(t("statusLoaded", language));
       }
-    } catch {
+    } catch (e) {
+      setFetchError(String((e as any)?.message || e || "Start failed"));
       setIsPlaying(false);
       setStatusTitle(t("statusError", language));
     }
@@ -414,6 +455,9 @@ export function useGamePageController(roomId: string) {
     runGame,
     startHumanGame,
     handleHumanAction,
+    pauseGame,
+    resumeGame,
+    isPaused,
     exportGameRecord,
     placeholder,
     fetchError,

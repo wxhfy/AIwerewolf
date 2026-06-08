@@ -29,7 +29,7 @@ export function RoleRevealOverlay({
   }, []);
 
   return (
-    <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[200] pointer-events-none">
+    <div data-testid="role-reveal-overlay" className="fixed top-20 left-1/2 -translate-x-1/2 z-[200] pointer-events-none">
       <div className="animate-slide-in rounded-xl bg-cardBackground/95 backdrop-blur border border-primary/30 shadow-xl px-6 py-4 text-center">
         <p className={`text-xl font-bold ${alignment === "wolf" ? "text-danger" : "text-success"}`}>
           {tRole(role, language)}

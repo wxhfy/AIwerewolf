@@ -27,6 +27,7 @@ interface HumanActionsState {
   targetPlayer: Player | undefined;
   optionIds: Set<string>;
   submitAction: () => void;
+  submitSkip: () => void;
 }
 
 /**
@@ -54,7 +55,7 @@ export function useHumanActions({
   );
   const isSpeech = pending?.action_type === "speech";
   const isWitch = pending?.request === "WITCH";
-  const canSubmit = isSpeech || !needsTarget || !!selectedTarget || Boolean(pending?.can_skip) || (isWitch && savePotion);
+  const canSubmit = isSpeech || !needsTarget || !!selectedTarget || (isWitch && savePotion);
   const targetPlayer = gameState?.players?.find(p => p.id === selectedTarget);
 
   function submitAction() {
@@ -64,6 +65,16 @@ export function useHumanActions({
       target_id: needsTarget ? (selectedTarget || null) : null,
       speech: isSpeech ? (speech.trim() || null) : null,
       save: isWitch ? savePotion : false,
+    });
+  }
+
+  function submitSkip() {
+    if (submitted || !pending?.can_skip) return;
+    setSubmitted(true);
+    onSubmit({
+      target_id: null,
+      speech: null,
+      save: false,
     });
   }
 
@@ -80,6 +91,6 @@ export function useHumanActions({
     submitted, speech, setSpeech, savePotion, setSavePotion,
     revealDone, setRevealDone,
     needsTarget, isSpeech: isSpeech || false, isWitch,
-    canSubmit, targetPlayer, optionIds, submitAction,
+    canSubmit, targetPlayer, optionIds, submitAction, submitSkip,
   };
 }

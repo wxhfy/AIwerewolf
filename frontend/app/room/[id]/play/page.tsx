@@ -122,9 +122,13 @@ export default function GamePage() {
         viewMode={controller.viewMode}
         isVisualNight={phase.isVisualNight}
         isHumanMode={controller.isHumanMode}
+        isPlaying={controller.isPlaying}
+        isPaused={controller.isPaused}
         canRun={!isHuman && !controller.isPlaying && !gameState?.winner && !!controller.fetchError}
         onRun={controller.runGame}
         onStartHuman={controller.startHumanGame}
+        onPause={controller.pauseGame}
+        onResume={controller.resumeGame}
       />
 
       {/* ── Mobile player rail ── */}
@@ -304,6 +308,7 @@ export default function GamePage() {
               selectedPlayer={humanActions.targetPlayer as Player | undefined}
               setSelectedTarget={humanActions.setSelectedTarget}
               onSubmit={humanActions.submitAction}
+              onSkip={humanActions.submitSkip}
               language={language}
             />
           )}

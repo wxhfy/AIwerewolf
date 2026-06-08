@@ -123,6 +123,10 @@ export function PlayerCard({
       aria-pressed={isInteractive ? isTarget : undefined}
       aria-label={`${player.seat}. ${player.name}. ${roleLabel}`}
       data-phase-aware
+      data-testid="player-card"
+      data-player-id={player.id}
+      data-player-seat={player.seat}
+      data-selectable={selectable ? "true" : "false"}
     >
       {/* ── Row 1 Left: Identity ─────────────────────────── */}
       <div style={{ gridArea: "identity" }} className="flex min-w-0 items-center gap-2">

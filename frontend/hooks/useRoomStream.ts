@@ -132,6 +132,18 @@ export function useRoomStream({
         setStatusTitle(t("statusLoaded", language));
         closeStream();
       }
+      if (msg.type === "paused") {
+        if (msg.state) {
+          if (getIsBlinking?.() && bufferSnapshot) {
+            bufferSnapshot(msg.state);
+          } else {
+            setGameState(msg.state);
+          }
+        }
+        if (msg.room) setRoom(msg.room);
+        setIsPlaying(false);
+        setStatusTitle(language === Language.ZH ? "对局已暂停" : "Match paused");
+      }
       if (msg.type === "error") {
         setIsPlaying(false);
         setStatusTitle(t("statusError", language));

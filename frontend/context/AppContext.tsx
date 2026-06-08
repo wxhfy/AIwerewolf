@@ -43,6 +43,23 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // 从 URL 恢复状态
   useEffect(() => {
     if (typeof window !== "undefined") {
+      const savedSettings = localStorage.getItem("gameSettings");
+      if (savedSettings) {
+        try {
+          const parsed = JSON.parse(savedSettings) as { language?: string; viewMode?: string; seed?: number };
+          if (parsed.language === Language.EN || parsed.language === Language.ZH) {
+            setLanguage(parsed.language);
+          }
+          if (parsed.viewMode === ViewMode.MODERATOR || parsed.viewMode === ViewMode.PUBLIC) {
+            setViewMode(parsed.viewMode);
+          }
+          if (typeof parsed.seed === "number" && Number.isFinite(parsed.seed)) {
+            setSeed(Math.trunc(parsed.seed));
+          }
+        } catch {
+          // Ignore stale settings; individual pages still provide defaults.
+        }
+      }
       const params = new URLSearchParams(window.location.search);
       const langParam = params.get("lang");
 
