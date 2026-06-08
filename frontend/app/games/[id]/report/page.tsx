@@ -79,13 +79,6 @@ export default function GameReportPage() {
             >
               {t("返回大厅", "Lobby")}
             </Link>
-            <Link
-              href="/evolution"
-              className="rounded-button border px-4 py-2 text-sm text-textPrimary"
-              style={{ borderColor: "var(--color-border)" }}
-            >
-              {t("进化看板", "Evolution")}
-            </Link>
             {meta?.hasMarkdown && (
               <a
                 href={mdHref}

@@ -22,6 +22,7 @@ interface ChatBubbleProps {
   animate?: boolean;
   onTypewriterComplete?: () => void;
   players?: Player[];
+  testId?: string;
 }
 
 export const ChatBubble = memo(function ChatBubble({
@@ -29,6 +30,7 @@ export const ChatBubble = memo(function ChatBubble({
   isOwn = false, isSystem = false, isSpeaking = false,
   eventType, eventPhase,
   players,
+  testId,
 }: ChatBubbleProps) {
   const displayContent = content.trim();
 
@@ -48,6 +50,7 @@ export const ChatBubble = memo(function ChatBubble({
       isSpeaking={isSpeaking}
       headerRight={phaseLabel || undefined}
       className={cn(isOwn && "opacity-90")}
+      testId={testId}
     >
       {displayContent ? (
         <MentionText text={displayContent} players={players} className="text-textPrimary" />

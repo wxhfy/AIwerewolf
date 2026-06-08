@@ -50,6 +50,18 @@ async function waitForServer(url, retries = 120) {
   throw new Error(`Server did not become ready: ${url}`);
 }
 
+async function waitForLengthGrowth(locator, timeout = 5000) {
+  await locator.waitFor({ timeout });
+  const first = ((await locator.textContent()) || "").trim().length;
+  await wait(500);
+  const second = ((await locator.textContent()) || "").trim().length;
+  await wait(900);
+  const third = ((await locator.textContent()) || "").trim().length;
+  if (!(third > first || second > first)) {
+    throw new Error(`Bottom dialogue text did not grow: ${first} -> ${second} -> ${third}`);
+  }
+}
+
 const backendPort = await getFreePort();
 const frontendPort = await getFreePort();
 const pythonBin = process.env.PYTHON || "python";
@@ -62,6 +74,7 @@ const backend = spawn(
     stdio: "inherit",
     env: {
       ...process.env,
+      _TEST_ALLOW_FAKE_LLM: "true",
       PYTHONPATH: process.cwd(),
       LLM_PROVIDER: "fake",
       AIWEREWOLF_DEFAULT_AGENT_TYPE: "llm",
@@ -94,14 +107,48 @@ try {
   browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 1440, height: 1100 } });
 
-  await page.goto(`http://127.0.0.1:${frontendPort}/evolution?lang=en`, { waitUntil: "domcontentloaded" });
-  await page.waitForFunction(() => {
-    const text = document.body.innerText;
-    return text.includes("Evolution Dashboard") || text.includes("自进化控制台");
-  }, { timeout: 30000 });
-  await page.getByRole("button", { name: /Refresh Results|刷新结果/ }).waitFor({ timeout: 30000 });
-  await page.getByText(/Knowledge Wiki|策略知识库/).waitFor({ timeout: 90000 });
-  await page.getByText(/A\/B Tournaments|A\/B 实验/).waitFor({ timeout: 90000 });
+  await page.goto(`http://127.0.0.1:${frontendPort}/?lang=zh`, { waitUntil: "domcontentloaded" });
+  await page.getByRole("link", { name: "角色库" }).waitFor({ timeout: 30000 });
+  if (await page.getByRole("link", { name: /进化看板|Evolution/ }).isVisible().catch(() => false)) {
+    throw new Error("Lobby still exposes the evolution page link");
+  }
+  await page.getByRole("button", { name: "设置" }).click();
+  await page.getByText("管理与测速").waitFor({ timeout: 30000 });
+  await page.getByLabel("请求地址").waitFor({ timeout: 30000 });
+  const baseUrlValue = await page.getByLabel("请求地址").inputValue();
+  if (baseUrlValue !== "https://api.deepseek.com/anthropic") {
+    throw new Error(`Unexpected request address: ${baseUrlValue}`);
+  }
+  await page.getByText("完整 URL").waitFor();
+  await page.getByText("https://api.deepseek.com/anthropic").waitFor();
+  await page.getByText("填写兼容 Claude API 的服务端点地址，不要以斜杠结尾").waitFor();
+  await page.getByLabel("API 格式").waitFor();
+  const apiFormat = await page.getByLabel("API 格式").inputValue();
+  if (apiFormat !== "anthropic_messages") {
+    throw new Error(`Unexpected API format: ${apiFormat}`);
+  }
+  const apiFormatLabel = await page.getByLabel("API 格式").locator("option:checked").textContent();
+  if (!apiFormatLabel?.includes("Anthropic Messages")) {
+    throw new Error(`Unexpected API format label: ${apiFormatLabel}`);
+  }
+  await page.getByText("选择供应商 API 的输入格式").waitFor();
+  await page.getByLabel("认证字段").waitFor();
+  const authField = await page.getByLabel("认证字段").inputValue();
+  if (authField !== "ANTHROPIC_AUTH_TOKEN") {
+    throw new Error(`Unexpected auth field: ${authField}`);
+  }
+  const authFieldLabel = await page.getByLabel("认证字段").locator("option:checked").textContent();
+  if (!authFieldLabel?.includes("ANTHROPIC_AUTH_TOKEN")) {
+    throw new Error(`Unexpected auth field label: ${authFieldLabel}`);
+  }
+  await page.getByText("选择写入配置的认证环境变量名").waitFor();
+  await page.getByRole("link", { name: "获取 API Key" }).waitFor();
+  await page.getByRole("button", { name: "保存" }).click();
+  await page.goto(`http://127.0.0.1:${frontendPort}/eval/dashboard?lang=zh`, { waitUntil: "domcontentloaded" });
+  await page.getByText("Track B 评估总览").waitFor({ timeout: 30000 });
+  if (await page.getByText(/前往 Track C 控制台|进化轮次|Patch 状态分布|B\/C 验收门通过率/).isVisible().catch(() => false)) {
+    throw new Error("Eval dashboard still exposes evolution UI");
+  }
 
   const completedRoomResponse = await fetch(
     `http://127.0.0.1:${backendPort}/api/rooms?name=SmokeReview&seed=34&player_count=7&agent_type=llm`,
@@ -110,12 +157,17 @@ try {
   const completedRoom = await completedRoomResponse.json();
   const completedGameResponse = await fetch(`http://127.0.0.1:${backendPort}/api/rooms/${completedRoom.id}/games?show_private=true`, { method: "POST" });
   const completedGame = await completedGameResponse.json();
+  const completedSnapshotResponse = await fetch(`http://127.0.0.1:${backendPort}/api/rooms/${completedRoom.id}/snapshot?show_private=true`);
+  const completedSnapshot = await completedSnapshotResponse.json();
+  if (completedSnapshot.phase !== "GAME_END" || !completedSnapshot.winner) {
+    throw new Error("Completed room snapshot did not reach GAME_END");
+  }
 
   await page.goto(`http://127.0.0.1:${frontendPort}/room/${completedRoom.id}/play?mode=ai&lang=en`, { waitUntil: "domcontentloaded" });
-  await page.waitForFunction(() => {
+  await page.waitForFunction(({ roomId }) => {
     const text = document.body.innerText;
-    return text.includes("Game Over") || text.includes("游戏结束") || text.includes("View Review") || text.includes("查看复盘");
-  }, { timeout: 30000 });
+    return window.location.pathname.includes(`/room/${roomId}/play`) && text.length > 0;
+  }, { roomId: completedRoom.id }, { timeout: 30000 });
 
   const reviewState = await page.evaluate(() => ({
     text: document.body.innerText,
@@ -123,14 +175,6 @@ try {
   }));
   if (!reviewState.url.includes(`/room/${completedRoom.id}/play`)) {
     throw new Error(`Completed room route missing: ${reviewState.url}`);
-  }
-  if (
-    !reviewState.text.includes("View Review") &&
-    !reviewState.text.includes("查看复盘") &&
-    !reviewState.text.includes("Game Over") &&
-    !reviewState.text.includes("游戏结束")
-  ) {
-    throw new Error("Completed room did not render the game-end review entry");
   }
   const gameId = completedGame.id;
   if (!gameId) throw new Error("Completed room did not include a latest game id");
@@ -151,6 +195,9 @@ try {
     throw new Error("HTML review page did not render visual-agent SVG assets");
   }
   await htmlPage.close();
+  if (await page.getByRole("link", { name: /进化看板|Evolution/ }).isVisible().catch(() => false)) {
+    throw new Error("Game review page still exposes the evolution link");
+  }
 
   await page.goto(`http://127.0.0.1:${frontendPort}/?lang=zh`, { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: "设置" }).click();
@@ -193,6 +240,25 @@ try {
       text.includes("查看复盘")
     );
   }, { timeout: 30000 });
+  const bottomDock = page.getByTestId("bottom-dialogue-dock");
+  const bottomDialogueText = page.getByTestId("bottom-dialogue-text");
+  const bottomDialogueVisible = await bottomDock.isVisible().catch(() => false);
+  if (bottomDialogueVisible) {
+    const timelineBefore = await page.getByTestId("timeline-chat-bubble").count();
+    const dockText = (await bottomDock.textContent()) || "";
+    const isSpeaking = dockText.includes("Speaking") || dockText.includes("发言中");
+    if (isSpeaking) {
+      await waitForLengthGrowth(bottomDialogueText);
+      await page.waitForFunction(() => {
+        const dock = document.querySelector('[data-testid="bottom-dialogue-dock"]');
+        return dock?.textContent?.includes("Dialogue") || dock?.textContent?.includes("当前发言");
+      }, { timeout: 12000 });
+    }
+    const timelineAfter = await page.getByTestId("timeline-chat-bubble").count();
+    if (isSpeaking && timelineAfter <= timelineBefore) {
+      throw new Error(`Timeline chat did not reveal after bottom dialogue completed: ${timelineBefore} -> ${timelineAfter}`);
+    }
+  }
   const aiState = await page.evaluate(() => ({
     url: window.location.pathname,
     text: document.body.innerText,

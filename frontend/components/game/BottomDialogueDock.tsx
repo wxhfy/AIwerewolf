@@ -86,6 +86,7 @@ export function BottomDialogueDock({
       key={typewriterKey}
       className="shrink-0 border-t border-border bg-cardBackground/92 px-4 py-3 shadow-[0_-10px_36px_rgba(0,0,0,0.08)] backdrop-blur-xl"
       data-phase-aware
+      data-testid="bottom-dialogue-dock"
     >
       <div className="mx-auto flex max-w-5xl gap-3">
         <div
@@ -124,7 +125,9 @@ export function BottomDialogueDock({
           </div>
 
           <div className="min-h-[3.4rem] whitespace-pre-wrap break-words text-xl leading-relaxed text-textPrimary">
-            <MentionText text={shownText} players={players} />
+            <span data-testid="bottom-dialogue-text">
+              <MentionText text={shownText} players={players} />
+            </span>
             {latestChat && !finished && (
               <span className="ml-1 inline-block h-[1em] w-0.5 animate-pulse align-middle bg-primary" />
             )}

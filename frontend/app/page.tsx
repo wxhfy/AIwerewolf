@@ -23,10 +23,12 @@ const defaultGameSettings: GameSettings = {
   viewMode: ViewMode.PUBLIC,
   language: Language.ZH,
   seed: Math.floor(Math.random() * 1000),
-  modelProvider: "ark",
-  modelName: "doubao-seed-2.0-pro",
+  modelProvider: "anthropic",
+  modelName: "deepseek-v4-flash",
   apiKey: "",
-  baseUrl: "",
+  baseUrl: "https://api.deepseek.com/anthropic",
+  apiFormat: "anthropic_messages",
+  authEnvVar: "ANTHROPIC_AUTH_TOKEN",
 };
 
 function normalizeGameSettings(raw: unknown): GameSettings {
@@ -44,7 +46,9 @@ function normalizeGameSettings(raw: unknown): GameSettings {
     modelProvider: typeof data.modelProvider === "string" && data.modelProvider.trim() ? data.modelProvider : defaultGameSettings.modelProvider,
     modelName: typeof data.modelName === "string" && data.modelName.trim() ? data.modelName : defaultGameSettings.modelName,
     apiKey: typeof data.apiKey === "string" ? data.apiKey : typeof data.customApiKey === "string" ? data.customApiKey : "",
-    baseUrl: typeof data.baseUrl === "string" ? data.baseUrl : "",
+    baseUrl: typeof data.baseUrl === "string" && data.baseUrl.trim() ? data.baseUrl.replace(/\/+$/, "") : defaultGameSettings.baseUrl,
+    apiFormat: typeof data.apiFormat === "string" && data.apiFormat.trim() ? data.apiFormat : defaultGameSettings.apiFormat,
+    authEnvVar: typeof data.authEnvVar === "string" && data.authEnvVar.trim() ? data.authEnvVar : defaultGameSettings.authEnvVar,
   };
 }
 
@@ -172,9 +176,6 @@ export default function LobbyPage() {
       <div className="absolute left-3 right-16 top-4 z-20 flex flex-wrap items-center justify-end gap-2 sm:left-auto sm:right-16 sm:flex-nowrap">
         <Link href="/personas" className="px-3 py-1.5 text-xs font-medium rounded-button border border-border/40 text-text-sub/70 hover:text-primary hover:border-primary/50 transition-colors backdrop-blur-sm">
           {language === "zh" ? "角色库" : "Personas"}
-        </Link>
-        <Link href="/evolution" className="px-3 py-1.5 text-xs font-medium rounded-button border border-border/40 text-text-sub/70 hover:text-primary hover:border-primary/50 transition-colors backdrop-blur-sm">
-          {language === "zh" ? "进化看板" : "Evolution"}
         </Link>
         <button
           onClick={() => setShowSettings(true)}

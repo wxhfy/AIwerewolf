@@ -1,17 +1,12 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import {
   Bar,
   BarChart,
   CartesianGrid,
-  Cell,
   ErrorBar,
   Legend,
-  Line,
-  LineChart,
-  ReferenceLine,
   ResponsiveContainer,
   Scatter,
   ScatterChart,
@@ -28,9 +23,7 @@ import { apiUrl } from "@/lib/api";
  *
  * 数据源:
  *  - GET /api/eval/role-scores        — 真 LLM 评分区分度实验
- *  - GET /api/metrics/aggregate       — Track B/C 持久层聚合
- *  - GET /api/evolution               — DreamJob 轮次 delta_win_rate
- *  - GET /api/evolution/dashboard     — acceptance_metrics + patches[]
+ *  - GET /api/metrics/aggregate       — Track B 持久层聚合
  */
 
 type RoleScore = {
@@ -104,35 +97,9 @@ type AggregateMetrics = {
   };
 };
 
-type EvolutionRound = {
-  id?: string;
-  baseline_version?: string;
-  candidate_version?: string;
-  baseline_wins?: number;
-  challenger_wins?: number;
-  delta_win_rate?: number;
-  accepted?: boolean;
-  created_at?: string;
-};
-
-type EvolutionDashboard = {
-  acceptance_metrics?: Array<{
-    track: string;
-    step_id: string;
-    name: string;
-    numerator: number;
-    denominator: number;
-    success_rate: number;
-    threshold: number;
-    passed: boolean;
-    evidence?: string;
-  }>;
-};
-
 const COLOR_GOOD = "rgb(var(--color-village-rgb) / 0.95)";
 const COLOR_BAD = "rgb(var(--color-danger-rgb) / 0.95)";
 const COLOR_NEUTRAL = "rgb(var(--color-text-sub-rgb) / 0.7)";
-const COLOR_ACCENT = "rgb(var(--color-info-rgb) / 0.9)";
 const COLOR_GRID = "rgb(var(--color-text-sub-rgb) / 0.16)";
 const COLOR_AXIS = "rgb(var(--color-text-sub-rgb) / 0.72)";
 const COLOR_CARD = "var(--color-card)";
@@ -147,8 +114,6 @@ const TOOLTIP_STYLE = {
 export default function EvalDashboardPage() {
   const [roleScores, setRoleScores] = useState<RoleScoresResponse | null>(null);
   const [aggregate, setAggregate] = useState<AggregateMetrics | null>(null);
-  const [rounds, setRounds] = useState<EvolutionRound[]>([]);
-  const [evolutionDashboard, setEvolutionDashboard] = useState<EvolutionDashboard | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [refreshTick, setRefreshTick] = useState(0);
@@ -159,17 +124,13 @@ export default function EvalDashboardPage() {
       setLoading(true);
       setError("");
       try {
-        const [scoresRes, aggRes, evoRes, evoDashRes] = await Promise.all([
+        const [scoresRes, aggRes] = await Promise.all([
           fetch(apiUrl("/api/eval/role-scores")),
           fetch(apiUrl("/api/metrics/aggregate?limit_games=500")),
-          fetch(apiUrl("/api/evolution?limit=30")),
-          fetch(apiUrl("/api/evolution/dashboard")),
         ]);
         if (cancelled) return;
         if (scoresRes.ok) setRoleScores(await scoresRes.json());
         if (aggRes.ok) setAggregate(await aggRes.json());
-        if (evoRes.ok) setRounds(await evoRes.json());
-        if (evoDashRes.ok) setEvolutionDashboard(await evoDashRes.json());
       } catch (err: any) {
         if (!cancelled) setError(err.message || "load failed");
       } finally {
@@ -215,52 +176,14 @@ export default function EvalDashboardPage() {
     }));
   }, [roleScores, roleScoreChartData]);
 
-  const evolutionDeltaData = useMemo(() => {
-    return rounds
-      .slice()
-      .reverse()
-      .map((round, index) => ({
-        index: index + 1,
-        delta_win_rate: Number(((round.delta_win_rate ?? 0) * 100).toFixed(2)),
-        baseline_wins: round.baseline_wins ?? 0,
-        candidate_wins: round.challenger_wins ?? 0,
-        accepted: round.accepted ? 1 : 0,
-        label: round.candidate_version || `r${index + 1}`,
-      }));
-  }, [rounds]);
-
-  const patchStatusData = useMemo(() => {
-    const byStatus = aggregate?.track_c?.by_patch_status || {};
-    return Object.entries(byStatus).map(([status, count]) => ({
-      status,
-      count,
-    }));
-  }, [aggregate]);
-
-  const gateData = useMemo(() => {
-    const metrics = evolutionDashboard?.acceptance_metrics || [];
-    return metrics.map((m) => ({
-      step: m.step_id,
-      success_rate_pct: Number((m.success_rate * 100).toFixed(1)),
-      threshold_pct: Number((m.threshold * 100).toFixed(1)),
-      passed: m.passed ? 1 : 0,
-      name: m.name,
-    }));
-  }, [evolutionDashboard]);
-
   // ------------- KPIs -------------
   const kpis = useMemo(() => {
     const tb = aggregate?.track_b;
-    const tc = aggregate?.track_c;
     const summary = roleScores?.summary;
     return {
       published: tb?.published_total ?? 0,
       approved: tb?.approved ?? 0,
       avgScore: tb?.avg_score ?? 0,
-      knowledgeDocs: tc?.strategy_docs_total ?? 0,
-      patches: tc?.patches_total ?? 0,
-      tournaments: tc?.tournaments_total ?? 0,
-      tournamentsAccepted: tc?.accepted ?? 0,
       discriminating: summary
         ? `${summary.discriminating_count}/${summary.total_roles}`
         : "0/0",
@@ -273,18 +196,12 @@ export default function EvalDashboardPage() {
     <div className="min-h-screen space-y-6 bg-background p-6 text-textPrimary">
       <header className="flex items-center justify-between border-b border-border pb-4">
         <div>
-          <h1 className="text-2xl font-semibold">Track B/C 评估总览</h1>
+          <h1 className="text-2xl font-semibold">Track B 评估总览</h1>
           <p className="mt-1 text-sm text-text-sub">
-            真 LLM 评分区分度 + 进化效果 — 最新刷新时间: {new Date().toLocaleString()}
+            真 LLM 评分区分度 — 最新刷新时间: {new Date().toLocaleString()}
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <Link
-            href="/evolution"
-            className="rounded-card border border-border bg-cardBackground px-3 py-2 text-sm text-textPrimary transition hover:border-primary/35 hover:text-primary"
-          >
-            前往 Track C 控制台
-          </Link>
           <button
             onClick={() => setRefreshTick((t) => t + 1)}
             className="rounded-card border border-primary/20 bg-primary px-3 py-2 text-sm font-medium text-white transition hover:bg-primaryHover"
@@ -301,11 +218,9 @@ export default function EvalDashboardPage() {
       )}
 
       {/* KPI strip */}
-      <section className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+      <section className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Kpi label="Track B 发布" value={kpis.published} sub={`approved ${kpis.approved}`} />
         <Kpi label="平均 ValidAgent 分" value={kpis.avgScore.toFixed(2)} sub="0-1" />
-        <Kpi label="知识文档" value={kpis.knowledgeDocs} sub={`patches ${kpis.patches}`} />
-        <Kpi label="A/B 锦标赛" value={kpis.tournaments} sub={`accepted ${kpis.tournamentsAccepted}`} />
         <Kpi
           label="评分区分度"
           value={kpis.discriminating}
@@ -375,98 +290,10 @@ export default function EvalDashboardPage() {
         </Panel>
       </section>
 
-      {/* Chart row 2: evolution + patches + gates */}
-      <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <Panel title="进化轮次 — Δ 胜率 (%)" subtitle={`最近 ${evolutionDeltaData.length} 轮`}>
-          {evolutionDeltaData.length === 0 ? (
-            <EmptyState label="没有 EvolutionRound 数据" />
-          ) : (
-            <ResponsiveContainer width="100%" height={260}>
-              <LineChart data={evolutionDeltaData}>
-                <CartesianGrid strokeDasharray="3 3" stroke={COLOR_GRID} />
-                <XAxis dataKey="index" stroke={COLOR_AXIS} />
-                <YAxis stroke={COLOR_AXIS} />
-                <Tooltip
-                  contentStyle={TOOLTIP_STYLE}
-                  labelStyle={{ color: COLOR_TEXT }}
-                />
-                <ReferenceLine y={0} stroke={COLOR_NEUTRAL} />
-                <Line
-                  type="monotone"
-                  dataKey="delta_win_rate"
-                  stroke={COLOR_ACCENT}
-                  strokeWidth={2}
-                  dot={(props: any) => {
-                    const accepted = props.payload?.accepted === 1;
-                    return (
-                      <circle
-                        key={props.key}
-                        cx={props.cx}
-                        cy={props.cy}
-                        r={4}
-                        stroke={accepted ? COLOR_GOOD : COLOR_NEUTRAL}
-                        fill={accepted ? COLOR_GOOD : COLOR_CARD}
-                        strokeWidth={1.5}
-                      />
-                    );
-                  }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          )}
-        </Panel>
-
-        <Panel title="Patch 状态分布" subtitle={`Track C 累计 ${aggregate?.track_c?.patches_total ?? 0}`}>
-          {patchStatusData.length === 0 ? (
-            <EmptyState label="没有 patch 记录" />
-          ) : (
-            <ResponsiveContainer width="100%" height={260}>
-              <BarChart data={patchStatusData} layout="vertical">
-                <CartesianGrid strokeDasharray="3 3" stroke={COLOR_GRID} />
-                <XAxis type="number" stroke={COLOR_AXIS} />
-                <YAxis dataKey="status" type="category" width={100} stroke={COLOR_AXIS} />
-                <Tooltip
-                  contentStyle={TOOLTIP_STYLE}
-                  labelStyle={{ color: COLOR_TEXT }}
-                />
-                <Bar dataKey="count" fill={COLOR_ACCENT} />
-              </BarChart>
-            </ResponsiveContainer>
-          )}
-        </Panel>
-
-        <Panel title="B/C 验收门通过率" subtitle="success_rate vs threshold">
-          {gateData.length === 0 ? (
-            <EmptyState label="没有 acceptance_metrics" />
-          ) : (
-            <ResponsiveContainer width="100%" height={260}>
-              <BarChart data={gateData}>
-                <CartesianGrid strokeDasharray="3 3" stroke={COLOR_GRID} />
-                <XAxis dataKey="step" stroke={COLOR_AXIS} angle={-25} textAnchor="end" height={50} interval={0} fontSize={10} />
-                <YAxis stroke={COLOR_AXIS} domain={[0, 100]} />
-                <Tooltip
-                  contentStyle={TOOLTIP_STYLE}
-                  labelStyle={{ color: COLOR_TEXT }}
-                />
-                <Legend />
-                <Bar dataKey="threshold_pct" name="阈值 %" fill={COLOR_GRID} />
-                <Bar dataKey="success_rate_pct" name="实测 %">
-                  {gateData.map((entry, idx) => (
-                    <Cell key={idx} fill={entry.passed ? COLOR_GOOD : COLOR_BAD} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          )}
-        </Panel>
-      </section>
-
       <footer className="border-t border-border pt-4 text-xs text-text-sub">
         本页布局固定，新一轮数据出现后点右上 “刷新” 即可。后端数据来源：
         <code className="ml-1 text-textPrimary">/api/eval/role-scores</code>{" "}
         <code className="ml-1 text-textPrimary">/api/metrics/aggregate</code>{" "}
-        <code className="ml-1 text-textPrimary">/api/evolution</code>{" "}
-        <code className="ml-1 text-textPrimary">/api/evolution/dashboard</code>
         {loading && <span className="ml-3 text-text-sub">loading...</span>}
       </footer>
     </div>
