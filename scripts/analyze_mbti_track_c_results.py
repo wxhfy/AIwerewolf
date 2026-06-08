@@ -192,7 +192,9 @@ def main() -> int:
     role_mbti_deltas = [
         row for row in track_c_deltas(rows, "role_mbti") if row["delta"] is not None and row["baseline_samples"] >= 2
     ]
-    role_mbti_deltas.sort(key=lambda row: (row["delta"], row["track_c_samples"] + row["baseline_samples"]), reverse=True)
+    role_mbti_deltas.sort(
+        key=lambda row: (row["delta"], row["track_c_samples"] + row["baseline_samples"]), reverse=True
+    )
     payload = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "inputs": [str(path) for path in inputs],
@@ -200,7 +202,9 @@ def main() -> int:
         "seed_count": len({row.get("seed") for row in rows}),
         "role_count": len({row.get("role") for row in rows}),
         "mbti_count": len({row.get("mbti") for row in rows}),
-        "track_c_counts": {str(key): value for key, value in sorted(Counter(bool(row.get("track_c")) for row in rows).items())},
+        "track_c_counts": {
+            str(key): value for key, value in sorted(Counter(bool(row.get("track_c")) for row in rows).items())
+        },
         "overall": summarize(rows, lambda row: "track_c_on" if bool(row.get("track_c")) else "track_c_off"),
         "role_summary": summarize(rows, lambda row: str(row.get("role") or "UNKNOWN")),
         "mbti_summary": summarize(rows, lambda row: str(row.get("mbti") or "UNKNOWN")),
