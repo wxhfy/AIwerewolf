@@ -40,7 +40,7 @@ if str(ROOT) not in sys.path:
 # Database URL — must be set BEFORE importing backend.db.database
 # because the SQLAlchemy engine is created at module-import time.
 # ──────────────────────────────────────────────────────────────────────
-DB_URL = "postgresql://werewolf:wolf_secret_2026@127.0.0.1:5433/werewolf"
+DB_URL = "postgresql://werewolf:werewolf_dev_password@127.0.0.1:5433/werewolf"
 os.environ.setdefault("DATABASE_URL", DB_URL)
 
 # Now safe to import project internals.

@@ -31,7 +31,7 @@ from sklearn.metrics import silhouette_score
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-DB_URL = "postgresql://werewolf:wolf_secret_2026@127.0.0.1:5433/werewolf"
+DB_URL = "postgresql://werewolf:werewolf_dev_password@127.0.0.1:5433/werewolf"
 os.environ.setdefault("DATABASE_URL", DB_URL)
 
 from sqlalchemy import text

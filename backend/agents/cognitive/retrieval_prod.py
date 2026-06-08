@@ -168,7 +168,7 @@ def _parse_role_from_persona_scope(persona_scope: str | None) -> str:
     return ""
 
 
-_DEFAULT_CONN = "postgresql://werewolf:wolf_secret_2026@127.0.0.1:5433/werewolf"
+_DEFAULT_CONN = "postgresql://werewolf:werewolf_dev_password@127.0.0.1:5433/werewolf"
 
 # ================================================================
 # Werewolf Domain Dictionary (jieba doesn't know these by default)

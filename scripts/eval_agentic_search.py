@@ -22,7 +22,7 @@ import numpy as np
 import psycopg2
 import requests
 
-CONN = "postgresql://werewolf:wolf_secret_2026@127.0.0.1:5433/werewolf"
+CONN = "postgresql://werewolf:werewolf_dev_password@127.0.0.1:5433/werewolf"
 LLM_KEY = os.environ.get("DSV4FLASH_API_KEY", "")
 LLM_URL = "https://ark.cn-beijing.volces.com/api/coding/v1/chat/completions"
 

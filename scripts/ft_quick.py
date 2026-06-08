@@ -17,7 +17,7 @@ from rank_bm25 import BM25Okapi
 from torch.utils.data import DataLoader
 from torch.utils.data import Dataset
 
-CONN = "postgresql://werewolf:wolf_secret_2026@127.0.0.1:5433/werewolf"
+CONN = "postgresql://werewolf:werewolf_dev_password@127.0.0.1:5433/werewolf"
 BGP = "/home/4T-3/PLM/bge-m3/"
 GPU = "cuda:3"
 OUT = "/home/4T-3/PLM/bge-m3-werewolf-ft-v3/"

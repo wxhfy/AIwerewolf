@@ -18,7 +18,7 @@ from torch.utils.data import Dataset
 
 sys.path.insert(0, ".")
 
-CONN = "postgresql://werewolf:wolf_secret_2026@127.0.0.1:5433/werewolf"
+CONN = "postgresql://werewolf:werewolf_dev_password@127.0.0.1:5433/werewolf"
 BGE_PATH = "/home/4T-3/PLM/bge-m3/"
 GPU = "cuda:3"
 OUTPUT_PATH = "/home/4T-3/PLM/bge-m3-werewolf-ft-v2/"
