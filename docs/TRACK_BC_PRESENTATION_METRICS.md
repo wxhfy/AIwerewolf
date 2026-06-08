@@ -43,7 +43,7 @@ Recommended thresholds for formal reporting:
 - Report role distribution next to every model/framework comparison.
 - Formal Volcengine runs should use v4flash only, for example
   `EXPERIMENT_MODEL_POOL="dsv4flash:deepseek-v4-flash"` or
-  `EXPERIMENT_MODEL_POOL="doubao:deepseek-v4-flash[1m]"`; do not use v4-pro in the final evidence path.
+  `EXPERIMENT_MODEL_POOL="doubao:${DOUBAO_ENDPOINT}"`; do not use v4-pro in the final evidence path.
 
 ## 3. Frontline Metrics from Recent Social-Deduction Work
 
@@ -56,6 +56,9 @@ Recommended thresholds for formal reporting:
 | WOLF benchmark | statement-level deception taxonomy, peer-rated deceptiveness, longitudinal suspicion/trust dynamics | Add deception labels per speech and trust-shift curves from public statements. |
 | BloodBench | role claims, fabricated info, false accusation, false defense, team cover, strategic bluff; cover-story consistency and evil-team coordination | Add claim taxonomy to speech audit and wolf-team coordination metrics. |
 | Strategy Bench | deception index and detection index across social deduction games | Present separate wolf-side and village-side indexes instead of only one overall score. |
+| Human-aligned social-deduction strategy benchmarks | human-aligned tactics, voting alignment, teammate coordination, persuasion effectiveness | Add "human-aligned strategy rate" and compare Track B suggestions against a hand-labeled tactic checklist. |
+| Multimodal/veracity Werewolf benchmarks | truthfulness/veracity, role-consistent statements, evidence groundedness | Use as inspiration for speech truthfulness and evidence-ref coverage; do not claim multimodal coverage unless UI/audio/video inputs are actually evaluated. |
+| Human-baseline deception studies | deception quality against human baselines, detectability, persuasion under suspicion | Add human-baseline pairwise preference only when enough annotated samples exist. |
 | Avalon/social deduction ablations | win rate plus engagement, persuasion, leadership, sharing/camouflage behavior | Use as optional cross-game inspiration: discussion leadership, persuasion success, information sharing rate. |
 
 ## 4. Suggested Figures for the Presentation
@@ -139,3 +142,62 @@ Recommended next implementation if time permits:
   https://www.bloodbench.com/
 - Strategy Bench reports deception and detection indexes across social deduction games:
   https://strategy.freysa.ai/
+- Newer social-deduction benchmark directions worth citing in limitations/related work include human-aligned
+  strategy evaluation, veracity/truthfulness, and human-baseline deception quality. Use these as motivation
+  for future Track B metric heads unless the corresponding annotations are actually run.
+
+## 7. Current Quantified Evidence Snapshot
+
+The current full-module quantification output is stored under
+`docs/experiments/core_module_quantification/`. It should be treated as the
+paper/presentation scorecard for the existing completed runs, not as a final
+claim of statistically significant Track C win-rate lift.
+
+Key quantitative results:
+
+| Module | Metric | Current value | Target | Interpretation |
+|---|---:|---:|---:|---|
+| Track C retrieval | offline score | 0.7040 | 0.55 | Passes the retrieval-quality gate. |
+| Retrieval ranking | nDCG@5 | 0.9587 | 0.80 | Hybrid retrieval ranks relevant lessons near the top. |
+| Retrieval precision | P@3 | 0.2821 | 0.20 | Conservative weak-label precision; useful for comparing policies. |
+| Retrieval coverage | coverage | 1.0000 | 0.80 | No empty result among the 26 query scenarios. |
+| Retrieval safety | candidate leakage | 0 | 0 | No candidate/deprecated leakage in offline evaluation. |
+| Retrieval latency | p95 latency | 12.24 ms | 50 ms | Low enough for live agent prompt injection. |
+| Formal evidence provenance | v4flash rows | 59 | 20 | Formal evidence uses Volcengine v4flash rows after filtering. |
+| Exclusion audit | excluded rows | 44 | report | 20 official DeepSeek rows and 24 pro rows excluded. |
+| Architecture evidence coverage | dimensions | 4 | 4 | Covers single-agent behavior, multi-agent behavior, engineering reliability, and B/C loop evidence. |
+| Track B leaderboard | top-tier completion | 0.8462 | 0.60 | Leaderboard can separate framework/agent variants. |
+| Framework separation | architecture evidence spread | 11.5286 | 5.0 | Variants are separable under the architecture evidence summary. |
+| Agent role behavior | single-agent dimension | 0.8982 | 0.70 | Role behavior is strongly measurable in completed formal rows. |
+| Multi-agent behavior | multi-agent dimension | 0.7500 | 0.70 | Interaction and role-normalized social deduction are measurable. |
+| Advanced B/C ability | advanced dimension | 0.6054 | 0.55 | B/C modules contribute measurable high-level signals. |
+| Engineering reliability | fallback/invalid count | 0 / 0 | 0 / 0 | Formal completed rows have no fallback or invalid-action contamination. |
+| Track C role/persona analysis | role-MBTI cells | 96 | 96 | Covers 6 roles x 16 MBTI types in auxiliary analysis. |
+| Track C auxiliary trend | average non-wolf role delta | +0.0643 | > 0 | Positive trend for non-wolf roles, but not a causal final-agent lift. |
+| Information isolation | strict visibility gate | pass | pass | `scripts/verify_visibility_strict.py` passed. |
+| Prompt/retrieval wiring | retrieval prompt tests | 19 passed | pass | Auto-injected Track C uses production retrieval policy. |
+| Track B consistency | review metric tests | 49 passed, 2 skipped | pass | Role scoring, counterfactuals, MVP, and report gates are covered. |
+| Experiment harness | leaderboard tests | 5 passed | pass | v4flash/pro/fake filtering and leaderboard output are covered. |
+
+Track C diagnosis:
+
+- The earlier MBTI/role experiment toggled Track C for every seat, so camp win
+  rate is zero-sum. It measures balance shift, not final-agent-vs-initial-agent
+  lift.
+- The runtime retrieval path previously allowed low-quality fill and bypassed
+  the production retrieval policy during auto-injection. This has been changed
+  so auto-injected lessons use role/alignment/phase-aware production retrieval
+  and skip low-quality fill by default.
+- The filtered formal v4flash historical set proves leaderboard
+  discriminability and module measurability, but `cognitive_full` superiority
+  still needs a paired target-seat A/B design.
+
+Final Track C causal experiment:
+
+Use paired seeds, fixed baseline opponents, and only one target seat upgraded
+from baseline to Track C in each paired game. Rotate the target across role and
+seat assignments. Report target-agent win rate, role-normalized adjusted final
+score, knowledge-hit rate, bad-case reduction, retrieval P@3/nDCG/coverage,
+fallback/invalid/info-leak gates, and bootstrap confidence intervals. This is
+the correct experiment for the claim that experience summaries improve final
+agent performance.

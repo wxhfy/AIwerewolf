@@ -21,7 +21,7 @@ AI Werewolf 的核心不是“调用几个 LLM 轮流说话”，而是把狼人
 - **能正确玩**：规则、阶段、技能、胜负由引擎统一裁决。
 - **能公平玩**：每个 Agent 只能看到自己身份允许的信息。
 - **能解释**：每一步发言、投票、技能行动都有事件、理由和证据链。
-- **能积累**：赛后经验进入策略知识库，并在后续对局中被检索使用。
+- **能积累**：赛后经验进入 runtime 策略池，并在后续对局中被检索使用；Track C Wiki/Hermes 提供长期知识编译和候选策略演进的增量设计。
 
 ## 2. 与常见方法的不同
 
@@ -32,7 +32,7 @@ AI Werewolf 的核心不是“调用几个 LLM 轮流说话”，而是把狼人
 | 普通狼人杀房间系统 | 实时交互成熟，但主要服务真人局，缺少 Agent 策略、私有上下文和知识回流 | 房间/WebSocket 只是外层，核心是可审计的 Agent Team 和信息不对称建模 |
 | 只看胜负统计 | 胜负受随机身份、座位和队友影响大，无法知道哪一步打得好或坏 | 每个关键行为进入赛后复盘，报告高光、失误、证据和可替代行动 |
 | 硬编码角色逻辑 | MVP 容易，但新增角色会牵动大量 if/else | 角色元数据、阶段、行动校验、技能结算分层，新增角色优先走 registry/config |
-| 把全部历史塞进上下文 | 成本高、噪声大，还可能污染当前局信息边界 | Agent 通过工具按需检索，策略知识再经过 confidence / visibility / privacy / applicability 过滤 |
+| 把全部历史塞进上下文 | 成本高、噪声大，还可能污染当前局信息边界 | Agent 只通过工具按需检索经过 confidence / visibility / privacy / applicability 过滤的 active 策略；Wiki/Hermes 作为离线知识组织与候选策略设计层 |
 
 ## 3. 核心架构分层
 
@@ -110,21 +110,28 @@ Agent 可调用的工具包括：
 
 设计优势：上下文更短、更聚焦；策略知识可以独立迭代；工具 trace 也能进入赛后审计。
 
-### 3.5 复盘层：从对局日志到可复用知识
+### 3.5 Track B/C 层：从对局日志到可验证策略进化
 
 入口：`backend/eval/`
 
-对局结束后，系统把 `GameEvent`、`AgentDecision`、快照和角色结果组织成复盘数据：
+对局结束后，系统把 `GameEvent`、`AgentDecision`、快照和角色结果组织成复盘数据，再进入 Track C 的 runtime 策略池。新增的 Wiki/Hermes 设计作为离线知识编译和候选策略演进层，不绕过现有生命周期门控。
 
 ```text
 GameEvent / AgentDecision / Snapshot
   -> DecisionScore / ScoredStep
   -> PublishedReview
   -> StrategyKnowledgeDoc(candidate/active/deprecated)
-  -> StrategyRetriever
+  -> StrategyRetriever / Agent Prompt Layer 3
+
+Optional offline layer:
+  -> Track C Wiki (Markdown strategy pages)
+  -> Hermes DreamJob / StrategyPatch / A/B tournament
+  -> candidate StrategyKnowledgeDoc
 ```
 
-设计优势：系统不仅能展示“谁赢了”，还能解释“关键转折在哪一步、当时可见信息是什么、下一局可以学到什么”。
+设计优势：系统不仅能展示“谁赢了”，还能解释“关键转折在哪一步、当时可见信息是什么、下一局可以学到什么”。PostgreSQL 策略池负责对局时低延迟、安全过滤和归因；Wiki/Hermes 层负责长期知识组织、人工审核和候选 patch 设计。
+
+详细设计见 [`TRACK_C_HERMES_LLM_WIKI_DESIGN.md`](TRACK_C_HERMES_LLM_WIKI_DESIGN.md)。
 
 ### 3.6 产品层：同一套引擎服务 AI、真人和观战
 
@@ -137,7 +144,7 @@ GameEvent / AgentDecision / Snapshot
 - `/room/[id]/human`：真人玩家操作界面。
 - `/games/[id]/report`：单局复盘报告。
 - `/eval/dashboard`：多局统计和排行榜。
-- Track C 后端/API/脚本：策略知识、实验结果和知识回流路径。
+- Track C 后端/API/脚本/wiki：策略知识、实验结果、Wiki 入口和知识回流路径。
 - `/personas`：人格配置入口。
 
 设计优势：真人玩家、AI 玩家、观众和赛后报告共用同一套状态流，不需要分别维护几套逻辑。
@@ -150,7 +157,7 @@ GameEvent / AgentDecision / Snapshot
 | 信息可信 | `GameState` / `PlayerView` 分离 | Agent 输入天然不含越权信息 |
 | 角色可扩展 | RoleRegistry + Phase/Action/Skill 分层 | 新角色不需要把规则写进 Prompt |
 | 决策可解释 | GameEvent + AgentDecision + Review | 可回放每一步、查看理由和证据 |
-| 策略可迭代 | StrategyKnowledgeDoc + Retriever | 赛后经验能进入下一局策略层 |
+| 策略可迭代 | StrategyKnowledgeDoc + Retriever + Track C Wiki/Hermes 增量层 | 赛后经验能沉淀、审核并进入下一局策略层 |
 | 交互完整 | Room + WebSocket + HumanAgent | AI 对局、真人混战、观战和复盘共用同一架构 |
 | 工程可验证 | pytest + E2E + UI smoke + visibility strict | 不依赖人工目测判断系统是否跑通 |
 
@@ -184,7 +191,7 @@ GameEvent / AgentDecision / Snapshot
 3. 真人页 `/room/[id]/human`：展示真人席位如何查看身份、选择目标、提交行动。
 4. 复盘页 `/games/[id]/report`：展示对局结束后的关键决策、证据链和改进建议。
 5. 统计页 `/eval/dashboard`：展示多局结果、排行榜和对比数据。
-6. Track C 报告与脚本：展示策略知识、实验结果和知识回流路径。
+6. Track C wiki / 报告 / 脚本：展示策略知识、实验结果、候选 patch 设计和知识回流路径。
 7. 人格页 `/personas`：展示不同 MBTI 人格与角色行为差异。
 
 ## 7. 可运行验证命令

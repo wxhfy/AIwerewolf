@@ -170,6 +170,41 @@ def _parse_role_from_persona_scope(persona_scope: str | None) -> str:
 
 _DEFAULT_CONN = "postgresql://werewolf:werewolf_dev_password@127.0.0.1:5433/werewolf"
 
+
+def _resolve_conn_str(conn_str: str = "") -> str:
+    """Resolve the PostgreSQL connection string used by the retriever.
+
+    CLI experiment scripts are often launched without sourcing `.env`, so the
+    retriever must load the local env file itself before falling back to the
+    development DSN.
+    """
+    if conn_str:
+        return conn_str
+    try:
+        from backend.llm.env import load_env_file
+
+        load_env_file()
+    except Exception:
+        pass
+    resolved = os.getenv("DATABASE_URL", "").strip() or os.getenv("AIWEREWOLF_DB_URL", "").strip() or _DEFAULT_CONN
+    return _normalize_psycopg2_conn_str(resolved)
+
+
+def _normalize_psycopg2_conn_str(conn_str: str) -> str:
+    """Convert SQLAlchemy PostgreSQL URLs into psycopg2-compatible URLs."""
+    if conn_str.startswith("postgresql+"):
+        return "postgresql://" + conn_str.split("://", 1)[1]
+    if conn_str.startswith("postgres+"):
+        return "postgres://" + conn_str.split("://", 1)[1]
+    return conn_str
+
+
+def _redact_conn_error(exc: Exception) -> str:
+    """Return a connection error string without credentials."""
+    msg = str(exc)
+    return _stdlib_re.sub(r"(postgres(?:ql)?(?:\+\w+)?://[^:\s/@]+):([^@\s]+)@", r"\1:***@", msg)
+
+
 # ================================================================
 # Werewolf Domain Dictionary (jieba doesn't know these by default)
 # ================================================================
@@ -450,8 +485,11 @@ def _filter_hybrid_phase(
     return buckets
 
 
-# Quality floor for bucket filling — docs below this threshold are skipped
-_DEFAULT_QUALITY_THRESHOLD = 0.60
+# Quality floor for bucket filling — docs below this threshold are skipped.
+# Track C lessons are helpful only when they are both relevant and reliable;
+# low-quality fill increases prompt noise and can reduce win rate.
+_DEFAULT_QUALITY_THRESHOLD = float(os.getenv("TRACK_C_RETRIEVAL_MIN_QUALITY", "0.72") or "0.72")
+_ALLOW_LOW_QUALITY_FILL = os.getenv("TRACK_C_ALLOW_LOW_QUALITY_FILL", "").lower() in {"1", "true", "yes", "on"}
 
 
 def _fill_from_buckets(
@@ -494,8 +532,10 @@ def _fill_from_buckets(
         if not bucket_docs or used_from_bucket[bucket_name] == 0:
             underfilled.append(bucket_name)
 
-    # Phase 2: still under k → take best available, drop quality threshold.
-    if len(results) < k:
+    # Phase 2: still under k → optionally take best available below the
+    # threshold. Disabled by default for formal experiments because injecting
+    # weak lessons is worse than injecting fewer lessons.
+    if len(results) < k and _ALLOW_LOW_QUALITY_FILL:
         for bucket_name in bucket_names:
             if len(results) >= k:
                 break
@@ -514,6 +554,7 @@ def _fill_from_buckets(
         "buckets_used": used_from_bucket,
         "bucket_underfilled": underfilled[:3] if underfilled else [],
         "quality_threshold": quality_threshold,
+        "allow_low_quality_fill": _ALLOW_LOW_QUALITY_FILL,
         "skipped_low_quality": sum(
             1 for bn in bucket_names for d in buckets.get(bn, []) if d.get("quality", 0) < quality_threshold
         ),
@@ -552,7 +593,7 @@ class StrategyRetriever:
     """
 
     def __init__(self, conn_str: str = ""):
-        self._conn = conn_str or _DEFAULT_CONN
+        self._conn = _resolve_conn_str(conn_str)
 
         self._docs: List[Dict] = []
         self._bm25: Any = None
@@ -1446,7 +1487,7 @@ def _build_doc_dict(
         "source_game_id": src_reports[0] if src_reports else "",
         "source_decision_id": src_items[0] if src_items else "",
         # Status tracking
-        "status": dtype,  # doc_type serves as the status field in current schema
+        "status": "active",
     }
 
 
@@ -1473,7 +1514,7 @@ def get_retriever(conn_str: str = "") -> Optional[StrategyRetriever]:
         if n > 0:
             return _retriever
     except Exception as e:
-        logger.warning(f"Failed to build production retriever from PG: {e}")
+        logger.warning("Failed to build production retriever from PG: %s", _redact_conn_error(e))
 
     # Fallback: in-memory strategy store (cold-start YAML)
     try:
@@ -1485,7 +1526,7 @@ def get_retriever(conn_str: str = "") -> Optional[StrategyRetriever]:
                 logger.info(f"StrategyRetriever built from {n} cold-start docs (in-memory)")
                 return _retriever
     except Exception as e:
-        logger.warning(f"Failed to build retriever from cold-start store: {e}")
+        logger.warning("Failed to build retriever from cold-start store: %s", e)
 
     return None
 
@@ -1497,59 +1538,31 @@ def _load_docs_from_cold_start() -> list[dict]:
     No PostgreSQL required.
     """
     from backend.agents.strategy_registry import get_strategy_registry
-    from backend.eval.evolution import StrategyKnowledgeStore
 
-    store = StrategyKnowledgeStore()
-
-    # 1. Load from strategy registry (YAML cold-start cards)
-    try:
-        registry = get_strategy_registry()
-        for card in registry.list_all():
-            doc_id = f"cold-{card.strategy_id}"
-            if doc_id not in store.docs:
-                from backend.eval.evolution import StrategyKnowledgeDoc
-
-                roles = card.applicable_roles
-                role = "global" if len(roles) > 2 else (roles[0] if roles else "global")
-                doc = StrategyKnowledgeDoc(
-                    doc_id=doc_id,
-                    doc_type="cold_start",
-                    role=role,
-                    phase="global",
-                    persona_scope=None,
-                    situation_pattern=card.summary or card.strategy_name,
-                    trigger_conditions=[],
-                    recommended_action=card.content[:300] if card.content else "",
-                    avoid_action=None,
-                    rationale=card.risk_notes or "",
-                    evidence_summary="Cold-start strategy from YAML",
-                    source_report_ids=[],
-                    source_item_ids=[],
-                    source_event_ids=[],
-                    counterfactual_ids=[],
-                    expected_metric_effects=[],
-                    quality_score=0.90,
-                    confidence=0.85,
-                    status="active",
-                    tags=card.applicable_roles,
-                )
-                store.upsert(doc)
-    except Exception:
-        pass
-
-    # Convert to retriever dict format
-    docs = []
-    for doc in store.all(include_deprecated=False):
+    docs: list[dict] = []
+    registry = get_strategy_registry()
+    for card in registry.list_all():
+        roles = tuple(card.applicable_roles or ())
+        role = "global" if len(roles) > 2 else (roles[0] if roles else "global")
+        strategy_text = "\n".join(_safe_str(item) for item in card.content if _safe_str(item))
+        risk_text = "\n".join(_safe_str(item) for item in card.risk_notes if _safe_str(item))
         docs.append(
             {
-                "doc_id": doc.doc_id or "",
-                "situation": doc.situation_pattern or "",
-                "strategy": doc.recommended_action or "",
-                "rationale": doc.rationale or "",
-                "role": doc.role or "global",
-                "phase": doc.phase or "global",
-                "quality": doc.quality_score,
-                "doc_type": doc.doc_type or "",
+                "doc_id": f"cold-{card.strategy_id}",
+                "situation": card.summary or card.strategy_name,
+                "strategy": strategy_text or card.summary or card.strategy_name,
+                "rationale": risk_text or "Cold-start strategy from YAML strategy registry.",
+                "role": role,
+                "phase": "global",
+                "quality": 0.90,
+                "doc_type": "cold_start",
+                "status": "active",
+                "role_scope": role,
+                "alignment_scope": _derive_alignment_from_role(role),
+                "phase_scope": "",
+                "mbti_scope": "",
+                "source_game_id": "",
+                "source_decision_id": "",
             }
         )
     return docs

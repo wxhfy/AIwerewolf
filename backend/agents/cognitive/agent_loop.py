@@ -1380,7 +1380,8 @@ def _build_track_c_strategy_block(obs: Observation, action_type: str) -> str:
 def _retrieve_track_c_strategy_lessons(obs: Observation, action_type: str) -> list[dict[str, Any]]:
     """Retrieve Track C lessons without making prompt construction fragile."""
     try:
-        from backend.db.persist import list_strategy_knowledge
+        from backend.agents.cognitive.retrieval_prod import RetrievalPolicy
+        from backend.agents.cognitive.retrieval_prod import retrieve_strategies_prod
 
         phase = str(getattr(obs, "phase", "") or "")
         role = str(getattr(obs, "player_role", "") or "")
@@ -1392,16 +1393,31 @@ def _retrieve_track_c_strategy_lessons(obs: Observation, action_type: str) -> li
             now = time.monotonic()
             if cached and now - cached[0] <= cache_ttl:
                 return [dict(row) for row in cached[1]]
-        rows = list_strategy_knowledge(role=role, phase=phase, status=None, limit=3)
-        if len(rows) < 3:
-            seen = {str(row.get("doc_id") or row.get("id") or "") for row in rows}
-            for row in list_strategy_knowledge(role=role, status=None, limit=6):
-                row_id = str(row.get("doc_id") or row.get("id") or "")
-                if row_id and row_id not in seen:
-                    rows.append(row)
-                    seen.add(row_id)
-                if len(rows) >= 3:
-                    break
+        policy_raw = os.getenv("TRACK_C_AUTO_RETRIEVAL_POLICY", "hybrid_role_alignment_phase")
+        try:
+            policy = RetrievalPolicy(policy_raw)
+        except ValueError:
+            policy = RetrievalPolicy.HYBRID_ROLE_ALIGNMENT_PHASE
+        keywords = _track_c_auto_keywords(role, phase, action)
+        rows = retrieve_strategies_prod(
+            role=role,
+            phase=phase,
+            keywords=keywords,
+            limit=int(os.getenv("TRACK_C_AUTO_RETRIEVAL_LIMIT", "3") or "3"),
+            output_mode="content",
+            retrieval_policy=policy,
+            alignment=_derive_alignment(role),
+            action_type=action,
+        )
+        if not rows and _feature_enabled("TRACK_C_LEGACY_AUTO_INJECT_FALLBACK", False):
+            from backend.db.persist import list_strategy_knowledge
+
+            rows = list_strategy_knowledge(
+                role=role,
+                phase=phase,
+                status="active",
+                limit=int(os.getenv("TRACK_C_AUTO_RETRIEVAL_LIMIT", "3") or "3"),
+            )
         lessons = [
             _normalize_strategy_row(row, index) for index, row in enumerate(rows, start=1) if isinstance(row, dict)
         ]
@@ -1425,6 +1441,41 @@ def _strategy_query_action(action_type: str) -> str:
     if action_type == "night":
         return "night_action"
     return action_type
+
+
+def _track_c_auto_keywords(role: str, phase: str, action: str) -> list[str]:
+    role_terms = {
+        "Werewolf": ["狼人", "伪装", "带节奏", "刀人"],
+        "WhiteWolfKing": ["白狼王", "自爆", "带走", "伪装"],
+        "Seer": ["预言家", "查验", "警徽流", "信息释放"],
+        "Witch": ["女巫", "解药", "毒药", "用药"],
+        "Hunter": ["猎人", "开枪", "带人", "藏身份"],
+        "Guard": ["守卫", "守护", "保护", "连续守"],
+        "Villager": ["平民", "发言", "投票", "站边"],
+    }
+    phase_terms = {
+        "DAY_BADGE_SPEECH": ["警徽", "上警", "警徽流"],
+        "DAY_SPEECH": ["发言", "表水", "分析"],
+        "DAY_VOTE": ["投票", "归票", "放逐"],
+        "NIGHT_WOLF_ACTION": ["刀人", "击杀", "目标"],
+        "NIGHT_SEER_ACTION": ["查验", "验人", "预言家"],
+        "NIGHT_WITCH_ACTION": ["女巫", "解药", "毒药"],
+        "NIGHT_GUARD_ACTION": ["守卫", "守护", "保护"],
+        "HUNTER_SHOOT": ["猎人", "开枪", "带人"],
+    }
+    action_terms = {
+        "talk": ["发言", "表达", "信息"],
+        "vote": ["投票", "归票", "票型"],
+        "night_action": ["夜晚", "技能", "目标"],
+    }
+    seen: set[str] = set()
+    keywords: list[str] = []
+    for term in role_terms.get(role, [role]) + phase_terms.get(phase, [phase]) + action_terms.get(action, [action]):
+        clean = str(term).strip()
+        if clean and clean not in seen:
+            seen.add(clean)
+            keywords.append(clean)
+    return keywords[:6]
 
 
 def _normalize_strategy_row(row: dict[str, Any], index: int) -> dict[str, Any]:

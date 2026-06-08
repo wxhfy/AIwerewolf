@@ -151,9 +151,11 @@ Layer 3  策略知识  → 教"怎么赢"（BM25 检索历史经验）
 ### 3.2 Track C：知识进化
 
 - **KnowledgeAbstractor**：从 highlight/mistake 提取经验
+- **Wiki 骨架**：把复盘、策略知识和实验反馈编译成 `docs/wiki/` Markdown 策略百科，供人类、LLM 和 Obsidian 共读共审；当前不直接注入 Agent
+- **Hermes-style DreamJob**：从 approved reviews + wiki 共识提出 candidate patch
 - 写入 `strategy_knowledge_docs`（status=candidate）
-- promote.py 管理 candidate → active → deprecated 生命周期
-- 知识回流到下一局 Agent 的策略检索中
+- promote / A/B tournament / usage feedback 管理 candidate → active → deprecated 生命周期
+- 验证后的知识回流到下一局 Agent 的策略检索中
 
 ### 3.3 PostgreSQL 证据链
 

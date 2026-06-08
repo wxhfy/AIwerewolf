@@ -315,7 +315,7 @@ def slide_cover(prs: Presentation) -> None:
         [
             "严格信息隔离下的多 Agent 博弈系统",
             "完整对局引擎 + 观战 UI + 真人/AI 混战入口",
-            "Track B 逐步评分复盘，Track C 策略知识回流",
+            "Track B 决策复盘评价，Track C 策略知识回流",
         ],
         0.8,
         2.55,
@@ -396,7 +396,7 @@ def slide_positioning(prs: Presentation) -> None:
         ("完整对局", "15+ 细分阶段，夜晚技能、白天发言、投票、胜负判定"),
         ("严格隔离", "GameState 与 PlayerView 分离，Agent 只看到身份允许的信息"),
         ("角色化 Agent", "MBTI 人格 + Role 身份 + Strategy 知识三层架构"),
-        ("可复盘进化", "每步决策可评分、可解释，并沉淀为下一局策略"),
+        ("可复盘进化", "每步决策可审计、可解释，并沉淀为下一局策略"),
     ]
     y = 3.48
     for idx, (title, body) in enumerate(features):
@@ -410,7 +410,7 @@ def slide_positioning(prs: Presentation) -> None:
     add_flow(slide, ["Play", "Evaluate", "Evolve"], 7.1, 2.45, 4.95, color=COLORS["green"])
     add_text(
         slide,
-        "系统闭环：对局执行 → 赛后评分 → 经验抽取 → 下一局策略回流",
+        "系统闭环：对局执行 → 赛后复盘 → 经验抽取 → 下一局策略回流",
         7.12,
         3.22,
         4.85,
@@ -443,7 +443,7 @@ def slide_architecture(prs: Presentation) -> None:
         [
             "FastAPI + WebSocket 承担房间、快照和实时事件推送",
             "WerewolfGame 是唯一规则主控，Agent 只提交 Decision",
-            "PostgreSQL 保存事件、快照、决策、评分、复盘和知识",
+            "PostgreSQL 保存事件、快照、决策、复盘和知识",
             "Track B/C 在赛后消费证据链，再回流到 StrategyRetriever",
         ],
         9.0,
@@ -495,7 +495,7 @@ def slide_game_flow(prs: Presentation) -> None:
         [
             "Agent 不直接修改 GameState，所有行动先过合法性校验",
             "夜晚并行动作在结算阶段统一处理，避免先后执行悖论",
-            "终局后自动形成可回放、可评分、可抽取知识的证据链",
+            "终局后自动形成可回放、可审计、可抽取知识的证据链",
         ],
         8.05,
         4.15,
@@ -516,9 +516,9 @@ def slide_modules(prs: Presentation) -> None:
         ["WerewolfGame", "初始化、阶段推进、结算、胜负、事件记录", "通过"],
         ["Visibility", "GameState -> PlayerView，信息裁剪", "92/92"],
         ["CognitiveAgent", "Observe / Memory / Planner / Tools / LLM", "通过"],
-        ["Track B", "逐步评分、复盘、证据引用", "通过"],
+        ["Track B", "决策审计、复盘、证据引用", "通过"],
         ["Track C", "lesson 抽取、知识生命周期、检索回流", "通过"],
-        ["Frontend", "大厅、观战、Human、复盘、进化看板", "通过"],
+        ["Frontend", "大厅、观战、Human、复盘、仪表盘", "通过"],
     ]
     add_table(slide, rows, 7.55, 1.55, 5.05, 4.25, font_size=7, widths=[1.35, 2.9, 0.8])
     add_text(
@@ -658,7 +658,7 @@ def slide_loop(prs: Presentation) -> None:
     add_text(slide, "Evaluate", 8.32, 3.33, 1.25, 0.26, size=16, bold=True, color=COLORS["blue"])
     add_text(
         slide,
-        "Track B 逐步评分，生成 ScoredStep 和 PublishedReview",
+        "Track B 评价关键决策，生成 ScoredStep 和 PublishedReview",
         9.55,
         3.3,
         2.25,
@@ -684,15 +684,15 @@ def slide_loop(prs: Presentation) -> None:
 def slide_track_b(prs: Presentation) -> None:
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     set_background(slide)
-    add_title(slide, "Track B：逐步评分与复盘", "从“谁赢了”推进到“每一步为什么好/坏”", "Evaluate")
-    add_text(slide, "三级打分级联", 0.78, 1.55, 2.0, 0.3, size=15, bold=True, color=COLORS["gold"])
-    add_flow(slide, ["Tier 1 规则", "Tier 2 轻量 LLM", "Tier 3 评审团"], 0.78, 2.08, 6.4, color=COLORS["blue"])
+    add_title(slide, "Track B：决策复盘评价", "从“谁赢了”推进到“每一步为什么好/坏”", "Evaluate")
+    add_text(slide, "三级评价链路", 0.78, 1.55, 2.0, 0.3, size=15, bold=True, color=COLORS["gold"])
+    add_flow(slide, ["Tier 1 规则", "Tier 2 轻量 LLM", "Tier 3 复核"], 0.78, 2.08, 6.4, color=COLORS["blue"])
     add_bullets(
         slide,
         [
             "明确场景用规则：投票、技能目标、信息泄露、非法行动",
             "模糊场景用轻量 LLM：发言有效性、推理质量、局势影响",
-            "高影响决策可进入评审团，保留 counterfactual 和证据引用",
+            "高影响决策可进入复核流程，保留 counterfactual 和证据引用",
         ],
         0.82,
         3.05,
@@ -771,13 +771,12 @@ def slide_track_c(prs: Presentation) -> None:
 def slide_frontend(prs: Presentation) -> None:
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     set_background(slide)
-    add_title(slide, "产品化界面", "Next.js 观战 UI、Human 模式、复盘与进化看板", "Frontend")
+    add_title(slide, "产品化界面", "Next.js 观战 UI、Human 模式、复盘与评测仪表盘", "Frontend")
     pages = [
         ("/", "大厅 / 创建房间", COLORS["gold"]),
         ("/room/[id]/play", "AI 对局观战", COLORS["blue"]),
         ("/room/[id]/human", "真人玩家操作", COLORS["green"]),
         ("/games/[id]/report", "单局复盘报告", COLORS["purple"]),
-        ("/evolution", "策略进化看板", COLORS["red"]),
         ("/eval/dashboard", "评测仪表盘", COLORS["blue"]),
         ("/personas", "Persona 库", COLORS["gold"]),
     ]
@@ -791,7 +790,7 @@ def slide_frontend(prs: Presentation) -> None:
     add_card(slide, 0.82, 5.95, 11.05, 0.5, fill=COLORS["bg2"], line=COLORS["line"])
     add_text(
         slide,
-        "UI smoke 覆盖：进化页加载、对局到 GAME_END、复盘 iframe、HTML 复盘资产、中英文切换、AI/Human 房间流程。",
+        "UI smoke 覆盖：对局到 GAME_END、复盘 iframe、HTML 复盘资产、中英文切换、AI/Human 房间流程。",
         1.05,
         6.1,
         10.65,
@@ -875,7 +874,7 @@ def slide_summary(prs: Presentation) -> None:
     add_text(slide, "当前交付", 0.85, 1.6, 1.6, 0.3, size=15, bold=True, color=COLORS["gold"])
     deliverables = [
         ("能玩", "完整狼人杀引擎，支持 AI 对局、Human 模式、实时观战"),
-        ("能解释", "事件、决策、评分、复盘全链路可追溯"),
+        ("能解释", "事件、决策、复盘全链路可追溯"),
         ("能积累", "Track C 将复盘经验转为可检索策略知识"),
     ]
     for idx, (title, body) in enumerate(deliverables):
@@ -936,9 +935,9 @@ def build_outline() -> str:
         ("信息隔离", "GameState 与 PlayerView 分离，92/92 边界检查"),
         ("CognitiveAgent", "三层 Prompt 与工具调用式决策循环"),
         ("闭环主线", "Play -> Evaluate -> Evolve -> Retrieve"),
-        ("Track B", "逐步评分、复盘报告、证据引用"),
-        ("Track C", "知识生命周期与安全回流"),
-        ("产品化界面", "大厅、对局、Human、复盘、进化、Persona"),
+        ("Track B", "决策复盘评价、报告生成、证据引用"),
+        ("Track C", "知识生命周期、安全回流与 Wiki/Hermes 增量设计"),
+        ("产品化界面", "大厅、对局、Human、复盘、仪表盘、Persona"),
         ("自动化验收", "pytest、E2E、visibility、frontend、demo、B/C 专项"),
         ("修复与风险", "本轮修复项、真实 LLM 长跑和 A/B 补验边界"),
         ("总结与下一步", "能玩、能解释、能积累；补真实验收与多局 A/B"),

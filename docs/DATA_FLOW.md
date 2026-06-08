@@ -138,6 +138,8 @@
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
+Track C 的 Wiki/Hermes 增量设计详见 [`TRACK_C_HERMES_LLM_WIKI_DESIGN.md`](TRACK_C_HERMES_LLM_WIKI_DESIGN.md)。Wiki 只负责知识编译、人工审核和展示；正在对局的 Agent 仍只从经过生命周期和安全过滤的 runtime strategy pool 检索策略。
+
 ---
 
 ## 证据链 (Evidence Chain)

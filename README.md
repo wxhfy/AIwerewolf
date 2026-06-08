@@ -24,7 +24,7 @@
 | 信息可信 | `GameState` 与 `PlayerView` 分离，隐藏身份和私有事件不会进入 Agent 输入 |
 | 角色可扩展 | RoleRegistry、Phase、Action、Skill 分层，新增角色不需要把规则写进 Prompt |
 | 决策可解释 | GameEvent、AgentDecision、PublishedReview 串起可回放证据链 |
-| 策略可迭代 | 赛后经验沉淀为 StrategyKnowledgeDoc，再由 Retriever 注入下一局 |
+| 策略可迭代 | 赛后经验沉淀为 StrategyKnowledgeDoc，再由 Retriever 注入下一局；Track C Wiki/Hermes 作为增量架构层承接长期知识编译 |
 
 完整架构说明见 [`docs/ARCHITECTURE_DESIGN_GUIDE.md`](docs/ARCHITECTURE_DESIGN_GUIDE.md)。
 
@@ -33,7 +33,7 @@
 ```
 Layer 1  MBTI 人格    →  决定"怎么思考"（认知风格、说话方式）
 Layer 2  Role 身份    →  定义"我是谁"（角色技能、胜利条件、反模式清单）
-Layer 3  Track C 策略 →  教"怎么赢"（动态检索知识库，加载历史对局经验）
+Layer 3  Track C 策略 →  教"怎么赢"（Retriever 加载 active 策略；Wiki/Hermes 承接长期知识设计）
 ```
 
 ---
@@ -165,6 +165,8 @@ ruff format --check backend/ scripts/ tests/ configs/
 | [`PROJECT_MODULE_DESIGN.md`](docs/PROJECT_MODULE_DESIGN.md) | 核心模块设计 |
 | [`DATA_FLOW.md`](docs/DATA_FLOW.md) | 端到端数据流 |
 | [`ARCHITECTURE_DESIGN_GUIDE.md`](docs/ARCHITECTURE_DESIGN_GUIDE.md) | 架构设计、差异化与证据索引 |
+| [`TRACK_C_HERMES_LLM_WIKI_DESIGN.md`](docs/TRACK_C_HERMES_LLM_WIKI_DESIGN.md) | Track C 的 Hermes 自进化外循环 + LLM Wiki 增量设计 |
+| [`FINAL_DELIVERY_PACKAGE.md`](docs/FINAL_DELIVERY_PACKAGE.md) | GitHub 最终交付包、展示路线和仓库边界 |
 | [`PRODUCT_TECH_DOC.md`](docs/PRODUCT_TECH_DOC.md) | 产品技术文档 |
 | [`PROJECT_ACCEPTANCE_REPORT.md`](docs/PROJECT_ACCEPTANCE_REPORT.md) | 项目总体验收报告 |
 | [`OPTIMIZATION_BENCHMARK.md`](docs/OPTIMIZATION_BENCHMARK.md) | API 调用优化基准 |

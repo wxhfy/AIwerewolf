@@ -10,7 +10,7 @@ Examples:
     EXPERIMENT_MODEL_POOL="dsv4flash:deepseek-v4-flash" \
       python scripts/track_bc_leaderboard_experiment.py --axis framework --games 20
 
-    EXPERIMENT_MODEL_POOL="doubao:deepseek-v4-flash[1m],dsv4flash:deepseek-v4-flash" \
+    EXPERIMENT_MODEL_POOL="doubao:${DOUBAO_ENDPOINT},dsv4flash:deepseek-v4-flash" \
       python scripts/track_bc_leaderboard_experiment.py --axis model --frameworks cognitive_full --games 20
 """
 
@@ -727,16 +727,17 @@ def mean_or_zero(values: Sequence[float]) -> float:
     return mean(values) if values else 0.0
 
 
-def build_rubric_leaderboard(
+def build_architecture_evidence_leaderboard(
     group_records: Sequence[dict[str, Any]],
     *,
     summary_context: dict[str, Any],
     leaderboard_payload: dict[str, Any],
 ) -> dict[str, Any]:
-    """Build a presentation leaderboard aligned with REQUIREMENTS.md scoring.
+    """Build a presentation leaderboard organized by architecture evidence.
 
     This does not replace the Track B leaderboard. It maps experiment evidence
-    into the course rubric dimensions: 20/20/30/30.
+    into the project architecture dimensions: Agent, multi-agent, engineering,
+    and B/C loop.
     """
     group_rows = aggregate_group_rows(group_records)
     if not group_rows:
@@ -1182,15 +1183,15 @@ def run_experiment(
         "raw_records": raw_game_records,
         "outputs": {
             "leaderboard_json": str(output_dir / "leaderboard.json"),
-            "rubric_leaderboard_json": str(output_dir / "rubric_leaderboard.json"),
-            "rubric_leaderboard_csv": str(output_dir / "rubric_leaderboard.csv"),
+            "architecture_evidence_leaderboard_json": str(output_dir / "architecture_evidence_leaderboard.json"),
+            "architecture_evidence_leaderboard_csv": str(output_dir / "architecture_evidence_leaderboard.csv"),
             "summary_json": str(output_dir / "summary.json"),
             "group_results_csv": str(output_dir / "group_results.csv"),
             "game_runs_jsonl": str(output_dir / "game_runs.jsonl"),
             "academic_report_md": str(output_dir / "academic_report.md"),
         },
     }
-    summary["rubric_leaderboard"] = build_rubric_leaderboard(
+    summary["architecture_evidence_leaderboard"] = build_architecture_evidence_leaderboard(
         group_records,
         summary_context=summary,
         leaderboard_payload=leaderboard_payload,
@@ -1198,11 +1199,11 @@ def run_experiment(
 
     write_jsonl(output_dir / "game_runs.jsonl", raw_game_records)
     write_group_csv(output_dir / "group_results.csv", group_records)
-    (output_dir / "rubric_leaderboard.json").write_text(
-        json.dumps(summary["rubric_leaderboard"], ensure_ascii=False, indent=2),
+    (output_dir / "architecture_evidence_leaderboard.json").write_text(
+        json.dumps(summary["architecture_evidence_leaderboard"], ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
-    write_rubric_csv(output_dir / "rubric_leaderboard.csv", summary["rubric_leaderboard"])
+    write_rubric_csv(output_dir / "architecture_evidence_leaderboard.csv", summary["architecture_evidence_leaderboard"])
     (output_dir / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
     (output_dir / "academic_report.md").write_text(
         render_academic_report(summary, leaderboard_payload, group_records),
@@ -1342,15 +1343,15 @@ def render_academic_report(
             f"{entry['critical_mistakes']} |"
         )
 
-    rubric = summary.get("rubric_leaderboard", {})
+    rubric = summary.get("architecture_evidence_leaderboard", {})
     lines.extend(
         [
             "",
-            "## Rubric Leaderboard（按评分标准映射）",
+            "## Architecture Evidence Leaderboard（按架构证据映射）",
             "",
-            "该表按 `REQUIREMENTS.md` 的 20/20/30/30 权重映射实验信号："
-            "单 Agent 能力 20%，多 Agent 协作 20%，工程完整度 30%，进阶 B/C 30%。"
-            "它用于答辩展示，不替代上方 Track B 原始指标。",
+            "该表把同一组实验信号映射到项目架构证据："
+            "Agent 决策、多 Agent 协作、工程闭环、复盘与知识回流。"
+            "它用于展示架构优势，不替代上方 Track B 原始指标。",
             "",
             "| Rank | Key | Total | Single Agent /20 | Multi-Agent /20 | Engineering /30 | Track B/C /30 | Evidence |",
             "|---:|---|---:|---:|---:|---:|---:|---|",

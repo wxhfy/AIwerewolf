@@ -227,6 +227,37 @@ def test_seer_checking_wolf_and_releasing_info_gets_higher_role_task_score() -> 
     assert released_score.role_task_score > hidden_score.role_task_score
 
 
+def test_seer_releasing_wolf_check_by_seat_number_counts_as_info_release() -> None:
+    seer = make_player("P1", "SeerA", Role.SEER, alive=True)
+    wolf = make_player("P2", "WolfA", Role.WEREWOLF, alive=False)
+    villager = make_player("P3", "VillagerA", Role.VILLAGER, alive=True)
+
+    state = make_state(
+        [seer, wolf, villager],
+        [
+            make_seer_result(1, seer, wolf, is_wolf=True),
+            make_speech(1, seer, "我是预言家，2号是我的查杀，今天归票2号。"),
+            make_vote(1, seer, wolf),
+            make_vote(1, villager, wolf),
+            make_death(1, wolf, "vote"),
+        ],
+        winner=Alignment.VILLAGE,
+    )
+
+    metrics = MetricsCalculator().compute(state)
+    report = ReviewReportBuilder().build(state, metrics)
+    seer_score = score_by_name(metrics, "SeerA")
+
+    assert seer_score.role_task_score >= 0.8
+    assert any(bonus.bonus_type == "seer_info_conversion" for bonus in bonuses_for_player(metrics, seer.id))
+    assert not any("did not release" in mistake for mistake in seer_score.mistakes)
+    assert not any("did not release" in bad_case.description for bad_case in report.bad_cases)
+    assert not any(
+        case.counterfactual_type in {"info_release", "seer_target"} and "did not" in case.original_decision
+        for case in report.counterfactuals
+    )
+
+
 def test_witch_poisoning_villager_generates_mistake_penalty() -> None:
     witch = make_player("P1", "WitchA", Role.WITCH, alive=True)
     wolf = make_player("P2", "WolfA", Role.WEREWOLF, alive=True)

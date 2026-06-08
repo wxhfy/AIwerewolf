@@ -2,7 +2,7 @@
   "project_name": "AI Werewolf",
   "report_type": "project_final_closure_report",
   "writing_style": "product_and_system_summary",
-  "one_sentence_summary": "AI Werewolf 是一个覆盖 AI 狼人杀完整对局、信息隔离、决策审计、赛后评分、知识抽取与策略回流的多智能体对战与自进化系统。",
+  "one_sentence_summary": "AI Werewolf 是一个覆盖 AI 狼人杀完整对局、信息隔离、决策审计、赛后复盘评价、知识抽取与策略回流的多智能体对战与自进化系统。",
   "core_pipeline": [
     "Play",
     "Evaluate",
@@ -81,7 +81,7 @@
       "benefits": [
         "信息隔离在代码层完成",
         "支持公开视角与主持视角",
-        "为赛后评分提供可见事实边界"
+        "为赛后复盘提供可见事实边界"
       ],
       "evidence": [
         "backend/engine/visibility.py",
@@ -181,7 +181,7 @@
     },
     {
       "name": "PostgreSQL Evidence Chain",
-      "role_in_system": "保存游戏、玩家、事件、快照、决策、评分、复盘、知识、反馈与进化记录。",
+      "role_in_system": "保存游戏、玩家、事件、快照、决策、复盘指标、报告、知识、反馈与进化记录。",
       "design_goal": "让每一步决策可审计、可复盘、可统计、可回流。",
       "design_solution": "核心表包括 games、players、game_events、game_snapshots、agent_decisions、evaluations、published_reviews、strategy_knowledge_docs、knowledge_usage_feedback 等。",
       "benefits": [
@@ -200,9 +200,9 @@
       ]
     },
     {
-      "name": "Track B Scoring and Review",
+      "name": "Track B Review and Evidence",
       "role_in_system": "逐步评价 Agent 决策并生成赛后复盘报告。",
-      "design_goal": "用过程评分解释每一步发言、投票和技能决策，而不只看胜负。",
+      "design_goal": "用过程评价解释每一步发言、投票和技能决策，而不只看胜负。",
       "design_solution": "PerStepScorer 输出 DecisionScore 与 ScoredStep，Track B 生成 PlayerReviewReport 和 PublishedReview。",
       "benefits": [
         "定位关键失误",
@@ -331,7 +331,7 @@
       ]
     },
     {
-      "stage": "第五阶段：Track B 赛后评分",
+      "stage": "第五阶段：Track B 赛后复盘评价",
       "goal": "对每一步决策进行过程评价，而不仅看胜负。",
       "main_changes": [
         "实现 PerStepScorer",
@@ -365,7 +365,7 @@
     },
     {
       "stage": "第七阶段：后端收敛与 strict mode 验收",
-      "goal": "把 DB、LLM、游戏、评分、知识和报告导出纳入统一验收。",
+      "goal": "把 DB、LLM、游戏、复盘、知识和报告导出纳入统一验收。",
       "main_changes": [
         "实现 scripts/run_backend_full_strict.py",
         "设置 REQUIRE_DB / REQUIRE_LLM / REQUIRE_TRACK_B / REQUIRE_TRACK_C",
@@ -481,7 +481,7 @@
     "needs_experiment": [
       "多局稳定性：连续 20/50 局 strict LLM 全链路",
       "检索策略在线对比：global_only / same_role_all_mbti / same_role_same_mbti / hybrid_role_mbti_global / hybrid_role_alignment_phase",
-      "Track B 评分有效性：Tier 分布、judge agreement、人工抽样一致性",
+      "Track B 复盘有效性：Tier 分布、judge agreement、人工抽样一致性",
       "Track C 知识回流：candidate 晋级率、active 池变化、回流前后过程分趋势",
       "前端展示验证：WebSocket 延迟、视角切换、完整对局可视化"
     ]
@@ -537,9 +537,9 @@
       "citation_status": "待补全正式引用"
     },
     {
-      "topic": "LLM 评审",
+      "topic": "LLM 复核",
       "work": "LLM-as-a-Judge / multi-judge panel",
-      "borrowed_idea": "用单评委和多评委评价复杂决策质量",
+      "borrowed_idea": "用单路和多路复核评价复杂决策质量",
       "mapped_module": "PerStepScorer / LLMJudgePanel",
       "citation_status": "待补全正式引用"
     }
@@ -552,7 +552,7 @@
     "图 5 信息隔离示意图",
     "图 6 决策证据链图",
     "图 7 设计演进路线图",
-    "图 8 Track B 评分流程图",
+    "图 8 Track B 复盘评价流程图",
     "图 9 Track C 知识回流流程图",
     "图 10 各阶段改进效果表",
     "图 11 多局实验占位图表",

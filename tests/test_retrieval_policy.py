@@ -93,6 +93,54 @@ def test_same_role_same_mbti_bm25_returns_empty_without_matching_mbti() -> None:
     assert results == []
 
 
+def test_hybrid_policy_does_not_fill_low_quality_docs_by_default() -> None:
+    retriever = StrategyRetriever()
+    assert (
+        retriever.build_from_docs(
+            [
+                {
+                    "doc_id": "seer-good",
+                    "situation": "查杀 表水 预言家",
+                    "strategy": "高质量预言家策略",
+                    "role": "Seer",
+                    "phase": "DAY_SPEECH",
+                    "quality": 0.95,
+                    "persona_scope": "mbti:INTJ+role:Seer",
+                },
+                {
+                    "doc_id": "seer-noisy",
+                    "situation": "查杀 表水 预言家",
+                    "strategy": "低质量噪声策略",
+                    "role": "Seer",
+                    "phase": "DAY_SPEECH",
+                    "quality": 0.2,
+                    "persona_scope": "mbti:ENFP+role:Seer",
+                },
+                {
+                    "doc_id": "global-noisy",
+                    "situation": "查杀 表水 通用",
+                    "strategy": "低质量通用噪声",
+                    "role": "global",
+                    "phase": "DAY_SPEECH",
+                    "quality": 0.1,
+                },
+            ]
+        )
+        == 3
+    )
+
+    results = retriever.search_with_keywords(
+        ["查杀"],
+        role="Seer",
+        phase="DAY_SPEECH",
+        k=3,
+        retrieval_policy=RetrievalPolicy.HYBRID_ROLE_MBTI_GLOBAL,
+        agent_context=_ctx("INTJ"),
+    )
+
+    assert [item["doc_id"] for item in results] == ["seer-good"]
+
+
 def test_same_role_same_mbti_keyword_search_returns_empty_without_matching_mbti() -> None:
     results = _retriever().search_with_keywords(
         ["查杀"],

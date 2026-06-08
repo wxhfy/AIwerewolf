@@ -256,7 +256,7 @@ def mean_or_zero(values: Sequence[float]) -> float:
     return mean(values) if values else 0.0
 
 
-def build_rubric_leaderboard(
+def build_architecture_evidence_leaderboard(
     tiers: dict[str, dict[str, Any]], leaderboard: Sequence[dict[str, Any]]
 ) -> list[dict[str, Any]]:
     if not tiers:
@@ -465,15 +465,15 @@ def render_report(payload: dict[str, Any]) -> str:
     lines.extend(
         [
             "",
-            "## 3. Rubric Leaderboard",
+            "## 3. Architecture Evidence Leaderboard",
             "",
-            "Mapped to `REQUIREMENTS.md`: single Agent 20%, multi-Agent/system 20%, engineering 30%, advanced B/C 30%.",
+            "Mapped to project architecture evidence: Agent decision quality, multi-Agent behavior, engineering health, and B/C loop.",
             "",
             "| Rank | Tier | Total | Single Agent /20 | Multi-Agent /20 | Engineering /30 | B/C /30 | Key Evidence |",
             "|---:|---|---:|---:|---:|---:|---:|---|",
         ]
     )
-    for row in payload["rubric_leaderboard"]:
+    for row in payload["architecture_evidence_leaderboard"]:
         dims = row["rubric_dimensions"]
         signals = row["evidence_signals"]
         evidence = (
@@ -505,7 +505,7 @@ def render_report(payload: dict[str, Any]) -> str:
 
     lines.extend(
         [
-            "## 5. Interpretation Against Rubric",
+            "## 5. Architecture Evidence Interpretation",
             "",
             "- Single Agent: evidence comes from real LLM decisions, role coverage, and no fallback in formal rows. This report does not inspect prompt text directly; use `docs/EXPERIMENT_SECTION_DESIGN.md` and code references for prompt-layer evidence.",
             "- Multi-Agent: evidence comes from role/team outcome, role coverage, paired seeds, and strict information isolation gate. The strongest claim is that the platform supports role-differentiated multi-agent experiments; direct deception/detection scoring still needs the Track B semantic audit output.",
@@ -537,7 +537,7 @@ def main() -> int:
     excluded_reasons = Counter(filter_reason(row) or "kept" for row in excluded)
     tiers = summarize_tiers(formal_rows)
     leaderboard = build_leaderboard(tiers)
-    rubric = build_rubric_leaderboard(tiers, leaderboard)
+    architecture_evidence = build_architecture_evidence_leaderboard(tiers, leaderboard)
     paired = [
         paired_seed_delta(formal_rows, "baseline", "anti_only"),
         paired_seed_delta(formal_rows, "baseline", "trackc_only"),
@@ -557,7 +557,7 @@ def main() -> int:
         "rubric_dimensions": RUBRIC_DIMENSIONS,
         "tier_summaries": tiers,
         "leaderboard": leaderboard,
-        "rubric_leaderboard": rubric,
+        "architecture_evidence_leaderboard": architecture_evidence,
         "paired_seed_deltas": paired,
         "role_summary": summarize_players(formal_rows, "role"),
         "team_summary": summarize_players(formal_rows, "team"),
@@ -587,7 +587,7 @@ def main() -> int:
         ],
     )
     write_csv(
-        args.output_dir / "rubric_leaderboard.csv",
+        args.output_dir / "architecture_evidence_leaderboard.csv",
         [
             {
                 "rank": row["rank"],
@@ -597,7 +597,7 @@ def main() -> int:
                 **row["rubric_dimensions"],
                 **row["evidence_signals"],
             }
-            for row in rubric
+            for row in architecture_evidence
         ],
         [
             "rank",

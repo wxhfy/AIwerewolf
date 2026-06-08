@@ -31,7 +31,7 @@
 | Track C `StrategyKnowledgeDocData` 缺 `experiment_id` | 赛后知识回流非致命失败 | 在 `backend/eval/evolution.py` 增加字段并在持久化层传递 |
 | `AbstractedLesson.to_pg_dict()` 与 Track C dataclass 字段不匹配 | 知识抽取非致命失败 | 补齐 `doc_id`、`counterfactual_ids`、`expected_metric_effects`，使用原生 JSON list |
 | 知识 upsert 合并时将字符串时间写入 DateTime | 知识回流序列化失败 | ORM 合并使用 `_now()`，输出层兼容字符串/DateTime |
-| UI smoke 等待旧版进化页文案 | 浏览器 smoke 假失败 | 更新 smoke 断言以匹配当前 `Strategy Evolution` 页面 |
+| UI smoke 等待旧版进化页文案 | 浏览器 smoke 假失败 | 更新 smoke 断言以匹配当前前端页面与路由边界 |
 
 ## 2. 自动化验收明细
 
@@ -195,7 +195,7 @@ UI smoke 覆盖：
 | 房间管理 | `backend/protocols/rooms.py` | 房间、active game、snapshot buffer | 通过 |
 | DB 持久化 | `backend/db/` | games/events/decisions/reviews/knowledge | 通过 |
 | Track B 复盘分析 | `backend/eval/per_step_scorer.py`, `track_b.py` | 决策质量指标、复盘报告、证据引用 | 通过 |
-| Track C 自进化 | `backend/eval/evolution.py`, `knowledge_abstractor.py` | lesson 抽取、知识生命周期、patch/tournament | 通过 |
+| Track C 自进化 | `backend/eval/evolution.py`, `knowledge_abstractor.py`, `docs/TRACK_C_HERMES_LLM_WIKI_DESIGN.md` | lesson 抽取、知识生命周期、patch/tournament；Wiki/Hermes 增量设计已文档化 | 通过 |
 | 前端大厅 | `frontend/app/page.tsx` | 配置房间、AI/Human 模式、设置 | 通过 |
 | 对局页 | `frontend/app/room/[id]/play/page.tsx` | 三栏玩家、事件流、状态栏、投票/发言/结果 | 通过 |
 | Human 模式 | `frontend/app/room/[id]/human/`, hooks | 真人行动输入、身份揭示、目标选择 | 通过 |
@@ -218,6 +218,10 @@ Evolve 经验抽取
   -> StrategyKnowledgeDoc(candidate/active/deprecated)
 Retrieve 下一局策略回流
   -> StrategyRetriever 注入 Agent 策略层
+
+Optional offline layer
+  -> Track C LLM Wiki / Hermes DreamJob
+  -> candidate patch / candidate StrategyKnowledgeDoc
 ```
 
 该设计使系统具备三个能力：能玩、能解释、能积累。
@@ -301,7 +305,7 @@ Track B 关注每一步行为质量：
 
 ### 4.7 Track C：知识抽取与安全回流
 
-Track C 从 Track B 的高光和失误中抽取 lesson，形成 `strategy_knowledge_docs`。
+Track C 从 Track B 的高光和失误中抽取 lesson，当前由 `strategy_knowledge_docs` 作为 runtime 策略池承担安全检索和生命周期管理。新增设计明确补充两层：Wiki 用 Markdown 组织复盘、实验和使用反馈；Hermes-style 外循环提出 candidate patch 并进行验证。新增层不绕过 runtime 的 candidate/active/deprecated 门控。
 
 生命周期：
 
@@ -329,7 +333,7 @@ candidate -> active -> deprecated
 | Prompt 分层 | 人设、身份、策略混杂 | Persona / Role / Strategy 三层 | 策略可独立实验和回流 |
 | 策略检索 | 策略写死在 Prompt 中 | StrategyRetriever + RetrievalPolicy | active 知识可动态进入决策 |
 | Track B | 胜负不能解释质量 | PerStepScorer + PublishedReview | 能定位高光、失误和证据 |
-| Track C | 复盘不能复用 | KnowledgeAbstractor + knowledge docs | 形成 Play-Evaluate-Evolve 闭环 |
+| Track C | 复盘不能复用 | KnowledgeAbstractor + knowledge docs；Wiki + Hermes DreamJob 作为增量设计 | 形成 Play-Evaluate-Evolve 闭环 |
 | strict/smoke | 分散测试无法证明整体 | pytest + e2e + UI smoke + visibility strict | 当前本地验收闭环通过 |
 
 设计演进总结：系统先把规则控制权从 LLM 中抽离到引擎，再把真实状态与可见状态分离，随后通过审计链条将每个 Agent 行为结构化，最后把复盘结果抽象为下一局可检索的策略知识。这个演进路径保证了工程正确性、狼人杀公平性和进阶课题的可解释性。
@@ -347,6 +351,6 @@ candidate -> active -> deprecated
 
 ## 7. 可放入最终交付报告的摘要
 
-本项目完成了一个 AI 狼人杀多智能体对战与自进化系统。系统以 `WerewolfGame` 为规则核心，支持从夜晚行动、白天发言、投票放逐到胜负判定的完整对局流程；以 `Visibility / PlayerView` 保证每个 Agent 只能看到身份允许的信息；以 `CognitiveAgent` 和 AgentLoop 实现角色化决策、记忆、社交判断和工具调用；以 PostgreSQL 保存事件、快照、决策和复盘证据链；以 Track B 对每一步决策进行赛后复盘分析并生成复盘报告；以 Track C 将高光和失误抽象为策略知识，通过 candidate/active/deprecated 生命周期管理后回流到下一局策略检索层。
+本项目完成了一个 AI 狼人杀多智能体对战与自进化系统。系统以 `WerewolfGame` 为规则核心，支持从夜晚行动、白天发言、投票放逐到胜负判定的完整对局流程；以 `Visibility / PlayerView` 保证每个 Agent 只能看到身份允许的信息；以 `CognitiveAgent` 和 AgentLoop 实现角色化决策、记忆、社交判断和工具调用；以 PostgreSQL 保存事件、快照、决策和复盘证据链；以 Track B 对每一步决策进行赛后复盘分析并生成复盘报告；以 Track C 将高光和失误抽象为策略知识，通过 candidate/active/deprecated 生命周期管理后回流到下一局策略检索层；同时新增 Wiki + Hermes-style 设计文档和 wiki 骨架，用于后续长期知识编译与候选策略验证。
 
 本轮验收在本地可复现环境下完成，核心自动化结果为：全量 pytest `449 passed, 27 skipped`，后端 E2E smoke passed，信息隔离专项 `92 passed, 0 failed`，前端 lint/build passed，Playwright UI smoke passed。系统已具备答辩演示所需的完整对局、观战 UI、复盘报告、复盘看板和策略进化闭环。

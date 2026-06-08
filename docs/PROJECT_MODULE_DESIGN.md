@@ -253,15 +253,15 @@
 
 **当前限制**：实际 Tier 触发比例、judge agreement 和人工一致性需要补实验。
 
-## 8. KnowledgeAbstractor
+## 8. Track C Knowledge Layer
 
-**模块定位**：Track C 经验抽取器。
+**模块定位**：Track C 经验抽取、runtime 策略回流，以及 Wiki/Hermes 增量设计的连接层。
 
 **输入输出**：
 
 | 输入 | 输出 |
 |---|---|
-| PlayerReviewReport、ScoredStep | AbstractedLesson、StrategyKnowledgeDoc |
+| PlayerReviewReport、ScoredStep | AbstractedLesson、StrategyKnowledgeDoc；Wiki source item 属于离线增量层 |
 
 **内部流程**：
 
@@ -271,6 +271,10 @@
 4. 对 lesson 去重。
 5. 标记 experiment_id。
 6. 写入 `strategy_knowledge_docs`，默认 status=candidate。
+7. 可选离线层将复盘、策略文档和使用反馈作为 Track C Wiki 的 raw sources。
+8. Hermes-style DreamJob 可生成 candidate patch，验证后同步回 runtime 策略池。
+
+详细设计见 [`TRACK_C_HERMES_LLM_WIKI_DESIGN.md`](TRACK_C_HERMES_LLM_WIKI_DESIGN.md)。
 
 **关键设计**：
 

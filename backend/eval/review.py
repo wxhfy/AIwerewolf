@@ -89,6 +89,97 @@ def _vnext_safe_numeric(features: dict) -> dict:
     }
 
 
+def _player_from_reference_payload(state: GameState, payload: dict[str, Any]) -> Player | None:
+    """Resolve a player from a payload containing target_id/target_name."""
+    target_id = payload.get("target_id")
+    if target_id:
+        try:
+            return state.player(str(target_id))
+        except Exception:
+            pass
+
+    target_name = str(payload.get("target_name") or "")
+    if target_name:
+        return next((player for player in state.players if player.name == target_name), None)
+    return None
+
+
+def _player_reference_keys(player: Player | None, payload: dict[str, Any] | None = None) -> set[str]:
+    keys: set[str] = set()
+    if player is not None:
+        keys.update({player.id, player.name})
+    if payload:
+        for key in ("target_id", "target_name"):
+            value = str(payload.get(key) or "")
+            if value:
+                keys.add(value)
+    return {key for key in keys if key}
+
+
+def _speech_mentions_player(
+    speech: str,
+    player: Player | None,
+    *,
+    extra_names: Sequence[str] = (),
+) -> bool:
+    text = str(speech or "")
+    names = list(extra_names)
+    if player is not None:
+        names.extend([player.id, player.name])
+
+    if any(name and name in text for name in names):
+        return True
+
+    if player is None:
+        return False
+
+    seat = getattr(player, "seat", None)
+    if seat is None:
+        return False
+
+    seat_text = re.escape(str(seat))
+    seat_patterns = [
+        rf"(?<!\d){seat_text}\s*[号號](?:玩家)?",
+        rf"玩家\s*{seat_text}\b",
+        rf"(?:@|#)\s*{seat_text}\b",
+        rf"\b(?:seat|player)\s*{seat_text}\b",
+    ]
+    return any(re.search(pattern, text, flags=re.IGNORECASE) for pattern in seat_patterns)
+
+
+def _speech_mentions_reference_payload(state: GameState, speech: str, payload: dict[str, Any]) -> bool:
+    player = _player_from_reference_payload(state, payload)
+    return _speech_mentions_player(
+        speech,
+        player,
+        extra_names=[
+            str(payload.get("target_id") or ""),
+            str(payload.get("target_name") or ""),
+        ],
+    )
+
+
+def _released_check_targets_from_context(state: GameState, ctx: _PlayerContext) -> set[str]:
+    released: set[str] = set()
+    for check_event in ctx.private_info_events:
+        if check_event.payload.get("kind") != "seer_result":
+            continue
+        for speech_event in ctx.speech_events:
+            if speech_event.day < check_event.day:
+                continue
+            if _speech_mentions_reference_payload(
+                state, str(speech_event.payload.get("speech", "")), check_event.payload
+            ):
+                released.update(
+                    _player_reference_keys(
+                        _player_from_reference_payload(state, check_event.payload),
+                        check_event.payload,
+                    )
+                )
+                break
+    return released
+
+
 class VNextScorer:
     """vNext scoring engine using PairwiseLogisticRanker + baseline comparison."""
 
@@ -889,7 +980,12 @@ class ReviewBonusDetector:
                     (
                         speech
                         for speech in ctx.speech_events
-                        if target_name and target_name in str(speech.payload.get("speech", ""))
+                        if speech.day >= check_event.day
+                        and _speech_mentions_reference_payload(
+                            state,
+                            str(speech.payload.get("speech", "")),
+                            check_event.payload,
+                        )
                     ),
                     None,
                 )
@@ -941,17 +1037,22 @@ class ReviewBonusDetector:
                 target_name = str(check_event.payload.get("target_name") or "")
                 if not target_name:
                     continue
+                target_player = _player_from_reference_payload(state, check_event.payload)
                 support_speech = next(
                     (
                         speech
                         for speech in ctx.speech_events
-                        if speech.day >= check_event.day and target_name in str(speech.payload.get("speech", ""))
+                        if speech.day >= check_event.day
+                        and _speech_mentions_reference_payload(
+                            state,
+                            str(speech.payload.get("speech", "")),
+                            check_event.payload,
+                        )
                     ),
                     None,
                 )
                 if support_speech is None:
                     continue
-                target_player = next((player for player in state.players if player.name == target_name), None)
                 if target_player is None or not target_player.alive:
                     continue
                 bonuses.append(
@@ -1542,10 +1643,14 @@ class MetricsCalculator:
                     if event.payload.get("kind") == "seer_result" and event.payload.get("is_wolf")
                 ]
                 if wolf_check_events:
-                    released_targets = self._released_check_targets(ctx)
+                    released_targets = self._released_check_targets(state, ctx)
                     for check_event in wolf_check_events:
                         target_name = str(check_event.payload.get("target_name") or "")
-                        if target_name and target_name not in released_targets:
+                        target_keys = _player_reference_keys(
+                            _player_from_reference_payload(state, check_event.payload),
+                            check_event.payload,
+                        )
+                        if target_name and not (target_keys & released_targets):
                             reports.append(
                                 self._report(
                                     state,
@@ -2014,7 +2119,7 @@ class MetricsCalculator:
                 if e.payload.get("kind") == "seer_result" and e.payload.get("is_wolf")
             ]
             total_checks = [e for e in ctx.private_info_events if e.payload.get("kind") == "seer_result"]
-            release_score = self._seer_release_score(ctx)
+            release_score = self._seer_release_score(state, ctx)
             influence = self._seer_vote_influence(state, ctx)
             check_value = 0.0 if not total_checks else (0.35 + 0.65 * (len(wolf_checks) / len(total_checks)))
             if wolf_checks:
@@ -2092,15 +2197,8 @@ class MetricsCalculator:
                 checked_good_ids.add(target_id)
         return checked_good_ids, checked_wolf_ids
 
-    def _released_check_targets(self, ctx: _PlayerContext) -> set[str]:
-        targets: set[str] = set()
-        for event in ctx.speech_events:
-            speech = str(event.payload.get("speech", ""))
-            for private_event in ctx.private_info_events:
-                target_name = str(private_event.payload.get("target_name") or "")
-                if target_name and target_name in speech:
-                    targets.add(target_name)
-        return targets
+    def _released_check_targets(self, state: GameState, ctx: _PlayerContext) -> set[str]:
+        return _released_check_targets_from_context(state, ctx)
 
     def _first_speech_day(self, ctx: _PlayerContext) -> int | None:
         if not ctx.speech_events:
@@ -2188,15 +2286,20 @@ class MetricsCalculator:
                 count += 1
         return count
 
-    def _seer_release_score(self, ctx: _PlayerContext) -> float:
-        checks = [event.payload for event in ctx.private_info_events if event.payload.get("kind") == "seer_result"]
+    def _seer_release_score(self, state: GameState, ctx: _PlayerContext) -> float:
+        checks = [event for event in ctx.private_info_events if event.payload.get("kind") == "seer_result"]
         if not checks:
             return 0.0
         released = 0
-        for payload in checks:
-            target_name = str(payload.get("target_name") or "")
+        for check_event in checks:
             for speech_event in ctx.speech_events:
-                if speech_event.day >= 1 and target_name and target_name in str(speech_event.payload.get("speech", "")):
+                if speech_event.day < check_event.day:
+                    continue
+                if _speech_mentions_reference_payload(
+                    state,
+                    str(speech_event.payload.get("speech", "")),
+                    check_event.payload,
+                ):
                     released += 1
                     break
         return self._clamp(released / len(checks))
@@ -4063,10 +4166,14 @@ class CounterfactualAnalyzer:
                     bonus.player_id == player.id and bonus.bonus_type == "seer_info_conversion"
                     for bonus in review_bonuses
                 ):
-                    released_targets = self._released_check_targets(ctx)
+                    released_targets = self._released_check_targets(state, ctx)
                     for check_event in wolf_checks:
                         target_name = str(check_event.payload.get("target_name") or "")
-                        if target_name and target_name in released_targets:
+                        target_keys = _player_reference_keys(
+                            _player_from_reference_payload(state, check_event.payload),
+                            check_event.payload,
+                        )
+                        if target_keys & released_targets:
                             continue
                         day = self._first_speech_day(ctx) or check_event.day
                         bad_case_id = self._find_bad_case_id(bad_cases, day, player.name, "speech")
@@ -4378,7 +4485,15 @@ class CounterfactualAnalyzer:
                 contexts = self._build_contexts(state)
                 ctx = contexts.get(seer_player.id)
                 if ctx:
-                    released = any(target.name in (s.payload.get("speech", "") or "") for s in ctx.speech_events)
+                    released = any(
+                        speech_event.day >= event.day
+                        and _speech_mentions_player(
+                            str(speech_event.payload.get("speech", "")),
+                            target,
+                            extra_names=[target.id, target.name],
+                        )
+                        for speech_event in ctx.speech_events
+                    )
                     if not released:
                         cases.append(
                             CounterfactualCase(
@@ -5258,18 +5373,9 @@ class CounterfactualAnalyzer:
                         contexts[pid].private_info_events.append(event)
         return contexts
 
-    def _released_check_targets(self, ctx: _PlayerContext) -> set[str]:
+    def _released_check_targets(self, state: GameState, ctx: _PlayerContext) -> set[str]:
         """Find seer check targets that were publicly mentioned in speeches."""
-        released: set[str] = set()
-        for check in ctx.private_info_events:
-            target_name = str(check.payload.get("target_name") or "")
-            if not target_name:
-                continue
-            for speech in ctx.speech_events:
-                if target_name in (speech.payload.get("speech", "") or ""):
-                    released.add(target_name)
-                    break
-        return released
+        return _released_check_targets_from_context(state, ctx)
 
     def _first_speech_day(self, ctx: _PlayerContext) -> int | None:
         """Find the first day this player made a public speech."""
@@ -5424,17 +5530,8 @@ class CounterfactualAnalyzer:
                         contexts[player_id].private_info_events.append(event)
         return contexts
 
-    def _released_check_targets(self, ctx: _PlayerContext) -> set[str]:
-        released_targets: set[str] = set()
-        for payload in [
-            event.payload for event in ctx.private_info_events if event.payload.get("kind") == "seer_result"
-        ]:
-            target_name = str(payload.get("target_name") or "")
-            if not target_name:
-                continue
-            if any(target_name in str(event.payload.get("speech", "")) for event in ctx.speech_events):
-                released_targets.add(target_name)
-        return released_targets
+    def _released_check_targets(self, state: GameState, ctx: _PlayerContext) -> set[str]:
+        return _released_check_targets_from_context(state, ctx)
 
     def _first_speech_day(self, ctx: _PlayerContext) -> int | None:
         if not ctx.speech_events:

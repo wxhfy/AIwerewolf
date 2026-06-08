@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from typing import Sequence
 
+from scripts import analyze_formal_experiment_results as formal
 from scripts import track_bc_leaderboard_experiment as exp
 
 
@@ -107,9 +108,9 @@ def test_framework_experiment_exports_track_c_delta(tmp_path: Path) -> None:
     assert summary["leaderboard_summary"]["paired_delta"]["avg_adjusted_final_score_delta"] > 0
     assert summary["role_win_rates"]["framework:cognitive_full"]["macro_role_win_rate"] > 0
     assert summary["bootstrap_reliability"]["iterations"] > 0
-    assert (tmp_path / "rubric_leaderboard.json").exists()
-    assert (tmp_path / "rubric_leaderboard.csv").exists()
-    rubric_entries = summary["rubric_leaderboard"]["entries"]
+    assert (tmp_path / "architecture_evidence_leaderboard.json").exists()
+    assert (tmp_path / "architecture_evidence_leaderboard.csv").exists()
+    rubric_entries = summary["architecture_evidence_leaderboard"]["entries"]
     assert rubric_entries[0]["group_key"] == "framework:cognitive_full"
     assert set(rubric_entries[0]["rubric_dimensions"]) == {
         "single_agent",
@@ -119,7 +120,7 @@ def test_framework_experiment_exports_track_c_delta(tmp_path: Path) -> None:
     }
     assert rubric_entries[0]["rubric_total_score"] > rubric_entries[-1]["rubric_total_score"]
     report = (tmp_path / "academic_report.md").read_text(encoding="utf-8")
-    assert "Rubric Leaderboard" in report
+    assert "Architecture Evidence Leaderboard" in report
     assert "Track C 非冗余性说明" in report
     assert "Bootstrap Reliability" in report
 
@@ -174,14 +175,17 @@ def test_model_axis_splits_single_game_metrics_by_player_model(tmp_path: Path) -
     assert summary["leaderboard_summary"]["can_distinguish"] is True
     assert summary["role_distribution_audit"]["model:fake:model-a"]["seat_samples"] > 0
     assert summary["role_win_rates"]["model:fake:model-a"]["micro_role_win_rate"] > 0
-    assert summary["rubric_leaderboard"]["weights"] == {
+    assert summary["architecture_evidence_leaderboard"]["weights"] == {
         "single_agent": 20.0,
         "multi_agent": 20.0,
         "engineering": 30.0,
         "advanced_bc": 30.0,
     }
     assert "role_wins" in (tmp_path / "group_results.csv").read_text(encoding="utf-8").splitlines()[0]
-    assert "rubric_total_score" in (tmp_path / "rubric_leaderboard.csv").read_text(encoding="utf-8").splitlines()[0]
+    assert (
+        "rubric_total_score"
+        in (tmp_path / "architecture_evidence_leaderboard.csv").read_text(encoding="utf-8").splitlines()[0]
+    )
     assert (tmp_path / "group_results.csv").exists()
 
 
@@ -208,3 +212,24 @@ def test_experiment_docstring_uses_v4flash_not_pro() -> None:
 
     assert "deepseek-v4-flash" in doc
     assert "deepseek-v4-pro" not in doc
+
+
+def test_formal_analysis_keeps_only_volcengine_v4flash_rows() -> None:
+    rows = [
+        {"provider": "dsv4flash", "model": "deepseek-v4-flash", "tier": "baseline", "winner": "wolf"},
+        {"provider": "doubao", "model_pool": ["deepseek-v4-flash"], "tier": "anti_only", "winner": "village"},
+        {"provider": "deepseek", "model": "deepseek-v4-flash", "tier": "baseline", "winner": "wolf"},
+        {"provider": "dsv4flash", "model": "deepseek-v4-pro", "tier": "baseline", "winner": "wolf"},
+        {"provider": "fake", "model": "deepseek-v4-flash", "tier": "baseline", "winner": "wolf"},
+        {"provider": "doubao", "model": "unknown-model", "tier": "baseline", "winner": "wolf"},
+    ]
+
+    kept = [row for row in rows if formal.keep_formal_row(row)]
+    rejected_reasons = [formal.filter_reason(row) for row in rows if not formal.keep_formal_row(row)]
+
+    assert len(kept) == 2
+    assert {row["provider"] for row in kept} == {"dsv4flash", "doubao"}
+    assert "non-Volcengine provider: deepseek" in rejected_reasons
+    assert "pro model row" in rejected_reasons
+    assert "fake/offline row" in rejected_reasons
+    assert "model is not explicitly deepseek-v4-flash" in rejected_reasons

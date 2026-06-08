@@ -2,7 +2,7 @@
 
 > **版本**：V2.1 · **更新日期**：2026-06-08 · **许可**：MIT © 2026 wxhfy
 >
-> **面向读者**：技术团队成员、项目评审老师、潜在合作者
+> **面向读者**：技术团队成员、课程指导老师、潜在合作者
 
 ---
 
@@ -45,7 +45,7 @@
 | **三层认知架构** | MBTI 人格 + Role 身份 + 策略知识，决定 Agent 如何思考与行动 |
 | **工具调用式决策** | Agent 通过 7 种工具主动检索信息，而非被动接收全部上下文 |
 | **分层复盘分析** | 确定性规则、轻量 LLM 和高影响决策复核组合，兼顾成本与质量 |
-| **知识自进化** | 经验提炼 → 入库（候选池）→ 质量筛选 → 晋升（活跃池）→ 检索注入 |
+| **知识自进化** | 经验提炼 → 入库 → 生命周期门控 → 检索注入；Wiki/Hermes 承接后续扩展 |
 | **证据全链追溯** | 每条决策从引擎事件 → Agent 决策 → 复盘分析 → 知识抽取，全链路可追溯 |
 | **真人 vs AI 混战** | HumanAgent 暂停对局等待输入，支持人类玩家加入博弈 |
 
@@ -249,29 +249,43 @@ confidence_allowed ──→ visibility_allowed ──→ privacy_safe ──→
 
 ### 3.7 知识进化（Track C）
 
-**定位**：把 Track B 的复盘结论沉淀为可复用的策略知识，回流到下一代 Agent。
+**定位**：把 Track B 的复盘结论沉淀为可复用的策略知识。当前 runtime 链路已经支持 lesson 入库、生命周期管理和检索回流；新增设计在其外侧补充 Wiki 知识编译层和 Hermes-style 候选策略验证层。
 
 **闭环流程**：
 
 ```
-Track B 复盘 ──→ KnowledgeAbstractor 提取经验 ──→ 写入 candidate 候选池
-                                                        │
-                                               promote.py 质量筛选
+当前 runtime 链路：
+Track B 复盘 ──→ KnowledgeAbstractor 提取经验 ──→ strategy_knowledge_docs(candidate/active)
                                                         │
                                                         ▼
-                                           active 活跃池 ──→ StrategyRetriever
-                                                                     │
-                                                        ┌────────────┘
+                                          StrategyRetriever 检索注入
+                                                        │
                                                         ▼
                                               下一局 Agent 检索使用
+
+增量设计：
+Track B / strategy docs / usage feedback ──→ Track C Wiki 编译
+                                                        │
+                                                        ▼
+                                      Hermes DreamJob 生成 candidate patch
+                                                        │
+                                                        ▼
+                                  A/B tournament + usage feedback 验证
+                                                        │
+                                                        ▼
+                                           candidate 策略池
+                                                        │
+                                                        ▼
+                                      lifecycle + 4-filter 后进入 active
 ```
 
-**知识生命周期**：`candidate → active → deprecated`；同时带有 L0–L4 置信分级。
+**知识生命周期**：runtime 知识仍走 `candidate → active → deprecated`，同时带有 L0–L4 置信分级；wiki 内容只负责知识组织，若同步回 runtime，只能从 candidate 开始。
 
 **防污染机制**：
 1. 新知识默认入 candidate 池，不直接污染 active
 2. 4-filter 安全管线严格防止当前局私密信息泄漏
 3. `TIER_EXPERIMENT_ID` 隔离不同实验的知识池
+4. Wiki-authored 内容只能同步为 candidate，不能直接成为 active
 
 **关键指标**：单局提炼约 99 条知识；活跃知识池零污染（935→935, delta=0）；知识回链原始事件 100%。
 
@@ -297,10 +311,22 @@ DecisionScore[] → ScoredStep[] → PlayerReviewReport[]
 KnowledgeAbstractor.abstract_from_game() → AbstractedLesson[]
      │
      ▼
-strategy_knowledge_docs 表（status=candidate）
-     │  promote.py
+strategy_knowledge_docs 表（status=candidate/active）
+     │  lifecycle + 4-filter
      ▼
 active 知识池 → StrategyRetriever → AgentLoop → 下一局决策
+
+Optional offline layer:
+PublishedReview / strategy docs / usage feedback
+     │
+     ▼
+Track C Wiki（docs/wiki/，供人类/LLM/Obsidian 审核）
+     │
+     ▼
+Hermes DreamJob / StrategyPatch / A/B tournament
+     │
+     ▼
+candidate StrategyKnowledgeDoc
 ```
 
 ### 4.2 单条决策追溯链路
@@ -521,7 +547,7 @@ _TEST_ALLOW_FAKE_LLM=true LLM_PROVIDER=fake pytest tests/ -q  # 离线模式
 - ✅ 认知 Agent（Observe→Think→Act + 工具调用 + 信念/人格/记忆）
 - ✅ 32 个命名角色（16 型 MBTI），狼队协同
 - ✅ Track B 复盘系统（三级分析级联 + LLM 复核 + 反事实复盘 + PublishedReview）
-- ✅ Track C 知识进化（提炼 → 入库 → 晋级 → 检索注入 → 闭环验证）
+- ✅ Track C runtime 知识进化（提炼 → 入库 → 生命周期管理 → 检索注入）；Wiki + Hermes 候选策略已明确为增量设计并建立 wiki 骨架
 - ✅ 全栈观战 UI 与断线重连
 - ✅ PostgreSQL 证据链（当前 20 张核心 ORM 表；历史快照含 25 万+ 条 agent_decisions）
 - ✅ Strict Mode 全链路验收（edbde010 局：7 人 / 村民胜 / 1553s / PASS）
@@ -541,8 +567,9 @@ _TEST_ALLOW_FAKE_LLM=true LLM_PROVIDER=fake pytest tests/ -q  # 离线模式
 | 优先级 | 事项 | 说明 |
 |:------:|------|------|
 | P0 | Track B/C 在线 A/B 验证 | 扩样本到 50+ 局/tier，对核心命题下定论 |
-| P0 | 法官一致性人工抽样 | 验证 Scoring 分数与人工判断对齐度 |
-| P1 | 自进化外循环 | 多轮进化迭代，胜率趋势验证 |
+| P0 | 复核一致性人工抽样 | 验证复盘评价与人工判断对齐度 |
+| P1 | Wiki ingest/lint/sync | 将 Track B 复盘、策略文档和实验反馈持续编译为可审核 wiki，并同步候选策略 |
+| P1 | 自进化外循环 | 多轮 Hermes-style 进化迭代，胜率趋势验证 |
 | P1 | Paired Seed 对照实验 | 量化分层认知 / 知识回流的净效果 |
 | P1 | 角色级细分指标 | 按角色统计胜率 + 过程分 |
 | P2 | 知识图谱复盘层 | 基于策略文档构建图谱关系 |

@@ -181,6 +181,45 @@ def test_track_c_lessons_enter_strategy_layer_only(monkeypatch) -> None:
     assert "Convert confirmed public information" in prompt
 
 
+def test_track_c_auto_retrieval_uses_precision_policy(monkeypatch) -> None:
+    captured = {}
+
+    def fake_prod_retrieve(*args, **kwargs):
+        captured["args"] = args
+        captured["kwargs"] = kwargs
+        return [
+            {
+                "doc_id": "doc-prod-seer",
+                "quality": 0.91,
+                "situation": "Seer DAY_VOTE",
+                "strategy": "Use public check information to vote.",
+                "doc_type": "accepted_patch",
+                "status": "active",
+            }
+        ]
+
+    monkeypatch.setattr(agent_loop_module, "time", agent_loop_module.time)
+    monkeypatch.setattr("backend.agents.cognitive.retrieval_prod.retrieve_strategies_prod", fake_prod_retrieve)
+    agent_loop_module._TRACK_C_RETRIEVAL_CACHE.clear()
+    obs = Observation(
+        player_id="P1",
+        player_name="Alice",
+        player_seat=1,
+        player_role="Seer",
+        day=1,
+        phase="DAY_VOTE",
+        alive=[PlayerInfo(id="P1", name="Alice", seat=1, alive=True)],
+    )
+
+    lessons = agent_loop_module._retrieve_track_c_strategy_lessons(obs, "vote")
+
+    assert lessons[0]["doc_id"] == "doc-prod-seer"
+    assert captured["kwargs"]["retrieval_policy"].value == "hybrid_role_alignment_phase"
+    assert captured["kwargs"]["alignment"] == "village"
+    assert "预言家" in captured["kwargs"]["keywords"]
+    assert "投票" in captured["kwargs"]["keywords"]
+
+
 def test_rules_tool_answers_mechanics_without_recommendation() -> None:
     obs = Observation(
         player_id="P1",

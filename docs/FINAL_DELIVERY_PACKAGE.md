@@ -31,7 +31,8 @@
 | 项目需求与范围 | `REQUIREMENTS.md`, `docs/prd.md` | 说明项目定位、核心需求、功能范围和交付边界 | 已具备 |
 | 架构与差异化 | `docs/ARCHITECTURE_DESIGN_GUIDE.md` | 解释与常见方法不同在哪里、设计优势是什么、模块入口在哪里 | 已具备 |
 | 核心模块设计 | `docs/PROJECT_MODULE_DESIGN.md` | 逐模块说明职责、输入输出、内部流程、验收方式和限制 | 已具备 |
-| 端到端数据流 | `docs/DATA_FLOW.md` | 展示 GameEvent、AgentDecision、复盘、知识回流之间的证据链 | 已具备 |
+| 端到端数据流 | `docs/DATA_FLOW.md` | 展示 GameEvent、AgentDecision、复盘、runtime 策略池和知识回流之间的证据链 | 已具备 |
+| Track C 增量设计 | `docs/TRACK_C_HERMES_LLM_WIKI_DESIGN.md`, `docs/wiki/` | 明确 Hermes-style 自进化外循环 + Wiki 的后续扩展边界，并提供 Obsidian-compatible Markdown 骨架 | 已具备 |
 | 产品技术文档 | `docs/PRODUCT_TECH_DOC.md` | 覆盖产品定位、技术栈、核心流程、部署配置和工程能力 | 已具备 |
 | 项目报告草稿 | `docs/PROJECT_FINAL_REPORT_DRAFT.md` | 可作为最终报告正文基础，重点讲系统能力和架构设计 | 已具备 |
 | 验收报告 | `docs/PROJECT_ACCEPTANCE_REPORT.md`, `docs/backend_acceptance_criteria.md` | 说明后端、前端、信息隔离、复盘、知识回流等模块的验证方式 | 已具备 |
@@ -47,12 +48,12 @@
 最终展示建议按以下顺序展开：
 
 1. **项目定位**：AI Werewolf 是信息不对称下的多 Agent 对战系统，不是单 prompt 游戏 demo。
-2. **架构主线**：规则引擎主控 -> 信息隔离 -> 角色化 Agent -> 决策审计 -> 复盘 -> 知识回流。
+2. **架构主线**：规则引擎主控 -> 信息隔离 -> 角色化 Agent -> 决策审计 -> 复盘 -> runtime 策略池 -> 知识回流。
 3. **与现有方法不同**：对比单 prompt、普通 AIWolf 回调 Agent、真人房间系统、只看胜负统计、硬编码角色逻辑。
 4. **系统运行**：从大厅创建房间，到观战页看到发言、投票、夜晚行动和终局。
 5. **真人混战**：展示 `/room/[id]/human` 如何让真人玩家和 AI 进入同一局。
 6. **复盘报告**：展示 `/games/[id]/report` 中的关键行为、证据链和建议。
-7. **知识回流**：说明 Track C 如何把复盘经验转为候选策略知识，再经检索进入后续对局。
+7. **知识回流**：说明 Track C 如何把复盘经验写入候选策略池，经生命周期门控后由 Retriever 进入后续对局；Wiki/Hermes 作为后续扩展路线展示。
 8. **验证结果**：展示 pytest、ruff、Next.js build、UI smoke、visibility strict 和 strict run 的验证入口。
 
 ## 4. GitHub 仓库应保持的样子
@@ -69,7 +70,7 @@ GitHub 仓库中不应保留：
 - `.env`、API Key、真实账号、私有日志。
 - `data/`、`logs/`、`references/`、`models/`、`.venv/`、`node_modules/`、`.next/`。
 - 大体积模型文件、临时截图、实验输出 JSONL、数据库备份。
-- 带旧评分规则口径、内部临时审计口径、未验证夸大结论的草稿。
+- 带旧赛制口径、内部临时审计口径、未验证夸大结论的草稿。
 
 ## 5. 最终自检命令
 
@@ -77,7 +78,6 @@ GitHub 仓库中不应保留：
 
 ```bash
 git status --short --branch
-git grep -n -I -E '评分标准|评分权重|课程评价标准|Rubric|rubric|满分|奖金|评委|评审团|打分|SCORING_RUBRIC|展示指南|进化看板|策略进化面板|frontend/app/evolution' -- '*.md' '*.mdx' '*.html' '*.svg' || true
 git grep -n -I -E 'wolf_secret_2026|sk-[A-Za-z0-9]|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}|Bearer [A-Za-z0-9._-]{20,}|API_KEY=[^<[:space:]]|SECRET_KEY=[^<[:space:]]|PASSWORD=[^<[:space:]]' -- . ':!frontend/package-lock.json' || true
 git ls-files | rg '(^|/)(\.env$|__pycache__|node_modules|\.next|data/|models/|references/|\.db$|\.sqlite$|\.log$|\.jsonl$|outputs/)' || true
 ruff check backend/ scripts/ tests/ configs/
@@ -91,4 +91,4 @@ node tests/ui_smoke.mjs
 
 当前交付包已经能覆盖一个全栈/AI 实战项目通常需要的内容：项目说明、运行方式、前后端代码、架构设计、差异化说明、模块设计、数据流、验收报告、实验计划、演示图表、PPT/PDF 和自动化验证入口。
 
-最终答辩或展示中应重点讲架构设计和证据链，不应复述外部评分规则，也不应把尚未平衡完成的实验写成已证明的显著提升结论。
+最终答辩或展示中应重点讲架构设计和证据链，不应复述外部评选细则，也不应把尚未平衡完成的实验写成已证明的显著提升结论。
