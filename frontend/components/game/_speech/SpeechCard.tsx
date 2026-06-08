@@ -20,6 +20,7 @@ export interface SpeechCardProps {
   headerRight?: React.ReactNode;
   /** 附加样式 */
   className?: string;
+  testId?: string;
 }
 
 /**
@@ -31,12 +32,12 @@ export interface SpeechCardProps {
  *   │  body: 发言正文 / 思考占位           │
  *   └─────────────────────────────────────┘
  */
-export function SpeechCard({ player, seat, name, children, isSpeaking, headerRight, className }: SpeechCardProps) {
+export function SpeechCard({ player, seat, name, children, isSpeaking, headerRight, className, testId }: SpeechCardProps) {
   const displaySeat = seat ?? player?.seat;
   const displayName = player?.name || name;
   
   return (
-    <div className={cn("py-1.5 animate-slide-in", className)}>
+    <div className={cn("py-1.5 animate-slide-in", className)} data-testid={testId}>
       <div
         className={cn(
           // 基础样式

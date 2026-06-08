@@ -12,6 +12,8 @@ export interface GameSettings {
   modelName: string;
   apiKey: string;
   baseUrl: string;
+  apiFormat: string;
+  authEnvVar: string;
 }
 
 interface SettingsModalProps {
@@ -29,6 +31,8 @@ export function SettingsModal({ isOpen, onClose, currentSettings, onSave }: Sett
   const [modelName, setModelName] = useState(currentSettings.modelName);
   const [apiKey, setApiKey] = useState(currentSettings.apiKey);
   const [baseUrl, setBaseUrl] = useState(currentSettings.baseUrl);
+  const [apiFormat, setApiFormat] = useState(currentSettings.apiFormat);
+  const [authEnvVar, setAuthEnvVar] = useState(currentSettings.authEnvVar);
   const [showApiKey, setShowApiKey] = useState(false);
 
   useEffect(() => {
@@ -40,6 +44,8 @@ export function SettingsModal({ isOpen, onClose, currentSettings, onSave }: Sett
       setModelName(currentSettings.modelName);
       setApiKey(currentSettings.apiKey);
       setBaseUrl(currentSettings.baseUrl);
+      setApiFormat(currentSettings.apiFormat);
+      setAuthEnvVar(currentSettings.authEnvVar);
     }
   }, [isOpen, currentSettings]);
 
@@ -53,7 +59,9 @@ export function SettingsModal({ isOpen, onClose, currentSettings, onSave }: Sett
       modelProvider: modelProvider.trim() || "ark",
       modelName: modelName.trim() || "doubao-seed-2.0-pro",
       apiKey,
-      baseUrl,
+      baseUrl: baseUrl.trim().replace(/\/+$/, ""),
+      apiFormat,
+      authEnvVar,
     });
     onClose();
   };
@@ -69,18 +77,26 @@ export function SettingsModal({ isOpen, onClose, currentSettings, onSave }: Sett
       languageSetting: { zh: "语言", en: "Language" },
       chinese: { zh: "中文", en: "Chinese" },
       english: { zh: "English", en: "English" },
-      advanced: { zh: "高级参数", en: "Advanced" },
+      advanced: { zh: "高级选项", en: "Advanced Options" },
       seed: { zh: "Seed", en: "Seed" },
       seedDesc: { zh: "相同 Seed 可复现同一局配置", en: "Same seed reproduces the same setup" },
       random: { zh: "随机", en: "Random" },
-      modelCall: { zh: "模型调用", en: "Model Call" },
-      provider: { zh: "Provider", en: "Provider" },
+      modelCall: { zh: "管理与测速", en: "Management & Speed Test" },
+      provider: { zh: "供应商", en: "Provider" },
       modelName: { zh: "模型名称", en: "Model" },
-      baseUrl: { zh: "Base URL", en: "Base URL" },
-      baseUrlPlaceholder: { zh: "留空使用服务端默认地址", en: "Leave empty for server default" },
+      requestAddress: { zh: "请求地址", en: "Request Address" },
+      fullUrl: { zh: "完整 URL", en: "Full URL" },
+      endpointHint: { zh: "填写兼容 Claude API 的服务端点地址，不要以斜杠结尾", en: "Enter a Claude-compatible service endpoint. Do not end with a slash." },
       apiKey: { zh: "API Key", en: "API Key" },
+      getApiKey: { zh: "获取 API Key", en: "Get API Key" },
       apiKeyDesc: { zh: "仅保存在本地浏览器，不显示在对局页面", en: "Stored locally only, never shown in the match UI" },
-      apiKeyPlaceholder: { zh: "留空使用服务端默认 Key", en: "Leave empty for server default" },
+      apiKeyPlaceholder: { zh: "•••••••••••••••••••••••••••••••••••", en: "•••••••••••••••••••••••••••••••••••" },
+      apiFormat: { zh: "API 格式", en: "API Format" },
+      anthropicNative: { zh: "Anthropic Messages（原生）", en: "Anthropic Messages (Native)" },
+      apiFormatDesc: { zh: "选择供应商 API 的输入格式", en: "Choose the provider API input format" },
+      authField: { zh: "认证字段", en: "Authentication Field" },
+      authTokenDefault: { zh: "ANTHROPIC_AUTH_TOKEN（默认）", en: "ANTHROPIC_AUTH_TOKEN (Default)" },
+      authFieldDesc: { zh: "选择写入配置的认证环境变量名", en: "Choose the authentication environment variable name" },
       showApiKey: { zh: "显示", en: "Show" },
       hideApiKey: { zh: "隐藏", en: "Hide" },
       cancel: { zh: "取消", en: "Cancel" },
@@ -98,7 +114,7 @@ export function SettingsModal({ isOpen, onClose, currentSettings, onSave }: Sett
       />
 
       {/* Modal */}
-      <div className="relative w-full max-w-xl overflow-hidden rounded-card border border-border bg-cardBackground shadow-modal-strong">
+      <div className="relative w-full max-w-2xl overflow-hidden rounded-card border border-border bg-cardBackground shadow-modal-strong">
         {/* Header */}
         <div className="relative border-b border-border bg-background/45 px-6 py-4">
           <h2 className="text-xl font-bold text-primary flex items-center gap-2">
@@ -236,9 +252,7 @@ export function SettingsModal({ isOpen, onClose, currentSettings, onSave }: Sett
                     onChange={(e) => setModelProvider(e.target.value)}
                     className="h-11 w-full rounded-lg border border-border/40 bg-cardBackground px-3 text-sm text-textPrimary outline-none transition-all focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
                   >
-                    <option value="ark">Ark / Doubao</option>
-                    <option value="deepseek">DeepSeek</option>
-                    <option value="openai-compatible">OpenAI Compatible</option>
+                    <option value="anthropic">DeepSeek Claude Compatible</option>
                   </select>
                 </label>
                 <label className="block">
@@ -251,16 +265,32 @@ export function SettingsModal({ isOpen, onClose, currentSettings, onSave }: Sett
                 </label>
               </div>
               <label className="mt-3 block">
-                <span className="mb-1.5 block text-xs font-medium uppercase tracking-wider text-text-sub/70">{t("baseUrl")}</span>
+                <span className="mb-1.5 block text-xs font-medium uppercase tracking-wider text-text-sub/70">{t("requestAddress")}</span>
                 <input
                   value={baseUrl}
-                  onChange={(e) => setBaseUrl(e.target.value)}
-                  placeholder={t("baseUrlPlaceholder")}
+                  onChange={(e) => setBaseUrl(e.target.value.replace(/\/+$/, ""))}
+                  placeholder="https://api.deepseek.com/anthropic"
                   className="h-11 w-full rounded-lg border border-border/40 bg-cardBackground px-3 text-sm text-textPrimary placeholder:text-text-sub/40 outline-none transition-all focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
                 />
+                <p className="mt-1.5 text-xs text-text-sub/60">
+                  <span className="font-medium text-text-sub">{t("fullUrl")}</span>
+                  <span className="mx-1">·</span>
+                  https://api.deepseek.com/anthropic
+                </p>
+                <p className="mt-1 text-xs text-primary/80">💡 {t("endpointHint")}</p>
               </label>
               <label className="mt-3 block">
-                <span className="mb-1.5 block text-xs font-medium uppercase tracking-wider text-text-sub/70">{t("apiKey")}</span>
+                <div className="mb-1.5 flex items-center justify-between gap-3">
+                  <span className="block text-xs font-medium uppercase tracking-wider text-text-sub/70">{t("apiKey")}</span>
+                  <a
+                    href="https://platform.deepseek.com/api_keys"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs font-medium text-primary transition-colors hover:text-primaryHover"
+                  >
+                    {t("getApiKey")}
+                  </a>
+                </div>
                 <div className="relative">
                   <input
                     type={showApiKey ? "text" : "password"}
@@ -278,6 +308,33 @@ export function SettingsModal({ isOpen, onClose, currentSettings, onSave }: Sett
                   </button>
                 </div>
               </label>
+              <div className="mt-4 border-t border-border/40 pt-4">
+                <p className="mb-3 text-sm font-medium text-textPrimary">{t("advanced")}</p>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <label className="block">
+                    <span className="mb-1.5 block text-xs font-medium uppercase tracking-wider text-text-sub/70">{t("apiFormat")}</span>
+                    <select
+                      value={apiFormat}
+                      onChange={(e) => setApiFormat(e.target.value)}
+                      className="h-11 w-full rounded-lg border border-border/40 bg-cardBackground px-3 text-sm text-textPrimary outline-none transition-all focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
+                    >
+                      <option value="anthropic_messages">{t("anthropicNative")}</option>
+                    </select>
+                    <p className="mt-1.5 text-xs text-text-sub/60">{t("apiFormatDesc")}</p>
+                  </label>
+                  <label className="block">
+                    <span className="mb-1.5 block text-xs font-medium uppercase tracking-wider text-text-sub/70">{t("authField")}</span>
+                    <select
+                      value={authEnvVar}
+                      onChange={(e) => setAuthEnvVar(e.target.value)}
+                      className="h-11 w-full rounded-lg border border-border/40 bg-cardBackground px-3 text-sm text-textPrimary outline-none transition-all focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
+                    >
+                      <option value="ANTHROPIC_AUTH_TOKEN">{t("authTokenDefault")}</option>
+                    </select>
+                    <p className="mt-1.5 text-xs text-text-sub/60">{t("authFieldDesc")}</p>
+                  </label>
+                </div>
+              </div>
             </div>
           </div>
         </div>

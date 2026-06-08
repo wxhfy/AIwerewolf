@@ -1,5 +1,11 @@
 name: CI
 
+env:
+  _TEST_ALLOW_FAKE_LLM: "true"
+  LLM_PROVIDER: fake
+  AIWEREWOLF_STRICT_MODE: "true"
+  ALLOW_FALLBACK: "false"
+
 on:
   push:
     branches: [main]
@@ -26,7 +32,7 @@ jobs:
         image: postgres:15
         env:
           POSTGRES_USER: werewolf
-          POSTGRES_PASSWORD: wolf_secret_2026
+          POSTGRES_PASSWORD: werewolf_dev_password
           POSTGRES_DB: werewolf
         ports:
           - 5433:5432
@@ -42,4 +48,4 @@ jobs:
           python-version: "3.12"
       - run: pip install -r requirements.txt
       - run: pip install pytest pytest-asyncio httpx
-      - run: pytest tests/ -q --timeout=120 || echo "::warning::Some tests require LLM credentials (expected in CI)"
+      - run: python -m pytest tests/ -q --timeout=120

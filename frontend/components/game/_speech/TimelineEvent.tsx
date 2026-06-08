@@ -152,6 +152,7 @@ export function TimelineEvent({
         animate={animateChat && hasContent}
         onTypewriterComplete={hasContent ? handleTypewriterComplete : undefined}
         players={players}
+        testId="timeline-chat-bubble"
       />
     );
   }

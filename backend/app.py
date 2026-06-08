@@ -995,9 +995,9 @@ async def room_ws(websocket: WebSocket, room_id: str) -> None:
 
 @app.get("/")
 def index():
-    """Backend root — the UI lives in the Next.js app on port 3002."""
+    """Backend root — the UI lives in the Next.js app on port 3001."""
     return {
         "message": "AI Werewolf backend is running.",
-        "ui": "http://localhost:3002",
+        "ui": "http://localhost:3001",
         "docs": "/docs",
     }

@@ -257,11 +257,7 @@ docs/html_plan/
 docs/archive/
 docs/DEVELOPMENT_ISSUES.md
 docs/PROJECT_CLOSURE_FACTS.json
-docs/PROJECT_DESIGN_HISTORY.md
-docs/PROJECT_FINAL_FACTS.json
-docs/PROJECT_FINAL_REPORT_DRAFT.md
 docs/track_b_open_data_sources_manifest.yaml
-docs/assets/closure/
 TODO.md
 
 # Planning docs (transient)
@@ -277,11 +273,15 @@ plans/
 .next-audit/
 .next-visual-check/
 .next-probe/
+.next-real-ui-probe/
+.next-smoke/
 
 # Skills cache (tracked via skills/locks/ instead)
 skills/gsap-*
 
 # Screenshot / binary assets (large, not source)
+docs/assets/closure/*.html
+docs/assets/closure/manifest.json
 docs/assets/closure/screenshots/
 
 # Frontend static media (large)
