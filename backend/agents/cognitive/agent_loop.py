@@ -436,6 +436,8 @@ class AgentLoop:
                     )
                 )
                 continue
+            if text_repair_mode and repair_rounds_used >= MAX_FORMAT_REPAIR_ROUNDS:
+                break
             if response_text:
                 context.append(HumanMessage(content=response_text))
             if repair_rounds_used >= MAX_FORMAT_REPAIR_ROUNDS and not text_repair_mode:

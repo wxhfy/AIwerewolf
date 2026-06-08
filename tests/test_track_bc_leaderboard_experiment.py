@@ -350,6 +350,25 @@ def test_framework_score_excludes_whole_game_external_failures(tmp_path: Path) -
         entries["full_cognitive"]["rubric_dimensions"]["engineering"]
         == entries["basic_react"]["rubric_dimensions"]["engineering"]
     )
+    failures = [json.loads(line) for line in (tmp_path / "failures.jsonl").read_text(encoding="utf-8").splitlines()]
+    partial = json.loads((tmp_path / "partial_summary.json").read_text(encoding="utf-8"))
+    assert failures[0]["error_type"] == "RuntimeError"
+    assert partial["failed_games"] == 1
+
+
+def test_game_timeout_failure_is_recorded_as_external_run_health() -> None:
+    failure = exp.build_failure_record(
+        exp.GameTimeoutError("game timed out after 1s"),
+        framework="rag_reflexion",
+        seed=99,
+        game_index=0,
+        elapsed_s=1.2,
+        timeout_s=1,
+    )
+
+    assert failure["error_type"] == "GameTimeoutError"
+    assert failure["external_failure"] is True
+    assert failure["timeout_s"] == 1
 
 
 def test_formal_analysis_excludes_external_failures_from_agent_scores() -> None:

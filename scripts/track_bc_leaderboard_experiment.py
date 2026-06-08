@@ -19,7 +19,9 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import multiprocessing as mp
 import os
+import queue
 import sys
 import time
 import traceback
@@ -87,6 +89,26 @@ GameRunner = Callable[
     [int, int, int, Sequence[ModelSpec], FrameworkSpec, int],
     GameRunResult,
 ]
+
+
+class GameTimeoutError(TimeoutError):
+    """Raised when a single game exceeds the configured experiment timeout."""
+
+
+class SubprocessGameError(RuntimeError):
+    """Error payload propagated from a subprocess game runner."""
+
+    def __init__(self, payload: dict[str, Any]) -> None:
+        self.payload = payload
+        super().__init__(str(payload.get("error") or "subprocess game failed"))
+
+    @property
+    def error_type(self) -> str:
+        return str(self.payload.get("error_type") or "SubprocessGameError")
+
+    @property
+    def child_traceback(self) -> str:
+        return str(self.payload.get("traceback") or "")
 
 
 FRAMEWORKS: dict[str, FrameworkSpec] = {
@@ -374,6 +396,7 @@ def resolve_model_specs(raw_models: str = "") -> list[ModelSpec]:
             'EXPERIMENT_MODEL_POOL="dsv4flash:deepseek-v4-flash".'
         )
     candidates = {
+        "anthropic": ["ANTHROPIC_DEFAULT_SONNET_MODEL", "ANTHROPIC_MODEL", "DEEPSEEK_MODEL"],
         "doubao": ["DOUBAO_ENDPOINT", "DOUBAO_MODEL", "ANTHROPIC_MODEL"],
         "ark": ["ANTHROPIC_MODEL", "DSV4FLASH_MODEL", "DOUBAO_ENDPOINT", "DOUBAO_MODEL"],
         "dsv4flash": ["DSV4FLASH_MODEL"],
@@ -1178,6 +1201,7 @@ def run_experiment(
     max_days: int,
     output_dir: Path,
     runner: GameRunner = run_llm_game,
+    game_timeout_s: int = 0,
 ) -> dict[str, Any]:
     if games <= 0:
         raise RuntimeError("--games must be positive.")
@@ -1192,28 +1216,72 @@ def run_experiment(
     group_records: list[dict[str, Any]] = []
     metrics_for_leaderboard: list[GameMetrics] = []
     failures: list[dict[str, Any]] = []
+    write_jsonl(output_dir / "game_runs.jsonl", [])
+    write_jsonl(output_dir / "failures.jsonl", [])
+    write_group_csv(output_dir / "group_results.csv", [])
+    write_partial_summary(
+        output_dir,
+        started_at=started_at,
+        axis=axis,
+        games=games,
+        start_seed=start_seed,
+        player_count=player_count,
+        max_days=max_days,
+        game_timeout_s=game_timeout_s,
+        model_specs=model_specs,
+        frameworks=frameworks,
+        raw_game_records=raw_game_records,
+        failures=failures,
+    )
 
     for framework in frameworks:
         for game_index in range(games):
             seed = start_seed + game_index
             print(f"[{axis}] framework={framework.name} seed={seed} ({game_index + 1}/{games})")
+            run_started = time.perf_counter()
             try:
-                result = runner(seed, player_count, max_days, model_specs, framework, game_index)
+                result = run_game_with_optional_timeout(
+                    seed,
+                    player_count,
+                    max_days,
+                    model_specs,
+                    framework,
+                    game_index,
+                    runner=runner,
+                    timeout_s=game_timeout_s,
+                )
             except Exception as exc:
                 traceback.print_exc()
-                failures.append(
-                    {
-                        "framework": framework.name,
-                        "seed": seed,
-                        "error": str(exc),
-                        "traceback": traceback.format_exc(limit=8),
-                    }
+                failure = build_failure_record(
+                    exc,
+                    framework=framework.name,
+                    seed=seed,
+                    game_index=game_index,
+                    elapsed_s=round(time.perf_counter() - run_started, 3),
+                    timeout_s=game_timeout_s,
+                )
+                failures.append(failure)
+                append_jsonl(output_dir / "failures.jsonl", failure)
+                write_partial_summary(
+                    output_dir,
+                    started_at=started_at,
+                    axis=axis,
+                    games=games,
+                    start_seed=start_seed,
+                    player_count=player_count,
+                    max_days=max_days,
+                    game_timeout_s=game_timeout_s,
+                    model_specs=model_specs,
+                    frameworks=frameworks,
+                    raw_game_records=raw_game_records,
+                    failures=failures,
                 )
                 continue
 
             raw_record = dict(result.record)
             raw_record["axis"] = axis
             raw_game_records.append(raw_record)
+            append_jsonl(output_dir / "game_runs.jsonl", raw_record)
 
             if axis == "framework":
                 metric = result.metric
@@ -1259,6 +1327,21 @@ def run_experiment(
                     group_records.append(metric_group_record(metric))
             else:
                 raise RuntimeError(f"Unsupported axis: {axis}")
+            write_group_csv(output_dir / "group_results.csv", group_records)
+            write_partial_summary(
+                output_dir,
+                started_at=started_at,
+                axis=axis,
+                games=games,
+                start_seed=start_seed,
+                player_count=player_count,
+                max_days=max_days,
+                game_timeout_s=game_timeout_s,
+                model_specs=model_specs,
+                frameworks=frameworks,
+                raw_game_records=raw_game_records,
+                failures=failures,
+            )
 
     leaderboard = LeaderboardAggregator().aggregate_version(metrics_for_leaderboard)
     leaderboard.metadata.update(
@@ -1269,6 +1352,7 @@ def run_experiment(
             "failed_games": len(failures),
             "player_count": player_count,
             "games_per_framework": games,
+            "game_timeout_s": game_timeout_s,
             "model_pool": [spec.label for spec in model_specs],
             "frameworks": [framework.name for framework in frameworks],
             "unit_note": "version rows are grouped player-score samples; model/combined axes split each game by seat model.",
@@ -1295,6 +1379,7 @@ def run_experiment(
         "seeds": list(range(start_seed, start_seed + games)),
         "player_count": player_count,
         "max_days": max_days,
+        "game_timeout_s": game_timeout_s,
         "model_pool": [spec.label for spec in model_specs],
         "frameworks": [
             {
@@ -1310,6 +1395,8 @@ def run_experiment(
         },
         "completed_raw_games": len(raw_game_records),
         "failed_games": len(failures),
+        "attempted_games": len(raw_game_records) + len(failures),
+        "failure_types": dict(sorted(Counter(str(item.get("error_type") or "unknown") for item in failures).items())),
         "leaderboard_summary": summarize_leaderboard(
             leaderboard_payload,
             group_records,
@@ -1325,8 +1412,10 @@ def run_experiment(
             "architecture_evidence_leaderboard_json": str(output_dir / "architecture_evidence_leaderboard.json"),
             "architecture_evidence_leaderboard_csv": str(output_dir / "architecture_evidence_leaderboard.csv"),
             "summary_json": str(output_dir / "summary.json"),
+            "partial_summary_json": str(output_dir / "partial_summary.json"),
             "group_results_csv": str(output_dir / "group_results.csv"),
             "game_runs_jsonl": str(output_dir / "game_runs.jsonl"),
+            "failures_jsonl": str(output_dir / "failures.jsonl"),
             "academic_report_md": str(output_dir / "academic_report.md"),
         },
     }
@@ -1337,6 +1426,7 @@ def run_experiment(
     )
 
     write_jsonl(output_dir / "game_runs.jsonl", raw_game_records)
+    write_jsonl(output_dir / "failures.jsonl", failures)
     write_group_csv(output_dir / "group_results.csv", group_records)
     (output_dir / "architecture_evidence_leaderboard.json").write_text(
         json.dumps(summary["architecture_evidence_leaderboard"], ensure_ascii=False, indent=2),
@@ -1352,9 +1442,178 @@ def run_experiment(
 
 
 def write_jsonl(path: Path, records: Sequence[dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as f:
         for record in records:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+
+def append_jsonl(path: Path, record: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+
+def _run_llm_game_worker(
+    result_queue: Any,
+    seed: int,
+    player_count: int,
+    max_days: int,
+    model_specs: Sequence[ModelSpec],
+    framework: FrameworkSpec,
+    game_index: int,
+) -> None:
+    try:
+        result = run_llm_game(seed, player_count, max_days, list(model_specs), framework, game_index)
+        result_queue.put({"ok": True, "result": result})
+    except BaseException as exc:
+        result_queue.put(
+            {
+                "ok": False,
+                "error_type": type(exc).__name__,
+                "error": str(exc),
+                "traceback": traceback.format_exc(limit=12),
+            }
+        )
+
+
+def run_game_with_optional_timeout(
+    seed: int,
+    player_count: int,
+    max_days: int,
+    model_specs: Sequence[ModelSpec],
+    framework: FrameworkSpec,
+    game_index: int,
+    *,
+    runner: GameRunner,
+    timeout_s: int,
+) -> GameRunResult:
+    if timeout_s <= 0 or runner is not run_llm_game:
+        return runner(seed, player_count, max_days, model_specs, framework, game_index)
+
+    context_name = "fork" if "fork" in mp.get_all_start_methods() else "spawn"
+    ctx = mp.get_context(context_name)
+    result_queue = ctx.Queue(maxsize=1)
+    proc = ctx.Process(
+        target=_run_llm_game_worker,
+        args=(result_queue, seed, player_count, max_days, list(model_specs), framework, game_index),
+    )
+    proc.start()
+    proc.join(timeout_s)
+    if proc.is_alive():
+        proc.terminate()
+        proc.join(5)
+        if proc.is_alive():
+            proc.kill()
+            proc.join(5)
+        raise GameTimeoutError(
+            f"game timed out after {timeout_s}s "
+            f"(framework={framework.name}, seed={seed}, exitcode={proc.exitcode})"
+        )
+
+    try:
+        payload = result_queue.get_nowait()
+    except queue.Empty as exc:
+        raise SubprocessGameError(
+            {
+                "error_type": "ChildProcessError",
+                "error": f"game subprocess exited without result (exitcode={proc.exitcode})",
+                "traceback": "",
+            }
+        ) from exc
+    finally:
+        result_queue.close()
+        result_queue.join_thread()
+
+    if payload.get("ok"):
+        result = payload.get("result")
+        if isinstance(result, GameRunResult):
+            return result
+        raise SubprocessGameError(
+            {
+                "error_type": "ChildProcessError",
+                "error": f"game subprocess returned unexpected payload type: {type(result).__name__}",
+                "traceback": "",
+            }
+        )
+    raise SubprocessGameError(payload)
+
+
+def build_failure_record(
+    exc: Exception,
+    *,
+    framework: str,
+    seed: int,
+    game_index: int,
+    elapsed_s: float,
+    timeout_s: int,
+) -> dict[str, Any]:
+    if isinstance(exc, SubprocessGameError):
+        error_type = exc.error_type
+        error = str(exc)
+        tb = exc.child_traceback
+    else:
+        error_type = type(exc).__name__
+        error = str(exc)
+        tb = traceback.format_exc(limit=8)
+    return {
+        "framework": framework,
+        "seed": seed,
+        "game_index": game_index,
+        "error_type": error_type,
+        "error": error,
+        "traceback": tb,
+        "elapsed_s": elapsed_s,
+        "timeout_s": timeout_s,
+        "external_failure": True,
+        "recorded_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def write_partial_summary(
+    output_dir: Path,
+    *,
+    started_at: str,
+    axis: str,
+    games: int,
+    start_seed: int,
+    player_count: int,
+    max_days: int,
+    game_timeout_s: int,
+    model_specs: Sequence[ModelSpec],
+    frameworks: Sequence[FrameworkSpec],
+    raw_game_records: Sequence[dict[str, Any]],
+    failures: Sequence[dict[str, Any]],
+) -> None:
+    payload = {
+        "run_status": "partial",
+        "started_at": started_at,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "axis": axis,
+        "games_per_framework": games,
+        "start_seed": start_seed,
+        "seeds": list(range(start_seed, start_seed + games)),
+        "player_count": player_count,
+        "max_days": max_days,
+        "game_timeout_s": game_timeout_s,
+        "model_pool": [spec.label for spec in model_specs],
+        "frameworks": [{"name": framework.name} for framework in frameworks],
+        "completed_raw_games": len(raw_game_records),
+        "failed_games": len(failures),
+        "attempted_games": len(raw_game_records) + len(failures),
+        "failure_types": dict(sorted(Counter(str(item.get("error_type") or "unknown") for item in failures).items())),
+        "latest_failures": list(failures)[-10:],
+        "outputs": {
+            "game_runs_jsonl": str(output_dir / "game_runs.jsonl"),
+            "failures_jsonl": str(output_dir / "failures.jsonl"),
+            "group_results_csv": str(output_dir / "group_results.csv"),
+            "summary_json": str(output_dir / "summary.json"),
+        },
+    }
+    (output_dir / "partial_summary.json").write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
 
 
 def write_group_csv(path: Path, records: Sequence[dict[str, Any]]) -> None:
@@ -1664,6 +1923,12 @@ def main() -> int:
     parser.add_argument("--player-count", type=int, default=7)
     parser.add_argument("--max-days", type=int, default=20)
     parser.add_argument("--output-dir", default="outputs/track_bc_leaderboard")
+    parser.add_argument(
+        "--game-timeout-s",
+        type=int,
+        default=0,
+        help="Per-game subprocess timeout for the default real LLM runner. 0 disables subprocess timeout.",
+    )
     parser.add_argument("--allow-fake", action="store_true", default=str_to_bool(os.getenv("ALLOW_OFFLINE_FAKE_LLM")))
     parser.add_argument("--skip-client-check", action="store_true")
     parser.add_argument("--strict-fallback", default="true")
@@ -1690,6 +1955,7 @@ def main() -> int:
         player_count=args.player_count,
         max_days=args.max_days,
         output_dir=output_dir,
+        game_timeout_s=args.game_timeout_s,
     )
     elapsed_s = time.perf_counter() - started
 

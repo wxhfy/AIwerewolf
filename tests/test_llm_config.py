@@ -12,6 +12,7 @@ from backend.engine.models import Alignment
 from backend.engine.models import Player
 from backend.engine.models import Role
 from backend.llm import create_client
+from backend.llm.anthropic_client import AnthropicClient
 from backend.llm.deepseek import DeepSeekClient
 
 
@@ -152,6 +153,16 @@ def test_create_client_anthropic_defaults_to_deepseek_compatible_settings(monkey
     assert client.api_key == "deepseek-compatible-token"
     assert client.base_url == "https://api.deepseek.com/anthropic"
     assert client.model == "deepseek-v4-flash"
+
+
+def test_anthropic_client_normalizes_coding_v1_base_url() -> None:
+    client = AnthropicClient(
+        api_key="test-key",
+        base_url="https://ark.cn-beijing.volces.com/api/coding/v1",
+        model="deepseek-v4-flash[1m]",
+    )
+
+    assert client.base_url == "https://ark.cn-beijing.volces.com/api/coding"
 
 
 def test_create_client_anthropic_accepts_official_anthropic_api_key(monkeypatch) -> None:

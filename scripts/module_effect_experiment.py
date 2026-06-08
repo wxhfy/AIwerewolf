@@ -36,6 +36,14 @@ FRONTEND_PROBE = ROOT / "docs" / "experiments" / "full_project_real_audit" / "fr
 MOBILE_PROBE = ROOT / "docs" / "experiments" / "full_project_real_audit" / "ui_playwright_mobile.json"
 BUBBLE_PROBE = ROOT / "docs" / "experiments" / "full_project_real_audit" / "ui_playwright_bubble_sampling.json"
 REAL_LLM_PROBE = ROOT / "docs" / "experiments" / "full_project_real_audit" / "real_llm_probe.json"
+SUPPLEMENTAL_FRAMEWORK_SUMMARIES = [
+    ROOT / "docs" / "experiments" / "framework_gap_reflexion_anthropic_v4flash_g6" / "summary.json",
+    ROOT / "docs" / "experiments" / "framework_gap_reflexion_anthropic_v4flash_g3" / "summary.json",
+    ROOT / "docs" / "experiments" / "framework_gap_reflexion_anthropic_v4flash_g1" / "summary.json",
+    ROOT / "docs" / "experiments" / "framework_gap_reflexion_doubao_endpoint_g1" / "summary.json",
+    ROOT / "docs" / "experiments" / "framework_gap_reflexion_doubao_endpoint_g6" / "summary.json",
+    ROOT / "docs" / "experiments" / "framework_gap_reflexion_v4flash_g6" / "summary.json",
+]
 
 OUTPUT_DIR = ROOT / "docs" / "experiments" / "module_effect_experiment"
 TRACKED_REPORT = ROOT / "docs" / "MODULE_EFFECT_EXPERIMENT_RESULTS.md"
@@ -72,6 +80,73 @@ COMMON_METRIC_REFERENCES = [
     },
 ]
 
+DOMAIN_METRIC_CATALOG = [
+    {
+        "metric_family": "AIWolf outcome metrics",
+        "external_source": "AIWolf Protocol Division",
+        "canonical_metrics": "overall win rate, per-role win rate",
+        "project_fields": "wolf_win_rate, village_win_rate, role_win_rates, macro_role_win_rate",
+        "current_status": "quantified in formal framework leaderboard",
+        "presentation_use": "primary outcome comparison; always show role distribution next to it",
+    },
+    {
+        "metric_family": "WereWolfPlus strategic indicators",
+        "external_source": "WereWolfPlus metrics notebook",
+        "canonical_metrics": "IRP, KSR, VSS, werewolf_kpi, seer_kpi, guard_kpi, KRS, KRE",
+        "project_fields": "vote_score, skill_score, role_task_score, role-wise KPI proxies",
+        "current_status": "mapped; exact IRP/KSR/VSS naming is reference-derived",
+        "presentation_use": "connects our role/vote/skill score decomposition to prior Werewolf agent work",
+    },
+    {
+        "metric_family": "AIWolfDial language quality",
+        "external_source": "AIWolfDial 2025",
+        "canonical_metrics": "naturalness, context awareness, contradiction consistency, action-dialogue coherence, team play",
+        "project_fields": "speech_score, process_score, evidence_refs, future contradiction/coherence head",
+        "current_status": "partially quantified; speech semantic audit is audit-only",
+        "presentation_use": "justifies Track B beyond win/loss by evaluating speech and reasoning quality",
+    },
+    {
+        "metric_family": "Speech-act classifier quality",
+        "external_source": "project open-data speech classifier",
+        "canonical_metrics": "exact accuracy, hamming loss, macro/micro F1, per-label F1",
+        "project_fields": "speech_act_probs, accusation/interrogation/defense/evidence_use/identity/call_for_action",
+        "current_status": "quantified as audit-only model",
+        "presentation_use": "shows speech analysis can be measured without affecting leaderboard score",
+    },
+    {
+        "metric_family": "Deception/detection/disclosure",
+        "external_source": "Mini-Mafia / WOLF / BloodBench direction",
+        "canonical_metrics": "wolf deception, village detection, seer disclosure, claim falsehoods, cover consistency",
+        "project_fields": "wolf_deception_proxy, village_detection_proxy, seer_disclosure_proxy, persona deception/detection scorer",
+        "current_status": "proxy quantified; direct claim labels pending",
+        "presentation_use": "frames social-deduction-specific capability instead of generic LLM accuracy",
+    },
+    {
+        "metric_family": "Track C retrieval IR",
+        "external_source": "information retrieval evaluation practice",
+        "canonical_metrics": "P@k, Recall@k, MRR, nDCG@k, coverage, leakage, latency",
+        "project_fields": "precision_at_3, ndcg_at_5, mrr, coverage_rate, candidate_leakage_count, latency_p95_ms",
+        "current_status": "quantified in retrieval ablation",
+        "presentation_use": "direct evidence that strategy-memory retrieval is effective and safe",
+    },
+    {
+        "metric_family": "Pairwise/review consistency",
+        "external_source": "human/LLM pairwise evaluation practice",
+        "canonical_metrics": "pairwise accuracy, Cohen's d, rank stability, bootstrap confidence interval",
+        "project_fields": "paired_seed_deltas, bootstrap_reliability, pairwise_ranker, review metric tests",
+        "current_status": "partially quantified; human labels pending for stronger claims",
+        "presentation_use": "supports Track B leaderboard consistency and discriminability",
+    },
+    {
+        "metric_family": "Safety and reproducibility",
+        "external_source": "agent benchmark reliability gates",
+        "canonical_metrics": "fallback rate, invalid action rate, information leak rate, evidence coverage",
+        "project_fields": "fallback_count, invalid_count, leak_doc_count, source_event_coverage, visibility strict checks",
+        "current_status": "quantified and gate-tested",
+        "presentation_use": "proves B/C loop is not leaking hidden information or hiding failures",
+    },
+]
+
 EXPANDED_AGENT_FRAMEWORKS = [
     {
         "framework": "basic_react",
@@ -102,7 +177,7 @@ EXPANDED_AGENT_FRAMEWORKS = [
         "aliases": "",
         "external_family": "Reflexion",
         "enabled_modules": "post-game reflection only",
-        "current_evidence_status": "runner implemented; new v4flash run needed",
+        "current_evidence_status": "supplemental anthropic-coding v4flash data available; historical formal score pending",
         "why_include": "checks whether reflection alone can replace runtime Track C retrieval",
     },
     {
@@ -110,7 +185,7 @@ EXPANDED_AGENT_FRAMEWORKS = [
         "aliases": "",
         "external_family": "RAG + Reflexion",
         "enabled_modules": "Track C retrieval + reflection",
-        "current_evidence_status": "runner implemented; new v4flash run needed",
+        "current_evidence_status": "supplemental anthropic-coding v4flash data available; historical formal score pending",
         "why_include": "tests retrieval and outer-loop reflection synergy without role guardrails",
     },
     {
@@ -861,6 +936,87 @@ def build_framework_score_comparison(formal: dict[str, Any]) -> list[dict[str, A
     return rows
 
 
+def summarize_supplemental_framework_runs(summary_paths: Sequence[Path]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for path in summary_paths:
+        exists = path.exists()
+        summary = load_json(path) if exists else {}
+        model_pool = summary.get("model_pool", [])
+        entries = summary.get("architecture_evidence_leaderboard", {}).get("entries", [])
+        failures = summary.get("failures", [])
+        completed_by_framework = {
+            framework: sum(1 for item in summary.get("raw_records", []) if str(item.get("framework") or "") == framework)
+            for framework in {str(item.get("framework") or "") for item in summary.get("raw_records", [])}
+            if framework
+        }
+        failed_by_framework = {
+            framework: sum(1 for item in failures if str(item.get("framework") or "") == framework)
+            for framework in {str(item.get("framework") or "") for item in failures}
+            if framework
+        }
+        if not exists:
+            rows.append(
+                {
+                    "experiment": str(path.relative_to(ROOT)),
+                    "model_pool": "n/a",
+                    "framework": "n/a",
+                    "score": None,
+                    "completed_games": None,
+                    "failed_games": None,
+                    "external_failure_rate": None,
+                    "win_rate": None,
+                    "macro_role_win_rate": None,
+                    "status": "pending; summary file not created yet",
+                }
+            )
+            continue
+        if entries:
+            for entry in entries:
+                signals = entry.get("evidence_signals", {})
+                framework_name = str(entry.get("framework") or entry.get("group_key") or "")
+                completed_games = completed_by_framework.get(framework_name)
+                failed_games = failed_by_framework.get(framework_name)
+                rows.append(
+                    {
+                        "experiment": str(path.relative_to(ROOT)),
+                        "model_pool": ",".join(str(item) for item in model_pool),
+                        "framework": framework_name,
+                        "score": entry.get("rubric_total_score"),
+                        "completed_games": completed_games if completed_games is not None else summary.get("completed_raw_games"),
+                        "failed_games": failed_games if failed_games is not None else summary.get("failed_games"),
+                        "external_failure_rate": signals.get("external_failure_rate"),
+                        "win_rate": signals.get("win_rate"),
+                        "macro_role_win_rate": signals.get("macro_role_win_rate"),
+                        "status": "completed supplemental run",
+                    }
+                )
+            continue
+        failure_types = sorted({str(item.get("error_type") or "unknown") for item in failures})
+        if summary.get("run_status"):
+            status = str(summary.get("run_status"))
+            if summary.get("blocker"):
+                status += "; " + str(summary.get("blocker"))
+        elif failures:
+            status = "no valid completed games; external failure types=" + ",".join(failure_types)
+        else:
+            status = "no valid completed games; no structured failure rows"
+        rows.append(
+            {
+                "experiment": str(path.relative_to(ROOT)),
+                "model_pool": ",".join(str(item) for item in model_pool),
+                "framework": ",".join(str(item.get("name")) for item in summary.get("frameworks", [])) or "n/a",
+                "score": None,
+                "completed_games": summary.get("completed_raw_games"),
+                "failed_games": summary.get("failed_games"),
+                "external_failure_rate": 1.0 if summary.get("failed_games") else None,
+                "win_rate": None,
+                "macro_role_win_rate": None,
+                "status": status,
+            }
+        )
+    return rows
+
+
 def build_frontier_agent_eval_summary(effects: Sequence[ModuleEffect], panels: dict[str, Any]) -> dict[str, Any]:
     by_module = {effect.module: effect for effect in effects}
     safety_scores = [
@@ -1177,6 +1333,38 @@ def render_markdown(payload: dict[str, Any]) -> str:
     lines.extend(
         [
             "",
+            "## Supplemental Reflexion Framework Runs",
+            "",
+            "These rows are supplemental runs for the two framework arms that were not present in the historical formal v4flash set. "
+            "They are not merged into the historical v4flash ranking unless they have valid completed games under the same formal model policy.",
+            "",
+            "| Experiment | Model pool | Framework | Score | Completed | Failed | External failure | Win rate | Macro role win | Status |",
+            "|---|---|---|---:|---:|---:|---:|---:|---:|---|",
+        ]
+    )
+    for row in payload["supplemental_framework_runs"]:
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    row["experiment"],
+                    row["model_pool"] or "n/a",
+                    f"`{row['framework']}`",
+                    fmt(row["score"]),
+                    fmt(row["completed_games"]),
+                    fmt(row["failed_games"]),
+                    fmt(row["external_failure_rate"]),
+                    fmt(row["win_rate"]),
+                    fmt(row["macro_role_win_rate"]),
+                    row["status"],
+                ]
+            )
+            + " |"
+        )
+
+    lines.extend(
+        [
+            "",
             "## Expanded Agent Framework Comparison Matrix",
             "",
             "| Framework | Existing alias | External design family | Enabled modules | Current evidence status | Why include it |",
@@ -1216,12 +1404,71 @@ def render_markdown(payload: dict[str, Any]) -> str:
                 f"{fmt(retrieval_panel.get('latency_p95_ms'))} | {retrieval_panel.get('candidate_leakage_count')} |"
             ),
             "",
+            "## Domain Metric Catalog for Multi-Angle Comparison",
+            "",
+            "| Metric family | External source | Canonical metrics | Project fields | Current status | Presentation use |",
+            "|---|---|---|---|---|---|",
+        ]
+    )
+    for item in payload["domain_metric_catalog"]:
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    item["metric_family"],
+                    item["external_source"],
+                    item["canonical_metrics"],
+                    item["project_fields"],
+                    item["current_status"],
+                    item["presentation_use"],
+                ]
+            )
+            + " |"
+        )
+
+    lines.extend(
+        [
+            "",
             "## Social-Deduction Metric Mapping",
             "",
             "| Metric family | Current quantitative field | Current value | Use in paper |",
             "|---|---|---:|---|",
         ]
     )
+    proxies = panels["social_deduction_capability_proxies"]
+    lines.extend(
+        [
+            (
+                "| AIWolf overall/role win rate | formal tier win rates + role win rates | "
+                f"{formal_rows} rows | Primary outcome metric with role-normalized macro win rate. |"
+            ),
+            (
+                "| Wolf deception proxy | wolf win rate by tier | "
+                f"baseline={fmt(proxies['wolf_deception_proxy']['baseline_wolf_win_rate'])}, "
+                f"trackc={fmt(proxies['wolf_deception_proxy']['trackc_only_wolf_win_rate'])} | "
+                "Use as proxy only; direct deception labels need speech taxonomy. |"
+            ),
+            (
+                "| Village detection proxy | village win rate + non-wolf role win rate | "
+                f"baseline={fmt(proxies['village_detection_proxy']['baseline_village_win_rate'])}, "
+                f"cognitive_full={fmt(proxies['village_detection_proxy']['cognitive_full_village_win_rate'])} | "
+                "Shows collective detection/survival trend under current logs. |"
+            ),
+            (
+                "| Seer disclosure proxy | Seer role win rate | "
+                f"{fmt(proxies['seer_disclosure_proxy']['formal_seer_win_rate'])} | "
+                "Aggregate proxy; future claim-level disclosure labels should be added. |"
+            ),
+            (
+                "| Track C knowledge safety | leak/invalid docs/source coverage | "
+                f"leak={panels['track_c_evolution_metrics'].get('leak_doc_count')}, "
+                f"invalid={panels['track_c_evolution_metrics'].get('invalid_doc_count')}, "
+                f"coverage={fmt(panels['track_c_evolution_metrics'].get('source_event_coverage'))} | "
+                "Supports B -> C feedback-loop hygiene. |"
+            ),
+        ]
+    )
+
     frontier_summary = payload["frontier_agent_eval_summary"]
     lines.extend(
         [
@@ -1286,40 +1533,6 @@ def render_markdown(payload: dict[str, Any]) -> str:
             "",
             "- The strongest evidence is not raw win rate; it is the combination of trajectory/process quality, RAG precision, safety gates, and reproducibility.",
             "- Your current architecture is strong on Agent role design, retrieval quality, and safety; the main weakness is full-stack execution reliability and the lack of a target-seat causal Track C A/B.",
-        ]
-    )
-
-    proxies = panels["social_deduction_capability_proxies"]
-    lines.extend(
-        [
-            (
-                "| AIWolf overall/role win rate | formal tier win rates + role win rates | "
-                f"{formal_rows} rows | Primary outcome metric with role-normalized macro win rate. |"
-            ),
-            (
-                "| Wolf deception proxy | wolf win rate by tier | "
-                f"baseline={fmt(proxies['wolf_deception_proxy']['baseline_wolf_win_rate'])}, "
-                f"trackc={fmt(proxies['wolf_deception_proxy']['trackc_only_wolf_win_rate'])} | "
-                "Use as proxy only; direct deception labels need speech taxonomy. |"
-            ),
-            (
-                "| Village detection proxy | village win rate + non-wolf role win rate | "
-                f"baseline={fmt(proxies['village_detection_proxy']['baseline_village_win_rate'])}, "
-                f"cognitive_full={fmt(proxies['village_detection_proxy']['cognitive_full_village_win_rate'])} | "
-                "Shows collective detection/survival trend under current logs. |"
-            ),
-            (
-                "| Seer disclosure proxy | Seer role win rate | "
-                f"{fmt(proxies['seer_disclosure_proxy']['formal_seer_win_rate'])} | "
-                "Aggregate proxy; future claim-level disclosure labels should be added. |"
-            ),
-            (
-                "| Track C knowledge safety | leak/invalid docs/source coverage | "
-                f"leak={panels['track_c_evolution_metrics'].get('leak_doc_count')}, "
-                f"invalid={panels['track_c_evolution_metrics'].get('invalid_doc_count')}, "
-                f"coverage={fmt(panels['track_c_evolution_metrics'].get('source_event_coverage'))} | "
-                "Supports B -> C feedback-loop hygiene. |"
-            ),
         ]
     )
 
@@ -1436,8 +1649,10 @@ def build_payload(run_gates_flag: bool) -> dict[str, Any]:
         "common_metric_panels": panels,
         "gate_results": gate_results,
         "common_metric_references": COMMON_METRIC_REFERENCES,
+        "domain_metric_catalog": DOMAIN_METRIC_CATALOG,
         "expanded_agent_frameworks": EXPANDED_AGENT_FRAMEWORKS,
         "framework_score_comparison": build_framework_score_comparison(formal),
+        "supplemental_framework_runs": summarize_supplemental_framework_runs(SUPPLEMENTAL_FRAMEWORK_SUMMARIES),
         "frontier_agent_eval_references": FRONTIER_AGENT_EVAL_REFERENCES,
         "frontier_agent_eval_summary": build_frontier_agent_eval_summary(effects, panels),
     }

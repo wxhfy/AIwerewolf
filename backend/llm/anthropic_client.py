@@ -76,7 +76,7 @@ class AnthropicClient:
         timeout: httpx.Timeout | None = None,
     ):
         self.api_key = api_key
-        self.base_url = base_url.rstrip("/")
+        self.base_url = self._normalize_base_url(base_url)
         self.model = model
         self.provider = "anthropic"
         self.available = True
@@ -85,6 +85,13 @@ class AnthropicClient:
         self._timeout = timeout or DEFAULT_TIMEOUT
         self._client: httpx.Client | None = None
         self._client_lock = threading.Lock()
+
+    @staticmethod
+    def _normalize_base_url(base_url: str) -> str:
+        stripped = str(base_url or "").rstrip("/")
+        if stripped.endswith("/v1"):
+            return stripped[:-3]
+        return stripped
 
     def _get_client(self) -> httpx.Client:
         if self._client is None:

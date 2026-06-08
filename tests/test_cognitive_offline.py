@@ -223,6 +223,36 @@ class InvalidNativeArgsThenTextDecisionLLM:
         )
 
 
+class InvalidNativeArgsThenEmptyTextLLM:
+    """Native submit_decision is invalid; text repair also returns no decision."""
+
+    def __init__(self, bound_tools: list[dict] | None = None, calls: list[dict] | None = None) -> None:
+        self.bound_tools = bound_tools or []
+        self.calls = calls if calls is not None else []
+
+    def bind_tools(self, tool_schemas: list[dict]) -> "InvalidNativeArgsThenEmptyTextLLM":
+        return InvalidNativeArgsThenEmptyTextLLM(tool_schemas, self.calls)
+
+    def invoke(self, messages, **kwargs):
+        tool_names = [
+            str((schema.get("function") or {}).get("name") or "")
+            for schema in self.bound_tools
+            if isinstance(schema, dict)
+        ]
+        self.calls.append(
+            {
+                "tool_names": tool_names,
+                "force_tool_name": kwargs.get("force_tool_name"),
+            }
+        )
+        if kwargs.get("force_tool_name") == "submit_decision" or "submit_decision" in tool_names:
+            return AIMessage(
+                content="",
+                tool_calls=[{"id": "call_bad", "name": "submit_decision", "args": {"speech": ""}}],
+            )
+        return AIMessage(content="")
+
+
 class MalformedReflectionLLM:
     def invoke(self, messages):
         return AIMessage(content='DECISION: {"target": "2号", "reasoning": "not a reflection"}')
@@ -376,6 +406,28 @@ def test_agent_loop_repairs_invalid_native_submit_args_with_text_decision() -> N
     assert len(llm.calls) == 3
     assert llm.calls[-1]["force_tool_name"] is None
     assert llm.calls[-1]["tool_names"] == []
+
+
+def test_agent_loop_exits_when_text_repair_after_invalid_native_args_is_empty() -> None:
+    obs = Observation(
+        player_id="P1",
+        player_name="Alice",
+        player_seat=1,
+        player_role="Villager",
+        day=1,
+        phase="DAY_SPEECH",
+        alive=[
+            PlayerInfo(id="P1", name="Alice", seat=1, alive=True),
+            PlayerInfo(id="P2", name="Bob", seat=2, alive=True),
+        ],
+    )
+    llm = InvalidNativeArgsThenEmptyTextLLM()
+    loop = AgentLoop(llm, "system prompt", action_type="speech", player_id="P1")
+
+    with pytest.raises(RuntimeError, match="failed to produce a structured decision"):
+        loop.run(obs, Memory("P1", "Villager"))
+
+    assert len(llm.calls) == 3
 
 
 def test_cognitive_agent_talk_preserves_native_fc_reasoning() -> None:
