@@ -1,189 +1,123 @@
-"""Batch experiment: run N CognitiveAgent games and track role win rates.
-
-Usage:
-  nohup python scripts/batch_experiment.py --games 20 > experiment.log 2>&1 &
-
-Each game takes ~30 min. 20 games = ~10 hours.
-Results are saved incrementally to data/experiment/batch_results.jsonl.
+"""Batch experiment runner: runs N games per batch, appends to output, exits cleanly.
+Designed to be called repeatedly to accumulate data without memory buildup.
 """
 
 from __future__ import annotations
 
+import argparse
 import json
+import os
 import sys
 import time
-import traceback
-import warnings
-from collections import defaultdict
-from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-warnings.filterwarnings("ignore")
 
-from backend.engine.game import WerewolfGame
+os.environ["LLM_PROVIDER"] = "anthropic"
+os.environ["AIWEREWOLF_RETRIEVAL_POLICY"] = "hybrid_role_mbti_global"
+os.environ["COGNITIVE_ENABLE_ANTI_PATTERNS"] = "1"
+os.environ["PYTHONUNBUFFERED"] = "1"
+
+ALL_MBTI = [
+    "INTJ",
+    "INTP",
+    "ENTJ",
+    "ENTP",
+    "INFJ",
+    "INFP",
+    "ENFJ",
+    "ENFP",
+    "ISTJ",
+    "ISFJ",
+    "ESTJ",
+    "ESFJ",
+    "ISTP",
+    "ISFP",
+    "ESTP",
+    "ESFP",
+]
 
 
-def _save_game_state(state, filepath: Path) -> None:
-    """Save full game state for Track B review and Track C evolution."""
-    players_data = []
+def run_one(seed: int, track_c: bool) -> dict | None:
+    os.environ["COGNITIVE_ENABLE_TRACK_C"] = "1" if track_c else "0"
+    from backend.agents.characters import build_character_roster
+    from backend.agents.factory import create_agents
+    from backend.engine.game import WerewolfGame
+    from backend.engine.rules import build_players
+
+    players = build_players(seed=seed)
+    mbti_map = {}
+    for i, p in enumerate(players):
+        mbti_map[p.id] = ALL_MBTI[(seed * 7 + i) % 16]
+    roster = build_character_roster(seed=seed, players=players)
+    for p in players:
+        if p.is_ai and p.id in roster:
+            target_mbti = mbti_map[p.id]
+            char = roster[p.id]
+            if hasattr(char, "persona") and char.persona:
+                char.persona.mbti = target_mbti
+            if hasattr(char, "profile") and char.profile:
+                char.profile.mbti = target_mbti
+    character_map = {p.id: roster[p.id] for p in players if p.id in roster}
+    agents = create_agents(players, {"type": "llm", "seed": seed, "character_map": character_map})
+    game = WerewolfGame(players=players, agents=agents, seed=seed, max_days=4)
+    try:
+        state = game.play()
+    except RuntimeError as e:
+        msg = str(e)[:120]
+        return {"seed": seed, "winner": "error", "day": 0, "players": [], "track_c": track_c, "error": msg}
+    per_player = []
     for p in state.players:
-        players_data.append(
-            {
-                "name": p.name,
-                "role": p.role.value,
-                "seat": p.seat,
-                "alive": p.alive,
-                "death_day": p.death_day if hasattr(p, "death_day") else None,
-            }
+        is_wolf = p.role in ("Werewolf", "WhiteWolfKing")
+        won = (state.winner.value == "wolf" and is_wolf) or (state.winner.value == "village" and not is_wolf)
+        per_player.append(
+            {"role": p.role, "mbti": mbti_map.get(p.id, "UNKNOWN"), "won": won, "track_c": track_c, "seed": seed}
         )
-    events_data = []
-    for e in getattr(state, "events", []) or []:
-        try:
-            evt = {
-                "day": getattr(e, "day", 0),
-                "phase": str(getattr(e, "phase", "")),
-                "type": str(getattr(e, "type", "")),
-            }
-            for field in ("actor", "target", "content", "speech", "vote", "result"):
-                val = getattr(e, field, None)
-                if val is not None:
-                    evt[field] = str(val) if not isinstance(val, (str, int, float, bool, list, dict)) else val
-            events_data.append(evt)
-        except Exception:
-            pass
-    data = {
-        "seed": getattr(state, "seed", 0),
-        "winner": state.winner.value if hasattr(state.winner, "value") else str(state.winner),
-        "days": state.day,
-        "players": players_data,
-        "events": events_data,
-        "event_count": len(events_data),
-    }
-    import json
-
-    filepath.write_text(json.dumps(data, ensure_ascii=False, indent=2))
+    return {"seed": seed, "winner": state.winner.value, "day": state.day, "players": per_player, "track_c": track_c}
 
 
-def run_batch(n_games: int = 20, start_seed: int = 100) -> None:
-    output_dir = ROOT / "data" / "experiment"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    results_file = output_dir / "batch_results.jsonl"
-    summary_file = output_dir / "batch_summary.json"
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--start-seed", type=int, required=True)
+    parser.add_argument("--end-seed", type=int, required=True)
+    parser.add_argument("--track-c", type=str, default="off", choices=["off", "on"])
+    parser.add_argument("--model", type=str, default="deepseek-v4-flash")
+    parser.add_argument("--output", type=str, default="data/experiment/mbti_batch.jsonl")
+    args = parser.parse_args()
 
-    role_stats: dict[str, dict] = defaultdict(lambda: {"wins": 0, "games": 0, "survival_days": 0.0, "alive_end": 0})
-    game_results = []
+    os.environ["ANTHROPIC_MODEL"] = args.model
+    track_c = args.track_c == "on"
+    os.makedirs("data/experiment", exist_ok=True)
 
-    print(f"Experiment started: {datetime.now()}")
-    print(f"Games: {n_games}, mode: cognitive")
-    print(f"Output: {results_file}")
-    print(f"{'=' * 60}")
+    records = 0
+    skipped = 0
+    t_start = time.time()
 
-    for i in range(n_games):
-        seed = start_seed + i
-        t0 = time.perf_counter()
-        result = {"seed": seed, "index": i + 1, "started": datetime.now().isoformat()}
+    for s in range(args.start_seed, args.end_seed + 1):
+        t0 = time.time()
+        result = run_one(s, track_c)
+        elapsed = time.time() - t0
+        if result is None or result.get("winner") == "error":
+            skipped += 1
+            err = result.get("error", "none") if result else "none"
+            print(f"  seed={s:>3} SKIP: {err[:80]}")
+            continue
+        n_players = len(result["players"])
+        records += n_players
+        wins = sum(1 for p in result["players"] if p["won"])
+        print(f"  seed={s:>3} {result['winner']:<8} d={result['day']} w={wins}/{n_players} {elapsed:.0f}s")
 
-        try:
-            game = WerewolfGame(seed=seed, player_count=7)
-            state = game.play()
-            elapsed = time.perf_counter() - t0
+        # Write immediately
+        with open(args.output, "a") as f:
+            for p in result["players"]:
+                f.write(json.dumps(p, ensure_ascii=False) + "\n")
 
-            winner = state.winner.value if hasattr(state.winner, "value") else str(state.winner)
-            result["winner"] = winner
-            result["days"] = state.day
-            result["duration_s"] = round(elapsed, 1)
-            result["players"] = []
-
-            for p in state.players:
-                role = p.role.value
-                team = "wolf" if role in ("Werewolf", "WhiteWolfKing") else "village"
-                won = team == winner
-                # Track by role
-                role_stats[role]["wins"] += 1 if won else 0
-                role_stats[role]["games"] += 1
-                role_stats[role]["survival_days"] += state.day if p.alive else (p.death_day or 0)
-                role_stats[role]["alive_end"] += 1 if p.alive else 0
-                # Track by MBTI+role
-                mbti = (p.persona or {}).get("mbti", "UNKNOWN") if hasattr(p, "persona") else "UNKNOWN"
-                mbti_key = f"{mbti}+{role}"
-                role_stats[mbti_key]["wins"] += 1 if won else 0
-                role_stats[mbti_key]["games"] += 1
-                role_stats[mbti_key]["survival_days"] += state.day if p.alive else (p.death_day or 0)
-                role_stats[mbti_key]["alive_end"] += 1 if p.alive else 0
-                result["players"].append({"name": p.name, "role": role, "mbti": mbti, "alive": p.alive, "won": won})
-
-            print(f"[{i + 1:2d}/{n_games}] seed={seed} winner={winner} days={state.day} time={elapsed:.0f}s")
-
-            # Save full game state for evolution analysis
-            state_file = output_dir / f"game_state_seed{seed}.json"
-            try:
-                _save_game_state(state, state_file)
-            except Exception:
-                pass
-
-        except Exception as e:
-            elapsed = time.perf_counter() - t0
-            result["error"] = str(e)
-            result["traceback"] = traceback.format_exc()[:500]
-            result["duration_s"] = round(elapsed, 1)
-            print(f"[{i + 1:2d}/{n_games}] seed={seed} FAILED: {e}")
-
-        game_results.append(result)
-
-        # Write incrementally
-        with open(results_file, "a") as f:
-            f.write(json.dumps(result, ensure_ascii=False) + "\n")
-
-        # Print running stats every 5 games
-        if (i + 1) % 5 == 0:
-            print(f"  --- Running stats after {i + 1} games ---")
-            for role in sorted(role_stats.keys()):
-                s = role_stats[role]
-                wr = s["wins"] / max(s["games"], 1)
-                print(f"  {role:<14s}: win_rate={wr:.1%} ({s['wins']}/{s['games']})")
-            print()
-
-    # Final summary
-    stats = {}
-    for role, s in sorted(role_stats.items()):
-        n = max(s["games"], 1)
-        stats[role] = {
-            "games": s["games"],
-            "wins": s["wins"],
-            "win_rate": round(s["wins"] / n, 4),
-            "avg_survival_days": round(s["survival_days"] / n, 2),
-            "alive_endgame_rate": round(s["alive_end"] / n, 4),
-        }
-
-    summary = {
-        "completed_at": datetime.now().isoformat(),
-        "total_games": n_games,
-        "successful": len([r for r in game_results if "error" not in r]),
-        "failed": len([r for r in game_results if "error" in r]),
-        "role_stats": stats,
-        "results": game_results,
-    }
-    with open(summary_file, "w") as f:
-        json.dump(summary, f, indent=2, ensure_ascii=False)
-
-    print(f"\n{'=' * 60}")
-    print(f"FINAL RESULTS ({summary['successful']}/{n_games} completed)")
-    print(f"{'=' * 60}")
-    print(f"{'Role':<14s} {'Win Rate':>9s} {'Surv Days':>10s} {'Alive End':>10s}")
-    print(f"{'-' * 56}")
-    for role, s in sorted(stats.items()):
-        print(f"{role:<14s} {s['win_rate']:>8.1%} {s['avg_survival_days']:>9.1f} {s['alive_endgame_rate']:>9.1%}")
-    print(f"{'=' * 60}")
-    print(f"Results saved to: {summary_file}")
+    total_t = time.time() - t_start
+    n_games = args.end_seed - args.start_seed + 1
+    ok_games = n_games - skipped
+    print(f"\nBATCH DONE: {ok_games}/{n_games} games ({skipped} skipped), {records} records, {total_t / 60:.1f}min")
 
 
 if __name__ == "__main__":
-    import argparse
-
-    p = argparse.ArgumentParser()
-    p.add_argument("--games", type=int, default=20)
-    p.add_argument("--start-seed", type=int, default=100)
-    args = p.parse_args()
-    run_batch(n_games=args.games, start_seed=args.start_seed)
+    main()
