@@ -1,191 +1,262 @@
 # AI Werewolf
 
-多智能体狼人杀 — 对战 · 复盘 · 进化
+多智能体狼人杀研究平台：让 AI 玩家在严格信息隔离下完成对局，并通过复盘评测与策略回流持续进化。
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.8+-blue)](https://www.python.org/)
-[![CI](https://img.shields.io/badge/CI-lint%20%2B%20test-brightgreen)](.github/workflows/ci.yml)
-[![PostgreSQL](https://img.shields.io/badge/db-PostgreSQL%2016-336791?logo=postgresql)](https://www.postgresql.org/)
+[![FastAPI](https://img.shields.io/badge/backend-FastAPI-009688?logo=fastapi)](https://fastapi.tiangolo.com/)
 [![Next.js](https://img.shields.io/badge/frontend-Next.js%2014-black?logo=next.js)](https://nextjs.org/)
+[![PostgreSQL](https://img.shields.io/badge/db-PostgreSQL%2016-336791?logo=postgresql)](https://www.postgresql.org/)
+[![CI](https://img.shields.io/badge/CI-ruff%20%2B%20pytest-brightgreen)](.github/workflows/ci.yml)
 
 ---
 
-## 项目概述
+## 项目一句话
 
-每个 AI 玩家拥有独立的 MBTI 人格、角色技能和认知架构，在严格信息隔离下进行推理、对话和决策。支持真人 vs AI 混战模式。赛后通过 LLM 复核和结构化复盘，提取策略知识沉淀到知识库，回流到下一代 Agent。
+AI Werewolf 不是单 prompt 聊天 demo，而是一套 **Play -> Evaluate -> Evolve** 的狼人杀 Agent Team 系统：
 
-### 架构主线
+- **Play**：规则引擎主控完整狼人杀流程，支持 7-12 人、警徽、PK、遗言、猎人开枪、白狼王自爆和真人混战。
+- **Evaluate**：Track B 对每一步发言、投票和技能行动做结构化评分、复盘、报告与 leaderboard。
+- **Evolve**：Track C 从复盘中抽取策略知识，经过安全过滤和检索回流到下一局 Agent。
 
-项目围绕 **规则引擎主控 → 信息隔离投影 → 角色化 Agent 决策 → 结构化复盘 → 策略知识回流** 展开。核心设计目标是让 AI 狼人杀既能正确运行，又能证明每个 Agent 在它应当知道的信息范围内做决策。
+它的核心研究问题是：在隐藏身份、欺骗、协作和不完全信息环境中，如何构建可运行、可观测、可评估、可进化的多智能体系统。
 
-| 架构优势 | 项目体现 |
-|------|------|
-| 规则稳定 | `WerewolfGame` 是状态唯一写入者，Agent 只提交行动意图 |
-| 信息可信 | `GameState` 与 `PlayerView` 分离，隐藏身份和私有事件不会进入 Agent 输入 |
-| 角色可扩展 | RoleRegistry、Phase、Action、Skill 分层，新增角色不需要把规则写进 Prompt |
-| 决策可解释 | GameEvent、AgentDecision、PublishedReview 串起可回放证据链 |
-| 策略可迭代 | 赛后经验沉淀为版本化 StrategyKnowledgeDoc，经 Retriever 注入下一局；Track C Wiki/Hermes 承接长期知识编译 |
+---
 
-完整架构说明见 [`docs/ARCHITECTURE_DESIGN_GUIDE.md`](docs/ARCHITECTURE_DESIGN_GUIDE.md)。
+## 架构总览
 
-### 与常见方案的区别
+<p align="center">
+  <img src="docs/assets/final_report/system-architecture.svg" alt="AI Werewolf system architecture" width="900">
+</p>
 
-| 常见方案 | 本项目设计 |
-|------|------|
-| 把狼人杀做成单轮 Prompt 或脚本裁判 | 规则引擎主控状态和裁决，Agent 只表达可验证的行动意图 |
-| 直接把全量历史塞给模型 | 公共信息、私有信息、角色技能和历史记忆分层投影，避免身份和夜晚事件泄露 |
-| 角色差异主要依赖 Prompt 文案 | MBTI 人格、角色约束、技能调度和策略检索拆成独立层，行为差异可配置、可测试 |
-| 赛后只输出胜负或自然语言总结 | 对局事件、决策、复盘、反事实和知识回流结构化保存，能追溯到具体回合和行动 |
-| 新策略直接覆盖旧策略 | Track C 使用 raw / refined / canonical 生命周期、版本组和 supersede 关系，优先使用经过验证的后期策略 |
+```mermaid
+flowchart LR
+    Engine["WerewolfGame<br/>规则裁决与状态唯一写入者"]
+    Visibility["Visibility<br/>GameState -> PlayerView"]
+    Agent["CognitiveAgent<br/>角色 / 人格 / 记忆 / 工具调用"]
+    Decision["Decision<br/>结构化行动意图"]
+    Review["Track B<br/>逐步评分 / 复盘 / Leaderboard"]
+    Knowledge["Track C<br/>策略知识抽取 / 检索 / 回流"]
+    UI["Next.js UI<br/>大厅 / 观战 / 真人操作 / 报告"]
 
-### 三层架构
-
-```
-Layer 1  MBTI 人格    →  决定"怎么思考"（认知风格、说话方式）
-Layer 2  Role 身份    →  定义"我是谁"（角色技能、胜利条件、反模式清单）
-Layer 3  Track C 策略 →  教"怎么赢"（Retriever 加载已验证的版本化策略；Wiki/Hermes 承接长期知识设计）
+    Engine --> Visibility --> Agent --> Decision --> Engine
+    Engine --> UI
+    Engine --> Review --> Knowledge --> Agent
 ```
 
-Track C 不把每次复盘总结都当作最终策略。新经验先进入 `raw` 候选层，经过复盘验证后提升为 `refined`，稳定策略再沉淀为 `canonical`；后续版本通过 `version_group`、`doc_version` 和 `supersedes_doc_ids` 关联旧策略，使越往后的有效经验更容易被检索到，同时避免未经验证的新总结压过稳定知识。
+关键设计边界：
+
+| 边界 | 设计 |
+|---|---|
+| 规则边界 | `WerewolfGame` 是真实状态唯一写入者；Agent 只能提交 `Decision`。 |
+| 信息边界 | Agent 只接收 `PlayerView`，不会看到上帝视角 `GameState`。 |
+| 行动边界 | 引擎校验阶段、角色、目标、生死状态和胜负条件。 |
+| 证据边界 | 决策原始输出、解析结果、工具 trace、检索策略和评分结果可追溯。 |
+| 进化边界 | Track C 只回流经过生命周期、安全过滤和适用性过滤的策略。 |
+
+---
+
+## 核心能力
+
+| 模块 | 能力 | 入口 |
+|---|---|---|
+| 游戏引擎 | 夜晚行动、白天发言、投票、死亡结算、胜负判定、警徽/PK/遗言等扩展流程 | `backend/engine/` |
+| 信息隔离 | 私有身份、夜间行动、狼队信息和公开视角分层投影 | `backend/engine/visibility.py` |
+| CognitiveAgent | MBTI 人格、角色目标、记忆、社交模型、规划器、工具调用决策 | `backend/agents/cognitive/` |
+| LLM 接入 | 统一 `create_client()`，支持 doubao / dsv4flash / ark / deepseek / anthropic / weapi / mimo / fake | `backend/llm/` |
+| Track B | 单步评分、复盘报告、runtime metrics、leaderboard | `backend/eval/` |
+| Track C | 策略抽取、知识生命周期、检索策略、usage feedback | `backend/eval/` + `backend/agents/cognitive/retrieval_prod.py` |
+| 前端 | 大厅、对局观战、真人操作、复盘仪表盘、人格管理、单局报告 | `frontend/app/` |
+| 实验 | Track B/C leaderboard、检索消融、模块效果评估、真实 LLM smoke | `scripts/` |
+
+---
+
+## Play -> Evaluate -> Evolve
+
+<p align="center">
+  <img src="docs/assets/final_report/play-evaluate-evolve.svg" alt="Play Evaluate Evolve loop" width="860">
+</p>
+
+```mermaid
+sequenceDiagram
+    participant G as WerewolfGame
+    participant V as Visibility
+    participant A as CognitiveAgent
+    participant B as Track B Review
+    participant C as Track C Knowledge
+
+    G->>V: project GameState to PlayerView
+    V->>A: role-visible observation
+    A->>A: memory + belief + strategy retrieval
+    A->>G: Decision(action_type, target, speech, reasoning)
+    G->>G: validate and resolve
+    G->>B: decision audit + game events
+    B->>C: highlights, mistakes, counterfactuals
+    C->>A: active strategy cards for future games
+```
+
+---
+
+## 当前量化结果
+
+最新模块级评估见 [`docs/MODULE_EFFECT_EXPERIMENT_RESULTS.md`](docs/MODULE_EFFECT_EXPERIMENT_RESULTS.md)。
+
+| 指标 | 当前结果 |
+|---|---:|
+| 核心模块达标 | 14 / 14 |
+| 平均模块效果分 | 90.79 / 100 |
+| 严格 v4flash formal evidence rows | 59 |
+| Track C 检索 P@3 | 0.2821 |
+| Track C 检索 nDCG@5 | 0.9587 |
+| Track C 检索 coverage | 1.0000 |
+| Track C candidate leakage | 0 |
+| 信息隔离 gate | 92 passed, 0 failed |
+| strict decision fallback / invalid | 0 / 0 |
+
+实验口径：整局 API 失败、超时和外部运行错误作为 run-health 披露，不计为 Agent 输局；胜率因果结论需要 paired target-seat A/B 支撑。
 
 ---
 
 ## 快速开始
 
+### 1. 安装依赖
+
 ```bash
-# 1. 安装依赖
 pip install -r requirements.txt
+cd frontend && npm install --legacy-peer-deps
+```
 
-# 2. 配置 LLM
+### 2. 配置环境
+
+```bash
 cp .env.example .env
-# 编辑 .env，设置 LLM_PROVIDER 和对应 API Key（如 DOUBAO_API_KEY / DEEPSEEK_API_KEY）
+```
 
-# 3. 启动 PostgreSQL（Docker，端口 5433）
+在 `.env` 中设置 `LLM_PROVIDER` 和对应 key。真实 key 只放 `.env`，不要提交到 Git。
+
+离线测试可以使用 fake provider：
+
+```bash
+export _TEST_ALLOW_FAKE_LLM=true
+export LLM_PROVIDER=fake
+```
+
+### 3. 启动数据库
+
+```bash
 docker run -d --name werewolf-pg \
   -e POSTGRES_USER=werewolf \
   -e POSTGRES_PASSWORD=werewolf_dev_password \
   -e POSTGRES_DB=werewolf \
   -p 5433:5432 postgres:16-alpine
-
-# 4. 初始化 / 迁移数据库结构
-python scripts/migrate_v2_columns.py
-
-# 5. 启动后端
-make dev
-# → http://localhost:8000/docs
-
-# 6. 启动前端（另开终端）
-cd frontend && npm install && npm run dev
-# → http://localhost:3001
 ```
 
-### 跑一局完整对局
+如果没有设置 `DATABASE_URL`，后端会使用 SQLite fallback；正式实验建议使用 PostgreSQL。
+
+### 4. 启动后端和前端
 
 ```bash
-# 严格模式，单局
-python scripts/llm_game_smoke.py --seed 1 --max-seed 1
+make dev
+# http://localhost:8000/docs
+```
 
-# 多层级消融实验
-python scripts/run_experiment.py --games 12
+```bash
+cd frontend
+npm run dev
+# http://localhost:3001
 ```
 
 ---
 
-## 技术栈
+## 常用验证
 
-| 层 | 技术 |
-|------|------|
-| 后端 | Python 3.8+ · FastAPI · WebSocket |
-| 前端 | Next.js 14 · React 18 · Tailwind CSS |
-| 数据库 | PostgreSQL 16（Docker，端口 5433） |
-| LLM | `backend.llm.create_client()` 统一接入，支持 doubao / dsv4flash / ark / deepseek / anthropic / weapi / mimo |
-| 检索 | BM25 + 倒排索引 · Agent 工具调用 |
-| 复盘 | LLM 复核 · 反事实推演 |
+```bash
+# 离线测试，无真实 LLM 调用
+_TEST_ALLOW_FAKE_LLM=true LLM_PROVIDER=fake python -m pytest tests/ -q
 
-### LLM 客户端
+# 后端 lint / format check
+ruff check backend/ scripts/ tests/ configs/
+ruff format --check backend/ scripts/ tests/ configs/
 
-`backend/llm/` 支持多种 API 格式和 provider：
+# 信息隔离严格检查
+python scripts/verify_visibility_strict.py
 
-| Client | 格式 | 端点 |
-|--------|:---:|------|
-| `AnthropicClient` | Anthropic Messages API | Anthropic-compatible endpoints |
-| `DeepSeekClient` | OpenAI Chat Completions | Volcengine Ark / DeepSeek / OpenAI-compatible endpoints |
+# 单局真实 LLM smoke，需配置真实 provider
+python scripts/llm_game_smoke.py --seed 1 --max-seed 1
 
-Provider 通过 `.env` 中 `LLM_PROVIDER` 切换；`LLM_PROVIDER=fake` 仅用于 `_TEST_ALLOW_FAKE_LLM=true` 的测试环境。
+# 前端构建
+cd frontend && npm run build
+```
 
 ---
 
 ## 项目结构
 
-```
+```text
 AIwerewolf/
 ├── backend/
-│   ├── engine/              # 游戏引擎（WerewolfGame, PlayerView, 阶段流转）
-│   ├── agents/cognitive/    # CognitiveAgent（Observe → Think → Act）
-│   ├── eval/                # 复盘分析（LLM 复核、报告、知识提取）
-│   ├── llm/                 # LLM 客户端（Anthropic + OpenAI 双格式）
-│   ├── db/                  # ORM + 持久化
-│   └── protocols/           # WebSocket / Room
-├── frontend/                # Next.js 观战 UI
-│   └── app/
-│       ├── page.tsx          # 大厅
-│       ├── room/[id]/play/   # 对局观战
-│       └── eval/dashboard/   # 复盘仪表盘
-├── scripts/                 # 实验、基准测试、验证
-├── tests/                   # 测试套件
-├── configs/                 # 规则配置
-├── docs/                    # 文档、实验报告
-└── data/                    # 本地实验数据（.gitignore，不进入 GitHub）
+│   ├── engine/              # 规则引擎、阶段流转、Visibility
+│   ├── agents/cognitive/    # CognitiveAgent、AgentLoop、Memory、Retrieval
+│   ├── eval/                # Track B/C 评分、复盘、进化
+│   ├── llm/                 # LLM 客户端封装
+│   ├── db/                  # SQLAlchemy models + persistence
+│   └── protocols/           # Room schema / WebSocket / RoomManager
+├── frontend/
+│   ├── app/                 # Next.js App Router 页面
+│   ├── components/          # UI 与 game 组件
+│   ├── hooks/               # 对局流、真人操作、展示派生状态
+│   └── lib/                 # API、i18n、展示工具
+├── scripts/                 # 实验、smoke、报告生成、迁移、验证脚本
+├── tests/                   # pytest + Playwright smoke
+├── configs/                 # 规则、策略和实验配置
+├── docs/                    # 正式文档、报告和展示资产
+└── references/              # 本地参考仓库，gitignore 排除
 ```
 
 ---
 
-## 关键页面
+## 主要页面
 
-| 页面 | 路由 | 说明 |
-|------|------|------|
-| 大厅 | `/` | 创建对局、进入房间 |
-| 对局观战 | `/room/[id]/play` | 实时观战，主持/观众视角切换 |
-| 人类玩家 | `/room/[id]/human` | 人类玩家操作面板 |
-| 复盘仪表盘 | `/eval/dashboard` | 单局报告、对局统计 |
-| 单局复盘 | `/games/[id]/report` | 完整复盘报告 |
-| 人格管理 | `/personas` | MBTI 人格配置 |
-
----
-
-## 对局验证
-
-```bash
-# 完整对局（真实 LLM）
-python scripts/llm_game_smoke.py --seed 1 --max-seed 3
-
-# 离线测试（无 API 调用）
-_TEST_ALLOW_FAKE_LLM=true LLM_PROVIDER=fake pytest tests/ -q
-
-# 后端严格验证
-python scripts/run_backend_full_strict.py
-
-# CI 检查
-ruff check backend/ scripts/ tests/ configs/
-ruff format --check backend/ scripts/ tests/ configs/
-```
+| 页面 | 路由 |
+|---|---|
+| 大厅 | `/` |
+| AI 对局观战 | `/room/[id]/play` |
+| 真人操作 | `/room/[id]/human` |
+| 复盘仪表盘 | `/eval/dashboard` |
+| 单局报告 | `/games/[id]/report` |
+| 进化看板 | `/evolution` |
+| 人格管理 | `/personas` |
 
 ---
 
-## 文档
+## 文档索引
 
 | 文档 | 说明 |
-|------|------|
-| [`prd.md`](docs/prd.md) | 产品需求规格（V2.0） |
-| [`PROJECT_MODULE_DESIGN.md`](docs/PROJECT_MODULE_DESIGN.md) | 核心模块设计 |
-| [`DATA_FLOW.md`](docs/DATA_FLOW.md) | 端到端数据流 |
-| [`ARCHITECTURE_DESIGN_GUIDE.md`](docs/ARCHITECTURE_DESIGN_GUIDE.md) | 架构设计、差异化与证据索引 |
-| [`TRACK_C_HERMES_LLM_WIKI_DESIGN.md`](docs/TRACK_C_HERMES_LLM_WIKI_DESIGN.md) | Track C 的 Hermes 自进化外循环 + LLM Wiki 增量设计 |
-| [`FINAL_DELIVERY_PACKAGE.md`](docs/FINAL_DELIVERY_PACKAGE.md) | GitHub 最终交付包、展示路线和仓库边界 |
-| [`PRODUCT_TECH_DOC.md`](docs/PRODUCT_TECH_DOC.md) | 产品技术文档 |
-| [`PROJECT_ACCEPTANCE_REPORT.md`](docs/PROJECT_ACCEPTANCE_REPORT.md) | 项目总体验收报告 |
-| [`OPTIMIZATION_BENCHMARK.md`](docs/OPTIMIZATION_BENCHMARK.md) | API 调用优化基准 |
-| [`backend_acceptance_criteria.md`](docs/backend_acceptance_criteria.md) | B/C 验收标准 |
+|---|---|
+| [`REQUIREMENTS.md`](REQUIREMENTS.md) | 课题需求与设计目标 |
+| [`docs/ARCHITECTURE_DESIGN_GUIDE.md`](docs/ARCHITECTURE_DESIGN_GUIDE.md) | 架构设计、差异化与证据索引 |
+| [`docs/DATA_FLOW.md`](docs/DATA_FLOW.md) | Play -> Evaluate -> Evolve 数据流和证据链 |
+| [`docs/PROJECT_MODULE_DESIGN.md`](docs/PROJECT_MODULE_DESIGN.md) | 核心模块设计 |
+| [`docs/MODULE_EFFECT_EXPERIMENT_RESULTS.md`](docs/MODULE_EFFECT_EXPERIMENT_RESULTS.md) | Track B/C 与模块效果评估 |
+| [`docs/TRACK_C_HERMES_LLM_WIKI_DESIGN.md`](docs/TRACK_C_HERMES_LLM_WIKI_DESIGN.md) | Track C 长期知识组织设计 |
+| [`docs/PRODUCT_TECH_DOC.md`](docs/PRODUCT_TECH_DOC.md) | 产品技术文档 |
+| [`docs/PROJECT_ACCEPTANCE_REPORT.md`](docs/PROJECT_ACCEPTANCE_REPORT.md) | 项目验收报告 |
+
+---
+
+## GitHub 提交边界
+
+应该进入仓库：
+
+- `backend/`、`frontend/`、`scripts/`、`tests/`、`configs/`
+- 根目录说明文档和 `docs/*.md`
+- 小型 SVG/HTML 展示资产、CI/部署配置
+
+不应该进入仓库：
+
+- `.env`、真实 API key、本地数据库、日志、`.venv`
+- `data/`、`models/`、`references/`
+- `node_modules/`、`.next*/`、大体积截图、实验输出 JSONL
 
 ---
 
