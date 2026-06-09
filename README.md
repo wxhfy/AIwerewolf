@@ -54,49 +54,7 @@
 | 前端能力 | 大厅、对局观战、真人操作、单局复盘、统计看板、人格配置页 |
 | 工程能力 | FastAPI REST/WebSocket、SQLAlchemy 持久化、配置化规则、严格信息隔离验证 |
 
-## 核心模块
-
-### 对局引擎
-
-入口：`backend/engine/game.py`
-
-`WerewolfGame` 是游戏状态的唯一写入者，负责初始化玩家、分配角色、推进昼夜阶段、结算技能、处理投票和判断胜负。Agent 不能直接修改状态，只能提交 `Decision`，再由引擎按当前阶段和规则裁决。
-
-### 阶段与行动规则
-
-入口：`backend/engine/phases.py`, `backend/engine/actions.py`
-
-阶段系统覆盖夜晚守卫、狼人行动、女巫行动、预言家查验、白天发言、警徽竞选、PK、投票、遗言和特殊技能。行动规则层负责检查 actor、target、技能次数和阶段约束，保证 LLM 输出不会绕过游戏规则。
-
-### 信息隔离
-
-入口：`backend/engine/visibility.py`
-
-系统将完整 `GameState` 投影为每个玩家自己的 `PlayerView`。狼人只看到狼队可见信息，预言家只看到自己的查验结果，观众公开视图会隐藏夜晚具体行动，信息边界由后端强制保证。
-
-### 角色注册与能力元数据
-
-入口：`backend/engine/roles/registry.py`
-
-RoleRegistry 是角色能力和展示信息的单一事实来源。可玩角色、模板角色、阵营、技能、夜晚顺序和前端展示都围绕它组织，方便后续扩展新角色而不破坏主流程。
-
-### Agent 运行时
-
-入口：`backend/agents/cognitive/`
-
-`CognitiveAgent` 将角色目标、人格风格、短期记忆、信任判断、工具调用和策略检索组合起来，再调用真实 LLM provider 生成结构化决策。AgentLoop 将“观察 -> 思考 -> 调工具 -> 输出 Decision”固定成可审计流程，便于复盘和调试。
-
-### 持久化与审计
-
-入口：`backend/db/models.py`, `backend/db/persist.py`
-
-系统将对局、玩家、事件、快照、Agent 决策、复盘报告、指标和策略知识写入数据库。这个审计链让一局游戏可以被回放、复盘、统计，也让 Track B 和 Track C 不依赖临时日志。
-
-### 前端体验
-
-入口：`frontend/app/`, `frontend/components/`, `frontend/hooks/`
-
-前端提供大厅、观战页、真人操作页、单局复盘页、统计看板和人格配置页。它只渲染后端给出的 public/private snapshot，不自行推断隐藏信息，从产品层配合后端信息隔离。
+核心模块设计详见 [`docs/PROJECT_MODULE_DESIGN.md`](docs/PROJECT_MODULE_DESIGN.md)，覆盖对局引擎、信息隔离、CognitiveAgent、AgentLoop、StrategyRetriever、PostgreSQL 证据链、PerStepScorer、Track C 知识层和前端控制台。
 
 ## Track B：复盘评测
 
