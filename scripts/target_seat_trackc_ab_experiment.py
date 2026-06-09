@@ -497,6 +497,97 @@ def append_jsonl(path: Path, payload: dict[str, Any]) -> None:
         f.write(json.dumps(payload, ensure_ascii=False, default=str) + "\n")
 
 
+def read_json(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def load_previous_results(payload: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    baseline = payload.get("baseline_results", []) if isinstance(payload, dict) else []
+    candidate = payload.get("candidate_results", []) if isinstance(payload, dict) else []
+    return dedupe_results_by_seed_side(list(baseline or [])), dedupe_results_by_seed_side(list(candidate or []))
+
+
+def dedupe_results_by_seed_side(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    by_key: dict[tuple[int, str], dict[str, Any]] = {}
+    for row in rows:
+        try:
+            seed = int(row.get("seed"))
+        except (TypeError, ValueError):
+            continue
+        side = str(row.get("side") or "").strip()
+        if side:
+            by_key[(seed, side)] = row
+    return list(by_key.values())
+
+
+def validate_resume_payload(
+    payload: dict[str, Any],
+    *,
+    path: Path,
+    target_role: str,
+    target_occurrence: int,
+    player_count: int,
+    max_days: int,
+    baseline_framework: str,
+    candidate_framework: str,
+    model_pool: Sequence[str],
+) -> None:
+    if not payload:
+        raise RuntimeError(f"Resume file is empty or missing: {path}")
+    if payload.get("runner") and payload.get("runner") != "target_seat_trackc_ab_experiment.py":
+        raise RuntimeError(f"Resume file was not produced by target_seat_trackc_ab_experiment.py: {path}")
+    expected = {
+        "target_role": target_role,
+        "target_occurrence": target_occurrence,
+        "player_count": player_count,
+        "max_days": max_days,
+        "baseline_framework": baseline_framework,
+        "candidate_framework": candidate_framework,
+    }
+    for key, value in expected.items():
+        if key in payload and payload.get(key) != value:
+            raise RuntimeError(f"Resume metadata mismatch for {key}: expected {value!r}, got {payload.get(key)!r}")
+    if "model_pool" in payload and list(payload.get("model_pool") or []) != list(model_pool):
+        raise RuntimeError("Resume metadata mismatch for model_pool")
+    for key in ("baseline_results", "candidate_results"):
+        if key in payload and not isinstance(payload.get(key), list):
+            raise RuntimeError(f"Resume field {key} must be a list")
+
+
+def completed_sides_by_seed(*result_lists: list[dict[str, Any]]) -> dict[tuple[int, str], dict[str, Any]]:
+    completed: dict[tuple[int, str], dict[str, Any]] = {}
+    for rows in result_lists:
+        for row in rows:
+            try:
+                seed = int(row.get("seed"))
+            except (TypeError, ValueError):
+                continue
+            side = str(row.get("side") or "").strip()
+            if side:
+                completed[(seed, side)] = row
+    return completed
+
+
+def result_seeds(*result_lists: list[dict[str, Any]]) -> list[int]:
+    seeds: set[int] = set()
+    for rows in result_lists:
+        for row in rows:
+            try:
+                seeds.add(int(row.get("seed")))
+            except (TypeError, ValueError):
+                continue
+    return sorted(seeds)
+
+
+def write_jsonl_rows(path: Path, rows: Sequence[dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as f:
+        for row in rows:
+            f.write(json.dumps(row, ensure_ascii=False, default=str) + "\n")
+
+
 def dry_run_plan(
     *,
     seeds: Sequence[int],
@@ -538,6 +629,12 @@ def main() -> int:
     parser.add_argument("--allow-fake", action="store_true")
     parser.add_argument("--skip-client-check", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--resume-from", type=Path, default=None, help="Previous target_seat_ab_*.json to resume from.")
+    parser.add_argument(
+        "--append",
+        action="store_true",
+        help="Append resumed results into --resume-from instead of writing a new timestamped output.",
+    )
     parser.add_argument("--bootstrap-iterations", type=int, default=1000)
     parser.add_argument("--min-paired-seeds", type=int, default=20)
     parser.add_argument("--min-adjusted-score-delta", type=float, default=3.0)
@@ -580,13 +677,50 @@ def main() -> int:
 
     model_specs = resolve_model_specs(args.models)
     validate_model_specs(model_specs, allow_fake=args.allow_fake, skip_client_check=args.skip_client_check)
+    model_pool = [spec.label for spec in model_specs]
     baseline_results: list[dict[str, Any]] = []
     candidate_results: list[dict[str, Any]] = []
-    games_jsonl = args.output_dir / f"target_seat_ab_{args.target_role}_{label}.games.jsonl"
+    if args.resume_from:
+        resume_payload = read_json(args.resume_from)
+        try:
+            validate_resume_payload(
+                resume_payload,
+                path=args.resume_from,
+                target_role=args.target_role,
+                target_occurrence=args.target_occurrence,
+                player_count=args.player_count,
+                max_days=args.max_days,
+                baseline_framework=baseline_framework.name,
+                candidate_framework=candidate_framework.name,
+                model_pool=model_pool,
+            )
+        except RuntimeError as exc:
+            raise SystemExit(str(exc)) from exc
+        previous_baseline, previous_candidate = load_previous_results(resume_payload)
+        baseline_results.extend(previous_baseline)
+        candidate_results.extend(previous_candidate)
+        if args.append:
+            out = args.resume_from.resolve()
+            games_jsonl = out.with_suffix(".games.jsonl")
+            partial_path = out.with_suffix(".partial.json")
+        else:
+            out = args.output_dir / f"target_seat_ab_{args.target_role}_{label}.json"
+            games_jsonl = args.output_dir / f"target_seat_ab_{args.target_role}_{label}.games.jsonl"
+            partial_path = args.output_dir / f"target_seat_ab_{args.target_role}_{label}.partial.json"
+    else:
+        out = args.output_dir / f"target_seat_ab_{args.target_role}_{label}.json"
+        games_jsonl = args.output_dir / f"target_seat_ab_{args.target_role}_{label}.games.jsonl"
+        partial_path = args.output_dir / f"target_seat_ab_{args.target_role}_{label}.partial.json"
+    already_done = completed_sides_by_seed(baseline_results, candidate_results)
+    if args.resume_from and not args.append:
+        write_jsonl_rows(games_jsonl, [*baseline_results, *candidate_results])
 
     started = time.perf_counter()
     for seed in args.seeds:
         for side, bucket in (("baseline", baseline_results), ("candidate", candidate_results)):
+            if (seed, side) in already_done:
+                print(f"skip completed side={side} seed={seed} target_role={args.target_role}")
+                continue
             print(f"running side={side} seed={seed} target_role={args.target_role}")
             result = run_target_game(
                 seed=seed,
@@ -601,6 +735,7 @@ def main() -> int:
             )
             row = asdict(result)
             bucket.append(row)
+            already_done[(seed, side)] = row
             append_jsonl(games_jsonl, row)
             partial = {
                 "updated_at": datetime.utcnow().isoformat() + "Z",
@@ -608,8 +743,10 @@ def main() -> int:
                 "baseline_completed": len(baseline_results),
                 "candidate_completed": len(candidate_results),
                 "games_jsonl": str(games_jsonl),
+                "resume_from": str(args.resume_from) if args.resume_from else "",
+                "append": bool(args.append),
             }
-            write_json(args.output_dir / f"target_seat_ab_{args.target_role}_{label}.partial.json", partial)
+            write_json(partial_path, partial)
 
     comparison = compare_results(
         baseline_results,
@@ -629,20 +766,22 @@ def main() -> int:
         "target_occurrence": args.target_occurrence,
         "baseline_framework": baseline_framework.name,
         "candidate_framework": candidate_framework.name,
-        "seeds": list(args.seeds),
+        "requested_seeds": list(args.seeds),
+        "seeds": result_seeds(baseline_results, candidate_results),
         "player_count": args.player_count,
         "max_days": args.max_days,
-        "model_pool": [spec.label for spec in model_specs],
+        "model_pool": model_pool,
         "games_jsonl": str(games_jsonl),
+        "resume_from": str(args.resume_from) if args.resume_from else "",
+        "append": bool(args.append),
         "baseline_results": baseline_results,
         "candidate_results": candidate_results,
         "comparison": comparison,
         "claim_boundary": (
-            "Use this as causal Track C evidence only when comparison.acceptance.accepted=true. "
-            "Otherwise report comparison.acceptance.claim_level and keep the result as partial evidence."
+            "仅当 comparison.acceptance.accepted=true 时，才能把本输出作为 Track C 单目标席位因果增益证据。"
+            "否则只能报告 comparison.acceptance.claim_level，并将其作为阶段性或烟测证据。"
         ),
     }
-    out = args.output_dir / f"target_seat_ab_{args.target_role}_{label}.json"
     write_json(out, output)
     print(f"Wrote {out}")
     print(json.dumps(comparison, ensure_ascii=False, indent=2))

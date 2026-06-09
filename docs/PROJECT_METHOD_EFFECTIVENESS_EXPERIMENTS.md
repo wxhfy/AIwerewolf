@@ -1,6 +1,6 @@
 # 项目方法有效性实验报告
 
-生成时间：2026-06-09T11:33:34+08:00
+生成时间：2026-06-09T12:02:09+08:00
 
 可追溯性说明：本报告引用的 `docs/experiments/` 和 `outputs/` 原始产物是本地实验输出，按仓库规则不进入 GitHub；可提交的机器可读摘要已汇总到 `docs/PROJECT_METHOD_EFFECTIVENESS_FACTS.json`、`docs/PROJECT_METHOD_EFFECTIVENESS_STATISTICS.json`、`docs/PROJECT_ROLE_RETRIEVAL_FACTS.json` 和 `docs/PROJECT_STRATEGY_USAGE_DECISION_SCORE_ANALYSIS.json`。
 
@@ -122,23 +122,23 @@
 
 | Metric | Value |
 | --- | --- |
-| feedback_total | 133302 |
-| retrieved | 133302 |
+| feedback_total | 133541 |
+| retrieved | 133541 |
 | used | 51383 |
 | helpful | 41192 |
-| used/retrieved | 38.55% |
-| helpful/retrieved | 30.90% |
+| used/retrieved | 38.48% |
+| helpful/retrieved | 30.85% |
 | helpful/used | 80.17% |
 | avg_score_delta | 0.0000 |
 | strategy_docs_active | 387 |
-| strategy_docs_candidate | 198869 |
+| strategy_docs_candidate | 200773 |
 
 运行时 feedback Wilson 95% CI：
 
 | Metric | Count | Rate | Wilson95CI |
 | --- | --- | --- | --- |
-| used/retrieved | 51383/133302 | 0.3855 | [0.3829, 0.3881] |
-| helpful/retrieved | 41192/133302 | 0.3090 | [0.3065, 0.3115] |
+| used/retrieved | 51383/133541 | 0.3848 | [0.3822, 0.3874] |
+| helpful/retrieved | 41192/133541 | 0.3085 | [0.3060, 0.3109] |
 | helpful/used | 41192/51383 | 0.8017 | [0.7982, 0.8051] |
 
 按角色 feedback：
@@ -208,15 +208,19 @@
 
 ## 10. Target-seat Track C 因果 A/B
 
-当前未找到正式 target-seat A/B 输出。`scripts/target_seat_trackc_ab_experiment.py` 已支持 per-agent feature flags、paired delta、bootstrap 95% CI 和 acceptance gate；需要在真实 LLM provider 可用后运行，并确保 paired seeds、fallback/invalid、bootstrap CI 门禁通过。
+| Source | Role | Baseline | Candidate | Paired | ScoreDelta | RoleTaskDelta | WinDelta | MaxDays | Scope | Fallback | Invalid | Accepted | ClaimLevel |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| outputs/target_seat_trackc_ab_seer_maxday1_probe/target_seat_ab_Seer_20260609T034156Z.json | Seer | basic_react | rag_react | 1 | 0.0000 | 0.0000 | 0.0000 | 1 | smoke_only | 0 | 0 | False | ci_not_positive |
+
+解释：`claim_scope=smoke_only` 的 target-seat 输出只说明真实 runner、per-agent feature flags、paired delta 和健康门禁能跑通；只有正式样本 `Accepted=true` 且 `ClaimLevel=causal_supported` 时，才能把 Track C 写成对单个目标席位的因果增益。
 
 ### 10.1 真实 LLM Provider Preflight
 
 | Status | SafeForFormalExperiment | ResolvedModels | Error | Source |
 | --- | --- | --- | --- | --- |
-| failed | False | deepseek:deepseek-v4-flash | RuntimeError: LLM client unavailable for deepseek:deepseek-v4-flash. Check API key/base URL env vars before running. | docs/PROJECT_PROVIDER_PREFLIGHT.json |
+| ok | True | doubao:ep-20260514115354-k4jz4 | None | docs/PROJECT_PROVIDER_PREFLIGHT.json |
 
-该 preflight 是当前不能补齐 target-seat 因果实验的直接证据；修复 key/base URL/provider 后需要先重跑 `python scripts/check_real_llm_provider.py`，确认 `safe_for_formal_experiment=true` 再启动正式 A/B。
+该 preflight 已通过真实 provider 可用性检查；target-seat 因果实验的剩余阻塞不再是 provider，而是仍需按功效计划运行正式 paired-seed A/B，并通过 fallback/invalid 与 bootstrap CI 门禁。
 
 ### 10.2 Target-seat A/B 功效计划
 
@@ -245,11 +249,11 @@
 | 精确 role+MBTI 检索过窄，不适合作为默认策略 | offline_retrieval_ablation | supported | same_role_same_mbti_coverage=0.1538; empty=22 | outputs/retrieval_effectiveness_current/results.json | 可作为补充桶或专项实验，不作为默认运行策略。 |
 | 精确 role+MBTI 稀疏主要来自当前知识池分布 | offline_retrieval_corpus | supported | roles=6; exact_empty_queries=21; global_generic_docs=35 | outputs/retrieval_effectiveness_current/role_corpus_stats.csv | 这是 active 知识池规模统计；不等同在线策略使用率。 |
 | Track C 知识库安全卫生达标 | audit_gate | supported | docs=131; invalid=0; leak=0; source_event_coverage=0.9924 | docs/experiments/full_project_real_audit/audit_summary.json | 审计样本和当前 DB 快照可能不同，正式归档需冻结 experiment_id。 |
-| 运行时 feedback 显示被使用策略多数被标记 helpful | runtime_db_snapshot | supported | retrieved=133302; used=51383; helpful=41192; helpful/used=80.17% | PostgreSQL knowledge_usage_feedback / strategy_knowledge_docs current non-fake snapshot | 当前 score_delta 平均仍接近 0，feedback 不能直接等同因果增益。 |
+| 运行时 feedback 显示被使用策略多数被标记 helpful | runtime_db_snapshot | supported | retrieved=133541; used=51383; helpful=41192; helpful/used=80.17% | PostgreSQL knowledge_usage_feedback / strategy_knowledge_docs current non-fake snapshot | 当前 score_delta 平均仍接近 0，feedback 不能直接等同因果增益。 |
 | 策略使用决策与更高 Track B 逐步评分相关 | observational_decision_score_join | supported | decision_rows=170399; used=3088; unused=167311; delta=0.0823; ci=[0.0764,0.0882]; strict_weighted_delta=0.0967; strict_strata=48/10/0 | docs/PROJECT_STRATEGY_USAGE_DECISION_SCORE_ANALYSIS.json | 观测性关联，不能替代 target-seat paired A/B 因果证明。 |
 | 策略使用评分关联覆盖 6 个核心角色 | role_internal_observational_control | supported | core_positive_roles=6/6; weighted_deltas=Werewolf:0.0899,Guard:0.1006,Seer:0.1272,Witch:0.0670,Villager:0.1220,Hunter:0.0779 | docs/PROJECT_STRATEGY_USAGE_DECISION_SCORE_ANALYSIS.json | 角色内按 action/tier/day/phase 控制后的观测性关联；非核心或低样本角色暂不声明，negative_or_weak=1。 |
 | Track C 开关存在角色/MBTI 层面的正向趋势 | auxiliary_trend | trend_only | off=0.3508; on=0.3784; avg_non_wolf_delta=0.0643 | docs/experiments/mbti_track_c_auxiliary_analysis/summary.json | 全席位同时切换，不是 target-seat 因果 A/B。 |
-| Track C 对单个目标席位的因果增益 | target_seat_paired_ab | missing | no target-seat output found | outputs/target_seat_trackc_ab*/target_seat_ab_*.json | 只有 accepted=true 且样本/健康/CI 门禁通过时，才能写成因果支持。 |
+| Track C 对单个目标席位的因果增益 | target_seat_paired_ab | smoke_only | role=Seer; paired=1; score_delta=0.0000; accepted=False; scope=smoke_only; max_days=1 | outputs/target_seat_trackc_ab_seer_maxday1_probe/target_seat_ab_Seer_20260609T034156Z.json | micro/max_days=1 输出只能证明 runner 可运行；只有正式样本 accepted=true 且样本/健康/CI 门禁通过时，才能写成因果支持。 |
 | Track C 在线烟测能把策略注入真实决策 | real_llm_smoke | smoke_only | rows=5; max_knowledge_hit=0.9200; fallback_sum=0 | docs/experiments/track_c_runtime_fix/*/group_results.csv | 样本小且有正反结果，只能证明链路可运行和策略命中，不能证明胜率提升。 |
 | 完整规则/角色/阶段覆盖已经过真实审计 | full_project_audit | supported | natural_games=9; controlled_cases=9; roles=8; phases=21; issues=0 | docs/experiments/full_project_real_audit/audit_summary.json | 审计证明平台覆盖，不是 Track C 单独增益。 |
 
@@ -273,11 +277,11 @@
 | Track C 最终胜率因果提升 | 当前正式数据中 trackc_only/both 完成率不均，辅助数据是全席位同时切换。 | 先跑 20 paired seeds pilot；正式因果验证建议 80-120 paired seeds 起步，只升级一个目标席位，固定对手、seed、角色分配。胜率作为辅助指标。 |
 | 每个角色的最优检索 policy | 离线 query set 仅 26 条，Guard/Hunter 等角色样本少。 | 每角色 20+ 查询，人工或 LLM judge 标注 top-5。 |
 | strategy_usage_feedback 的逐决策因果分数 | 当前 avg_score_delta 接近 0，未与 Track B ScoredStep 做严格差分。 | 关联 retrieved_doc_ids / knowledge_usage_feedback / PerStepScorer，计算 used vs unused 决策分差。 |
-| 当前真实 LLM provider 连通性 | 当前客户端检查解析到 deepseek:deepseek-v4-flash，但 create_client 返回 unavailable。 | 修复 provider/base URL/key 后，先运行 target-seat paired A/B，再运行全席位 track_bc_leaderboard_experiment。 |
+| 正式 target-seat A/B 样本量 | 当前 provider 已通过 Doubao/Ark endpoint 真实 chat preflight，且 max_days=1 smoke 可跑通；但尚未完成 80-120 paired seeds 的正式目标席位实验。 | 按功效计划运行正式 target-seat paired A/B：固定 seed、角色分配和对手，只升级目标席位，并报告 adjusted score、role-task、win-rate、fallback/invalid 与 bootstrap CI。 |
 
 ## 13. 下一步真实实验命令
 
-修复 provider/base URL/key 后，建议先运行 20 paired seeds pilot 验证链路健康：
+当前 Doubao/Ark endpoint 已通过真实 chat preflight。建议先运行 20 paired seeds pilot 验证完整 target-seat 链路健康：
 
 ```bash
 python scripts/target_seat_trackc_ab_experiment.py \
@@ -285,6 +289,7 @@ python scripts/target_seat_trackc_ab_experiment.py \
   --seeds 9301 9302 9303 9304 9305 9306 9307 9308 9309 9310 9311 9312 9313 9314 9315 9316 9317 9318 9319 9320 \
   --baseline-framework basic_react \
   --candidate-framework rag_react \
+  --models "doubao:${DOUBAO_ENDPOINT}" \
   --player-count 7 \
   --max-days 20 \
   --bootstrap-iterations 2000 \

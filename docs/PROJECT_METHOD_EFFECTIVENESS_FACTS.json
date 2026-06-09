@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-06-09T11:33:34+08:00",
+  "generated_at": "2026-06-09T12:02:09+08:00",
   "sources": {
     "formal_summary": "docs/experiments/formal_v4flash_framework_analysis/summary.json",
     "formal_leaderboard": "docs/experiments/formal_v4flash_framework_analysis/leaderboard.csv",
@@ -883,7 +883,7 @@
       }
     ],
     "single_role_quantification": {
-      "generated_at": "2026-06-09T11:17:02+08:00",
+      "generated_at": "2026-06-09T11:56:17+08:00",
       "input_dir": "outputs/retrieval_effectiveness_current",
       "sources": {
         "results": "outputs/retrieval_effectiveness_current/results.json",
@@ -2127,18 +2127,18 @@
   },
   "runtime_feedback": {
     "status": "ok",
-    "queried_at": "2026-06-09T11:33:34+08:00",
-    "feedback_total": 133302,
-    "retrieved": 133302,
+    "queried_at": "2026-06-09T12:02:09+08:00",
+    "feedback_total": 133541,
+    "retrieved": 133541,
     "used": 51383,
     "helpful": 41192,
-    "used_rate": 0.3854630838246988,
-    "helpful_over_retrieved": 0.30901261796522184,
+    "used_rate": 0.3847732157165215,
+    "helpful_over_retrieved": 0.308459574213163,
     "helpful_over_used": 0.8016659206352296,
     "avg_score_delta": 0.0,
-    "strategy_docs_total": 199273,
+    "strategy_docs_total": 201177,
     "strategy_docs_active": 387,
-    "strategy_docs_candidate": 198869,
+    "strategy_docs_candidate": 200773,
     "strategy_docs_deprecated": 17,
     "by_role": [
       {
@@ -2209,7 +2209,7 @@
       "7909103f-1427-44b1-8708-c50de366db0a",
       "caf3d82d-4284-4feb-8b98-4aba441b2495"
     ],
-    "filter": "excludes games whose players.model_name contains fake",
+    "filter": "excludes feedback games and knowledge docs whose players.model_name contains fake, plus fake target-seat output game_ids",
     "source": "PostgreSQL knowledge_usage_feedback / strategy_knowledge_docs current non-fake snapshot"
   },
   "statistics": {
@@ -2860,19 +2860,19 @@
     "runtime_feedback": {
       "status": "ok",
       "source": "PostgreSQL knowledge_usage_feedback / strategy_knowledge_docs current non-fake snapshot",
-      "filter": "excludes games whose players.model_name contains fake",
-      "retrieved": 133302,
+      "filter": "excludes feedback games and knowledge docs whose players.model_name contains fake, plus fake target-seat output game_ids",
+      "retrieved": 133541,
       "used": 51383,
       "helpful": 41192,
       "used_over_retrieved": {
-        "rate": 0.3854630838246988,
-        "ci_low": 0.38285363842248815,
-        "ci_high": 0.3880791306633041
+        "rate": 0.3847732157165215,
+        "ci_low": 0.38216699675079674,
+        "ci_high": 0.3873860639943066
       },
       "helpful_over_retrieved": {
-        "rate": 0.30901261796522184,
-        "ci_low": 0.3065375276795739,
-        "ci_high": 0.3114987159774333
+        "rate": 0.308459574213163,
+        "ci_low": 0.3059879387241235,
+        "ci_high": 0.31094222954678635
       },
       "helpful_over_used": {
         "rate": 0.8016659206352296,
@@ -6095,21 +6095,40 @@
     ]
   },
   "provider_preflight": {
-    "checked_at": "2026-06-09T10:50:03+08:00",
-    "status": "failed",
+    "checked_at": "2026-06-09T11:41:35+08:00",
+    "status": "ok",
     "allow_fake": false,
     "skip_client_check": false,
-    "raw_models_provided": false,
+    "run_chat_check": true,
+    "raw_models_provided": true,
     "resolved_models": [
       {
-        "provider": "deepseek",
-        "model": "deepseek-v4-flash",
-        "label": "deepseek:deepseek-v4-flash"
+        "provider": "doubao",
+        "model": "ep-20260514115354-k4jz4",
+        "label": "doubao:ep-20260514115354-k4jz4"
       }
     ],
-    "client_checks": [],
-    "error": "RuntimeError: LLM client unavailable for deepseek:deepseek-v4-flash. Check API key/base URL env vars before running.",
-    "safe_for_formal_experiment": false
+    "client_checks": [
+      {
+        "label": "doubao:ep-20260514115354-k4jz4",
+        "provider": "doubao",
+        "model": "ep-20260514115354-k4jz4",
+        "available": true,
+        "fake": false,
+        "client_class": "DeepSeekClient",
+        "base_url_present": true
+      }
+    ],
+    "chat_checks": [
+      {
+        "label": "doubao:ep-20260514115354-k4jz4",
+        "ok": true,
+        "elapsed_s": 2.723,
+        "response_preview": "OK"
+      }
+    ],
+    "error": null,
+    "safe_for_formal_experiment": true
   },
   "strategy_usage_decision_scores": {
     "generated_at": "2026-06-09T11:31:45+08:00",
@@ -9406,7 +9425,53 @@
       "knowledge_hit_rate": 0.826923
     }
   ],
-  "target_seat_ab": [],
+  "target_seat_ab": [
+    {
+      "source": "outputs/target_seat_trackc_ab_seer_maxday1_probe/target_seat_ab_Seer_20260609T034156Z.json",
+      "generated_at": "2026-06-09T03:43:28.279504Z",
+      "target_role": "Seer",
+      "baseline_framework": "basic_react",
+      "candidate_framework": "rag_react",
+      "paired_seed_count": 1,
+      "target_win_rate_delta": 0.0,
+      "target_adjusted_score_delta": 0.0,
+      "target_role_task_delta": 0.0,
+      "candidate_fallback_count": 0,
+      "candidate_invalid_count": 0,
+      "accepted": false,
+      "claim_level": "ci_not_positive",
+      "max_days": 1,
+      "player_count": 7,
+      "elapsed_s": 91.118,
+      "claim_scope": "smoke_only",
+      "bootstrap_ci": {
+        "adjusted_final_score_delta": {
+          "samples": 1,
+          "mean": 0.0,
+          "ci95_low": 0.0,
+          "ci95_high": 0.0
+        },
+        "role_task_score_delta": {
+          "samples": 1,
+          "mean": 0.0,
+          "ci95_low": 0.0,
+          "ci95_high": 0.0
+        },
+        "process_score_delta": {
+          "samples": 1,
+          "mean": 0.0,
+          "ci95_low": 0.0,
+          "ci95_high": 0.0
+        },
+        "target_win_rate_delta": {
+          "samples": 1,
+          "mean": 0.0,
+          "ci95_low": 0.0,
+          "ci95_high": 0.0
+        }
+      }
+    }
+  ],
   "target_seat_power_plan": {
     "generated_at": "2026-06-09T11:23:50+08:00",
     "report_type": "target_seat_trackc_ab_power_plan",
@@ -10272,7 +10337,7 @@
       "claim": "运行时 feedback 显示被使用策略多数被标记 helpful",
       "evidence_level": "runtime_db_snapshot",
       "status": "supported",
-      "metric": "retrieved=133302; used=51383; helpful=41192; helpful/used=80.17%",
+      "metric": "retrieved=133541; used=51383; helpful=41192; helpful/used=80.17%",
       "source": "PostgreSQL knowledge_usage_feedback / strategy_knowledge_docs current non-fake snapshot",
       "boundary": "当前 score_delta 平均仍接近 0，feedback 不能直接等同因果增益。"
     },
@@ -10303,10 +10368,10 @@
     {
       "claim": "Track C 对单个目标席位的因果增益",
       "evidence_level": "target_seat_paired_ab",
-      "status": "missing",
-      "metric": "no target-seat output found",
-      "source": "outputs/target_seat_trackc_ab*/target_seat_ab_*.json",
-      "boundary": "只有 accepted=true 且样本/健康/CI 门禁通过时，才能写成因果支持。"
+      "status": "smoke_only",
+      "metric": "role=Seer; paired=1; score_delta=0.0000; accepted=False; scope=smoke_only; max_days=1",
+      "source": "outputs/target_seat_trackc_ab_seer_maxday1_probe/target_seat_ab_Seer_20260609T034156Z.json",
+      "boundary": "micro/max_days=1 输出只能证明 runner 可运行；只有正式样本 accepted=true 且样本/健康/CI 门禁通过时，才能写成因果支持。"
     },
     {
       "claim": "Track C 在线烟测能把策略注入真实决策",
@@ -10342,9 +10407,9 @@
       "required_experiment": "关联 retrieved_doc_ids / knowledge_usage_feedback / PerStepScorer，计算 used vs unused 决策分差。"
     },
     {
-      "gap": "当前真实 LLM provider 连通性",
-      "reason": "当前客户端检查解析到 deepseek:deepseek-v4-flash，但 create_client 返回 unavailable。",
-      "required_experiment": "修复 provider/base URL/key 后，先运行 target-seat paired A/B，再运行全席位 track_bc_leaderboard_experiment。"
+      "gap": "正式 target-seat A/B 样本量",
+      "reason": "当前 provider 已通过 Doubao/Ark endpoint 真实 chat preflight，且 max_days=1 smoke 可跑通；但尚未完成 80-120 paired seeds 的正式目标席位实验。",
+      "required_experiment": "按功效计划运行正式 target-seat paired A/B：固定 seed、角色分配和对手，只升级目标席位，并报告 adjusted score、role-task、win-rate、fallback/invalid 与 bootstrap CI。"
     }
   ]
 }

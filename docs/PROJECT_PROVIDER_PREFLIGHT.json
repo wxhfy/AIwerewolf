@@ -1,17 +1,36 @@
 {
-  "checked_at": "2026-06-09T10:50:03+08:00",
-  "status": "failed",
+  "checked_at": "2026-06-09T11:41:35+08:00",
+  "status": "ok",
   "allow_fake": false,
   "skip_client_check": false,
-  "raw_models_provided": false,
+  "run_chat_check": true,
+  "raw_models_provided": true,
   "resolved_models": [
     {
-      "provider": "deepseek",
-      "model": "deepseek-v4-flash",
-      "label": "deepseek:deepseek-v4-flash"
+      "provider": "doubao",
+      "model": "ep-20260514115354-k4jz4",
+      "label": "doubao:ep-20260514115354-k4jz4"
     }
   ],
-  "client_checks": [],
-  "error": "RuntimeError: LLM client unavailable for deepseek:deepseek-v4-flash. Check API key/base URL env vars before running.",
-  "safe_for_formal_experiment": false
+  "client_checks": [
+    {
+      "label": "doubao:ep-20260514115354-k4jz4",
+      "provider": "doubao",
+      "model": "ep-20260514115354-k4jz4",
+      "available": true,
+      "fake": false,
+      "client_class": "DeepSeekClient",
+      "base_url_present": true
+    }
+  ],
+  "chat_checks": [
+    {
+      "label": "doubao:ep-20260514115354-k4jz4",
+      "ok": true,
+      "elapsed_s": 2.723,
+      "response_preview": "OK"
+    }
+  ],
+  "error": null,
+  "safe_for_formal_experiment": true
 }

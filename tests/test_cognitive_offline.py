@@ -29,6 +29,8 @@ from backend.agents.cognitive.profiles import get_profile
 from backend.agents.cognitive.reflect import Reflector
 from backend.agents.cognitive.reflect import reflections_to_knowledge_docs
 from backend.agents.cognitive.repository import _profile_from_role_card_row
+from backend.agents.cognitive.repository import _role_goal_from_row
+from backend.agents.cognitive.repository import load_profile_from_db
 from backend.agents.cognitive.repository import load_profiles_from_db
 from backend.engine.game import WerewolfGame
 from backend.engine.models import ActionType
@@ -101,6 +103,40 @@ class DeterministicCognitiveLLM:
             if name and name != self_name:
                 return name
         return names[0] if names else "P1"
+
+
+class _FakeProfileCursor:
+    def __init__(self, rows) -> None:
+        self.closed = False
+        self.executed = ""
+        self._rows = rows
+
+    def execute(self, query: str) -> None:
+        self.executed = query
+
+    def fetchall(self):
+        return self._rows
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class _FakeProfileConnection:
+    def __init__(self, rows) -> None:
+        self.closed = False
+        self.cursor_obj = _FakeProfileCursor(rows)
+
+    def cursor(self) -> _FakeProfileCursor:
+        return self.cursor_obj
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def _install_fake_profile_db(monkeypatch: pytest.MonkeyPatch, rows) -> _FakeProfileConnection:
+    fake_conn = _FakeProfileConnection(rows)
+    monkeypatch.setitem(sys.modules, "psycopg2", SimpleNamespace(connect=lambda _: fake_conn))
+    return fake_conn
 
 
 class ProviderModelLLM:
@@ -1213,33 +1249,7 @@ def test_character_profile_injection_does_not_pollute_default_role_profile() -> 
 def test_load_profiles_from_db_closes_resources_and_returns_isolated_profiles(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    class FakeCursor:
-        def __init__(self) -> None:
-            self.closed = False
-            self.executed = ""
-
-        def execute(self, query: str) -> None:
-            self.executed = query
-
-        def fetchall(self):
-            return [("Villager", "DB goal", [], [], [], [])]
-
-        def close(self) -> None:
-            self.closed = True
-
-    class FakeConnection:
-        def __init__(self) -> None:
-            self.closed = False
-            self.cursor_obj = FakeCursor()
-
-        def cursor(self) -> FakeCursor:
-            return self.cursor_obj
-
-        def close(self) -> None:
-            self.closed = True
-
-    fake_conn = FakeConnection()
-    monkeypatch.setitem(sys.modules, "psycopg2", SimpleNamespace(connect=lambda _: fake_conn))
+    fake_conn = _install_fake_profile_db(monkeypatch, [("Villager", "DB goal")])
 
     profiles = load_profiles_from_db("postgresql://unit-test")
     profile = profiles["Villager"]
@@ -1247,6 +1257,7 @@ def test_load_profiles_from_db_closes_resources_and_returns_isolated_profiles(
     assert fake_conn.closed is True
     assert fake_conn.cursor_obj.closed is True
     assert "FROM role_strategy_cards" in fake_conn.cursor_obj.executed
+    assert "speech_policy" not in fake_conn.cursor_obj.executed
     assert profile.goal == "DB goal"
 
     profile.persona.mbti = "ENFP"
@@ -1260,9 +1271,11 @@ def test_profile_from_role_card_row_preserves_base_fields_and_goal_override() ->
 
     db_profile = _profile_from_role_card_row("Villager", "DB goal")
     fallback_profile = _profile_from_role_card_row("Villager", "")
+    unknown_role_profile = _profile_from_role_card_row("UnknownRole", "")
 
     assert db_profile.goal == "DB goal"
     assert fallback_profile.goal == default_profile.goal
+    assert unknown_role_profile.goal == default_profile.goal
     assert db_profile.role == default_profile.role
     assert db_profile.backstory == default_profile.backstory
     assert db_profile.speech_style == default_profile.speech_style
@@ -1273,6 +1286,48 @@ def test_profile_from_role_card_row_preserves_base_fields_and_goal_override() ->
 
     db_profile.personality.append("测试污染")
     assert "测试污染" not in _profile_from_role_card_row("Villager", "DB goal").personality
+
+
+def test_role_goal_from_row_accepts_tuple_and_dict_rows() -> None:
+    assert _role_goal_from_row(("Villager", "DB goal")) == ("Villager", "DB goal")
+    assert _role_goal_from_row(("Villager", "DB goal", "ignored")) == ("Villager", "DB goal")
+    assert _role_goal_from_row(("Villager",)) == ("Villager", None)
+    assert _role_goal_from_row({"role": "Seer", "goal": "DB seer goal"}) == ("Seer", "DB seer goal")
+    assert _role_goal_from_row({"role": "  ", "goal": "ignored"}) is None
+    assert _role_goal_from_row({}) is None
+    assert _role_goal_from_row(()) is None
+    assert _role_goal_from_row(None) is None
+
+
+def test_load_profiles_from_db_skips_unparseable_rows_and_falls_back(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_conn = _install_fake_profile_db(monkeypatch, [{}, ()])
+
+    profiles = load_profiles_from_db("postgresql://unit-test")
+
+    assert profiles["Villager"].goal == get_profile("Villager").goal
+    assert "" not in profiles
+    assert fake_conn.closed is True
+    assert fake_conn.cursor_obj.closed is True
+
+
+def test_load_profile_from_db_fallback_preserves_unknown_role_isolation(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setitem(
+        sys.modules,
+        "psycopg2",
+        SimpleNamespace(connect=lambda _: (_ for _ in ()).throw(RuntimeError("db unavailable"))),
+    )
+
+    profile = load_profile_from_db("UnknownRole", conn_str="postgresql://unit-test")
+    default_profile = get_profile("UnknownRole")
+
+    assert profile.goal == default_profile.goal
+    assert profile.persona.mbti == default_profile.persona.mbti
+
+    profile.persona.mbti = "ENFP"
+    assert (
+        load_profile_from_db("UnknownRole", conn_str="postgresql://unit-test").persona.mbti
+        == default_profile.persona.mbti
+    )
 
 
 def test_cognitive_agent_reflection_game_id_preserves_unknown_fallback() -> None:
