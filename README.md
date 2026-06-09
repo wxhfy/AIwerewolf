@@ -86,7 +86,7 @@ flowchart TB
 | 信息隔离在后端完成 | `GameState` 投影为 `PlayerView` 和 public snapshot，前端只渲染后端给出的视图 |
 | Agent 行为可组合 | Persona、Role、Strategy 三层 Prompt 配合 Memory、BeliefTracker、SocialModel 和工具调用 |
 | 复盘证据可追溯 | `GameEvent`、`AgentDecision`、`PublishedReview` 和策略知识形成可回放证据链 |
-| 策略迭代有生命周期 | Track C 新策略先进入候选池，经过质量门禁和验证后进入 active 策略池，后续版本可替换旧策略并保留 lineage |
+| 策略迭代有生命周期 | Track C 新策略先进入候选池，赛后自动门禁和批处理治理会将高质量候选晋级为 active，并把低质、过期或超量候选归档为 deprecated |
 
 ## 核心模块
 
@@ -134,6 +134,17 @@ flowchart TB
 | 角色差异主要依赖台词文案 | 身份目标、技能边界、人格风格、记忆状态、社交模型和策略检索共同影响行为 |
 | 赛后只展示胜负 | 系统保留逐步事件、决策理由、复盘报告、排行榜和策略知识来源 |
 | 新策略直接覆盖旧策略 | Track C 使用候选、启用、废弃和版本关系管理策略知识 |
+
+## Track C 生命周期
+
+Track C 的策略知识分两层触发：
+
+| 层级 | 触发方式 | 作用 |
+|---|---|---|
+| 赛后自动门禁 | 每局结束后由 `run_post_game_scoring()` 调用 `promote_after_store(source_game_id=game_id)` | 只处理本局新知识，按质量、聚类和使用反馈把候选晋级为 active，并做轻量归档 |
+| 批处理治理 | `python scripts/promote.py --mode lifecycle --apply` | 对全库执行质量晋级、反馈晋级、active 池剪枝、candidate 池上限治理和低质归档 |
+
+生产 Agent 的策略检索默认只加载 `active` 策略。`candidate` 是待验证知识池，不会直接污染下一局 Prompt；批处理治理会限制候选堆积，低质、过期或超量候选进入 `deprecated`。
 
 ## 快速开始
 
