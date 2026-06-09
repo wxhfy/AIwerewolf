@@ -280,6 +280,7 @@ def collect_db_feedback_snapshot_raw_sql() -> dict[str, Any]:
         )
         feedback_where, feedback_params = sql_exclusion(excluded_game_ids, "k.game_id")
         role_where, role_params = sql_exclusion(excluded_game_ids, "k.game_id")
+        docs_where, docs_params = sql_exclusion(excluded_game_ids, "d.source_game_id")
         feedback_where = (
             " WHERE " + nonfake_filter.format(column="k.game_id")
             if not feedback_where
@@ -290,6 +291,14 @@ def collect_db_feedback_snapshot_raw_sql() -> dict[str, Any]:
             if not role_where
             else role_where + " AND " + nonfake_filter.format(column="k.game_id")
         )
+        docs_nonfake_filter = (
+            "d.source_game_id IS NULL OR NOT EXISTS ("
+            "SELECT 1 FROM players p_fake "
+            "WHERE p_fake.game_id = d.source_game_id "
+            "AND lower(COALESCE(p_fake.model_name, '')) LIKE '%fake%'"
+            ")"
+        )
+        docs_where = " WHERE " + docs_nonfake_filter if not docs_where else docs_where + " AND " + docs_nonfake_filter
         db = SessionLocal()
         try:
             counts = (
@@ -314,15 +323,17 @@ def collect_db_feedback_snapshot_raw_sql() -> dict[str, Any]:
             docs = (
                 db.execute(
                     text(
-                        """
+                        f"""
                     SELECT
                       COUNT(*) AS total,
                       COUNT(*) FILTER (WHERE status = 'active') AS active,
                       COUNT(*) FILTER (WHERE status = 'candidate') AS candidate,
                       COUNT(*) FILTER (WHERE status = 'deprecated') AS deprecated
-                    FROM strategy_knowledge_docs
+                    FROM strategy_knowledge_docs d
+                    {docs_where}
                     """
-                    )
+                    ),
+                    docs_params,
                 )
                 .mappings()
                 .first()
@@ -372,7 +383,7 @@ def collect_db_feedback_snapshot_raw_sql() -> dict[str, Any]:
                 "strategy_docs_deprecated": inum(docs.get("deprecated") if docs else 0),
                 "by_role": by_role,
                 "excluded_fake_target_seat_game_ids": excluded_game_ids,
-                "filter": "excludes games whose players.model_name contains fake",
+                "filter": "excludes feedback games and knowledge docs whose players.model_name contains fake, plus fake target-seat output game_ids",
                 "source": "PostgreSQL knowledge_usage_feedback / strategy_knowledge_docs current non-fake snapshot",
             }
         finally:
@@ -435,6 +446,12 @@ def collect_target_seat_results() -> list[dict[str, Any]]:
                 "candidate_invalid_count": inum(comparison.get("candidate_invalid_count")),
                 "accepted": bool(acceptance.get("accepted", False)),
                 "claim_level": acceptance.get("claim_level", "待确认"),
+                "max_days": inum(payload.get("max_days")),
+                "player_count": inum(payload.get("player_count")),
+                "elapsed_s": fnum(payload.get("elapsed_s")),
+                "claim_scope": "smoke_only"
+                if inum(payload.get("max_days")) <= 1 or inum(comparison.get("paired_seed_count")) < 20
+                else "formal_candidate",
                 "bootstrap_ci": comparison.get("bootstrap_ci", {}),
             }
         )
@@ -656,16 +673,21 @@ def build_evidence() -> dict[str, Any]:
         {
             "claim": "Track C 对单个目标席位的因果增益",
             "evidence_level": "target_seat_paired_ab",
-            "status": target_seat_rows[0]["claim_level"] if target_seat_rows else "missing",
+            "status": (
+                target_seat_rows[0]["claim_level"]
+                if target_seat_rows and target_seat_rows[0].get("claim_scope") == "formal_candidate"
+                else ("smoke_only" if target_seat_rows else "missing")
+            ),
             "metric": (
                 f"role={target_seat_rows[0]['target_role']}; paired={target_seat_rows[0]['paired_seed_count']}; "
                 f"score_delta={fmt(target_seat_rows[0]['target_adjusted_score_delta'])}; "
-                f"accepted={target_seat_rows[0]['accepted']}"
+                f"accepted={target_seat_rows[0]['accepted']}; "
+                f"scope={target_seat_rows[0].get('claim_scope')}; max_days={target_seat_rows[0].get('max_days')}"
             )
             if target_seat_rows
             else "no target-seat output found",
             "source": target_seat_rows[0]["source"] if target_seat_rows else TARGET_SEAT_GLOB,
-            "boundary": "只有 accepted=true 且样本/健康/CI 门禁通过时，才能写成因果支持。",
+            "boundary": "micro/max_days=1 输出只能证明 runner 可运行；只有正式样本 accepted=true 且样本/健康/CI 门禁通过时，才能写成因果支持。",
         },
         {
             "claim": "Track C 在线烟测能把策略注入真实决策",
@@ -702,9 +724,9 @@ def build_evidence() -> dict[str, Any]:
             "required_experiment": "关联 retrieved_doc_ids / knowledge_usage_feedback / PerStepScorer，计算 used vs unused 决策分差。",
         },
         {
-            "gap": "当前真实 LLM provider 连通性",
-            "reason": "当前客户端检查解析到 deepseek:deepseek-v4-flash，但 create_client 返回 unavailable。",
-            "required_experiment": "修复 provider/base URL/key 后，先运行 target-seat paired A/B，再运行全席位 track_bc_leaderboard_experiment。",
+            "gap": "正式 target-seat A/B 样本量",
+            "reason": "当前 provider 已通过 Doubao/Ark endpoint 真实 chat preflight，且 max_days=1 smoke 可跑通；但尚未完成 80-120 paired seeds 的正式目标席位实验。",
+            "required_experiment": "按功效计划运行正式 target-seat paired A/B：固定 seed、角色分配和对手，只升级目标席位，并报告 adjusted score、role-task、win-rate、fallback/invalid 与 bootstrap CI。",
         },
     ]
 
@@ -1338,6 +1360,8 @@ def render_report(evidence: dict[str, Any]) -> str:
                     "ScoreDelta",
                     "RoleTaskDelta",
                     "WinDelta",
+                    "MaxDays",
+                    "Scope",
                     "Fallback",
                     "Invalid",
                     "Accepted",
@@ -1353,6 +1377,8 @@ def render_report(evidence: dict[str, Any]) -> str:
                         fmt(row.get("target_adjusted_score_delta")),
                         fmt(row.get("target_role_task_delta")),
                         fmt(row.get("target_win_rate_delta")),
+                        row.get("max_days"),
+                        row.get("claim_scope"),
                         row.get("candidate_fallback_count"),
                         row.get("candidate_invalid_count"),
                         row.get("accepted"),
@@ -1362,7 +1388,7 @@ def render_report(evidence: dict[str, Any]) -> str:
                 ],
             ),
             "",
-            "解释：只有 `Accepted=true` 且 `ClaimLevel=causal_supported` 时，才能把 Track C 写成对单个目标席位的因果增益。否则只能作为部分证据或待补实验。",
+            "解释：`claim_scope=smoke_only` 的 target-seat 输出只说明真实 runner、per-agent feature flags、paired delta 和健康门禁能跑通；只有正式样本 `Accepted=true` 且 `ClaimLevel=causal_supported` 时，才能把 Track C 写成对单个目标席位的因果增益。",
             "",
         ]
     else:
@@ -1370,6 +1396,13 @@ def render_report(evidence: dict[str, Any]) -> str:
             "当前未找到正式 target-seat A/B 输出。`scripts/target_seat_trackc_ab_experiment.py` 已支持 per-agent feature flags、paired delta、bootstrap 95% CI 和 acceptance gate；需要在真实 LLM provider 可用后运行，并确保 paired seeds、fallback/invalid、bootstrap CI 门禁通过。",
             "",
         ]
+
+    provider_preflight_safe = bool(provider_preflight.get("safe_for_formal_experiment", False))
+    provider_preflight_note = (
+        "该 preflight 已通过真实 provider 可用性检查；target-seat 因果实验的剩余阻塞不再是 provider，而是仍需按功效计划运行正式 paired-seed A/B，并通过 fallback/invalid 与 bootstrap CI 门禁。"
+        if provider_preflight_safe
+        else "该 preflight 是当前不能补齐 target-seat 因果实验的直接证据；修复 key/base URL/provider 后需要先重跑 `python scripts/check_real_llm_provider.py`，确认 `safe_for_formal_experiment=true` 再启动正式 A/B。"
+    )
 
     lines += [
         "### 10.1 真实 LLM Provider Preflight",
@@ -1387,7 +1420,7 @@ def render_report(evidence: dict[str, Any]) -> str:
             ],
         ),
         "",
-        "该 preflight 是当前不能补齐 target-seat 因果实验的直接证据；修复 key/base URL/provider 后需要先重跑 `python scripts/check_real_llm_provider.py`，确认 `safe_for_formal_experiment=true` 再启动正式 A/B。",
+        provider_preflight_note,
         "",
         "### 10.2 Target-seat A/B 功效计划",
         "",
@@ -1469,7 +1502,7 @@ def render_report(evidence: dict[str, Any]) -> str:
         "",
         "## 13. 下一步真实实验命令",
         "",
-        "修复 provider/base URL/key 后，建议先运行 20 paired seeds pilot 验证链路健康：",
+        "当前 Doubao/Ark endpoint 已通过真实 chat preflight。建议先运行 20 paired seeds pilot 验证完整 target-seat 链路健康：",
         "",
         "```bash",
         "python scripts/target_seat_trackc_ab_experiment.py \\",
@@ -1477,6 +1510,7 @@ def render_report(evidence: dict[str, Any]) -> str:
         "  --seeds 9301 9302 9303 9304 9305 9306 9307 9308 9309 9310 9311 9312 9313 9314 9315 9316 9317 9318 9319 9320 \\",
         "  --baseline-framework basic_react \\",
         "  --candidate-framework rag_react \\",
+        '  --models "doubao:${DOUBAO_ENDPOINT}" \\',
         "  --player-count 7 \\",
         "  --max-days 20 \\",
         "  --bootstrap-iterations 2000 \\",
