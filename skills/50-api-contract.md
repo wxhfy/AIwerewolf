@@ -51,6 +51,7 @@ updated: 2026-06-08
 | GET | `/api/games` | — | 列出内存中的 active/recorded games |
 | GET | `/api/games/{game_id}` | `show_private` | 获取内存对局快照 |
 | GET | `/api/replay/{game_id}` | `show_private` | 获取 DB 持久化回放 payload |
+| GET | `/api/replay/{game_id}.json` | `show_private`, `download` | 导出完整 DB 持久化对局 JSON；包含 final snapshot、snapshots、events、timeline、phase_transitions、decisions、votes；默认 attachment 下载 |
 | GET | `/api/games/{game_id}/metrics` | — | 单局 Track B 多维指标 |
 | GET | `/api/games/{game_id}/runtime_metrics` | — | 单局运行时指标（延迟、tokens、有效决策等） |
 | GET | `/api/games/{game_id}/reviews` | — | 复盘报告聚合 payload |

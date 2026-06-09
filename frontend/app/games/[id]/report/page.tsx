@@ -17,6 +17,7 @@ export default function GameReportPage() {
 
   const htmlSrc = apiUrl(`/api/games/${gameId}/reviews/html`);
   const mdHref = apiUrl(`/api/games/${gameId}/reviews.md`);
+  const replayJsonHref = apiUrl(`/api/replay/${gameId}.json?show_private=true`);
 
   return (
     <main className="min-h-screen px-5 py-6" style={{ background: "var(--color-bg)" }}>
@@ -46,6 +47,14 @@ export default function GameReportPage() {
                 {t("下载 MD", "Download MD")}
               </a>
             )}
+            <a
+              href={replayJsonHref}
+              download={`replay-${gameId}.json`}
+              className="rounded-button border px-4 py-2 text-sm font-semibold text-textPrimary"
+              style={{ borderColor: "var(--color-border)" }}
+            >
+              {t("导出对局 JSON", "Export Replay JSON")}
+            </a>
           </div>
         </header>
 

@@ -6,7 +6,7 @@
 #   make dev           — local development server
 # ============================================================================
 
-PYTHON  ?= python
+PYTHON  ?= .venv/bin/python3
 ENV_FILE ?= .env
 APP_HOST ?= $(shell sed -n 's/^APP_HOST=//p' $(ENV_FILE) 2>/dev/null | tail -1)
 APP_HOST := $(or $(APP_HOST),0.0.0.0)

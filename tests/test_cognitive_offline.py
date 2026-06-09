@@ -29,6 +29,7 @@ from backend.agents.cognitive.profiles import get_profile
 from backend.agents.cognitive.reflect import Reflector
 from backend.agents.cognitive.reflect import reflections_to_knowledge_docs
 from backend.agents.cognitive.repository import _profile_from_role_card_row
+from backend.agents.cognitive.repository import _profiles_from_role_rows
 from backend.agents.cognitive.repository import _role_goal_from_row
 from backend.agents.cognitive.repository import load_profile_from_db
 from backend.agents.cognitive.repository import load_profiles_from_db
@@ -1297,6 +1298,25 @@ def test_role_goal_from_row_accepts_tuple_and_dict_rows() -> None:
     assert _role_goal_from_row({}) is None
     assert _role_goal_from_row(()) is None
     assert _role_goal_from_row(None) is None
+
+
+def test_profiles_from_role_rows_skips_invalid_rows_and_returns_isolated_profiles() -> None:
+    profiles = _profiles_from_role_rows(
+        [
+            {},
+            (),
+            ("Villager", "DB goal"),
+            {"role": "Seer", "goal": "DB seer goal"},
+        ]
+    )
+
+    assert set(profiles) == {"Villager", "Seer"}
+    assert profiles["Villager"].goal == "DB goal"
+    assert profiles["Seer"].goal == "DB seer goal"
+
+    profiles["Villager"].persona.mbti = "ENFP"
+    fresh_profiles = _profiles_from_role_rows([("Villager", "DB goal")])
+    assert fresh_profiles["Villager"].persona.mbti == get_profile("Villager").persona.mbti
 
 
 def test_load_profiles_from_db_skips_unparseable_rows_and_falls_back(monkeypatch: pytest.MonkeyPatch) -> None:

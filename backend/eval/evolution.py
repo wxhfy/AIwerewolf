@@ -2733,8 +2733,12 @@ class TournamentRunner:
         baseline_target_records = self._filter_records_by_role(baseline_records, target_role) or baseline_records
         candidate_target_records = self._filter_records_by_role(candidate_records, target_role) or candidate_records
         total_games = min(len(baseline_metrics), len(candidate_metrics))
-        baseline_wins = sum(1 for item in baseline_metrics if item.winner == "village")
-        candidate_wins = sum(1 for item in candidate_metrics if item.winner == "village")
+        target_alignment = self._target_alignment(candidate_metrics, target_role) or self._target_alignment(
+            baseline_metrics, target_role
+        )
+        win_alignment = target_alignment or "village"
+        baseline_wins = self._wins_for_alignment(baseline_metrics, win_alignment)
+        candidate_wins = self._wins_for_alignment(candidate_metrics, win_alignment)
         comparison = ABComparison(
             baseline_version=baseline_version,
             candidate_version=candidate_version,
@@ -2996,6 +3000,21 @@ class TournamentRunner:
             return list(records)
         role_lower = role.lower()
         return [r for r in records if str(r.get("role", "")).lower() == role_lower]
+
+    @staticmethod
+    def _target_alignment(metrics: Sequence[GameMetrics], role: str | None) -> str | None:
+        if not role:
+            return None
+        role_lower = role.lower()
+        for metric in metrics:
+            for score in metric.player_scores:
+                if str(score.role).lower() == role_lower and score.alignment:
+                    return str(score.alignment)
+        return None
+
+    @staticmethod
+    def _wins_for_alignment(metrics: Sequence[GameMetrics], alignment: str) -> int:
+        return sum(1 for metric in metrics if str(metric.winner or "") == alignment)
 
     def _avg(self, records: Sequence[dict[str, Any]], key: str) -> float:
         if not records:

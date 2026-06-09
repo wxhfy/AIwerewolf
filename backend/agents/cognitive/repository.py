@@ -6,6 +6,7 @@ No game logic, no LLM calls — pure data access.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import replace
 from typing import Any
 
@@ -27,14 +28,7 @@ def load_profiles_from_db(conn_str: str = "") -> dict[str, Profile]:
     Falls back to hardcoded profiles if DB is unavailable.
     """
     try:
-        profiles = {}
-        for row in _fetch_active_role_card_rows(conn_str):
-            parsed = _role_goal_from_row(row)
-            if parsed is None:
-                continue
-            role, goal = parsed
-            profiles[role] = _profile_from_role_card_row(role, goal)
-
+        profiles = _profiles_from_role_rows(_fetch_active_role_card_rows(conn_str))
         return profiles if profiles else get_profiles()
 
     except Exception:
@@ -69,6 +63,17 @@ def _default_db_url() -> str:
     from backend.db.database import DEFAULT_DB_URL
 
     return DEFAULT_DB_URL
+
+
+def _profiles_from_role_rows(rows: Iterable[Any]) -> dict[str, Profile]:
+    profiles: dict[str, Profile] = {}
+    for row in rows:
+        parsed = _role_goal_from_row(row)
+        if parsed is None:
+            continue
+        role, goal = parsed
+        profiles[role] = _profile_from_role_card_row(role, goal)
+    return profiles
 
 
 def _role_goal_from_row(row: Any) -> tuple[str, str | None] | None:

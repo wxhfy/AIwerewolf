@@ -263,13 +263,17 @@ class FakeLLMClient:
         if pressure_target and pressure_target not in checked_good and pressure_target not in teammates:
             return pressure_target
 
+        is_night = "【任务：夜晚行动】" in text
+
         if role == "Seer":
-            if "【任务：夜晚行动】" in text and available:
-                return available[-1]
+            if is_night and available:
+                # Check unverified players first (strategic: prefer unchecked over checked-good)
+                unchecked = [n for n in available if n not in checked_good]
+                return unchecked[0] if unchecked else available[0]
             if available:
-                return available[-1]
-        if role == "Werewolf":
-            if "【任务：夜晚行动】" in text:
+                return available[0]
+        elif role == "Werewolf":
+            if is_night:
                 plain = FakeLLMClient._plain_villager_targets(available)
                 if plain:
                     return plain[0]
@@ -280,15 +284,27 @@ class FakeLLMClient:
             if named_power:
                 return named_power[0]
         elif role == "Guard":
-            return available[-1] if available else legal_names[-1]
+            if is_night:
+                # Guard should prioritize protecting key good roles
+                key_protect = FakeLLMClient._key_protect_targets(legal_names)
+                if key_protect:
+                    return key_protect[0]
+            return available[0] if available else legal_names[0]
         elif role == "Witch":
             claimed = FakeLLMClient._role_claim_targets(text, legal_names)
             if claimed:
                 return claimed[0]
+            if available:
+                return available[0]
+        elif role == "Hunter":
+            if available:
+                return available[0]
+        # Villager and other village roles: converge on first available suspect
+        # Use available[0] (not available[-1]) so all villagers vote together
 
         if available:
-            return available[-1]
-        return legal_names[-1]
+            return available[0]
+        return legal_names[0]
 
     @staticmethod
     def _speech_decision(text: str, target: str, seer_target: str = "") -> str:
@@ -313,10 +329,10 @@ class FakeLLMClient:
 
     @staticmethod
     def _witch_decision(text: str, target: str) -> dict[str, Any]:
-        if not FakeLLMClient._has_strategy_bias(text):
-            return {"reasoning": "fake LLM witch baseline keeps potions", "save": False, "poison_target": None}
         if "今晚被刀的是:" in text and "解药可用" in text:
-            return {"reasoning": "fake LLM witch strategy saves the night victim", "save": True, "poison_target": None}
+            return {"reasoning": "fake LLM witch saves the night victim", "save": True, "poison_target": None}
+        if not FakeLLMClient._has_strategy_bias(text):
+            return {"reasoning": "fake LLM witch baseline holds potions", "save": False, "poison_target": None}
         if "毒药可用" in text and target:
             return {
                 "reasoning": f"fake LLM witch strategy poisons public pressure target {target}",
@@ -335,8 +351,25 @@ class FakeLLMClient:
             if not name:
                 continue
             escaped = re.escape(name)
-            if re.search(rf"(查杀|票压到|归票|指向)\s*{escaped}", text):
+            if re.search(rf"(查杀|票压到|归票|指向|狼坑|投\s*{escaped})\s*{escaped}", text):
                 return name
             if re.search(rf"{escaped}\s*(是|为)?\s*狼人", text):
                 return name
+            if re.search(rf"{escaped}[^。\n]{{0,10}}(嫌疑|可疑|像狼|铁狼|标狼)", text):
+                return name
         return ""
+
+    @staticmethod
+    def _key_protect_targets(legal_names: list[str]) -> list[str]:
+        """Priority-sorted list of good-aligned power roles that Guard should protect."""
+        priority_patterns = [
+            "预言",  # Seer
+            "女巫",  # Witch
+            "猎人",  # Hunter
+        ]
+        targets: list[str] = []
+        for pattern in priority_patterns:
+            for name in legal_names:
+                if pattern in name and name not in targets:
+                    targets.append(name)
+        return targets

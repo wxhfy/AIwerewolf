@@ -127,6 +127,50 @@ def _metrics(
     )
 
 
+def _role_metrics(
+    version: str,
+    role: str,
+    alignment: str,
+    winner: str,
+    score: float = 60.0,
+    role_task: float = 0.5,
+) -> GameMetrics:
+    return GameMetrics(
+        game_id=f"{version}-{role}-{winner}-{score}",
+        winner=winner,
+        total_days=1,
+        total_events=1,
+        wolf_elimination_rate=1.0,
+        village_survival_rate=1.0,
+        info_efficiency=1.0,
+        player_scores=[
+            PlayerScore(
+                "p1",
+                "PersonaA",
+                "persona-a",
+                "PersonaA",
+                role,
+                alignment,
+                1.0 if winner == alignment else 0.0,
+                role_task,
+                0.8,
+                0.8,
+                0.8,
+                1.0,
+                0.0,
+                score,
+                adjusted_final_score=score,
+            )
+        ],
+        metadata={
+            "strategy_version": version,
+            "target_role": role,
+            "info_leak_count": 0,
+            "invalid_action_rate": 0.0,
+        },
+    )
+
+
 # ---------------------------------------------------------------------------
 # C1: 能从 B 的 ApprovedReviewReport 中抽象策略知识
 # ---------------------------------------------------------------------------
@@ -533,6 +577,22 @@ def test_c9_tournament_runner_compares_metrics() -> None:
     assert comparison.critical_mistakes_delta < 0  # candidate has fewer mistakes
     assert comparison.info_leak_count == 0
     assert comparison.invalid_action_rate == 0.0
+
+
+def test_c9_tournament_runner_counts_wins_for_target_role_alignment() -> None:
+    baseline = [
+        _role_metrics("wolf_v1", "Werewolf", "wolf", "village"),
+        _role_metrics("wolf_v1", "Werewolf", "wolf", "wolf"),
+    ]
+    candidate = [
+        _role_metrics("wolf_v2", "Werewolf", "wolf", "wolf"),
+        _role_metrics("wolf_v2", "Werewolf", "wolf", "wolf"),
+    ]
+
+    comparison = TournamentRunner().compare_metrics("wolf_v1", "wolf_v2", baseline, candidate)
+
+    assert comparison.baseline_wins == 1
+    assert comparison.candidate_wins == 2
 
 
 def test_c9b_tournament_runner_runs_real_fixed_20_seed_games() -> None:
