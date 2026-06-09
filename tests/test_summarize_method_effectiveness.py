@@ -55,3 +55,39 @@ def test_existing_target_seat_results_redacts_endpoint_ids(tmp_path: Path) -> No
     )
 
     assert summary.existing_target_seat_results(facts_path) == [{"source": "x", "model": "doubao:ep-<redacted>"}]
+
+
+def test_merge_target_seat_rows_prefers_tracked_real_llm_pilot() -> None:
+    pilot = {
+        "generated_at": "2026-06-09T17:15:35+08:00",
+        "source": "outputs/target/real.json",
+        "claim_scope": "real_llm_pilot_only",
+        "target_role": "Seer",
+        "baseline_framework": "basic_react",
+        "candidate_framework": "rag_react",
+        "paired_seed_count": 5,
+        "target_adjusted_score_delta": 20.668,
+        "target_role_task_delta": 0.283,
+        "target_process_score_delta": 22.184,
+        "candidate_decision_count": 201,
+        "candidate_fallback_count": 0,
+        "candidate_invalid_count": 0,
+        "max_days": 20,
+        "player_count": 7,
+        "acceptance": {"accepted": False, "claim_level": "ci_not_positive"},
+    }
+    frozen_smoke = {
+        "source": "outputs/target/smoke.json",
+        "claim_scope": "smoke_only",
+        "target_role": "Seer",
+        "paired_seed_count": 3,
+        "max_days": 1,
+    }
+
+    rows = summary.merge_target_seat_rows([frozen_smoke], pilot)
+
+    assert rows[0]["source"] == "outputs/target/real.json"
+    assert rows[0]["summary_source"] == "docs/PROJECT_TARGET_SEAT_TRACKC_PILOT.json"
+    assert rows[0]["claim_scope"] == "real_llm_pilot_only"
+    assert rows[0]["target_process_score_delta"] == 22.184
+    assert rows[1]["claim_scope"] == "smoke_only"

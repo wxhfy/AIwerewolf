@@ -43,6 +43,8 @@ USAGE_DECISION_SCORE_FACTS = ROOT / "docs" / "PROJECT_STRATEGY_USAGE_DECISION_SC
 USAGE_DECISION_SCORE_REPORT = ROOT / "docs" / "PROJECT_STRATEGY_USAGE_DECISION_SCORE_ANALYSIS.md"
 TARGET_SEAT_POWER_PLAN = ROOT / "docs" / "PROJECT_TARGET_SEAT_AB_POWER_PLAN.json"
 TARGET_SEAT_POWER_REPORT = ROOT / "docs" / "PROJECT_TARGET_SEAT_AB_POWER_PLAN.md"
+TARGET_SEAT_TRACKC_PILOT = ROOT / "docs" / "PROJECT_TARGET_SEAT_TRACKC_PILOT.json"
+TARGET_SEAT_TRACKC_PILOT_REPORT = ROOT / "docs" / "PROJECT_TARGET_SEAT_TRACKC_PILOT.md"
 
 TRACK_C_SMOKE_FILES = [
     ROOT / "docs" / "experiments" / "track_c_runtime_fix" / "doubao_smoke_g1" / "group_results.csv",
@@ -95,6 +97,58 @@ def existing_target_seat_results(path: Path) -> list[dict[str, Any]]:
     if not isinstance(value, list):
         return []
     return [sanitize_endpoint_ids(row) for row in value if isinstance(row, dict)]
+
+
+def target_seat_row_from_pilot(payload: dict[str, Any]) -> dict[str, Any] | None:
+    if not payload:
+        return None
+    acceptance = payload.get("acceptance", {}) if isinstance(payload.get("acceptance"), dict) else {}
+    return {
+        "source": payload.get("source", str(TARGET_SEAT_TRACKC_PILOT.relative_to(ROOT))),
+        "summary_source": str(TARGET_SEAT_TRACKC_PILOT.relative_to(ROOT)),
+        "generated_at": payload.get("generated_at", ""),
+        "target_role": payload.get("target_role", ""),
+        "baseline_framework": payload.get("baseline_framework", ""),
+        "candidate_framework": payload.get("candidate_framework", ""),
+        "paired_seed_count": inum(payload.get("paired_seed_count")),
+        "target_win_rate_delta": fnum(payload.get("target_win_rate_delta")),
+        "target_adjusted_score_delta": fnum(payload.get("target_adjusted_score_delta")),
+        "target_role_task_delta": fnum(payload.get("target_role_task_delta")),
+        "target_process_score_delta": fnum(payload.get("target_process_score_delta")),
+        "candidate_decision_count": inum(payload.get("candidate_decision_count")),
+        "candidate_fallback_count": inum(payload.get("candidate_fallback_count")),
+        "candidate_invalid_count": inum(payload.get("candidate_invalid_count")),
+        "accepted": bool(acceptance.get("accepted", False)),
+        "claim_level": acceptance.get("claim_level", "待确认"),
+        "max_days": inum(payload.get("max_days")),
+        "player_count": inum(payload.get("player_count")),
+        "claim_scope": payload.get("claim_scope", "待确认"),
+        "bootstrap_ci": payload.get("bootstrap_ci", {}),
+    }
+
+
+def merge_target_seat_rows(rows: list[dict[str, Any]], pilot: dict[str, Any]) -> list[dict[str, Any]]:
+    merged: list[dict[str, Any]] = []
+    pilot_row = target_seat_row_from_pilot(pilot)
+    if pilot_row:
+        merged.append(pilot_row)
+    seen = {str(row.get("source") or "") for row in merged}
+    for row in rows:
+        source = str(row.get("source") or "")
+        if source and source in seen:
+            continue
+        merged.append(dict(row))
+        if source:
+            seen.add(source)
+    merged.sort(
+        key=lambda row: (
+            inum(row.get("paired_seed_count")),
+            inum(row.get("max_days")),
+            str(row.get("generated_at") or ""),
+        ),
+        reverse=True,
+    )
+    return merged
 
 
 def read_csv(path: Path) -> list[dict[str, str]]:
@@ -522,6 +576,7 @@ def build_evidence(
     track_b_showcase = read_json(TRACK_B_LEADERBOARD_SHOWCASE)
     usage_decision_scores = read_json(USAGE_DECISION_SCORE_FACTS)
     target_seat_power = read_json(TARGET_SEAT_POWER_PLAN)
+    target_seat_pilot = read_json(TARGET_SEAT_TRACKC_PILOT)
     per_role_rows = read_csv(RETRIEVAL_PER_ROLE)
     role_corpus_rows = read_csv(RETRIEVAL_ROLE_CORPUS)
     db_feedback = runtime_feedback_snapshot or collect_db_feedback_snapshot_raw_sql()
@@ -533,6 +588,7 @@ def build_evidence(
         target_seat_snapshot=target_seat_snapshot,
         refresh_target_seat=refresh_target_seat,
     )
+    target_seat_rows = merge_target_seat_rows(target_seat_rows, target_seat_pilot)
 
     retrieval_metrics = retrieval.get("metrics", {}) if isinstance(retrieval, dict) else {}
     default_policy = retrieval_metrics.get("hybrid_role_mbti_global", {})
@@ -755,18 +811,25 @@ def build_evidence(
             "status": (
                 target_seat_rows[0]["claim_level"]
                 if target_seat_rows and target_seat_rows[0].get("claim_scope") == "formal_candidate"
-                else ("smoke_only" if target_seat_rows else "missing")
+                else (target_seat_rows[0].get("claim_scope") if target_seat_rows else "missing")
             ),
             "metric": (
                 f"role={target_seat_rows[0]['target_role']}; paired={target_seat_rows[0]['paired_seed_count']}; "
                 f"score_delta={fmt(target_seat_rows[0]['target_adjusted_score_delta'])}; "
+                f"role_task_delta={fmt(target_seat_rows[0].get('target_role_task_delta'))}; "
+                f"fallback={target_seat_rows[0].get('candidate_fallback_count')}; "
+                f"invalid={target_seat_rows[0].get('candidate_invalid_count')}; "
                 f"accepted={target_seat_rows[0]['accepted']}; "
                 f"scope={target_seat_rows[0].get('claim_scope')}; max_days={target_seat_rows[0].get('max_days')}"
             )
             if target_seat_rows
             else "no target-seat output found",
-            "source": target_seat_rows[0]["source"] if target_seat_rows else TARGET_SEAT_GLOB,
-            "boundary": "micro/max_days=1 输出只能证明 runner 可运行；只有正式样本 accepted=true 且样本/健康/CI 门禁通过时，才能写成因果支持。",
+            "source": (
+                (target_seat_rows[0].get("summary_source") or target_seat_rows[0]["source"])
+                if target_seat_rows
+                else TARGET_SEAT_GLOB
+            ),
+            "boundary": "当前最强 target-seat 证据是 5-pair 真实 LLM pilot：趋势正向且健康门禁通过，但 CI gate 未通过；只有 accepted=true 且样本/健康/CI 门禁通过时，才能写成因果支持。",
         },
         {
             "claim": "Track C 在线烟测能把策略注入真实决策",
@@ -789,7 +852,7 @@ def build_evidence(
     open_gaps = [
         {
             "gap": "Track C 最终胜率因果提升",
-            "reason": "当前正式数据中 trackc_only/both 完成率不均，辅助数据是全席位同时切换。",
+            "reason": "当前正式数据中 trackc_only/both 完成率不均；真实 target-seat 5-pair pilot 呈正向评分趋势但 CI 跨 0，且胜率 delta 为 0。",
             "required_experiment": "先跑 20 paired seeds pilot；正式因果验证建议 80-120 paired seeds 起步，只升级一个目标席位，固定对手、seed、角色分配。胜率作为辅助指标。",
         },
         {
@@ -804,7 +867,7 @@ def build_evidence(
         },
         {
             "gap": "正式 target-seat A/B 样本量",
-            "reason": "当前 provider 已通过 Doubao/Ark endpoint 真实 chat preflight，且 max_days=1 smoke 可跑通；但尚未完成 80-120 paired seeds 的正式目标席位实验。",
+            "reason": "当前已有 Seer 5-pair 真实 LLM pilot：adjusted +20.668、role-task +0.283、fallback/invalid=0，但 CI gate 未通过；尚未完成 20-pair pilot 或 80-120 paired seeds 正式验证。",
             "required_experiment": "按功效计划运行正式 target-seat paired A/B：固定 seed、角色分配和对手，只升级目标席位，并报告 adjusted score、role-task、win-rate、fallback/invalid 与 bootstrap CI。",
         },
     ]
@@ -832,6 +895,8 @@ def build_evidence(
             "usage_decision_score_report": str(USAGE_DECISION_SCORE_REPORT.relative_to(ROOT)),
             "target_seat_power_plan": str(TARGET_SEAT_POWER_PLAN.relative_to(ROOT)),
             "target_seat_power_report": str(TARGET_SEAT_POWER_REPORT.relative_to(ROOT)),
+            "target_seat_trackc_pilot": str(TARGET_SEAT_TRACKC_PILOT.relative_to(ROOT)),
+            "target_seat_trackc_pilot_report": str(TARGET_SEAT_TRACKC_PILOT_REPORT.relative_to(ROOT)),
         },
         "formal": {
             "row_counts": formal.get("row_counts", {}),
@@ -883,6 +948,7 @@ def build_evidence(
         },
         "track_c_smoke": smoke_rows,
         "target_seat_ab": target_seat_rows,
+        "target_seat_trackc_pilot": target_seat_pilot,
         "target_seat_power_plan": target_seat_power,
         "evidence_matrix": evidence_matrix,
         "open_gaps": open_gaps,
@@ -1459,15 +1525,18 @@ def render_report(evidence: dict[str, Any]) -> str:
             table(
                 [
                     "Source",
+                    "SummarySource",
                     "Role",
                     "Baseline",
                     "Candidate",
                     "Paired",
                     "ScoreDelta",
                     "RoleTaskDelta",
+                    "ProcessDelta",
                     "WinDelta",
                     "MaxDays",
                     "Scope",
+                    "Decisions",
                     "Fallback",
                     "Invalid",
                     "Accepted",
@@ -1476,15 +1545,18 @@ def render_report(evidence: dict[str, Any]) -> str:
                 [
                     [
                         row.get("source"),
+                        row.get("summary_source", ""),
                         row.get("target_role"),
                         row.get("baseline_framework"),
                         row.get("candidate_framework"),
                         row.get("paired_seed_count"),
                         fmt(row.get("target_adjusted_score_delta")),
                         fmt(row.get("target_role_task_delta")),
+                        fmt(row.get("target_process_score_delta")),
                         fmt(row.get("target_win_rate_delta")),
                         row.get("max_days"),
                         row.get("claim_scope"),
+                        row.get("candidate_decision_count", ""),
                         row.get("candidate_fallback_count"),
                         row.get("candidate_invalid_count"),
                         row.get("accepted"),
@@ -1494,7 +1566,7 @@ def render_report(evidence: dict[str, Any]) -> str:
                 ],
             ),
             "",
-            "解释：`claim_scope=smoke_only` 的 target-seat 输出只说明真实 runner、per-agent feature flags、paired delta 和健康门禁能跑通；只有正式样本 `Accepted=true` 且 `ClaimLevel=causal_supported` 时，才能把 Track C 写成对单个目标席位的因果增益。",
+            "解释：`claim_scope=real_llm_pilot_only` 表示真实 LLM target-seat A/B 已跑通，并能展示目标席位 paired delta、per-agent feature flags 和健康门禁；但样本量仍小，bootstrap CI 下界跨 0，不能写成因果支持。只有正式样本 `Accepted=true` 且 `ClaimLevel=causal_supported` 时，才能把 Track C 写成对单个目标席位的因果增益。",
             "",
         ]
     else:
