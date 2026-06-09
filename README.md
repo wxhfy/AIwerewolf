@@ -90,49 +90,31 @@ Track C 的策略知识分两层触发：
 
 ## 快速开始
 
-### 1. 安装后端依赖
+### 方式一：Docker 一键启动
 
 ```bash
-pip install -r requirements.txt
 cp .env.example .env
+# 编辑 .env 填入 LLM_PROVIDER 和 API Key
+docker compose up -d
 ```
 
-编辑 `.env`，设置 `LLM_PROVIDER` 和对应 provider 的 API Key。正式 Demo 和结果统计使用真实 LLM provider。
+后端 `http://localhost:8000/docs`，前端 `http://localhost:3001`。
 
-### 2. 启动 PostgreSQL
+### 方式二：手动安装
 
 ```bash
-docker run -d --name werewolf-pg \
-  -e POSTGRES_USER=werewolf \
-  -e POSTGRES_PASSWORD=werewolf_dev_password \
-  -e POSTGRES_DB=werewolf \
-  -p 5433:5432 postgres:16-alpine
-
+cp .env.example .env
+pip install -r requirements.txt
+make dev                              # 后端 http://localhost:8000/docs
 ```
-
-未配置 `DATABASE_URL` 时，后端使用 SQLite 本地模式。
-
-### 3. 启动后端
-
-```bash
-make dev
-# http://localhost:8000/docs
-```
-
-### 4. 启动前端
 
 ```bash
 cd frontend
 npm install --legacy-peer-deps
-npm run dev
-# http://localhost:3001
+npm run dev                           # 前端 http://localhost:3001
 ```
 
-如果 3001 被占用：
-
-```bash
-PORT=3002 npm run dev
-```
+未配置 `DATABASE_URL` 时，后端使用 SQLite 本地模式，无需 PostgreSQL。
 
 ## Demo 路线
 
