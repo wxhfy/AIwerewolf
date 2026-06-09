@@ -86,14 +86,14 @@ flowchart TB
 | Track C | `backend/eval/knowledge_abstractor.py`, `backend/agents/cognitive/retrieval_prod.py` | 策略抽取、生命周期治理和下一局检索 |
 | 前端 | `frontend/app/`, `frontend/components/`, `frontend/hooks/` | 大厅、观战、真人操作、复盘和统计看板 |
 
-## 5. 量化概览（LLM 对局）
+## 5. 量化概览（多模型对局）
 
-以下统计 LLM provider 的对局数据，fake provider 不计入。
+以下统计多模型 provider 的对局数据，离线测试模式不计入。
 
 | 方向 | 当前概览 |
 |---|---:|
-| LLM 完成对局 | 292 |
-| LLM 决策 | 10,253 |
+| 多模型完成对局 | 292 |
+| 多模型决策 | 10,253 |
 | 决策有效率 | 100%（10,253 / 10,253） |
 | published reviews | 4,971 |
 | strategy knowledge docs | 219,558（active 386 / candidate 1,695 / deprecated 217,477） |
