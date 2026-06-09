@@ -127,7 +127,7 @@ Layer 3  策略知识  → 教"怎么赢"（BM25 检索历史经验）
 
 - `AIWEREWOLF_STRICT_MODE=true`
 - `ALLOW_FALLBACK=false`
-- LLM 超时、解析失败、非法目标应暴露为 invalid/failure，不静默替换为启发式动作
+- LLM 超时、解析异常、非法目标应暴露为 invalid/error，不静默替换为启发式动作
 - `_TEST_ALLOW_FAKE_LLM=true LLM_PROVIDER=fake` 仅用于测试和 CI
 
 ### 2.6 真人 vs AI 混战

@@ -196,9 +196,12 @@ _SHARED_CLIENT = None
 def _get_client():
     global _SHARED_CLIENT
     if _SHARED_CLIENT is None:
+        model = os.environ.get("DOUBAO_MODEL")
+        if not model:
+            raise RuntimeError("DOUBAO_MODEL must be set for Doubao extraction scripts")
         _SHARED_CLIENT = create_client(
             provider="doubao",
-            model=os.environ.get("DOUBAO_MODEL", "ep-20260514115354-k4jz4"),
+            model=model,
             api_key=os.environ["DOUBAO_API_KEY"],
             base_url=os.environ["DOUBAO_BASE_URL"],
         )

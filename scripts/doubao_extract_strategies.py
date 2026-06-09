@@ -179,9 +179,13 @@ def extract_with_doubao(prompt: str, model: str | None = None) -> dict[str, Any]
     """Call Doubao to extract strategies."""
     import os
 
+    resolved_model = model or os.environ.get("DOUBAO_MODEL")
+    if not resolved_model:
+        raise RuntimeError("DOUBAO_MODEL must be set for Doubao extraction scripts")
+
     client = create_client(
         provider="doubao",
-        model=model or os.environ.get("DOUBAO_MODEL", "ep-20260514115354-k4jz4"),
+        model=resolved_model,
         api_key=os.environ["DOUBAO_API_KEY"],
         base_url=os.environ["DOUBAO_BASE_URL"],
     )

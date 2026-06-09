@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-DEFAULT_OUTPUT = ROOT / "docs" / "PROJECT_PROVIDER_PREFLIGHT.json"
+DEFAULT_OUTPUT = ROOT / "docs" / "evidence" / "PROJECT_PROVIDER_PREFLIGHT.json"
 
 
 def now_iso() -> str:

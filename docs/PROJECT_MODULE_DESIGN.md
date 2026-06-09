@@ -33,7 +33,7 @@
 
 **设计收益**：规则一致、流程可复现、便于验收、便于扩展角色、便于回放和复盘。
 
-**验收方式**：`scripts/run_backend_full_strict.py`；`docs/backend_acceptance_criteria.md` 记录 Game Engine verified。
+**验收方式**：`scripts/run_backend_full_strict.py`；当前结果以 `docs/evidence/` 和严格模式命令为准。
 
 **当前限制**：扩展角色仍需补充更多规则测试；长期并发压力测试需要单独运行。
 
@@ -68,7 +68,7 @@
 
 **设计收益**：防止上帝视角；让推理更接近真实玩家；为赛后复盘提供“当时可见事实”边界。
 
-**验收方式**：`scripts/verify_visibility_strict.py`；`docs/backend_acceptance_criteria.md` 记录 92 项边界检查通过。
+**验收方式**：`scripts/verify_visibility_strict.py`；当前结果以信息隔离专项验证命令为准。
 
 **当前限制**：每新增角色、私有事件或前端视角，都需要补充隔离测试。
 
@@ -264,7 +264,7 @@
 
 **设计收益**：不只看胜负；能定位失误；能为 Track C 提供结构化经验。
 
-**验收方式**：`docs/backend_acceptance_criteria.md` 记录 Track B verified；当前 PostgreSQL 快照有 `evaluations=95790`。
+**验收方式**：当前本地数据库快照有 `evaluations=126003`，复盘证据文件统一放在 `docs/evidence/`。
 
 **当前限制**：实际 Tier 触发比例、judge agreement 和人工一致性需要补实验。
 
@@ -289,7 +289,7 @@
 7. 可选离线层将复盘、策略文档和使用反馈作为 Track C Wiki 的 raw sources。
 8. Hermes-style DreamJob 可生成 candidate patch，验证后同步回 runtime 策略池。
 
-详细设计见 [`TRACK_C_HERMES_LLM_WIKI_DESIGN.md`](TRACK_C_HERMES_LLM_WIKI_DESIGN.md)。
+Track C 的完整图谱见 [`ENGINEERING_ARCHITECTURE.md`](ENGINEERING_ARCHITECTURE.md)，Wiki/长期知识编译层见 [`wiki/track-c/overview.md`](wiki/track-c/overview.md)。
 
 **关键设计**：
 
@@ -300,9 +300,11 @@
 | role / phase / persona_scope | 支持未来精确检索 |
 | quality / confidence | 支持晋级与过滤 |
 
+**Candidate 生效机制**：candidate 代表“已抽取、待验证”的经验，不代表生产对局立即注入。`KnowledgeAbstractor` 默认写入 candidate；`promote_after_store()` 根据质量阈值和角色/类型聚类晋级 active；`retrieval_prod` 构建生产索引时只加载 active，并用 maturity、validated_at、knowledge_epoch 和使用反馈排序。因此 candidate 的主要作用是积累和筛选，active 才是稳定影响下一局 Agent 的策略层。
+
 **设计收益**：复盘经验可沉淀；知识可回流；策略池可控。
 
-**验收方式**：strict 验收文档记录 candidate 增量和 active 零污染；`strategy_knowledge_docs` 当前快照 active 401、candidate 3856、deprecated 1。
+**验收方式**：strict 验收文档记录 candidate 增量和 active 零污染；当前本地数据库快照显示 `strategy_knowledge_docs` 为 active 387、candidate 216906、deprecated 17。
 
 **当前限制**：晋级后的真实效果需要 paired seed 对照实验。
 

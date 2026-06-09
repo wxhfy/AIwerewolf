@@ -20,9 +20,10 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+EVIDENCE_DIR = ROOT / "docs" / "evidence"
 DEFAULT_INPUT_DIR = ROOT / "outputs" / "retrieval_effectiveness_current"
-DEFAULT_REPORT = ROOT / "docs" / "PROJECT_ROLE_RETRIEVAL_QUANTIFICATION.md"
-DEFAULT_FACTS = ROOT / "docs" / "PROJECT_ROLE_RETRIEVAL_FACTS.json"
+DEFAULT_REPORT = EVIDENCE_DIR / "PROJECT_ROLE_RETRIEVAL_QUANTIFICATION.md"
+DEFAULT_FACTS = EVIDENCE_DIR / "PROJECT_ROLE_RETRIEVAL_FACTS.json"
 
 DEFAULT_POLICY = "hybrid_role_mbti_global"
 BASELINE_POLICY = "global_only"
@@ -388,7 +389,7 @@ def render_report(evidence: dict[str, Any]) -> str:
         f"- `{evidence['sources']['per_query_details']}`",
         f"- 代码依据：`{evidence['sources']['code_retriever']}`、`{evidence['sources']['code_tool']}`、`{evidence['sources']['code_evaluation']}`",
         "",
-        "可追溯性说明：`outputs/retrieval_effectiveness_current/` 是本地实验输出目录，按仓库规则不进入 GitHub；本报告对应的可提交机器可读摘要保存在 `docs/PROJECT_ROLE_RETRIEVAL_FACTS.json`，方法总览同时汇总到 `docs/PROJECT_METHOD_EFFECTIVENESS_FACTS.json`。",
+        "可追溯性说明：`outputs/retrieval_effectiveness_current/` 是本地实验输出目录，按仓库规则不进入 GitHub；本报告对应的可提交机器可读摘要保存在 `docs/evidence/PROJECT_ROLE_RETRIEVAL_FACTS.json`，方法总览同时汇总到 `docs/evidence/PROJECT_METHOD_EFFECTIVENESS_FACTS.json`。",
         "",
         "## 1. 单角色检索是如何运行的",
         "",

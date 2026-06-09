@@ -22,17 +22,18 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+EVIDENCE_DIR = ROOT / "docs" / "evidence"
 RETRIEVAL_DETAILS = ROOT / "outputs" / "retrieval_effectiveness_current" / "per_query_details.jsonl"
 MBTI_TRACK_C_SUMMARY = ROOT / "docs" / "experiments" / "mbti_track_c_auxiliary_analysis" / "summary.json"
 MBTI_ROLE_DELTAS = ROOT / "docs" / "experiments" / "mbti_track_c_auxiliary_analysis" / "role_deltas.csv"
 FORMAL_LEADERBOARD = ROOT / "docs" / "experiments" / "formal_v4flash_framework_analysis" / "leaderboard.csv"
 FORMAL_RUBRIC = ROOT / "docs" / "experiments" / "formal_v4flash_framework_analysis" / "rubric_leaderboard.csv"
-METHOD_FACTS = ROOT / "docs" / "PROJECT_METHOD_EFFECTIVENESS_FACTS.json"
-USAGE_DECISION_SCORE_FACTS = ROOT / "docs" / "PROJECT_STRATEGY_USAGE_DECISION_SCORE_ANALYSIS.json"
-USAGE_DECISION_SCORE_REPORT = ROOT / "docs" / "PROJECT_STRATEGY_USAGE_DECISION_SCORE_ANALYSIS.md"
+METHOD_FACTS = EVIDENCE_DIR / "PROJECT_METHOD_EFFECTIVENESS_FACTS.json"
+USAGE_DECISION_SCORE_FACTS = EVIDENCE_DIR / "PROJECT_STRATEGY_USAGE_DECISION_SCORE_ANALYSIS.json"
+USAGE_DECISION_SCORE_REPORT = EVIDENCE_DIR / "PROJECT_STRATEGY_USAGE_DECISION_SCORE_ANALYSIS.md"
 
-DEFAULT_REPORT = ROOT / "docs" / "PROJECT_METHOD_EFFECTIVENESS_STATISTICS.md"
-DEFAULT_FACTS = ROOT / "docs" / "PROJECT_METHOD_EFFECTIVENESS_STATISTICS.json"
+DEFAULT_REPORT = EVIDENCE_DIR / "PROJECT_METHOD_EFFECTIVENESS_STATISTICS.md"
+DEFAULT_FACTS = EVIDENCE_DIR / "PROJECT_METHOD_EFFECTIVENESS_STATISTICS.json"
 
 DEFAULT_POLICY = "hybrid_role_mbti_global"
 BASELINE_POLICY = "global_only"

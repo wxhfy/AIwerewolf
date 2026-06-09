@@ -10,7 +10,7 @@
 - `outputs/retrieval_effectiveness_current/per_query_details.jsonl`
 - 代码依据：`backend/agents/cognitive/retrieval_prod.py`、`backend/agents/cognitive/tools.py`、`scripts/evaluate_retrieval_policies.py`
 
-可追溯性说明：`outputs/retrieval_effectiveness_current/` 是本地实验输出目录，按仓库规则不进入 GitHub；本报告对应的可提交机器可读摘要保存在 `docs/PROJECT_ROLE_RETRIEVAL_FACTS.json`，方法总览同时汇总到 `docs/PROJECT_METHOD_EFFECTIVENESS_FACTS.json`。
+可追溯性说明：`outputs/retrieval_effectiveness_current/` 是本地实验输出目录，按仓库规则不进入 GitHub；本报告对应的可提交机器可读摘要保存在 `docs/evidence/PROJECT_ROLE_RETRIEVAL_FACTS.json`，方法总览同时汇总到 `docs/evidence/PROJECT_METHOD_EFFECTIVENESS_FACTS.json`。
 
 ## 1. 单角色检索是如何运行的
 
@@ -181,16 +181,16 @@ Policy 对比显示，`same_role_all_mbti` 通常能提供稳定覆盖，`same_r
 
 默认检索可以覆盖该角色，但相关性仍是主要短板；P@3=0.0833，Effective@3=0.2500。当前角色语料 42 条，其中角色通用 28 条、MBTI 细分 14 条。精确 role+MBTI 检索有 4 个查询为空，主要原因是当前 MBTI 细分语料不足。
 
-## 9. 当前可写结论与边界
+## 9. 展示结论与后续确认项
 
-| 可以写入报告的结论 | 证据来源 |
+| 展示结论 | 证据来源 |
 | --- | --- |
 | 默认单角色检索能够覆盖 6 个核心角色，当前离线 query set 无空结果。 | `outputs/retrieval_effectiveness_current/per_role_results.csv` |
 | 默认策略主要从本角色桶返回策略，而不是依赖全局兜底。 | `outputs/retrieval_effectiveness_current/results.json` |
 | 精确 role+MBTI 检索当前过窄，不适合作为唯一默认策略。 | `outputs/retrieval_effectiveness_current/results.json` 与 `role_corpus_stats.csv` |
 | Guard、Hunter、Witch、Villager 等角色需要补充更多 MBTI 细分策略卡。 | `outputs/retrieval_effectiveness_current/role_corpus_stats.csv` |
 
-| 暂不能写入的结论 | 原因 | 后续补充 |
+| 后续确认项 | 当前状态 | 建议动作 |
 | --- | --- | --- |
 | 每个角色的当前检索策略已经达到最终最优 | 离线 query set 每角色样本数有限，且为弱标注。 | 每角色补 20+ 查询，并进行人工或 LLM judge 标注。 |
 | 单角色检索直接带来胜率提升 | 当前指标是检索相关性，不是在线因果实验。 | 运行 target-seat paired A/B，固定对手，只切换目标席位 Track C。 |

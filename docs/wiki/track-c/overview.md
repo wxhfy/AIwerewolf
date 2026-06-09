@@ -31,7 +31,8 @@ The retriever prefers validated refined/canonical descendants within the same st
 
 ## Evidence
 
-- Canonical design: [Track C Hermes + LLM Wiki Design](../../TRACK_C_HERMES_LLM_WIKI_DESIGN.md)
+- Runtime lifecycle diagrams: `../../ENGINEERING_ARCHITECTURE.md`
+- Module design: `../../PROJECT_MODULE_DESIGN.md`
 - Runtime knowledge table: `strategy_knowledge_docs`
 - Evolution code: `backend/eval/evolution.py`
 - Retrieval code: `backend/agents/cognitive/retrieval_prod.py`

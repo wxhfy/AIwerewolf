@@ -240,9 +240,12 @@ def sample_opportunities(opps: list[dict]) -> dict[str, list[dict]]:
 
 
 def create_doubao_client():
+    model = os.environ.get("DOUBAO_MODEL")
+    if not model:
+        raise RuntimeError("DOUBAO_MODEL must be set for Doubao extraction scripts")
     return create_client(
         provider="doubao",
-        model=os.environ.get("DOUBAO_MODEL", "ep-20260514115354-k4jz4"),
+        model=model,
         api_key=os.environ["DOUBAO_API_KEY"],
         base_url=os.environ["DOUBAO_BASE_URL"],
     )

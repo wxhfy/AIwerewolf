@@ -20,8 +20,9 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-DEFAULT_REPORT = ROOT / "docs" / "PROJECT_TARGET_SEAT_AB_POWER_PLAN.md"
-DEFAULT_FACTS = ROOT / "docs" / "PROJECT_TARGET_SEAT_AB_POWER_PLAN.json"
+OUTPUT_DIR = ROOT / "outputs" / "target_seat_power_plan"
+DEFAULT_REPORT = OUTPUT_DIR / "PROJECT_TARGET_SEAT_AB_POWER_PLAN.md"
+DEFAULT_FACTS = OUTPUT_DIR / "PROJECT_TARGET_SEAT_AB_POWER_PLAN.json"
 
 TARGET_RUNNER = ROOT / "scripts" / "target_seat_trackc_ab_experiment.py"
 SCORE_EFFECTS = [3.0, 5.0, 8.0, 10.0]

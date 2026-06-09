@@ -87,7 +87,7 @@ def test_merge_target_seat_rows_prefers_tracked_real_llm_pilot() -> None:
     rows = summary.merge_target_seat_rows([frozen_smoke], pilot)
 
     assert rows[0]["source"] == "outputs/target/real.json"
-    assert rows[0]["summary_source"] == "docs/PROJECT_TARGET_SEAT_TRACKC_PILOT.json"
+    assert rows[0]["summary_source"] == "docs/evidence/PROJECT_TARGET_SEAT_TRACKC_PILOT.json"
     assert rows[0]["claim_scope"] == "real_llm_pilot_only"
     assert rows[0]["target_process_score_delta"] == 22.184
     assert rows[1]["claim_scope"] == "smoke_only"

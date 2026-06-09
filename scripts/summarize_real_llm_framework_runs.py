@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
+EVIDENCE_DIR = ROOT / "docs" / "evidence"
 
 DEFAULT_GLOBS = [
     "outputs/final_showcase_report/real_experiment_real_llm*",
@@ -29,8 +30,8 @@ DEFAULT_GLOBS = [
     "docs/experiments/formal_v4flash_framework_analysis",
 ]
 
-DEFAULT_REPORT = ROOT / "docs" / "PROJECT_REAL_LLM_FRAMEWORK_EVIDENCE.md"
-DEFAULT_FACTS = ROOT / "docs" / "PROJECT_REAL_LLM_FRAMEWORK_EVIDENCE.json"
+DEFAULT_REPORT = EVIDENCE_DIR / "PROJECT_REAL_LLM_FRAMEWORK_EVIDENCE.md"
+DEFAULT_FACTS = EVIDENCE_DIR / "PROJECT_REAL_LLM_FRAMEWORK_EVIDENCE.json"
 
 
 def now_iso() -> str:

@@ -24,7 +24,7 @@
 | 主持工具 | AlecM33/Werewolf | 主持人/旁观视角设计参考 | Frontend Console | GPL-3.0，禁止直接复制 |
 | 工具调用式推理 | ReAct / Tool Calling / Building Effective Agents | 推理中调用工具，工具结果进入下一轮决策 | AgentLoop | 待补全论文/文章引用 |
 | 检索增强生成 | RAG / BM25 / IR | 外部知识检索后注入上下文 | StrategyRetriever | 待补全正式引用 |
-| 自反思 Agent | Reflexion | 从失败经验中生成可复用记忆 | Track C | 待补全正式引用 |
+| 自反思 Agent | Reflexion | 从复盘经验中生成可复用记忆 | Track C | 待补全正式引用 |
 | 终身学习 Agent | Voyager | 从交互中沉淀技能库并复用 | Track C | 待补全正式引用 |
 | LLM 复核 | LLM-as-a-Judge / multi-review panel | 用 LLM 辅助复核复杂决策和报告质量 | PerStepScorer / LLMReviewPanel | 待补全正式引用 |
 | 社交推理游戏 AI | Werewolf / Avalon / Diplomacy 相关多智能体博弈 | 信息不对称、欺骗、阵营协作 | Agent 策略、对比实验 | 待补全正式引用 |
@@ -34,7 +34,7 @@
 
 ### 3.1 wolfcha
 
-来源：`docs/archive/REFERENCE.md`。
+来源：本地 `references/wolfcha/` 参考仓库与 `SKILLS.md` 的项目参考说明。
 
 wolfcha 提供了 AI 狼人杀产品化的参考，包括完整阶段枚举、Persona 生成、双层扮演、游戏状态管理和产品 UI。AI Werewolf 借鉴其“人格 + 身份”分离思想，但进一步加入了 Track B/C 的复盘和知识回流。
 
