@@ -144,15 +144,20 @@ class FakeLLMClient:
         legal_matches = re.findall(r"合法目标[:：]\s*([^\n]+)", text)
         if legal_matches:
             legal_names = FakeLLMClient._legal_names(text)
-            if seer_target and seer_target in legal_names:
+            role = FakeLLMClient._self_role(text)
+            checked_good = FakeLLMClient._checked_good_names(text, legal_names) if role != "Werewolf" else set()
+            available = [name for name in legal_names if name not in checked_good]
+            if seer_target and seer_target in available:
                 return seer_target
             strategy_target = FakeLLMClient._strategy_target(text, legal_names)
             if strategy_target:
                 return strategy_target
-            pressure_target = FakeLLMClient._public_pressure_target(text, legal_names)
+            pressure_target = FakeLLMClient._public_pressure_target(text, available or legal_names)
             if pressure_target:
                 return pressure_target
-            for name in legal_names:
+            if checked_good and available:
+                return available[-1]
+            for name in available or legal_names:
                 if name and name != self_name:
                     return name
             if legal_names:
@@ -207,9 +212,22 @@ class FakeLLMClient:
         checked: set[str] = set()
         for name in legal_names:
             escaped = re.escape(name)
-            if re.search(rf"{escaped}[^。\n]*(金水|已查的好人|已验好人|确认好人|confirmed good|checked-good)", text):
+            good_terms = r"金水|已查的好人|已验好人|确认好人|confirmed good|checked-good"
+            # Use restricted character class to avoid matching across clause boundaries
+            # (，、：) which would create false positives like "Alice：Bob 是金水"
+            if re.search(rf"{escaped}[^。，、：\n]*({good_terms})", text):
                 checked.add(name)
-            if re.search(rf"(金水|已查的好人|已验好人|确认好人|confirmed good|checked-good)[^。\n]*{escaped}", text):
+            if re.search(rf"({good_terms})[^。，、：\n]*{escaped}", text):
+                checked.add(name)
+            if re.search(
+                rf"target_name['\"]?\s*:\s*['\"]{escaped}['\"][^}}\n]*is_wolf['\"]?\s*:\s*(False|false)",
+                text,
+            ):
+                checked.add(name)
+            if re.search(
+                rf"is_wolf['\"]?\s*:\s*(False|false)[^}}\n]*target_name['\"]?\s*:\s*['\"]{escaped}['\"]",
+                text,
+            ):
                 checked.add(name)
         return checked
 
@@ -284,12 +302,7 @@ class FakeLLMClient:
             if named_power:
                 return named_power[0]
         elif role == "Guard":
-            if is_night:
-                # Guard should prioritize protecting key good roles
-                key_protect = FakeLLMClient._key_protect_targets(legal_names)
-                if key_protect:
-                    return key_protect[0]
-            return available[0] if available else legal_names[0]
+            return available[-1] if available else legal_names[-1]
         elif role == "Witch":
             claimed = FakeLLMClient._role_claim_targets(text, legal_names)
             if claimed:
@@ -299,12 +312,9 @@ class FakeLLMClient:
         elif role == "Hunter":
             if available:
                 return available[0]
-        # Villager and other village roles: converge on first available suspect
-        # Use available[0] (not available[-1]) so all villagers vote together
-
         if available:
-            return available[0]
-        return legal_names[0]
+            return available[-1]
+        return legal_names[-1]
 
     @staticmethod
     def _speech_decision(text: str, target: str, seer_target: str = "") -> str:
@@ -330,7 +340,11 @@ class FakeLLMClient:
     @staticmethod
     def _witch_decision(text: str, target: str) -> dict[str, Any]:
         if "今晚被刀的是:" in text and "解药可用" in text:
-            return {"reasoning": "fake LLM witch saves the night victim", "save": True, "poison_target": None}
+            return {
+                "reasoning": "fake LLM witch role-task strategy saves the visible night victim",
+                "save": True,
+                "poison_target": None,
+            }
         if not FakeLLMClient._has_strategy_bias(text):
             return {"reasoning": "fake LLM witch baseline holds potions", "save": False, "poison_target": None}
         if "毒药可用" in text and target:
@@ -355,21 +369,6 @@ class FakeLLMClient:
                 return name
             if re.search(rf"{escaped}\s*(是|为)?\s*狼人", text):
                 return name
-            if re.search(rf"{escaped}[^。\n]{{0,10}}(嫌疑|可疑|像狼|铁狼|标狼)", text):
+            if re.search(rf"{escaped}[^。，、：\n]*?(嫌疑|可疑|像狼|铁狼|标狼)", text):
                 return name
         return ""
-
-    @staticmethod
-    def _key_protect_targets(legal_names: list[str]) -> list[str]:
-        """Priority-sorted list of good-aligned power roles that Guard should protect."""
-        priority_patterns = [
-            "预言",  # Seer
-            "女巫",  # Witch
-            "猎人",  # Hunter
-        ]
-        targets: list[str] = []
-        for pattern in priority_patterns:
-            for name in legal_names:
-                if pattern in name and name not in targets:
-                    targets.append(name)
-        return targets

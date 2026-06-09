@@ -11,9 +11,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import multiprocessing as mp
 import os
+import queue
 import sys
 import time
+import traceback
 from contextlib import contextmanager
 from dataclasses import asdict
 from dataclasses import dataclass
@@ -75,6 +78,26 @@ class TargetGameResult:
     elapsed_s: float
     framework_assignment: dict[str, str]
     seat_assignments: list[dict[str, Any]]
+
+
+class TargetGameTimeoutError(TimeoutError):
+    """Raised when a target-seat side game exceeds the configured timeout."""
+
+
+class TargetGameSubprocessError(RuntimeError):
+    """Error payload propagated from a target-seat side-game subprocess."""
+
+    def __init__(self, payload: dict[str, Any]) -> None:
+        self.payload = payload
+        super().__init__(str(payload.get("error") or "target-seat subprocess failed"))
+
+    @property
+    def error_type(self) -> str:
+        return str(self.payload.get("error_type") or "TargetGameSubprocessError")
+
+    @property
+    def child_traceback(self) -> str:
+        return str(self.payload.get("traceback") or "")
 
 
 @contextmanager
@@ -301,6 +324,101 @@ def run_target_game(
     )
 
 
+def _run_target_game_worker(result_queue: Any, kwargs: dict[str, Any]) -> None:
+    try:
+        result_queue.put({"ok": True, "result": run_target_game(**kwargs)})
+    except Exception as exc:
+        result_queue.put(
+            {
+                "ok": False,
+                "error_type": type(exc).__name__,
+                "error": str(exc),
+                "traceback": traceback.format_exc(limit=12),
+            }
+        )
+
+
+def run_target_game_with_optional_timeout(*, timeout_s: int = 0, **kwargs: Any) -> TargetGameResult:
+    if timeout_s <= 0:
+        return run_target_game(**kwargs)
+
+    context_name = "fork" if "fork" in mp.get_all_start_methods() else "spawn"
+    ctx = mp.get_context(context_name)
+    result_queue = ctx.Queue(maxsize=1)
+    proc = ctx.Process(target=_run_target_game_worker, args=(result_queue, dict(kwargs)))
+    proc.start()
+    proc.join(timeout_s)
+    if proc.is_alive():
+        proc.terminate()
+        proc.join(5)
+        if proc.is_alive():
+            proc.kill()
+            proc.join(5)
+        raise TargetGameTimeoutError(
+            "target-seat side game timed out after "
+            f"{timeout_s}s (side={kwargs.get('side')}, seed={kwargs.get('seed')}, "
+            f"target_role={kwargs.get('target_role')}, exitcode={proc.exitcode})"
+        )
+
+    try:
+        payload = result_queue.get_nowait()
+    except queue.Empty as exc:
+        raise TargetGameSubprocessError(
+            {
+                "error_type": "ChildProcessError",
+                "error": f"target-seat subprocess exited without result (exitcode={proc.exitcode})",
+                "traceback": "",
+            }
+        ) from exc
+    finally:
+        result_queue.close()
+        result_queue.join_thread()
+
+    if payload.get("ok"):
+        result = payload.get("result")
+        if isinstance(result, TargetGameResult):
+            return result
+        raise TargetGameSubprocessError(
+            {
+                "error_type": "ChildProcessError",
+                "error": f"unexpected target-seat payload type: {type(result).__name__}",
+                "traceback": "",
+            }
+        )
+    raise TargetGameSubprocessError(payload)
+
+
+def build_failure_record(
+    exc: Exception,
+    *,
+    seed: int,
+    side: str,
+    target_role: str,
+    elapsed_s: float,
+    timeout_s: int,
+) -> dict[str, Any]:
+    if isinstance(exc, TargetGameSubprocessError):
+        error_type = exc.error_type
+        error = str(exc)
+        tb = exc.child_traceback
+    else:
+        error_type = type(exc).__name__
+        error = str(exc)
+        tb = traceback.format_exc(limit=8)
+    return {
+        "seed": seed,
+        "side": side,
+        "target_role": target_role,
+        "error_type": error_type,
+        "error": error,
+        "traceback": tb,
+        "elapsed_s": elapsed_s,
+        "timeout_s": timeout_s,
+        "external_failure": True,
+        "recorded_at": datetime.utcnow().isoformat() + "Z",
+    }
+
+
 def avg(values: list[float]) -> float:
     return sum(values) / len(values) if values else 0.0
 
@@ -509,6 +627,11 @@ def load_previous_results(payload: dict[str, Any]) -> tuple[list[dict[str, Any]]
     return dedupe_results_by_seed_side(list(baseline or [])), dedupe_results_by_seed_side(list(candidate or []))
 
 
+def load_previous_failures(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    failures = payload.get("failures", []) if isinstance(payload, dict) else []
+    return list(failures or []) if isinstance(failures, list) else []
+
+
 def dedupe_results_by_seed_side(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     by_key: dict[tuple[int, str], dict[str, Any]] = {}
     for row in rows:
@@ -588,6 +711,34 @@ def write_jsonl_rows(path: Path, rows: Sequence[dict[str, Any]]) -> None:
             f.write(json.dumps(row, ensure_ascii=False, default=str) + "\n")
 
 
+def write_partial(
+    path: Path,
+    *,
+    target_role: str,
+    baseline_results: list[dict[str, Any]],
+    candidate_results: list[dict[str, Any]],
+    failures: list[dict[str, Any]],
+    games_jsonl: Path,
+    failures_jsonl: Path,
+    resume_from: Path | None,
+    append: bool,
+    game_timeout_s: int,
+) -> None:
+    partial = {
+        "updated_at": datetime.utcnow().isoformat() + "Z",
+        "target_role": target_role,
+        "baseline_completed": len(baseline_results),
+        "candidate_completed": len(candidate_results),
+        "failure_count": len(failures),
+        "games_jsonl": str(games_jsonl),
+        "failures_jsonl": str(failures_jsonl),
+        "resume_from": str(resume_from) if resume_from else "",
+        "append": bool(append),
+        "game_timeout_s": game_timeout_s,
+    }
+    write_json(path, partial)
+
+
 def dry_run_plan(
     *,
     seeds: Sequence[int],
@@ -629,6 +780,16 @@ def main() -> int:
     parser.add_argument("--allow-fake", action="store_true")
     parser.add_argument("--skip-client-check", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--game-timeout-s", type=int, default=0, help="Hard timeout per side game; 0 disables.")
+    parser.add_argument(
+        "--max-new-games", type=int, default=0, help="Stop after this many newly-run side games; 0 disables."
+    )
+    parser.add_argument(
+        "--only-side",
+        choices=["baseline", "candidate"],
+        default="",
+        help="Run only one side. Useful for retrying missing side games.",
+    )
     parser.add_argument("--resume-from", type=Path, default=None, help="Previous target_seat_ab_*.json to resume from.")
     parser.add_argument(
         "--append",
@@ -680,6 +841,7 @@ def main() -> int:
     model_pool = [spec.label for spec in model_specs]
     baseline_results: list[dict[str, Any]] = []
     candidate_results: list[dict[str, Any]] = []
+    failures: list[dict[str, Any]] = []
     if args.resume_from:
         resume_payload = read_json(args.resume_from)
         try:
@@ -697,56 +859,104 @@ def main() -> int:
         except RuntimeError as exc:
             raise SystemExit(str(exc)) from exc
         previous_baseline, previous_candidate = load_previous_results(resume_payload)
+        previous_failures = load_previous_failures(resume_payload)
         baseline_results.extend(previous_baseline)
         candidate_results.extend(previous_candidate)
+        failures.extend(previous_failures)
         if args.append:
             out = args.resume_from.resolve()
             games_jsonl = out.with_suffix(".games.jsonl")
+            failures_jsonl = out.with_suffix(".failures.jsonl")
             partial_path = out.with_suffix(".partial.json")
         else:
             out = args.output_dir / f"target_seat_ab_{args.target_role}_{label}.json"
             games_jsonl = args.output_dir / f"target_seat_ab_{args.target_role}_{label}.games.jsonl"
+            failures_jsonl = args.output_dir / f"target_seat_ab_{args.target_role}_{label}.failures.jsonl"
             partial_path = args.output_dir / f"target_seat_ab_{args.target_role}_{label}.partial.json"
     else:
         out = args.output_dir / f"target_seat_ab_{args.target_role}_{label}.json"
         games_jsonl = args.output_dir / f"target_seat_ab_{args.target_role}_{label}.games.jsonl"
+        failures_jsonl = args.output_dir / f"target_seat_ab_{args.target_role}_{label}.failures.jsonl"
         partial_path = args.output_dir / f"target_seat_ab_{args.target_role}_{label}.partial.json"
     already_done = completed_sides_by_seed(baseline_results, candidate_results)
     if args.resume_from and not args.append:
         write_jsonl_rows(games_jsonl, [*baseline_results, *candidate_results])
+        write_jsonl_rows(failures_jsonl, failures)
 
+    new_games_attempted = 0
+    new_games_completed = 0
     started = time.perf_counter()
+    sides = (("baseline", baseline_results), ("candidate", candidate_results))
+    if args.only_side:
+        sides = tuple((side, bucket) for side, bucket in sides if side == args.only_side)
     for seed in args.seeds:
-        for side, bucket in (("baseline", baseline_results), ("candidate", candidate_results)):
+        for side, bucket in sides:
+            if args.max_new_games > 0 and new_games_attempted >= args.max_new_games:
+                print(f"reached max_new_games={args.max_new_games}; stopping early")
+                break
             if (seed, side) in already_done:
                 print(f"skip completed side={side} seed={seed} target_role={args.target_role}")
                 continue
             print(f"running side={side} seed={seed} target_role={args.target_role}")
-            result = run_target_game(
-                seed=seed,
-                player_count=args.player_count,
-                max_days=args.max_days,
-                model_specs=model_specs,
-                baseline_framework=baseline_framework,
-                candidate_framework=candidate_framework,
-                target_role=args.target_role,
-                target_occurrence=args.target_occurrence,
-                side=side,
-            )
+            new_games_attempted += 1
+            run_started = time.perf_counter()
+            try:
+                result = run_target_game_with_optional_timeout(
+                    seed=seed,
+                    player_count=args.player_count,
+                    max_days=args.max_days,
+                    model_specs=model_specs,
+                    baseline_framework=baseline_framework,
+                    candidate_framework=candidate_framework,
+                    target_role=args.target_role,
+                    target_occurrence=args.target_occurrence,
+                    side=side,
+                    timeout_s=max(args.game_timeout_s, 0),
+                )
+            except Exception as exc:
+                failure = build_failure_record(
+                    exc,
+                    seed=seed,
+                    side=side,
+                    target_role=args.target_role,
+                    elapsed_s=round(time.perf_counter() - run_started, 3),
+                    timeout_s=max(args.game_timeout_s, 0),
+                )
+                failures.append(failure)
+                append_jsonl(failures_jsonl, failure)
+                print(f"failed side={side} seed={seed}: {failure['error_type']} {failure['error']}")
+                write_partial(
+                    partial_path,
+                    target_role=args.target_role,
+                    baseline_results=baseline_results,
+                    candidate_results=candidate_results,
+                    failures=failures,
+                    games_jsonl=games_jsonl,
+                    failures_jsonl=failures_jsonl,
+                    resume_from=args.resume_from,
+                    append=bool(args.append),
+                    game_timeout_s=max(args.game_timeout_s, 0),
+                )
+                continue
             row = asdict(result)
             bucket.append(row)
             already_done[(seed, side)] = row
             append_jsonl(games_jsonl, row)
-            partial = {
-                "updated_at": datetime.utcnow().isoformat() + "Z",
-                "target_role": args.target_role,
-                "baseline_completed": len(baseline_results),
-                "candidate_completed": len(candidate_results),
-                "games_jsonl": str(games_jsonl),
-                "resume_from": str(args.resume_from) if args.resume_from else "",
-                "append": bool(args.append),
-            }
-            write_json(partial_path, partial)
+            new_games_completed += 1
+            write_partial(
+                partial_path,
+                target_role=args.target_role,
+                baseline_results=baseline_results,
+                candidate_results=candidate_results,
+                failures=failures,
+                games_jsonl=games_jsonl,
+                failures_jsonl=failures_jsonl,
+                resume_from=args.resume_from,
+                append=bool(args.append),
+                game_timeout_s=max(args.game_timeout_s, 0),
+            )
+        if args.max_new_games > 0 and new_games_attempted >= args.max_new_games:
+            break
 
     comparison = compare_results(
         baseline_results,
@@ -772,10 +982,17 @@ def main() -> int:
         "max_days": args.max_days,
         "model_pool": model_pool,
         "games_jsonl": str(games_jsonl),
+        "failures_jsonl": str(failures_jsonl),
         "resume_from": str(args.resume_from) if args.resume_from else "",
         "append": bool(args.append),
+        "game_timeout_s": max(args.game_timeout_s, 0),
+        "max_new_games": max(args.max_new_games, 0),
+        "only_side": args.only_side,
+        "new_games_attempted": new_games_attempted,
+        "new_games_completed": new_games_completed,
         "baseline_results": baseline_results,
         "candidate_results": candidate_results,
+        "failures": failures,
         "comparison": comparison,
         "claim_boundary": (
             "仅当 comparison.acceptance.accepted=true 时，才能把本输出作为 Track C 单目标席位因果增益证据。"

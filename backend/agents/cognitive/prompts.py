@@ -316,7 +316,8 @@ def build_strategy_bias_block(strategy_bias: dict, action: str) -> str:
     lines = [
         "【本局强制策略规则 — 高优先级，必须严格遵守】",
         "下列规则由本轮策略版本指定，优先级高于你的通用策略直觉。",
-        "即使你认为某条规则不是最优，也必须按字面意思行动，不要二次判断。",
+        "但它不得覆盖当前可见事实、角色规则、合法目标、信息边界或本角色基本任务；发生冲突时必须按这些硬约束行动。",
+        "执行策略时仍要维护角色任务分：先完成本身份的核心职责，再选择具体打法。",
     ]
     for section in sections:
         for item in strategy_bias.get(section, [])[:3]:

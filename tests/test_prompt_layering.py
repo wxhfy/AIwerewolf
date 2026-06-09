@@ -135,6 +135,7 @@ def test_agent_loop_places_forced_strategy_only_in_strategy_layer(monkeypatch) -
 
     assert "【本局强制策略规则" in prompt
     assert "[vote_policy] Use verified public information before voting." in prompt
+    assert "本角色基本任务" in prompt
     assert "【身份与性格】只介绍角色边界。" in prompt
 
 
@@ -181,6 +182,7 @@ def test_track_c_lessons_enter_strategy_layer_only(monkeypatch) -> None:
     assert strategy_index > task_index
     assert "doc-track-c-seer" in prompt
     assert "Convert confirmed public information" in prompt
+    assert "本角色基本职责不退化" in prompt
 
 
 def test_track_c_auto_retrieval_uses_precision_policy(monkeypatch) -> None:

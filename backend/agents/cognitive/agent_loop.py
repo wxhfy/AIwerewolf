@@ -1507,6 +1507,7 @@ def _build_track_c_strategy_block(
         "【策略层：Track C 复盘知识】",
         "以下内容来自已发布复盘/策略知识库，并已通过运行时安全过滤；仅作为高置信可选参考。",
         "如果它与当前可见事实、角色规则、合法目标或任务约束冲突，必须忽略；不能把历史复盘当作本局隐藏身份事实。",
+        "执行策略时必须保持本角色基本职责不退化，例如预言家查验并释放可信信息、守卫避免连守且保护关键好人、猎人开枪只瞄准高疑似狼人、村民基于公开事实投票。",
     ]
     for index, item in enumerate(lessons[:3], start=1):
         doc_id = str(item.get("doc_id") or item.get("id") or f"lesson-{index}")

@@ -229,6 +229,7 @@ def test_framework_specs_encode_academic_baseline_and_full_stack() -> None:
         exp.ModelSpec("ark", "m1"),
         exp.ModelSpec("doubao", "m2"),
     ]
+    assert exp.DEFAULT_GAMES_PER_FRAMEWORK >= 5
 
 
 def test_expanded_framework_report_records_agent_family_matrix(tmp_path: Path) -> None:
