@@ -366,396 +366,625 @@ class VisualReportAgent:
 
 class HTMLReviewRenderer:
     def render(self, document: PublishedReviewDocument) -> str:
-        visual_agent = VisualReportAgent()
         report = document.review_report
         scoreboard = list(report.get("scoreboard", []))
-        latest_suspicion = document.suspicion_matrix[-1]["target_scores"] if document.suspicion_matrix else {}
-        player_name_by_id = {player["id"]: player["name"] for player in document.replay_bundle.get("players", [])}
-        speech_counts: dict[str, int] = {}
-        for item in document.speech_acts:
-            speech_counts[item["stance"]] = speech_counts.get(item["stance"], 0) + 1
-
-        score_max = max([float(entry.get("adjusted_final_score", 0.0)) for entry in scoreboard] + [1.0])
-        suspicion_items = sorted(latest_suspicion.items(), key=lambda item: item[1], reverse=True)[:8]
-        winner = escape(
-            str(
-                report.get("winner")
-                or document.review_report.get("winner")
-                or document.replay_bundle.get("winner")
-                or "unknown"
-            )
-        )
-        total_players = len(document.replay_bundle.get("players", []))
-        village_count = sum(
-            1 for player in document.replay_bundle.get("players", []) if player.get("alignment") == "village"
-        )
-        wolf_count = max(total_players - village_count, 0)
-        village_pct = round((village_count / max(total_players, 1)) * 100, 1)
-
-        scoreboard_rows = "\n".join(
-            f"""
-            <div class="row">
-              <div class="row-head">
-                <span class="rank">#{int(entry.get("rank", 0))}</span>
-                <span class="name">{escape(str(entry.get("player_name", "")))}</span>
-                <span class="meta">{escape(str(entry.get("role", "")))} · {escape(str(entry.get("alignment", "")))}</span>
-              </div>
-              <div class="bar-wrap">
-                <div class="bar" style="width:{(float(entry.get("adjusted_final_score", 0.0)) / score_max) * 100:.1f}%"></div>
-                <span class="bar-value">{float(entry.get("adjusted_final_score", 0.0)):.2f}</span>
-              </div>
-            </div>
-            """
-            for entry in scoreboard[:7]
-        )
-
-        suspicion_rows = "\n".join(
-            f"""
-            <div class="row compact">
-              <div class="row-head">
-                <span class="name">{escape(player_name_by_id.get(player_id, player_id))}</span>
-              </div>
-              <div class="bar-wrap">
-                <div class="bar suspicion" style="width:{float(value) * 100:.1f}%"></div>
-                <span class="bar-value">{float(value):.2f}</span>
-              </div>
-            </div>
-            """
-            for player_id, value in suspicion_items
-        )
-
-        speech_rows = (
-            "\n".join(
-                f"""
-            <div class="speech-chip">
-              <span>{escape(stance)}</span>
-              <strong>{count}</strong>
-            </div>
-            """
-                for stance, count in sorted(speech_counts.items(), key=lambda item: item[1], reverse=True)
-            )
-            or '<div class="speech-chip"><span>none</span><strong>0</strong></div>'
-        )
-
-        highlights = (
-            "\n".join(
-                f"<li><strong>{escape(str(item.get('title', '')))}</strong><span>{escape(str(item.get('description', '')))}</span></li>"
-                for item in report.get("turning_points", [])[:5]
-            )
-            or "<li><strong>暂无</strong><span>No turning points</span></li>"
-        )
-
-        bad_cases = (
-            "\n".join(
-                f"<li><strong>{escape(str(item.get('player_name', '')))} · {escape(str(item.get('severity', '')))}</strong><span>{escape(str(item.get('description', '')))}</span></li>"
-                for item in report.get("bad_cases", [])[:5]
-            )
-            or "<li><strong>暂无</strong><span>No bad cases</span></li>"
-        )
-
-        counterfactuals = (
-            "\n".join(
-                f"<li><strong>{escape(str(item.get('counterfactual_type', '')))}</strong><span>{escape(str(item.get('expected_effect', '')))}</span></li>"
-                for item in report.get("counterfactuals", [])[:4]
-            )
-            or "<li><strong>暂无</strong><span>No counterfactuals</span></li>"
-        )
-
+        player_reviews = list(report.get("player_reviews", []))
+        turning_points = list(report.get("turning_points", []))
+        counterfactuals = list(report.get("counterfactuals", []))
+        bad_cases = list(report.get("bad_cases", []))
+        mvp_results = list(report.get("mvp_results", []))
+        strategy_suggestions = list(report.get("strategy_suggestions", []))
         validation = document.validation_result
-        validation_items = (
-            "\n".join(
-                f"<li><strong>{escape(issue['gate'])}</strong><span>{escape(issue['message'])}</span></li>"
-                for issue in validation.get("issues", [])[:6]
-            )
-            or "<li><strong>PASS</strong><span>No blocking issues. Report published.</span></li>"
-        )
-        banner_svg = visual_agent.render_story_banner(document)
-        timeline_svg = visual_agent.render_timeline_ribbon(document)
-        heatmap_svg = visual_agent.render_suspicion_heatmap(document)
 
+        player_name_by_id = {p["id"]: p["name"] for p in document.replay_bundle.get("players", [])}
+        total_players = len(document.replay_bundle.get("players", []))
+        village_count = sum(1 for p in document.replay_bundle.get("players", []) if p.get("alignment") == "village")
+        wolf_count = total_players - village_count
+        winner = escape(str(report.get("winner", "unknown")))
+        winner_label = "🐺 狼人胜" if winner == "wolf" else "🏘️ 村民胜"
+        game_summary = escape(str(report.get("game_summary", "")))
+        total_days = int(report.get("total_days", 0))
+        total_events = int(report.get("total_events", 0))
+        score_max = max([float(e.get("adjusted_final_score", 0)) for e in scoreboard] + [1.0])
+
+        # ---- build sections ----
+        scoreboard_html = self._build_scoreboard(scoreboard, score_max)
+        mvp_html = self._build_mvp(mvp_results)
+        player_reviews_html = self._build_player_reviews(player_reviews, score_max)
+        turning_html = self._build_turning_points(turning_points)
+        counterfactual_html = self._build_counterfactuals(counterfactuals)
+        bad_cases_html = self._build_bad_cases(bad_cases)
+        strategy_html = self._build_strategies(strategy_suggestions)
+        camp_html = self._build_camp(village_count, wolf_count, winner)
+        meta_html = self._build_meta(document, len(scoreboard), total_days, total_events, validation)
+        suspicion_html = self._build_suspicion(document, player_name_by_id)
+        speech_html = self._build_speech_acts(document)
+        validation_html = self._build_validation(validation)
+
+        # ---- leaderboards (queried from DB) ----
+        model_lb_html = self._build_model_leaderboard()
+        framework_lb_html = self._build_framework_leaderboard()
+
+        return self._render_full_html(
+            document,
+            winner_label,
+            game_summary,
+            meta_html,
+            mvp_html,
+            scoreboard_html,
+            player_reviews_html,
+            turning_html,
+            counterfactual_html,
+            bad_cases_html,
+            strategy_html,
+            camp_html,
+            suspicion_html,
+            speech_html,
+            model_lb_html,
+            framework_lb_html,
+            validation_html,
+        )
+
+    # ── sub-renderers ─────────────────────────────────────────────
+
+    def _build_meta(self, document, n_players, total_days, total_events, validation):
+        gid = escape(document.game_id[:8])
+        grade = escape(str(validation.get("grade", "-")))
+        status = "✓ 已发布" if validation.get("publish_allowed") else "审核中"
+        return f"""<div class="meta-card"><span class="meta-label">对局</span><strong>{gid}</strong></div>
+<div class="meta-card"><span class="meta-label">玩家</span><strong>{n_players}</strong></div>
+<div class="meta-card"><span class="meta-label">天数 / 事件</span><strong>{total_days}天 · {total_events}事件</strong></div>
+<div class="meta-card"><span class="meta-label">校验</span><strong class="{"pass" if grade == "pass" else "fail"}">{grade} · {status}</strong></div>"""
+
+    def _build_mvp(self, mvp_results):
+        if not mvp_results:
+            return ""
+        cards = []
+        for mvp in mvp_results[:2]:
+            mtype = {"global_mvp": "🏆 全局 MVP", "winner_mvp": "🥇 胜方 MVP"}.get(mvp.get("mvp_type", ""), "⭐ MVP")
+            name = escape(str(mvp.get("player_name", "")))
+            role = escape(str(mvp.get("role", "")))
+            reason = escape(str(mvp.get("reason", "")))
+            evidence = "".join(f"<li>{escape(str(e))}</li>" for e in mvp.get("evidence", [])[:3])
+            cards.append(f"""<div class="mvp-card">
+  <div class="mvp-type">{mtype}</div>
+  <div class="mvp-name">{name} <span class="mvp-role">{role}</span></div>
+  <p class="mvp-reason">{reason}</p>
+  <ul class="mvp-evidence">{evidence}</ul>
+</div>""")
+        return f"""<section class="section" id="mvp">
+<h2 class="section-title">MVP</h2>
+<div class="mvp-grid">{"".join(cards)}</div>
+</section>"""
+
+    def _build_scoreboard(self, scoreboard, score_max):
+        rows = []
+        medals = ["🥇", "🥈", "🥉"]
+        for e in scoreboard[:7]:
+            rank = int(e.get("rank", 0))
+            medal = medals[rank - 1] if rank <= 3 else f"#{rank}"
+            name = escape(str(e.get("player_name", "")))
+            role = escape(str(e.get("role", "")))
+            align = escape(str(e.get("alignment", "")))
+            score = float(e.get("adjusted_final_score", 0))
+            pct = (score / score_max) * 100
+            side_cls = "wolf-side" if align == "wolf" else "village-side"
+            rows.append(f"""<div class="sb-row">
+  <span class="sb-medal">{medal}</span>
+  <div class="sb-info">
+    <span class="sb-name">{name}</span>
+    <span class="sb-meta">{role} · <span class="{side_cls}">{align}</span></span>
+  </div>
+  <div class="sb-bar-track"><div class="sb-bar" style="width:{pct:.0f}%"></div></div>
+  <span class="sb-score">{score:.1f}</span>
+</div>""")
+        return f"""<section class="section">
+<h2 class="section-title">玩家评分榜</h2>
+<div class="scoreboard">{"".join(rows)}</div>
+</section>"""
+
+    def _build_player_reviews(self, player_reviews, score_max):
+        if not player_reviews:
+            return ""
+        cards = []
+        for i, pr in enumerate(player_reviews[:7]):
+            name = escape(str(pr.get("player_name", "")))
+            role = escape(str(pr.get("role", "")))
+            align = escape(str(pr.get("alignment", "")))
+            overall = escape(str(pr.get("overall_summary", "")))
+            score = float(pr.get("adjusted_final_score", 0))
+            process = float(pr.get("process_score", 0))
+            outcome = float(pr.get("outcome_bonus", 0))
+            speech = escape(str(pr.get("speech_summary", "")))
+            score_summary = escape(str(pr.get("score_summary", "")))
+            pct = (score / score_max) * 100
+
+            strengths = "".join(f"<li>{escape(str(s))}</li>" for s in pr.get("strengths", [])[:4])
+            weaknesses = "".join(f"<li>{escape(str(w))}</li>" for w in pr.get("weaknesses", [])[:4])
+            highlights = "".join(f"<li>{escape(str(h))}</li>" for h in pr.get("highlights", [])[:4])
+            suggestions = "".join(f"<li>{escape(str(s))}</li>" for s in pr.get("suggestions", [])[:4])
+            mistakes = "".join(f"<li>{escape(str(m))}</li>" for m in pr.get("mistakes", [])[:4])
+
+            collapsed = "collapsed" if i >= 3 else ""
+            cards.append(f"""<details class="player-card {collapsed}" {"open" if i < 3 else ""}>
+<summary class="pc-summary">
+  <span class="pc-index">#{i + 1}</span>
+  <span class="pc-name">{name}</span>
+  <span class="pc-role">{role} · {align}</span>
+  <span class="pc-score-badge" style="--pct:{pct:.0f}%">{score:.1f}</span>
+  <svg class="pc-chevron" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+</summary>
+<div class="pc-body">
+  <p class="pc-overall">{overall}</p>
+  <div class="pc-score-grid">
+    <div class="pc-score-item"><span class="pc-sl">过程分</span><strong>{process:.1f}</strong></div>
+    <div class="pc-score-item"><span class="pc-sl">胜负加成</span><strong>{outcome:.1f}</strong></div>
+    <div class="pc-score-item"><span class="pc-sl">最终得分</span><strong>{score:.1f}</strong></div>
+  </div>
+  <p class="pc-speech">💬 {speech}</p>
+  <p class="pc-score-note">{score_summary}</p>
+  {f'<div class="pc-col"><h4>✅ 优势</h4><ul>{strengths}</ul></div>' if strengths else ""}
+  {f'<div class="pc-col"><h4>⚠️ 不足</h4><ul>{weaknesses}</ul></div>' if weaknesses else ""}
+  {f'<div class="pc-col"><h4>🌟 亮点</h4><ul>{highlights}</ul></div>' if highlights else ""}
+  {f'<div class="pc-col"><h4>💡 建议</h4><ul>{suggestions}</ul></div>' if suggestions else ""}
+  {f'<div class="pc-col"><h4>❌ 失误</h4><ul>{mistakes}</ul></div>' if mistakes else ""}
+</div>
+</details>""")
+        return f"""<section class="section" id="player-reviews">
+<h2 class="section-title">个人深度复盘</h2>
+<div class="player-cards">{"".join(cards)}</div>
+</section>"""
+
+    def _build_turning_points(self, turning_points):
+        if not turning_points:
+            return '<section class="section"><h2 class="section-title">关键决策复盘</h2><p class="empty">暂无关键转折点</p></section>'
+        items = []
+        for tp in turning_points[:6]:
+            day = tp.get("day", "?")
+            title = escape(str(tp.get("title", "")))
+            desc = escape(str(tp.get("description", "")))
+            impact = float(tp.get("impact", 0))
+            impact_cls = "impact-high" if impact >= 1.0 else "impact-mid" if impact >= 0.5 else "impact-low"
+            related = ", ".join(str(p) for p in tp.get("related_players", [])[:3])
+            evidence = "".join(f"<li>{escape(str(e))}</li>" for e in tp.get("evidence", [])[:2])
+            items.append(f"""<div class="tp-card">
+  <div class="tp-header">
+    <span class="tp-day">D{day}</span>
+    <span class="tp-title">{title}</span>
+    <span class="tp-impact {impact_cls}">{impact:+.1f}</span>
+  </div>
+  <p class="tp-desc">{desc}</p>
+  {f'<p class="tp-related">👥 {related}</p>' if related else ""}
+  {f'<ul class="tp-evidence">{evidence}</ul>' if evidence else ""}
+</div>""")
+        return f"""<section class="section" id="turning-points">
+<h2 class="section-title">关键决策复盘</h2>
+<div class="tp-grid">{"".join(items)}</div>
+</section>"""
+
+    def _build_counterfactuals(self, counterfactuals):
+        if not counterfactuals:
+            return (
+                '<section class="section"><h2 class="section-title">反事实推演</h2><p class="empty">暂无</p></section>'
+            )
+        items = []
+        for cf in counterfactuals[:6]:
+            ctype = escape(str(cf.get("counterfactual_type", cf.get("phase", ""))))
+            desc = escape(str(cf.get("expected_effect", cf.get("description", ""))))
+            conf = float(cf.get("confidence", 0.5)) * 100
+            assumptions = cf.get("assumptions", "")
+            if isinstance(assumptions, dict):
+                orig = escape(str(assumptions.get("original_decision", "")))
+                alt = escape(str(assumptions.get("alternative", "")))
+            else:
+                orig = escape(str(assumptions))
+                alt = ""
+            items.append(f"""<div class="cf-card">
+  <div class="cf-type">{ctype}</div>
+  <p class="cf-desc">{desc}</p>
+  <div class="cf-confidence"><span class="cf-bar" style="width:{conf:.0f}%"></span><span class="cf-pct">{conf:.0f}% 置信</span></div>
+  {f'<div class="cf-compare"><span class="cf-orig">{orig}</span><span class="cf-arrow">→</span><span class="cf-alt">{alt}</span></div>' if orig and alt else ""}
+</div>""")
+        return f"""<section class="section" id="counterfactuals">
+<h2 class="section-title">反事实推演</h2>
+<div class="cf-grid">{"".join(items)}</div>
+</section>"""
+
+    def _build_bad_cases(self, bad_cases):
+        if not bad_cases:
+            return ""
+        items = "".join(
+            f"""<div class="bc-card">
+  <span class="bc-player">{escape(str(b.get("player_name", "")))}</span>
+  <span class="bc-severity">{escape(str(b.get("severity", "")))}</span>
+  <p class="bc-desc">{escape(str(b.get("description", "")))}</p>
+</div>"""
+            for b in bad_cases[:5]
+        )
+        return f"""<section class="section" id="bad-cases">
+<h2 class="section-title">关键失误</h2>
+<div class="bc-grid">{items}</div>
+</section>"""
+
+    def _build_strategies(self, suggestions):
+        if not suggestions:
+            return ""
+        items = "".join(
+            f"""<div class="sg-card sg-{escape(str(s.get("priority", "medium")))}">
+  <span class="sg-priority">{escape(str(s.get("priority", "medium")))}</span>
+  <p class="sg-text">{escape(str(s.get("suggestion", "")))}</p>
+  <span class="sg-target">→ {escape(str(s.get("target_type", "")))} · {escape(str(s.get("target", "")))}</span>
+</div>"""
+            for s in suggestions[:8]
+        )
+        return f"""<section class="section" id="strategies">
+<h2 class="section-title">策略建议</h2>
+<div class="sg-grid">{items}</div>
+</section>"""
+
+    def _build_camp(self, village_count, wolf_count, winner):
+        vpct = round(village_count / max(village_count + wolf_count, 1) * 100)
+        return f"""<div class="panel">
+<h2>阵营分布</h2>
+<div class="camp-ring" style="--vpct:{vpct}%"></div>
+<div class="camp-caption">🏘️ Village {village_count} · 🐺 Wolf {wolf_count}</div>
+</div>"""
+
+    def _build_suspicion(self, document, name_by_id):
+        if not document.suspicion_matrix:
+            return ""
+        latest = document.suspicion_matrix[-1]["target_scores"]
+        items = sorted(latest.items(), key=lambda x: x[1], reverse=True)[:8]
+        rows = "".join(
+            f"""<div class="row compact">
+  <div class="row-head"><span class="name">{escape(name_by_id.get(pid, pid))}</span></div>
+  <div class="bar-wrap"><div class="bar suspicion" style="width:{float(v) * 100:.0f}%"></div><span class="bar-value">{float(v):.2f}</span></div>
+</div>"""
+            for pid, v in items
+        )
+        return f"""<div class="panel">
+<h2>公共怀疑矩阵（最终帧）</h2>
+{rows}
+</div>"""
+
+    def _build_speech_acts(self, document):
+        counts: dict[str, int] = {}
+        for item in document.speech_acts:
+            counts[item["stance"]] = counts.get(item["stance"], 0) + 1
+        chips = (
+            "".join(
+                f'<div class="speech-chip"><span>{escape(s)}</span><strong>{c}</strong></div>'
+                for s, c in sorted(counts.items(), key=lambda x: x[1], reverse=True)
+            )
+            or '<div class="speech-chip"><span>—</span><strong>0</strong></div>'
+        )
+        return f"""<div class="panel">
+<h2>Speech Act 画像</h2>
+<div class="speech-grid">{chips}</div>
+</div>"""
+
+    def _build_validation(self, validation):
+        issues = validation.get("issues", [])
+        grade = escape(str(validation.get("grade", "-")))
+        score = float(validation.get("score", 0))
+        publish = "✓ 可发布" if validation.get("publish_allowed") else "⏳ 审核中"
+        issue_rows = (
+            "".join(
+                f"<li><strong>{escape(i.get('gate', ''))}</strong><span>{escape(i.get('message', ''))}</span></li>"
+                for i in issues[:6]
+            )
+            or "<li><strong>PASS</strong><span>无阻塞问题</span></li>"
+        )
+        return f"""<section class="section" id="validation">
+<h2 class="section-title">报告可信度校验</h2>
+<div class="val-header">
+  <span class="val-grade {"pass" if grade == "pass" else "fail"}">{grade.upper()}</span>
+  <span class="val-score">评分 {score:.2f}</span>
+  <span class="val-publish">{publish}</span>
+</div>
+<ul class="clean">{issue_rows}</ul>
+</section>"""
+
+    def _build_model_leaderboard(self):
+        try:
+            import os, psycopg2
+            url = os.getenv("DATABASE_URL", "postgresql://werewolf:wolf_secret_2026@127.0.0.1:5433/werewolf")
+            url = url.replace("postgresql+psycopg2://", "postgresql://")
+            conn = psycopg2.connect(url)
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT provider, COUNT(*) as games,
+                       SUM(CASE WHEN winner='wolf' THEN 1 ELSE 0 END) as ww,
+                       SUM(CASE WHEN winner='village' THEN 1 ELSE 0 END) as vw
+                FROM (SELECT DISTINCT ad.provider, g.id, g.winner
+                      FROM agent_decisions ad JOIN games g ON g.id=ad.game_id
+                      WHERE g.status='finished' AND ad.provider IN ('doubao','deepseek','dsv4flash','weapi')) sub
+                GROUP BY provider ORDER BY games DESC
+            """)
+            rows = cur.fetchall()
+            cur.close(); conn.close()
+            if not rows: return ""
+            items = ""
+            for r in rows:
+                total = r[1] or 1
+                wp = round((r[2] or 0) / total * 100)
+                vp = 100 - wp
+                items += f"""<div class="lb-row">
+  <span class="lb-name">{escape(r[0])}</span>
+  <span class="lb-games">{total}局</span>
+  <div class="lb-bar-dual"><span class="lb-wolf" style="width:{wp}%"></span><span class="lb-vill" style="width:{vp}%"></span></div>
+  <span class="lb-pct"><span class="lb-wolf-txt">🐺{wp}%</span> <span class="lb-vill-txt">🏘️{vp}%</span></span>
+</div>"""
+            return f"""<section class="section" id="model-lb">
+<h2 class="section-title">模型胜率榜</h2>
+<div class="leaderboard">{items}</div>
+</section>"""
+        except Exception:
+            return ""
+
+    def _build_framework_leaderboard(self):
+        try:
+            import os, psycopg2
+            url = os.getenv("DATABASE_URL", "postgresql://werewolf:wolf_secret_2026@127.0.0.1:5433/werewolf")
+            url = url.replace("postgresql+psycopg2://", "postgresql://")
+            conn = psycopg2.connect(url)
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT model_name, COUNT(*) as games,
+                       SUM(CASE WHEN winner='wolf' THEN 1 ELSE 0 END) as ww,
+                       SUM(CASE WHEN winner='village' THEN 1 ELSE 0 END) as vw
+                FROM (SELECT DISTINCT COALESCE(ad.model_name,'unknown') as model_name, g.id, g.winner
+                      FROM agent_decisions ad JOIN games g ON g.id=ad.game_id
+                      WHERE g.status='finished' AND ad.provider IN ('doubao','deepseek','dsv4flash','weapi')
+                        AND ad.model_name IS NOT NULL AND ad.model_name != '') sub
+                GROUP BY model_name ORDER BY games DESC LIMIT 6
+            """)
+            rows = cur.fetchall()
+            cur.close(); conn.close()
+            if not rows: return ""
+            items = ""
+            for r in rows:
+                total = r[1] or 1
+                wp = round((r[2] or 0) / total * 100)
+                vp = 100 - wp
+                items += f"""<div class="lb-row">
+  <span class="lb-name">{escape(str(r[0])[:40])}</span>
+  <span class="lb-games">{total}局</span>
+  <div class="lb-bar-dual"><span class="lb-wolf" style="width:{wp}%"></span><span class="lb-vill" style="width:{vp}%"></span></div>
+  <span class="lb-pct"><span class="lb-wolf-txt">🐺{wp}%</span> <span class="lb-vill-txt">🏘️{vp}%</span></span>
+</div>"""
+            return f"""<section class="section" id="framework-lb">
+<h2 class="section-title">Agent 框架胜率榜</h2>
+<div class="leaderboard">{items}</div>
+</section>"""
+        except Exception:
+            return ""
+
+    # ── full HTML template ────────────────────────────────────────
+
+    def _render_full_html(
+        self,
+        document,
+        winner_label,
+        game_summary,
+        meta_html,
+        mvp_html,
+        scoreboard_html,
+        player_reviews_html,
+        turning_html,
+        counterfactual_html,
+        bad_cases_html,
+        strategy_html,
+        camp_html,
+        suspicion_html,
+        speech_html,
+        model_lb_html,
+        framework_lb_html,
+        validation_html,
+    ):
+        gid = escape(document.game_id)
+        created = escape(str(document.created_at))
+        published = escape(str(document.published_at or "-"))
         return f"""<!doctype html>
 <html lang="zh-CN">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Track B Review · {escape(document.game_id)}</title>
-  <style>
-    :root {{
-      --bg: #f7efe4;
-      --paper: #fffaf3;
-      --ink: #1f1a17;
-      --muted: #7a6c62;
-      --line: #e5d3bd;
-      --accent: #9c5d2c;
-      --accent-soft: #d8b08d;
-      --danger: #9f3f3f;
-      --success: #2d7d55;
-      --shadow: 0 24px 60px rgba(71, 49, 26, 0.14);
-    }}
-    * {{ box-sizing: border-box; }}
-    body {{
-      margin: 0;
-      font-family: "Segoe UI", "PingFang SC", "Hiragino Sans GB", sans-serif;
-      background:
-        radial-gradient(circle at top left, rgba(156,93,44,0.08), transparent 36%),
-        linear-gradient(180deg, #fbf5ec 0%, var(--bg) 100%);
-      color: var(--ink);
-      padding: 28px;
-    }}
-    .report {{
-      max-width: 1300px;
-      margin: 0 auto;
-      background: var(--paper);
-      border: 1px solid var(--line);
-      border-radius: 28px;
-      box-shadow: var(--shadow);
-      overflow: hidden;
-    }}
-    .hero {{
-      padding: 32px;
-      border-bottom: 1px solid var(--line);
-      background: linear-gradient(135deg, rgba(156,93,44,0.12), rgba(255,255,255,0.5));
-    }}
-    .eyebrow {{
-      letter-spacing: .12em;
-      text-transform: uppercase;
-      font-size: 12px;
-      color: var(--muted);
-      margin-bottom: 10px;
-    }}
-    h1 {{ margin: 0; font-size: 34px; }}
-    .sub {{
-      margin-top: 10px;
-      color: var(--muted);
-      font-size: 15px;
-      line-height: 1.6;
-    }}
-    .meta-grid {{
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 14px;
-      margin-top: 24px;
-    }}
-    .visual-stage {{
-      margin-top: 22px;
-      border-radius: 24px;
-      overflow: hidden;
-      border: 1px solid rgba(122,108,98,0.12);
-      background: rgba(255,255,255,0.74);
-    }}
-    .visual-note {{
-      margin-top: 12px;
-      color: var(--muted);
-      font-size: 13px;
-      line-height: 1.6;
-    }}
-    .meta-card, .panel {{
-      background: rgba(255,255,255,0.72);
-      border: 1px solid var(--line);
-      border-radius: 20px;
-      padding: 18px;
-    }}
-    .meta-card strong {{ display: block; font-size: 26px; margin-top: 8px; }}
-    .layout {{
-      display: grid;
-      grid-template-columns: 1.25fr .95fr;
-      gap: 18px;
-      padding: 22px;
-    }}
-    .stack {{ display: grid; gap: 18px; }}
-    .panel h2 {{
-      margin: 0 0 14px;
-      font-size: 18px;
-    }}
-    .row {{
-      display: grid;
-      grid-template-columns: 220px 1fr;
-      gap: 12px;
-      align-items: center;
-      margin-bottom: 10px;
-    }}
-    .row.compact {{ grid-template-columns: 150px 1fr; }}
-    .row-head {{
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }}
-    .rank {{
-      display: inline-flex;
-      width: fit-content;
-      font-size: 12px;
-      color: var(--muted);
-    }}
-    .name {{ font-weight: 700; }}
-    .meta {{ font-size: 12px; color: var(--muted); }}
-    .bar-wrap {{
-      position: relative;
-      height: 18px;
-      border-radius: 999px;
-      background: rgba(156,93,44,0.12);
-      overflow: hidden;
-    }}
-    .bar {{
-      position: absolute;
-      inset: 0 auto 0 0;
-      border-radius: inherit;
-      background: linear-gradient(90deg, var(--accent), #c88448);
-    }}
-    .bar.suspicion {{
-      background: linear-gradient(90deg, #b55b47, #d79958);
-    }}
-    .bar-value {{
-      position: absolute;
-      right: 10px;
-      top: 50%;
-      transform: translateY(-50%);
-      font-size: 12px;
-      font-weight: 700;
-      color: #fff;
-    }}
-    .camp-ring {{
-      width: 180px;
-      height: 180px;
-      margin: 8px auto 12px;
-      border-radius: 50%;
-      background: conic-gradient(var(--success) 0 {village_pct}%, var(--danger) {village_pct}% 100%);
-      display: grid;
-      place-items: center;
-    }}
-    .camp-ring::after {{
-      content: "";
-      width: 92px;
-      height: 92px;
-      border-radius: 50%;
-      background: var(--paper);
-      border: 1px solid var(--line);
-    }}
-    .camp-caption {{ text-align: center; color: var(--muted); font-size: 13px; }}
-    ul.clean {{
-      list-style: none;
-      padding: 0;
-      margin: 0;
-      display: grid;
-      gap: 10px;
-    }}
-    ul.clean li {{
-      padding: 12px 14px;
-      border: 1px solid var(--line);
-      border-radius: 16px;
-      background: rgba(255,255,255,0.66);
-      display: grid;
-      gap: 6px;
-    }}
-    ul.clean strong {{ font-size: 14px; }}
-    ul.clean span {{ color: var(--muted); font-size: 13px; line-height: 1.55; }}
-    .speech-grid {{
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-    }}
-    .wide-panel {{
-      padding: 0;
-      overflow: hidden;
-    }}
-    .wide-panel .inner {{
-      padding: 18px;
-    }}
-    .speech-chip {{
-      border: 1px solid var(--line);
-      background: rgba(255,255,255,0.66);
-      border-radius: 999px;
-      padding: 8px 12px;
-      display: inline-flex;
-      gap: 10px;
-      align-items: center;
-      font-size: 13px;
-    }}
-    .footer {{
-      padding: 20px 24px 28px;
-      border-top: 1px solid var(--line);
-      color: var(--muted);
-      font-size: 13px;
-    }}
-    @media (max-width: 980px) {{
-      body {{ padding: 14px; }}
-      .meta-grid, .layout {{ grid-template-columns: 1fr; }}
-      .row, .row.compact {{ grid-template-columns: 1fr; }}
-    }}
-  </style>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>复盘报告 · {gid[:8]}</title>
+<style>
+:root{{--bg:#faf7f2;--paper:#fffdf9;--ink:#1f1a17;--muted:#6b6058;--line:#e8ddd0;--accent:#9c5d2c;
+  --accent2:#c88448;--danger:#b33a3a;--success:#2d7d55;--gold:#b8801d;--wolf:#c0392b;--village:#2d7d55;
+  --shadow:0 8px 32px rgba(71,49,26,.08);--radius:16px;--radius-sm:10px;}}
+*,*::before,*::after{{box-sizing:border-box;margin:0;padding:0}}
+body{{margin:0;font-family:"Segoe UI","PingFang SC","Hiragino Sans GB",sans-serif;
+  background:linear-gradient(180deg,#f5efe4 0%,var(--bg) 40%,#ede4d6 100%);color:var(--ink);padding:24px;-webkit-font-smoothing:antialiased}}
+.report{{max-width:1100px;margin:0 auto}}
+.report-header{{background:linear-gradient(135deg,#2a1f14 0%,#3d2b1a 40%,#5a3d22 100%);color:#f0e6d8;
+  border-radius:var(--radius);padding:32px 36px;margin-bottom:24px;position:relative;overflow:hidden}}
+.report-header::before{{content:"";position:absolute;top:-60px;right:-60px;width:240px;height:240px;
+  background:radial-gradient(circle,rgba(255,255,255,.06),transparent 70%);border-radius:50%}}
+.header-eyebrow{{font-size:11px;letter-spacing:.15em;text-transform:uppercase;opacity:.6;margin-bottom:8px}}
+.header-title{{font-size:36px;font-weight:800;line-height:1.15;margin-bottom:10px;position:relative}}
+.header-winner{{display:inline-block;font-size:18px;padding:4px 16px;border-radius:99px;
+  background:rgba(255,255,255,.12);backdrop-filter:blur(8px);margin-bottom:12px}}
+.header-summary{{font-size:14px;opacity:.75;max-width:600px;line-height:1.6}}
+.meta-grid{{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:20px;position:relative}}
+.meta-card{{background:rgba(255,255,255,.08);border-radius:var(--radius-sm);padding:14px 16px;backdrop-filter:blur(4px)}}
+.meta-label{{display:block;font-size:11px;opacity:.5;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px}}
+.meta-card strong{{font-size:22px;font-weight:700;display:block}}
+.meta-card strong.pass{{color:#8fd49e}} .meta-card strong.fail{{color:#f08080}}
+
+.section{{margin-bottom:28px}}
+.section-title{{font-size:20px;font-weight:800;margin-bottom:16px;padding-left:14px;border-left:4px solid var(--accent);line-height:1.3}}
+.empty{{color:var(--muted);font-style:italic;padding:16px}}
+
+/* MVP */
+.mvp-grid{{display:grid;grid-template-columns:1fr 1fr;gap:16px}}
+.mvp-card{{background:linear-gradient(135deg,rgba(255,255,255,.9),rgba(255,248,240,.95));border:1px solid var(--line);
+  border-radius:var(--radius);padding:20px;box-shadow:var(--shadow)}}
+.mvp-type{{font-size:16px;font-weight:700;color:var(--accent);margin-bottom:4px}}
+.mvp-name{{font-size:20px;font-weight:800}} .mvp-role{{font-size:14px;color:var(--muted);margin-left:8px}}
+.mvp-reason{{color:var(--muted);font-size:14px;margin-top:8px;line-height:1.5}}
+.mvp-evidence{{margin-top:10px;padding-left:18px;font-size:13px;color:var(--muted);line-height:1.6}}
+
+/* Scoreboard */
+.scoreboard{{display:grid;gap:8px}}
+.sb-row{{display:grid;grid-template-columns:40px 1fr 2fr 60px;gap:12px;align-items:center;
+  padding:10px 14px;background:rgba(255,255,255,.7);border:1px solid var(--line);border-radius:var(--radius-sm)}}
+.sb-medal{{font-size:20px;text-align:center}}
+.sb-name{{font-weight:700;font-size:15px}} .sb-meta{{font-size:12px;color:var(--muted)}}
+.wolf-side{{color:var(--wolf);font-weight:600}} .village-side{{color:var(--village);font-weight:600}}
+.sb-bar-track{{height:10px;border-radius:99px;background:rgba(156,93,44,.1);overflow:hidden}}
+.sb-bar{{height:100%;border-radius:inherit;background:linear-gradient(90deg,var(--accent),var(--accent2))}}
+.sb-score{{font-weight:800;font-size:18px;text-align:right;font-variant-numeric:tabular-nums}}
+
+/* Player Review Cards */
+.player-cards{{display:grid;gap:10px}}
+.player-card{{background:var(--paper);border:1px solid var(--line);border-radius:var(--radius);
+  box-shadow:var(--shadow);overflow:hidden;transition:all .2s}}
+.player-card[open]{{border-color:var(--accent-soft,var(--accent2))}}
+.pc-summary{{display:grid;grid-template-columns:40px 1fr auto 60px 24px;gap:12px;align-items:center;
+  padding:14px 18px;cursor:pointer;list-style:none;user-select:none}}
+.pc-summary::-webkit-details-marker{{display:none}}
+.pc-index{{font-size:13px;color:var(--muted);font-weight:600}}
+.pc-name{{font-weight:700;font-size:16px}} .pc-role{{font-size:13px;color:var(--muted)}}
+.pc-score-badge{{display:inline-flex;align-items:center;justify-content:center;min-width:54px;padding:4px 10px;
+  border-radius:99px;font-weight:800;font-size:15px;
+  background:conic-gradient(var(--accent) var(--pct),#eee var(--pct) 100%);color:var(--ink)}}
+.pc-chevron{{width:20px;height:20px;color:var(--muted);transition:transform .2s}}
+details[open] .pc-chevron{{transform:rotate(180deg)}}
+.pc-body{{padding:0 18px 18px;display:grid;gap:14px}}
+.pc-overall{{font-size:14px;color:var(--ink);line-height:1.6}}
+.pc-score-grid{{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}}
+.pc-score-item{{background:rgba(156,93,44,.06);border-radius:var(--radius-sm);padding:12px;text-align:center}}
+.pc-sl{{display:block;font-size:11px;color:var(--muted);text-transform:uppercase;margin-bottom:4px}}
+.pc-score-item strong{{font-size:22px;font-weight:800}}
+.pc-speech{{font-size:13px;color:var(--muted);line-height:1.5}}
+.pc-score-note{{font-size:12px;color:var(--muted)}}
+.pc-col{{margin-top:4px}} .pc-col h4{{font-size:13px;font-weight:700;margin-bottom:6px}}
+.pc-col ul{{padding-left:18px;font-size:13px;color:var(--muted);line-height:1.7}}
+
+/* Turning Points */
+.tp-grid{{display:grid;grid-template-columns:1fr 1fr;gap:14px}}
+.tp-card{{background:var(--paper);border:1px solid var(--line);border-radius:var(--radius);
+  padding:16px;box-shadow:var(--shadow)}}
+.tp-header{{display:flex;align-items:center;gap:10px;margin-bottom:8px}}
+.tp-day{{font-size:12px;font-weight:700;background:var(--accent);color:#fff;padding:2px 8px;border-radius:99px}}
+.tp-title{{font-weight:700;font-size:15px}}
+.tp-impact{{font-size:12px;font-weight:800;padding:2px 8px;border-radius:99px}}
+.impact-high{{background:#fef2f2;color:var(--danger)}} .impact-mid{{background:#fffbeb;color:var(--gold)}}
+.impact-low{{background:#f0fdf4;color:var(--success)}}
+.tp-desc{{font-size:13px;color:var(--muted);line-height:1.55}}
+.tp-related{{font-size:12px;color:var(--muted);margin-top:6px}}
+.tp-evidence{{margin-top:6px;padding-left:16px;font-size:12px;color:var(--muted);line-height:1.5}}
+
+/* Counterfactuals */
+.cf-grid{{display:grid;grid-template-columns:1fr 1fr;gap:14px}}
+.cf-card{{background:rgba(255,255,255,.7);border:1px dashed var(--line);border-radius:var(--radius);
+  padding:16px}}
+.cf-type{{font-size:12px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}}
+.cf-desc{{font-size:14px;line-height:1.5;margin-bottom:10px}}
+.cf-confidence{{display:flex;align-items:center;gap:8px}}
+.cf-bar{{display:inline-block;height:5px;border-radius:99px;background:linear-gradient(90deg,var(--accent),var(--accent2))}}
+.cf-pct{{font-size:12px;color:var(--muted);white-space:nowrap}}
+.cf-compare{{display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:center;margin-top:10px;
+  font-size:12px;background:rgba(0,0,0,.02);padding:10px;border-radius:8px}}
+.cf-orig{{color:var(--danger)}} .cf-arrow{{color:var(--muted)}} .cf-alt{{color:var(--success)}}
+
+/* Bad Cases */
+.bc-grid{{display:grid;gap:10px}}
+.bc-card{{background:#fef2f2;border:1px solid #fecaca;border-radius:var(--radius);padding:14px}}
+.bc-player{{font-weight:700;font-size:14px}} .bc-severity{{float:right;font-size:11px;color:var(--danger);
+  background:#fee2e2;padding:2px 8px;border-radius:99px}}
+.bc-desc{{font-size:13px;color:var(--muted);margin-top:6px;line-height:1.5}}
+
+/* Strategy Suggestions */
+.sg-grid{{display:grid;grid-template-columns:1fr 1fr;gap:10px}}
+.sg-card{{padding:14px;border-radius:var(--radius-sm);border:1px solid var(--line)}}
+.sg-high{{background:linear-gradient(135deg,#fef2f2,rgba(255,255,255,.8));border-color:#fecaca}}
+.sg-medium{{background:linear-gradient(135deg,#fffbeb,rgba(255,255,255,.8));border-color:#fde68a}}
+.sg-priority{{display:inline-block;font-size:10px;font-weight:700;text-transform:uppercase;
+  padding:2px 6px;border-radius:4px;margin-bottom:6px}}
+.sg-high .sg-priority{{background:var(--danger);color:#fff}}
+.sg-medium .sg-priority{{background:var(--gold);color:#fff}}
+.sg-text{{font-size:13px;line-height:1.55}}
+.sg-target{{display:block;font-size:11px;color:var(--muted);margin-top:6px}}
+
+/* Side panels */
+.side-grid{{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:24px}}
+.panel{{background:rgba(255,255,255,.7);border:1px solid var(--line);border-radius:var(--radius);
+  padding:18px;box-shadow:var(--shadow)}}
+.panel h2{{font-size:16px;font-weight:700;margin-bottom:12px}}
+.camp-ring{{width:140px;height:140px;margin:0 auto 10px;border-radius:50%;
+  background:conic-gradient(var(--village) 0 var(--vpct),var(--wolf) var(--vpct) 100%);display:grid;place-items:center}}
+.camp-ring::after{{content:"";width:70px;height:70px;border-radius:50%;background:#fffdf9}}
+.camp-caption{{text-align:center;font-size:13px;color:var(--muted)}}
+.row.compact{{display:grid;grid-template-columns:100px 1fr;gap:8px;align-items:center;margin-bottom:8px;font-size:13px}}
+.row-head .name{{font-weight:600}}
+.bar-wrap{{position:relative;height:16px;border-radius:99px;background:rgba(156,93,44,.1);overflow:hidden}}
+.bar{{position:absolute;inset:0 auto 0 0;border-radius:inherit;
+  background:linear-gradient(90deg,var(--accent),var(--accent2))}}
+.bar.suspicion{{background:linear-gradient(90deg,#b55b47,#d79958)}}
+.bar-value{{position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:11px;font-weight:700;color:#fff}}
+.speech-grid{{display:flex;flex-wrap:wrap;gap:8px}}
+.speech-chip{{border:1px solid var(--line);background:rgba(255,255,255,.6);border-radius:99px;
+  padding:6px 12px;display:inline-flex;gap:8px;align-items:center;font-size:13px}}
+.speech-chip strong{{font-weight:800}}
+
+/* Leaderboard */
+.leaderboard{{display:grid;gap:8px}}
+.lb-row{{display:grid;grid-template-columns:140px 56px 1fr 120px;gap:10px;align-items:center;
+  padding:10px 14px;background:rgba(255,255,255,.7);border:1px solid var(--line);border-radius:var(--radius-sm)}}
+.lb-name{{font-weight:700;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
+.lb-games{{font-size:12px;color:var(--muted)}}
+.lb-bar-dual{{display:flex;height:12px;border-radius:99px;overflow:hidden}}
+.lb-wolf{{background:var(--wolf);transition:width .3s}}
+.lb-vill{{background:var(--village);transition:width .3s}}
+.lb-pct{{font-size:12px;text-align:right}}
+.lb-wolf-txt{{color:var(--wolf);font-weight:600}} .lb-vill-txt{{color:var(--village);font-weight:600}}
+
+/* Validation */
+.val-header{{display:flex;align-items:center;gap:14px;margin-bottom:12px}}
+.val-grade{{font-size:18px;font-weight:800;padding:4px 14px;border-radius:99px}}
+.val-grade.pass{{background:#dcfce7;color:var(--success)}} .val-grade.fail{{background:#fef2f2;color:var(--danger)}}
+.val-score{{font-size:14px;color:var(--muted)}} .val-publish{{font-size:13px;color:var(--muted)}}
+ul.clean{{list-style:none;padding:0;display:grid;gap:8px;font-size:13px;color:var(--muted);line-height:1.5}}
+
+.footer{{text-align:center;font-size:12px;color:var(--muted);padding:20px;border-top:1px solid var(--line);margin-top:24px}}
+
+@media(max-width:768px){{
+  .meta-grid,.mvp-grid,.tp-grid,.cf-grid,.sg-grid,.side-grid{{grid-template-columns:1fr}}
+  .sb-row{{grid-template-columns:32px 1fr 60px}} .sb-bar-track{{display:none}}
+  .lb-row{{grid-template-columns:1fr}} .header-title{{font-size:26px}}
+}}
+</style>
 </head>
 <body>
-  <div class="report">
-    <section class="hero">
-      <div class="eyebrow">Track B Review</div>
-      <h1>AI Werewolf 复盘报告</h1>
-      <p class="sub">{escape(str(report.get("game_summary", "")))}<br/>Winner: <strong>{winner}</strong> · Validation: <strong>{escape(str(validation.get("grade", "unknown")))}</strong> · Publish: <strong>{"yes" if validation.get("publish_allowed") else "no"}</strong></p>
-      <div class="meta-grid">
-        <div class="meta-card"><span>Game</span><strong>{escape(document.game_id[:8])}</strong></div>
-        <div class="meta-card"><span>Scoreboard</span><strong>{len(scoreboard)}</strong></div>
-        <div class="meta-card"><span>Speech Acts</span><strong>{len(document.speech_acts)}</strong></div>
-        <div class="meta-card"><span>Suspicion Frames</span><strong>{len(document.suspicion_matrix)}</strong></div>
-      </div>
-      <div class="visual-stage">{banner_svg}</div>
-      <div class="visual-note">All report visuals on this page are painted by a dedicated visual report agent as inline SVG artifacts, then embedded into the final HTML snapshot for replay-safe delivery.</div>
-    </section>
+<div class="report">
+<header class="report-header">
+  <div class="header-eyebrow">Track B · Post-Game Review</div>
+  <h1 class="header-title">AI Werewolf 复盘报告</h1>
+  <div class="header-winner">{winner_label}</div>
+  <p class="header-summary">{game_summary}</p>
+  <div class="meta-grid">{meta_html}</div>
+</header>
 
-    <section class="layout">
-      <div class="stack">
-        <div class="panel">
-          <h2>玩家评分榜</h2>
-          {scoreboard_rows}
-        </div>
-        <div class="panel">
-          <h2>关键高光 / 转折点</h2>
-          <ul class="clean">{highlights}</ul>
-        </div>
-        <div class="panel">
-          <h2>局部反事实</h2>
-          <ul class="clean">{counterfactuals}</ul>
-        </div>
-        <div class="panel wide-panel">
-          <div class="inner">
-            <h2>局势时间线图</h2>
-          </div>
-          {timeline_svg}
-        </div>
-      </div>
+{mvp_html}
+{scoreboard_html}
+{player_reviews_html}
+{turning_html}
+{counterfactual_html}
+{bad_cases_html}
 
-      <div class="stack">
-        <div class="panel">
-          <h2>阵营分布</h2>
-          <div class="camp-ring"></div>
-          <div class="camp-caption">Village {village_count} · Wolf {wolf_count}</div>
-        </div>
-        <div class="panel">
-          <h2>公共怀疑矩阵（最终帧）</h2>
-          {suspicion_rows}
-        </div>
-        <div class="panel wide-panel">
-          <div class="inner">
-            <h2>怀疑热力图</h2>
-          </div>
-          {heatmap_svg}
-        </div>
-        <div class="panel">
-          <h2>Speech Act 画像</h2>
-          <div class="speech-grid">{speech_rows}</div>
-        </div>
-        <div class="panel">
-          <h2>关键失误</h2>
-          <ul class="clean">{bad_cases}</ul>
-        </div>
-        <div class="panel">
-          <h2>Valid Agent 校验</h2>
-          <ul class="clean">{validation_items}</ul>
-        </div>
-      </div>
-    </section>
+<div class="side-grid">{camp_html}{suspicion_html}{speech_html}</div>
 
-    <div class="footer">
-      Generated at {escape(document.created_at)} · Published {escape(str(document.published_at or "-"))}
-    </div>
-  </div>
+{model_lb_html}
+{framework_lb_html}
+{strategy_html}
+{validation_html}
+
+<div class="footer">Generated {created} · Published {published}</div>
+</div>
 </body>
 </html>"""
 

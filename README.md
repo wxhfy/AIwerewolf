@@ -20,6 +20,13 @@
 
 面向狼人杀博弈的多智能体认知决策与自进化系统。项目围绕规则引擎、信息隔离、Agent 决策、赛后评测和策略知识回流构建，将复杂对局拆成可验证、可复盘、可迭代的工程模块。
 
+项目信息：
+
+| 项目 | 内容 |
+|---|---|
+| GitHub 仓库 | https://github.com/wxhfy/AIwerewolf |
+| 小组成员 | 付一涵、穆玉玲、王松磊 |
+
 主线能力：
 
 | 主线 | 项目实现 |
@@ -43,15 +50,15 @@
 | 信息隔离在后端完成 | `GameState` 投影为 `PlayerView` 和 public snapshot，前端只渲染后端给出的视图 |
 | Agent 行为可组合 | Persona、Role、Strategy 三层 Prompt 配合 Memory、BeliefTracker、SocialModel 和工具调用 |
 | 复盘证据可追溯 | `GameEvent`、`AgentDecision`、`PublishedReview` 和策略知识形成可回放证据链 |
-| 策略迭代有生命周期 | Track C 新策略先进入候选池，赛后自动门禁和批处理治理会将高质量候选晋级为 active，并把低质、过期或超量候选归档为 deprecated |
+| 策略迭代有生命周期 | Track C 新策略先进入候选池，赛后自动门禁和批处理治理会将高质量候选晋级为 active，并把未达门禁、过期或超量候选归档为 deprecated |
 
 ## 已实现内容
 
 | 方向 | 已实现能力 |
 |---|---|
 | 对局能力 | 7-12 人狼人杀配置、昼夜流程、警徽竞选、PK、遗言、猎人开枪、白狼王自爆、真人混战 |
-| Agent 能力 | 角色化 `CognitiveAgent`、人格配置、记忆、社交模型、工具调用、策略检索和真实 LLM provider 接入 |
-| 复盘能力 | Track B 逐决策评分、复盘报告、关键决策展示、leaderboard 和统计看板 |
+| Agent 能力 | 角色化 `CognitiveAgent`、人格配置、记忆、社交模型、工具调用、策略检索和多模型 provider 接入 |
+| 复盘能力 | Track B 逐决策质量评估、复盘报告、关键决策展示、leaderboard 和统计看板 |
 | 进化能力 | Track C 策略知识抽取、candidate/active/deprecated 生命周期、策略检索回流 |
 | 前端能力 | 大厅、对局观战、真人操作、单局复盘、统计看板、人格配置页 |
 | 工程能力 | FastAPI REST/WebSocket、SQLAlchemy 持久化、配置化规则、严格信息隔离验证 |
@@ -62,13 +69,13 @@
 
 入口：`backend/eval/per_step_scorer.py`, `backend/eval/track_b.py`
 
-Track B 的目标是把“谁赢了”拆解成“每一步为什么好或不好”。系统会读取对局事件、Agent 决策、发言、投票和技能使用记录，生成逐步评分、关键决策、复盘报告和 leaderboard。
+Track B 的目标是把“谁赢了”拆解成“每一步如何影响局势”。系统会读取对局事件、Agent 决策、发言、投票和技能使用记录，生成逐步质量评估、关键决策、复盘报告和 leaderboard。
 
 核心输出：
 
 | 输出 | 作用 |
 |---|---|
-| 逐决策评分 | 评价发言、投票、技能、时机和影响 |
+| 逐决策质量评估 | 评价发言、投票、技能、时机和影响 |
 | PublishedReview | 生成单局复盘报告和前端可展示材料 |
 | Leaderboard | 按模型、Agent 版本、角色和行为维度聚合表现 |
 | 决策证据链 | 将复盘结论追溯到具体事件和 Agent 输出 |
@@ -77,9 +84,9 @@ Track B 的目标是把“谁赢了”拆解成“每一步为什么好或不好
 
 入口：`backend/eval/knowledge_abstractor.py`, `backend/agents/cognitive/retrieval_prod.py`
 
-Track C 的目标是将复盘经验沉淀为可检索策略，并回流到下一局 Agent。系统从 Track B 的高光和失误中抽取策略知识，先进入 candidate 池，再通过质量、聚类和使用反馈晋级为 active，最后由 `StrategyRetriever` 按角色、阶段和适用条件完成检索。
+Track C 的目标是将复盘经验沉淀为可检索策略，并回流到下一局 Agent。系统从 Track B 的高价值片段和改进点中抽取策略知识，先进入 candidate 池，再通过质量、聚类和使用反馈晋级为 active，最后由 `StrategyRetriever` 按角色、阶段和适用条件完成检索。
 
-当前默认检索策略为 `same_role_all_mbti`：在 6 个固定单 Agent 场景的火山 v4flash 轻量 A/B 中，综合评分 8.13，相比无检索 7.33 提升 +0.80；`hybrid_role_mbti_global` 保留为可选分层兜底策略。
+当前默认检索策略为 `same_role_all_mbti`：在 6 个固定单 Agent 场景的火山 v4flash 轻量 A/B 中，综合质量 8.13，相比无检索 7.33 提升 +0.80；`hybrid_role_mbti_global` 保留为可选分层兜底策略。
 
 ## Track C 生命周期
 
@@ -88,9 +95,9 @@ Track C 的策略知识分两层触发：
 | 层级 | 触发方式 | 作用 |
 |---|---|---|
 | 赛后自动门禁 | 每局结束后由 `run_post_game_scoring()` 调用 `promote_after_store(source_game_id=game_id)` | 只处理本局新知识，按质量、聚类和使用反馈把候选晋级为 active，并做轻量归档 |
-| 批处理治理 | 本地治理脚本或数据库维护任务 | 对全库执行质量晋级、反馈晋级、active 池剪枝、candidate 池上限治理和低质归档 |
+| 批处理治理 | 本地治理脚本或数据库维护任务 | 对全库执行质量晋级、反馈晋级、active 池剪枝、candidate 池上限治理和未达门禁归档 |
 
-生产 Agent 的策略检索只加载 `active` 策略。`candidate` 是候选知识池，不直接进入下一局 Prompt；批处理治理限制候选堆积，低质、过期或超量候选进入 `deprecated`。
+生产 Agent 的策略检索只加载 `active` 策略。`candidate` 是候选知识池，不直接进入下一局 Prompt；批处理治理限制候选堆积，未达门禁、过期或超量候选进入 `deprecated`。
 
 初始策略种子在 `configs/seed_strategies.json`（386 条 active 策略，覆盖 14 个角色），首次启动时加载即可获得基线策略能力。
 

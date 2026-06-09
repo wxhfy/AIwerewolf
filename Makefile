@@ -82,7 +82,11 @@ demo:
 	$(PYTHON) -m backend.run_demo --seed $(SEED)
 
 test:
-	$(PYTHON) -m backend.run_demo --seed $(SEED)
+	@if [ -d tests ]; then \
+		_TEST_ALLOW_FAKE_LLM=true LLM_PROVIDER=fake AIWEREWOLF_STRICT_MODE=true ALLOW_FALLBACK=false $(PYTHON) -m pytest tests/ -q; \
+	else \
+		$(PYTHON) -m py_compile backend/app.py backend/run_demo.py backend/eval/post_game.py; \
+	fi
 
 test-strict:
 	@if [ -f scripts/run_backend_full_strict.py ]; then \

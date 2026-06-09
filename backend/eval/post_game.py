@@ -12,8 +12,6 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-from backend.db.database import DEFAULT_DB_URL as _DEFAULT_CONN
-
 
 def run_post_game_scoring(game_state: Any, game_id: str, *, return_details: bool = False) -> int | dict[str, int]:
     """Score all decisions and extract knowledge after game end.
@@ -26,8 +24,9 @@ def run_post_game_scoring(game_state: Any, game_id: str, *, return_details: bool
     try:
         from collections import defaultdict
 
-        import psycopg2
-
+        from backend.db.database import SessionLocal
+        from backend.db.models import AgentDecision
+        from backend.db.models import StrategyKnowledgeDoc
         from backend.eval.knowledge_abstractor import KnowledgeAbstractor
         from backend.eval.knowledge_abstractor import store_lessons_to_db
         from backend.eval.per_step_scorer import PerStepScorer
@@ -44,60 +43,51 @@ def run_post_game_scoring(game_state: Any, game_id: str, *, return_details: bool
         return {"lessons_stored": 0, "promoted_count": 0} if return_details else 0
 
     # 2. Read decisions from agent_decisions table
-    conn = psycopg2.connect(_DEFAULT_CONN)
-    conn.set_isolation_level(0)
-    cur = conn.cursor()
-    cur.execute(
-        """SELECT id, player_id, day, phase, parsed_action, raw_output
-           FROM agent_decisions WHERE game_id = %s""",
-        (game_id,),
-    )
-    rows = cur.fetchall()
-    cur.close()
-    conn.close()
+    db = SessionLocal()
+    try:
+        decisions = (
+            db.query(AgentDecision)
+            .filter(AgentDecision.game_id == game_id)
+            .order_by(AgentDecision.day, AgentDecision.created_at)
+            .all()
+        )
+        existing_docs = db.query(StrategyKnowledgeDoc).filter(StrategyKnowledgeDoc.source_game_id == game_id).count()
+        if existing_docs == 0:
+            existing_docs = sum(
+                1
+                for doc in db.query(StrategyKnowledgeDoc.source_report_ids).all()
+                if game_id in (doc.source_report_ids or [])
+            )
+    finally:
+        db.close()
 
-    if not rows:
+    if not decisions:
         logger.info(f"No decisions found for game {game_id}, skipping scoring")
         return {"lessons_stored": 0, "promoted_count": 0} if return_details else 0
 
     # 2.5. Check if this game already has per_step lessons (Track B may have scored it)
-    import json as _check_json
-
-    try:
-        check_conn = psycopg2.connect(_DEFAULT_CONN)
-        check_conn.set_isolation_level(0)
-        check_cur = check_conn.cursor()
-        check_cur.execute(
-            "SELECT COUNT(*) FROM strategy_knowledge_docs WHERE source_report_ids @> %s::jsonb",
-            (_check_json.dumps([game_id]),),
+    if existing_docs > 0:
+        logger.info(
+            f"Game {game_id} already has {existing_docs} per_step lessons (from Track B), skipping post_game scoring"
         )
-        existing = int(check_cur.fetchone()[0] or 0)
-        check_cur.close()
-        check_conn.close()
-        if existing > 0:
-            logger.info(
-                f"Game {game_id} already has {existing} per_step lessons (from Track B), skipping post_game scoring"
-            )
-            return {"lessons_stored": 0, "promoted_count": 0} if return_details else 0
-    except Exception:
-        logger.debug(f"Could not check existing lessons for game {game_id}, continuing", exc_info=True)
+        return {"lessons_stored": 0, "promoted_count": 0} if return_details else 0
 
     # 3. Build decision dicts for scoring
     decision_dicts: list[dict] = []
-    for row in rows:
-        pa = row[4] or {}
-        player_id = str(row[1] or "")
+    for row in decisions:
+        pa = row.parsed_action or {}
+        player_id = str(row.player_id or "")
         decision_dicts.append(
             {
-                "id": str(row[0] or ""),
+                "id": str(row.id or ""),
                 "player_id": player_id,
                 "player_name": _player_name(state_dict, player_id),
                 "player_role": _player_role(state_dict, player_id),
-                "day": int(row[2] or 0),
-                "phase": str(row[3] or ""),
+                "day": int(row.day or 0),
+                "phase": str(row.phase or ""),
                 "target_id": str(pa.get("target_id", "") or ""),
                 "action_type": str(pa.get("action_type", "") or ""),
-                "raw_text": str(row[5] or pa.get("speech", "") or ""),
+                "raw_text": str(row.raw_output or pa.get("speech", "") or ""),
                 "vote_weight": float(pa.get("vote_weight", 1.0) or 1.0),
             }
         )
