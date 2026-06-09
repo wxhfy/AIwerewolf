@@ -126,9 +126,8 @@ Layer 3  策略知识  → 教"怎么赢"（BM25 检索历史经验）
 正式对局 AI 席位使用 LLM-compatible `CognitiveAgent`；`agent_type=heuristic` 会被后端拒绝。默认 strict 语义是：
 
 - `AIWEREWOLF_STRICT_MODE=true`
-- `ALLOW_FALLBACK=false`
-- LLM 超时、解析异常、非法目标应暴露为 invalid/error，不静默替换为启发式动作
-- `_TEST_ALLOW_FAKE_LLM=true LLM_PROVIDER=fake` 仅用于测试和 CI
+- LLM 超时、解析异常、非法目标应暴露为错误，不静默替换为启发式动作
+- 正式对局、展示和结果统计只采用真实 LLM provider 路径
 
 ### 2.6 真人 vs AI 混战
 
@@ -151,8 +150,8 @@ Layer 3  策略知识  → 教"怎么赢"（BM25 检索历史经验）
 ### 3.2 Track C：知识进化
 
 - **KnowledgeAbstractor**：从 highlight/mistake 提取经验
-- **Wiki 骨架**：把复盘、策略知识和实验反馈编译成 `docs/wiki/` Markdown 策略百科，供人类、LLM 和 Obsidian 共读共审；当前不直接注入 Agent
-- **Hermes-style DreamJob**：从 approved reviews + wiki 共识提出 candidate patch
+- **长期知识骨架**：把复盘、策略知识和实验反馈编译成可读策略材料，供人类和 LLM 共读共审；当前不直接注入 Agent
+- **Hermes-style DreamJob**：从复盘材料和策略共识提出 candidate patch
 - 写入 `strategy_knowledge_docs`（status=candidate）
 - promote / A/B tournament / usage feedback 管理 candidate → active → deprecated 生命周期
 - 验证后的知识回流到下一局 Agent 的策略检索中

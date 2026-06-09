@@ -60,7 +60,7 @@ AIWolf 系列项目提供标准 Agent 生命周期接口。AI Werewolf 保留了
 
 ### 3.5 werewolf-brain / open_mafia_engine
 
-werewolf-brain 提供角色库、夜晚序列和权重平衡思路；open_mafia_engine 提供事件驱动和 phase cycle 的参考。AI Werewolf 没有直接复制规则库，而是用自己的 RoleRegistry、ActionValidator 和 PhaseMachine 风格实现。
+werewolf-brain 提供角色库、夜晚序列和权重平衡思路；open_mafia_engine 提供事件驱动和 phase cycle 的参考。AI Werewolf 没有直接复制规则库，而是用自己的 RoleRegistry、行动合法性组件和 PhaseMachine 风格实现。
 
 对应模块：`backend/engine/roles/`、`backend/engine/actions.py`、`backend/engine/game.py`。
 

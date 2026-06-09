@@ -28,7 +28,7 @@ flowchart TB
     subgraph game_layer ["Layer 4 - Rule engine and information boundary"]
         game["WerewolfGame<br/>authoritative state writer"]
         phase_manager["PhaseManager<br/>night / day / special phases"]
-        actions["Action validation<br/>actor / target / skill legality"]
+        actions["Action legality<br/>actor / target / skill checks"]
         roles["RoleRegistry and skills<br/>role metadata / extensibility"]
         visibility["Visibility builder<br/>GameState -> PlayerView / public snapshot"]
     end
@@ -51,7 +51,7 @@ flowchart TB
     end
 
     subgraph data_layer ["Layer 1 - Data, configuration and verification"]
-        database[(PostgreSQL / SQLite fallback<br/>events / decisions / reports / knowledge)]
+        database[(PostgreSQL / local SQLite<br/>events / decisions / reports / knowledge)]
         configs["YAML and env config<br/>rules / models / experiments"]
         tests["Tests and CI<br/>pytest / ruff / frontend build"]
         ops["Operational checks<br/>preflight / smoke / strict visibility"]
@@ -152,7 +152,7 @@ flowchart LR
     end
 
     subgraph data_layer ["Data layer"]
-        db[(PostgreSQL / SQLite fallback<br/>games / events / decisions / reviews / knowledge)]
+        db[(PostgreSQL / local SQLite<br/>games / events / decisions / reviews / knowledge)]
         llm["LLM-compatible providers<br/>doubao / deepseek / ark / weapi / anthropic"]
     end
 
@@ -234,7 +234,7 @@ sequenceDiagram
     end
 
     agent-->>game: Submit Decision
-    game->>game: Validate actor, target, skill and phase
+    game->>game: Check actor, target, skill and phase
     game->>db: Persist GameEvent and AgentDecision
     game-->>api: Public snapshot and private action state
     api-->>frontend: REST / WebSocket update
@@ -384,7 +384,7 @@ stateDiagram-v2
     accDescr: Lifecycle of Track C strategy knowledge from candidate lessons to active strategy cards, usage feedback, versioned updates and retained deprecated records.
 
     [*] --> Candidate: Extract from review
-    Candidate --> Active: Promote after validation
+    Candidate --> Active: Promote after review
     Active --> Active: Update confidence and usage feedback
     Active --> Candidate: Generate versioned patch
     Active --> Deprecated: Superseded by newer active version

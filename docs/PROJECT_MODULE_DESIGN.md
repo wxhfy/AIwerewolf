@@ -33,7 +33,7 @@
 
 **设计收益**：规则一致、流程可复现、便于验收、便于扩展角色、便于回放和复盘。
 
-**验收方式**：`scripts/run_backend_full_strict.py`；当前结果以 `docs/evidence/` 和严格模式命令为准。
+**验收方式**：`scripts/run_backend_full_strict.py` 和信息隔离专项验证命令。
 
 **当前限制**：扩展角色仍需补充更多规则测试；长期并发压力测试需要单独运行。
 
@@ -264,13 +264,13 @@
 
 **设计收益**：不只看胜负；能定位失误；能为 Track C 提供结构化经验。
 
-**验收方式**：当前本地数据库快照有 `evaluations=126003`，复盘证据文件统一放在 `docs/evidence/`。
+**验收方式**：复盘链路通过本地数据库和严格模式脚本验证，原始评估输出不进入 GitHub 仓库。
 
 **当前限制**：实际 Tier 触发比例、judge agreement 和人工一致性需要补实验。
 
 ## 8. Track C Knowledge Layer
 
-**模块定位**：Track C 经验抽取、runtime 策略回流，以及 Wiki/Hermes 增量设计的连接层。
+**模块定位**：Track C 经验抽取、runtime 策略回流，以及长期策略知识增量设计的连接层。
 
 **输入输出**：
 
@@ -286,10 +286,10 @@
 4. 对 lesson 去重。
 5. 标记 experiment_id。
 6. 写入 `strategy_knowledge_docs`，默认 status=candidate。
-7. 可选离线层将复盘、策略文档和使用反馈作为 Track C Wiki 的 raw sources。
-8. Hermes-style DreamJob 可生成 candidate patch，验证后同步回 runtime 策略池。
+7. 可选离线层将复盘、策略文档和使用反馈编译为长期知识材料。
+8. Hermes-style DreamJob 可生成 candidate patch，经治理后同步回 runtime 策略池。
 
-Track C 的完整图谱见 [`ENGINEERING_ARCHITECTURE.md`](ENGINEERING_ARCHITECTURE.md)，Wiki/长期知识编译层见 [`wiki/track-c/overview.md`](wiki/track-c/overview.md)。
+Track C 的完整图谱见 [`ENGINEERING_ARCHITECTURE.md`](ENGINEERING_ARCHITECTURE.md)，长期知识编译层作为本地扩展材料维护。
 
 **关键设计**：
 
@@ -300,7 +300,7 @@ Track C 的完整图谱见 [`ENGINEERING_ARCHITECTURE.md`](ENGINEERING_ARCHITECT
 | role / phase / persona_scope | 支持未来精确检索 |
 | quality / confidence | 支持晋级与过滤 |
 
-**Candidate 生效机制**：candidate 代表“已抽取、待验证”的经验，不代表生产对局立即注入。`KnowledgeAbstractor` 默认写入 candidate；`promote_after_store()` 根据质量阈值和角色/类型聚类晋级 active；`retrieval_prod` 构建生产索引时只加载 active，并用 maturity、validated_at、knowledge_epoch 和使用反馈排序。因此 candidate 的主要作用是积累和筛选，active 才是稳定影响下一局 Agent 的策略层。
+**Candidate 生效机制**：candidate 代表“已抽取、待筛选”的经验，不代表生产对局立即注入。`KnowledgeAbstractor` 默认写入 candidate；`promote_after_store()` 根据质量阈值和角色/类型聚类晋级 active；`retrieval_prod` 构建生产索引时只加载 active，并用 maturity、knowledge_epoch 和使用反馈排序。因此 candidate 的主要作用是积累和筛选，active 才是稳定影响下一局 Agent 的策略层。
 
 **设计收益**：复盘经验可沉淀；知识可回流；策略池可控。
 
@@ -339,6 +339,6 @@ Track C 的完整图谱见 [`ENGINEERING_ARCHITECTURE.md`](ENGINEERING_ARCHITECT
 
 **设计收益**：便于演示、调试、验收和后续 replay viewer 扩展。
 
-**验收方式**：前端代码存在，`docs/assets/closure/screenshots/` 有结项展示截图。
+**验收方式**：前端代码存在，运行本地前端后可通过大厅、对局页、真人操作页和复盘页验证。
 
 **当前限制**：本轮未重新跑 Playwright 视觉验收；WebSocket 延迟和公开/主持视角切换需专项验证。
