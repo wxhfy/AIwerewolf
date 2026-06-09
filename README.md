@@ -106,10 +106,11 @@ flowchart TB
 
 | 方向 | 当前结果 |
 |---|---:|
-| 本地数据库 games | 11,730 |
-| 本地数据库 agent_decisions | 302,291 |
-| 本地数据库 published_reviews | 4,955 |
-| 本地数据库 strategy_knowledge_docs | 217,310 |
+| 本地数据库 games | 11,737 |
+| 本地数据库 agent_decisions | 302,613 |
+| 本地数据库 published_reviews | 4,962 |
+| 本地数据库 strategy_knowledge_docs | 219,306 |
+| Track C active / candidate / deprecated | 386 / 1,443 / 217,477 |
 | 真实 LLM 完成对局 | 78 |
 | 真实 LLM 决策 | 1,936 |
 | strict formal completed games | 34 |
