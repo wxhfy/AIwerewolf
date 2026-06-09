@@ -1,5 +1,5 @@
 {
-  "checked_at": "2026-06-09T11:41:35+08:00",
+  "checked_at": "2026-06-09T19:40:22+08:00",
   "status": "ok",
   "allow_fake": false,
   "skip_client_check": false,
@@ -7,27 +7,27 @@
   "raw_models_provided": true,
   "resolved_models": [
     {
-      "provider": "doubao",
-      "model": "ep-<redacted>",
-      "label": "doubao:ep-<redacted>"
+      "provider": "anthropic",
+      "model": "deepseek-v4-flash[1m]",
+      "label": "anthropic:deepseek-v4-flash[1m]"
     }
   ],
   "client_checks": [
     {
-      "label": "doubao:ep-<redacted>",
-      "provider": "doubao",
-      "model": "ep-<redacted>",
+      "label": "anthropic:deepseek-v4-flash[1m]",
+      "provider": "anthropic",
+      "model": "deepseek-v4-flash[1m]",
       "available": true,
       "fake": false,
-      "client_class": "DeepSeekClient",
+      "client_class": "AnthropicClient",
       "base_url_present": true
     }
   ],
   "chat_checks": [
     {
-      "label": "doubao:ep-<redacted>",
+      "label": "anthropic:deepseek-v4-flash[1m]",
       "ok": true,
-      "elapsed_s": 2.723,
+      "elapsed_s": 1.76,
       "response_preview": "OK"
     }
   ],
