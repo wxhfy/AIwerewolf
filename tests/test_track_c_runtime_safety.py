@@ -104,6 +104,32 @@ def test_lifecycle_feedback_can_promote_candidate(monkeypatch) -> None:
     assert session.committed
 
 
+def test_lifecycle_feedback_promotion_still_requires_cluster_quality(monkeypatch) -> None:
+    rows = [
+        _FakeKnowledgeRow(
+            "feedback-low-quality",
+            "per_step_lesson",
+            "Seer",
+            0.74,
+            usage_count=3,
+            success_count=3,
+        )
+    ]
+    session = _FakeSession(rows)
+    monkeypatch.setattr(database, "SessionLocal", lambda: session)
+
+    result = knowledge_abstractor.run_strategy_knowledge_lifecycle(
+        quality_threshold=0.95,
+        cluster_threshold=0.75,
+        feedback_min_usage=3,
+        feedback_success_rate=0.70,
+    )
+
+    assert result["feedback_promoted"] == 0
+    assert rows[0].status == "candidate"
+    assert session.committed
+
+
 def test_lifecycle_feedback_can_deprecate_harmful_candidate(monkeypatch) -> None:
     rows = [
         _FakeKnowledgeRow(
