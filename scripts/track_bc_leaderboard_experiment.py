@@ -1507,8 +1507,7 @@ def run_game_with_optional_timeout(
             proc.kill()
             proc.join(5)
         raise GameTimeoutError(
-            f"game timed out after {timeout_s}s "
-            f"(framework={framework.name}, seed={seed}, exitcode={proc.exitcode})"
+            f"game timed out after {timeout_s}s (framework={framework.name}, seed={seed}, exitcode={proc.exitcode})"
         )
 
     try:
