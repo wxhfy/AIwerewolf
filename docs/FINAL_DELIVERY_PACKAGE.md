@@ -33,7 +33,9 @@
 | Track B showcase 完成对局 | 6 | `docs/evidence/PROJECT_TRACK_B_LEADERBOARD_SHOWCASE.json` |
 | 单角色检索 Coverage | 100.00% | `docs/evidence/PROJECT_ROLE_RETRIEVAL_FACTS.json` |
 | 策略使用决策质量差异 | +0.0823 | `docs/evidence/PROJECT_STRATEGY_USAGE_DECISION_SCORE_ANALYSIS.json` |
-| Target-seat Seer adjusted delta | +20.6680 | `docs/evidence/PROJECT_TARGET_SEAT_TRACKC_PILOT.json` |
+| Target-seat Seer paired pipeline pilot | 20 pairs | `docs/evidence/PROJECT_TARGET_SEAT_TRACKC_PILOT.json` |
+| Target-seat Seer adjusted delta | +6.0120 | `docs/evidence/PROJECT_TARGET_SEAT_TRACKC_PILOT.json` |
+| Target-seat Seer role-task delta | +0.1008 | `docs/evidence/PROJECT_TARGET_SEAT_TRACKC_PILOT.json` |
 
 ## 3. 推荐展示路线
 

@@ -18,9 +18,10 @@
 | 默认策略 RoleBucketShare | 99.23% | `PROJECT_ROLE_RETRIEVAL_FACTS.json` |
 | 策略使用决策质量差异 | +0.0823 | `PROJECT_STRATEGY_USAGE_DECISION_SCORE_ANALYSIS.json` |
 | 严格分层 weighted delta | +0.0967 | `PROJECT_STRATEGY_USAGE_DECISION_SCORE_ANALYSIS.json` |
-| Target-seat Seer paired seeds | 5 | `PROJECT_TARGET_SEAT_TRACKC_PILOT.json` |
-| Target-seat adjusted delta | +20.6680 | `PROJECT_TARGET_SEAT_TRACKC_PILOT.json` |
-| Target-seat process delta | +22.1840 | `PROJECT_TARGET_SEAT_TRACKC_PILOT.json` |
+| Target-seat Seer paired pipeline pilot | 20 pairs | `PROJECT_TARGET_SEAT_TRACKC_PILOT.json` |
+| Target-seat adjusted delta | +6.0120 | `PROJECT_TARGET_SEAT_TRACKC_PILOT.json` |
+| Target-seat process delta | +6.5290 | `PROJECT_TARGET_SEAT_TRACKC_PILOT.json` |
+| Target-seat role-task delta | +0.1008 | `PROJECT_TARGET_SEAT_TRACKC_PILOT.json` |
 
 ## 本地数据库快照
 
@@ -75,6 +76,6 @@
 
 - 真实 LLM 完成对局、决策健康、复盘产物和检索覆盖率可以作为项目展示结果。
 - 策略使用与逐决策质量差异是观测性关联，适合说明策略回流链路价值。
-- Target-seat pilot 已展示正向趋势和链路健康，后续扩大 paired seeds 后再作为最终效果确认。
+- Target-seat 20-pair pipeline pilot 已展示正向趋势和链路健康，但 `accepted=false` 且 bootstrap CI 下界跨 0，后续需扩大到 80-120 paired seeds 再作为最终效果确认。
 - Track C candidate 是候选知识池，生产 Agent 默认使用 active 策略池；candidate 进入 active 需要质量、聚类或版本验证门禁。
 - 不建议在最终展示中展开历史过程日志或中间诊断结果；GitHub 默认文档集只保留最终展示口径。
