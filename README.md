@@ -11,7 +11,6 @@
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.8+-blue)](https://www.python.org/)
-[![CI](https://img.shields.io/badge/CI-lint%20%2B%20test-brightgreen)](.github/workflows/ci.yml)
 [![PostgreSQL](https://img.shields.io/badge/db-PostgreSQL%2016-336791?logo=postgresql)](https://www.postgresql.org/)
 [![Next.js](https://img.shields.io/badge/frontend-Next.js%2014-black?logo=next.js)](https://nextjs.org/)
 
@@ -53,7 +52,7 @@
 | 复盘能力 | Track B 逐决策评分、复盘报告、关键决策展示、leaderboard 和统计看板 |
 | 进化能力 | Track C 策略知识抽取、candidate/active/deprecated 生命周期、策略检索回流 |
 | 前端能力 | 大厅、对局观战、真人操作、单局复盘、统计看板、人格配置页 |
-| 工程能力 | FastAPI REST/WebSocket、SQLAlchemy 持久化、配置化规则、pytest/ruff/CI、严格信息隔离验证 |
+| 工程能力 | FastAPI REST/WebSocket、SQLAlchemy 持久化、配置化规则、严格信息隔离验证 |
 
 ## 核心模块
 
@@ -127,7 +126,7 @@ Track C 的策略知识分两层触发：
 | 层级 | 触发方式 | 作用 |
 |---|---|---|
 | 赛后自动门禁 | 每局结束后由 `run_post_game_scoring()` 调用 `promote_after_store(source_game_id=game_id)` | 只处理本局新知识，按质量、聚类和使用反馈把候选晋级为 active，并做轻量归档 |
-| 批处理治理 | `python scripts/promote.py --mode lifecycle --apply` | 对全库执行质量晋级、反馈晋级、active 池剪枝、candidate 池上限治理和低质归档 |
+| 批处理治理 | `promote.py --mode lifecycle --apply` | 对全库执行质量晋级、反馈晋级、active 池剪枝、candidate 池上限治理和低质归档 |
 
 生产 Agent 的策略检索只加载 `active` 策略。`candidate` 是候选知识池，不直接进入下一局 Prompt；批处理治理限制候选堆积，低质、过期或超量候选进入 `deprecated`。
 
@@ -151,10 +150,9 @@ docker run -d --name werewolf-pg \
   -e POSTGRES_DB=werewolf \
   -p 5433:5432 postgres:16-alpine
 
-python scripts/migrate_v2_columns.py
 ```
 
-未配置 `DATABASE_URL` 时，后端会使用 SQLite 本地模式，适合轻量本地验证。
+未配置 `DATABASE_URL` 时，后端使用 SQLite 本地模式。
 
 ### 3. 启动后端
 
@@ -200,18 +198,6 @@ PORT=3002 npm run dev
 | LLM 接入 | `backend.llm.create_client()` |
 | 数据库 | SQLAlchemy；PostgreSQL 优先，支持 SQLite 本地模式 |
 | 前端 | Next.js 14 / React 18 / TypeScript / Tailwind CSS |
-| 测试与质量 | pytest / ruff / frontend lint / build / GitHub Actions |
-
-## 验证命令
-
-| 目标 | 命令 |
-|---|---|
-| 后端配置测试 | `python -m pytest tests/test_llm_config.py -q` |
-| 信息隔离专项 | `python scripts/verify_visibility_strict.py` |
-| 后端 E2E smoke | `python scripts/e2e_smoke.py` |
-| 严格模式验收 | `python scripts/run_backend_full_strict.py` |
-| 后端 lint | `ruff check backend/ scripts/ tests/ configs/` |
-| 前端构建 | `cd frontend && npm run build` |
 
 ## 项目结构
 
@@ -229,8 +215,6 @@ AIwerewolf/
 │   ├── components/            # UI 和 game 组件
 │   ├── hooks/                 # 对局流和真人操作 hooks
 │   └── types/                 # 后端契约 TS 镜像
-├── scripts/                   # smoke、实验、迁移、报告和验证脚本
-├── tests/                     # pytest 和 UI smoke
 ├── configs/                   # 规则、策略和实验配置
 ├── docs/                      # 架构、模块、需求和参考文档
 └── docs/assets/               # README logo 等轻量项目介绍资产
@@ -240,7 +224,7 @@ AIwerewolf/
 
 | 内容 | 当前位置 |
 |---|---|
-| 代码仓库 | `backend/`, `frontend/`, `scripts/`, `tests/`, `configs/` |
+| 代码仓库 | `backend/`, `frontend/`, `configs/` |
 | 产品原型 | Next.js 前端：大厅、观战、真人操作、复盘、人格配置 |
 | Demo 链接 | 本地后端 `http://localhost:8000/docs`，本地前端 `http://localhost:3001` |
 | 项目介绍文档 | `docs/FINAL_SHOWCASE_REPORT.md`, `docs/ENGINEERING_ARCHITECTURE.md`, `docs/PROJECT_MODULE_DESIGN.md`, `docs/prd.md` |
