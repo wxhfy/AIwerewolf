@@ -1,12 +1,12 @@
 # 项目方法有效性实验报告
 
-生成时间：2026-06-09T12:28:38+08:00
+生成时间：2026-06-09T16:24:07+08:00
 
 可追溯性说明：本报告引用的 `docs/experiments/` 和 `outputs/` 原始产物是本地实验输出，按仓库规则不进入 GitHub；可提交的机器可读摘要已汇总到 `docs/PROJECT_METHOD_EFFECTIVENESS_FACTS.json`、`docs/PROJECT_METHOD_EFFECTIVENESS_STATISTICS.json`、`docs/PROJECT_ROLE_RETRIEVAL_FACTS.json` 和 `docs/PROJECT_STRATEGY_USAGE_DECISION_SCORE_ANALYSIS.json`。
 
 ## 1. 结论摘要
 
-当前证据已经可以支持：系统方法不是单一 Prompt，而是可运行、可审计、可评分、可检索回流的多模块闭环；Track C 默认检索策略在离线检索指标和运行时反馈上具有明确增益；正式 v4flash 数据证明框架版本和 B/C 模块可以被量化区分。
+当前证据已经可以支持：系统方法不是单一 Prompt，而是可运行、可审计、可评分、可检索回流的多模块闭环；Track B 可以按对局、模型/版本、角色席位、评分维度和 rubric 多层展示；Track C 默认检索策略在离线检索指标和运行时反馈上具有明确增益；正式 v4flash 数据证明框架版本和 B/C 模块可以被量化区分。
 
 当前证据暂不能支持：Track C 对最终胜率具有统计显著的因果提升。该结论仍需要 target-seat paired A/B。
 
@@ -27,11 +27,12 @@
 | formal v4flash rows | 59 | formal_v4flash_framework_analysis/summary.json | 真实 LLM 正式数据 |
 | formal LLM decisions | 1059 | formal_v4flash_framework_analysis/leaderboard.csv | fallback=0，invalid=0 |
 | rubric spread | 11.5286 | formal_v4flash_framework_analysis/rubric_leaderboard.csv | 证明 leaderboard 能区分版本 |
+| Track B showcase games / decisions | 6 / 216 | docs/PROJECT_TRACK_B_LEADERBOARD_SHOWCASE.json | pilot 展示；fallback=0，invalid=0 |
 | module effects passed | 14/14 | module_effect_experiment/module_effects.csv | mean score=90.79 |
 | retrieval query/docs | 26 / 374 | outputs/retrieval_effectiveness_current/results.json | 当前离线检索实验 |
 | default retrieval P@3 / Coverage | 0.2564 / 1.0000 | outputs/retrieval_effectiveness_current/results.json | 弱标注离线指标 |
 | Track C audit invalid/leak | 0 / 0 | full_project_real_audit/audit_summary.json | 知识安全审计 |
-| runtime helpful/used | 80.18% | PostgreSQL knowledge_usage_feedback / strategy_knowledge_docs current non-fake snapshot | 当前 DB 快照，非因果分数 |
+| runtime helpful/used | 80.20% | PostgreSQL knowledge_usage_feedback / strategy_knowledge_docs current non-fake snapshot | 当前 DB 快照，非因果分数 |
 
 ## 4. Track C 检索有效性
 
@@ -122,24 +123,24 @@
 
 | Metric | Value |
 | --- | --- |
-| feedback_total | 135650 |
-| retrieved | 135650 |
-| used | 51439 |
-| helpful | 41246 |
-| used/retrieved | 37.92% |
-| helpful/retrieved | 30.41% |
-| helpful/used | 80.18% |
+| feedback_total | 137368 |
+| retrieved | 137368 |
+| used | 51496 |
+| helpful | 41301 |
+| used/retrieved | 37.49% |
+| helpful/retrieved | 30.07% |
+| helpful/used | 80.20% |
 | avg_score_delta | 0.0000 |
 | strategy_docs_active | 387 |
-| strategy_docs_candidate | 210605 |
+| strategy_docs_candidate | 216374 |
 
 运行时 feedback Wilson 95% CI：
 
 | Metric | Count | Rate | Wilson95CI |
 | --- | --- | --- | --- |
-| used/retrieved | 51439/135650 | 0.3792 | [0.3766, 0.3818] |
-| helpful/retrieved | 41246/135650 | 0.3041 | [0.3016, 0.3065] |
-| helpful/used | 41246/51439 | 0.8018 | [0.7984, 0.8053] |
+| used/retrieved | 51496/137368 | 0.3749 | [0.3723, 0.3774] |
+| helpful/retrieved | 41301/137368 | 0.3007 | [0.2982, 0.3031] |
+| helpful/used | 41301/51496 | 0.8020 | [0.7986, 0.8054] |
 
 按角色 feedback：
 
@@ -244,13 +245,14 @@
 | --- | --- | --- | --- | --- | --- |
 | 正式 v4flash 数据可用于区分框架版本 | formal_real_llm | supported | formal_rows=59; rubric_spread=11.5286 | docs/experiments/formal_v4flash_framework_analysis/summary.json | 证明可度量和可区分，不单独证明最终架构统计显著优于 baseline。 |
 | 正式决策链没有 fallback/invalid 污染 | formal_real_llm | supported | llm_decisions=1059; fallback=0; invalid=0 | docs/experiments/formal_v4flash_framework_analysis/leaderboard.csv | 整局 external failure 仍需作为运行稳定性风险披露。 |
+| Track B leaderboard 可以进行多层评分展示 | real_llm_track_b_showcase | pilot_supported | games=6; raw_decisions=216; fallback=0; invalid=0 | docs/PROJECT_TRACK_B_LEADERBOARD_SHOWCASE.json | 展示 Track B 的对局层、模型/版本层、角色层、评分维度和 rubric 层；不是 Track C 因果增益或正式模型优劣结论。 |
 | 核心模块效果已经按多维指标量化 | consolidated_module_audit | supported | passed_modules=14/14; mean_score=90.79 | docs/experiments/module_effect_experiment/module_effects.csv | 模块分数是综合指标，不等同最终胜率提升。 |
 | Track C 默认检索策略优于纯 global-only 检索 | offline_retrieval_ablation | supported | default_score=0.6991; global_score=-0.1450; default_p3=0.2564; default_coverage=1.0000 | outputs/retrieval_effectiveness_current/results.json | 弱标注离线检索，证明检索设计合理性；不是在线胜率因果证明。 |
 | 单角色默认检索稳定覆盖全部核心角色 | offline_retrieval_per_role | supported | roles=6; all_coverage_1=True; role_bucket_share=0.9923 | outputs/retrieval_effectiveness_current/per_role_results.csv | 每角色 query 数仍偏少；不能声明某个角色的最优 policy 已最终确定。 |
 | 精确 role+MBTI 检索过窄，不适合作为默认策略 | offline_retrieval_ablation | supported | same_role_same_mbti_coverage=0.1538; empty=22 | outputs/retrieval_effectiveness_current/results.json | 可作为补充桶或专项实验，不作为默认运行策略。 |
 | 精确 role+MBTI 稀疏主要来自当前知识池分布 | offline_retrieval_corpus | supported | roles=6; exact_empty_queries=21; global_generic_docs=35 | outputs/retrieval_effectiveness_current/role_corpus_stats.csv | 这是 active 知识池规模统计；不等同在线策略使用率。 |
 | Track C 知识库安全卫生达标 | audit_gate | supported | docs=131; invalid=0; leak=0; source_event_coverage=0.9924 | docs/experiments/full_project_real_audit/audit_summary.json | 审计样本和当前 DB 快照可能不同，正式归档需冻结 experiment_id。 |
-| 运行时 feedback 显示被使用策略多数被标记 helpful | runtime_db_snapshot | supported | retrieved=135650; used=51439; helpful=41246; helpful/used=80.18% | PostgreSQL knowledge_usage_feedback / strategy_knowledge_docs current non-fake snapshot | 当前 score_delta 平均仍接近 0，feedback 不能直接等同因果增益。 |
+| 运行时 feedback 显示被使用策略多数被标记 helpful | runtime_db_snapshot | supported | retrieved=137368; used=51496; helpful=41301; helpful/used=80.20% | PostgreSQL knowledge_usage_feedback / strategy_knowledge_docs current non-fake snapshot | 当前 score_delta 平均仍接近 0，feedback 不能直接等同因果增益。 |
 | 策略使用决策与更高 Track B 逐步评分相关 | observational_decision_score_join | supported | decision_rows=170399; used=3088; unused=167311; delta=0.0823; ci=[0.0764,0.0882]; strict_weighted_delta=0.0967; strict_strata=48/10/0 | docs/PROJECT_STRATEGY_USAGE_DECISION_SCORE_ANALYSIS.json | 观测性关联，不能替代 target-seat paired A/B 因果证明。 |
 | 策略使用评分关联覆盖 6 个核心角色 | role_internal_observational_control | supported | core_positive_roles=6/6; weighted_deltas=Werewolf:0.0899,Guard:0.1006,Seer:0.1272,Witch:0.0670,Villager:0.1220,Hunter:0.0779 | docs/PROJECT_STRATEGY_USAGE_DECISION_SCORE_ANALYSIS.json | 角色内按 action/tier/day/phase 控制后的观测性关联；非核心或低样本角色暂不声明，negative_or_weak=1。 |
 | Track C 开关存在角色/MBTI 层面的正向趋势 | auxiliary_trend | trend_only | off=0.3508; on=0.3784; avg_non_wolf_delta=0.0643 | docs/experiments/mbti_track_c_auxiliary_analysis/summary.json | 全席位同时切换，不是 target-seat 因果 A/B。 |
@@ -265,6 +267,7 @@
 | 结论 | 依据 |
 | --- | --- |
 | 系统方法形成 Play -> Evaluate -> Evolve 闭环，且可审计 | 正式 v4flash、full audit、DB feedback |
+| Track B 可以进行多层 leaderboard 展示 | PROJECT_TRACK_B_LEADERBOARD_SHOWCASE：game/model-role/score/rubric/decision-health |
 | Track C 默认检索策略相对 global_only 在离线 IR 指标上更有效 | P@3、Effective@3、nDCG@5、Coverage |
 | 单角色检索能稳定覆盖核心角色 | per_role_results 中默认策略 Coverage/Top5Fill=1 |
 | 策略使用决策与更高 Track B 逐步评分相关 | decision_id 联表：per_step_scores + agent_decisions + knowledge_usage_feedback |

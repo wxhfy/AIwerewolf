@@ -22,6 +22,8 @@ ROOT = Path(__file__).resolve().parent.parent
 
 DEFAULT_GLOBS = [
     "outputs/final_showcase_report/real_experiment_real_llm*",
+    "outputs/final_showcase_report/real_experiment_leaderboard_*",
+    "outputs/final_showcase_report/real_experiment_model_leaderboard_*",
     "docs/experiments/framework_gap_reflexion*",
     "docs/experiments/track_c_runtime_fix/*",
     "docs/experiments/formal_v4flash_framework_analysis",
@@ -147,6 +149,14 @@ def group_metrics(rows: list[dict[str, str]]) -> list[dict[str, Any]]:
             }
         )
     return results
+
+
+def game_run_decision_summary(rows: list[dict[str, Any]]) -> dict[str, int]:
+    return {
+        "decision_count": sum(inum(row.get("decision_count")) for row in rows),
+        "fallback_count": sum(inum(row.get("fallback_count")) for row in rows),
+        "invalid_count": sum(inum(row.get("invalid_count")) for row in rows),
+    }
 
 
 def is_formal_analysis_summary(summary: dict[str, Any]) -> bool:
@@ -293,13 +303,19 @@ def summarize_run(run_dir: Path) -> dict[str, Any]:
         return summarize_formal_analysis(run_dir, summary_path, summary)
 
     group_rows = read_csv(run_dir / "group_results.csv")
+    game_runs = read_jsonl(run_dir / "game_runs.jsonl")
     failures = read_jsonl(run_dir / "failures.jsonl")
     group_summary = group_metrics(group_rows)
     classification = classify_run(summary, group_rows, summary_is_partial)
     failure_types = Counter(str(row.get("error_type") or "unknown") for row in failures)
-    total_fallback = sum(row["fallback_count"] for row in group_summary)
-    total_invalid = sum(row["invalid_count"] for row in group_summary)
-    total_decisions = sum(row["decision_count"] for row in group_summary)
+    game_decisions = game_run_decision_summary(game_runs)
+    total_decisions = (
+        game_decisions["decision_count"] if game_runs else sum(row["decision_count"] for row in group_summary)
+    )
+    total_fallback = (
+        game_decisions["fallback_count"] if game_runs else sum(row["fallback_count"] for row in group_summary)
+    )
+    total_invalid = game_decisions["invalid_count"] if game_runs else sum(row["invalid_count"] for row in group_summary)
 
     return {
         "run_dir": rel(run_dir),

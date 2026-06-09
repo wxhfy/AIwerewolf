@@ -13,6 +13,11 @@
     "docs/experiments/track_c_runtime_fix/doubao_smoke_g1_after_target_guard",
     "docs/experiments/track_c_runtime_fix/doubao_smoke_g1_conservative_baseline_retry",
     "docs/experiments/track_c_runtime_fix/doubao_smoke_g1_conservative_gate",
+    "outputs/final_showcase_report/real_experiment_leaderboard_ark_framework_g5_20260609",
+    "outputs/final_showcase_report/real_experiment_leaderboard_ark_probe_basic_g1_20260609",
+    "outputs/final_showcase_report/real_experiment_leaderboard_pilot_doubao_g1_20260609",
+    "outputs/final_showcase_report/real_experiment_leaderboard_throttled_probe_doubao_g1_20260609",
+    "outputs/final_showcase_report/real_experiment_model_leaderboard_ark_full_cognitive_g1_20260609",
     "outputs/final_showcase_report/real_experiment_real_llm_g1",
     "outputs/final_showcase_report/real_experiment_real_llm_g1_after_agentloop_repair",
     "outputs/final_showcase_report/real_experiment_real_llm_g1_after_reasoning_repair",
@@ -23,14 +28,14 @@
     "outputs/final_showcase_report/real_experiment_real_llm_g5_doubao_v3"
   ],
   "aggregate": {
-    "run_count": 19,
-    "completed_raw_games": 71,
-    "failed_games": 76,
-    "total_decisions": 1715,
+    "run_count": 24,
+    "completed_raw_games": 78,
+    "failed_games": 80,
+    "total_decisions": 1936,
     "total_fallback": 0,
     "total_invalid": 0,
     "formal_candidate_runs": 0,
-    "smoke_runs": 5,
+    "smoke_runs": 7,
     "running_no_completed_games": 0
   },
   "runs": [
@@ -715,6 +720,266 @@
       "scope": "incomplete_with_failures",
       "claim_level": "operational_diagnostics",
       "boundary": "存在整局失败，不能写成方法效果结论；可用于定位稳定性问题。"
+    },
+    {
+      "run_dir": "outputs/final_showcase_report/real_experiment_leaderboard_ark_framework_g5_20260609",
+      "summary_file": "outputs/final_showcase_report/real_experiment_leaderboard_ark_framework_g5_20260609/partial_summary.json",
+      "status": "partial",
+      "started_at": "2026-06-09T07:49:45.518170+00:00",
+      "generated_at": "2026-06-09T08:02:08.253251+00:00",
+      "axis": "framework",
+      "games_per_framework": 5,
+      "seeds": [
+        9601,
+        9602,
+        9603,
+        9604,
+        9605
+      ],
+      "player_count": 7,
+      "max_days": 20,
+      "game_timeout_s": 720,
+      "model_pool": [
+        "anthropic:deepseek-v4-flash[1m]"
+      ],
+      "frameworks": [
+        "basic_react",
+        "rag_react",
+        "full_cognitive"
+      ],
+      "completed_raw_games": 5,
+      "failed_games": 0,
+      "attempted_games": 5,
+      "failure_types": {},
+      "group_summary": [
+        {
+          "group_key": "framework:basic_react",
+          "framework": "basic_react",
+          "rows": 5,
+          "decision_count": 182,
+          "fallback_count": 0,
+          "invalid_count": 0,
+          "avg_knowledge_hit_rate": 0.0542048,
+          "avg_adjusted_final_score": 49.0908572,
+          "avg_win_rate": 0.3714284
+        }
+      ],
+      "total_decisions": 182,
+      "total_fallback": 0,
+      "total_invalid": 0,
+      "mean_knowledge_hit_rate": 0.0542048,
+      "leaderboard_summary": {},
+      "scope": "low_sample_or_partial",
+      "claim_level": "trend_only",
+      "boundary": "样本量或完成度不足，只能作为趋势/链路证据。"
+    },
+    {
+      "run_dir": "outputs/final_showcase_report/real_experiment_leaderboard_ark_probe_basic_g1_20260609",
+      "summary_file": "outputs/final_showcase_report/real_experiment_leaderboard_ark_probe_basic_g1_20260609/summary.json",
+      "status": "complete",
+      "started_at": "2026-06-09T07:47:18.987786+00:00",
+      "generated_at": "2026-06-09T07:47:34.887561+00:00",
+      "axis": "framework",
+      "games_per_framework": 1,
+      "seeds": [
+        9501
+      ],
+      "player_count": 7,
+      "max_days": 1,
+      "game_timeout_s": 600,
+      "model_pool": [
+        "anthropic:deepseek-v4-flash[1m]"
+      ],
+      "frameworks": [
+        "basic_react"
+      ],
+      "completed_raw_games": 1,
+      "failed_games": 0,
+      "attempted_games": 1,
+      "failure_types": {},
+      "group_summary": [
+        {
+          "group_key": "framework:basic_react",
+          "framework": "basic_react",
+          "rows": 1,
+          "decision_count": 5,
+          "fallback_count": 0,
+          "invalid_count": 0,
+          "avg_knowledge_hit_rate": 0.0,
+          "avg_adjusted_final_score": 38.314286,
+          "avg_win_rate": 0.285714
+        }
+      ],
+      "total_decisions": 5,
+      "total_fallback": 0,
+      "total_invalid": 0,
+      "mean_knowledge_hit_rate": 0.0,
+      "leaderboard_summary": {
+        "entries": 1,
+        "top_key": "framework:basic_react",
+        "bottom_key": "framework:basic_react",
+        "win_rate_spread": 0.0,
+        "avg_adjusted_final_score_spread": 0.0,
+        "can_distinguish": false,
+        "paired_delta": {}
+      },
+      "scope": "smoke_only",
+      "claim_level": "pipeline_health_only",
+      "boundary": "max_days<=1，只能证明 runner、feature flag 和指标写入链路可运行。"
+    },
+    {
+      "run_dir": "outputs/final_showcase_report/real_experiment_leaderboard_pilot_doubao_g1_20260609",
+      "summary_file": "outputs/final_showcase_report/real_experiment_leaderboard_pilot_doubao_g1_20260609/summary.json",
+      "status": "complete",
+      "started_at": "2026-06-09T07:41:58.528239+00:00",
+      "generated_at": "2026-06-09T07:42:01.431070+00:00",
+      "axis": "framework",
+      "games_per_framework": 1,
+      "seeds": [
+        9401
+      ],
+      "player_count": 7,
+      "max_days": 3,
+      "game_timeout_s": 600,
+      "model_pool": [
+        "doubao:ep-<redacted>"
+      ],
+      "frameworks": [
+        "basic_react",
+        "rag_react",
+        "full_cognitive"
+      ],
+      "completed_raw_games": 0,
+      "failed_games": 3,
+      "attempted_games": 3,
+      "failure_types": {
+        "HTTPStatusError": 3
+      },
+      "group_summary": [],
+      "total_decisions": 0,
+      "total_fallback": 0,
+      "total_invalid": 0,
+      "mean_knowledge_hit_rate": 0.0,
+      "leaderboard_summary": {
+        "entries": 0,
+        "can_distinguish": false
+      },
+      "scope": "incomplete_with_failures",
+      "claim_level": "operational_diagnostics",
+      "boundary": "存在整局失败，不能写成方法效果结论；可用于定位稳定性问题。"
+    },
+    {
+      "run_dir": "outputs/final_showcase_report/real_experiment_leaderboard_throttled_probe_doubao_g1_20260609",
+      "summary_file": "outputs/final_showcase_report/real_experiment_leaderboard_throttled_probe_doubao_g1_20260609/summary.json",
+      "status": "complete",
+      "started_at": "2026-06-09T07:43:29.413227+00:00",
+      "generated_at": "2026-06-09T07:43:29.807642+00:00",
+      "axis": "framework",
+      "games_per_framework": 1,
+      "seeds": [
+        9411
+      ],
+      "player_count": 7,
+      "max_days": 1,
+      "game_timeout_s": 600,
+      "model_pool": [
+        "doubao:ep-<redacted>"
+      ],
+      "frameworks": [
+        "basic_react"
+      ],
+      "completed_raw_games": 0,
+      "failed_games": 1,
+      "attempted_games": 1,
+      "failure_types": {
+        "HTTPStatusError": 1
+      },
+      "group_summary": [],
+      "total_decisions": 0,
+      "total_fallback": 0,
+      "total_invalid": 0,
+      "mean_knowledge_hit_rate": 0.0,
+      "leaderboard_summary": {
+        "entries": 0,
+        "can_distinguish": false
+      },
+      "scope": "smoke_only",
+      "claim_level": "pipeline_health_only",
+      "boundary": "max_days<=1，只能证明 runner、feature flag 和指标写入链路可运行。"
+    },
+    {
+      "run_dir": "outputs/final_showcase_report/real_experiment_model_leaderboard_ark_full_cognitive_g1_20260609",
+      "summary_file": "outputs/final_showcase_report/real_experiment_model_leaderboard_ark_full_cognitive_g1_20260609/summary.json",
+      "status": "complete",
+      "started_at": "2026-06-09T08:05:10.378824+00:00",
+      "generated_at": "2026-06-09T08:10:39.170233+00:00",
+      "axis": "model",
+      "games_per_framework": 1,
+      "seeds": [
+        9701
+      ],
+      "player_count": 7,
+      "max_days": 3,
+      "game_timeout_s": 720,
+      "model_pool": [
+        "anthropic:deepseek-v4-flash[1m]",
+        "anthropic:deepseek-v4-pro[1m]"
+      ],
+      "frameworks": [
+        "full_cognitive"
+      ],
+      "completed_raw_games": 1,
+      "failed_games": 0,
+      "attempted_games": 1,
+      "failure_types": {},
+      "group_summary": [
+        {
+          "group_key": "model:anthropic:deepseek-v4-flash[1m]",
+          "framework": "full_cognitive",
+          "rows": 1,
+          "decision_count": 34,
+          "fallback_count": 0,
+          "invalid_count": 0,
+          "avg_knowledge_hit_rate": 0.911765,
+          "avg_adjusted_final_score": 31.4325,
+          "avg_win_rate": 0.25
+        },
+        {
+          "group_key": "model:anthropic:deepseek-v4-pro[1m]",
+          "framework": "full_cognitive",
+          "rows": 1,
+          "decision_count": 34,
+          "fallback_count": 0,
+          "invalid_count": 0,
+          "avg_knowledge_hit_rate": 0.911765,
+          "avg_adjusted_final_score": 42.426667,
+          "avg_win_rate": 0.333333
+        }
+      ],
+      "total_decisions": 34,
+      "total_fallback": 0,
+      "total_invalid": 0,
+      "mean_knowledge_hit_rate": 0.911765,
+      "leaderboard_summary": {
+        "entries": 2,
+        "top_key": "model:anthropic:deepseek-v4-pro[1m]",
+        "bottom_key": "model:anthropic:deepseek-v4-flash[1m]",
+        "win_rate_spread": 0.0833,
+        "avg_adjusted_final_score_spread": 10.9942,
+        "can_distinguish": true,
+        "paired_delta": {
+          "baseline": "model:anthropic:deepseek-v4-flash[1m]",
+          "candidate": "model:anthropic:deepseek-v4-pro[1m]",
+          "paired_seed_count": 1,
+          "avg_adjusted_final_score_delta": 10.994167,
+          "avg_win_rate_delta": 0.083333,
+          "positive_score_delta_seeds": 1,
+          "positive_win_rate_delta_seeds": 1
+        }
+      },
+      "scope": "low_sample_or_partial",
+      "claim_level": "trend_only",
+      "boundary": "样本量或完成度不足，只能作为趋势/链路证据。"
     },
     {
       "run_dir": "outputs/final_showcase_report/real_experiment_real_llm_g1",
