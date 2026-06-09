@@ -945,7 +945,9 @@ def summarize_supplemental_framework_runs(summary_paths: Sequence[Path]) -> list
         entries = summary.get("architecture_evidence_leaderboard", {}).get("entries", [])
         failures = summary.get("failures", [])
         completed_by_framework = {
-            framework: sum(1 for item in summary.get("raw_records", []) if str(item.get("framework") or "") == framework)
+            framework: sum(
+                1 for item in summary.get("raw_records", []) if str(item.get("framework") or "") == framework
+            )
             for framework in {str(item.get("framework") or "") for item in summary.get("raw_records", [])}
             if framework
         }
@@ -982,7 +984,9 @@ def summarize_supplemental_framework_runs(summary_paths: Sequence[Path]) -> list
                         "model_pool": ",".join(str(item) for item in model_pool),
                         "framework": framework_name,
                         "score": entry.get("rubric_total_score"),
-                        "completed_games": completed_games if completed_games is not None else summary.get("completed_raw_games"),
+                        "completed_games": completed_games
+                        if completed_games is not None
+                        else summary.get("completed_raw_games"),
                         "failed_games": failed_games if failed_games is not None else summary.get("failed_games"),
                         "external_failure_rate": signals.get("external_failure_rate"),
                         "win_rate": signals.get("win_rate"),
