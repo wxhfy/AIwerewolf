@@ -234,3 +234,11 @@ def test_build_facts_accepts_fixed_generated_at(tmp_path: Path) -> None:
     facts = summary.build_facts([run_dir], generated_at="2026-06-09T15:36:46+08:00")
 
     assert facts["generated_at"] == "2026-06-09T15:36:46+08:00"
+
+
+def test_existing_generated_at_reads_committed_snapshot(tmp_path: Path) -> None:
+    output = tmp_path / "facts.json"
+    _write_json(output, {"generated_at": "2026-06-09T15:36:46+08:00"})
+
+    assert summary.existing_generated_at(output) == "2026-06-09T15:36:46+08:00"
+    assert summary.existing_generated_at(tmp_path / "missing.json") is None

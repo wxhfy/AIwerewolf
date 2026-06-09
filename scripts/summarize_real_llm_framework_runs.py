@@ -355,6 +355,12 @@ def build_facts(run_dirs: list[Path], *, generated_at: str | None = None) -> dic
     }
 
 
+def existing_generated_at(path: Path) -> str | None:
+    payload = read_json(path)
+    value = payload.get("generated_at")
+    return str(value) if value else None
+
+
 def markdown_table(headers: list[str], rows: list[list[Any]]) -> str:
     lines = [
         "| " + " | ".join(headers) + " |",
@@ -536,7 +542,8 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     run_dirs = [Path(item) for item in args.input_dir] if args.input_dir else discover_run_dirs(DEFAULT_GLOBS)
-    facts = build_facts(run_dirs, generated_at=args.generated_at)
+    generated_at = args.generated_at or existing_generated_at(args.output_json)
+    facts = build_facts(run_dirs, generated_at=generated_at)
     args.output_json.parent.mkdir(parents=True, exist_ok=True)
     args.output_md.parent.mkdir(parents=True, exist_ok=True)
     args.output_json.write_text(json.dumps(facts, ensure_ascii=False, indent=2), encoding="utf-8")
