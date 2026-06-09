@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from scripts import summarize_method_effectiveness as summary
 from scripts import check_real_llm_provider
+from scripts import summarize_method_effectiveness as summary
 
 
 def test_sanitize_endpoint_ids_redacts_nested_provider_endpoint() -> None:

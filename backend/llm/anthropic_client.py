@@ -8,7 +8,7 @@ Usage:
     from backend.llm.anthropic_client import AnthropicClient
 
     client = AnthropicClient(
-        api_key="ark-b2f9...",
+        api_key="ark-<redacted>",
         base_url="https://ark.cn-beijing.volces.com/api/coding/v1",
         model="deepseek-v4-pro[1m]",
     )

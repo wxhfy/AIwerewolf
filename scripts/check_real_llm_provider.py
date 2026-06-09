@@ -35,6 +35,8 @@ def display_path(path: Path) -> str:
 
 
 def redact(value: str) -> str:
+    value = re.sub(r"ep-\d{14}-[A-Za-z0-9_-]+", "ep-<redacted>", value)
+    value = re.sub(r"ark-[A-Za-z0-9][A-Za-z0-9-]{20,}", "ark-<redacted>", value)
     value = re.sub(r"(sk-[A-Za-z0-9_-]{8})[A-Za-z0-9_-]+", r"\1***", value)
     value = re.sub(r"([A-Za-z0-9_]*KEY=)[^\s,;]+", r"\1***", value)
     value = re.sub(r"([A-Za-z0-9_]*TOKEN=)[^\s,;]+", r"\1***", value)
@@ -72,7 +74,7 @@ def build_preflight(
     try:
         specs = resolve_model_specs(raw_models)
         result["resolved_models"] = [
-            {"provider": spec.provider, "model": spec.model, "label": spec.label} for spec in specs
+            {"provider": spec.provider, "model": redact(spec.model), "label": redact(spec.label)} for spec in specs
         ]
         validate_model_specs(specs, allow_fake=allow_fake, skip_client_check=skip_client_check)
 
@@ -83,9 +85,9 @@ def build_preflight(
             available = getattr(client, "available", True) is not False
             fake = spec.provider in {"fake", "fake_llm", "offline_llm"} or "fake" in spec.model.lower()
             client_row = {
-                "label": spec.label,
+                "label": redact(spec.label),
                 "provider": spec.provider,
-                "model": spec.model,
+                "model": redact(spec.model),
                 "available": available,
                 "fake": fake,
                 "client_class": type(client).__name__,
@@ -111,7 +113,7 @@ def build_preflight(
                         response_text = str(response)
                     result["chat_checks"].append(
                         {
-                            "label": spec.label,
+                            "label": redact(spec.label),
                             "ok": bool(response_text.strip()),
                             "elapsed_s": elapsed_s,
                             "response_preview": redact(response_text.strip())[:80],
@@ -120,7 +122,7 @@ def build_preflight(
                 except Exception as chat_exc:
                     result["chat_checks"].append(
                         {
-                            "label": spec.label,
+                            "label": redact(spec.label),
                             "ok": False,
                             "elapsed_s": round(time.perf_counter() - started, 3),
                             "error": f"{type(chat_exc).__name__}: {redact(str(chat_exc))}",
