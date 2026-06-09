@@ -36,6 +36,8 @@ ROLE_RETRIEVAL_REPORT = ROOT / "docs" / "PROJECT_ROLE_RETRIEVAL_QUANTIFICATION.m
 METHOD_STATISTICS = ROOT / "docs" / "PROJECT_METHOD_EFFECTIVENESS_STATISTICS.json"
 METHOD_STATISTICS_REPORT = ROOT / "docs" / "PROJECT_METHOD_EFFECTIVENESS_STATISTICS.md"
 PROVIDER_PREFLIGHT = ROOT / "docs" / "PROJECT_PROVIDER_PREFLIGHT.json"
+TRACK_B_LEADERBOARD_SHOWCASE = ROOT / "docs" / "PROJECT_TRACK_B_LEADERBOARD_SHOWCASE.json"
+TRACK_B_LEADERBOARD_SHOWCASE_REPORT = ROOT / "docs" / "PROJECT_TRACK_B_LEADERBOARD_SHOWCASE.md"
 USAGE_DECISION_SCORE_FACTS = ROOT / "docs" / "PROJECT_STRATEGY_USAGE_DECISION_SCORE_ANALYSIS.json"
 USAGE_DECISION_SCORE_REPORT = ROOT / "docs" / "PROJECT_STRATEGY_USAGE_DECISION_SCORE_ANALYSIS.md"
 TARGET_SEAT_POWER_PLAN = ROOT / "docs" / "PROJECT_TARGET_SEAT_AB_POWER_PLAN.json"
@@ -470,6 +472,7 @@ def build_evidence() -> dict[str, Any]:
     role_retrieval = read_json(ROLE_RETRIEVAL_FACTS)
     statistics_report = read_json(METHOD_STATISTICS)
     provider_preflight = read_json(PROVIDER_PREFLIGHT)
+    track_b_showcase = read_json(TRACK_B_LEADERBOARD_SHOWCASE)
     usage_decision_scores = read_json(USAGE_DECISION_SCORE_FACTS)
     target_seat_power = read_json(TARGET_SEAT_POWER_PLAN)
     per_role_rows = read_csv(RETRIEVAL_PER_ROLE)
@@ -535,6 +538,7 @@ def build_evidence() -> dict[str, Any]:
     weak_or_negative_role_rows = [
         row for row in usage_role_internal_for_matrix if fnum(row.get("weighted_mean_delta_used_minus_unused")) <= 0
     ]
+    track_b_showcase_aggregate = track_b_showcase.get("aggregate", {}) if isinstance(track_b_showcase, dict) else {}
 
     evidence_matrix = [
         {
@@ -552,6 +556,21 @@ def build_evidence() -> dict[str, Any]:
             "metric": f"llm_decisions={formal_decisions}; fallback={formal_fallback}; invalid={formal_invalid}",
             "source": "docs/experiments/formal_v4flash_framework_analysis/leaderboard.csv",
             "boundary": "整局 external failure 仍需作为运行稳定性风险披露。",
+        },
+        {
+            "claim": "Track B leaderboard 可以进行多层评分展示",
+            "evidence_level": "real_llm_track_b_showcase",
+            "status": "pilot_supported" if track_b_showcase_aggregate else "missing",
+            "metric": (
+                f"games={track_b_showcase_aggregate.get('completed_real_llm_games')}; "
+                f"raw_decisions={track_b_showcase_aggregate.get('raw_decision_count')}; "
+                f"fallback={track_b_showcase_aggregate.get('fallback_count')}; "
+                f"invalid={track_b_showcase_aggregate.get('invalid_count')}"
+            )
+            if track_b_showcase_aggregate
+            else "no Track B showcase facts found",
+            "source": "docs/PROJECT_TRACK_B_LEADERBOARD_SHOWCASE.json",
+            "boundary": "展示 Track B 的对局层、模型/版本层、角色层、评分维度和 rubric 层；不是 Track C 因果增益或正式模型优劣结论。",
         },
         {
             "claim": "核心模块效果已经按多维指标量化",
@@ -747,6 +766,8 @@ def build_evidence() -> dict[str, Any]:
             "method_statistics": str(METHOD_STATISTICS.relative_to(ROOT)),
             "method_statistics_report": str(METHOD_STATISTICS_REPORT.relative_to(ROOT)),
             "provider_preflight": str(PROVIDER_PREFLIGHT.relative_to(ROOT)),
+            "track_b_leaderboard_showcase": str(TRACK_B_LEADERBOARD_SHOWCASE.relative_to(ROOT)),
+            "track_b_leaderboard_showcase_report": str(TRACK_B_LEADERBOARD_SHOWCASE_REPORT.relative_to(ROOT)),
             "usage_decision_score_facts": str(USAGE_DECISION_SCORE_FACTS.relative_to(ROOT)),
             "usage_decision_score_report": str(USAGE_DECISION_SCORE_REPORT.relative_to(ROOT)),
             "target_seat_power_plan": str(TARGET_SEAT_POWER_PLAN.relative_to(ROOT)),
@@ -791,6 +812,7 @@ def build_evidence() -> dict[str, Any]:
         "runtime_feedback": db_feedback,
         "statistics": statistics_report,
         "provider_preflight": provider_preflight,
+        "track_b_leaderboard_showcase": track_b_showcase,
         "strategy_usage_decision_scores": usage_decision_scores,
         "track_c_auxiliary": {
             "overall": mbti_overall,
@@ -857,6 +879,14 @@ def render_report(evidence: dict[str, Any]) -> str:
     provider_preflight = (
         evidence.get("provider_preflight", {}) if isinstance(evidence.get("provider_preflight"), dict) else {}
     )
+    track_b_showcase = (
+        evidence.get("track_b_leaderboard_showcase", {})
+        if isinstance(evidence.get("track_b_leaderboard_showcase"), dict)
+        else {}
+    )
+    track_b_showcase_aggregate = (
+        track_b_showcase.get("aggregate", {}) if isinstance(track_b_showcase.get("aggregate"), dict) else {}
+    )
     target_power = (
         evidence.get("target_seat_power_plan", {}) if isinstance(evidence.get("target_seat_power_plan"), dict) else {}
     )
@@ -877,7 +907,7 @@ def render_report(evidence: dict[str, Any]) -> str:
         "",
         "## 1. 结论摘要",
         "",
-        "当前证据已经可以支持：系统方法不是单一 Prompt，而是可运行、可审计、可评分、可检索回流的多模块闭环；Track C 默认检索策略在离线检索指标和运行时反馈上具有明确增益；正式 v4flash 数据证明框架版本和 B/C 模块可以被量化区分。",
+        "当前证据已经可以支持：系统方法不是单一 Prompt，而是可运行、可审计、可评分、可检索回流的多模块闭环；Track B 可以按对局、模型/版本、角色席位、评分维度和 rubric 多层展示；Track C 默认检索策略在离线检索指标和运行时反馈上具有明确增益；正式 v4flash 数据证明框架版本和 B/C 模块可以被量化区分。",
         "",
         "当前证据暂不能支持：Track C 对最终胜率具有统计显著的因果提升。该结论仍需要 target-seat paired A/B。",
         "",
@@ -916,6 +946,12 @@ def render_report(evidence: dict[str, Any]) -> str:
                     fmt(formal["rubric_spread"]),
                     "formal_v4flash_framework_analysis/rubric_leaderboard.csv",
                     "证明 leaderboard 能区分版本",
+                ],
+                [
+                    "Track B showcase games / decisions",
+                    f"{track_b_showcase_aggregate.get('completed_real_llm_games', 'n/a')} / {track_b_showcase_aggregate.get('raw_decision_count', 'n/a')}",
+                    "docs/PROJECT_TRACK_B_LEADERBOARD_SHOWCASE.json",
+                    f"pilot 展示；fallback={track_b_showcase_aggregate.get('fallback_count', 'n/a')}，invalid={track_b_showcase_aggregate.get('invalid_count', 'n/a')}",
                 ],
                 [
                     "module effects passed",
@@ -1482,6 +1518,10 @@ def render_report(evidence: dict[str, Any]) -> str:
             ["结论", "依据"],
             [
                 ["系统方法形成 Play -> Evaluate -> Evolve 闭环，且可审计", "正式 v4flash、full audit、DB feedback"],
+                [
+                    "Track B 可以进行多层 leaderboard 展示",
+                    "PROJECT_TRACK_B_LEADERBOARD_SHOWCASE：game/model-role/score/rubric/decision-health",
+                ],
                 ["Track C 默认检索策略相对 global_only 在离线 IR 指标上更有效", "P@3、Effective@3、nDCG@5、Coverage"],
                 ["单角色检索能稳定覆盖核心角色", "per_role_results 中默认策略 Coverage/Top5Fill=1"],
                 [

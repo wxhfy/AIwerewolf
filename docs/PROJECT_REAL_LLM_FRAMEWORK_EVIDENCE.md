@@ -10,14 +10,14 @@
 
 | 指标 | 值 |
 | --- | --- |
-| run_count | 19 |
-| completed_raw_games | 71 |
-| failed_games | 76 |
-| total_decisions | 1715 |
+| run_count | 24 |
+| completed_raw_games | 78 |
+| failed_games | 80 |
+| total_decisions | 1936 |
 | total_fallback | 0 |
 | total_invalid | 0 |
 | formal_candidate_runs | 0 |
-| smoke_runs | 5 |
+| smoke_runs | 7 |
 | running_no_completed_games | 0 |
 
 ## 2. Run 级证据边界
@@ -35,6 +35,11 @@
 | docs/experiments/track_c_runtime_fix/doubao_smoke_g1_after_target_guard | complete | low_sample_or_partial | 1 | 8 | 2 | 0 | 0 | 0 | 0.4135 | trend_only |
 | docs/experiments/track_c_runtime_fix/doubao_smoke_g1_conservative_baseline_retry | complete | low_sample_or_partial | 1 | 8 | 1 | 0 | 0 | 0 | 0.0000 | trend_only |
 | docs/experiments/track_c_runtime_fix/doubao_smoke_g1_conservative_gate | complete | incomplete_with_failures | 1 | 8 | 1 | 1 | 0 | 0 | 0.9200 | operational_diagnostics |
+| outputs/final_showcase_report/real_experiment_leaderboard_ark_framework_g5_20260609 | partial | low_sample_or_partial | 5 | 20 | 5 | 0 | 0 | 0 | 0.0542 | trend_only |
+| outputs/final_showcase_report/real_experiment_leaderboard_ark_probe_basic_g1_20260609 | complete | smoke_only | 1 | 1 | 1 | 0 | 0 | 0 | 0.0000 | pipeline_health_only |
+| outputs/final_showcase_report/real_experiment_leaderboard_pilot_doubao_g1_20260609 | complete | incomplete_with_failures | 1 | 3 | 0 | 3 | 0 | 0 | 0.0000 | operational_diagnostics |
+| outputs/final_showcase_report/real_experiment_leaderboard_throttled_probe_doubao_g1_20260609 | complete | smoke_only | 1 | 1 | 0 | 1 | 0 | 0 | 0.0000 | pipeline_health_only |
+| outputs/final_showcase_report/real_experiment_model_leaderboard_ark_full_cognitive_g1_20260609 | complete | low_sample_or_partial | 1 | 3 | 1 | 0 | 0 | 0 | 0.9118 | trend_only |
 | outputs/final_showcase_report/real_experiment_real_llm_g1 | complete | incomplete_with_failures | 1 | 8 | 2 | 1 | 0 | 0 | 0.4000 | operational_diagnostics |
 | outputs/final_showcase_report/real_experiment_real_llm_g1_after_agentloop_repair | complete | incomplete_with_failures | 1 | 8 | 2 | 1 | 0 | 0 | 0.7068 | operational_diagnostics |
 | outputs/final_showcase_report/real_experiment_real_llm_g1_after_reasoning_repair | complete | low_sample_or_partial | 1 | 8 | 3 | 0 | 0 | 0 | 0.5690 | trend_only |
@@ -158,6 +163,53 @@ Paired delta：
 | Group | Rows | Score | WinRate | Decision | Fallback | Invalid | KnowledgeHit |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | framework:trackc_only | 1 | 63.9200 | 0.7143 | 50 | 0 | 0 | 0.9200 |
+
+### outputs/final_showcase_report/real_experiment_leaderboard_ark_framework_g5_20260609
+
+证据边界：样本量或完成度不足，只能作为趋势/链路证据。
+
+| Group | Rows | Score | WinRate | Decision | Fallback | Invalid | KnowledgeHit |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| framework:basic_react | 5 | 49.0909 | 0.3714 | 182 | 0 | 0 | 0.0542 |
+
+### outputs/final_showcase_report/real_experiment_leaderboard_ark_probe_basic_g1_20260609
+
+证据边界：max_days<=1，只能证明 runner、feature flag 和指标写入链路可运行。
+
+| Group | Rows | Score | WinRate | Decision | Fallback | Invalid | KnowledgeHit |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| framework:basic_react | 1 | 38.3143 | 0.2857 | 5 | 0 | 0 | 0.0000 |
+
+### outputs/final_showcase_report/real_experiment_leaderboard_pilot_doubao_g1_20260609
+
+证据边界：存在整局失败，不能写成方法效果结论；可用于定位稳定性问题。
+
+当前没有完成局分组指标。
+
+Failure types：`{"HTTPStatusError": 3}`
+
+### outputs/final_showcase_report/real_experiment_leaderboard_throttled_probe_doubao_g1_20260609
+
+证据边界：max_days<=1，只能证明 runner、feature flag 和指标写入链路可运行。
+
+当前没有完成局分组指标。
+
+Failure types：`{"HTTPStatusError": 1}`
+
+### outputs/final_showcase_report/real_experiment_model_leaderboard_ark_full_cognitive_g1_20260609
+
+证据边界：样本量或完成度不足，只能作为趋势/链路证据。
+
+| Group | Rows | Score | WinRate | Decision | Fallback | Invalid | KnowledgeHit |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| model:anthropic:deepseek-v4-flash[1m] | 1 | 31.4325 | 0.2500 | 34 | 0 | 0 | 0.9118 |
+| model:anthropic:deepseek-v4-pro[1m] | 1 | 42.4267 | 0.3333 | 34 | 0 | 0 | 0.9118 |
+
+Paired delta：
+
+| Baseline | Candidate | PairedSeeds | ScoreDelta | WinDelta |
+| --- | --- | --- | --- | --- |
+| model:anthropic:deepseek-v4-flash[1m] | model:anthropic:deepseek-v4-pro[1m] | 1 | 10.9942 | 0.0833 |
 
 ### outputs/final_showcase_report/real_experiment_real_llm_g1
 

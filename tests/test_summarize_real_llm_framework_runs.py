@@ -83,6 +83,35 @@ def test_summarize_run_redacts_endpoint_ids_from_model_pool(tmp_path: Path) -> N
     assert result["model_pool"] == ["doubao:ep-<redacted>", "anthropic:deepseek-v4-flash"]
 
 
+def test_summarize_run_uses_game_runs_for_model_axis_decision_totals(tmp_path: Path) -> None:
+    run_dir = tmp_path / "model_axis"
+    payload = _base_summary(completed=1)
+    payload["axis"] = "model"
+    payload["frameworks"] = [{"name": "full_cognitive"}]
+    payload["model_pool"] = ["anthropic:model-a", "anthropic:model-b"]
+    _write_json(run_dir / "summary.json", payload)
+    _write_group_csv(run_dir / "group_results.csv")
+    (run_dir / "game_runs.jsonl").write_text(
+        json.dumps(
+            {
+                "game_id": "g1",
+                "decision_count": 10,
+                "fallback_count": 0,
+                "invalid_count": 0,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (run_dir / "failures.jsonl").write_text("", encoding="utf-8")
+
+    result = summary.summarize_run(run_dir)
+
+    assert result["total_decisions"] == 10
+    assert result["group_summary"][0]["decision_count"] == 10
+    assert result["group_summary"][1]["decision_count"] == 10
+
+
 def test_summarize_run_classifies_smoke_when_max_days_one(tmp_path: Path) -> None:
     run_dir = tmp_path / "smoke"
     _write_json(run_dir / "summary.json", _base_summary(max_days=1, games_per_framework=3, completed=6))
