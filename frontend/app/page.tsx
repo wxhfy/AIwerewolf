@@ -177,6 +177,9 @@ export default function LobbyPage() {
         <Link href="/personas" className="px-3 py-1.5 text-xs font-medium rounded-button border border-border/40 text-text-sub/70 hover:text-primary hover:border-primary/50 transition-colors backdrop-blur-sm">
           {language === "zh" ? "角色库" : "Personas"}
         </Link>
+        <Link href="/demo/replay" className="px-3 py-1.5 text-xs font-medium rounded-button border border-border/40 text-text-sub/70 hover:text-primary hover:border-primary/50 transition-colors backdrop-blur-sm">
+          {language === "zh" ? "固定演示" : "Fixed Demo"}
+        </Link>
         <button
           data-testid="open-settings-button"
           onClick={() => setShowSettings(true)}
