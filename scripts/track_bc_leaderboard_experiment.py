@@ -90,6 +90,8 @@ GameRunner = Callable[
     GameRunResult,
 ]
 
+DEFAULT_GAMES_PER_FRAMEWORK = 10
+
 
 class GameTimeoutError(TimeoutError):
     """Raised when a single game exceeds the configured experiment timeout."""
@@ -1917,7 +1919,12 @@ def main() -> int:
             "Backward-compatible names anti_only, trackc_only, cognitive_full remain supported."
         ),
     )
-    parser.add_argument("--games", type=int, default=10, help="Games per framework condition (minimum 5 recommended for statistical power).")
+    parser.add_argument(
+        "--games",
+        type=int,
+        default=DEFAULT_GAMES_PER_FRAMEWORK,
+        help="Games per framework condition (minimum 5 recommended for statistical power).",
+    )
     parser.add_argument("--start-seed", type=int, default=1001)
     parser.add_argument("--player-count", type=int, default=7)
     parser.add_argument("--max-days", type=int, default=20)

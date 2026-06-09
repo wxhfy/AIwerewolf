@@ -686,6 +686,26 @@ def test_c10_acceptance_policy_promotes_or_rejects() -> None:
     decision_fallback = policy.decide(comparison_fallback)
     assert not decision_fallback.accepted
 
+    # Should reject: overall score and mistakes improved, but the candidate
+    # degrades the patched role's core task score.
+    comparison_role_task_regress = ABComparison(
+        baseline_version="v1",
+        candidate_version="v2",
+        total_games=2,
+        baseline_wins=0,
+        candidate_wins=2,
+        baseline_avg_score=61.0,
+        candidate_avg_score=73.0,
+        target_role_avg_score_delta=19.0,
+        role_task_score_delta=-1.0,
+        critical_mistakes_delta=-0.5,
+        info_leak_count=0,
+        invalid_action_rate=0.0,
+    )
+    decision_role_task_regress = policy.decide(comparison_role_task_regress)
+    assert not decision_role_task_regress.accepted
+    assert "role_task_score_delta must be non-negative" in decision_role_task_regress.failed_conditions
+
     # Should reject: regression
     comparison_regress = ABComparison(
         baseline_version="v1",

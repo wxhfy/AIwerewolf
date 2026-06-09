@@ -2382,6 +2382,7 @@ class AcceptancePolicy:
     """v2: hard safety gates + improvement conditions + needs_more_trials."""
 
     CAMP_WIN_RATE_FLOOR_DELTA = -0.05
+    ROLE_TASK_DEGRADATION_FLOOR = 0.0
     IMPROVEMENT_MIN_DELTA = 0.03
     MISTAKE_MIN_DELTA = -0.10
     NON_DEGRADED_RATIO = 0.60
@@ -2412,6 +2413,9 @@ class AcceptancePolicy:
             hard_results["invalid_action_count == 0"] = ec.total_invalid_action_count == 0
             hard_results["patch_caused_fallback_count == 0"] = ec.total_patch_caused_fallback_count == 0
             hard_results["camp_win_rate_delta >= -0.05"] = ec.camp_win_rate_delta >= self.CAMP_WIN_RATE_FLOOR_DELTA
+            hard_results["role_task_score_delta >= 0"] = (
+                ec.mean_deltas.get("role_task_score_delta", 0.0) >= self.ROLE_TASK_DEGRADATION_FLOOR
+            )
             hard_results["rule_violation_count == 0"] = True  # engine-level guarantee
             passed_hard = all(hard_results.values())
         elif comparison is not None:
@@ -2419,6 +2423,9 @@ class AcceptancePolicy:
             hard_results["invalid_action_rate == 0"] = comparison.invalid_action_rate == 0
             hard_results["patch_caused_fallback_count == 0"] = comparison.candidate_fallback_count == 0
             hard_results["camp_win_rate_delta >= -0.05"] = True  # not computed in legacy
+            hard_results["role_task_score_delta >= 0"] = (
+                comparison.role_task_score_delta >= self.ROLE_TASK_DEGRADATION_FLOOR
+            )
             hard_results["rule_violation_count == 0"] = True
             passed_hard = all(hard_results.values())
             # Backward-compat: legacy text descriptions
@@ -2434,6 +2441,10 @@ class AcceptancePolicy:
                 satisfied.append("no candidate fallback decisions")
             else:
                 failed.append("candidate fallback_count must be zero")
+            if comparison.role_task_score_delta >= self.ROLE_TASK_DEGRADATION_FLOOR:
+                satisfied.append("role_task_score is non-degraded")
+            else:
+                failed.append("role_task_score_delta must be non-negative")
         else:
             return AcceptanceDecision(
                 status="rolled_back",
@@ -2626,8 +2637,8 @@ class TournamentRunner:
             patch_caused_fb = 0  # defaults — infrastructure can override
             infra_fb = max(0, c_fb - b_fb)  # excess candidate fallbacks attributed to infra
 
-            candidate_better = score_delta >= 0 and role_delta >= -0.01
-            non_degraded = score_delta >= -0.01
+            candidate_better = score_delta >= 0 and role_delta >= self.acceptance_policy.ROLE_TASK_DEGRADATION_FLOOR
+            non_degraded = score_delta >= -0.01 and role_delta >= self.acceptance_policy.ROLE_TASK_DEGRADATION_FLOOR
 
             target_deltas.append(score_delta)
             mistake_deltas.append(mistake_delta)

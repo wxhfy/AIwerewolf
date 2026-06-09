@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import httpx
 import pytest
@@ -16,6 +17,15 @@ from backend.engine.models import Role
 from backend.llm import create_client
 from backend.llm.anthropic_client import AnthropicClient
 from backend.llm.deepseek import DeepSeekClient
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def test_makefile_defaults_to_venv_python_for_test_targets() -> None:
+    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+
+    assert "PYTHON  ?= .venv/bin/python3" in makefile
+    assert "$(PYTHON) -m pytest tests/" in makefile
 
 
 def test_create_client_infers_deepseek_from_model() -> None:
@@ -546,8 +556,28 @@ def test_fake_llm_strategy_bias_skips_pressure_target_when_checked_good() -> Non
     response = client.chat_sync([{"role": "user", "content": prompt}])
 
     content = response["choices"][0]["message"]["content"]
-    assert '"target": "Dave"' in content
+    assert '"target": "Bob"' not in content
     assert "Bob" not in content
+
+
+def test_fake_llm_baseline_avoids_checked_good_target() -> None:
+    client = create_client(provider="fake")
+    prompt = (
+        "=== 当前状态 ===\n"
+        "你是 3号:Carol，身份=Villager\n"
+        "合法目标：1号:Alice，2号:Bob，4号:Dave\n"
+        "=== 今日发言 ===\n"
+        "1号:Alice：Bob 是金水，但也有人在归票 Bob。\n"
+        "【任务：投票】\n"
+        "选择一个存活玩家投票放逐。\n"
+    )
+
+    response = client.chat_sync([{"role": "user", "content": prompt}])
+
+    content = response["choices"][0]["message"]["content"]
+    payload = json.loads(content.replace("DECISION: ", "", 1))
+    assert payload["target"] in {"Alice", "Dave"}
+    assert payload["target"] != "Bob"
 
 
 def test_fake_llm_werewolf_strategy_avoids_teammate_target() -> None:
@@ -680,7 +710,7 @@ def test_fake_llm_witch_strategy_saves_visible_night_victim() -> None:
     payload = json.loads(response["choices"][0]["message"]["content"])
     assert payload["save"] is True
     assert payload["poison_target"] is None
-    assert "strategy" in payload["reasoning"]
+    assert "role-task" in payload["reasoning"]
 
 
 def test_create_agents_applies_role_model_overrides() -> None:

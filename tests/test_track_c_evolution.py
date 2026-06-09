@@ -627,6 +627,25 @@ def test_tournament_acceptance_promotes_clear_improvement() -> None:
     assert comparison.critical_mistakes_delta < 0
 
 
+def test_paired_tournament_rejects_role_task_degradation_despite_score_lift() -> None:
+    baseline = [_metrics("seer_v1", 60.0, 0.60), _metrics("seer_v1", 60.0, 0.60)]
+    candidate = [_metrics("seer_v2_candidate", 70.0, 0.50), _metrics("seer_v2_candidate", 70.0, 0.50)]
+
+    comparison = TournamentRunner().compare_paired_seed_results(
+        baseline,
+        candidate,
+        num_bootstrap=10,
+        target_role="Seer",
+    )
+    decision = AcceptancePolicy().decide(evolution_comparison=comparison)
+
+    assert comparison.mean_deltas["target_role_avg_score_delta"] > 0
+    assert comparison.mean_deltas["role_task_score_delta"] < 0
+    assert comparison.candidate_non_degraded_seed_count == 0
+    assert not decision.accepted
+    assert decision.hard_gate_results["role_task_score_delta >= 0"] is False
+
+
 def test_evolution_pipeline_exports_summary(tmp_path) -> None:
     report = _approved_report()
     baseline = [_metrics("seer_v1", 60.0, 0.50, critical=True), _metrics("seer_v1", 62.0, 0.52, critical=True)]
