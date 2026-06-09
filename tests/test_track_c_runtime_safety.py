@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
+from datetime import timedelta
+from datetime import timezone
 
 from backend.db import database
 from backend.db import persist
@@ -15,6 +18,11 @@ class _FakeKnowledgeRow:
     role: str
     quality_score: float
     status: str = "candidate"
+    usage_count: int = 0
+    success_count: int = 0
+    failure_count: int = 0
+    updated_at: datetime | None = None
+    created_at: datetime | None = None
 
 
 class _FakeQuery:
@@ -29,19 +37,7 @@ class _FakeQuery:
         return self
 
     def all(self) -> list[_FakeKnowledgeRow]:
-        if self._query_number == 1:
-            return [
-                row
-                for row in self._rows
-                if row.status == "candidate" and row.quality_score >= 0.85 and not row.doc_type.startswith("reflection")
-            ]
-        if self._query_number == 2:
-            return [
-                row
-                for row in self._rows
-                if row.status == "candidate" and row.quality_score >= 0.75 and not row.doc_type.startswith("reflection")
-            ]
-        return [row for row in self._rows if row.status == "active"]
+        return list(self._rows)
 
 
 class _FakeSession:
@@ -49,6 +45,7 @@ class _FakeSession:
         self._rows = rows
         self._query_count = 0
         self.committed = False
+        self.rolled_back = False
 
     def query(self, *_args, **_kwargs) -> _FakeQuery:
         self._query_count += 1
@@ -58,7 +55,7 @@ class _FakeSession:
         self.committed = True
 
     def rollback(self) -> None:
-        pass
+        self.rolled_back = True
 
     def close(self) -> None:
         pass
@@ -79,6 +76,145 @@ def test_promote_after_store_does_not_auto_promote_reflections(monkeypatch) -> N
     assert by_id["reflection-high"].status == "candidate"
     assert by_id["lesson-high"].status == "active"
     assert session.committed
+
+
+def test_lifecycle_feedback_can_promote_candidate(monkeypatch) -> None:
+    rows = [
+        _FakeKnowledgeRow(
+            "feedback-good",
+            "per_step_lesson",
+            "Seer",
+            0.76,
+            usage_count=3,
+            success_count=3,
+        )
+    ]
+    session = _FakeSession(rows)
+    monkeypatch.setattr(database, "SessionLocal", lambda: session)
+
+    result = knowledge_abstractor.run_strategy_knowledge_lifecycle(
+        quality_threshold=0.95,
+        cluster_threshold=0.75,
+        feedback_min_usage=3,
+        feedback_success_rate=0.70,
+    )
+
+    assert result["feedback_promoted"] == 1
+    assert rows[0].status == "active"
+    assert session.committed
+
+
+def test_lifecycle_feedback_can_deprecate_harmful_candidate(monkeypatch) -> None:
+    rows = [
+        _FakeKnowledgeRow(
+            "feedback-bad",
+            "per_step_lesson",
+            "Seer",
+            0.70,
+            usage_count=5,
+            success_count=1,
+            failure_count=4,
+        )
+    ]
+    session = _FakeSession(rows)
+    monkeypatch.setattr(database, "SessionLocal", lambda: session)
+
+    result = knowledge_abstractor.run_strategy_knowledge_lifecycle(
+        quality_threshold=0.95,
+        cluster_threshold=0.90,
+        feedback_deprecation_min_usage=5,
+        feedback_deprecation_failure_rate=0.70,
+    )
+
+    assert result["feedback_deprecated"] == 1
+    assert rows[0].status == "deprecated"
+    assert session.committed
+
+
+def test_lifecycle_deprecates_stale_unused_candidates(monkeypatch) -> None:
+    rows = [
+        _FakeKnowledgeRow(
+            "stale-candidate",
+            "per_step_lesson",
+            "Guard",
+            0.70,
+            updated_at=datetime.now(timezone.utc) - timedelta(days=60),
+        )
+    ]
+    session = _FakeSession(rows)
+    monkeypatch.setattr(database, "SessionLocal", lambda: session)
+
+    result = knowledge_abstractor.run_strategy_knowledge_lifecycle(
+        quality_threshold=0.95,
+        cluster_threshold=0.90,
+        deprecation_threshold=0.60,
+        stale_days=45,
+    )
+
+    assert result["stale_deprecated"] == 1
+    assert rows[0].status == "deprecated"
+    assert session.committed
+
+
+def test_lifecycle_prunes_excess_candidates(monkeypatch) -> None:
+    now = datetime.now(timezone.utc)
+    rows = [
+        _FakeKnowledgeRow(f"candidate-{idx}", "per_step_lesson", "Seer", quality, updated_at=now)
+        for idx, quality in enumerate([0.70, 0.69, 0.68, 0.67, 0.66], start=1)
+    ]
+    session = _FakeSession(rows)
+    monkeypatch.setattr(database, "SessionLocal", lambda: session)
+
+    result = knowledge_abstractor.run_strategy_knowledge_lifecycle(
+        quality_threshold=0.95,
+        cluster_threshold=0.90,
+        candidate_cap_per_role_type=2,
+        candidate_total_cap=20,
+        deprecation_threshold=0.60,
+        stale_days=365,
+    )
+
+    assert result["candidate_pruned"] == 3
+    assert [row.status for row in rows].count("candidate") == 2
+    assert [row.status for row in rows].count("deprecated") == 3
+
+
+def test_lifecycle_active_pool_cap_demotes_lowest_quality(monkeypatch) -> None:
+    rows = [
+        _FakeKnowledgeRow("active-1", "per_step_lesson", "Seer", 0.90, status="active"),
+        _FakeKnowledgeRow("active-2", "per_step_lesson", "Seer", 0.80, status="active"),
+        _FakeKnowledgeRow("active-3", "per_step_lesson", "Seer", 0.70, status="active"),
+        _FakeKnowledgeRow("active-4", "per_step_lesson", "Seer", 0.60, status="active"),
+    ]
+    session = _FakeSession(rows)
+    monkeypatch.setattr(database, "SessionLocal", lambda: session)
+
+    result = knowledge_abstractor.run_strategy_knowledge_lifecycle(
+        active_cap_per_role_type=2,
+        candidate_cap_per_role_type=10,
+        candidate_total_cap=20,
+        deprecation_threshold=0.50,
+    )
+
+    assert result["active_demoted"] == 2
+    by_id = {row.id: row for row in rows}
+    assert by_id["active-1"].status == "active"
+    assert by_id["active-2"].status == "active"
+    assert by_id["active-3"].status == "candidate"
+    assert by_id["active-4"].status == "candidate"
+
+
+def test_lifecycle_dry_run_rolls_back_status_changes(monkeypatch) -> None:
+    rows = [_FakeKnowledgeRow("quality-good", "per_step_lesson", "Seer", 0.91)]
+    session = _FakeSession(rows)
+    monkeypatch.setattr(database, "SessionLocal", lambda: session)
+
+    result = knowledge_abstractor.run_strategy_knowledge_lifecycle(dry_run=True)
+
+    assert result["quality_promoted"] == 1
+    assert rows[0].status == "candidate"
+    assert session.rolled_back
+    assert not session.committed
 
 
 class _UpsertQuery:

@@ -142,7 +142,61 @@ def claim_scope(payload: dict[str, Any], comparison: dict[str, Any]) -> str:
         return "causal_supported"
     if paired < 20:
         return "real_llm_pilot_only"
+    if paired < 80:
+        return "pipeline_pilot_not_accepted"
     return "formal_candidate_not_accepted"
+
+
+def sample_scale_interpretation(paired: int, max_days: int) -> str:
+    if max_days <= 1:
+        return "max_days=1 烟测，只能证明 runner 和记录链路可运行。"
+    if paired < 20:
+        return f"{paired}-pair 真实 LLM pilot，尚未达到 20-pair pipeline pilot 或 80+ formal 建议规模。"
+    if paired < 80:
+        return f"{paired}-pair pipeline pilot 已完成；仍未达到 80-120 paired seeds 正式验证建议规模。"
+    return f"{paired}-pair formal candidate；仍需以 acceptance、bootstrap CI 和健康门禁共同判定。"
+
+
+def completed_games_sentence(facts: dict[str, Any]) -> str:
+    baseline = inum(facts.get("baseline_completed"))
+    candidate = inum(facts.get("candidate_completed"))
+    fallback = inum(facts.get("candidate_fallback_count"))
+    invalid = inum(facts.get("candidate_invalid_count"))
+    if baseline == candidate:
+        return (
+            f"本 pilot 中 baseline/candidate 各完成 {baseline} 局，candidate fallback/invalid 为 {fallback}/{invalid}。"
+        )
+    return (
+        f"本 pilot 中 baseline 完成 {baseline} 局、candidate 完成 {candidate} 局，"
+        f"candidate fallback/invalid 为 {fallback}/{invalid}。"
+    )
+
+
+def cannot_replace_formal_experiment_sentence(paired: int, accepted: bool) -> str:
+    if accepted:
+        return "即使 accepted=true，也仍需在正式报告中同时呈现样本量、bootstrap CI、健康门禁和角色覆盖边界。"
+    if paired < 20:
+        return f"不能把 {paired} paired seeds pilot 替代 20-pair pipeline pilot 或 80-120 paired seeds 的正式验证。"
+    if paired < 80:
+        return f"不能把 {paired} paired seeds pipeline pilot 替代 80-120 paired seeds 的正式验证。"
+    return f"不能把 {paired} paired seeds 但 accepted=false 的结果写成 Track C 因果支持。"
+
+
+def next_required_experiment_sentence(paired: int, accepted: bool) -> str:
+    if accepted:
+        return (
+            "如需扩大正式结论边界，继续轮换 Seer/Witch/Guard/Werewolf/Hunter/Villager，"
+            "并报告不同角色下的 score、role-task、win-rate、fallback/invalid 与 bootstrap CI。"
+        )
+    if paired < 20:
+        return (
+            "先扩到 20 paired seeds 作为 pipeline pilot；若趋势和健康门禁保持，再按功效计划扩到 "
+            "80-120 paired seeds，并轮换 Seer/Witch/Guard/Werewolf/Hunter/Villager。"
+        )
+    return (
+        f"当前已完成 {paired} paired seeds pipeline pilot；下一步按功效计划扩到 80-120 paired seeds，"
+        "并轮换 Seer/Witch/Guard/Werewolf/Hunter/Villager。"
+    )
 
 
 def build_facts(*, source_path: Path = DEFAULT_SOURCE, generated_at: str | None = None) -> dict[str, Any]:
@@ -162,6 +216,14 @@ def build_facts(*, source_path: Path = DEFAULT_SOURCE, generated_at: str | None 
     role_task_ci = ci.get("role_task_score_delta", {}) if isinstance(ci.get("role_task_score_delta"), dict) else {}
     process_ci = ci.get("process_score_delta", {}) if isinstance(ci.get("process_score_delta"), dict) else {}
     win_ci = ci.get("target_win_rate_delta", {}) if isinstance(ci.get("target_win_rate_delta"), dict) else {}
+    facts_stub = {
+        "baseline_completed": comparison.get("baseline_completed"),
+        "candidate_completed": comparison.get("candidate_completed"),
+        "candidate_fallback_count": comparison.get("candidate_fallback_count"),
+        "candidate_invalid_count": comparison.get("candidate_invalid_count"),
+    }
+    paired_count = inum(comparison.get("paired_seed_count"))
+    accepted = bool(acceptance.get("accepted", False))
 
     return {
         "generated_at": generated_at or now_iso(),
@@ -219,23 +281,20 @@ def build_facts(*, source_path: Path = DEFAULT_SOURCE, generated_at: str | None 
         },
         "paired_rows": paired_rows,
         "can_write": [
-            "真实 LLM target-seat paired A/B runner 已在 Seer 目标席位上跑通。",
-            "本 pilot 中 baseline/candidate 各完成 5 局，candidate fallback/invalid 为 0。",
+            f"真实 LLM target-seat paired A/B runner 已在 {payload.get('target_role')} 目标席位上跑通。",
+            completed_games_sentence(facts_stub),
             "candidate 相对 baseline 的目标席位 adjusted/process/role-task 指标呈正向均值趋势。",
         ],
         "cannot_write": [
             "不能写成 Track C 已经获得单目标席位因果增益。",
             "不能写成 Track C 已经提升最终胜率。",
-            "不能把 5 paired seeds pilot 替代 80-120 paired seeds 的正式验证。",
+            cannot_replace_formal_experiment_sentence(paired_count, accepted),
         ],
         "claim_boundary": (
             "该 pilot 是真实 LLM target-seat A/B 阶段性证据。由于 bootstrap CI 下界仍跨 0，"
             "acceptance.accepted=false，只能写成正向趋势和链路健康，不能写成 causal_supported。"
         ),
-        "next_required_experiment": (
-            "先扩到 20 paired seeds 作为 pipeline pilot；若趋势和健康门禁保持，再按功效计划扩到 "
-            "80-120 paired seeds，并轮换 Seer/Witch/Guard/Werewolf/Hunter/Villager。"
-        ),
+        "next_required_experiment": next_required_experiment_sentence(paired_count, accepted),
     }
 
 
@@ -250,6 +309,8 @@ def render_report(facts: dict[str, Any]) -> str:
     acceptance = facts.get("acceptance", {}) if isinstance(facts.get("acceptance"), dict) else {}
     gate_summary = facts.get("acceptance_gate_summary", {})
     ci = facts.get("bootstrap_ci", {}) if isinstance(facts.get("bootstrap_ci"), dict) else {}
+    paired = inum(facts.get("paired_seed_count"))
+    max_days = inum(facts.get("max_days"))
     lines = [
         "# Target-seat Track C 真实 LLM Pilot 证据",
         "",
@@ -294,7 +355,7 @@ def render_report(facts: dict[str, Any]) -> str:
                 [
                     "Paired seeds",
                     facts["paired_seed_count"],
-                    "5-pair pilot，未达到 20-pair pipeline pilot 或 80+ formal 建议规模。",
+                    sample_scale_interpretation(paired, max_days),
                 ],
                 [
                     "Completed baseline/candidate",

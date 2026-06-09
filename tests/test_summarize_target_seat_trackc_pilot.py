@@ -120,3 +120,72 @@ def test_existing_generated_at_reads_snapshot(tmp_path: Path) -> None:
 
     assert pilot.existing_generated_at(output) == "2026-06-09T00:00:00+08:00"
     assert pilot.existing_generated_at(tmp_path / "missing.json") is None
+
+
+def test_build_facts_marks_20_pair_pipeline_pilot_not_formal(tmp_path: Path) -> None:
+    source = tmp_path / "target.json"
+    baseline_results = [
+        _result("baseline", seed, adjusted=10 + seed, role_task=0.1, process=10 + seed) for seed in range(1, 21)
+    ]
+    candidate_results = [
+        _result("candidate", seed, adjusted=13 + seed, role_task=0.15, process=13 + seed) for seed in range(1, 21)
+    ]
+    _write_json(
+        source,
+        {
+            "runner": "target_seat_trackc_ab_experiment.py",
+            "target_role": "Seer",
+            "target_occurrence": 1,
+            "baseline_framework": "basic_react",
+            "candidate_framework": "rag_react",
+            "requested_seeds": list(range(1, 21)),
+            "player_count": 7,
+            "max_days": 20,
+            "model_pool": ["anthropic:model-a"],
+            "baseline_results": baseline_results,
+            "candidate_results": candidate_results,
+            "failures": [],
+            "comparison": {
+                "paired_seed_count": 20,
+                "paired_seeds": list(range(1, 21)),
+                "baseline_completed": 20,
+                "candidate_completed": 20,
+                "target_win_rate_delta": 0.0,
+                "target_adjusted_score_delta": 3.0,
+                "target_role_task_delta": 0.05,
+                "target_process_score_delta": 3.0,
+                "candidate_decision_count": 200,
+                "candidate_fallback_count": 0,
+                "candidate_invalid_count": 0,
+                "candidate_invalid_rate": 0.0,
+                "bootstrap_ci": {
+                    "adjusted_final_score_delta": {"mean": 3.0, "ci95_low": -1.0, "ci95_high": 7.0},
+                    "role_task_score_delta": {"mean": 0.05, "ci95_low": -0.01, "ci95_high": 0.1},
+                    "process_score_delta": {"mean": 3.0, "ci95_low": -1.0, "ci95_high": 7.0},
+                    "target_win_rate_delta": {"mean": 0.0, "ci95_low": 0.0, "ci95_high": 0.0},
+                },
+                "acceptance": {
+                    "accepted": False,
+                    "claim_level": "ci_not_positive",
+                    "gates": {
+                        "enough_samples": True,
+                        "strict_health": True,
+                        "score_gate": True,
+                        "role_task_gate": True,
+                        "win_gate": False,
+                        "ci_gate": False,
+                        "improvement_gate": True,
+                    },
+                },
+            },
+        },
+    )
+
+    facts = pilot.build_facts(source_path=source, generated_at="2026-06-09T00:00:00+08:00")
+    report = pilot.render_report(facts)
+
+    assert facts["claim_scope"] == "pipeline_pilot_not_accepted"
+    assert "各完成 20 局" in facts["can_write"][1]
+    assert "20 paired seeds pipeline pilot" in facts["cannot_write"][2]
+    assert "下一步按功效计划扩到 80-120 paired seeds" in facts["next_required_experiment"]
+    assert "20-pair pipeline pilot 已完成" in report
