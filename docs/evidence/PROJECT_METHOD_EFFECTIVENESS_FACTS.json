@@ -10,19 +10,19 @@
     "retrieval_results": "outputs/retrieval_effectiveness_current/results.json",
     "retrieval_per_role": "outputs/retrieval_effectiveness_current/per_role_results.csv",
     "retrieval_role_corpus": "outputs/retrieval_effectiveness_current/role_corpus_stats.csv",
-    "role_retrieval_facts": "docs/PROJECT_ROLE_RETRIEVAL_FACTS.json",
-    "role_retrieval_report": "docs/PROJECT_ROLE_RETRIEVAL_QUANTIFICATION.md",
-    "method_statistics": "docs/PROJECT_METHOD_EFFECTIVENESS_STATISTICS.json",
-    "method_statistics_report": "docs/PROJECT_METHOD_EFFECTIVENESS_STATISTICS.md",
-    "provider_preflight": "docs/PROJECT_PROVIDER_PREFLIGHT.json",
-    "track_b_leaderboard_showcase": "docs/PROJECT_TRACK_B_LEADERBOARD_SHOWCASE.json",
-    "track_b_leaderboard_showcase_report": "docs/PROJECT_TRACK_B_LEADERBOARD_SHOWCASE.md",
-    "usage_decision_score_facts": "docs/PROJECT_STRATEGY_USAGE_DECISION_SCORE_ANALYSIS.json",
-    "usage_decision_score_report": "docs/PROJECT_STRATEGY_USAGE_DECISION_SCORE_ANALYSIS.md",
-    "target_seat_power_plan": "docs/PROJECT_TARGET_SEAT_AB_POWER_PLAN.json",
-    "target_seat_power_report": "docs/PROJECT_TARGET_SEAT_AB_POWER_PLAN.md",
-    "target_seat_trackc_pilot": "docs/PROJECT_TARGET_SEAT_TRACKC_PILOT.json",
-    "target_seat_trackc_pilot_report": "docs/PROJECT_TARGET_SEAT_TRACKC_PILOT.md"
+    "role_retrieval_facts": "docs/evidence/PROJECT_ROLE_RETRIEVAL_FACTS.json",
+    "role_retrieval_report": "docs/evidence/PROJECT_ROLE_RETRIEVAL_QUANTIFICATION.md",
+    "method_statistics": "docs/evidence/PROJECT_METHOD_EFFECTIVENESS_STATISTICS.json",
+    "method_statistics_report": "docs/evidence/PROJECT_METHOD_EFFECTIVENESS_STATISTICS.md",
+    "provider_preflight": "docs/evidence/PROJECT_PROVIDER_PREFLIGHT.json",
+    "track_b_leaderboard_showcase": "docs/evidence/PROJECT_TRACK_B_LEADERBOARD_SHOWCASE.json",
+    "track_b_leaderboard_showcase_report": "docs/evidence/PROJECT_TRACK_B_LEADERBOARD_SHOWCASE.md",
+    "usage_decision_score_facts": "docs/evidence/PROJECT_STRATEGY_USAGE_DECISION_SCORE_ANALYSIS.json",
+    "usage_decision_score_report": "docs/evidence/PROJECT_STRATEGY_USAGE_DECISION_SCORE_ANALYSIS.md",
+    "target_seat_power_plan": "outputs/target_seat_power_plan/PROJECT_TARGET_SEAT_AB_POWER_PLAN.json",
+    "target_seat_power_report": "outputs/target_seat_power_plan/PROJECT_TARGET_SEAT_AB_POWER_PLAN.md",
+    "target_seat_trackc_pilot": "docs/evidence/PROJECT_TARGET_SEAT_TRACKC_PILOT.json",
+    "target_seat_trackc_pilot_report": "docs/evidence/PROJECT_TARGET_SEAT_TRACKC_PILOT.md"
   },
   "formal": {
     "row_counts": {
@@ -2222,9 +2222,9 @@
       "retrieval_details": "outputs/retrieval_effectiveness_current/per_query_details.jsonl",
       "mbti_track_c_summary": "docs/experiments/mbti_track_c_auxiliary_analysis/summary.json",
       "mbti_role_deltas": "docs/experiments/mbti_track_c_auxiliary_analysis/role_deltas.csv",
-      "method_facts": "docs/PROJECT_METHOD_EFFECTIVENESS_FACTS.json",
-      "usage_decision_score_facts": "docs/PROJECT_STRATEGY_USAGE_DECISION_SCORE_ANALYSIS.json",
-      "usage_decision_score_report": "docs/PROJECT_STRATEGY_USAGE_DECISION_SCORE_ANALYSIS.md",
+      "method_facts": "docs/evidence/PROJECT_METHOD_EFFECTIVENESS_FACTS.json",
+      "usage_decision_score_facts": "docs/evidence/PROJECT_STRATEGY_USAGE_DECISION_SCORE_ANALYSIS.json",
+      "usage_decision_score_report": "docs/evidence/PROJECT_STRATEGY_USAGE_DECISION_SCORE_ANALYSIS.md",
       "formal_leaderboard": "docs/experiments/formal_v4flash_framework_analysis/leaderboard.csv",
       "formal_rubric": "docs/experiments/formal_v4flash_framework_analysis/rubric_leaderboard.csv"
     },
@@ -10938,7 +10938,7 @@
   "target_seat_ab": [
     {
       "source": "outputs/target_seat_trackc_ab_seer_ark_pilot_20260609/target_seat_ab_Seer_20260609T082838Z.json",
-      "summary_source": "docs/PROJECT_TARGET_SEAT_TRACKC_PILOT.json",
+      "summary_source": "docs/evidence/PROJECT_TARGET_SEAT_TRACKC_PILOT.json",
       "generated_at": "2026-06-09T17:15:35+08:00",
       "target_role": "Seer",
       "baseline_framework": "basic_react",
@@ -12124,7 +12124,7 @@
       "evidence_level": "real_llm_track_b_showcase",
       "status": "pilot_supported",
       "metric": "games=6; raw_decisions=216; panels=7; panel_names=对局层,模型/版本层,玩家/角色席位层,评分维度层,Rubric 层,决策健康层,复盘展示层; fallback=0; invalid=0",
-      "source": "docs/PROJECT_TRACK_B_LEADERBOARD_SHOWCASE.json",
+      "source": "docs/evidence/PROJECT_TRACK_B_LEADERBOARD_SHOWCASE.json",
       "boundary": "展示 Track B 的对局层、模型/版本层、玩家/角色席位层、评分维度层、rubric 层、决策健康层和复盘产物层；不是 Track C 因果增益或正式模型优劣结论。"
     },
     {
@@ -12188,7 +12188,7 @@
       "evidence_level": "observational_decision_score_join",
       "status": "supported",
       "metric": "decision_rows=170399; used=3088; unused=167311; delta=0.0823; ci=[0.0764,0.0882]; strict_weighted_delta=0.0967; strict_strata=48/10/0",
-      "source": "docs/PROJECT_STRATEGY_USAGE_DECISION_SCORE_ANALYSIS.json",
+      "source": "docs/evidence/PROJECT_STRATEGY_USAGE_DECISION_SCORE_ANALYSIS.json",
       "boundary": "观测性关联，不能替代 target-seat paired A/B 因果证明。"
     },
     {
@@ -12196,7 +12196,7 @@
       "evidence_level": "role_internal_observational_control",
       "status": "supported",
       "metric": "core_positive_roles=6/6; weighted_deltas=Werewolf:0.0899,Guard:0.1006,Seer:0.1272,Witch:0.0670,Villager:0.1220,Hunter:0.0779",
-      "source": "docs/PROJECT_STRATEGY_USAGE_DECISION_SCORE_ANALYSIS.json",
+      "source": "docs/evidence/PROJECT_STRATEGY_USAGE_DECISION_SCORE_ANALYSIS.json",
       "boundary": "角色内按 action/tier/day/phase 控制后的观测性关联；非核心或低样本角色暂不声明，negative_or_weak=1。"
     },
     {
@@ -12212,7 +12212,7 @@
       "evidence_level": "target_seat_paired_ab",
       "status": "real_llm_pilot_only",
       "metric": "role=Seer; paired=5; score_delta=20.6680; role_task_delta=0.2830; fallback=0; invalid=0; accepted=False; scope=real_llm_pilot_only; max_days=20",
-      "source": "docs/PROJECT_TARGET_SEAT_TRACKC_PILOT.json",
+      "source": "docs/evidence/PROJECT_TARGET_SEAT_TRACKC_PILOT.json",
       "boundary": "当前最强 target-seat 证据是 5-pair 真实 LLM pilot：趋势正向且健康门禁通过，但 CI gate 未通过；只有 accepted=true 且样本/健康/CI 门禁通过时，才能写成因果支持。"
     },
     {

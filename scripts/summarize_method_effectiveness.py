@@ -23,6 +23,9 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+EVIDENCE_DIR = ROOT / "docs" / "evidence"
+LOCAL_REPORT_DIR = ROOT / "outputs" / "method_effectiveness"
+TARGET_SEAT_POWER_DIR = ROOT / "outputs" / "target_seat_power_plan"
 FORMAL_SUMMARY = ROOT / "docs" / "experiments" / "formal_v4flash_framework_analysis" / "summary.json"
 FORMAL_LEADERBOARD = ROOT / "docs" / "experiments" / "formal_v4flash_framework_analysis" / "leaderboard.csv"
 FORMAL_RUBRIC = ROOT / "docs" / "experiments" / "formal_v4flash_framework_analysis" / "rubric_leaderboard.csv"
@@ -32,19 +35,19 @@ MBTI_TRACK_C = ROOT / "docs" / "experiments" / "mbti_track_c_auxiliary_analysis"
 RETRIEVAL_RESULTS = ROOT / "outputs" / "retrieval_effectiveness_current" / "results.json"
 RETRIEVAL_PER_ROLE = ROOT / "outputs" / "retrieval_effectiveness_current" / "per_role_results.csv"
 RETRIEVAL_ROLE_CORPUS = ROOT / "outputs" / "retrieval_effectiveness_current" / "role_corpus_stats.csv"
-ROLE_RETRIEVAL_FACTS = ROOT / "docs" / "PROJECT_ROLE_RETRIEVAL_FACTS.json"
-ROLE_RETRIEVAL_REPORT = ROOT / "docs" / "PROJECT_ROLE_RETRIEVAL_QUANTIFICATION.md"
-METHOD_STATISTICS = ROOT / "docs" / "PROJECT_METHOD_EFFECTIVENESS_STATISTICS.json"
-METHOD_STATISTICS_REPORT = ROOT / "docs" / "PROJECT_METHOD_EFFECTIVENESS_STATISTICS.md"
-PROVIDER_PREFLIGHT = ROOT / "docs" / "PROJECT_PROVIDER_PREFLIGHT.json"
-TRACK_B_LEADERBOARD_SHOWCASE = ROOT / "docs" / "PROJECT_TRACK_B_LEADERBOARD_SHOWCASE.json"
-TRACK_B_LEADERBOARD_SHOWCASE_REPORT = ROOT / "docs" / "PROJECT_TRACK_B_LEADERBOARD_SHOWCASE.md"
-USAGE_DECISION_SCORE_FACTS = ROOT / "docs" / "PROJECT_STRATEGY_USAGE_DECISION_SCORE_ANALYSIS.json"
-USAGE_DECISION_SCORE_REPORT = ROOT / "docs" / "PROJECT_STRATEGY_USAGE_DECISION_SCORE_ANALYSIS.md"
-TARGET_SEAT_POWER_PLAN = ROOT / "docs" / "PROJECT_TARGET_SEAT_AB_POWER_PLAN.json"
-TARGET_SEAT_POWER_REPORT = ROOT / "docs" / "PROJECT_TARGET_SEAT_AB_POWER_PLAN.md"
-TARGET_SEAT_TRACKC_PILOT = ROOT / "docs" / "PROJECT_TARGET_SEAT_TRACKC_PILOT.json"
-TARGET_SEAT_TRACKC_PILOT_REPORT = ROOT / "docs" / "PROJECT_TARGET_SEAT_TRACKC_PILOT.md"
+ROLE_RETRIEVAL_FACTS = EVIDENCE_DIR / "PROJECT_ROLE_RETRIEVAL_FACTS.json"
+ROLE_RETRIEVAL_REPORT = EVIDENCE_DIR / "PROJECT_ROLE_RETRIEVAL_QUANTIFICATION.md"
+METHOD_STATISTICS = EVIDENCE_DIR / "PROJECT_METHOD_EFFECTIVENESS_STATISTICS.json"
+METHOD_STATISTICS_REPORT = EVIDENCE_DIR / "PROJECT_METHOD_EFFECTIVENESS_STATISTICS.md"
+PROVIDER_PREFLIGHT = EVIDENCE_DIR / "PROJECT_PROVIDER_PREFLIGHT.json"
+TRACK_B_LEADERBOARD_SHOWCASE = EVIDENCE_DIR / "PROJECT_TRACK_B_LEADERBOARD_SHOWCASE.json"
+TRACK_B_LEADERBOARD_SHOWCASE_REPORT = EVIDENCE_DIR / "PROJECT_TRACK_B_LEADERBOARD_SHOWCASE.md"
+USAGE_DECISION_SCORE_FACTS = EVIDENCE_DIR / "PROJECT_STRATEGY_USAGE_DECISION_SCORE_ANALYSIS.json"
+USAGE_DECISION_SCORE_REPORT = EVIDENCE_DIR / "PROJECT_STRATEGY_USAGE_DECISION_SCORE_ANALYSIS.md"
+TARGET_SEAT_POWER_PLAN = TARGET_SEAT_POWER_DIR / "PROJECT_TARGET_SEAT_AB_POWER_PLAN.json"
+TARGET_SEAT_POWER_REPORT = TARGET_SEAT_POWER_DIR / "PROJECT_TARGET_SEAT_AB_POWER_PLAN.md"
+TARGET_SEAT_TRACKC_PILOT = EVIDENCE_DIR / "PROJECT_TARGET_SEAT_TRACKC_PILOT.json"
+TARGET_SEAT_TRACKC_PILOT_REPORT = EVIDENCE_DIR / "PROJECT_TARGET_SEAT_TRACKC_PILOT.md"
 
 TRACK_C_SMOKE_FILES = [
     ROOT / "docs" / "experiments" / "track_c_runtime_fix" / "doubao_smoke_g1" / "group_results.csv",
@@ -59,8 +62,8 @@ TRACK_C_SMOKE_FILES = [
 ]
 TARGET_SEAT_GLOB = "outputs/target_seat_trackc_ab*/target_seat_ab_*.json"
 
-DEFAULT_REPORT = ROOT / "docs" / "PROJECT_METHOD_EFFECTIVENESS_EXPERIMENTS.md"
-DEFAULT_FACTS = ROOT / "docs" / "PROJECT_METHOD_EFFECTIVENESS_FACTS.json"
+DEFAULT_REPORT = LOCAL_REPORT_DIR / "PROJECT_METHOD_EFFECTIVENESS_EXPERIMENTS.md"
+DEFAULT_FACTS = EVIDENCE_DIR / "PROJECT_METHOD_EFFECTIVENESS_FACTS.json"
 
 
 def read_json(path: Path) -> dict[str, Any]:
@@ -685,7 +688,7 @@ def build_evidence(
             )
             if track_b_showcase_aggregate
             else "no Track B showcase facts found",
-            "source": "docs/PROJECT_TRACK_B_LEADERBOARD_SHOWCASE.json",
+            "source": "docs/evidence/PROJECT_TRACK_B_LEADERBOARD_SHOWCASE.json",
             "boundary": "展示 Track B 的对局层、模型/版本层、玩家/角色席位层、评分维度层、rubric 层、决策健康层和复盘产物层；不是 Track C 因果增益或正式模型优劣结论。",
         },
         {
@@ -773,7 +776,7 @@ def build_evidence(
                 f"strict_weighted_delta={fmt(usage_strict_for_matrix.get('weighted_mean_delta_used_minus_unused'))}; "
                 f"strict_strata={usage_strict_for_matrix.get('positive_strata')}/{usage_strict_for_matrix.get('negative_strata')}/{usage_strict_for_matrix.get('tied_strata')}"
             ),
-            "source": "docs/PROJECT_STRATEGY_USAGE_DECISION_SCORE_ANALYSIS.json",
+            "source": "docs/evidence/PROJECT_STRATEGY_USAGE_DECISION_SCORE_ANALYSIS.json",
             "boundary": "观测性关联，不能替代 target-seat paired A/B 因果证明。",
         },
         {
@@ -788,7 +791,7 @@ def build_evidence(
                     for row in core_usage_role_rows
                 )
             ),
-            "source": "docs/PROJECT_STRATEGY_USAGE_DECISION_SCORE_ANALYSIS.json",
+            "source": "docs/evidence/PROJECT_STRATEGY_USAGE_DECISION_SCORE_ANALYSIS.json",
             "boundary": (
                 "角色内按 action/tier/day/phase 控制后的观测性关联；"
                 f"非核心或低样本角色暂不声明，negative_or_weak={len(weak_or_negative_role_rows)}。"
@@ -1037,7 +1040,7 @@ def render_report(evidence: dict[str, Any]) -> str:
         "",
         f"生成时间：{evidence['generated_at']}",
         "",
-        "可追溯性说明：本报告引用的 `docs/experiments/` 和 `outputs/` 原始产物是本地实验输出，按仓库规则不进入 GitHub；可提交的机器可读摘要已汇总到 `docs/PROJECT_METHOD_EFFECTIVENESS_FACTS.json`、`docs/PROJECT_METHOD_EFFECTIVENESS_STATISTICS.json`、`docs/PROJECT_ROLE_RETRIEVAL_FACTS.json` 和 `docs/PROJECT_STRATEGY_USAGE_DECISION_SCORE_ANALYSIS.json`。",
+        "可追溯性说明：本报告引用的 `docs/experiments/` 和 `outputs/` 原始产物是本地实验输出，按仓库规则不进入 GitHub；可提交的机器可读摘要已汇总到 `docs/evidence/PROJECT_METHOD_EFFECTIVENESS_FACTS.json`、`docs/evidence/PROJECT_METHOD_EFFECTIVENESS_STATISTICS.json`、`docs/evidence/PROJECT_ROLE_RETRIEVAL_FACTS.json` 和 `docs/evidence/PROJECT_STRATEGY_USAGE_DECISION_SCORE_ANALYSIS.json`。",
         "",
         "## 1. 结论摘要",
         "",
@@ -1086,7 +1089,7 @@ def render_report(evidence: dict[str, Any]) -> str:
                     f"{track_b_showcase_aggregate.get('completed_real_llm_games', 'n/a')} / "
                     f"{track_b_showcase_aggregate.get('raw_decision_count', 'n/a')} / "
                     f"{len(track_b_panel_names) if track_b_panel_names else 'n/a'}",
-                    "docs/PROJECT_TRACK_B_LEADERBOARD_SHOWCASE.json",
+                    "docs/evidence/PROJECT_TRACK_B_LEADERBOARD_SHOWCASE.json",
                     f"pilot 多层展示；panels={len(track_b_panel_names)}，fallback={track_b_showcase_aggregate.get('fallback_count', 'n/a')}，invalid={track_b_showcase_aggregate.get('invalid_count', 'n/a')}",
                 ],
                 [
@@ -1162,7 +1165,7 @@ def render_report(evidence: dict[str, Any]) -> str:
         "",
         f"默认策略相对 `global_only` 的核心提升：P@3 从 {fmt(global_only.get('precision_at_3'))} 到 {fmt(default.get('precision_at_3'))}，Effective@3 从 {fmt(global_only.get('effective_at_3'))} 到 {fmt(default.get('effective_at_3'))}，Coverage 从 {fmt(global_only.get('coverage_rate'))} 到 {fmt(default.get('coverage_rate'))}。`same_role_same_mbti` 过窄，Coverage 只有 {fmt(exact.get('coverage_rate'))}。",
         "",
-        "统计补充详见 `docs/PROJECT_METHOD_EFFECTIVENESS_STATISTICS.md`。默认检索相对 `global_only` 的 paired bootstrap 结果如下：",
+        "统计补充详见 `docs/evidence/PROJECT_METHOD_EFFECTIVENESS_STATISTICS.md`。默认检索相对 `global_only` 的 paired bootstrap 结果如下：",
         "",
         table(
             ["Metric", "MeanDelta", "Bootstrap95CI", "Sign +/−/tie", "CI跨0"],
@@ -1182,7 +1185,7 @@ def render_report(evidence: dict[str, Any]) -> str:
         "",
         "## 5. 单角色检索有效性",
         "",
-        "单角色检索的详细机制、分角色命中率和语料池规模已单独整理为 `docs/PROJECT_ROLE_RETRIEVAL_QUANTIFICATION.md`，机器可读摘要见 `docs/PROJECT_ROLE_RETRIEVAL_FACTS.json`。",
+        "单角色检索的详细机制、分角色命中率和语料池规模已单独整理为 `docs/evidence/PROJECT_ROLE_RETRIEVAL_QUANTIFICATION.md`，机器可读摘要见 `docs/evidence/PROJECT_ROLE_RETRIEVAL_FACTS.json`。",
         "",
         "单角色检索流程按 `search_strategies -> AgentContext -> keyword/BM25 recall -> RetrievalPolicy buckets -> quality gate -> Strategy prompt` 运行。当前可追溯代码依据如下：",
         "",
@@ -1403,7 +1406,7 @@ def render_report(evidence: dict[str, Any]) -> str:
     lines += [
         "## 8. 策略使用与逐决策评分关联",
         "",
-        "详细报告见 `docs/PROJECT_STRATEGY_USAGE_DECISION_SCORE_ANALYSIS.md`。该统计通过 `decision_id` 将 Track B per-step score、agent_decisions 和 knowledge_usage_feedback 联表，并排除 fake/offline game。",
+        "详细报告见 `docs/evidence/PROJECT_STRATEGY_USAGE_DECISION_SCORE_ANALYSIS.md`。该统计通过 `decision_id` 将 Track B per-step score、agent_decisions 和 knowledge_usage_feedback 联表，并排除 fake/offline game。",
         "",
         table(
             ["Metric", "Value"],
@@ -1593,7 +1596,7 @@ def render_report(evidence: dict[str, Any]) -> str:
                     provider_preflight.get("safe_for_formal_experiment", False),
                     ", ".join(row.get("label", "") for row in provider_preflight.get("resolved_models", [])),
                     provider_preflight.get("error", ""),
-                    evidence.get("sources", {}).get("provider_preflight", "docs/PROJECT_PROVIDER_PREFLIGHT.json"),
+                    evidence.get("sources", {}).get("provider_preflight", "docs/evidence/PROJECT_PROVIDER_PREFLIGHT.json"),
                 ]
             ],
         ),
@@ -1602,7 +1605,7 @@ def render_report(evidence: dict[str, Any]) -> str:
         "",
         "### 10.2 Target-seat A/B 功效计划",
         "",
-        "样本量计划详见 `docs/PROJECT_TARGET_SEAT_AB_POWER_PLAN.md`。该文件只用于规划真实实验，不构成 Track C 已产生因果增益的结论。",
+        "样本量计划默认输出到 `outputs/target_seat_power_plan/PROJECT_TARGET_SEAT_AB_POWER_PLAN.md`。该文件只用于规划真实实验，不构成 Track C 已产生因果增益的结论。",
         "",
         table(
             ["Item", "Value"],
@@ -1717,7 +1720,7 @@ def render_report(evidence: dict[str, Any]) -> str:
         "  --output-dir outputs/method_effectiveness_paired_v4flash",
         "```",
         "",
-        "如果要证明 Track C 对单个最终 Agent 的因果增益，还需要正式 target-seat A/B：同 seed、同角色分配、同 baseline 对手，只升级一个目标席位，并按角色轮换。根据 `docs/PROJECT_TARGET_SEAT_AB_POWER_PLAN.md`，正式验证建议 80-120 paired seeds 起步，胜率只作为辅助指标。",
+        "如果要证明 Track C 对单个最终 Agent 的因果增益，还需要正式 target-seat A/B：同 seed、同角色分配、同 baseline 对手，只升级一个目标席位，并按角色轮换。根据 `outputs/target_seat_power_plan/PROJECT_TARGET_SEAT_AB_POWER_PLAN.md`，正式验证建议 80-120 paired seeds 起步，胜率只作为辅助指标。",
     ]
     return "\n".join(lines) + "\n"
 

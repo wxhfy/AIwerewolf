@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
+EVIDENCE_DIR = ROOT / "docs" / "evidence"
 
 DEFAULT_FRAMEWORK_DIR = (
     ROOT / "outputs" / "final_showcase_report" / "real_experiment_leaderboard_ark_framework_g5_20260609"
@@ -28,8 +29,8 @@ DEFAULT_MODEL_DIR = (
 DEFAULT_SINGLE_PREFLIGHT = ROOT / "outputs" / "final_showcase_report" / "real_llm_ark_userkey_preflight.json"
 DEFAULT_MULTI_PREFLIGHT = ROOT / "outputs" / "final_showcase_report" / "real_llm_ark_multi_model_preflight.json"
 
-DEFAULT_REPORT = ROOT / "docs" / "PROJECT_TRACK_B_LEADERBOARD_SHOWCASE.md"
-DEFAULT_FACTS = ROOT / "docs" / "PROJECT_TRACK_B_LEADERBOARD_SHOWCASE.json"
+DEFAULT_REPORT = EVIDENCE_DIR / "PROJECT_TRACK_B_LEADERBOARD_SHOWCASE.md"
+DEFAULT_FACTS = EVIDENCE_DIR / "PROJECT_TRACK_B_LEADERBOARD_SHOWCASE.json"
 
 
 def now_iso() -> str:

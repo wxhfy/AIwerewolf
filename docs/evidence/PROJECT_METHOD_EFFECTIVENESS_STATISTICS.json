@@ -4,9 +4,9 @@
     "retrieval_details": "outputs/retrieval_effectiveness_current/per_query_details.jsonl",
     "mbti_track_c_summary": "docs/experiments/mbti_track_c_auxiliary_analysis/summary.json",
     "mbti_role_deltas": "docs/experiments/mbti_track_c_auxiliary_analysis/role_deltas.csv",
-    "method_facts": "docs/PROJECT_METHOD_EFFECTIVENESS_FACTS.json",
-    "usage_decision_score_facts": "docs/PROJECT_STRATEGY_USAGE_DECISION_SCORE_ANALYSIS.json",
-    "usage_decision_score_report": "docs/PROJECT_STRATEGY_USAGE_DECISION_SCORE_ANALYSIS.md",
+    "method_facts": "docs/evidence/PROJECT_METHOD_EFFECTIVENESS_FACTS.json",
+    "usage_decision_score_facts": "docs/evidence/PROJECT_STRATEGY_USAGE_DECISION_SCORE_ANALYSIS.json",
+    "usage_decision_score_report": "docs/evidence/PROJECT_STRATEGY_USAGE_DECISION_SCORE_ANALYSIS.md",
     "formal_leaderboard": "docs/experiments/formal_v4flash_framework_analysis/leaderboard.csv",
     "formal_rubric": "docs/experiments/formal_v4flash_framework_analysis/rubric_leaderboard.csv"
   },

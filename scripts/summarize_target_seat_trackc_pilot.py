@@ -17,12 +17,13 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
+EVIDENCE_DIR = ROOT / "docs" / "evidence"
 
 DEFAULT_SOURCE = (
     ROOT / "outputs" / "target_seat_trackc_ab_seer_ark_pilot_20260609" / "target_seat_ab_Seer_20260609T082838Z.json"
 )
-DEFAULT_REPORT = ROOT / "docs" / "PROJECT_TARGET_SEAT_TRACKC_PILOT.md"
-DEFAULT_FACTS = ROOT / "docs" / "PROJECT_TARGET_SEAT_TRACKC_PILOT.json"
+DEFAULT_REPORT = EVIDENCE_DIR / "PROJECT_TARGET_SEAT_TRACKC_PILOT.md"
+DEFAULT_FACTS = EVIDENCE_DIR / "PROJECT_TARGET_SEAT_TRACKC_PILOT.json"
 
 
 def now_iso() -> str:
