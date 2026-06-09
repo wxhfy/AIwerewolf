@@ -114,6 +114,7 @@
 | AgentLoop 工具调用 | 一次性 Prompt 难以按需补信息 | 工具调用循环 | 26/27 tool trace 文档记录 | 文档记录 |
 | StrategyRetriever | 静态策略无法回流 | BM25 + policy + 4-filter | 检索策略评估报告 | 实验报告 |
 | hybrid_role_mbti_global | global_only 覆盖不足 | 角色/MBTI/全局分层 | Coverage / P@3 / nDCG@5 | 检索报告 |
+| 单角色检索量化 | 只知道总体 policy 排名，无法说明单个角色实际从哪里命中 | 统计 DefaultEff@3、RoleBucket、GlobalBucket、ExactEmptyQueries | Effective@3 / Coverage / RoleBucketShare | 真实离线检索结果 |
 | 4-filter | 相似度 top-k 可能泄露或不适用 | confidence / visibility / privacy / applicability | candidate leakage / active 池污染 | 文档记录，需补专项统计 |
 | PerStepScorer | 胜负无法解释行为质量 | 逐步复盘分析 | 27/27 ScoredStep 覆盖 | 文档记录 |
 | KnowledgeAbstractor | 复盘无法回到下一局 | lesson -> candidate docs | lessons 数、candidate 增量 | 文档记录 |
@@ -176,7 +177,26 @@
 
 不可写结论：不能把检索评估分数解释为真实对局胜率提升。
 
-### 4.2 方案对比占位模板
+### 4.2 单角色检索量化结果
+
+来源：`outputs/retrieval_effectiveness_current/results.json`、`outputs/retrieval_effectiveness_current/per_role_results.csv`、`outputs/retrieval_effectiveness_current/role_corpus_stats.csv`、`docs/PROJECT_ROLE_RETRIEVAL_QUANTIFICATION.md`。
+
+![单角色检索路径与量化结果](assets/final_report/single-role-retrieval.svg)
+
+默认策略 `hybrid_role_mbti_global` 的单角色路径为：`same_role_same_mbti -> same_role_all_mbti -> global`。当前离线 query set 中，默认策略 Coverage 为 1.0000，Effective@3 为 0.5000，P@3 为 0.2564，RoleBucketShare 为 0.9923，GlobalBucketShare 为 0.0077。精确 `same_role_same_mbti` 作为唯一策略时 Coverage 只有 0.1538，空检索 22/26，说明它适合作为优先桶，但当前不适合单独作为默认检索范围。
+
+| Role | DefaultEff@3 | GlobalEff@3 | ExactEff@3 | Default P@3 | Coverage | RoleBucket | GlobalBucket | 诊断 |
+|---|---:|---:|---:|---:|---:|---:|---:|---|
+| Guard | 1.0000 | 0.0000 | 0.0000 | 0.5000 | 1.0000 | 1.0000 | 0.0000 | 当前命中充分，需补 role+MBTI 细分卡 |
+| Hunter | 1.0000 | 0.5000 | 0.0000 | 0.5000 | 1.0000 | 1.0000 | 0.0000 | 当前命中充分，需补 role+MBTI 细分卡 |
+| Seer | 0.6000 | 0.0000 | 0.2000 | 0.3333 | 1.0000 | 1.0000 | 0.0000 | 覆盖稳定，Top-3 高相关密度仍需提升 |
+| Villager | 0.5000 | 0.3333 | 0.0000 | 0.2778 | 1.0000 | 0.9667 | 0.0333 | 覆盖稳定，需扩充村民关键局面策略 |
+| Werewolf | 0.2857 | 0.0000 | 0.1429 | 0.1429 | 1.0000 | 1.0000 | 0.0000 | 相关性是主要短板，需补狼人阶段/动作策略 |
+| Witch | 0.2500 | 0.2500 | 0.0000 | 0.0833 | 1.0000 | 1.0000 | 0.0000 | 相关性是主要短板，需补救/毒关键局面策略 |
+
+可写结论：默认单角色检索可以稳定覆盖 6 个核心角色，并且检索结果主要来自本角色策略桶。结论边界：每个角色 query 数仍偏少，当前结果是离线弱标注检索有效性，不是在线对局因果提升。
+
+### 4.3 方案对比占位模板
 
 以下为方案对比展示模板，数值为占位示例，后续需用真实在线对局实验替换。该表用于展示汇报图表结构，不用于证明某一检索策略在线最优。
 

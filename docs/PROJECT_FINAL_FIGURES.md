@@ -208,6 +208,33 @@ flowchart TD
 
 说明：该图表用于展示检索策略在线对比应包含哪些指标。当前可引用的检索结果主要来自 `docs/experiments/retrieval_policy_results.md` 的离线弱标注和 LLM 复核，不能直接写成真实对局提升。
 
+## 图 13 单角色检索路径与量化结果
+
+![单角色检索路径与量化结果](assets/final_report/single-role-retrieval.svg)
+
+```mermaid
+flowchart LR
+  accTitle: Single Role Retrieval
+  accDescr: A single agent provides role, MBTI, alignment, phase, action type and keywords. The retriever recalls candidates, fills same-role and global buckets, applies quality gates, and injects top-k strategies into the prompt.
+  ctx[AgentContext: role / MBTI / phase / action / keywords]
+  recall[keyword / regex recall + BM25 fallback]
+  exact[same_role_same_mbti]
+  role[same_role_all_mbti]
+  global[global fallback]
+  gate[quality gate + dedup + top-k]
+  prompt[Strategy Prompt]
+  ctx --> recall
+  recall --> exact
+  recall --> role
+  recall --> global
+  exact --> gate
+  role --> gate
+  global --> gate
+  gate --> prompt
+```
+
+说明：该图回答“单个角色到底怎么检索”。默认 `hybrid_role_mbti_global` 先查精确 role+MBTI，再查本角色通用策略，最后才使用 global 兜底。当前离线量化结果为 Effective@3=50.00%、Coverage=100.00%、RoleBucketShare=99.23%、GlobalBucketShare=0.77%。这些是真实离线检索指标，来源为 `outputs/retrieval_effectiveness_current/`，不能写成在线胜率提升结论。
+
 ## 附：新增 SVG 素材清单
 
 | 文件 | 用途 |
@@ -219,6 +246,7 @@ flowchart TD
 | `docs/assets/final_report/module-map.svg` | 功能模块图 |
 | `docs/assets/final_report/game-operation-flow.svg` | 单局操作流程 |
 | `docs/assets/final_report/track-bc-flow.svg` | Track B/C 流程 |
+| `docs/assets/final_report/single-role-retrieval.svg` | 单角色检索路径与量化 |
 | `docs/assets/final_report/placeholder-stability.svg` | 多局稳定性占位可视化 |
 | `docs/assets/final_report/placeholder-retrieval-policy.svg` | 检索策略占位可视化 |
 

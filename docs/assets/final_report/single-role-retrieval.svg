@@ -1,0 +1,134 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-label="Single role strategy retrieval flow and metrics">
+  <defs>
+    <style>
+      .bg{fill:#f7f9fc}
+      .panel{fill:#fff;stroke:#d7dde8;stroke-width:1.4;rx:18}
+      .ctx{fill:#eef6ff;stroke:#8bbaf0;stroke-width:1.3;rx:14}
+      .recall{fill:#effaf3;stroke:#89c69b;stroke-width:1.3;rx:14}
+      .bucket{fill:#fff7e8;stroke:#d7a652;stroke-width:1.3;rx:14}
+      .gate{fill:#fff0f1;stroke:#de8d97;stroke-width:1.3;rx:14}
+      .metric{fill:#f4f6f8;stroke:#b7c0cf;stroke-width:1.3;rx:14}
+      .title{font:700 34px Arial,"Noto Sans SC",sans-serif;fill:#101828}
+      .sub{font:400 17px Arial,"Noto Sans SC",sans-serif;fill:#667085}
+      .h{font:700 20px Arial,"Noto Sans SC",sans-serif;fill:#111827}
+      .m{font:700 16px Arial,"Noto Sans SC",sans-serif;fill:#1f2937}
+      .s{font:400 13.5px Arial,"Noto Sans SC",sans-serif;fill:#586174}
+      .tiny{font:400 12px Arial,"Noto Sans SC",sans-serif;fill:#667085}
+      .kpi{font:700 28px Arial,"Noto Sans SC",sans-serif;fill:#0f172a}
+      .num{font:700 14px Arial,"Noto Sans SC",sans-serif;fill:#fff}
+      .dot{fill:#2563eb}
+      .arrow{stroke:#64748b;stroke-width:2.2;fill:none;marker-end:url(#arrow)}
+      .amber{stroke:#b45309;stroke-width:2.2;fill:none;marker-end:url(#arrowAmber)}
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 Z" fill="#64748b"/></marker>
+    <marker id="arrowAmber" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 Z" fill="#b45309"/></marker>
+  </defs>
+
+  <rect class="bg" width="1600" height="900"/>
+  <text class="title" x="70" y="66">单角色策略检索路径与当前量化结果</text>
+  <text class="sub" x="70" y="96">默认 policy: hybrid_role_mbti_global；数据来源：outputs/retrieval_effectiveness_current/，弱标注离线 query set。</text>
+
+  <rect class="panel" x="56" y="132" width="1488" height="700"/>
+
+  <text class="h" x="92" y="178">运行路径</text>
+  <text class="tiny" x="92" y="202">每个 Agent 带入自己的角色、MBTI、阵营、阶段、动作类型和关键词；检索结果进入 Strategy Prompt 层。</text>
+
+  <rect class="ctx" x="96" y="250" width="240" height="132"/>
+  <circle class="dot" cx="122" cy="276" r="15"/><text class="num" x="117" y="281">1</text>
+  <text class="m" x="149" y="280">AgentContext</text>
+  <text class="s" x="122" y="313">role / MBTI / alignment</text>
+  <text class="s" x="122" y="336">phase / action_type / day</text>
+  <text class="s" x="122" y="359">keywords from AgentLoop</text>
+
+  <rect class="recall" x="402" y="250" width="252" height="132"/>
+  <circle class="dot" cx="428" cy="276" r="15"/><text class="num" x="423" y="281">2</text>
+  <text class="m" x="455" y="280">候选召回</text>
+  <text class="s" x="428" y="313">关键词 / 正则多字段匹配</text>
+  <text class="s" x="428" y="336">situation / strategy / rationale</text>
+  <text class="s" x="428" y="359">候选不足时 BM25 fallback</text>
+
+  <rect class="bucket" x="720" y="214" width="268" height="94"/>
+  <circle class="dot" cx="746" cy="240" r="15"/><text class="num" x="741" y="245">3</text>
+  <text class="m" x="773" y="244">第一桶：role + MBTI</text>
+  <text class="s" x="746" y="276">same_role_same_mbti</text>
+  <text class="tiny" x="746" y="296">最精确，但当前语料稀疏</text>
+
+  <rect class="bucket" x="720" y="330" width="268" height="94"/>
+  <circle class="dot" cx="746" cy="356" r="15"/><text class="num" x="741" y="361">4</text>
+  <text class="m" x="773" y="360">第二桶：same role</text>
+  <text class="s" x="746" y="392">same_role_all_mbti</text>
+  <text class="tiny" x="746" y="412">当前主要覆盖来源</text>
+
+  <rect class="bucket" x="720" y="446" width="268" height="94"/>
+  <circle class="dot" cx="746" cy="472" r="15"/><text class="num" x="741" y="477">5</text>
+  <text class="m" x="773" y="476">第三桶：global</text>
+  <text class="s" x="746" y="508">global fallback</text>
+  <text class="tiny" x="746" y="528">只在角色桶不足时兜底</text>
+
+  <rect class="gate" x="1060" y="250" width="260" height="132"/>
+  <circle class="dot" cx="1086" cy="276" r="15"/><text class="num" x="1081" y="281">6</text>
+  <text class="m" x="1113" y="280">质量门禁 + Top-K</text>
+  <text class="s" x="1086" y="313">quality threshold 0.72</text>
+  <text class="s" x="1086" y="336">dedup / bucket_trace</text>
+  <text class="s" x="1086" y="359">strict 4-filter 安全管线</text>
+
+  <rect class="ctx" x="1368" y="250" width="120" height="132"/>
+  <text class="m" x="1388" y="289">Strategy</text>
+  <text class="m" x="1388" y="313">Prompt</text>
+  <text class="s" x="1388" y="345">进入下一步</text>
+  <text class="s" x="1388" y="366">Decision</text>
+
+  <path class="arrow" d="M336,316 L394,316"/>
+  <path class="arrow" d="M654,316 L710,286"/>
+  <path class="arrow" d="M654,316 L710,377"/>
+  <path class="arrow" d="M654,316 L710,493"/>
+  <path class="arrow" d="M988,261 L1050,300"/>
+  <path class="arrow" d="M988,377 L1050,322"/>
+  <path class="arrow" d="M988,493 L1050,344"/>
+  <path class="arrow" d="M1320,316 L1358,316"/>
+
+  <text class="h" x="92" y="482">当前真实量化指标</text>
+  <text class="tiny" x="92" y="506">口径：Effective@3 = Top-3 至少一条相关策略；Coverage = 查询是否返回策略；RoleBucket = Top-5 来自角色桶比例。</text>
+
+  <rect class="metric" x="96" y="540" width="220" height="118"/>
+  <text class="tiny" x="122" y="573">总体 Effective@3</text>
+  <text class="kpi" x="122" y="615">50.00%</text>
+  <text class="s" x="122" y="641">hybrid_role_mbti_global</text>
+
+  <rect class="metric" x="348" y="540" width="220" height="118"/>
+  <text class="tiny" x="374" y="573">总体 P@3</text>
+  <text class="kpi" x="374" y="615">0.2564</text>
+  <text class="s" x="374" y="641">Top-3 结果纯度</text>
+
+  <rect class="metric" x="600" y="540" width="220" height="118"/>
+  <text class="tiny" x="626" y="573">Coverage</text>
+  <text class="kpi" x="626" y="615">100%</text>
+  <text class="s" x="626" y="641">当前 26 条查询无空结果</text>
+
+  <rect class="metric" x="852" y="540" width="220" height="118"/>
+  <text class="tiny" x="878" y="573">RoleBucketShare</text>
+  <text class="kpi" x="878" y="615">99.23%</text>
+  <text class="s" x="878" y="641">主要来自本角色策略桶</text>
+
+  <rect class="metric" x="1104" y="540" width="220" height="118"/>
+  <text class="tiny" x="1130" y="573">GlobalBucketShare</text>
+  <text class="kpi" x="1130" y="615">0.77%</text>
+  <text class="s" x="1130" y="641">global 仅作兜底</text>
+
+  <rect class="metric" x="1356" y="540" width="132" height="118"/>
+  <text class="tiny" x="1376" y="573">Exact Empty</text>
+  <text class="kpi" x="1376" y="615">22/26</text>
+  <text class="s" x="1376" y="641">role+MBTI 过窄</text>
+
+  <text class="h" x="92" y="720">默认策略分角色 Effective@3</text>
+  <rect class="metric" x="96" y="742" width="1392" height="54"/>
+  <text class="m" x="122" y="775">Guard 1.00</text>
+  <text class="m" x="330" y="775">Hunter 1.00</text>
+  <text class="m" x="548" y="775">Seer 0.60</text>
+  <text class="m" x="738" y="775">Villager 0.50</text>
+  <text class="m" x="955" y="775">Werewolf 0.2857</text>
+  <text class="m" x="1238" y="775">Witch 0.25</text>
+
+  <path class="amber" d="M854,424 C876,462 900,492 942,535"/>
+  <text class="tiny" x="960" y="510">诊断：same-role 通用池保障覆盖，role+MBTI 细分池仍需扩充。</text>
+</svg>

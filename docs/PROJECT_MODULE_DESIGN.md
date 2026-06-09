@@ -159,11 +159,11 @@
 **内部流程**：
 
 1. 从 PostgreSQL active 策略知识构建索引。
-2. 按 RetrievalPolicy 选择候选范围。
-3. 使用倒排索引、关键词匹配和 BM25 排序。
-4. 应用 4-filter 安全管线。
-5. 返回策略摘要或正文。
-6. 将 bucket、policy、doc_id 等写入 trace。
+2. 根据 Agent 的 `role / mbti / alignment / phase / action_type / keywords` 构造检索上下文。
+3. 先用关键词或正则在 situation、strategy、rationale 等字段中召回候选，候选不足时使用 BM25 兜底。
+4. 按 RetrievalPolicy 选择候选范围；默认 `hybrid_role_mbti_global` 依次填充 `same_role_same_mbti -> same_role_all_mbti -> global`。
+5. 应用质量门禁、去重、Top-K 填充和 4-filter 安全管线。
+6. 返回策略摘要或正文，并将 bucket、policy、doc_id 等写入 trace。
 
 **关键设计**：
 
@@ -173,6 +173,21 @@
 | RetrievalPolicy | 支持角色、MBTI、全局和混合策略 |
 | 4-filter | confidence / visibility / privacy / applicability |
 | candidate 屏蔽 | 对局内默认只用 active 知识 |
+
+**单角色量化结果**：
+
+| 指标 | 当前值 | 来源 |
+|---|---:|---|
+| 默认 policy | `hybrid_role_mbti_global` | `backend/agents/cognitive/tools.py` |
+| query set | 26 | `outputs/retrieval_effectiveness_current/results.json` |
+| Coverage | 1.0000 | 同上 |
+| Effective@3 | 0.5000 | 同上 |
+| P@3 | 0.2564 | 同上 |
+| RoleBucketShare | 0.9923 | 同上 |
+| GlobalBucketShare | 0.0077 | 同上 |
+| `same_role_same_mbti` empty | 22/26 | 同上 |
+
+分角色 Effective@3：Guard 1.0000、Hunter 1.0000、Seer 0.6000、Villager 0.5000、Werewolf 0.2857、Witch 0.2500。该结果说明当前默认检索能稳定覆盖核心角色，且主要从本角色策略桶返回内容；但它是离线弱标注检索指标，不能直接解释为在线胜率提升。
 
 **设计收益**：策略不写死；无需 GPU；可解释；可安全回流。
 
