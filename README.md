@@ -1,11 +1,11 @@
-# 面向狼人杀博弈的多智能体认知决策与自进化系统
+# AI Werewolf
 
 <p align="center">
   <img src="docs/assets/ai-werewolf-icon.svg" alt="AI Werewolf logo" width="112">
 </p>
 
 <p align="center">
-  <strong>面向社会推理博弈的多智能体狼人杀研究平台</strong><br>
+  <strong>面向狼人杀博弈的多智能体认知决策与自进化系统</strong><br>
   Play complete games, evaluate every decision, and evolve reusable strategy knowledge.
 </p>
 
