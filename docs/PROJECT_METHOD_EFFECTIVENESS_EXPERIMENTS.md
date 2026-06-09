@@ -1,6 +1,6 @@
 # 项目方法有效性实验报告
 
-生成时间：2026-06-09T12:02:09+08:00
+生成时间：2026-06-09T12:28:38+08:00
 
 可追溯性说明：本报告引用的 `docs/experiments/` 和 `outputs/` 原始产物是本地实验输出，按仓库规则不进入 GitHub；可提交的机器可读摘要已汇总到 `docs/PROJECT_METHOD_EFFECTIVENESS_FACTS.json`、`docs/PROJECT_METHOD_EFFECTIVENESS_STATISTICS.json`、`docs/PROJECT_ROLE_RETRIEVAL_FACTS.json` 和 `docs/PROJECT_STRATEGY_USAGE_DECISION_SCORE_ANALYSIS.json`。
 
@@ -31,7 +31,7 @@
 | retrieval query/docs | 26 / 374 | outputs/retrieval_effectiveness_current/results.json | 当前离线检索实验 |
 | default retrieval P@3 / Coverage | 0.2564 / 1.0000 | outputs/retrieval_effectiveness_current/results.json | 弱标注离线指标 |
 | Track C audit invalid/leak | 0 / 0 | full_project_real_audit/audit_summary.json | 知识安全审计 |
-| runtime helpful/used | 80.17% | PostgreSQL knowledge_usage_feedback / strategy_knowledge_docs current non-fake snapshot | 当前 DB 快照，非因果分数 |
+| runtime helpful/used | 80.18% | PostgreSQL knowledge_usage_feedback / strategy_knowledge_docs current non-fake snapshot | 当前 DB 快照，非因果分数 |
 
 ## 4. Track C 检索有效性
 
@@ -122,24 +122,24 @@
 
 | Metric | Value |
 | --- | --- |
-| feedback_total | 133541 |
-| retrieved | 133541 |
-| used | 51383 |
-| helpful | 41192 |
-| used/retrieved | 38.48% |
-| helpful/retrieved | 30.85% |
-| helpful/used | 80.17% |
+| feedback_total | 135650 |
+| retrieved | 135650 |
+| used | 51439 |
+| helpful | 41246 |
+| used/retrieved | 37.92% |
+| helpful/retrieved | 30.41% |
+| helpful/used | 80.18% |
 | avg_score_delta | 0.0000 |
 | strategy_docs_active | 387 |
-| strategy_docs_candidate | 200773 |
+| strategy_docs_candidate | 210605 |
 
 运行时 feedback Wilson 95% CI：
 
 | Metric | Count | Rate | Wilson95CI |
 | --- | --- | --- | --- |
-| used/retrieved | 51383/133541 | 0.3848 | [0.3822, 0.3874] |
-| helpful/retrieved | 41192/133541 | 0.3085 | [0.3060, 0.3109] |
-| helpful/used | 41192/51383 | 0.8017 | [0.7982, 0.8051] |
+| used/retrieved | 51439/135650 | 0.3792 | [0.3766, 0.3818] |
+| helpful/retrieved | 41246/135650 | 0.3041 | [0.3016, 0.3065] |
+| helpful/used | 41246/51439 | 0.8018 | [0.7984, 0.8053] |
 
 按角色 feedback：
 
@@ -210,6 +210,7 @@
 
 | Source | Role | Baseline | Candidate | Paired | ScoreDelta | RoleTaskDelta | WinDelta | MaxDays | Scope | Fallback | Invalid | Accepted | ClaimLevel |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| outputs/target_seat_trackc_ab_seer_smoke3_maxday1/target_seat_ab_Seer_20260609T042435Z.json | Seer | basic_react | rag_react | 3 | -1.2000 | 0.0867 | 0.0000 | 1 | smoke_only | 0 | 0 | False | ci_not_positive |
 | outputs/target_seat_trackc_ab_seer_maxday1_probe/target_seat_ab_Seer_20260609T034156Z.json | Seer | basic_react | rag_react | 1 | 0.0000 | 0.0000 | 0.0000 | 1 | smoke_only | 0 | 0 | False | ci_not_positive |
 
 解释：`claim_scope=smoke_only` 的 target-seat 输出只说明真实 runner、per-agent feature flags、paired delta 和健康门禁能跑通；只有正式样本 `Accepted=true` 且 `ClaimLevel=causal_supported` 时，才能把 Track C 写成对单个目标席位的因果增益。
@@ -249,11 +250,11 @@
 | 精确 role+MBTI 检索过窄，不适合作为默认策略 | offline_retrieval_ablation | supported | same_role_same_mbti_coverage=0.1538; empty=22 | outputs/retrieval_effectiveness_current/results.json | 可作为补充桶或专项实验，不作为默认运行策略。 |
 | 精确 role+MBTI 稀疏主要来自当前知识池分布 | offline_retrieval_corpus | supported | roles=6; exact_empty_queries=21; global_generic_docs=35 | outputs/retrieval_effectiveness_current/role_corpus_stats.csv | 这是 active 知识池规模统计；不等同在线策略使用率。 |
 | Track C 知识库安全卫生达标 | audit_gate | supported | docs=131; invalid=0; leak=0; source_event_coverage=0.9924 | docs/experiments/full_project_real_audit/audit_summary.json | 审计样本和当前 DB 快照可能不同，正式归档需冻结 experiment_id。 |
-| 运行时 feedback 显示被使用策略多数被标记 helpful | runtime_db_snapshot | supported | retrieved=133541; used=51383; helpful=41192; helpful/used=80.17% | PostgreSQL knowledge_usage_feedback / strategy_knowledge_docs current non-fake snapshot | 当前 score_delta 平均仍接近 0，feedback 不能直接等同因果增益。 |
+| 运行时 feedback 显示被使用策略多数被标记 helpful | runtime_db_snapshot | supported | retrieved=135650; used=51439; helpful=41246; helpful/used=80.18% | PostgreSQL knowledge_usage_feedback / strategy_knowledge_docs current non-fake snapshot | 当前 score_delta 平均仍接近 0，feedback 不能直接等同因果增益。 |
 | 策略使用决策与更高 Track B 逐步评分相关 | observational_decision_score_join | supported | decision_rows=170399; used=3088; unused=167311; delta=0.0823; ci=[0.0764,0.0882]; strict_weighted_delta=0.0967; strict_strata=48/10/0 | docs/PROJECT_STRATEGY_USAGE_DECISION_SCORE_ANALYSIS.json | 观测性关联，不能替代 target-seat paired A/B 因果证明。 |
 | 策略使用评分关联覆盖 6 个核心角色 | role_internal_observational_control | supported | core_positive_roles=6/6; weighted_deltas=Werewolf:0.0899,Guard:0.1006,Seer:0.1272,Witch:0.0670,Villager:0.1220,Hunter:0.0779 | docs/PROJECT_STRATEGY_USAGE_DECISION_SCORE_ANALYSIS.json | 角色内按 action/tier/day/phase 控制后的观测性关联；非核心或低样本角色暂不声明，negative_or_weak=1。 |
 | Track C 开关存在角色/MBTI 层面的正向趋势 | auxiliary_trend | trend_only | off=0.3508; on=0.3784; avg_non_wolf_delta=0.0643 | docs/experiments/mbti_track_c_auxiliary_analysis/summary.json | 全席位同时切换，不是 target-seat 因果 A/B。 |
-| Track C 对单个目标席位的因果增益 | target_seat_paired_ab | smoke_only | role=Seer; paired=1; score_delta=0.0000; accepted=False; scope=smoke_only; max_days=1 | outputs/target_seat_trackc_ab_seer_maxday1_probe/target_seat_ab_Seer_20260609T034156Z.json | micro/max_days=1 输出只能证明 runner 可运行；只有正式样本 accepted=true 且样本/健康/CI 门禁通过时，才能写成因果支持。 |
+| Track C 对单个目标席位的因果增益 | target_seat_paired_ab | smoke_only | role=Seer; paired=3; score_delta=-1.2000; accepted=False; scope=smoke_only; max_days=1 | outputs/target_seat_trackc_ab_seer_smoke3_maxday1/target_seat_ab_Seer_20260609T042435Z.json | micro/max_days=1 输出只能证明 runner 可运行；只有正式样本 accepted=true 且样本/健康/CI 门禁通过时，才能写成因果支持。 |
 | Track C 在线烟测能把策略注入真实决策 | real_llm_smoke | smoke_only | rows=5; max_knowledge_hit=0.9200; fallback_sum=0 | docs/experiments/track_c_runtime_fix/*/group_results.csv | 样本小且有正反结果，只能证明链路可运行和策略命中，不能证明胜率提升。 |
 | 完整规则/角色/阶段覆盖已经过真实审计 | full_project_audit | supported | natural_games=9; controlled_cases=9; roles=8; phases=21; issues=0 | docs/experiments/full_project_real_audit/audit_summary.json | 审计证明平台覆盖，不是 Track C 单独增益。 |
 

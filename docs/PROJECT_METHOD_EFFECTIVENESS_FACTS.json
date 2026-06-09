@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-06-09T12:02:09+08:00",
+  "generated_at": "2026-06-09T12:28:38+08:00",
   "sources": {
     "formal_summary": "docs/experiments/formal_v4flash_framework_analysis/summary.json",
     "formal_leaderboard": "docs/experiments/formal_v4flash_framework_analysis/leaderboard.csv",
@@ -2127,18 +2127,18 @@
   },
   "runtime_feedback": {
     "status": "ok",
-    "queried_at": "2026-06-09T12:02:09+08:00",
-    "feedback_total": 133541,
-    "retrieved": 133541,
-    "used": 51383,
-    "helpful": 41192,
-    "used_rate": 0.3847732157165215,
-    "helpful_over_retrieved": 0.308459574213163,
-    "helpful_over_used": 0.8016659206352296,
+    "queried_at": "2026-06-09T12:28:38+08:00",
+    "feedback_total": 135650,
+    "retrieved": 135650,
+    "used": 51439,
+    "helpful": 41246,
+    "used_rate": 0.37920383339476593,
+    "helpful_over_retrieved": 0.304061924069296,
+    "helpful_over_used": 0.8018429596220766,
     "avg_score_delta": 0.0,
-    "strategy_docs_total": 201177,
+    "strategy_docs_total": 211009,
     "strategy_docs_active": 387,
-    "strategy_docs_candidate": 200773,
+    "strategy_docs_candidate": 210605,
     "strategy_docs_deprecated": 17,
     "by_role": [
       {
@@ -2861,23 +2861,23 @@
       "status": "ok",
       "source": "PostgreSQL knowledge_usage_feedback / strategy_knowledge_docs current non-fake snapshot",
       "filter": "excludes feedback games and knowledge docs whose players.model_name contains fake, plus fake target-seat output game_ids",
-      "retrieved": 133541,
-      "used": 51383,
-      "helpful": 41192,
+      "retrieved": 135650,
+      "used": 51439,
+      "helpful": 41246,
       "used_over_retrieved": {
-        "rate": 0.3847732157165215,
-        "ci_low": 0.38216699675079674,
-        "ci_high": 0.3873860639943066
+        "rate": 0.37920383339476593,
+        "ci_low": 0.3766252837337987,
+        "ci_high": 0.3817892247426055
       },
       "helpful_over_retrieved": {
-        "rate": 0.308459574213163,
-        "ci_low": 0.3059879387241235,
-        "ci_high": 0.31094222954678635
+        "rate": 0.304061924069296,
+        "ci_low": 0.3016194951672197,
+        "ci_high": 0.30651545056659874
       },
       "helpful_over_used": {
-        "rate": 0.8016659206352296,
-        "ci_low": 0.7981956263752185,
-        "ci_high": 0.8050911107493298
+        "rate": 0.8018429596220766,
+        "ci_low": 0.7983757117151543,
+        "ci_high": 0.8052651260413665
       },
       "interpretation": "Current non-fake PostgreSQL snapshot. This is usage feedback, not causal score lift."
     },
@@ -9427,6 +9427,51 @@
   ],
   "target_seat_ab": [
     {
+      "source": "outputs/target_seat_trackc_ab_seer_smoke3_maxday1/target_seat_ab_Seer_20260609T042435Z.json",
+      "generated_at": "2026-06-09T04:28:06.013381Z",
+      "target_role": "Seer",
+      "baseline_framework": "basic_react",
+      "candidate_framework": "rag_react",
+      "paired_seed_count": 3,
+      "target_win_rate_delta": 0.0,
+      "target_adjusted_score_delta": -1.2000000000000004,
+      "target_role_task_delta": 0.08666666666666667,
+      "candidate_fallback_count": 0,
+      "candidate_invalid_count": 0,
+      "accepted": false,
+      "claim_level": "ci_not_positive",
+      "max_days": 1,
+      "player_count": 7,
+      "elapsed_s": 209.567,
+      "claim_scope": "smoke_only",
+      "bootstrap_ci": {
+        "adjusted_final_score_delta": {
+          "samples": 3,
+          "mean": -1.2,
+          "ci95_low": -3.6,
+          "ci95_high": 0.0
+        },
+        "role_task_score_delta": {
+          "samples": 3,
+          "mean": 0.0867,
+          "ci95_low": 0.0,
+          "ci95_high": 0.26
+        },
+        "process_score_delta": {
+          "samples": 3,
+          "mean": -0.5933,
+          "ci95_low": -1.78,
+          "ci95_high": 0.0
+        },
+        "target_win_rate_delta": {
+          "samples": 3,
+          "mean": 0.0,
+          "ci95_low": 0.0,
+          "ci95_high": 0.0
+        }
+      }
+    },
+    {
       "source": "outputs/target_seat_trackc_ab_seer_maxday1_probe/target_seat_ab_Seer_20260609T034156Z.json",
       "generated_at": "2026-06-09T03:43:28.279504Z",
       "target_role": "Seer",
@@ -10337,7 +10382,7 @@
       "claim": "运行时 feedback 显示被使用策略多数被标记 helpful",
       "evidence_level": "runtime_db_snapshot",
       "status": "supported",
-      "metric": "retrieved=133541; used=51383; helpful=41192; helpful/used=80.17%",
+      "metric": "retrieved=135650; used=51439; helpful=41246; helpful/used=80.18%",
       "source": "PostgreSQL knowledge_usage_feedback / strategy_knowledge_docs current non-fake snapshot",
       "boundary": "当前 score_delta 平均仍接近 0，feedback 不能直接等同因果增益。"
     },
@@ -10369,8 +10414,8 @@
       "claim": "Track C 对单个目标席位的因果增益",
       "evidence_level": "target_seat_paired_ab",
       "status": "smoke_only",
-      "metric": "role=Seer; paired=1; score_delta=0.0000; accepted=False; scope=smoke_only; max_days=1",
-      "source": "outputs/target_seat_trackc_ab_seer_maxday1_probe/target_seat_ab_Seer_20260609T034156Z.json",
+      "metric": "role=Seer; paired=3; score_delta=-1.2000; accepted=False; scope=smoke_only; max_days=1",
+      "source": "outputs/target_seat_trackc_ab_seer_smoke3_maxday1/target_seat_ab_Seer_20260609T042435Z.json",
       "boundary": "micro/max_days=1 输出只能证明 runner 可运行；只有正式样本 accepted=true 且样本/健康/CI 门禁通过时，才能写成因果支持。"
     },
     {
