@@ -1,0 +1,1238 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Werewolf 对局动画演示</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --paper: #fbfaf7;
+      --surface: #ffffff;
+      --surface-2: #f2efe8;
+      --ink: #171411;
+      --muted: #756f66;
+      --line: #ded8cc;
+      --village: #1d7a52;
+      --village-soft: #e3f2eb;
+      --wolf: #b62f26;
+      --wolf-soft: #f8e2df;
+      --track: #2457a6;
+      --track-soft: #e2ebfa;
+      --gold: #a8751a;
+      --gold-soft: #fbefd5;
+      --shadow: 0 20px 70px rgba(23, 20, 17, 0.12);
+      --radius: 8px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      min-height: 100%;
+    }
+
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at 15% 12%, rgba(168, 117, 26, 0.12), transparent 24rem),
+        linear-gradient(135deg, rgba(29, 122, 82, 0.06), transparent 34%),
+        var(--paper);
+      color: var(--ink);
+      font-family: "Noto Serif SC", "Songti SC", "Microsoft YaHei", serif;
+      overflow-x: hidden;
+      transition: background 700ms ease;
+    }
+
+    body[data-mode="night"] {
+      background:
+        radial-gradient(circle at 78% 12%, rgba(36, 87, 166, 0.16), transparent 22rem),
+        linear-gradient(135deg, rgba(23, 20, 17, 0.08), transparent 48%),
+        var(--paper);
+    }
+
+    button {
+      border: 0;
+      font: inherit;
+    }
+
+    .page {
+      width: min(1540px, calc(100vw - 40px));
+      margin: 0 auto;
+      padding: 26px 0 34px;
+    }
+
+    .topbar {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 20px;
+      align-items: end;
+      margin-bottom: 18px;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin: 0 0 10px;
+      color: var(--track);
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .eyebrow::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--track);
+      box-shadow: 0 0 0 6px var(--track-soft);
+    }
+
+    h1 {
+      margin: 0;
+      max-width: 1040px;
+      font-size: clamp(32px, 4.2vw, 58px);
+      line-height: 1.08;
+      font-weight: 900;
+      letter-spacing: 0;
+    }
+
+    .subline {
+      margin: 14px 0 0;
+      max-width: 760px;
+      color: var(--muted);
+      font-family: "Microsoft YaHei", "Noto Sans SC", sans-serif;
+      font-size: 15px;
+      line-height: 1.8;
+    }
+
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      min-height: 34px;
+      padding: 0 12px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.78);
+      color: var(--muted);
+      font-family: "Microsoft YaHei", "Noto Sans SC", sans-serif;
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .chip strong {
+      color: var(--ink);
+      margin-left: 6px;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 292px minmax(0, 1fr) 336px;
+      gap: 16px;
+      align-items: start;
+    }
+
+    .panel,
+    .stage,
+    .timeline-shell {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(255, 255, 255, 0.86);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(14px);
+    }
+
+    .panel {
+      overflow: hidden;
+    }
+
+    .panel-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 16px 16px 12px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .panel-title h2 {
+      margin: 0;
+      font-size: 17px;
+      line-height: 1.2;
+    }
+
+    .panel-title span {
+      color: var(--muted);
+      font-family: "Microsoft YaHei", "Noto Sans SC", sans-serif;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .player-list {
+      display: grid;
+      gap: 8px;
+      padding: 12px;
+    }
+
+    .player-card {
+      position: relative;
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: center;
+      min-height: 72px;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface);
+      transition: transform 260ms ease, border-color 260ms ease, box-shadow 260ms ease;
+    }
+
+    .player-card.is-actor {
+      transform: translateX(4px);
+      border-color: var(--track);
+      box-shadow: 0 12px 32px rgba(36, 87, 166, 0.16);
+    }
+
+    .player-card.is-target {
+      border-color: var(--gold);
+      background: var(--gold-soft);
+    }
+
+    .seat {
+      display: grid;
+      place-items: center;
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      color: #fff;
+      font-family: Georgia, serif;
+      font-weight: 900;
+      background: var(--village);
+    }
+
+    .player-card[data-camp="wolf"] .seat {
+      background: var(--wolf);
+    }
+
+    .player-main {
+      min-width: 0;
+    }
+
+    .player-name {
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+      min-width: 0;
+      font-weight: 900;
+    }
+
+    .player-name small {
+      color: var(--muted);
+      font-family: "Microsoft YaHei", "Noto Sans SC", sans-serif;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .player-meta {
+      margin-top: 5px;
+      color: var(--muted);
+      font-family: "Microsoft YaHei", "Noto Sans SC", sans-serif;
+      font-size: 11px;
+      line-height: 1.45;
+    }
+
+    .score-badge {
+      display: grid;
+      place-items: center;
+      width: 44px;
+      height: 44px;
+      border-radius: var(--radius);
+      background: var(--surface-2);
+      color: var(--ink);
+      font-family: Georgia, serif;
+      font-size: 15px;
+      font-weight: 900;
+    }
+
+    .stage {
+      position: relative;
+      min-height: 676px;
+      padding: 20px;
+      overflow: hidden;
+    }
+
+    .stage::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      opacity: 0.7;
+      background:
+        linear-gradient(90deg, rgba(222, 216, 204, 0.38) 1px, transparent 1px),
+        linear-gradient(0deg, rgba(222, 216, 204, 0.34) 1px, transparent 1px);
+      background-size: 52px 52px;
+      mask-image: linear-gradient(to bottom, black, transparent 90%);
+      pointer-events: none;
+    }
+
+    .stage-head,
+    .stage-body,
+    .controls,
+    .seat-rail {
+      position: relative;
+      z-index: 1;
+    }
+
+    .stage-head {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 14px;
+      align-items: start;
+      margin-bottom: 18px;
+    }
+
+    .round-kicker {
+      margin: 0 0 8px;
+      color: var(--muted);
+      font-family: "Microsoft YaHei", "Noto Sans SC", sans-serif;
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .phase {
+      margin: 0;
+      font-size: clamp(28px, 4vw, 48px);
+      line-height: 1.08;
+      font-weight: 900;
+    }
+
+    .result-card {
+      min-width: 184px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface);
+    }
+
+    .result-card strong {
+      display: block;
+      color: var(--village);
+      font-size: 20px;
+      line-height: 1.1;
+    }
+
+    .result-card span {
+      display: block;
+      margin-top: 7px;
+      color: var(--muted);
+      font-family: "Microsoft YaHei", "Noto Sans SC", sans-serif;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .seat-rail {
+      display: grid;
+      grid-template-columns: repeat(7, minmax(0, 1fr));
+      gap: 8px;
+      margin-bottom: 18px;
+    }
+
+    .seat-pill {
+      min-width: 0;
+      padding: 9px 8px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(255, 255, 255, 0.84);
+      color: var(--muted);
+      font-family: "Microsoft YaHei", "Noto Sans SC", sans-serif;
+      font-size: 11px;
+      font-weight: 800;
+      text-align: center;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      transition: transform 260ms ease, background 260ms ease, color 260ms ease, border-color 260ms ease;
+    }
+
+    .seat-pill.is-actor {
+      transform: translateY(-4px);
+      border-color: var(--track);
+      background: var(--track-soft);
+      color: var(--track);
+    }
+
+    .seat-pill.is-target {
+      border-color: var(--gold);
+      background: var(--gold-soft);
+      color: var(--gold);
+    }
+
+    .event-card {
+      position: relative;
+      min-height: 308px;
+      padding: 28px;
+      border-radius: var(--radius);
+      background:
+        linear-gradient(135deg, rgba(255,255,255,0.08), transparent 30%),
+        var(--ink);
+      color: #fff;
+      overflow: hidden;
+    }
+
+    .event-card::after {
+      content: "";
+      position: absolute;
+      width: 240px;
+      height: 240px;
+      right: -80px;
+      bottom: -92px;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      border-radius: 50%;
+      box-shadow: inset 0 0 0 32px rgba(255, 255, 255, 0.04);
+    }
+
+    .event-card.is-animating {
+      animation: card-in 520ms cubic-bezier(.2,.8,.2,1);
+    }
+
+    @keyframes card-in {
+      from {
+        transform: translateY(16px) scale(0.985);
+        opacity: 0.1;
+      }
+      to {
+        transform: translateY(0) scale(1);
+        opacity: 1;
+      }
+    }
+
+    .action-row {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+
+    .action-tag,
+    .retrieval-tag {
+      display: inline-flex;
+      align-items: center;
+      min-height: 30px;
+      padding: 0 10px;
+      border-radius: 999px;
+      font-family: "Microsoft YaHei", "Noto Sans SC", sans-serif;
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    .action-tag {
+      background: #fff;
+      color: var(--ink);
+    }
+
+    .retrieval-tag {
+      border: 1px solid rgba(255, 255, 255, 0.32);
+      color: rgba(255, 255, 255, 0.92);
+    }
+
+    .retrieval-tag.is-on {
+      background: var(--track);
+      border-color: var(--track);
+      animation: pulse 1.8s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(36, 87, 166, 0.42); }
+      50% { box-shadow: 0 0 0 8px rgba(36, 87, 166, 0); }
+    }
+
+    .decision-line {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+      gap: 14px;
+      align-items: center;
+      margin-bottom: 24px;
+    }
+
+    .decision-person {
+      min-width: 0;
+      padding: 14px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: var(--radius);
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .decision-person span {
+      display: block;
+      color: rgba(255, 255, 255, 0.62);
+      font-family: "Microsoft YaHei", "Noto Sans SC", sans-serif;
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .decision-person strong {
+      display: block;
+      margin-top: 6px;
+      font-size: 25px;
+      line-height: 1.1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .arrow {
+      color: rgba(255, 255, 255, 0.72);
+      font-size: 32px;
+      font-weight: 900;
+    }
+
+    .speech {
+      position: relative;
+      z-index: 1;
+      margin: 0;
+      font-size: clamp(20px, 2.25vw, 32px);
+      line-height: 1.58;
+      font-weight: 800;
+      letter-spacing: 0;
+    }
+
+    .runtime-strip {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 18px;
+    }
+
+    .runtime-item {
+      padding: 10px;
+      border-radius: var(--radius);
+      background: rgba(255, 255, 255, 0.08);
+      color: rgba(255, 255, 255, 0.72);
+      font-family: "Microsoft YaHei", "Noto Sans SC", sans-serif;
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    .runtime-item strong {
+      display: block;
+      margin-top: 4px;
+      color: #fff;
+      font-family: Georgia, serif;
+      font-size: 18px;
+    }
+
+    .controls {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 12px;
+      align-items: center;
+      margin-top: 18px;
+    }
+
+    .control-buttons {
+      display: flex;
+      gap: 8px;
+    }
+
+    .control-btn {
+      display: inline-grid;
+      place-items: center;
+      min-width: 42px;
+      height: 42px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface);
+      color: var(--ink);
+      cursor: pointer;
+      font-family: "Microsoft YaHei", "Noto Sans SC", sans-serif;
+      font-size: 13px;
+      font-weight: 900;
+      transition: transform 180ms ease, border-color 180ms ease, background 180ms ease;
+    }
+
+    .control-btn:hover,
+    .control-btn:focus-visible {
+      transform: translateY(-2px);
+      border-color: var(--track);
+      outline: none;
+    }
+
+    .control-btn.primary {
+      min-width: 86px;
+      background: var(--ink);
+      color: #fff;
+    }
+
+    .progress {
+      height: 10px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--surface);
+      overflow: hidden;
+    }
+
+    .progress-bar {
+      width: 0;
+      height: 100%;
+      background: linear-gradient(90deg, var(--village), var(--gold), var(--wolf));
+      border-radius: inherit;
+      transition: width 420ms ease;
+    }
+
+    .step-counter {
+      color: var(--muted);
+      font-family: Georgia, serif;
+      font-size: 18px;
+      font-weight: 900;
+      white-space: nowrap;
+    }
+
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      padding: 12px;
+    }
+
+    .metric {
+      min-height: 86px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface);
+    }
+
+    .metric span {
+      display: block;
+      color: var(--muted);
+      font-family: "Microsoft YaHei", "Noto Sans SC", sans-serif;
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .metric strong {
+      display: block;
+      margin-top: 12px;
+      font-family: Georgia, serif;
+      font-size: 30px;
+      line-height: 1;
+    }
+
+    .chapter-list,
+    .evidence-list {
+      display: grid;
+      gap: 8px;
+      padding: 0 12px 12px;
+    }
+
+    .chapter {
+      display: grid;
+      gap: 5px;
+      width: 100%;
+      padding: 11px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface);
+      color: var(--ink);
+      text-align: left;
+      cursor: pointer;
+      transition: transform 180ms ease, border-color 180ms ease, background 180ms ease;
+    }
+
+    .chapter:hover,
+    .chapter:focus-visible,
+    .chapter.is-active {
+      transform: translateX(-3px);
+      border-color: var(--track);
+      background: var(--track-soft);
+      outline: none;
+    }
+
+    .chapter strong {
+      font-size: 14px;
+    }
+
+    .chapter span,
+    .evidence {
+      color: var(--muted);
+      font-family: "Microsoft YaHei", "Noto Sans SC", sans-serif;
+      font-size: 12px;
+      line-height: 1.55;
+    }
+
+    .evidence {
+      padding: 11px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface);
+    }
+
+    .timeline-shell {
+      grid-column: 1 / -1;
+      padding: 14px;
+    }
+
+    .timeline-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .timeline-head h2 {
+      margin: 0;
+      font-size: 17px;
+    }
+
+    .timeline-head span {
+      color: var(--muted);
+      font-family: "Microsoft YaHei", "Noto Sans SC", sans-serif;
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .timeline {
+      display: grid;
+      grid-template-columns: repeat(18, minmax(116px, 1fr));
+      gap: 8px;
+      overflow-x: auto;
+      padding-bottom: 4px;
+      scroll-snap-type: x proximity;
+    }
+
+    .tick {
+      display: grid;
+      gap: 5px;
+      min-height: 92px;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface);
+      color: var(--ink);
+      text-align: left;
+      cursor: pointer;
+      scroll-snap-align: start;
+      transition: transform 180ms ease, border-color 180ms ease, background 180ms ease;
+    }
+
+    .tick:hover,
+    .tick:focus-visible,
+    .tick.is-active {
+      transform: translateY(-3px);
+      border-color: var(--track);
+      background: var(--track-soft);
+      outline: none;
+    }
+
+    .tick b {
+      font-size: 14px;
+      line-height: 1.2;
+    }
+
+    .tick span,
+    .tick small {
+      color: var(--muted);
+      font-family: "Microsoft YaHei", "Noto Sans SC", sans-serif;
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    @media (max-width: 1240px) {
+      .layout {
+        grid-template-columns: minmax(0, 1fr) 330px;
+      }
+
+      .players-panel {
+        grid-column: 1 / -1;
+      }
+
+      .player-list {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 880px) {
+      .page {
+        width: min(100vw - 24px, 720px);
+        padding-top: 18px;
+      }
+
+      .topbar,
+      .layout,
+      .stage-head,
+      .controls {
+        grid-template-columns: 1fr;
+      }
+
+      .hero-actions {
+        justify-content: flex-start;
+      }
+
+      .player-list,
+      .metric-grid,
+      .runtime-strip {
+        grid-template-columns: 1fr;
+      }
+
+      .seat-rail {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .stage {
+        min-height: auto;
+        padding: 14px;
+      }
+
+      .event-card {
+        min-height: 0;
+        padding: 18px;
+      }
+
+      .decision-line {
+        grid-template-columns: 1fr;
+      }
+
+      .arrow {
+        display: none;
+      }
+
+      .speech {
+        font-size: 20px;
+      }
+
+    }
+  </style>
+</head>
+<body data-mode="day">
+  <main class="page">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Fixed historical replay</p>
+        <h1>AI Werewolf 对局动画演示</h1>
+        <p class="subline">基于已实现的固定回放代码与历史真实 LLM 对局快照生成，打开 HTML 即可自动播放。页面内嵌全部展示数据，不调用后端、不请求模型，适合现场演示、录屏和截图。</p>
+      </div>
+      <div class="hero-actions" aria-label="对局摘要">
+        <span class="chip">对局 ID <strong>9d0470c9</strong></span>
+        <span class="chip">模型 <strong>doubao v4 flash</strong></span>
+        <span class="chip">结果 <strong>好人阵营胜利</strong></span>
+      </div>
+    </header>
+
+    <section class="layout">
+      <aside class="panel players-panel">
+        <div class="panel-title">
+          <h2>玩家席位</h2>
+          <span>7P · 固定角色</span>
+        </div>
+        <div class="player-list" id="playerList"></div>
+      </aside>
+
+      <section class="stage" aria-live="polite">
+        <div class="stage-head">
+          <div>
+            <p class="round-kicker" id="roundKicker">第 1 天 · 夜晚</p>
+            <h2 class="phase" id="phaseTitle">加载中</h2>
+          </div>
+          <div class="result-card">
+            <strong id="winnerText">好人阵营胜利</strong>
+            <span id="mvpText">MVP 南柯辞 · 预言家 · 55.4</span>
+          </div>
+        </div>
+
+        <div class="seat-rail" id="seatRail"></div>
+
+        <article class="event-card" id="eventCard">
+          <div class="action-row">
+            <span class="action-tag" id="actionTag">行动</span>
+            <span class="retrieval-tag" id="retrievalTag">Track C 检索</span>
+          </div>
+
+          <div class="decision-line">
+            <div class="decision-person">
+              <span>行动者</span>
+              <strong id="actorName">-</strong>
+            </div>
+            <div class="arrow">→</div>
+            <div class="decision-person">
+              <span>目标 / 影响位</span>
+              <strong id="targetName">-</strong>
+            </div>
+          </div>
+
+          <p class="speech" id="speechText"></p>
+
+          <div class="runtime-strip">
+            <div class="runtime-item">Token<strong id="tokenValue">-</strong></div>
+            <div class="runtime-item">Latency<strong id="latencyValue">-</strong></div>
+            <div class="runtime-item">Track C<strong id="retrievalValue">-</strong></div>
+          </div>
+        </article>
+
+        <div class="controls">
+          <div class="control-buttons">
+            <button class="control-btn" id="prevBtn" type="button" aria-label="上一步">‹</button>
+            <button class="control-btn primary" id="playBtn" type="button">暂停</button>
+            <button class="control-btn" id="nextBtn" type="button" aria-label="下一步">›</button>
+          </div>
+          <div class="progress" aria-hidden="true">
+            <div class="progress-bar" id="progressBar"></div>
+          </div>
+          <div class="step-counter" id="stepCounter">01 / 18</div>
+        </div>
+      </section>
+
+      <aside class="panel">
+        <div class="panel-title">
+          <h2>量化展示</h2>
+          <span>Track B / C</span>
+        </div>
+        <div class="metric-grid" id="metricGrid"></div>
+
+        <div class="panel-title">
+          <h2>关键章节</h2>
+          <span>点击跳转</span>
+        </div>
+        <div class="chapter-list" id="chapterList"></div>
+
+        <div class="panel-title">
+          <h2>展示证据</h2>
+          <span>同局快照</span>
+        </div>
+        <div class="evidence-list" id="evidenceList"></div>
+      </aside>
+
+      <section class="timeline-shell">
+        <div class="timeline-head">
+          <h2>固定回放时间线</h2>
+          <span>18 个精选步骤自动循环播放</span>
+        </div>
+        <div class="timeline" id="timeline"></div>
+      </section>
+    </section>
+  </main>
+
+  <script>
+    const replay = {
+      source: {
+        gameId: "9d0470c9-cdaa-4039-87bf-a59324a14b12",
+        model: "doubao:ep-20260514115354-k4jz4",
+        finishedAt: "2026-05-26 14:36",
+      },
+      result: {
+        winnerLabel: "好人阵营胜利",
+        totalDays: 3,
+        mvp: "南柯辞",
+        mvpRole: "Seer",
+        mvpScore: 55.4,
+      },
+      metrics: {
+        decisions: 45,
+        replaySteps: 18,
+        retrievalHits: 36,
+        retrievalRate: 0.8,
+        totalTokens: 191855,
+        avgLatencyMs: 19752,
+      },
+      players: [
+        { id: "P1-492d47", seat: 1, name: "司南", role: "Hunter", camp: "village", mbti: "ISTP", style: "deconstructive", aliveAtEnd: true, finalScore: 47.1, processScore: 55.4 },
+        { id: "P2-580f93", seat: 2, name: "舒朗", role: "Villager", camp: "village", mbti: "INFJ", style: "observer", aliveAtEnd: true, finalScore: 46.6, processScore: 54.8 },
+        { id: "P3-6f9d14", seat: 3, name: "陶若安", role: "Guard", camp: "village", mbti: "ESFJ", style: "harmonizer", aliveAtEnd: false, finalScore: 47.4, processScore: 55.8 },
+        { id: "P4-271f2c", seat: 4, name: "顾景行", role: "Werewolf", camp: "wolf", mbti: "INTP", style: "academic", aliveAtEnd: false, finalScore: 40.8, processScore: 47.9 },
+        { id: "P5-3e75c8", seat: 5, name: "穆冬青", role: "Witch", camp: "village", mbti: "ESFJ", style: "caretaker", aliveAtEnd: false, finalScore: 47.5, processScore: 55.9 },
+        { id: "P6-d8216c", seat: 6, name: "南柯辞", role: "Seer", camp: "village", mbti: "INFJ", style: "poetic", aliveAtEnd: false, finalScore: 55.4, processScore: 65.2 },
+        { id: "P7-01a471", seat: 7, name: "云锦", role: "Werewolf", camp: "wolf", mbti: "ENFJ", style: "rallier", aliveAtEnd: false, finalScore: 45.3, processScore: 53.2 },
+      ],
+      chapters: [
+        { label: "首夜查杀", stepIndex: 4, note: "预言家查验 7 号云锦为狼人，形成第一天主线。" },
+        { label: "警徽竞选", stepIndex: 7, note: "猎人、狼人、女巫同时竞选，焦点集中到 7 号。" },
+        { label: "第一天放逐", stepIndex: 11, note: "多名好人根据发言跟票行为归票 7 号。" },
+        { label: "第二天误推出守卫", stepIndex: 15, note: "票型解释冲突扩大，守卫被放逐并留下 4 号狼面线索。" },
+        { label: "女巫终局毒杀", stepIndex: 16, note: "女巫根据守卫遗言和票型逻辑毒杀最后一狼。" },
+      ],
+      evidence: [
+        "Track B 将预言家查验、Day 1 归票和女巫关键毒杀列为高价值决策。",
+        "Track C 在 36/45 次决策中注入可检索策略，覆盖率 80%。",
+        "所有展示文本均来自同一局历史运行记录的固定快照，可重复复现。",
+      ],
+      steps: [
+        { id: "step-01", day: 1, phaseLabel: "夜晚 · 守卫行动", kind: "guard", kindLabel: "守护", actorId: "P3-6f9d14", targetId: "P7-01a471", text: "首夜目前信息不足，狼队大概率优先刀能带队的好人，选偏号召型的玩家守护能降低好人损失。", retrievalUsed: false, tokenTotal: 2306, latencyMs: 11919 },
+        { id: "step-02", day: 1, phaseLabel: "夜晚 · 狼人行动", kind: "attack", kindLabel: "袭击", actorId: "P4-271f2c", targetId: "P1-492d47", text: "目前信息不足，优先刀逻辑输出能力较强的玩家，降低好人阵营后续带队概率。", retrievalUsed: false, tokenTotal: 2628, latencyMs: 12946 },
+        { id: "step-03", day: 1, phaseLabel: "夜晚 · 狼人行动", kind: "attack", kindLabel: "袭击", actorId: "P7-01a471", targetId: "P1-492d47", text: "我同意@4号:顾景行的判断，@1号:司南逻辑输出能力较强，刀掉他能降低好人阵营后续带队排狼的效率。", retrievalUsed: false, tokenTotal: 2764, latencyMs: 7640 },
+        { id: "step-04", day: 1, phaseLabel: "夜晚 · 女巫行动", kind: "witch_save", kindLabel: "解药", actorId: "P5-3e75c8", targetId: "P1-492d47", text: "目前信息不足，首夜为避免好人损失轮次，选择救下被刀的@1号:司南，当前无明确狼人线索，暂不使用毒药。", retrievalUsed: true, tokenTotal: 2539, latencyMs: 7098 },
+        { id: "step-05", day: 1, phaseLabel: "夜晚 · 预言家行动", kind: "divine", kindLabel: "查验", actorId: "P6-d8216c", targetId: "P7-01a471", text: "首轮优先查验高影响力的号召位，@7号:云锦的发言风格容易主导首日节奏，查验他能快速锚定阵营基准。", retrievalUsed: false, tokenTotal: 2387, latencyMs: 11689 },
+        { id: "step-06", day: 1, phaseLabel: "警徽竞选发言", kind: "talk", kindLabel: "发言", actorId: "P1-492d47", text: "警徽我要，我是猎人，倒了能开枪自证，不会浪费好人轮次。\n\n我拿警徽就卡死所有人的发言逻辑，划水混票的直接进抗推位。\n\n今天先重点盯7号的警上发言，先标记测试。", retrievalUsed: true, tokenTotal: 2505, latencyMs: 15667 },
+        { id: "step-07", day: 1, phaseLabel: "警徽竞选发言", kind: "talk", kindLabel: "发言", actorId: "P4-271f2c", text: "警徽我要，我记发言和票型的准确率很高，拿了警徽归票不会歪，浪费不了好人轮次。\n\n我现在60%倾向先重点盯7号，边角位藏身份的概率本来就比中置位高，等下他发言我会卡逻辑漏洞。", retrievalUsed: true, tokenTotal: 2877, latencyMs: 22111 },
+        { id: "step-08", day: 1, phaseLabel: "警徽竞选发言", kind: "talk", kindLabel: "发言", actorId: "P5-3e75c8", text: "这把警徽我想拿哦，我记发言和票型都挺仔细的，拿到之后肯定会捋清楚逻辑再归票，不会浪费好人的轮次。\n\n刚才我看警上好多人一上来就把7号标成重点盯的对象，这有点奇怪吧？", retrievalUsed: true, tokenTotal: 2746, latencyMs: 15341 },
+        { id: "step-09", day: 1, phaseLabel: "警徽投票", kind: "vote", kindLabel: "投票", actorId: "P6-d8216c", targetId: "P7-01a471", text: "我昨夜查验@7号:云锦为狼人，是确定的查杀目标，优先出他不会浪费好人轮次。接下来请好人重点观察此前无理由扎堆踩7的警上竞选者的发言破绽。", retrievalUsed: true, tokenTotal: 4956, latencyMs: 17796 },
+        { id: "step-10", day: 1, phaseLabel: "白天自由发言", kind: "talk", kindLabel: "发言", actorId: "P7-01a471", text: "刚看到前面有人提主盯3号、备选挂5号，我觉得这个方向挺合理的，第一天信息少，先抓发言状态确实是最稳妥的切入点。\n\n3号等下正常聊就好，大大方方说你的判断就行。", retrievalUsed: true, tokenTotal: 2809, latencyMs: 21057 },
+        { id: "step-11", day: 1, phaseLabel: "投票放逐", kind: "vote", kindLabel: "投票", actorId: "P1-492d47", targetId: "P7-01a471", text: "@7号:云锦无独立逻辑输出，全程照搬他人怀疑方向，狼面优先级最高。暂不投3、5号是因为二者均给出了明确判断，立场可追溯。", retrievalUsed: true, tokenTotal: 5025, latencyMs: 12638 },
+        { id: "step-12", day: 1, phaseLabel: "投票放逐", kind: "vote", kindLabel: "投票", actorId: "P6-d8216c", targetId: "P7-01a471", text: "我是预言家，昨夜查验@7号:云锦为狼人，本轮优先出查杀。暂不投其他焦点位是因为暂无实锤佐证，后续好人可留意本轮票型里的异常跟风项。", retrievalUsed: true, tokenTotal: 5824, latencyMs: 12377 },
+        { id: "step-13", day: 1, phaseLabel: "遗言", kind: "talk", kindLabel: "发言", actorId: "P7-01a471", text: "害，第一夜就吃刀我也是蛮懵的，我就是个没任何功能的平民，大家不用特意盘我身份哈。\n\n接下来我建议大家可以重点听3号的发言逻辑，目前没其他信息的话，就先把他当第一个怀疑锚点来核对就好。", retrievalUsed: true, tokenTotal: 3045, latencyMs: 28276 },
+        { id: "step-14", day: 2, phaseLabel: "夜晚 · 女巫行动", kind: "witch_save", kindLabel: "解药", actorId: "P5-3e75c8", targetId: "P6-d8216c", text: "目前唯一起跳预言家的@6号:南柯辞属于关键神职，符合解药优先保神职的策略，我选择救下他；当前暂无百分百实锤的铁狼线索，毒药暂不使用。", retrievalUsed: true, tokenTotal: 4902, latencyMs: 15142 },
+        { id: "step-15", day: 2, phaseLabel: "白天自由发言", kind: "talk", kindLabel: "发言", actorId: "P5-3e75c8", text: "我先把自己的票型捋得明明白白的啊，第一天我全程投的都是7号，从来没改票，也没踩过1号，怀疑我的朋友可以先核对下公开票型哈。\n\n现在3号和4号互咬得挺厉害的，我这轮重点就听你俩把各自的投票逻辑全聊透。", retrievalUsed: true, tokenTotal: 3734, latencyMs: 38584 },
+        { id: "step-16", day: 2, phaseLabel: "遗言", kind: "talk", kindLabel: "发言", actorId: "P3-6f9d14", text: "我是守卫哦，这轮出局确实有点意外，不过好人轮次还够，大家别慌~\n\n第一天投票的时候4号顾景行单票挂6号南柯辞的票型我一直觉得很怪，狼面相对更高，大家可以多留意他的发言。", retrievalUsed: true, tokenTotal: 2998, latencyMs: 22633 },
+        { id: "step-17", day: 3, phaseLabel: "夜晚 · 女巫行动", kind: "witch_poison", kindLabel: "毒药", actorId: "P5-3e75c8", targetId: "P4-271f2c", text: "解药已在首夜使用无法自救，@4号:顾景行被跳守卫出局的@3号:陶若安重点怀疑，且首日单票挂后被狼刀的好人@6号:南柯辞，狼面较高，选择撒毒。", retrievalUsed: true, tokenTotal: 5822, latencyMs: 33327 },
+        { id: "step-18", day: 3, phaseLabel: "警徽移交", kind: "vote", kindLabel: "移交", actorId: "P5-3e75c8", targetId: "P1-492d47", text: "我首夜开解药救下了@1号:司南，他是明确的好人，之前也跳了猎人身份可信，警徽交给他带队我放心。", retrievalUsed: false, tokenTotal: 4084, latencyMs: 9339 },
+      ],
+    };
+
+    const playerById = new Map(replay.players.map((player) => [player.id, player]));
+    let currentIndex = 0;
+    let playing = true;
+    let timer = null;
+    const intervalMs = 4600;
+
+    const nodes = {
+      playerList: document.getElementById("playerList"),
+      seatRail: document.getElementById("seatRail"),
+      metricGrid: document.getElementById("metricGrid"),
+      chapterList: document.getElementById("chapterList"),
+      evidenceList: document.getElementById("evidenceList"),
+      timeline: document.getElementById("timeline"),
+      roundKicker: document.getElementById("roundKicker"),
+      phaseTitle: document.getElementById("phaseTitle"),
+      actionTag: document.getElementById("actionTag"),
+      retrievalTag: document.getElementById("retrievalTag"),
+      actorName: document.getElementById("actorName"),
+      targetName: document.getElementById("targetName"),
+      speechText: document.getElementById("speechText"),
+      tokenValue: document.getElementById("tokenValue"),
+      latencyValue: document.getElementById("latencyValue"),
+      retrievalValue: document.getElementById("retrievalValue"),
+      progressBar: document.getElementById("progressBar"),
+      stepCounter: document.getElementById("stepCounter"),
+      eventCard: document.getElementById("eventCard"),
+      playBtn: document.getElementById("playBtn"),
+    };
+
+    function escapeHtml(value) {
+      return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function roleLabel(role) {
+      return {
+        Hunter: "猎人",
+        Villager: "村民",
+        Guard: "守卫",
+        Werewolf: "狼人",
+        Witch: "女巫",
+        Seer: "预言家",
+      }[role] || role;
+    }
+
+    function campLabel(camp) {
+      return camp === "wolf" ? "狼人阵营" : "好人阵营";
+    }
+
+    function phaseGroup(step) {
+      if (step.phaseLabel.includes("夜晚")) return "夜晚行动";
+      if (step.phaseLabel.includes("警徽")) return "警徽阶段";
+      if (step.phaseLabel.includes("投票") || step.phaseLabel.includes("放逐")) return "投票放逐";
+      if (step.phaseLabel.includes("遗言")) return "遗言复盘";
+      return "白天发言";
+    }
+
+    function compactNumber(value) {
+      if (value >= 10000) return `${(value / 10000).toFixed(1)}w`;
+      return String(value);
+    }
+
+    function renderStatic() {
+      nodes.playerList.innerHTML = replay.players.map((player) => `
+        <article class="player-card" data-player-id="${player.id}" data-camp="${player.camp}">
+          <div class="seat">${player.seat}</div>
+          <div class="player-main">
+            <div class="player-name">${escapeHtml(player.name)} <small>${roleLabel(player.role)}</small></div>
+            <div class="player-meta">${campLabel(player.camp)} · ${player.mbti} · ${player.style}<br>过程分 ${player.processScore.toFixed(1)} · 终局分 ${player.finalScore.toFixed(1)}</div>
+          </div>
+          <div class="score-badge">${player.finalScore.toFixed(1)}</div>
+        </article>
+      `).join("");
+
+      nodes.seatRail.innerHTML = replay.players.map((player) => `
+        <div class="seat-pill" data-seat-player-id="${player.id}">${player.seat} 号 · ${escapeHtml(player.name)}</div>
+      `).join("");
+
+      const metrics = [
+        ["决策总数", replay.metrics.decisions],
+        ["回放步骤", replay.metrics.replaySteps],
+        ["检索命中", replay.metrics.retrievalHits],
+        ["覆盖率", `${Math.round(replay.metrics.retrievalRate * 100)}%`],
+        ["Token", compactNumber(replay.metrics.totalTokens)],
+        ["平均延迟", `${(replay.metrics.avgLatencyMs / 1000).toFixed(1)}s`],
+      ];
+      nodes.metricGrid.innerHTML = metrics.map(([label, value]) => `
+        <div class="metric"><span>${label}</span><strong>${value}</strong></div>
+      `).join("");
+
+      nodes.chapterList.innerHTML = replay.chapters.map((chapter) => `
+        <button class="chapter" type="button" data-chapter-index="${chapter.stepIndex}">
+          <strong>${escapeHtml(chapter.label)}</strong>
+          <span>${escapeHtml(chapter.note)}</span>
+        </button>
+      `).join("");
+
+      nodes.evidenceList.innerHTML = replay.evidence.map((text) => `
+        <div class="evidence">${escapeHtml(text)}</div>
+      `).join("");
+
+      nodes.timeline.innerHTML = replay.steps.map((step, index) => `
+        <button class="tick" type="button" data-tick-index="${index}">
+          <span>${String(index + 1).padStart(2, "0")} / Day ${step.day}</span>
+          <b>${escapeHtml(phaseGroup(step))}</b>
+          <small>${escapeHtml(step.kindLabel)} · ${escapeHtml(step.phaseLabel)}</small>
+        </button>
+      `).join("");
+
+      document.querySelectorAll("[data-chapter-index]").forEach((button) => {
+        button.addEventListener("click", () => {
+          pause();
+          setStep(Number(button.dataset.chapterIndex));
+        });
+      });
+
+      document.querySelectorAll("[data-tick-index]").forEach((button) => {
+        button.addEventListener("click", () => {
+          pause();
+          setStep(Number(button.dataset.tickIndex));
+        });
+      });
+    }
+
+    function renderStep() {
+      const step = replay.steps[currentIndex];
+      const actor = playerById.get(step.actorId);
+      const target = step.targetId ? playerById.get(step.targetId) : null;
+      const isNight = step.phaseLabel.includes("夜晚");
+
+      document.body.dataset.mode = isNight ? "night" : "day";
+      nodes.roundKicker.textContent = `第 ${step.day} 天 · ${phaseGroup(step)}`;
+      nodes.phaseTitle.textContent = step.phaseLabel;
+      nodes.actionTag.textContent = step.kindLabel;
+      nodes.retrievalTag.textContent = step.retrievalUsed ? "Track C 策略命中" : "基础决策";
+      nodes.retrievalTag.classList.toggle("is-on", step.retrievalUsed);
+      nodes.actorName.textContent = actor ? `${actor.seat} 号 ${actor.name} · ${roleLabel(actor.role)}` : "未知";
+      nodes.targetName.textContent = target ? `${target.seat} 号 ${target.name} · ${roleLabel(target.role)}` : "无指定目标";
+      nodes.speechText.innerHTML = escapeHtml(step.text).replaceAll("\n", "<br>");
+      nodes.tokenValue.textContent = compactNumber(step.tokenTotal);
+      nodes.latencyValue.textContent = `${(step.latencyMs / 1000).toFixed(1)}s`;
+      nodes.retrievalValue.textContent = step.retrievalUsed ? "命中" : "未启用";
+      nodes.progressBar.style.width = `${((currentIndex + 1) / replay.steps.length) * 100}%`;
+      nodes.stepCounter.textContent = `${String(currentIndex + 1).padStart(2, "0")} / ${replay.steps.length}`;
+
+      document.querySelectorAll("[data-player-id]").forEach((card) => {
+        card.classList.toggle("is-actor", card.dataset.playerId === step.actorId);
+        card.classList.toggle("is-target", card.dataset.playerId === step.targetId);
+      });
+
+      document.querySelectorAll("[data-seat-player-id]").forEach((pill) => {
+        pill.classList.toggle("is-actor", pill.dataset.seatPlayerId === step.actorId);
+        pill.classList.toggle("is-target", pill.dataset.seatPlayerId === step.targetId);
+      });
+
+      document.querySelectorAll("[data-tick-index]").forEach((button) => {
+        button.classList.toggle("is-active", Number(button.dataset.tickIndex) === currentIndex);
+      });
+
+      document.querySelectorAll("[data-chapter-index]").forEach((button) => {
+        button.classList.toggle("is-active", Number(button.dataset.chapterIndex) === currentIndex);
+      });
+
+      const activeTick = document.querySelector(`[data-tick-index="${currentIndex}"]`);
+      if (activeTick) activeTick.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" });
+
+      nodes.eventCard.classList.remove("is-animating");
+      void nodes.eventCard.offsetWidth;
+      nodes.eventCard.classList.add("is-animating");
+    }
+
+    function setStep(index) {
+      currentIndex = (index + replay.steps.length) % replay.steps.length;
+      renderStep();
+    }
+
+    function next() {
+      setStep(currentIndex + 1);
+    }
+
+    function previous() {
+      setStep(currentIndex - 1);
+    }
+
+    function play() {
+      if (timer) return;
+      playing = true;
+      nodes.playBtn.textContent = "暂停";
+      timer = window.setInterval(next, intervalMs);
+    }
+
+    function pause() {
+      playing = false;
+      nodes.playBtn.textContent = "播放";
+      window.clearInterval(timer);
+      timer = null;
+    }
+
+    document.getElementById("prevBtn").addEventListener("click", () => {
+      pause();
+      previous();
+    });
+
+    document.getElementById("nextBtn").addEventListener("click", () => {
+      pause();
+      next();
+    });
+
+    nodes.playBtn.addEventListener("click", () => {
+      if (playing) pause();
+      else play();
+    });
+
+    window.addEventListener("keydown", (event) => {
+      if (event.key === "ArrowRight") {
+        pause();
+        next();
+      }
+      if (event.key === "ArrowLeft") {
+        pause();
+        previous();
+      }
+      if (event.code === "Space") {
+        event.preventDefault();
+        if (playing) pause();
+        else play();
+      }
+    });
+
+    renderStatic();
+    renderStep();
+    play();
+  </script>
+</body>
+</html>
