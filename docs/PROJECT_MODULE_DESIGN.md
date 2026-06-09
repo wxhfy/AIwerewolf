@@ -33,7 +33,7 @@
 
 **设计收益**：规则一致、流程可复现、便于验收、便于扩展角色、便于回放和复盘。
 
-**验收方式**：`scripts/run_backend_full_strict.py` 和信息隔离专项验证命令。
+**验收方式**：`backend.run_demo`、引擎源码审计，以及 local-only strict 验证材料。
 
 ## 2. Visibility / PlayerView
 
@@ -66,7 +66,7 @@
 
 **设计收益**：防止上帝视角；让推理更接近真实玩家；为赛后复盘提供“当时可见事实”边界。
 
-**验收方式**：`scripts/verify_visibility_strict.py`。
+**验收方式**：`backend/engine/visibility.py` 源码审计、PlayerView 投影链路检查，以及 local-only 信息隔离专项验证材料。
 
 ## 3. CognitiveAgent
 
@@ -171,7 +171,7 @@
 | 指标 | 当前值 | 来源 |
 |---|---:|---|
 | 默认 policy | `hybrid_role_mbti_global` | `backend/agents/cognitive/tools.py` |
-| query set | 26 | `outputs/retrieval_effectiveness_current/results.json` |
+| query set | 26 | `outputs/retrieval_effectiveness_current/results.json`（local-only ignored） |
 | Coverage | 1.0000 | 同上 |
 | Effective@3 | 0.5000 | 同上 |
 | P@3 | 0.2564 | 同上 |
@@ -183,7 +183,7 @@
 
 **设计收益**：策略不写死；无需 GPU；可解释；可安全回流。
 
-**验收方式**：`scripts/evaluate_retrieval_policies.py`、`scripts/evaluate_retrieval_policies_llm_judge.py`、tool_trace。
+**验收方式**：tool_trace、local-only 检索评估输出和 LLM judge 摘要。
 
 ## 6. PostgreSQL Evidence Chain
 

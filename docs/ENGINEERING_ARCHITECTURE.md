@@ -51,8 +51,8 @@ flowchart TB
     subgraph data_layer ["Layer 1 - Data, configuration and verification"]
         database[(PostgreSQL / local SQLite<br/>events / decisions / reports / knowledge)]
         configs["YAML and env config<br/>rules / models / experiments"]
-        tests["Tests and CI<br/>pytest / ruff / frontend build"]
-        ops["Operational checks<br/>preflight / smoke / strict visibility"]
+        checks["Verification hooks<br/>demo / ruff / frontend build"]
+        ops["Operational checks<br/>preflight / local-only strict checks"]
     end
 
     lobby --> rest_api
@@ -85,8 +85,8 @@ flowchart TB
     database --> retriever
     configs --> game
     configs --> llm_client
-    tests --> game
-    tests --> rest_api
+    checks --> game
+    checks --> rest_api
     ops --> database
 
     classDef experience fill:#dbeafe,stroke:#2563eb,stroke-width:2px,color:#1e3a5f
@@ -101,7 +101,7 @@ flowchart TB
     class game,phase_manager,actions,roles,visibility game_style
     class cognitive,persona,memory,tool_loop,llm_client agent_style
     class scorer,review,leaderboard,abstractor,lifecycle,retriever eval_style
-    class database,configs,tests,ops data_style
+    class database,configs,checks,ops data_style
 ```
 
 分层说明：
@@ -113,7 +113,7 @@ flowchart TB
 | Layer 4 Rule engine and information boundary | 对局状态、规则流转、行动合法性、信息隔离 | `backend/engine/` |
 | Layer 3 Agent cognition and decision runtime | 角色化认知、工具调用、LLM 决策和策略注入 | `backend/agents/cognitive/`, `backend/llm/` |
 | Layer 2 Evaluation and evolution | 赛后复盘、指标看板、策略知识抽取与回流 | `backend/eval/` |
-| Layer 1 Data, configuration and verification | 持久化、配置、CI、smoke 和专项验证 | `backend/db/`, `configs/`, `tests/`, `scripts/` |
+| Layer 1 Data, configuration and verification | 持久化、配置、demo smoke、ruff、前端构建和本地专项验证 | `backend/db/`, `configs/`, `backend.ops`, local-only `scripts/` / `tests/` |
 
 关键设计原则：
 

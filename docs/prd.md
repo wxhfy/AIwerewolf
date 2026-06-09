@@ -219,7 +219,7 @@ Layer 3  策略知识  → 教"怎么赢"（BM25 检索历史经验）
 cp .env.example .env   # 配置 LLM 密钥
 make dev               # 启动后端 http://localhost:8000
 cd frontend && npm run dev  # 启动前端 http://localhost:3001
-python scripts/llm_game_smoke.py --seed 1  # 跑一局
+python -m backend.run_demo --seed 1  # 跑一局本地 demo
 ```
 
 ### 5.3 阶段超时（仅混战模式生效）
