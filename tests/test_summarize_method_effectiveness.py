@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from scripts import summarize_method_effectiveness as summary
+from scripts import check_real_llm_provider
 
 
 def test_sanitize_endpoint_ids_redacts_nested_provider_endpoint() -> None:
@@ -25,6 +26,16 @@ def test_sanitize_endpoint_ids_redacts_nested_provider_endpoint() -> None:
     assert redacted["resolved_models"][0]["label"] == "doubao:ep-<redacted>"
     assert redacted["chat_checks"][0]["label"] == "doubao:ep-<redacted>"
     assert redacted["safe_value"] == "anthropic:deepseek-v4-flash"
+
+
+def test_provider_preflight_redacts_endpoint_and_ark_token() -> None:
+    endpoint_id = "ep-" + "20260514115354" + "-k4jz4"
+    ark_token = "ark-" + "example-token-with-many-characters"
+    text = f"doubao:{endpoint_id} token={ark_token}"
+
+    redacted = check_real_llm_provider.redact(text)
+
+    assert redacted == "doubao:ep-<redacted> token=ark-<redacted>"
 
 
 def test_select_target_seat_results_reuses_tracked_snapshot_by_default(monkeypatch) -> None:

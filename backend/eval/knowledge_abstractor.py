@@ -570,7 +570,7 @@ def run_strategy_knowledge_lifecycle(
                 and not _is_reflection_doc(row)
                 and usage >= feedback_min_usage
                 and success_rate >= feedback_success_rate
-                and _quality(row) >= deprecation_threshold
+                and _quality(row) >= cluster_threshold
             ):
                 row.status = "active"
                 result["feedback_promoted"] += 1
