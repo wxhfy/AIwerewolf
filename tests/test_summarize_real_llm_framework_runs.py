@@ -223,3 +223,14 @@ def test_render_report_contains_boundaries(tmp_path: Path) -> None:
     assert "Run 级证据边界" in report
     assert "Track C 对胜率有统计显著因果提升" in report
     assert "framework:trackc_only" in report
+
+
+def test_build_facts_accepts_fixed_generated_at(tmp_path: Path) -> None:
+    run_dir = tmp_path / "formal"
+    _write_json(run_dir / "summary.json", _base_summary())
+    _write_group_csv(run_dir / "group_results.csv")
+    (run_dir / "failures.jsonl").write_text("", encoding="utf-8")
+
+    facts = summary.build_facts([run_dir], generated_at="2026-06-09T15:36:46+08:00")
+
+    assert facts["generated_at"] == "2026-06-09T15:36:46+08:00"
