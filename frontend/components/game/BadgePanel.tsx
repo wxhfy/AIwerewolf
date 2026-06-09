@@ -3,7 +3,7 @@
 import React from "react";
 import { GameState, Language } from "@/types";
 import { cn } from "@/lib/utils";
-import { isRevealBlockingChat } from "@/lib/eventFilter";
+import { getRevealedEvents } from "@/lib/eventFilter";
 
 interface BadgePanelProps {
   gameState: GameState;
@@ -31,25 +31,7 @@ export function BadgePanel({ gameState, language, activeSpeakerId, displayPhase,
   const players = gameState.players || [];
   const pkTargets = new Set(gameState.pk_targets || []);
 
-  // ── Compute reveal cutoff (match EventTimeline's mergeConsecutiveChats) ─
-  let revealCutoff = (gameState.events || []).length;
-  let prevActor = "", prevPhase = "";
-  for (let i = 0; i < (gameState.events || []).length; i++) {
-    const e = gameState.events[i];
-    if (e.type === "CHAT_MESSAGE") {
-      if (!isRevealBlockingChat(e, prevActor, prevPhase)) continue;
-      prevActor = (e.payload as any)?.actor_id || "";
-      prevPhase = e.phase || "";
-      if (!completedIds.has(e.id)) {
-        revealCutoff = i;
-        break;
-      }
-    } else {
-      prevActor = "";
-      prevPhase = "";
-    }
-  }
-  const revealedEvents = (gameState.events || []).slice(0, revealCutoff);
+  const revealedEvents = getRevealedEvents(gameState.events || [], completedIds);
 
   // ── Speech progress: only count badge CANDIDATES who spoke ──────
   const candidateSet = new Set(candidates);

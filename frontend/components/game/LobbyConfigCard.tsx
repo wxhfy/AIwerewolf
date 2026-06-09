@@ -20,7 +20,7 @@ export function LobbyConfigCard(props: LobbyConfigCardProps) {
   const isAi = mode === "ai";
 
   const modeDesc = isAi
-    ? (language === "zh" ? "所有玩家由 AI 控制，你可以观战完整对局。" : "All players controlled by AI. Spectate the full match.")
+    ? (language === "zh" ? "所有玩家由 AI 控制，直接展示完整全局对局流程。" : "All players are AI-controlled with the full global match flow shown.")
     : (language === "zh" ? "你选择一个座位加入对局，其余玩家由 AI 扮演。" : "Pick a seat to join. Other players are AI-controlled.");
 
   const buttonText = isAi

@@ -24,7 +24,6 @@ interface SettingsModalProps {
 }
 
 export function SettingsModal({ isOpen, onClose, currentSettings, onSave }: SettingsModalProps) {
-  const [viewMode, setViewMode] = useState<ViewMode>(currentSettings.viewMode);
   const [language, setLanguage] = useState<Language>(currentSettings.language);
   const [seed, setSeed] = useState(currentSettings.seed);
   const [modelProvider, setModelProvider] = useState(currentSettings.modelProvider);
@@ -37,7 +36,6 @@ export function SettingsModal({ isOpen, onClose, currentSettings, onSave }: Sett
 
   useEffect(() => {
     if (isOpen) {
-      setViewMode(currentSettings.viewMode);
       setLanguage(currentSettings.language);
       setSeed(currentSettings.seed);
       setModelProvider(currentSettings.modelProvider);
@@ -64,7 +62,7 @@ export function SettingsModal({ isOpen, onClose, currentSettings, onSave }: Sett
 
   const handleSave = () => {
     onSave({
-      viewMode,
+      viewMode: ViewMode.MODERATOR,
       language,
       seed: Number.isFinite(seed) ? Math.trunc(seed) : 7,
       modelProvider: modelProvider.trim() || "ark",
@@ -80,11 +78,6 @@ export function SettingsModal({ isOpen, onClose, currentSettings, onSave }: Sett
   const t = (key: string) => {
       const translations: Record<string, { zh: string; en: string }> = {
       settings: { zh: "演示设置", en: "Demo Settings" },
-      viewMode: { zh: "默认视角", en: "Default View" },
-      moderatorView: { zh: "全局视角", en: "Global View" },
-      publicView: { zh: "普通观众", en: "Audience" },
-      moderatorDesc: { zh: "展示隐藏身份、夜间行动与关键决策", en: "Show hidden roles, night actions, and key decisions" },
-      publicDesc: { zh: "只展示公开发言、投票和死亡结果", en: "Show public speeches, votes, and deaths" },
       languageSetting: { zh: "语言", en: "Language" },
       chinese: { zh: "中文", en: "Chinese" },
       english: { zh: "English", en: "English" },
@@ -100,7 +93,7 @@ export function SettingsModal({ isOpen, onClose, currentSettings, onSave }: Sett
       endpointHint: { zh: "填写兼容 Claude API 的服务端点地址，不要以斜杠结尾", en: "Enter a Claude-compatible service endpoint. Do not end with a slash." },
       apiKey: { zh: "API Key", en: "API Key" },
       getApiKey: { zh: "获取 API Key", en: "Get API Key" },
-      apiKeyDesc: { zh: "仅保存在本地浏览器，不显示在对局页面", en: "Stored locally only, never shown in the match UI" },
+      apiKeyDesc: { zh: "保存后创建的新对局会直接使用该 API，房间接口不会回显 Key", en: "New matches use this API directly; room responses never echo the key" },
       apiKeyPlaceholder: { zh: "•••••••••••••••••••••••••••••••••••", en: "•••••••••••••••••••••••••••••••••••" },
       apiFormat: { zh: "API 格式", en: "API Format" },
       anthropicNative: { zh: "Anthropic Messages（原生）", en: "Anthropic Messages (Native)" },
@@ -150,53 +143,6 @@ export function SettingsModal({ isOpen, onClose, currentSettings, onSave }: Sett
 
         {/* Content */}
         <div className="max-h-[72vh] space-y-6 overflow-y-auto px-6 py-6">
-          {/* View Mode */}
-          <div>
-            <label className="block text-sm font-medium text-textPrimary mb-3">
-              {t("viewMode")}
-            </label>
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                onClick={() => setViewMode(ViewMode.MODERATOR)}
-                className={`relative p-4 rounded-lg border transition-all ${
-                  viewMode === ViewMode.MODERATOR
-                    ? "border-primary bg-primary/10 shadow-lg shadow-primary/20"
-                    : "border-border/40 hover:border-border/60 bg-background/50"
-                }`}
-              >
-                <div className="flex items-center gap-2 mb-1">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={viewMode === ViewMode.MODERATOR ? "text-primary" : "text-text-sub/60"}>
-                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                    <circle cx="12" cy="12" r="3" />
-                  </svg>
-                  <span className={`text-sm font-medium ${viewMode === ViewMode.MODERATOR ? "text-primary" : "text-text-sub"}`}>
-                    {t("moderatorView")}
-                  </span>
-                </div>
-                <p className="text-xs text-text-sub/60 text-left">{t("moderatorDesc")}</p>
-              </button>
-
-              <button
-                onClick={() => setViewMode(ViewMode.PUBLIC)}
-                className={`relative p-4 rounded-lg border transition-all ${
-                  viewMode === ViewMode.PUBLIC
-                    ? "border-primary bg-primary/10 shadow-lg shadow-primary/20"
-                    : "border-border/40 hover:border-border/60 bg-background/50"
-                }`}
-              >
-                <div className="flex items-center gap-2 mb-1">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={viewMode === ViewMode.PUBLIC ? "text-primary" : "text-text-sub/60"}>
-                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H7v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" />
-                  </svg>
-                  <span className={`text-sm font-medium ${viewMode === ViewMode.PUBLIC ? "text-primary" : "text-text-sub"}`}>
-                    {t("publicView")}
-                  </span>
-                </div>
-                <p className="text-xs text-text-sub/60 text-left">{t("publicDesc")}</p>
-              </button>
-            </div>
-          </div>
-
           {/* Language */}
           <div>
             <label className="block text-sm font-medium text-textPrimary mb-3">

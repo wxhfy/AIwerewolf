@@ -47,7 +47,9 @@
     ".next-real-ui-probe/types/**/*.ts",
     ".next-real-ui-probe/dev/types/**/*.ts",
     ".next-visual-check/types/**/*.ts",
-    ".next-visual-check/dev/types/**/*.ts"
+    ".next-visual-check/dev/types/**/*.ts",
+    ".next-delivery-verify/types/**/*.ts",
+    ".next-delivery-verify/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

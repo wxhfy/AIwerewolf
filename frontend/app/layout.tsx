@@ -5,7 +5,7 @@ import { HtmlLang } from "@/components/ui/HtmlLang";
 
 export const metadata: Metadata = {
   title: "AI Werewolf",
-  description: "AI Werewolf Spectator Console",
+  description: "AI Werewolf Global Match Console",
 };
 
 export default function RootLayout({

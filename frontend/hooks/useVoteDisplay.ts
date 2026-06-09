@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import { GameState } from "@/types";
-import { isRevealBlockingChat } from "@/lib/eventFilter";
+import { getRevealedEvents } from "@/lib/eventFilter";
 
 export type VoteDisplayMode =
   | { type: "HIDDEN" }
@@ -47,24 +47,7 @@ export function useVoteDisplay(
     const events = gameState?.events;
     if (!events || events.length === 0) return [];
 
-    let cutoff = events.length;
-    let prevActor = "", prevPhase = "";
-    for (let i = 0; i < events.length; i++) {
-      const e = events[i];
-      if (e.type === "CHAT_MESSAGE") {
-        if (!isRevealBlockingChat(e, prevActor, prevPhase)) continue;
-        prevActor = (e.payload as any)?.actor_id || "";
-        prevPhase = e.phase || "";
-        if (!completedIds.has(e.id)) {
-          cutoff = i;
-          break;
-        }
-      } else {
-        prevActor = "";
-        prevPhase = "";
-      }
-    }
-    return events.slice(0, cutoff);
+    return getRevealedEvents(events, completedIds);
   }, [gameState?.events, completedTick]);
 
   // ── Badge vote tally (from revealed events) ──

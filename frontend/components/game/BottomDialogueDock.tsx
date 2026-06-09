@@ -3,7 +3,7 @@
 import React, { useMemo } from "react";
 import { GameEvent, Player, Language } from "@/types";
 import { t, tPhase } from "@/lib/i18n";
-import { normalizeSpeechContent } from "@/lib/eventFilter";
+import { getChatCompletionIds, normalizeSpeechContent } from "@/lib/eventFilter";
 import { useTypewriter } from "@/hooks/useTypewriter";
 import { cn } from "@/lib/utils";
 import { MentionText } from "@/components/game/MentionText";
@@ -69,11 +69,12 @@ export function BottomDialogueDock({
         : "Match log appears above. Current dialogue appears here.";
 
   const typewriterKey = latestChat?.id || `pending-${pendingPlayerId || phase || "empty"}`;
+  const completionIds = latestChat ? getChatCompletionIds(latestChat) : [];
   const { displayedText, finished } = useTypewriter(text, {
     enabled: shouldRender && Boolean(latestChat) && !isLocked,
     charsPerSecond: 38,
     maxDurationMs: 9000,
-    onComplete: latestChat ? () => onChatComplete?.(latestChat.id) : undefined,
+    onComplete: latestChat ? () => completionIds.forEach((id) => onChatComplete?.(id)) : undefined,
   });
 
   if (!shouldRender) return null;
@@ -84,11 +85,12 @@ export function BottomDialogueDock({
   return (
     <section
       key={typewriterKey}
-      className="shrink-0 border-t border-border bg-cardBackground/92 px-4 py-3 shadow-[0_-10px_36px_rgba(0,0,0,0.08)] backdrop-blur-xl"
+      className="h-[168px] shrink-0 border-t border-border bg-cardBackground/92 px-4 py-3 shadow-[0_-10px_36px_rgba(0,0,0,0.08)] backdrop-blur-xl"
       data-phase-aware
       data-testid="bottom-dialogue-dock"
+      data-chat-event-ids={completionIds.join(",")}
     >
-      <div className="mx-auto flex max-w-5xl gap-3">
+      <div className="mx-auto flex h-full max-w-5xl gap-3">
         <div
           className={cn(
             "relative flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-border bg-background",
@@ -105,10 +107,13 @@ export function BottomDialogueDock({
           )}
         </div>
 
-        <div className="min-h-[96px] min-w-0 flex-1 rounded-2xl border border-border bg-background/70 px-5 py-4 shadow-card">
-          <div className="mb-2 flex items-center justify-between gap-3">
+        <div
+          className="flex h-full min-h-0 min-w-0 flex-1 flex-col rounded-2xl border border-amber-100/60 bg-[#FFFBF7] px-5 py-4 text-gray-700 shadow-[0_2px_8px_rgba(0,0,0,0.06),0_1px_2px_rgba(0,0,0,0.04)]"
+          data-testid="bottom-dialogue-bubble"
+        >
+          <div className="mb-2 flex shrink-0 items-center justify-between gap-3">
             <div className="min-w-0">
-              <p className="truncate font-display text-base font-bold text-primary">
+              <p className="truncate text-base font-medium text-gray-800">
                 {speakerName}
               </p>
               <p className="text-[11px] text-text-sub">
@@ -124,7 +129,10 @@ export function BottomDialogueDock({
             </span>
           </div>
 
-          <div className="min-h-[3.4rem] whitespace-pre-wrap break-words text-xl leading-relaxed text-textPrimary">
+          <div
+            className="min-h-0 flex-1 overflow-y-auto pr-1 whitespace-pre-wrap break-words text-base leading-relaxed text-gray-700 [scrollbar-width:thin]"
+            data-testid="bottom-dialogue-text-wrap"
+          >
             <span data-testid="bottom-dialogue-text">
               <MentionText text={shownText} players={players} />
             </span>

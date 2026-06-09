@@ -114,6 +114,9 @@ export interface EventPayload {
   reason?: string;
   reasoning?: string;
   speech?: string;
+  merged_event_ids?: string[];
+  segment_index?: number;
+  segment_total?: number;
   target?: { id?: string; name?: string };
   target_id?: string;
   target_name?: string;
@@ -213,6 +216,10 @@ export interface RoomRecord {
   seed: number;
   player_count: number;
   agent_type: string;
+  llm_configured?: boolean;
+  llm_provider?: string;
+  llm_model?: string;
+  llm_base_url?: string;
   status: string;
   created_at: number;
   updated_at: number;
@@ -233,6 +240,17 @@ export interface RoomCreateRequest {
   seed?: number;
   player_count?: number;
   agent_type?: string;
+  human_seat?: number | null;
+  rule_pack_id?: string;
+  llm_config?: RoomLlmConfig;
+}
+
+export interface RoomLlmConfig {
+  provider?: string;
+  model?: string;
+  api_key?: string;
+  base_url?: string;
+  api_format?: string;
 }
 
 export interface ValidationIssue {

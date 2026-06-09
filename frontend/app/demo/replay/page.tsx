@@ -23,7 +23,7 @@ const actionTone: Record<DemoReplayStep["kind"], string> = {
   divine: "border-indigo-500/35 bg-indigo-500/10 text-indigo-950",
 };
 
-type ReplayViewMode = "audience" | "global";
+type ReplayViewMode = "global";
 
 const privateActionKinds = new Set<DemoReplayStep["kind"]>([
   "attack",
@@ -53,48 +53,43 @@ function isPrivateStep(step: DemoReplayStep) {
   return step.phaseLabel.includes("夜晚") || privateActionKinds.has(step.kind);
 }
 
-function displayPhaseLabel(step: DemoReplayStep, viewMode: ReplayViewMode) {
-  return viewMode === "audience" && isPrivateStep(step) ? "夜晚阶段" : step.phaseLabel;
+function displayPhaseLabel(step: DemoReplayStep, _viewMode: ReplayViewMode) {
+  return step.phaseLabel;
 }
 
-function displayKindLabel(step: DemoReplayStep, viewMode: ReplayViewMode) {
-  return viewMode === "audience" && isPrivateStep(step) ? "夜间结算" : step.kindLabel;
+function displayKindLabel(step: DemoReplayStep, _viewMode: ReplayViewMode) {
+  return step.kindLabel;
 }
 
-function displayStepText(step: DemoReplayStep, viewMode: ReplayViewMode) {
-  if (viewMode === "global" || !isPrivateStep(step)) return step.text;
-  return "夜间行动已按观众视角折叠。公开回放仅展示阶段推进，不暴露角色技能、阵营身份和具体目标。";
+function displayStepText(step: DemoReplayStep, _viewMode: ReplayViewMode) {
+  return step.text;
 }
 
-function displayRole(player: DemoReplayPlayer | undefined, viewMode: ReplayViewMode) {
+function displayRole(player: DemoReplayPlayer | undefined, _viewMode: ReplayViewMode) {
   if (!player) return "";
-  return viewMode === "global" ? roleLabels[player.role] : "身份未公开";
+  return roleLabels[player.role];
 }
 
-function displayTargetLabel(step: DemoReplayStep, target: DemoReplayPlayer | undefined, viewMode: ReplayViewMode) {
-  if (viewMode === "audience" && isPrivateStep(step)) return "观众视角不可见";
+function displayTargetLabel(step: DemoReplayStep, target: DemoReplayPlayer | undefined, _viewMode: ReplayViewMode) {
   return target ? playerLabel(target) : "无目标";
 }
 
-function displayActorLabel(step: DemoReplayStep, actor: DemoReplayPlayer | undefined, viewMode: ReplayViewMode) {
-  if (viewMode === "audience" && isPrivateStep(step)) return "夜间系统结算";
+function displayActorLabel(step: DemoReplayStep, actor: DemoReplayPlayer | undefined, _viewMode: ReplayViewMode) {
   return playerLabel(actor);
 }
 
 function displayActorRole(step: DemoReplayStep, actor: DemoReplayPlayer | undefined, viewMode: ReplayViewMode) {
-  if (viewMode === "audience" && isPrivateStep(step)) return "公开信息折叠";
   return displayRole(actor, viewMode);
 }
 
-function playerTone(player: DemoReplayPlayer | undefined, viewMode: ReplayViewMode) {
-  if (viewMode === "audience") return "bg-[#6f5a43] text-white";
+function playerTone(player: DemoReplayPlayer | undefined, _viewMode: ReplayViewMode) {
   return player?.camp === "wolf" ? "bg-[#8d1d16] text-white" : "bg-[#176d37] text-white";
 }
 
 export default function FixedReplayDemoPage() {
   const [stepIndex, setStepIndex] = useState(0);
   const [playing, setPlaying] = useState(true);
-  const [replayViewMode, setReplayViewMode] = useState<ReplayViewMode>("audience");
+  const replayViewMode: ReplayViewMode = "global";
   const playersById = useMemo(() => new Map(demoReplay.players.map((player) => [player.id, player])), []);
   const currentStep = demoReplay.steps[stepIndex];
   const actor = playersById.get(currentStep.actorId);
@@ -102,16 +97,10 @@ export default function FixedReplayDemoPage() {
   const timelineStart = Math.max(0, stepIndex - 7);
   const visibleSteps = demoReplay.steps.slice(timelineStart, stepIndex + 1);
   const progress = ((stepIndex + 1) / demoReplay.steps.length) * 100;
-  const isGlobalView = replayViewMode === "global";
+  const isGlobalView = true;
   const currentIsPrivate = isPrivateStep(currentStep);
-  const currentActionTone = replayViewMode === "audience" && currentIsPrivate
-    ? "border-stone-500/25 bg-stone-500/10 text-stone-950"
-    : actionTone[currentStep.kind];
-  const evidenceItems = isGlobalView ? demoReplay.evidence : [
-    "观众视角仅展示公开发言、投票、遗言和阶段推进。",
-    "夜间技能、阵营身份和目标信息在历史回放中保持折叠。",
-    "切换到全局视角可查看完整身份、目标与 Track B/C 分析证据。",
-  ];
+  const currentActionTone = actionTone[currentStep.kind];
+  const evidenceItems = demoReplay.evidence;
 
   useEffect(() => {
     if (!playing) return;
@@ -137,22 +126,9 @@ export default function FixedReplayDemoPage() {
             <h1 className="font-display text-2xl font-bold text-[#5f2a0b]">历史对局回放</h1>
           </div>
           <div className="flex flex-wrap items-center gap-2 text-sm">
-            <div className="flex rounded-full border border-[#d8c7aa] bg-white/60 p-1 text-xs font-semibold" aria-label="回放视角">
-              <button
-                type="button"
-                onClick={() => setReplayViewMode("audience")}
-                className={`rounded-full px-3 py-1.5 transition ${replayViewMode === "audience" ? "bg-[#6f3510] text-white shadow-sm" : "text-[#6f5a43] hover:bg-[#f2e4cb]"}`}
-              >
-                观众视角
-              </button>
-              <button
-                type="button"
-                onClick={() => setReplayViewMode("global")}
-                className={`rounded-full px-3 py-1.5 transition ${replayViewMode === "global" ? "bg-[#6f3510] text-white shadow-sm" : "text-[#6f5a43] hover:bg-[#f2e4cb]"}`}
-              >
-                全局视角
-              </button>
-            </div>
+            <span className="rounded-full border border-[#d8c7aa] bg-white/60 px-3 py-1.5 text-xs font-semibold text-[#6f3510]">
+              全局视角
+            </span>
             <span className="rounded-full border border-[#d8c7aa] px-3 py-1 text-[#6f5a43]">game_id: {demoReplay.source.gameId.slice(0, 8)}</span>
             <Link href="/" className="rounded-button border border-[#b98745] px-4 py-2 font-semibold text-[#5f2a0b] transition hover:bg-[#f2e4cb]">
               返回大厅
@@ -194,7 +170,7 @@ export default function FixedReplayDemoPage() {
           <section className="rounded-card border border-[#d8c7aa] bg-[#fffaf1] p-4 shadow-sm">
             <div className="mb-3 flex items-center justify-between">
               <h2 className="font-display text-lg font-bold text-[#5f2a0b]">{isGlobalView ? "席位与身份" : "席位信息"}</h2>
-              <span className="text-xs text-[#80684d]">{isGlobalView ? "全局视角" : "观众视角"}</span>
+              <span className="text-xs text-[#80684d]">全局视角</span>
             </div>
             <div className="space-y-2">
               {demoReplay.players.map((player) => (

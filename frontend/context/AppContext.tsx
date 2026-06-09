@@ -22,13 +22,15 @@ interface AppContextType {
   setSpeed: (speed: number) => void;
   seed: number;
   setSeed: (seed: number) => void;
+  settingsLoaded: boolean;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [language, setLanguage] = useState<Language>(Language.ZH);
-  const [viewMode, setViewMode] = useState<ViewMode>(ViewMode.PUBLIC);
+  const [viewMode, setViewModeState] = useState<ViewMode>(ViewMode.MODERATOR);
+  const setViewMode = (_mode: ViewMode) => setViewModeState(ViewMode.MODERATOR);
   // The user wants every game LLM-driven. Heuristic remains a code path only
   // as LLMAgent's automatic fallback after 3 retry failures, never as a
   // user-selectable mode. Default to LLM and reject any URL override below.
@@ -39,6 +41,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [speed, setSpeed] = useState(800);
   const [seed, setSeed] = useState(7);
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
 
   // 从 URL 恢复状态
   useEffect(() => {
@@ -50,9 +53,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           if (parsed.language === Language.EN || parsed.language === Language.ZH) {
             setLanguage(parsed.language);
           }
-          if (parsed.viewMode === ViewMode.MODERATOR || parsed.viewMode === ViewMode.PUBLIC) {
-            setViewMode(parsed.viewMode);
-          }
+          setViewMode(ViewMode.MODERATOR);
+          localStorage.setItem(
+            "gameSettings",
+            JSON.stringify({ ...parsed, viewMode: ViewMode.MODERATOR }),
+          );
           if (typeof parsed.seed === "number" && Number.isFinite(parsed.seed)) {
             setSeed(Math.trunc(parsed.seed));
           }
@@ -70,6 +75,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       // public surface is LLM-only now; honoring stale URLs would silently
       // downgrade users back to heuristic.
     }
+    setSettingsLoaded(true);
   }, []);
 
   // 更新 URL 参数
@@ -107,6 +113,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setSpeed,
         seed,
         setSeed,
+        settingsLoaded,
       }}
     >
       {children}

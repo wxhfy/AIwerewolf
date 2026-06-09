@@ -15,10 +15,9 @@ export default function HumanPageRedirect() {
   const router = useRouter();
 
   useEffect(() => {
-    const mode = searchParams.toString()
-      ? `human&${searchParams.toString()}`
-      : "human";
-    router.replace(`/room/${params.id}/play?mode=${mode}`);
+    const nextParams = new URLSearchParams(searchParams.toString());
+    nextParams.set("mode", "human");
+    router.replace(`/room/${params.id}/play?${nextParams.toString()}`);
   }, [params.id, searchParams, router]);
 
   return null;

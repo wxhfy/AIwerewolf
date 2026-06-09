@@ -6,6 +6,7 @@ import { useAppContext } from "@/context/AppContext";
 import { t, tRole } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/Badge";
+import { PlayerPortrait } from "@/components/game/PlayerPortrait";
 
 interface PlayerCardProps {
   player: Player;
@@ -128,22 +129,21 @@ export function PlayerCard({
       data-player-seat={player.seat}
       data-selectable={selectable ? "true" : "false"}
     >
+      {/* ── Portrait ─────────────────────────────────────── */}
+      <div style={{ gridArea: "portrait" }} className="flex items-start">
+        <div className="relative">
+          <PlayerPortrait player={player} size="sm" isHighlighted={isSpeaking || isNightActive || isTarget} />
+          <span className={cn(
+            "absolute -bottom-1 -right-1 flex h-6 min-w-6 items-center justify-center rounded-full border-2 border-cardBackground px-1 text-[11px] font-bold leading-none shadow-sm",
+            isDead ? "bg-text-sub text-white" : isSpeaking ? "bg-success text-white" : "bg-primary text-white",
+          )}>
+            {isDead ? "✝" : player.seat}
+          </span>
+        </div>
+      </div>
+
       {/* ── Row 1 Left: Identity ─────────────────────────── */}
       <div style={{ gridArea: "identity" }} className="flex min-w-0 items-center gap-2">
-        <span className={cn(
-          "relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-base font-bold",
-          isDead ? "bg-text-sub/20 text-text-sub" : isSpeaking ? "bg-success text-white" : "bg-primary text-white",
-          isSpeaking && "motion-safe:animate-[pulse_0.6s_ease-in-out_infinite]",
-        )}>
-          {isDead ? "✝" : player.seat}
-          {isSpeaking && (
-            <span className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 flex gap-[1px]">
-              <span className="w-0.5 h-3 bg-success rounded-full motion-safe:animate-[pulse_0.3s_ease-in-out_infinite]" />
-              <span className="w-0.5 h-4 bg-success rounded-full motion-safe:animate-[pulse_0.3s_ease-in-out_infinite_0.15s]" />
-              <span className="w-0.5 h-2.5 bg-success rounded-full motion-safe:animate-[pulse_0.3s_ease-in-out_infinite_0.3s]" />
-            </span>
-          )}
-        </span>
         <span className={cn(
           "min-w-0 truncate font-display font-semibold leading-tight text-textPrimary",
           isDead && "text-text-sub"

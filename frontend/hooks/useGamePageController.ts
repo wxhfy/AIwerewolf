@@ -6,8 +6,8 @@ import { useAppContext } from "@/context/AppContext";
 import { fetchReplayDownload, fetchRoom, pauseRoom, resumeRoom, startRoom, submitHumanAction } from "@/lib/gameApi";
 import { t } from "@/lib/i18n";
 import { placeholderPlayers } from "@/lib/gameView";
-import { isRevealBlockingChat } from "@/lib/eventFilter";
-import { EventType, Language, Player, ViewMode } from "@/types";
+import { getChatCompletionIds, isChatCompleted, mergeConsecutiveChats } from "@/lib/eventFilter";
+import { EventType, Language, Player } from "@/types";
 import { useAutoScroll } from "@/hooks/useAutoScroll";
 import { useGameDerivedState } from "@/hooks/useGameDerivedState";
 import { usePhaseTransition } from "@/hooks/usePhaseTransition";
@@ -23,7 +23,7 @@ export function useGamePageController(roomId: string) {
   const {
     language, setLanguage, viewMode, setViewMode, agentType,
     room, setRoom, gameState, setGameState, isPlaying, setIsPlaying,
-    speed, seed,
+    speed, seed, settingsLoaded,
   } = useAppContext();
 
   const [showWinnerPanel, setShowWinnerPanel] = useState(false);
@@ -66,6 +66,7 @@ export function useGamePageController(roomId: string) {
   const latestGameStateRef = useRef(gameState);
   const autoStartedRef = useRef(false);
   const isHumanMode = mode === "human";
+  const showPrivateView = true;
   const [fetchError, setFetchError] = useState<string | null>(null);
 
   // ── Typewriter-driven display phase ─────────────────────────────
@@ -90,18 +91,11 @@ export function useGamePageController(roomId: string) {
     const events = gameState?.events;
     if (!events) return null;
 
-    let prevActor = "";
-    let prevPhase = "";
-    for (const event of events) {
+    for (const event of mergeConsecutiveChats(events)) {
       if (event.type !== EventType.CHAT_MESSAGE) {
-        prevActor = "";
-        prevPhase = "";
         continue;
       }
-      if (!isRevealBlockingChat(event, prevActor, prevPhase)) continue;
-      prevActor = (event.payload as any)?.actor_id || "";
-      prevPhase = event.phase || "";
-      if (!completedIdsRef.current.has(event.id)) return event;
+      if (!getChatCompletionIds(event).every((id) => completedIdsRef.current.has(id))) return event;
     }
     return null;
   }, [gameState?.events, completedTick]);
@@ -127,7 +121,7 @@ export function useGamePageController(roomId: string) {
     setStatusTitle,
     getIsBlinking: phase.getIsBlinking,
     bufferSnapshot: phase.bufferSnapshot,
-    showPrivate: viewMode === ViewMode.MODERATOR,
+    showPrivate: showPrivateView,
   });
 
   // 眨眼 + settling 结束后，对齐缓冲的最新状态。
@@ -167,11 +161,12 @@ export function useGamePageController(roomId: string) {
   }, [roomId]);
 
   useEffect(() => {
+    if (!settingsLoaded) return;
     if (mode === "human" && !isPlaying && !gameState?.pending_input && !gameState?.winner && !autoStartedRef.current) {
       autoStartedRef.current = true;
       startHumanGame();
     }
-  }, [mode, roomId, gameState?.id]);
+  }, [mode, roomId, gameState?.id, settingsLoaded]);
 
   useEffect(() => {
     if (!gameState) return;
@@ -223,17 +218,18 @@ export function useGamePageController(roomId: string) {
   }, [roomId]);
 
   useEffect(() => {
+    if (!settingsLoaded) return;
     if (autoStartedRef.current) return;
     if (mode !== "ai") return;
     if (gameState?.winner) return;
-    if (isPlaying) return;
     if (roomStream.isStreamActive()) return;
     const id = setTimeout(() => {
+      if (roomStream.isStreamActive()) return;
       autoStartedRef.current = true;
       runGame();
     }, 200);
     return () => clearTimeout(id);
-  }, [mode, roomId]);
+  }, [mode, roomId, gameState?.winner, settingsLoaded, showPrivateView]);
 
   function runGame() {
     setIsPaused(false);
@@ -281,7 +277,7 @@ export function useGamePageController(roomId: string) {
     setStatusTitle(t("statusStreaming", language));
     setGameState(null);
     try {
-      const snapshot = await startRoom(roomId, viewMode === ViewMode.MODERATOR);
+      const snapshot = await startRoom(roomId, true);
       setGameState(snapshot);
       if (snapshot.winner) {
         setIsPlaying(false);
@@ -331,7 +327,7 @@ export function useGamePageController(roomId: string) {
   function buildSnapshotExportPayload(state: NonNullable<typeof latestGameStateRef.current>) {
     return {
       exported_at: new Date().toISOString(),
-      export_scope: viewMode === ViewMode.MODERATOR ? "global_view_snapshot" : "audience_view_snapshot",
+      export_scope: "global_view_snapshot",
       export_source: "frontend_snapshot",
       game: {
         id: state.id,
@@ -361,11 +357,11 @@ export function useGamePageController(roomId: string) {
 
     if (state.id) {
       try {
-        const replay = await fetchReplayDownload(state.id, viewMode === ViewMode.MODERATOR);
+        const replay = await fetchReplayDownload(state.id, showPrivateView);
         downloadGameRecord(
           {
             exported_at: new Date().toISOString(),
-            export_scope: viewMode === ViewMode.MODERATOR ? "persisted_replay_private" : "persisted_replay_public",
+            export_scope: "persisted_replay_private",
             export_source: "backend_replay",
             replay,
           },
@@ -389,10 +385,14 @@ export function useGamePageController(roomId: string) {
     const targetPhase = stuckPhaseRef.current;
     if (!targetPhase) return;
     let changed = false;
-    for (const e of events) {
-      if (e.type === "CHAT_MESSAGE" && e.phase === targetPhase && !completedIdsRef.current.has(e.id)) {
-        completedIdsRef.current.add(e.id);
-        changed = true;
+    for (const e of mergeConsecutiveChats(events)) {
+      if (e.type === "CHAT_MESSAGE" && e.phase === targetPhase) {
+        for (const id of getChatCompletionIds(e)) {
+          if (!completedIdsRef.current.has(id)) {
+            completedIdsRef.current.add(id);
+            changed = true;
+          }
+        }
       }
     }
     if (changed) setCompletedTick((n) => n + 1);
@@ -411,23 +411,11 @@ export function useGamePageController(roomId: string) {
     if (gameState?.winner) return gameState?.phase;
     const completed = completedIdsRef.current;
 
-    // Find the phase of the earliest uncompleted CHAT_MESSAGE,
-    // skipping segments that mergeConsecutiveChats would collapse.
-    let prevActor = "";
-    let prevPhase = "";
     let blockingPhase: string | undefined;
-    for (const e of events) {
-      if (e.type === EventType.CHAT_MESSAGE) {
-        if (!isRevealBlockingChat(e, prevActor, prevPhase)) continue;
-        prevActor = (e.payload as any)?.actor_id || "";
-        prevPhase = e.phase || "";
-        if (!completed.has(e.id)) {
-          blockingPhase = e.phase;
-          break;
-        }
-      } else {
-        prevActor = "";
-        prevPhase = "";
+    for (const e of mergeConsecutiveChats(events)) {
+      if (e.type === EventType.CHAT_MESSAGE && !isChatCompleted(e, completed)) {
+        blockingPhase = e.phase;
+        break;
       }
     }
 

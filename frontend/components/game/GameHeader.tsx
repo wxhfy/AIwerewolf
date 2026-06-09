@@ -1,6 +1,6 @@
 "use client";
 
-import { Language, ViewMode } from "@/types";
+import { Language } from "@/types";
 import { format, t } from "@/lib/i18n";
 import { truncate } from "@/lib/utils";
 import { Button } from "@/components/ui/Button";
@@ -10,7 +10,6 @@ interface GameHeaderProps {
   day?: number;
   winner?: string;
   language: Language;
-  viewMode: ViewMode;
   isVisualNight: boolean;
   isHumanMode: boolean;
   isPlaying: boolean;
@@ -27,7 +26,6 @@ export function GameHeader({
   day,
   winner,
   language,
-  viewMode,
   isVisualNight,
   isHumanMode,
   isPlaying,
@@ -38,7 +36,7 @@ export function GameHeader({
   onPause,
   onResume,
 }: GameHeaderProps) {
-  const canControlAiGame = !isHumanMode && !winner && viewMode === ViewMode.MODERATOR;
+  const canControlAiGame = !isHumanMode && !winner;
 
   return (
     <header className="relative z-10 flex flex-wrap items-center gap-3 border-b border-border bg-cardBackground px-4 py-2.5 md:px-6" data-phase-aware>
@@ -59,9 +57,7 @@ export function GameHeader({
       </div>
       <div className="flex items-center gap-2">
         <div className="hidden items-center text-[11px] text-text-sub/70 lg:flex">
-          {viewMode === ViewMode.PUBLIC
-            ? (language === Language.ZH ? "只看公开进程" : "Public flow")
-            : (language === Language.ZH ? "含隐藏信息" : "Hidden info")}
+          {language === Language.ZH ? "全局对战流程" : "Global match flow"}
         </div>
         {canControlAiGame && (isPlaying || isPaused) && (
           <Button

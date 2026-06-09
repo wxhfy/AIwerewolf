@@ -2,6 +2,16 @@ import { EventType, GameEvent } from "@/types";
 
 export type ViewMode = "player" | "public" | "host";
 
+type UiChatPayload = GameEvent["payload"] & {
+  last_words?: boolean;
+  merged_event_ids?: string[];
+  segment_total?: number;
+};
+
+function getUiChatPayload(event: GameEvent): UiChatPayload {
+  return event.payload as UiChatPayload;
+}
+
 /**
  * Filter events by visibility rules.
  */
@@ -50,8 +60,8 @@ export function isMergedChatSegment(
 ): boolean {
   if (event.type !== EventType.CHAT_MESSAGE) return false;
   // Don't skip multi-segment speeches — they are separate intentional bubbles
-  if ((event.payload as any)?.segment_total > 1) return false;
-  const actor = (event.payload as any)?.actor_id || "";
+  if ((getUiChatPayload(event).segment_total || 0) > 1) return false;
+  const actor = getUiChatPayload(event).actor_id || "";
   const phase = event.phase || "";
   if (!actor || !phase) return false;
   return actor === prevActor && phase === prevPhase;
@@ -71,6 +81,78 @@ export function isRevealBlockingChat(
   return event.type === EventType.CHAT_MESSAGE && !isMergedChatSegment(event, prevActor, prevPhase);
 }
 
+export function canMergeChatEvents(prev: GameEvent | undefined, event: GameEvent): boolean {
+  if (!prev) return false;
+  if (event.type !== EventType.CHAT_MESSAGE || prev.type !== EventType.CHAT_MESSAGE) return false;
+  const eventPayload = getUiChatPayload(event);
+  const prevPayload = getUiChatPayload(prev);
+  const isExplicitMultiSegment = (eventPayload.segment_total || 0) > 1 || (prevPayload.segment_total || 0) > 1;
+  if (isExplicitMultiSegment) return false;
+  return Boolean(
+    event.payload.actor_id &&
+    event.payload.actor_id === prev.payload.actor_id &&
+    event.phase === prev.phase &&
+    !eventPayload?.last_words &&
+    !prevPayload?.last_words,
+  );
+}
+
+/**
+ * Merge legacy consecutive same-actor same-phase chat events into the exact
+ * bubble displayed in the timeline. BottomDialogueDock also uses this helper,
+ * so the live typewriter text and the finalized log bubble stay identical.
+ */
+export function mergeConsecutiveChats(events: GameEvent[]): GameEvent[] {
+  const merged: GameEvent[] = [];
+  for (const event of events) {
+    const prev = merged[merged.length - 1];
+    if (canMergeChatEvents(prev, event)) {
+      const prevSpeech = (prev.payload.speech as string) || "";
+      const curSpeech = (event.payload.speech as string) || "";
+      const prevIds = getUiChatPayload(prev).merged_event_ids || [prev.id];
+      const payload: UiChatPayload = {
+        ...prev.payload,
+        speech: prevSpeech ? `${prevSpeech}\n\n${curSpeech}` : curSpeech,
+        merged_event_ids: [...prevIds, event.id],
+      };
+      merged[merged.length - 1] = {
+        ...prev,
+        payload,
+      };
+    } else {
+      merged.push(event);
+    }
+  }
+  return merged;
+}
+
+export function getChatCompletionIds(event: GameEvent): string[] {
+  const mergedIds = getUiChatPayload(event).merged_event_ids;
+  return Array.isArray(mergedIds) && mergedIds.every((id) => typeof id === "string")
+    ? mergedIds
+    : [event.id];
+}
+
+export function isChatCompleted(event: GameEvent, completedIds: Set<string>): boolean {
+  return getChatCompletionIds(event).every((id) => completedIds.has(id));
+}
+
+export function getRevealCutoff(events: GameEvent[], completedIds: Set<string>): number {
+  const merged = mergeConsecutiveChats(events);
+  for (let i = 0; i < merged.length; i++) {
+    const event = merged[i];
+    if (event.type === EventType.CHAT_MESSAGE && !isChatCompleted(event, completedIds)) {
+      const rawIndex = events.findIndex((raw) => raw.id === event.id);
+      return rawIndex >= 0 ? rawIndex : events.length;
+    }
+  }
+  return events.length;
+}
+
+export function getRevealedEvents(events: GameEvent[], completedIds: Set<string>): GameEvent[] {
+  return events.slice(0, getRevealCutoff(events, completedIds));
+}
+
 /**
  * Iterates CHAT_MESSAGE events, skipping merged segments.
  * After a non-chat event, prevActor/prevPhase are reset.
@@ -88,7 +170,7 @@ export function forEachVisibleChat(
     const e = events[i];
     if (e.type === EventType.CHAT_MESSAGE) {
       if (!isRevealBlockingChat(e, prevActor, prevPhase)) continue;
-      prevActor = (e.payload as any)?.actor_id || "";
+      prevActor = getUiChatPayload(e).actor_id || "";
       prevPhase = e.phase || "";
       const shouldStop = onSegment(e, i);
       if (shouldStop) return;
@@ -107,6 +189,8 @@ export function forEachVisibleChat(
  */
 export function normalizeSpeechContent(raw: unknown, fallbackText: string): string {
   if (raw == null) return fallbackText || "发言完毕，过。";
-  const s = String(raw).trim();
+  const s = String(raw)
+    .replace(/[ \t]*\\+[ \t]*(\r?\n)/g, "$1")
+    .trim();
   return s.length > 0 ? s : fallbackText || "发言完毕，过。";
 }

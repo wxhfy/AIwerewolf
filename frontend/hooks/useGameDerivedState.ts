@@ -1,6 +1,6 @@
 import { useMemo } from "react";
-import { Alignment, EventType, GameEvent, GameState, Phase } from "@/types";
-import { isRevealBlockingChat } from "@/lib/eventFilter";
+import { Alignment, GameEvent, GameState, Phase } from "@/types";
+import { getRevealedEvents } from "@/lib/eventFilter";
 
 /**
  * 夜间阶段 → 对应角色列表。
@@ -44,29 +44,7 @@ export function useGameDerivedState(gameState: GameState | null, humanSeat: numb
   // ── Revealed events only — syncs with EventTimeline revealIndex ──
   const revealedEvents = useMemo(() => {
     if (!gameState?.events) return [];
-    const events = gameState.events;
-    // Match EventTimeline's mergeConsecutiveChats: skip segments that
-    // would be collapsed into the previous bubble.
-    let cutoff = events.length;
-    let prevActor = "", prevPhase = "";
-    for (let i = 0; i < events.length; i++) {
-      const e = events[i];
-      if (e.type === EventType.CHAT_MESSAGE) {
-        const actor = (e.payload as any)?.actor_id || "";
-        const ph = e.phase || "";
-        if (!isRevealBlockingChat(e, prevActor, prevPhase)) continue;
-        prevActor = actor;
-        prevPhase = ph;
-        if (!completedIds?.has(e.id)) {
-          cutoff = i;
-          break;
-        }
-      } else {
-        prevActor = "";
-        prevPhase = "";
-      }
-    }
-    return events.slice(0, cutoff);
+    return getRevealedEvents(gameState.events, completedIds || new Set());
   }, [gameState?.events, completedIds, completedTick]);
 
   // Tracks which players have spoken (from revealed events only)

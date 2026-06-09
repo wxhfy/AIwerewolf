@@ -8,8 +8,6 @@ import { EventTimeline } from "@/components/game/EventTimeline";
 import { GameEndPanel } from "@/components/game/GameEndPanel";
 import { GameHeader } from "@/components/game/GameHeader";
 import { MobilePlayerRail, PlayerRail } from "@/components/game/PlayerRail";
-import { PhaseOverlayCoordinator } from "@/components/game/PhaseOverlayCoordinator";
-import { DayNightBlinkTransition } from "@/components/game/DayNightBlinkTransition";
 import { ThinkingBubble } from "@/components/game/ThinkingBubble";
 import { VotePanel } from "@/components/game/VotePanel";
 import { BottomDialogueDock } from "@/components/game/BottomDialogueDock";
@@ -33,11 +31,11 @@ export default function GamePage() {
   const controller = useGamePageController(params.id);
   const { gameState, derived, phase, scroll, voteDisplay } = controller;
   const language = controller.language;
-  const isGlobalView = controller.viewMode === ViewMode.MODERATOR;
+  const isGlobalView = controller.viewMode === ViewMode.MODERATOR || isHuman;
 
   const isEndPhase = phase.visualPhaseGroup === "end" || Boolean(gameState?.winner);
   const showNightOverlay = phase.isVisualNight && !isEndPhase;
-  const isLocked = controller.isBlinking || controller.isTransitioning;
+  const isLocked = false;
 
   // ── Human mode state ──────────────────────────────────────────────
   const humanPlayer = isHuman ? gameState?.players?.find(p => p.seat === controller.humanSeat) : undefined;
@@ -84,14 +82,6 @@ export default function GamePage() {
       data-phase={phase.visualPhaseGroup}
       data-phase-aware
     >
-      {/* ── 昼夜眨眼转场（z-index 1500，覆盖一切） ── */}
-      <DayNightBlinkTransition
-        blinkPhase={controller.blinkPhase}
-        onCloseComplete={controller.onBlinkCloseComplete}
-        onPauseComplete={controller.onBlinkPauseComplete}
-        onOpenComplete={controller.onBlinkOpenComplete}
-      />
-      <PhaseOverlayCoordinator phaseAnnouncement={phase.phaseAnnouncement} />
       <BackgroundMusic language={language} placement="bottom-right" />
 
       {/* ── Fetch error ── */}
@@ -119,7 +109,6 @@ export default function GamePage() {
         day={gameState?.day}
         winner={gameState?.winner}
         language={language}
-        viewMode={controller.viewMode}
         isVisualNight={phase.isVisualNight}
         isHumanMode={controller.isHumanMode}
         isPlaying={controller.isPlaying}
@@ -176,7 +165,6 @@ export default function GamePage() {
               gameState={gameState}
               derived={derived}
               language={language}
-              viewMode={controller.viewMode}
             />
           )}
 

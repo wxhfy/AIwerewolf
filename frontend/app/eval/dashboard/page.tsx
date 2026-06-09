@@ -117,6 +117,7 @@ export default function EvalDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [refreshTick, setRefreshTick] = useState(0);
+  const [lastRefreshAt, setLastRefreshAt] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -134,7 +135,10 @@ export default function EvalDashboardPage() {
       } catch (err: any) {
         if (!cancelled) setError(err.message || "load failed");
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLastRefreshAt(new Date().toLocaleString());
+          setLoading(false);
+        }
       }
     }
     loadAll();
@@ -198,7 +202,7 @@ export default function EvalDashboardPage() {
         <div>
           <h1 className="text-2xl font-semibold">Track B 评估总览</h1>
           <p className="mt-1 text-sm text-text-sub">
-            真 LLM 评分区分度 — 最新刷新时间: {new Date().toLocaleString()}
+            真 LLM 评分区分度 — 最新刷新时间: {lastRefreshAt || "加载中"}
           </p>
         </div>
         <div className="flex items-center gap-3">

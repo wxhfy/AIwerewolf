@@ -3,7 +3,7 @@
 import React, { useCallback, useRef } from "react";
 import { EventType, GameEvent, Language, Player } from "@/types";
 import { t, tPhase } from "@/lib/i18n";
-import { normalizeSpeechContent } from "@/lib/eventFilter";
+import { getChatCompletionIds, normalizeSpeechContent } from "@/lib/eventFilter";
 import { ChatBubble } from "@/components/game/ChatBubble";
 import { EventItem } from "@/components/game/EventItem";
 
@@ -91,13 +91,18 @@ export function TimelineEvent({
   const content = isChat ? normalizeSpeechContent(rawSpeech, t("speechPass", language)) : "";
   const hasContent = isChat && rawSpeech.trim().length > 0;
   const actorId = isChat ? (event.payload.actor_id || "") : "";
+  const completionIds = isChat ? getChatCompletionIds(event) : [event.id];
+  const completionKey = completionIds.join("\u0000");
+  const completeChat = useCallback(() => {
+    completionIds.forEach((id) => onChatCompleteRef.current(id));
+  }, [completionKey]);
 
   // Empty speech: immediately mark as complete
   React.useEffect(() => {
     if (!isChat) return;
     if (rawSpeech.trim()) return;
-    onChatCompleteRef.current(event.id);
-  }, [event.id, isChat, rawSpeech]);
+    completeChat();
+  }, [completeChat, isChat, rawSpeech]);
 
   // Fallback timer (8s) — only active while this bubble is being animated.
   // Waiting bubbles (animateChat=false) must NOT start timers or they'll
@@ -109,15 +114,15 @@ export function TimelineEvent({
       return;
     }
     timerRef.current = setTimeout(() => {
-      onChatCompleteRef.current(event.id);
+      completeChat();
     }, 8000);
     return () => { if (timerRef.current) clearTimeout(timerRef.current); };
-  }, [event.id, hasContent, animateChat]);
+  }, [completeChat, hasContent, animateChat]);
 
   const handleTypewriterComplete = useCallback(() => {
     if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
-    onChatCompleteRef.current(event.id);
-  }, [event.id]);
+    completeChat();
+  }, [completeChat]);
 
   // ── System messages ──
   const isSystem = event.type === EventType.PHASE_CHANGED
@@ -153,6 +158,7 @@ export function TimelineEvent({
         onTypewriterComplete={hasContent ? handleTypewriterComplete : undefined}
         players={players}
         testId="timeline-chat-bubble"
+        dataEventIds={completionIds.join(",")}
       />
     );
   }

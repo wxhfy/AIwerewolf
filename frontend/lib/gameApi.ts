@@ -1,4 +1,4 @@
-import { AgentType, GameState, RoomRecord } from "@/types";
+import { AgentType, GameState, RoomCreateRequest, RoomLlmConfig, RoomRecord } from "@/types";
 import { apiUrl } from "@/lib/api";
 
 export type GameMode = "ai" | "human";
@@ -11,6 +11,7 @@ interface CreateRoomParams {
   agentType: AgentType;
   mode: GameMode;
   humanSeat: number;
+  llmConfig?: RoomLlmConfig;
 }
 
 interface HumanActionPayload {
@@ -36,16 +37,21 @@ async function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit): P
   }
 }
 
-export async function createRoom({ seed, playerCount, agentType, mode, humanSeat }: CreateRoomParams): Promise<RoomRecord> {
-  const params = new URLSearchParams({
+export async function createRoom({ seed, playerCount, agentType, mode, humanSeat, llmConfig }: CreateRoomParams): Promise<RoomRecord> {
+  const body: RoomCreateRequest = {
     name: "Demo Room",
-    seed: String(seed),
-    player_count: String(playerCount),
+    seed,
+    player_count: playerCount,
     agent_type: agentType,
-  });
-  if (mode === "human") params.set("human_seat", String(humanSeat));
+    ...(mode === "human" ? { human_seat: humanSeat } : {}),
+    ...(llmConfig ? { llm_config: llmConfig } : {}),
+  };
 
-  const response = await fetchWithTimeout(apiUrl(`/api/rooms?${params.toString()}`), { method: "POST" });
+  const response = await fetchWithTimeout(apiUrl("/api/rooms"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
   if (!response.ok) throw new Error(`Failed to create room (${response.status})`);
   return parseJson<RoomRecord>(response);
 }

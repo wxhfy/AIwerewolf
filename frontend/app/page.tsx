@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { gsap } from "gsap";
 import { useGSAP } from "@gsap/react";
 import { useAppContext } from "@/context/AppContext";
-import { Language, AgentType, PrepareSnapshot, RoomInfoRow, RoomRecord, ViewMode } from "@/types";
+import { Language, AgentType, PrepareSnapshot, RoomInfoRow, RoomLlmConfig, RoomRecord, ViewMode } from "@/types";
 import { createRoom, prepareRoom } from "@/lib/gameApi";
 import { t } from "@/lib/i18n";
 import { AnimatedWerewolfBackground } from "@/components/game/AnimatedWerewolfBackground";
@@ -20,7 +20,7 @@ if (typeof window !== "undefined") {
 }
 
 const defaultGameSettings: GameSettings = {
-  viewMode: ViewMode.PUBLIC,
+  viewMode: ViewMode.MODERATOR,
   language: Language.ZH,
   seed: Math.floor(Math.random() * 1000),
   modelProvider: "anthropic",
@@ -33,7 +33,7 @@ const defaultGameSettings: GameSettings = {
 
 function normalizeGameSettings(raw: unknown): GameSettings {
   const data = raw && typeof raw === "object" ? raw as Partial<GameSettings> & { customApiKey?: string } : {};
-  const viewMode = data.viewMode === ViewMode.MODERATOR ? ViewMode.MODERATOR : ViewMode.PUBLIC;
+  const viewMode = ViewMode.MODERATOR;
   const language = data.language === Language.EN ? Language.EN : Language.ZH;
   const seed = typeof data.seed === "number" && Number.isFinite(data.seed)
     ? Math.trunc(data.seed)
@@ -84,13 +84,13 @@ export default function LobbyPage() {
     if (gameSettings.language !== language) {
       setLanguage(gameSettings.language);
     }
-    if (gameSettings.viewMode !== viewMode) {
-      setViewMode(gameSettings.viewMode);
+    if (viewMode !== ViewMode.MODERATOR) {
+      setViewMode(ViewMode.MODERATOR);
     }
     if (gameSettings.seed !== seed) {
       setSeed(gameSettings.seed);
     }
-  }, [agentType, setAgentType, gameSettings.language, gameSettings.seed, gameSettings.viewMode, language, seed, setLanguage, setSeed, setViewMode, viewMode]);
+  }, [agentType, setAgentType, gameSettings.language, gameSettings.seed, language, seed, setLanguage, setSeed, setViewMode, viewMode]);
 
   function persistGameSettings(newSettings: GameSettings) {
     setGameSettings(newSettings);
@@ -100,10 +100,11 @@ export default function LobbyPage() {
   }
 
   const handleSaveSettings = (newSettings: GameSettings) => {
-    persistGameSettings(newSettings);
-    setLanguage(newSettings.language);
-    setViewMode(newSettings.viewMode);
-    setSeed(newSettings.seed);
+    const normalizedSettings = normalizeGameSettings(newSettings);
+    persistGameSettings(normalizedSettings);
+    setLanguage(normalizedSettings.language);
+    setViewMode(ViewMode.MODERATOR);
+    setSeed(normalizedSettings.seed);
   };
 
   const [playerCount, setPlayerCount] = useState(7);
@@ -136,12 +137,34 @@ export default function LobbyPage() {
     return error instanceof Error && error.message === "requestTimeout" ? t("requestTimeout", language) : error instanceof Error ? error.message : fallback;
   }
 
+  function buildRoomLlmConfig(settings: GameSettings): RoomLlmConfig | undefined {
+    const config: RoomLlmConfig = {};
+    const provider = settings.modelProvider.trim();
+    const model = settings.modelName.trim();
+    const apiKey = settings.apiKey.trim();
+    const baseUrl = settings.baseUrl.trim().replace(/\/+$/, "");
+    if (!apiKey) return undefined;
+    if (provider) config.provider = provider;
+    if (model) config.model = model;
+    config.api_key = apiKey;
+    if (baseUrl) config.base_url = baseUrl;
+    if (settings.apiFormat.trim()) config.api_format = settings.apiFormat.trim();
+    return config;
+  }
+
   async function handleCreateRoom() {
     setIsCreating(true); setError(""); setPrepareSnapshot(null);
     try {
-      const room = await createRoom({ seed, playerCount, agentType: AgentType.LLM, mode, humanSeat });
+      const room = await createRoom({
+        seed,
+        playerCount,
+        agentType: AgentType.LLM,
+        mode,
+        humanSeat,
+        llmConfig: buildRoomLlmConfig(gameSettings),
+      });
       setCreatedRoom(room);
-      if (mode === "ai") setPrepareSnapshot(await prepareRoom(room.id, viewMode === ViewMode.MODERATOR));
+      if (mode === "ai") setPrepareSnapshot(await prepareRoom(room.id, true));
       setShowModal(true);
     } catch (e) { setError(getErrorMessage(e, "创建房间失败")); }
     finally { setIsCreating(false); }
@@ -152,6 +175,7 @@ export default function LobbyPage() {
     { label: t("gameMode", language), value: mode === "human" ? t("humanPlay", language) : t("aiVsAi", language) },
     { label: t("players", language), value: String(playerCount) },
     { label: t("agent", language), value: t("agentLlm", language) },
+    { label: language === Language.ZH ? "模型" : "Model", value: gameSettings.modelName || createdRoom.llm_model || "-" },
     ...(mode === "human" ? [{ label: t("yourSeat", language), value: `${t("seat", language)} ${humanSeat}` }] : []),
   ] : [];
 
@@ -159,9 +183,13 @@ export default function LobbyPage() {
     if (!createdRoom) return;
     setIsStarting(true); setError("");
     try {
-      setGameState(prepareSnapshot ?? await prepareRoom(createdRoom.id, viewMode === ViewMode.MODERATOR));
+      if (mode === "ai") {
+        setGameState(prepareSnapshot ?? await prepareRoom(createdRoom.id, true));
+      } else {
+        setGameState(null);
+      }
       const gamePath = mode === "human"
-        ? `/room/${createdRoom.id}/human?human_seat=${humanSeat}&mode=human`
+        ? `/room/${createdRoom.id}/play?mode=human&human_seat=${humanSeat}`
         : `/room/${createdRoom.id}/play?mode=ai`;
       router.push(gamePath);
     } catch (e) { setError(getErrorMessage(e, "启动失败")); setIsStarting(false); }
@@ -177,14 +205,7 @@ export default function LobbyPage() {
         <Link href="/personas" className="px-3 py-1.5 text-xs font-medium rounded-button border border-border/40 text-text-sub/70 hover:text-primary hover:border-primary/50 transition-colors backdrop-blur-sm">
           {language === "zh" ? "角色库" : "Personas"}
         </Link>
-        <Link href="/demo/replay" className="flex items-center gap-1.5 rounded-button border border-primary/45 bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary shadow-[0_0_18px_rgba(183,131,63,0.12)] backdrop-blur-sm transition-colors hover:border-primary/70 hover:bg-primary/15">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M3 12a9 9 0 1 0 3-6.7" />
-            <path d="M3 3v6h6" />
-            <path d="M10 8l6 4-6 4V8z" />
-          </svg>
-          {language === "zh" ? "历史回放" : "Replay"}
-        </Link>
+
         <button
           data-testid="open-settings-button"
           onClick={() => setShowSettings(true)}

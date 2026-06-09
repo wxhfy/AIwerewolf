@@ -23,6 +23,7 @@ interface ChatBubbleProps {
   onTypewriterComplete?: () => void;
   players?: Player[];
   testId?: string;
+  dataEventIds?: string;
 }
 
 export const ChatBubble = memo(function ChatBubble({
@@ -31,6 +32,7 @@ export const ChatBubble = memo(function ChatBubble({
   eventType, eventPhase,
   players,
   testId,
+  dataEventIds,
 }: ChatBubbleProps) {
   const displayContent = content.trim();
 
@@ -51,6 +53,7 @@ export const ChatBubble = memo(function ChatBubble({
       headerRight={phaseLabel || undefined}
       className={cn(isOwn && "opacity-90")}
       testId={testId}
+      dataEventIds={dataEventIds}
     >
       {displayContent ? (
         <MentionText text={displayContent} players={players} className="text-textPrimary" />

@@ -3,6 +3,7 @@
 import React, { useEffect, useRef } from "react";
 import { EventType, GameEvent, Language, ViewMode, Player } from "@/types";
 import { t } from "@/lib/i18n";
+import { getChatCompletionIds, mergeConsecutiveChats } from "@/lib/eventFilter";
 import { TimelineEvent } from "./TimelineEvent";
 import { ChatBubble } from "@/components/game/ChatBubble";
 import { VoteResultPanel } from "@/components/game/VoteResultPanel";
@@ -41,34 +42,6 @@ function isRedundantPhaseAnnouncement(event: GameEvent): boolean {
   return false;
 }
 
-function mergeConsecutiveChats(events: GameEvent[]): GameEvent[] {
-  const merged: GameEvent[] = [];
-  for (const event of events) {
-    const prev = merged[merged.length - 1];
-    // Don't merge multi-segment speeches (segment_total > 1) — they are
-    // intentionally separate bubbles from the backend
-    const isMultiSegment = (event.payload as any)?.segment_total > 1
-      || (prev?.payload as any)?.segment_total > 1;
-    if (
-      !isMultiSegment &&
-      prev && event.type === EventType.CHAT_MESSAGE && prev.type === EventType.CHAT_MESSAGE &&
-      event.payload.actor_id && event.payload.actor_id === prev.payload.actor_id &&
-      event.phase === prev.phase &&
-      !(event.payload as any).last_words && !(prev.payload as any).last_words
-    ) {
-      const prevSpeech = (prev.payload.speech as string) || "";
-      const curSpeech = (event.payload.speech as string) || "";
-      merged[merged.length - 1] = {
-        ...prev,
-        payload: { ...prev.payload, speech: prevSpeech ? `${prevSpeech}\n\n${curSpeech}` : curSpeech },
-      };
-    } else {
-      merged.push(event);
-    }
-  }
-  return merged;
-}
-
 function isNightActionDetail(event: GameEvent, viewMode: ViewMode): boolean {
   if (viewMode === ViewMode.MODERATOR) return false;
   if (event.type !== EventType.NIGHT_ACTION) return false;
@@ -104,7 +77,7 @@ export function DayEventBlock({
     event.type !== EventType.PRIVATE_INFO &&
     (viewMode === ViewMode.MODERATOR || event.visibility !== "private") &&
     !isRedundantPhaseAnnouncement(event) &&
-    // 观众视角只看夜间完成摘要；全局视角保留夜间行动细节。
+    // 全局视角保留夜间行动细节。
     !isNightActionDetail(event, viewMode) &&
     // 过滤投票放逐的 PLAYER_DIED 事件，统一在遗言后渲染一次确认
     !(event.type === EventType.PLAYER_DIED && (event.payload as any)?.reason === "vote")
@@ -118,7 +91,7 @@ export function DayEventBlock({
   if (timelineEvents.length === 0) return null;
 
   const visibleEvents = timelineEvents.filter(
-    (event) => event.type !== EventType.CHAT_MESSAGE || completedIds.has(event.id),
+    (event) => event.type !== EventType.CHAT_MESSAGE || getChatCompletionIds(event).every((id) => completedIds.has(id)),
   );
 
   // Vote result cutoff: show before LAST_WORDS / HUNTER_SHOOT / BADGE_TRANSFER
