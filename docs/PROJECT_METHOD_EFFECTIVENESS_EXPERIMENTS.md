@@ -220,7 +220,7 @@
 
 | Status | SafeForFormalExperiment | ResolvedModels | Error | Source |
 | --- | --- | --- | --- | --- |
-| ok | True | doubao:ep-20260514115354-k4jz4 | None | docs/PROJECT_PROVIDER_PREFLIGHT.json |
+| ok | True | doubao:ep-<redacted> | None | docs/PROJECT_PROVIDER_PREFLIGHT.json |
 
 该 preflight 已通过真实 provider 可用性检查；target-seat 因果实验的剩余阻塞不再是 provider，而是仍需按功效计划运行正式 paired-seed A/B，并通过 fallback/invalid 与 bootstrap CI 门禁。
 

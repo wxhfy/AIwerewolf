@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import re
 import statistics
 import sys
 from datetime import datetime
@@ -64,6 +65,28 @@ def read_json(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {}
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def sanitize_endpoint_ids(value: Any) -> Any:
+    if isinstance(value, str):
+        return re.sub(r"ep-\d{14}-[A-Za-z0-9_-]+", "ep-<redacted>", value)
+    if isinstance(value, list):
+        return [sanitize_endpoint_ids(item) for item in value]
+    if isinstance(value, dict):
+        return {key: sanitize_endpoint_ids(item) for key, item in value.items()}
+    return value
+
+
+def existing_generated_at(path: Path) -> str | None:
+    payload = read_json(path)
+    value = payload.get("generated_at")
+    return str(value) if value else None
+
+
+def existing_runtime_feedback(path: Path) -> dict[str, Any] | None:
+    payload = read_json(path)
+    value = payload.get("runtime_feedback")
+    return value if isinstance(value, dict) and value else None
 
 
 def read_csv(path: Path) -> list[dict[str, str]]:
@@ -461,7 +484,11 @@ def collect_target_seat_results() -> list[dict[str, Any]]:
     return rows
 
 
-def build_evidence() -> dict[str, Any]:
+def build_evidence(
+    *,
+    generated_at: str | None = None,
+    runtime_feedback_snapshot: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     formal = read_json(FORMAL_SUMMARY)
     formal_leaderboard = read_csv(FORMAL_LEADERBOARD)
     formal_rubric = read_csv(FORMAL_RUBRIC)
@@ -471,13 +498,13 @@ def build_evidence() -> dict[str, Any]:
     retrieval = read_json(RETRIEVAL_RESULTS)
     role_retrieval = read_json(ROLE_RETRIEVAL_FACTS)
     statistics_report = read_json(METHOD_STATISTICS)
-    provider_preflight = read_json(PROVIDER_PREFLIGHT)
+    provider_preflight = sanitize_endpoint_ids(read_json(PROVIDER_PREFLIGHT))
     track_b_showcase = read_json(TRACK_B_LEADERBOARD_SHOWCASE)
     usage_decision_scores = read_json(USAGE_DECISION_SCORE_FACTS)
     target_seat_power = read_json(TARGET_SEAT_POWER_PLAN)
     per_role_rows = read_csv(RETRIEVAL_PER_ROLE)
     role_corpus_rows = read_csv(RETRIEVAL_ROLE_CORPUS)
-    db_feedback = collect_db_feedback_snapshot_raw_sql()
+    db_feedback = runtime_feedback_snapshot or collect_db_feedback_snapshot_raw_sql()
     if isinstance(statistics_report, dict) and db_feedback.get("status") == "ok":
         statistics_report = dict(statistics_report)
         statistics_report["runtime_feedback"] = runtime_feedback_ci_from_snapshot(db_feedback)
@@ -750,7 +777,7 @@ def build_evidence() -> dict[str, Any]:
     ]
 
     return {
-        "generated_at": now_iso(),
+        "generated_at": generated_at or now_iso(),
         "sources": {
             "formal_summary": str(FORMAL_SUMMARY.relative_to(ROOT)),
             "formal_leaderboard": str(FORMAL_LEADERBOARD.relative_to(ROOT)),
@@ -1584,11 +1611,19 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Summarize method effectiveness evidence")
     parser.add_argument("--report", default=str(DEFAULT_REPORT), help="Tracked Markdown report path")
     parser.add_argument("--facts", default=str(DEFAULT_FACTS), help="Tracked JSON facts path")
+    parser.add_argument("--generated-at", default=None, help="Override generated_at for reproducible snapshots")
+    parser.add_argument(
+        "--refresh-runtime",
+        action="store_true",
+        help="Refresh PostgreSQL runtime feedback instead of reusing the existing tracked snapshot",
+    )
     args = parser.parse_args()
 
-    evidence = build_evidence()
     report_path = Path(args.report)
     facts_path = Path(args.facts)
+    generated_at = args.generated_at or existing_generated_at(facts_path)
+    runtime_feedback = None if args.refresh_runtime else existing_runtime_feedback(facts_path)
+    evidence = build_evidence(generated_at=generated_at, runtime_feedback_snapshot=runtime_feedback)
     report_path.parent.mkdir(parents=True, exist_ok=True)
     facts_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text(render_report(evidence), encoding="utf-8")

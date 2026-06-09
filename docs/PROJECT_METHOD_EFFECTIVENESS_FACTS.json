@@ -6106,15 +6106,15 @@
     "resolved_models": [
       {
         "provider": "doubao",
-        "model": "ep-20260514115354-k4jz4",
-        "label": "doubao:ep-20260514115354-k4jz4"
+        "model": "ep-<redacted>",
+        "label": "doubao:ep-<redacted>"
       }
     ],
     "client_checks": [
       {
-        "label": "doubao:ep-20260514115354-k4jz4",
+        "label": "doubao:ep-<redacted>",
         "provider": "doubao",
-        "model": "ep-20260514115354-k4jz4",
+        "model": "ep-<redacted>",
         "available": true,
         "fake": false,
         "client_class": "DeepSeekClient",
@@ -6123,7 +6123,7 @@
     ],
     "chat_checks": [
       {
-        "label": "doubao:ep-20260514115354-k4jz4",
+        "label": "doubao:ep-<redacted>",
         "ok": true,
         "elapsed_s": 2.723,
         "response_preview": "OK"
