@@ -743,9 +743,7 @@ def _run_strategy_knowledge_lifecycle_sql(
         )
     )
 
-    counts = db.execute(
-        text("SELECT status, COUNT(*) FROM strategy_knowledge_docs GROUP BY status")
-    ).fetchall()
+    counts = db.execute(text("SELECT status, COUNT(*) FROM strategy_knowledge_docs GROUP BY status")).fetchall()
     for status, count in counts:
         key = f"{status}_after"
         if key in result:
@@ -787,6 +785,7 @@ def run_strategy_knowledge_lifecycle(
     import logging
 
     from backend.db.database import SessionLocal
+
     logger = logging.getLogger(__name__)
     db = SessionLocal()
     result = {
