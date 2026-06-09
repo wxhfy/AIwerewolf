@@ -10943,40 +10943,40 @@
       "target_role": "Seer",
       "baseline_framework": "basic_react",
       "candidate_framework": "rag_react",
-      "paired_seed_count": 5,
+      "paired_seed_count": 20,
       "target_win_rate_delta": 0.0,
-      "target_adjusted_score_delta": 20.668,
-      "target_role_task_delta": 0.283,
-      "target_process_score_delta": 22.183999999999997,
-      "candidate_decision_count": 201,
+      "target_adjusted_score_delta": 6.012,
+      "target_role_task_delta": 0.10082999999999998,
+      "target_process_score_delta": 6.529000000000001,
+      "candidate_decision_count": 752,
       "candidate_fallback_count": 0,
       "candidate_invalid_count": 0,
       "accepted": false,
       "claim_level": "ci_not_positive",
       "max_days": 20,
       "player_count": 7,
-      "claim_scope": "real_llm_pilot_only",
+      "claim_scope": "pipeline_pilot_not_accepted",
       "bootstrap_ci": {
         "adjusted_final_score_delta": {
-          "samples": 5,
-          "mean": 20.668,
-          "ci95_low": -3.9,
-          "ci95_high": 44.308
+          "samples": 20,
+          "mean": 6.012,
+          "ci95_low": -6.3681,
+          "ci95_high": 17.6161
         },
         "role_task_score_delta": {
-          "samples": 5,
-          "mean": 0.283,
-          "ci95_low": -0.079,
-          "ci95_high": 0.645
+          "samples": 20,
+          "mean": 0.1008,
+          "ci95_low": -0.0534,
+          "ci95_high": 0.2458
         },
         "process_score_delta": {
-          "samples": 5,
-          "mean": 22.184,
-          "ci95_low": -4.3657,
-          "ci95_high": 51.084
+          "samples": 20,
+          "mean": 6.529,
+          "ci95_low": -6.4924,
+          "ci95_high": 19.537
         },
         "target_win_rate_delta": {
-          "samples": 5,
+          "samples": 20,
           "mean": 0.0,
           "ci95_low": 0.0,
           "ci95_high": 0.0
@@ -11077,7 +11077,7 @@
   "target_seat_trackc_pilot": {
     "generated_at": "2026-06-09T17:15:35+08:00",
     "report_type": "target_seat_trackc_real_llm_pilot",
-    "claim_scope": "real_llm_pilot_only",
+    "claim_scope": "pipeline_pilot_not_accepted",
     "source": "outputs/target_seat_trackc_ab_seer_ark_pilot_20260609/target_seat_ab_Seer_20260609T082838Z.json",
     "raw_source_is_tracked": false,
     "runner": "target_seat_trackc_ab_experiment.py",
@@ -11091,64 +11091,94 @@
       "anthropic:deepseek-v4-flash[1m]"
     ],
     "model_assignment_counts": {
-      "anthropic:deepseek-v4-flash[1m]": 35
+      "anthropic:deepseek-v4-flash[1m]": 140
     },
     "requested_seeds": [
       9801,
       9802,
       9803,
       9804,
-      9805
+      9805,
+      9806,
+      9807,
+      9808,
+      9809,
+      9810,
+      9811,
+      9812,
+      9813,
+      9814,
+      9815,
+      9816,
+      9817,
+      9818,
+      9819,
+      9820
     ],
     "paired_seeds": [
       9801,
       9802,
       9803,
       9804,
-      9805
+      9805,
+      9806,
+      9807,
+      9808,
+      9809,
+      9810,
+      9811,
+      9812,
+      9813,
+      9814,
+      9815,
+      9816,
+      9817,
+      9818,
+      9819,
+      9820
     ],
     "games_jsonl": "outputs/target_seat_trackc_ab_seer_ark_pilot_20260609/target_seat_ab_Seer_20260609T082838Z.games.jsonl",
     "failures_jsonl": "outputs/target_seat_trackc_ab_seer_ark_pilot_20260609/target_seat_ab_Seer_20260609T082838Z.failures.jsonl",
     "failure_count": 0,
-    "baseline_completed": 5,
-    "candidate_completed": 5,
-    "paired_seed_count": 5,
+    "baseline_completed": 20,
+    "candidate_completed": 20,
+    "paired_seed_count": 20,
     "baseline_target_win_rate": 0.0,
     "candidate_target_win_rate": 0.0,
     "target_win_rate_delta": 0.0,
-    "baseline_target_adjusted_score": 29.802,
-    "candidate_target_adjusted_score": 50.470000000000006,
-    "target_adjusted_score_delta": 20.668,
-    "target_role_task_delta": 0.283,
-    "target_process_score_delta": 22.183999999999997,
-    "positive_adjusted_score_delta_seeds": 3,
-    "positive_role_task_delta_seeds": 3,
+    "baseline_target_adjusted_score": 34.21150000000001,
+    "candidate_target_adjusted_score": 40.223499999999994,
+    "target_adjusted_score_delta": 6.012,
+    "target_role_task_delta": 0.10082999999999998,
+    "target_process_score_delta": 6.529000000000001,
+    "positive_adjusted_score_delta_seeds": 10,
+    "positive_role_task_delta_seeds": 13,
     "positive_win_delta_seeds": 0,
-    "candidate_decision_count": 201,
+    "candidate_decision_count": 752,
     "candidate_fallback_count": 0,
     "candidate_invalid_count": 0,
     "candidate_invalid_rate": 0.0,
     "bootstrap_ci": {
       "adjusted_final_score_delta": {
-        "samples": 5,
-        "mean": 20.668,
-        "ci95_low": -3.9,
-        "ci95_high": 44.308
+        "samples": 20,
+        "mean": 6.012,
+        "ci95_low": -6.3681,
+        "ci95_high": 17.6161
       },
       "role_task_score_delta": {
-        "samples": 5,
-        "mean": 0.283,
-        "ci95_low": -0.079,
-        "ci95_high": 0.645
+        "samples": 20,
+        "mean": 0.1008,
+        "ci95_low": -0.0534,
+        "ci95_high": 0.2458
       },
       "process_score_delta": {
-        "samples": 5,
-        "mean": 22.184,
-        "ci95_low": -4.3657,
-        "ci95_high": 51.084
+        "samples": 20,
+        "mean": 6.529,
+        "ci95_low": -6.4924,
+        "ci95_high": 19.537
       },
       "target_win_rate_delta": {
-        "samples": 5,
+        "samples": 20,
         "mean": 0.0,
         "ci95_low": 0.0,
         "ci95_high": 0.0
@@ -11157,17 +11187,17 @@
     "acceptance": {
       "accepted": false,
       "claim_level": "ci_not_positive",
-      "min_paired_seeds": 5,
-      "min_adjusted_score_delta": 1.0,
-      "min_role_task_delta": 0.01,
-      "min_win_rate_delta": 0.0,
+      "min_paired_seeds": 20,
+      "min_adjusted_score_delta": 3.0,
+      "min_role_task_delta": 0.03,
+      "min_win_rate_delta": 0.03,
       "require_positive_ci": true,
       "gates": {
         "enough_samples": true,
         "strict_health": true,
         "score_gate": true,
         "role_task_gate": true,
-        "win_gate": true,
+        "win_gate": false,
         "ci_gate": false,
         "improvement_gate": true
       }
@@ -11177,7 +11207,7 @@
       "strict_health": true,
       "score_gate": true,
       "role_task_gate": true,
-      "win_gate": true,
+      "win_gate": false,
       "ci_gate": false,
       "improvement_gate": true
     },
@@ -11291,817 +11321,352 @@
         "candidate_decisions": 33,
         "candidate_fallback": 0,
         "candidate_invalid": 0
+      },
+      {
+        "seed": 9806,
+        "target_seat": 3,
+        "target_role": "Seer",
+        "target_alignment": "village",
+        "baseline_game_id": "9ee5a3e2-8174-4411-bc3e-24bb3489eb66",
+        "candidate_game_id": "4d11bfe0-50ec-4be6-b1d7-e8d5972c0cda",
+        "baseline_winner": "wolf",
+        "candidate_winner": "wolf",
+        "baseline_target_won": false,
+        "candidate_target_won": false,
+        "adjusted_delta": -20.78,
+        "role_task_delta": 0.26,
+        "process_delta": -23.09,
+        "baseline_adjusted_score": 53.78,
+        "candidate_adjusted_score": 33.0,
+        "baseline_role_task_score": 0.49,
+        "candidate_role_task_score": 0.75,
+        "candidate_decisions": 28,
+        "candidate_fallback": 0,
+        "candidate_invalid": 0
+      },
+      {
+        "seed": 9807,
+        "target_seat": 5,
+        "target_role": "Seer",
+        "target_alignment": "village",
+        "baseline_game_id": "3b0e8b6b-b9f1-457f-afe3-a3df648d0224",
+        "candidate_game_id": "6c428c63-54e0-41f7-9839-7163ee26270c",
+        "baseline_winner": "wolf",
+        "candidate_winner": "wolf",
+        "baseline_target_won": false,
+        "candidate_target_won": false,
+        "adjusted_delta": 4.88,
+        "role_task_delta": 0.0583,
+        "process_delta": 5.42,
+        "baseline_adjusted_score": 24.85,
+        "candidate_adjusted_score": 29.73,
+        "baseline_role_task_score": 0.315,
+        "candidate_role_task_score": 0.3733,
+        "candidate_decisions": 59,
+        "candidate_fallback": 0,
+        "candidate_invalid": 0
+      },
+      {
+        "seed": 9808,
+        "target_seat": 3,
+        "target_role": "Seer",
+        "target_alignment": "village",
+        "baseline_game_id": "39e30acd-b138-45a0-93f0-205c132e3d90",
+        "candidate_game_id": "e874a177-ce3c-4e8a-ab4a-fefff04069b1",
+        "baseline_winner": "wolf",
+        "candidate_winner": "wolf",
+        "baseline_target_won": false,
+        "candidate_target_won": false,
+        "adjusted_delta": 0.0,
+        "role_task_delta": 0.0,
+        "process_delta": 0.0,
+        "baseline_adjusted_score": 12.6,
+        "candidate_adjusted_score": 12.6,
+        "baseline_role_task_score": 0.14,
+        "candidate_role_task_score": 0.14,
+        "candidate_decisions": 41,
+        "candidate_fallback": 0,
+        "candidate_invalid": 0
+      },
+      {
+        "seed": 9809,
+        "target_seat": 2,
+        "target_role": "Seer",
+        "target_alignment": "village",
+        "baseline_game_id": "f9270f51-1772-451c-b313-2f82bebedca2",
+        "candidate_game_id": "1e87ea4c-ca8a-4279-b1b7-53d7f5304915",
+        "baseline_winner": "wolf",
+        "candidate_winner": "wolf",
+        "baseline_target_won": false,
+        "candidate_target_won": false,
+        "adjusted_delta": 21.23,
+        "role_task_delta": 0.51,
+        "process_delta": 23.6,
+        "baseline_adjusted_score": 60.27,
+        "candidate_adjusted_score": 81.5,
+        "baseline_role_task_score": 0.49,
+        "candidate_role_task_score": 1.0,
+        "candidate_decisions": 35,
+        "candidate_fallback": 0,
+        "candidate_invalid": 0
+      },
+      {
+        "seed": 9810,
+        "target_seat": 3,
+        "target_role": "Seer",
+        "target_alignment": "village",
+        "baseline_game_id": "4481d8ae-cc20-4a1b-8e9a-c1e45d9f09c8",
+        "candidate_game_id": "6870de86-5b47-4111-b6f5-ff439a0b8b88",
+        "baseline_winner": "wolf",
+        "candidate_winner": "wolf",
+        "baseline_target_won": false,
+        "candidate_target_won": false,
+        "adjusted_delta": 30.02,
+        "role_task_delta": 0.045,
+        "process_delta": 30.36,
+        "baseline_adjusted_score": 0.0,
+        "candidate_adjusted_score": 30.02,
+        "baseline_role_task_score": 0.445,
+        "candidate_role_task_score": 0.49,
+        "candidate_decisions": 47,
+        "candidate_fallback": 0,
+        "candidate_invalid": 0
+      },
+      {
+        "seed": 9811,
+        "target_seat": 4,
+        "target_role": "Seer",
+        "target_alignment": "village",
+        "baseline_game_id": "f189cf2f-a33d-49b9-8418-5c97e624ab83",
+        "candidate_game_id": "b6e18fdc-d61b-4f94-8034-2a03a0d51af8",
+        "baseline_winner": "wolf",
+        "candidate_winner": "wolf",
+        "baseline_target_won": false,
+        "candidate_target_won": false,
+        "adjusted_delta": -26.7,
+        "role_task_delta": 0.0,
+        "process_delta": -29.68,
+        "baseline_adjusted_score": 79.06,
+        "candidate_adjusted_score": 52.36,
+        "baseline_role_task_score": 0.825,
+        "candidate_role_task_score": 0.825,
+        "candidate_decisions": 33,
+        "candidate_fallback": 0,
+        "candidate_invalid": 0
+      },
+      {
+        "seed": 9812,
+        "target_seat": 1,
+        "target_role": "Seer",
+        "target_alignment": "village",
+        "baseline_game_id": "a243fb11-0f93-480c-b199-56214badfc12",
+        "candidate_game_id": "c70124ef-f68d-4475-be8b-3198c511adb9",
+        "baseline_winner": "wolf",
+        "candidate_winner": "wolf",
+        "baseline_target_won": false,
+        "candidate_target_won": false,
+        "adjusted_delta": -61.07,
+        "role_task_delta": -0.86,
+        "process_delta": -63.96,
+        "baseline_adjusted_score": 80.67,
+        "candidate_adjusted_score": 19.6,
+        "baseline_role_task_score": 1.0,
+        "candidate_role_task_score": 0.14,
+        "candidate_decisions": 5,
+        "candidate_fallback": 0,
+        "candidate_invalid": 0
+      },
+      {
+        "seed": 9813,
+        "target_seat": 7,
+        "target_role": "Seer",
+        "target_alignment": "village",
+        "baseline_game_id": "8cb563ed-e673-4247-be4b-9c9511e85875",
+        "candidate_game_id": "6aab82a3-c329-4f5a-a280-163aaeaeea3b",
+        "baseline_winner": "wolf",
+        "candidate_winner": "wolf",
+        "baseline_target_won": false,
+        "candidate_target_won": false,
+        "adjusted_delta": -3.79,
+        "role_task_delta": 0.175,
+        "process_delta": -4.22,
+        "baseline_adjusted_score": 25.22,
+        "candidate_adjusted_score": 21.43,
+        "baseline_role_task_score": 0.315,
+        "candidate_role_task_score": 0.49,
+        "candidate_decisions": 45,
+        "candidate_fallback": 0,
+        "candidate_invalid": 0
+      },
+      {
+        "seed": 9814,
+        "target_seat": 6,
+        "target_role": "Seer",
+        "target_alignment": "village",
+        "baseline_game_id": "3882cfd8-ed1a-4307-a438-3912f16e9f18",
+        "candidate_game_id": "1106595a-169c-4c8b-bec7-4aeb8f7eace3",
+        "baseline_winner": "wolf",
+        "candidate_winner": "wolf",
+        "baseline_target_won": false,
+        "candidate_target_won": false,
+        "adjusted_delta": 14.11,
+        "role_task_delta": -0.175,
+        "process_delta": 17.02,
+        "baseline_adjusted_score": 1.2,
+        "candidate_adjusted_score": 15.31,
+        "baseline_role_task_score": 0.49,
+        "candidate_role_task_score": 0.315,
+        "candidate_decisions": 28,
+        "candidate_fallback": 0,
+        "candidate_invalid": 0
+      },
+      {
+        "seed": 9815,
+        "target_seat": 4,
+        "target_role": "Seer",
+        "target_alignment": "village",
+        "baseline_game_id": "ffa28205-46fb-4cc3-8406-e5f6c4fd14db",
+        "candidate_game_id": "bc331a58-4f0d-4a95-aef8-c6fdd74fd1b7",
+        "baseline_winner": "wolf",
+        "candidate_winner": "wolf",
+        "baseline_target_won": false,
+        "candidate_target_won": false,
+        "adjusted_delta": 38.7,
+        "role_task_delta": 0.175,
+        "process_delta": 41.67,
+        "baseline_adjusted_score": 14.52,
+        "candidate_adjusted_score": 53.22,
+        "baseline_role_task_score": 0.315,
+        "candidate_role_task_score": 0.49,
+        "candidate_decisions": 45,
+        "candidate_fallback": 0,
+        "candidate_invalid": 0
+      },
+      {
+        "seed": 9816,
+        "target_seat": 3,
+        "target_role": "Seer",
+        "target_alignment": "village",
+        "baseline_game_id": "0ef81777-7040-44d9-b711-e8d65fbff045",
+        "candidate_game_id": "1b7e0fa8-172d-44c3-8941-ab922be34947",
+        "baseline_winner": "wolf",
+        "candidate_winner": "wolf",
+        "baseline_target_won": false,
+        "candidate_target_won": false,
+        "adjusted_delta": 30.26,
+        "role_task_delta": 0.09,
+        "process_delta": 31.4,
+        "baseline_adjusted_score": 16.0,
+        "candidate_adjusted_score": 46.26,
+        "baseline_role_task_score": 0.4,
+        "candidate_role_task_score": 0.49,
+        "candidate_decisions": 48,
+        "candidate_fallback": 0,
+        "candidate_invalid": 0
+      },
+      {
+        "seed": 9817,
+        "target_seat": 6,
+        "target_role": "Seer",
+        "target_alignment": "village",
+        "baseline_game_id": "11157758-2c76-4e45-9fde-c76cf33ae722",
+        "candidate_game_id": "e1aa862b-0c33-49ef-9036-d17334b9a848",
+        "baseline_winner": "wolf",
+        "candidate_winner": "wolf",
+        "baseline_target_won": false,
+        "candidate_target_won": false,
+        "adjusted_delta": -0.19,
+        "role_task_delta": 0.0583,
+        "process_delta": -0.22,
+        "baseline_adjusted_score": 25.35,
+        "candidate_adjusted_score": 25.16,
+        "baseline_role_task_score": 0.315,
+        "candidate_role_task_score": 0.3733,
+        "candidate_decisions": 51,
+        "candidate_fallback": 0,
+        "candidate_invalid": 0
+      },
+      {
+        "seed": 9818,
+        "target_seat": 6,
+        "target_role": "Seer",
+        "target_alignment": "village",
+        "baseline_game_id": "db03b943-8145-4892-9c2e-2e68885a873a",
+        "candidate_game_id": "9ccc78f0-5a84-433a-89b0-c1ee7423107f",
+        "baseline_winner": "wolf",
+        "candidate_winner": "wolf",
+        "baseline_target_won": false,
+        "candidate_target_won": false,
+        "adjusted_delta": -16.29,
+        "role_task_delta": 0.005,
+        "process_delta": -15.88,
+        "baseline_adjusted_score": 75.22,
+        "candidate_adjusted_score": 58.93,
+        "baseline_role_task_score": 0.695,
+        "candidate_role_task_score": 0.7,
+        "candidate_decisions": 29,
+        "candidate_fallback": 0,
+        "candidate_invalid": 0
+      },
+      {
+        "seed": 9819,
+        "target_seat": 2,
+        "target_role": "Seer",
+        "target_alignment": "village",
+        "baseline_game_id": "13659e10-3059-4fa4-8fbb-e7577e7b2d10",
+        "candidate_game_id": "867115b1-f4af-4d12-9e70-e8119b90f606",
+        "baseline_winner": "wolf",
+        "candidate_winner": "wolf",
+        "baseline_target_won": false,
+        "candidate_target_won": false,
+        "adjusted_delta": 6.83,
+        "role_task_delta": 0.26,
+        "process_delta": 7.59,
+        "baseline_adjusted_score": 32.49,
+        "candidate_adjusted_score": 39.32,
+        "baseline_role_task_score": 0.49,
+        "candidate_role_task_score": 0.75,
+        "candidate_decisions": 23,
+        "candidate_fallback": 0,
+        "candidate_invalid": 0
+      },
+      {
+        "seed": 9820,
+        "target_seat": 2,
+        "target_role": "Seer",
+        "target_alignment": "village",
+        "baseline_game_id": "141a039e-3a18-425c-b158-09b658355222",
+        "candidate_game_id": "1f69fca9-4b98-4a85-97d3-096512d72e05",
+        "baseline_winner": "wolf",
+        "candidate_winner": "wolf",
+        "baseline_target_won": false,
+        "candidate_target_won": false,
+        "adjusted_delta": -0.31,
+        "role_task_delta": 0.0,
+        "process_delta": -0.35,
+        "baseline_adjusted_score": 33.99,
+        "candidate_adjusted_score": 33.68,
+        "baseline_role_task_score": 0.49,
+        "candidate_role_task_score": 0.49,
+        "candidate_decisions": 34,
+        "candidate_fallback": 0,
+        "candidate_invalid": 0
       }
     ],
     "can_write": [
       "真实 LLM target-seat paired A/B runner 已在 Seer 目标席位上跑通。",
-      "本 pilot 中 baseline/candidate 各完成 5 局，candidate fallback/invalid 为 0。",
+      "本 pilot 中 baseline/candidate 各完成 20 局，candidate fallback/invalid 为 0/0。",
       "candidate 相对 baseline 的目标席位 adjusted/process/role-task 指标呈正向均值趋势。"
     ],
     "cannot_write": [
       "不能写成 Track C 已经获得单目标席位因果增益。",
       "不能写成 Track C 已经提升最终胜率。",
-      "不能把 5 paired seeds pilot 替代 80-120 paired seeds 的正式验证。"
+      "不能把 20 paired seeds pipeline pilot 替代 80-120 paired seeds 的正式验证。"
     ],
     "claim_boundary": "该 pilot 是真实 LLM target-seat A/B 阶段性证据。由于 bootstrap CI 下界仍跨 0，acceptance.accepted=false，只能写成正向趋势和链路健康，不能写成 causal_supported。",
-    "next_required_experiment": "先扩到 20 paired seeds 作为 pipeline pilot；若趋势和健康门禁保持，再按功效计划扩到 80-120 paired seeds，并轮换 Seer/Witch/Guard/Werewolf/Hunter/Villager。"
+    "next_required_experiment": "当前已完成 20 paired seeds pipeline pilot；下一步按功效计划扩到 80-120 paired seeds，并轮换 Seer/Witch/Guard/Werewolf/Hunter/Villager。"
   },
-  "target_seat_power_plan": {
-    "generated_at": "2026-06-09T11:23:50+08:00",
-    "report_type": "target_seat_trackc_ab_power_plan",
-    "sources": {
-      "target_seat_runner": "scripts/target_seat_trackc_ab_experiment.py",
-      "observed_score_stats": "PostgreSQL published_reviews.report_json.metadata.player_scores, excluding games whose players.model_name contains fake"
-    },
-    "acceptance_gates_from_runner_defaults": {
-      "min_paired_seeds": 20,
-      "min_adjusted_score_delta": 3.0,
-      "min_role_task_delta": 0.03,
-      "min_win_rate_delta": 0.03,
-      "require_positive_ci": true,
-      "strict_health": "candidate_fallback_count == 0 and candidate_invalid_count == 0"
-    },
-    "statistical_assumptions": {
-      "alpha": 0.05,
-      "test": "two-sided mean paired delta approximation",
-      "power_levels": [
-        0.8,
-        0.9
-      ],
-      "paired_continuous_formula": "n = ((z_alpha/2 + z_power) * paired_delta_sd / effect)^2",
-      "paired_binary_formula": "n = ((z_alpha/2 + z_power)^2 * (discordance_rate - effect^2)) / effect^2",
-      "boundary": "This is a planning estimate, not an experimental result."
-    },
-    "observed_score_stats": {
-      "status": "ok",
-      "queried_at": "2026-06-09T11:23:50+08:00",
-      "source": "PostgreSQL published_reviews.report_json.metadata.player_scores, excluding games whose players.model_name contains fake",
-      "overall": {
-        "n": 22432,
-        "adjusted_mean": 45.50536777817464,
-        "adjusted_sd": 30.622831591243752,
-        "role_task_mean": 0.6008951364122309,
-        "role_task_sd": 0.23834793863586057,
-        "process_mean": 43.9369616466492,
-        "process_sd": 30.017632070198584,
-        "final_mean": 43.789160128388204,
-        "final_sd": 29.816731548812943
-      },
-      "by_role": [
-        {
-          "role": "Werewolf",
-          "n": 5668,
-          "n_adjusted": 5668,
-          "adjusted_mean": 68.80018348623898,
-          "adjusted_sd": 26.48258199944895,
-          "n_role_task": 5668,
-          "role_task_mean": 0.7401001411432545,
-          "role_task_sd": 0.190356246678047,
-          "n_process": 5658,
-          "process_mean": 66.76667550371232,
-          "process_sd": 26.176506203680585,
-          "final_mean": 66.22215067043099,
-          "final_sd": 26.03048941854258
-        },
-        {
-          "role": "Villager",
-          "n": 4581,
-          "n_adjusted": 4581,
-          "adjusted_mean": 30.362392490722918,
-          "adjusted_sd": 30.220530687218194,
-          "n_role_task": 4581,
-          "role_task_mean": 0.47018869242522904,
-          "role_task_sd": 0.25385372028872294,
-          "n_process": 4576,
-          "process_mean": 29.356577797202895,
-          "process_sd": 29.45230914493851,
-          "final_mean": 30.030502073783083,
-          "final_sd": 29.517666239528715
-        },
-        {
-          "role": "Seer",
-          "n": 2830,
-          "n_adjusted": 2830,
-          "adjusted_mean": 38.61498586572449,
-          "adjusted_sd": 28.75743394783077,
-          "n_role_task": 2830,
-          "role_task_mean": 0.5972833922261512,
-          "role_task_sd": 0.2757842467834692,
-          "n_process": 2825,
-          "process_mean": 37.24460530973409,
-          "process_sd": 28.174179492571636,
-          "final_mean": 36.90832155477046,
-          "final_sd": 27.78747487810983
-        },
-        {
-          "role": "Witch",
-          "n": 2830,
-          "n_adjusted": 2830,
-          "adjusted_mean": 39.621530035336285,
-          "adjusted_sd": 22.439721713862678,
-          "n_role_task": 2830,
-          "role_task_mean": 0.5065106007067148,
-          "role_task_sd": 0.1545606518994472,
-          "n_process": 2825,
-          "process_mean": 39.7292814159296,
-          "process_sd": 22.085896903041657,
-          "final_mean": 39.15775618374619,
-          "final_sd": 22.04385754935681
-        },
-        {
-          "role": "Hunter",
-          "n": 2830,
-          "n_adjusted": 2830,
-          "adjusted_mean": 37.75844876325081,
-          "adjusted_sd": 31.716065811709193,
-          "n_role_task": 2830,
-          "role_task_mean": 0.6056244169611169,
-          "role_task_sd": 0.20761915536303854,
-          "n_process": 2825,
-          "process_mean": 37.14059115044244,
-          "process_sd": 30.6222316764221,
-          "final_mean": 36.961689045936325,
-          "final_sd": 30.848046486753574
-        },
-        {
-          "role": "Guard",
-          "n": 2822,
-          "n_adjusted": 2822,
-          "adjusted_mean": 41.65470233876752,
-          "adjusted_sd": 21.71408888357843,
-          "n_role_task": 2822,
-          "role_task_mean": 0.617520127569101,
-          "role_task_sd": 0.22437753518863027,
-          "n_process": 2817,
-          "process_mean": 37.14262335818222,
-          "process_sd": 21.3940883179217,
-          "final_mean": 36.84743090007085,
-          "final_sd": 21.41249274967081
-        },
-        {
-          "role": "WhiteWolfKing",
-          "n": 871,
-          "n_adjusted": 871,
-          "adjusted_mean": 52.71128587830094,
-          "adjusted_sd": 19.246127311891485,
-          "n_role_task": 871,
-          "role_task_mean": 0.6316438576348977,
-          "role_task_sd": 0.11783777073684013,
-          "n_process": 871,
-          "process_mean": 51.60781859931117,
-          "process_sd": 20.597566457512734,
-          "final_mean": 52.249747416762474,
-          "final_sd": 19.25381012433498
-        }
-      ]
-    },
-    "scenario_tables": {
-      "adjusted_score_power80": [
-        {
-          "paired_delta_sd": 5.0,
-          "delta_3": 22,
-          "delta_5": 8,
-          "delta_8": 4,
-          "delta_10": 2
-        },
-        {
-          "paired_delta_sd": 10.0,
-          "delta_3": 88,
-          "delta_5": 32,
-          "delta_8": 13,
-          "delta_10": 8
-        },
-        {
-          "paired_delta_sd": 15.0,
-          "delta_3": 197,
-          "delta_5": 71,
-          "delta_8": 28,
-          "delta_10": 18
-        },
-        {
-          "paired_delta_sd": 20.0,
-          "delta_3": 349,
-          "delta_5": 126,
-          "delta_8": 50,
-          "delta_10": 32
-        },
-        {
-          "paired_delta_sd": 25.0,
-          "delta_3": 546,
-          "delta_5": 197,
-          "delta_8": 77,
-          "delta_10": 50
-        },
-        {
-          "paired_delta_sd": 30.0,
-          "delta_3": 785,
-          "delta_5": 283,
-          "delta_8": 111,
-          "delta_10": 71
-        }
-      ],
-      "adjusted_score_power90": [
-        {
-          "paired_delta_sd": 5.0,
-          "delta_3": 30,
-          "delta_5": 11,
-          "delta_8": 5,
-          "delta_10": 3
-        },
-        {
-          "paired_delta_sd": 10.0,
-          "delta_3": 117,
-          "delta_5": 43,
-          "delta_8": 17,
-          "delta_10": 11
-        },
-        {
-          "paired_delta_sd": 15.0,
-          "delta_3": 263,
-          "delta_5": 95,
-          "delta_8": 37,
-          "delta_10": 24
-        },
-        {
-          "paired_delta_sd": 20.0,
-          "delta_3": 467,
-          "delta_5": 169,
-          "delta_8": 66,
-          "delta_10": 43
-        },
-        {
-          "paired_delta_sd": 25.0,
-          "delta_3": 730,
-          "delta_5": 263,
-          "delta_8": 103,
-          "delta_10": 66
-        },
-        {
-          "paired_delta_sd": 30.0,
-          "delta_3": 1051,
-          "delta_5": 379,
-          "delta_8": 148,
-          "delta_10": 95
-        }
-      ],
-      "role_task_power80": [
-        {
-          "paired_delta_sd": 0.05,
-          "delta_0.03": 22,
-          "delta_0.05": 8,
-          "delta_0.08": 4,
-          "delta_0.1": 2
-        },
-        {
-          "paired_delta_sd": 0.1,
-          "delta_0.03": 88,
-          "delta_0.05": 32,
-          "delta_0.08": 13,
-          "delta_0.1": 8
-        },
-        {
-          "paired_delta_sd": 0.15,
-          "delta_0.03": 197,
-          "delta_0.05": 71,
-          "delta_0.08": 28,
-          "delta_0.1": 18
-        },
-        {
-          "paired_delta_sd": 0.2,
-          "delta_0.03": 349,
-          "delta_0.05": 126,
-          "delta_0.08": 50,
-          "delta_0.1": 32
-        },
-        {
-          "paired_delta_sd": 0.25,
-          "delta_0.03": 546,
-          "delta_0.05": 197,
-          "delta_0.08": 77,
-          "delta_0.1": 50
-        },
-        {
-          "paired_delta_sd": 0.3,
-          "delta_0.03": 785,
-          "delta_0.05": 283,
-          "delta_0.08": 111,
-          "delta_0.1": 71
-        }
-      ],
-      "target_win_power80": [
-        {
-          "discordance_rate": 0.2,
-          "delta_0.03": 1737,
-          "delta_0.05": 621,
-          "delta_0.08": 238,
-          "delta_0.1": 150
-        },
-        {
-          "discordance_rate": 0.3,
-          "delta_0.03": 2609,
-          "delta_0.05": 935,
-          "delta_0.08": 361,
-          "delta_0.1": 228
-        },
-        {
-          "discordance_rate": 0.4,
-          "delta_0.03": 3481,
-          "delta_0.05": 1248,
-          "delta_0.08": 483,
-          "delta_0.1": 307
-        },
-        {
-          "discordance_rate": 0.5,
-          "delta_0.03": 4353,
-          "delta_0.05": 1562,
-          "delta_0.08": 606,
-          "delta_0.1": 385
-        }
-      ],
-      "adjusted_score_by_role_power80": [
-        {
-          "role": "Werewolf",
-          "n_observed": 5668,
-          "observed_individual_sd": 26.4826,
-          "assumed_pair_correlation": 0.25,
-          "estimated_paired_delta_sd": 32.4344,
-          "delta_3": 918,
-          "delta_5": 331,
-          "delta_8": 130,
-          "delta_10": 83
-        },
-        {
-          "role": "Werewolf",
-          "n_observed": 5668,
-          "observed_individual_sd": 26.4826,
-          "assumed_pair_correlation": 0.5,
-          "estimated_paired_delta_sd": 26.4826,
-          "delta_3": 612,
-          "delta_5": 221,
-          "delta_8": 87,
-          "delta_10": 56
-        },
-        {
-          "role": "Werewolf",
-          "n_observed": 5668,
-          "observed_individual_sd": 26.4826,
-          "assumed_pair_correlation": 0.75,
-          "estimated_paired_delta_sd": 18.726,
-          "delta_3": 306,
-          "delta_5": 111,
-          "delta_8": 44,
-          "delta_10": 28
-        },
-        {
-          "role": "Villager",
-          "n_observed": 4581,
-          "observed_individual_sd": 30.2205,
-          "assumed_pair_correlation": 0.25,
-          "estimated_paired_delta_sd": 37.0124,
-          "delta_3": 1195,
-          "delta_5": 431,
-          "delta_8": 169,
-          "delta_10": 108
-        },
-        {
-          "role": "Villager",
-          "n_observed": 4581,
-          "observed_individual_sd": 30.2205,
-          "assumed_pair_correlation": 0.5,
-          "estimated_paired_delta_sd": 30.2205,
-          "delta_3": 797,
-          "delta_5": 287,
-          "delta_8": 113,
-          "delta_10": 72
-        },
-        {
-          "role": "Villager",
-          "n_observed": 4581,
-          "observed_individual_sd": 30.2205,
-          "assumed_pair_correlation": 0.75,
-          "estimated_paired_delta_sd": 21.3691,
-          "delta_3": 399,
-          "delta_5": 144,
-          "delta_8": 57,
-          "delta_10": 36
-        },
-        {
-          "role": "Seer",
-          "n_observed": 2830,
-          "observed_individual_sd": 28.7574,
-          "assumed_pair_correlation": 0.25,
-          "estimated_paired_delta_sd": 35.2205,
-          "delta_3": 1082,
-          "delta_5": 390,
-          "delta_8": 153,
-          "delta_10": 98
-        },
-        {
-          "role": "Seer",
-          "n_observed": 2830,
-          "observed_individual_sd": 28.7574,
-          "assumed_pair_correlation": 0.5,
-          "estimated_paired_delta_sd": 28.7574,
-          "delta_3": 722,
-          "delta_5": 260,
-          "delta_8": 102,
-          "delta_10": 65
-        },
-        {
-          "role": "Seer",
-          "n_observed": 2830,
-          "observed_individual_sd": 28.7574,
-          "assumed_pair_correlation": 0.75,
-          "estimated_paired_delta_sd": 20.3346,
-          "delta_3": 361,
-          "delta_5": 130,
-          "delta_8": 51,
-          "delta_10": 33
-        },
-        {
-          "role": "Witch",
-          "n_observed": 2830,
-          "observed_individual_sd": 22.4397,
-          "assumed_pair_correlation": 0.25,
-          "estimated_paired_delta_sd": 27.4829,
-          "delta_3": 659,
-          "delta_5": 238,
-          "delta_8": 93,
-          "delta_10": 60
-        },
-        {
-          "role": "Witch",
-          "n_observed": 2830,
-          "observed_individual_sd": 22.4397,
-          "assumed_pair_correlation": 0.5,
-          "estimated_paired_delta_sd": 22.4397,
-          "delta_3": 440,
-          "delta_5": 159,
-          "delta_8": 62,
-          "delta_10": 40
-        },
-        {
-          "role": "Witch",
-          "n_observed": 2830,
-          "observed_individual_sd": 22.4397,
-          "assumed_pair_correlation": 0.75,
-          "estimated_paired_delta_sd": 15.8673,
-          "delta_3": 220,
-          "delta_5": 80,
-          "delta_8": 31,
-          "delta_10": 20
-        },
-        {
-          "role": "Hunter",
-          "n_observed": 2830,
-          "observed_individual_sd": 31.7161,
-          "assumed_pair_correlation": 0.25,
-          "estimated_paired_delta_sd": 38.8441,
-          "delta_3": 1316,
-          "delta_5": 474,
-          "delta_8": 186,
-          "delta_10": 119
-        },
-        {
-          "role": "Hunter",
-          "n_observed": 2830,
-          "observed_individual_sd": 31.7161,
-          "assumed_pair_correlation": 0.5,
-          "estimated_paired_delta_sd": 31.7161,
-          "delta_3": 878,
-          "delta_5": 316,
-          "delta_8": 124,
-          "delta_10": 79
-        },
-        {
-          "role": "Hunter",
-          "n_observed": 2830,
-          "observed_individual_sd": 31.7161,
-          "assumed_pair_correlation": 0.75,
-          "estimated_paired_delta_sd": 22.4266,
-          "delta_3": 439,
-          "delta_5": 158,
-          "delta_8": 62,
-          "delta_10": 40
-        },
-        {
-          "role": "Guard",
-          "n_observed": 2822,
-          "observed_individual_sd": 21.7141,
-          "assumed_pair_correlation": 0.25,
-          "estimated_paired_delta_sd": 26.5942,
-          "delta_3": 617,
-          "delta_5": 223,
-          "delta_8": 87,
-          "delta_10": 56
-        },
-        {
-          "role": "Guard",
-          "n_observed": 2822,
-          "observed_individual_sd": 21.7141,
-          "assumed_pair_correlation": 0.5,
-          "estimated_paired_delta_sd": 21.7141,
-          "delta_3": 412,
-          "delta_5": 149,
-          "delta_8": 58,
-          "delta_10": 38
-        },
-        {
-          "role": "Guard",
-          "n_observed": 2822,
-          "observed_individual_sd": 21.7141,
-          "assumed_pair_correlation": 0.75,
-          "estimated_paired_delta_sd": 15.3542,
-          "delta_3": 206,
-          "delta_5": 75,
-          "delta_8": 29,
-          "delta_10": 19
-        },
-        {
-          "role": "WhiteWolfKing",
-          "n_observed": 871,
-          "observed_individual_sd": 19.2461,
-          "assumed_pair_correlation": 0.25,
-          "estimated_paired_delta_sd": 23.5716,
-          "delta_3": 485,
-          "delta_5": 175,
-          "delta_8": 69,
-          "delta_10": 44
-        },
-        {
-          "role": "WhiteWolfKing",
-          "n_observed": 871,
-          "observed_individual_sd": 19.2461,
-          "assumed_pair_correlation": 0.5,
-          "estimated_paired_delta_sd": 19.2461,
-          "delta_3": 324,
-          "delta_5": 117,
-          "delta_8": 46,
-          "delta_10": 30
-        },
-        {
-          "role": "WhiteWolfKing",
-          "n_observed": 871,
-          "observed_individual_sd": 19.2461,
-          "assumed_pair_correlation": 0.75,
-          "estimated_paired_delta_sd": 13.6091,
-          "delta_3": 162,
-          "delta_5": 59,
-          "delta_8": 23,
-          "delta_10": 15
-        }
-      ],
-      "role_task_by_role_power80": [
-        {
-          "role": "Werewolf",
-          "n_observed": 5668,
-          "observed_individual_sd": 0.1904,
-          "assumed_pair_correlation": 0.25,
-          "estimated_paired_delta_sd": 0.2331,
-          "delta_0.03": 475,
-          "delta_0.05": 171,
-          "delta_0.08": 67,
-          "delta_0.1": 43
-        },
-        {
-          "role": "Werewolf",
-          "n_observed": 5668,
-          "observed_individual_sd": 0.1904,
-          "assumed_pair_correlation": 0.5,
-          "estimated_paired_delta_sd": 0.1904,
-          "delta_0.03": 317,
-          "delta_0.05": 114,
-          "delta_0.08": 45,
-          "delta_0.1": 29
-        },
-        {
-          "role": "Werewolf",
-          "n_observed": 5668,
-          "observed_individual_sd": 0.1904,
-          "assumed_pair_correlation": 0.75,
-          "estimated_paired_delta_sd": 0.1346,
-          "delta_0.03": 159,
-          "delta_0.05": 57,
-          "delta_0.08": 23,
-          "delta_0.1": 15
-        },
-        {
-          "role": "Villager",
-          "n_observed": 4581,
-          "observed_individual_sd": 0.2539,
-          "assumed_pair_correlation": 0.25,
-          "estimated_paired_delta_sd": 0.3109,
-          "delta_0.03": 843,
-          "delta_0.05": 304,
-          "delta_0.08": 119,
-          "delta_0.1": 76
-        },
-        {
-          "role": "Villager",
-          "n_observed": 4581,
-          "observed_individual_sd": 0.2539,
-          "assumed_pair_correlation": 0.5,
-          "estimated_paired_delta_sd": 0.2539,
-          "delta_0.03": 562,
-          "delta_0.05": 203,
-          "delta_0.08": 80,
-          "delta_0.1": 51
-        },
-        {
-          "role": "Villager",
-          "n_observed": 4581,
-          "observed_individual_sd": 0.2539,
-          "assumed_pair_correlation": 0.75,
-          "estimated_paired_delta_sd": 0.1795,
-          "delta_0.03": 281,
-          "delta_0.05": 102,
-          "delta_0.08": 40,
-          "delta_0.1": 26
-        },
-        {
-          "role": "Seer",
-          "n_observed": 2830,
-          "observed_individual_sd": 0.2758,
-          "assumed_pair_correlation": 0.25,
-          "estimated_paired_delta_sd": 0.3378,
-          "delta_0.03": 995,
-          "delta_0.05": 359,
-          "delta_0.08": 140,
-          "delta_0.1": 90
-        },
-        {
-          "role": "Seer",
-          "n_observed": 2830,
-          "observed_individual_sd": 0.2758,
-          "assumed_pair_correlation": 0.5,
-          "estimated_paired_delta_sd": 0.2758,
-          "delta_0.03": 664,
-          "delta_0.05": 239,
-          "delta_0.08": 94,
-          "delta_0.1": 60
-        },
-        {
-          "role": "Seer",
-          "n_observed": 2830,
-          "observed_individual_sd": 0.2758,
-          "assumed_pair_correlation": 0.75,
-          "estimated_paired_delta_sd": 0.195,
-          "delta_0.03": 332,
-          "delta_0.05": 120,
-          "delta_0.08": 47,
-          "delta_0.1": 30
-        },
-        {
-          "role": "Witch",
-          "n_observed": 2830,
-          "observed_individual_sd": 0.1546,
-          "assumed_pair_correlation": 0.25,
-          "estimated_paired_delta_sd": 0.1893,
-          "delta_0.03": 313,
-          "delta_0.05": 113,
-          "delta_0.08": 44,
-          "delta_0.1": 29
-        },
-        {
-          "role": "Witch",
-          "n_observed": 2830,
-          "observed_individual_sd": 0.1546,
-          "assumed_pair_correlation": 0.5,
-          "estimated_paired_delta_sd": 0.1546,
-          "delta_0.03": 209,
-          "delta_0.05": 76,
-          "delta_0.08": 30,
-          "delta_0.1": 19
-        },
-        {
-          "role": "Witch",
-          "n_observed": 2830,
-          "observed_individual_sd": 0.1546,
-          "assumed_pair_correlation": 0.75,
-          "estimated_paired_delta_sd": 0.1093,
-          "delta_0.03": 105,
-          "delta_0.05": 38,
-          "delta_0.08": 15,
-          "delta_0.1": 10
-        },
-        {
-          "role": "Hunter",
-          "n_observed": 2830,
-          "observed_individual_sd": 0.2076,
-          "assumed_pair_correlation": 0.25,
-          "estimated_paired_delta_sd": 0.2543,
-          "delta_0.03": 564,
-          "delta_0.05": 203,
-          "delta_0.08": 80,
-          "delta_0.1": 51
-        },
-        {
-          "role": "Hunter",
-          "n_observed": 2830,
-          "observed_individual_sd": 0.2076,
-          "assumed_pair_correlation": 0.5,
-          "estimated_paired_delta_sd": 0.2076,
-          "delta_0.03": 376,
-          "delta_0.05": 136,
-          "delta_0.08": 53,
-          "delta_0.1": 34
-        },
-        {
-          "role": "Hunter",
-          "n_observed": 2830,
-          "observed_individual_sd": 0.2076,
-          "assumed_pair_correlation": 0.75,
-          "estimated_paired_delta_sd": 0.1468,
-          "delta_0.03": 188,
-          "delta_0.05": 68,
-          "delta_0.08": 27,
-          "delta_0.1": 17
-        },
-        {
-          "role": "Guard",
-          "n_observed": 2822,
-          "observed_individual_sd": 0.2244,
-          "assumed_pair_correlation": 0.25,
-          "estimated_paired_delta_sd": 0.2748,
-          "delta_0.03": 659,
-          "delta_0.05": 238,
-          "delta_0.08": 93,
-          "delta_0.1": 60
-        },
-        {
-          "role": "Guard",
-          "n_observed": 2822,
-          "observed_individual_sd": 0.2244,
-          "assumed_pair_correlation": 0.5,
-          "estimated_paired_delta_sd": 0.2244,
-          "delta_0.03": 440,
-          "delta_0.05": 159,
-          "delta_0.08": 62,
-          "delta_0.1": 40
-        },
-        {
-          "role": "Guard",
-          "n_observed": 2822,
-          "observed_individual_sd": 0.2244,
-          "assumed_pair_correlation": 0.75,
-          "estimated_paired_delta_sd": 0.1587,
-          "delta_0.03": 220,
-          "delta_0.05": 80,
-          "delta_0.08": 31,
-          "delta_0.1": 20
-        },
-        {
-          "role": "WhiteWolfKing",
-          "n_observed": 871,
-          "observed_individual_sd": 0.1178,
-          "assumed_pair_correlation": 0.25,
-          "estimated_paired_delta_sd": 0.1443,
-          "delta_0.03": 182,
-          "delta_0.05": 66,
-          "delta_0.08": 26,
-          "delta_0.1": 17
-        },
-        {
-          "role": "WhiteWolfKing",
-          "n_observed": 871,
-          "observed_individual_sd": 0.1178,
-          "assumed_pair_correlation": 0.5,
-          "estimated_paired_delta_sd": 0.1178,
-          "delta_0.03": 122,
-          "delta_0.05": 44,
-          "delta_0.08": 18,
-          "delta_0.1": 11
-        },
-        {
-          "role": "WhiteWolfKing",
-          "n_observed": 871,
-          "observed_individual_sd": 0.1178,
-          "assumed_pair_correlation": 0.75,
-          "estimated_paired_delta_sd": 0.0833,
-          "delta_0.03": 61,
-          "delta_0.05": 22,
-          "delta_0.08": 9,
-          "delta_0.1": 6
-        }
-      ]
-    },
-    "recommendation": {
-      "pilot_paired_seeds": 20,
-      "minimum_confirmatory_paired_seeds": 80,
-      "preferred_confirmatory_paired_seeds": 120,
-      "high_confidence_paired_seeds": 200,
-      "primary_metrics": [
-        "target_adjusted_score_delta",
-        "target_role_task_delta"
-      ],
-      "secondary_metrics": [
-        "target_win_rate_delta",
-        "target_process_score_delta"
-      ],
-      "rationale": "20 个 paired seeds 适合验证 pipeline 和健康门禁，不适合直接作为最终因果证明。除非真实 paired 方差很低，否则评分和 role-task 指标通常需要 80+ paired seeds；胜率差所需样本显著更大，应作为辅助指标。"
-    },
-    "claim_boundary": "Use this plan to choose real target-seat A/B sample size. Do not cite the scenario tables as evidence that Track C improves performance."
-  },
+  "target_seat_power_plan": {},
   "evidence_matrix": [
     {
       "claim": "正式 v4flash 数据可用于区分框架版本",
@@ -12210,10 +11775,10 @@
     {
       "claim": "Track C 对单个目标席位的因果增益",
       "evidence_level": "target_seat_paired_ab",
-      "status": "real_llm_pilot_only",
-      "metric": "role=Seer; paired=5; score_delta=20.6680; role_task_delta=0.2830; fallback=0; invalid=0; accepted=False; scope=real_llm_pilot_only; max_days=20",
+      "status": "pipeline_pilot_not_accepted",
+      "metric": "role=Seer; paired=20; score_delta=6.0120; role_task_delta=0.1008; fallback=0; invalid=0; accepted=False; scope=pipeline_pilot_not_accepted; max_days=20",
       "source": "docs/evidence/PROJECT_TARGET_SEAT_TRACKC_PILOT.json",
-      "boundary": "当前最强 target-seat 证据是 5-pair 真实 LLM pilot：趋势正向且健康门禁通过，但 CI gate 未通过；只有 accepted=true 且样本/健康/CI 门禁通过时，才能写成因果支持。"
+      "boundary": "当前最强 target-seat 证据是 20-pair 真实 LLM pipeline pilot：趋势正向且健康门禁通过，但 CI gate 未通过；只有 accepted=true 且样本/健康/CI 门禁通过时，才能写成因果支持。"
     },
     {
       "claim": "Track C 在线烟测能把策略注入真实决策",
@@ -12235,8 +11800,8 @@
   "open_gaps": [
     {
       "gap": "Track C 最终胜率因果提升",
-      "reason": "当前正式数据中 trackc_only/both 完成率不均；真实 target-seat 5-pair pilot 呈正向评分趋势但 CI 跨 0，且胜率 delta 为 0。",
-      "required_experiment": "先跑 20 paired seeds pilot；正式因果验证建议 80-120 paired seeds 起步，只升级一个目标席位，固定对手、seed、角色分配。胜率作为辅助指标。"
+      "reason": "当前正式数据中 trackc_only/both 完成率不均；当前已有 Seer 20-pair 真实 LLM target-seat 输出：adjusted 6.0120、role-task 0.1008、fallback/invalid=0/0，但 bootstrap CI gate 未通过，且胜率 delta 未形成正向证据。",
+      "required_experiment": "已完成 20-pair pipeline pilot；下一步按功效计划扩到 80-120 paired seeds，并轮换 Seer/Witch/Guard/Werewolf/Hunter/Villager。胜率作为辅助指标。"
     },
     {
       "gap": "每个角色的最优检索 policy",
@@ -12250,7 +11815,7 @@
     },
     {
       "gap": "正式 target-seat A/B 样本量",
-      "reason": "当前已有 Seer 5-pair 真实 LLM pilot：adjusted +20.668、role-task +0.283、fallback/invalid=0，但 CI gate 未通过；尚未完成 20-pair pilot 或 80-120 paired seeds 正式验证。",
+      "reason": "当前已有 Seer 20-pair 真实 LLM target-seat 输出：adjusted 6.0120、role-task 0.1008、fallback/invalid=0/0，但 bootstrap CI gate 未通过，且胜率 delta 未形成正向证据。",
       "required_experiment": "按功效计划运行正式 target-seat paired A/B：固定 seed、角色分配和对手，只升级目标席位，并报告 adjusted score、role-task、win-rate、fallback/invalid 与 bootstrap CI。"
     }
   ]

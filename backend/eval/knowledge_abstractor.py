@@ -18,9 +18,11 @@ Each game produces:
 from __future__ import annotations
 
 import os
+from collections import defaultdict
 from dataclasses import dataclass
 from dataclasses import field
 from datetime import datetime
+from datetime import timedelta
 from datetime import timezone
 from typing import Any
 from typing import Dict
@@ -29,6 +31,19 @@ from typing import Optional
 
 from backend.eval.per_step_scorer import PlayerReviewReport
 from backend.eval.per_step_scorer import ScoredStep
+
+AUTO_PROMOTION_QUALITY_THRESHOLD = float(os.getenv("TRACKC_AUTO_PROMOTION_QUALITY_THRESHOLD", "0.85"))
+AUTO_PROMOTION_CLUSTER_THRESHOLD = float(os.getenv("TRACKC_AUTO_PROMOTION_CLUSTER_THRESHOLD", "0.75"))
+AUTO_PROMOTION_CLUSTER_TOP_N = int(os.getenv("TRACKC_AUTO_PROMOTION_CLUSTER_TOP_N", "5"))
+ACTIVE_DOC_CAP_PER_ROLE_TYPE = int(os.getenv("TRACKC_ACTIVE_DOC_CAP_PER_ROLE_TYPE", "20"))
+CANDIDATE_DOC_CAP_PER_ROLE_TYPE = int(os.getenv("TRACKC_CANDIDATE_DOC_CAP_PER_ROLE_TYPE", "200"))
+CANDIDATE_DOC_TOTAL_CAP = int(os.getenv("TRACKC_CANDIDATE_DOC_TOTAL_CAP", "5000"))
+CANDIDATE_DEPRECATION_THRESHOLD = float(os.getenv("TRACKC_CANDIDATE_DEPRECATION_THRESHOLD", "0.60"))
+CANDIDATE_STALE_DAYS = int(os.getenv("TRACKC_CANDIDATE_STALE_DAYS", "45"))
+FEEDBACK_PROMOTION_MIN_USAGE = int(os.getenv("TRACKC_FEEDBACK_PROMOTION_MIN_USAGE", "3"))
+FEEDBACK_PROMOTION_SUCCESS_RATE = float(os.getenv("TRACKC_FEEDBACK_PROMOTION_SUCCESS_RATE", "0.70"))
+FEEDBACK_DEPRECATION_MIN_USAGE = int(os.getenv("TRACKC_FEEDBACK_DEPRECATION_MIN_USAGE", "5"))
+FEEDBACK_DEPRECATION_FAILURE_RATE = float(os.getenv("TRACKC_FEEDBACK_DEPRECATION_FAILURE_RATE", "0.70"))
 
 
 @dataclass
@@ -418,101 +433,262 @@ def store_lessons_to_db(
         db.close()
 
 
-def promote_after_store() -> int:
-    """Promote candidates to active after new lessons are stored.
+def _quality(row: Any) -> float:
+    try:
+        return float(getattr(row, "quality_score", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
 
-    Runs the standard 3-step promotion pipeline:
-    1. quality  — promote candidates with quality_score ≥ 0.85
-    2. cluster  — promote top-5 per (role, doc_type) cluster, quality ≥ 0.75
-    3. prune    — cap active docs per (role, doc_type) at 30
 
-    Called from post_game.py after each game's lessons are stored.
-    Returns total number of candidates promoted.
+def _usage_count(row: Any) -> int:
+    try:
+        return int(getattr(row, "usage_count", 0) or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _success_count(row: Any) -> int:
+    try:
+        return int(getattr(row, "success_count", 0) or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _failure_count(row: Any) -> int:
+    try:
+        return int(getattr(row, "failure_count", 0) or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _group_key(row: Any) -> tuple[str, str]:
+    return (str(getattr(row, "role", "") or "global"), str(getattr(row, "doc_type", "") or "unknown"))
+
+
+def _is_reflection_doc(row: Any) -> bool:
+    return str(getattr(row, "doc_type", "") or "").lower().startswith("reflection")
+
+
+def _updated_rank(row: Any) -> float:
+    value = getattr(row, "updated_at", None) or getattr(row, "created_at", None)
+    if isinstance(value, datetime):
+        return value.timestamp()
+    if isinstance(value, str) and value:
+        try:
+            return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+        except ValueError:
+            return 0.0
+    return 0.0
+
+
+def _candidate_sort_key(row: Any) -> tuple[float, float, int]:
+    return (_quality(row), _updated_rank(row), _usage_count(row))
+
+
+def _is_stale_candidate(row: Any, cutoff: datetime) -> bool:
+    value = getattr(row, "updated_at", None) or getattr(row, "created_at", None)
+    if value is None:
+        return False
+    if isinstance(value, str):
+        try:
+            value = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return False
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value < cutoff and _usage_count(row) == 0 and _quality(row) < AUTO_PROMOTION_CLUSTER_THRESHOLD
+    return False
+
+
+def run_strategy_knowledge_lifecycle(
+    *,
+    quality_threshold: float = AUTO_PROMOTION_QUALITY_THRESHOLD,
+    cluster_threshold: float = AUTO_PROMOTION_CLUSTER_THRESHOLD,
+    cluster_top_n: int = AUTO_PROMOTION_CLUSTER_TOP_N,
+    active_cap_per_role_type: int = ACTIVE_DOC_CAP_PER_ROLE_TYPE,
+    candidate_cap_per_role_type: int = CANDIDATE_DOC_CAP_PER_ROLE_TYPE,
+    candidate_total_cap: int = CANDIDATE_DOC_TOTAL_CAP,
+    deprecation_threshold: float = CANDIDATE_DEPRECATION_THRESHOLD,
+    stale_days: int = CANDIDATE_STALE_DAYS,
+    feedback_min_usage: int = FEEDBACK_PROMOTION_MIN_USAGE,
+    feedback_success_rate: float = FEEDBACK_PROMOTION_SUCCESS_RATE,
+    feedback_deprecation_min_usage: int = FEEDBACK_DEPRECATION_MIN_USAGE,
+    feedback_deprecation_failure_rate: float = FEEDBACK_DEPRECATION_FAILURE_RATE,
+    dry_run: bool = False,
+) -> dict[str, int]:
+    """Run the shared Track C knowledge lifecycle.
+
+    This is the single promotion/governance implementation used by both layers:
+    the automatic post-game hook and the explicit maintenance script.
+
+    Lifecycle:
+    1. feedback/quality/cluster gates promote candidate docs to active
+    2. active docs are capped per (role, doc_type)
+    3. low-quality, stale, or excess candidates are deprecated
     """
     import logging
-    from collections import defaultdict
-
-    from sqlalchemy import or_
 
     from backend.db.database import SessionLocal
-    from backend.db.persist import StrategyKnowledgeDoc
+    from backend.db.models import StrategyKnowledgeDoc
 
     logger = logging.getLogger(__name__)
     db = SessionLocal()
-    promoted_total = 0
+    result = {
+        "feedback_promoted": 0,
+        "quality_promoted": 0,
+        "cluster_promoted": 0,
+        "active_demoted": 0,
+        "low_quality_deprecated": 0,
+        "feedback_deprecated": 0,
+        "stale_deprecated": 0,
+        "candidate_pruned": 0,
+        "active_after": 0,
+        "candidate_after": 0,
+        "deprecated_after": 0,
+    }
+    original_status: dict[str, str] = {}
 
     try:
-        # ── Step 1: quality promo (q ≥ 0.90) ──
-        quality_threshold = 0.85
         rows = (
             db.query(StrategyKnowledgeDoc)
-            .filter(
-                StrategyKnowledgeDoc.status == "candidate",
-                StrategyKnowledgeDoc.quality_score >= quality_threshold,
-                or_(
-                    StrategyKnowledgeDoc.doc_type.is_(None),
-                    ~StrategyKnowledgeDoc.doc_type.ilike("reflection%"),
-                ),
-            )
+            .filter(StrategyKnowledgeDoc.status.in_(["active", "candidate", "deprecated"]))
             .all()
         )
-        for row in rows:
-            row.status = "active"
-            promoted_total += 1
+        original_status = {str(getattr(row, "id", id(row))): str(getattr(row, "status", "") or "") for row in rows}
 
-        # ── Step 2: cluster promo (top-5 per role/doc_type, q ≥ 0.75) ──
-        cluster_threshold = 0.75
-        top_n = 5
-        rows = (
-            db.query(StrategyKnowledgeDoc)
-            .filter(
-                StrategyKnowledgeDoc.status == "candidate",
-                StrategyKnowledgeDoc.quality_score >= cluster_threshold,
-                or_(
-                    StrategyKnowledgeDoc.doc_type.is_(None),
-                    ~StrategyKnowledgeDoc.doc_type.ilike("reflection%"),
-                ),
-            )
-            .order_by(StrategyKnowledgeDoc.quality_score.desc())
-            .all()
-        )
-        groups: dict[tuple[str, str], list] = defaultdict(list)
+        # Step 1: usage feedback can promote validated candidates or deprecate harmful ones.
         for row in rows:
-            key = (row.role, row.doc_type or "unknown")
-            groups[key].append(row)
-        for key, group in groups.items():
-            for row in sorted(group, key=lambda r: r.quality_score, reverse=True)[:top_n]:
-                if row.status == "candidate":
+            status = str(getattr(row, "status", "") or "")
+            usage = _usage_count(row)
+            if usage <= 0:
+                continue
+            success_rate = _success_count(row) / max(usage, 1)
+            failure_rate = _failure_count(row) / max(usage, 1)
+            if (
+                status == "candidate"
+                and not _is_reflection_doc(row)
+                and usage >= feedback_min_usage
+                and success_rate >= feedback_success_rate
+                and _quality(row) >= deprecation_threshold
+            ):
+                row.status = "active"
+                result["feedback_promoted"] += 1
+            elif (
+                status in {"candidate", "active"}
+                and usage >= feedback_deprecation_min_usage
+                and failure_rate >= feedback_deprecation_failure_rate
+                and (_quality(row) < quality_threshold or status == "candidate")
+            ):
+                row.status = "deprecated"
+                result["feedback_deprecated"] += 1
+
+        # Step 2: high-confidence quality promotion.
+        for row in rows:
+            if (
+                str(getattr(row, "status", "") or "") == "candidate"
+                and not _is_reflection_doc(row)
+                and _quality(row) >= quality_threshold
+            ):
+                row.status = "active"
+                result["quality_promoted"] += 1
+
+        # Step 3: cluster gate promotes the best remaining candidates per bucket.
+        candidate_groups: dict[tuple[str, str], list[Any]] = defaultdict(list)
+        for row in rows:
+            if (
+                str(getattr(row, "status", "") or "") == "candidate"
+                and not _is_reflection_doc(row)
+                and _quality(row) >= cluster_threshold
+            ):
+                candidate_groups[_group_key(row)].append(row)
+        for group in candidate_groups.values():
+            for row in sorted(group, key=_candidate_sort_key, reverse=True)[:cluster_top_n]:
+                if str(getattr(row, "status", "") or "") == "candidate":
                     row.status = "active"
-                    promoted_total += 1
+                    result["cluster_promoted"] += 1
 
-        # ── Step 3: prune (cap active per role/doc_type at 20) ──
-        cap = 20
-        active_rows = (
-            db.query(StrategyKnowledgeDoc)
-            .filter(StrategyKnowledgeDoc.status == "active")
-            .order_by(StrategyKnowledgeDoc.quality_score.desc())
-            .all()
-        )
-        active_groups: dict[tuple[str, str], list] = defaultdict(list)
-        for row in active_rows:
-            key = (row.role, row.doc_type or "unknown")
-            active_groups[key].append(row)
-        for key, group in active_groups.items():
-            if len(group) > cap:
-                # Demote lowest-quality excess to candidate
-                excess = sorted(group, key=lambda r: r.quality_score)[: len(group) - cap]
-                for row in excess:
+        # Step 4: keep the active pool small and curated.
+        active_groups: dict[tuple[str, str], list[Any]] = defaultdict(list)
+        for row in rows:
+            if str(getattr(row, "status", "") or "") == "active":
+                active_groups[_group_key(row)].append(row)
+        for group in active_groups.values():
+            if len(group) <= active_cap_per_role_type:
+                continue
+            keep = {id(row) for row in sorted(group, key=_candidate_sort_key, reverse=True)[:active_cap_per_role_type]}
+            for row in group:
+                if id(row) not in keep:
                     row.status = "candidate"
+                    result["active_demoted"] += 1
 
-        db.commit()
+        # Step 5: prevent candidate accumulation.
+        stale_cutoff = datetime.now(timezone.utc) - timedelta(days=stale_days)
+        for row in rows:
+            if str(getattr(row, "status", "") or "") != "candidate":
+                continue
+            if _quality(row) < deprecation_threshold:
+                row.status = "deprecated"
+                result["low_quality_deprecated"] += 1
+            elif _is_stale_candidate(row, stale_cutoff):
+                row.status = "deprecated"
+                result["stale_deprecated"] += 1
 
-        if promoted_total > 0:
-            logger.info("promote_after_store: %d candidates → active", promoted_total)
-        return promoted_total
+        candidate_groups = defaultdict(list)
+        for row in rows:
+            if str(getattr(row, "status", "") or "") == "candidate":
+                candidate_groups[_group_key(row)].append(row)
+        for group in candidate_groups.values():
+            if len(group) <= candidate_cap_per_role_type:
+                continue
+            keep = {
+                id(row) for row in sorted(group, key=_candidate_sort_key, reverse=True)[:candidate_cap_per_role_type]
+            }
+            for row in group:
+                if id(row) not in keep and str(getattr(row, "status", "") or "") == "candidate":
+                    row.status = "deprecated"
+                    result["candidate_pruned"] += 1
+
+        candidates = [row for row in rows if str(getattr(row, "status", "") or "") == "candidate"]
+        if len(candidates) > candidate_total_cap:
+            keep = {id(row) for row in sorted(candidates, key=_candidate_sort_key, reverse=True)[:candidate_total_cap]}
+            for row in candidates:
+                if id(row) not in keep and str(getattr(row, "status", "") or "") == "candidate":
+                    row.status = "deprecated"
+                    result["candidate_pruned"] += 1
+
+        result["active_after"] = sum(1 for row in rows if str(getattr(row, "status", "") or "") == "active")
+        result["candidate_after"] = sum(1 for row in rows if str(getattr(row, "status", "") or "") == "candidate")
+        result["deprecated_after"] = sum(1 for row in rows if str(getattr(row, "status", "") or "") == "deprecated")
+
+        if dry_run:
+            db.rollback()
+            for row in rows:
+                key = str(getattr(row, "id", id(row)))
+                if key in original_status:
+                    row.status = original_status[key]
+        else:
+            db.commit()
+
+        logger.info("Track C knowledge lifecycle: %s", result)
+        return result
     except Exception:
         db.rollback()
-        logger.warning("promote_after_store failed", exc_info=True)
-        return 0
+        for row in locals().get("rows", []):
+            key = str(getattr(row, "id", id(row)))
+            if key in original_status:
+                row.status = original_status[key]
+        logger.warning("Track C knowledge lifecycle failed", exc_info=True)
+        return result
     finally:
         db.close()
+
+
+def promote_after_store() -> int:
+    """Run automatic post-game candidate promotion and pool governance.
+
+    Called from post_game.py after each game's lessons are stored.
+    Returns total number of candidates promoted to active.
+    """
+    result = run_strategy_knowledge_lifecycle()
+    return result["feedback_promoted"] + result["quality_promoted"] + result["cluster_promoted"]

@@ -154,6 +154,68 @@ def merge_target_seat_rows(rows: list[dict[str, Any]], pilot: dict[str, Any]) ->
     return merged
 
 
+def target_seat_boundary(row: dict[str, Any] | None) -> str:
+    if not row:
+        return "当前未找到 target-seat 证据；只有 accepted=true 且样本/健康/CI 门禁通过时，才能写成因果支持。"
+    paired = inum(row.get("paired_seed_count"))
+    scope = row.get("claim_scope")
+    if scope == "smoke_only":
+        prefix = f"当前 target-seat 证据为 {paired}-pair/max_days={row.get('max_days')} 烟测"
+    elif paired < 20:
+        prefix = f"当前最强 target-seat 证据是 {paired}-pair 真实 LLM pilot"
+    elif paired < 80:
+        prefix = f"当前最强 target-seat 证据是 {paired}-pair 真实 LLM pipeline pilot"
+    else:
+        prefix = f"当前最强 target-seat 证据是 {paired}-pair 真实 LLM formal candidate"
+    return (
+        f"{prefix}：趋势正向且健康门禁通过，但 CI gate 未通过；"
+        "只有 accepted=true 且样本/健康/CI 门禁通过时，才能写成因果支持。"
+    )
+
+
+def target_seat_gap_reason(row: dict[str, Any] | None) -> str:
+    if not row:
+        return "当前正式数据中 trackc_only/both 完成率不均，且尚未找到 target-seat paired A/B 真实输出。"
+    paired = inum(row.get("paired_seed_count"))
+    return (
+        f"当前已有 {row.get('target_role', 'target')} {paired}-pair 真实 LLM target-seat 输出："
+        f"adjusted {fmt(row.get('target_adjusted_score_delta'))}、"
+        f"role-task {fmt(row.get('target_role_task_delta'))}、"
+        f"fallback/invalid={row.get('candidate_fallback_count')}/{row.get('candidate_invalid_count')}，"
+        "但 bootstrap CI gate 未通过，且胜率 delta 未形成正向证据。"
+    )
+
+
+def target_seat_required_experiment(row: dict[str, Any] | None) -> str:
+    if not row:
+        return (
+            "先跑 20 paired seeds pipeline pilot；正式因果验证建议 80-120 paired seeds 起步，"
+            "只升级一个目标席位，固定对手、seed、角色分配。胜率作为辅助指标。"
+        )
+    paired = inum(row.get("paired_seed_count"))
+    if paired < 20:
+        return (
+            "先扩到 20 paired seeds pipeline pilot；正式因果验证建议 80-120 paired seeds 起步，"
+            "只升级一个目标席位，固定对手、seed、角色分配。胜率作为辅助指标。"
+        )
+    return (
+        "已完成 20-pair pipeline pilot；下一步按功效计划扩到 80-120 paired seeds，"
+        "并轮换 Seer/Witch/Guard/Werewolf/Hunter/Villager。胜率作为辅助指标。"
+    )
+
+
+def target_seat_claim_scope(*, max_days: int, paired: int, accepted: bool) -> str:
+    if max_days <= 1:
+        return "smoke_only"
+    if accepted:
+        return "causal_supported"
+    if paired < 20:
+        return "real_llm_pilot_only"
+    if paired < 80:
+        return "pipeline_pilot_not_accepted"
+    return "formal_candidate_not_accepted"
+
+
 def read_csv(path: Path) -> list[dict[str, str]]:
     if not path.exists():
         return []
@@ -521,6 +583,9 @@ def collect_target_seat_results() -> list[dict[str, Any]]:
         if any("fake" in item for item in model_pool):
             continue
         acceptance = comparison.get("acceptance", {})
+        max_days = inum(payload.get("max_days"))
+        paired = inum(comparison.get("paired_seed_count"))
+        accepted = bool(acceptance.get("accepted", False))
         rows.append(
             {
                 "source": str(path.relative_to(ROOT)),
@@ -528,20 +593,18 @@ def collect_target_seat_results() -> list[dict[str, Any]]:
                 "target_role": payload.get("target_role", ""),
                 "baseline_framework": payload.get("baseline_framework", ""),
                 "candidate_framework": payload.get("candidate_framework", ""),
-                "paired_seed_count": inum(comparison.get("paired_seed_count")),
+                "paired_seed_count": paired,
                 "target_win_rate_delta": fnum(comparison.get("target_win_rate_delta")),
                 "target_adjusted_score_delta": fnum(comparison.get("target_adjusted_score_delta")),
                 "target_role_task_delta": fnum(comparison.get("target_role_task_delta")),
                 "candidate_fallback_count": inum(comparison.get("candidate_fallback_count")),
                 "candidate_invalid_count": inum(comparison.get("candidate_invalid_count")),
-                "accepted": bool(acceptance.get("accepted", False)),
+                "accepted": accepted,
                 "claim_level": acceptance.get("claim_level", "待确认"),
-                "max_days": inum(payload.get("max_days")),
+                "max_days": max_days,
                 "player_count": inum(payload.get("player_count")),
                 "elapsed_s": fnum(payload.get("elapsed_s")),
-                "claim_scope": "smoke_only"
-                if inum(payload.get("max_days")) <= 1 or inum(comparison.get("paired_seed_count")) < 20
-                else "formal_candidate",
+                "claim_scope": target_seat_claim_scope(max_days=max_days, paired=paired, accepted=accepted),
                 "bootstrap_ci": comparison.get("bootstrap_ci", {}),
             }
         )
@@ -592,6 +655,7 @@ def build_evidence(
         refresh_target_seat=refresh_target_seat,
     )
     target_seat_rows = merge_target_seat_rows(target_seat_rows, target_seat_pilot)
+    best_target_seat = target_seat_rows[0] if target_seat_rows else None
 
     retrieval_metrics = retrieval.get("metrics", {}) if isinstance(retrieval, dict) else {}
     default_policy = retrieval_metrics.get("hybrid_role_mbti_global", {})
@@ -812,27 +876,27 @@ def build_evidence(
             "claim": "Track C 对单个目标席位的因果增益",
             "evidence_level": "target_seat_paired_ab",
             "status": (
-                target_seat_rows[0]["claim_level"]
-                if target_seat_rows and target_seat_rows[0].get("claim_scope") == "formal_candidate"
-                else (target_seat_rows[0].get("claim_scope") if target_seat_rows else "missing")
+                best_target_seat["claim_level"]
+                if best_target_seat and best_target_seat.get("claim_scope") == "causal_supported"
+                else (best_target_seat.get("claim_scope") if best_target_seat else "missing")
             ),
             "metric": (
-                f"role={target_seat_rows[0]['target_role']}; paired={target_seat_rows[0]['paired_seed_count']}; "
-                f"score_delta={fmt(target_seat_rows[0]['target_adjusted_score_delta'])}; "
-                f"role_task_delta={fmt(target_seat_rows[0].get('target_role_task_delta'))}; "
-                f"fallback={target_seat_rows[0].get('candidate_fallback_count')}; "
-                f"invalid={target_seat_rows[0].get('candidate_invalid_count')}; "
-                f"accepted={target_seat_rows[0]['accepted']}; "
-                f"scope={target_seat_rows[0].get('claim_scope')}; max_days={target_seat_rows[0].get('max_days')}"
+                f"role={best_target_seat['target_role']}; paired={best_target_seat['paired_seed_count']}; "
+                f"score_delta={fmt(best_target_seat['target_adjusted_score_delta'])}; "
+                f"role_task_delta={fmt(best_target_seat.get('target_role_task_delta'))}; "
+                f"fallback={best_target_seat.get('candidate_fallback_count')}; "
+                f"invalid={best_target_seat.get('candidate_invalid_count')}; "
+                f"accepted={best_target_seat['accepted']}; "
+                f"scope={best_target_seat.get('claim_scope')}; max_days={best_target_seat.get('max_days')}"
             )
-            if target_seat_rows
+            if best_target_seat
             else "no target-seat output found",
             "source": (
-                (target_seat_rows[0].get("summary_source") or target_seat_rows[0]["source"])
-                if target_seat_rows
+                (best_target_seat.get("summary_source") or best_target_seat["source"])
+                if best_target_seat
                 else TARGET_SEAT_GLOB
             ),
-            "boundary": "当前最强 target-seat 证据是 5-pair 真实 LLM pilot：趋势正向且健康门禁通过，但 CI gate 未通过；只有 accepted=true 且样本/健康/CI 门禁通过时，才能写成因果支持。",
+            "boundary": target_seat_boundary(best_target_seat),
         },
         {
             "claim": "Track C 在线烟测能把策略注入真实决策",
@@ -855,8 +919,8 @@ def build_evidence(
     open_gaps = [
         {
             "gap": "Track C 最终胜率因果提升",
-            "reason": "当前正式数据中 trackc_only/both 完成率不均；真实 target-seat 5-pair pilot 呈正向评分趋势但 CI 跨 0，且胜率 delta 为 0。",
-            "required_experiment": "先跑 20 paired seeds pilot；正式因果验证建议 80-120 paired seeds 起步，只升级一个目标席位，固定对手、seed、角色分配。胜率作为辅助指标。",
+            "reason": "当前正式数据中 trackc_only/both 完成率不均；" + target_seat_gap_reason(best_target_seat),
+            "required_experiment": target_seat_required_experiment(best_target_seat),
         },
         {
             "gap": "每个角色的最优检索 policy",
@@ -870,7 +934,7 @@ def build_evidence(
         },
         {
             "gap": "正式 target-seat A/B 样本量",
-            "reason": "当前已有 Seer 5-pair 真实 LLM pilot：adjusted +20.668、role-task +0.283、fallback/invalid=0，但 CI gate 未通过；尚未完成 20-pair pilot 或 80-120 paired seeds 正式验证。",
+            "reason": target_seat_gap_reason(best_target_seat),
             "required_experiment": "按功效计划运行正式 target-seat paired A/B：固定 seed、角色分配和对手，只升级目标席位，并报告 adjusted score、role-task、win-rate、fallback/invalid 与 bootstrap CI。",
         },
     ]
@@ -1569,7 +1633,7 @@ def render_report(evidence: dict[str, Any]) -> str:
                 ],
             ),
             "",
-            "解释：`claim_scope=real_llm_pilot_only` 表示真实 LLM target-seat A/B 已跑通，并能展示目标席位 paired delta、per-agent feature flags 和健康门禁；但样本量仍小，bootstrap CI 下界跨 0，不能写成因果支持。只有正式样本 `Accepted=true` 且 `ClaimLevel=causal_supported` 时，才能把 Track C 写成对单个目标席位的因果增益。",
+            "解释：target-seat A/B 已能展示目标席位 paired delta、per-agent feature flags 和健康门禁；但只要 bootstrap CI 下界跨 0 或 acceptance 未通过，就不能写成因果支持。只有 `Accepted=true` 且 `ClaimLevel=causal_supported` 时，才能把 Track C 写成对单个目标席位的因果增益。",
             "",
         ]
     else:
@@ -1596,7 +1660,9 @@ def render_report(evidence: dict[str, Any]) -> str:
                     provider_preflight.get("safe_for_formal_experiment", False),
                     ", ".join(row.get("label", "") for row in provider_preflight.get("resolved_models", [])),
                     provider_preflight.get("error", ""),
-                    evidence.get("sources", {}).get("provider_preflight", "docs/evidence/PROJECT_PROVIDER_PREFLIGHT.json"),
+                    evidence.get("sources", {}).get(
+                        "provider_preflight", "docs/evidence/PROJECT_PROVIDER_PREFLIGHT.json"
+                    ),
                 ]
             ],
         ),
@@ -1687,23 +1753,23 @@ def render_report(evidence: dict[str, Any]) -> str:
         "",
         "## 13. 下一步真实实验命令",
         "",
-        "当前 Doubao/Ark endpoint 已通过真实 chat preflight。建议先运行 20 paired seeds pilot 验证完整 target-seat 链路健康：",
+        "当前真实 provider 已通过 chat preflight。20-pair pipeline pilot 已完成；下一步按功效计划扩展 target-seat A/B：",
         "",
         "```bash",
         "python scripts/target_seat_trackc_ab_experiment.py \\",
         "  --target-role Seer \\",
-        "  --seeds 9301 9302 9303 9304 9305 9306 9307 9308 9309 9310 9311 9312 9313 9314 9315 9316 9317 9318 9319 9320 \\",
+        "  --seeds $(seq -s ' ' 9901 9980) \\",
         "  --baseline-framework basic_react \\",
         "  --candidate-framework rag_react \\",
-        '  --models "doubao:${DOUBAO_ENDPOINT}" \\',
+        '  --models "${DOUBAO_MODEL}" \\',
         "  --player-count 7 \\",
         "  --max-days 20 \\",
         "  --bootstrap-iterations 2000 \\",
-        "  --min-paired-seeds 20 \\",
+        "  --min-paired-seeds 80 \\",
         "  --min-adjusted-score-delta 3.0 \\",
         "  --min-role-task-delta 0.03 \\",
         "  --min-win-rate-delta 0.03 \\",
-        "  --output-dir outputs/target_seat_trackc_ab_seer",
+        "  --output-dir outputs/target_seat_trackc_ab_seer_confirmatory",
         "```",
         "",
         "全席位框架对比可继续运行：",

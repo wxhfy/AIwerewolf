@@ -2,6 +2,9 @@
 """Unified strategy promotion pipeline.
 
 Modes:
+  lifecycle  — Run the full Track C lifecycle used by the post-game hook:
+               quality + cluster + usage feedback promotion, active pruning,
+               candidate low-quality/stale/excess deprecation.
   quality    — Promote candidates with quality_score >= threshold to active,
                deprecate those below deprecation_threshold. Reflection docs
                are skipped unless --allow-reflections is set.
@@ -11,11 +14,12 @@ Modes:
   prune      — Cap active docs per (role, doc_type), demote excess to candidate.
 
 Usage:
+  python scripts/promote.py --mode lifecycle --apply
   python scripts/promote.py --mode quality --quality-threshold 0.85 --apply
   python scripts/promote.py --mode cluster --top-n 3 --quality-threshold 0.70 --apply
   python scripts/promote.py --mode feedback --min-usage 5 --apply
   python scripts/promote.py --mode prune --apply
-  python scripts/promote.py --mode quality --dry-run   # preview only
+  python scripts/promote.py --mode lifecycle --dry-run   # preview only
 """
 
 from __future__ import annotations
@@ -29,6 +33,19 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from backend.db.database import DEFAULT_DB_URL
+from backend.eval.knowledge_abstractor import ACTIVE_DOC_CAP_PER_ROLE_TYPE
+from backend.eval.knowledge_abstractor import AUTO_PROMOTION_CLUSTER_THRESHOLD
+from backend.eval.knowledge_abstractor import AUTO_PROMOTION_CLUSTER_TOP_N
+from backend.eval.knowledge_abstractor import AUTO_PROMOTION_QUALITY_THRESHOLD
+from backend.eval.knowledge_abstractor import CANDIDATE_DEPRECATION_THRESHOLD
+from backend.eval.knowledge_abstractor import CANDIDATE_DOC_CAP_PER_ROLE_TYPE
+from backend.eval.knowledge_abstractor import CANDIDATE_DOC_TOTAL_CAP
+from backend.eval.knowledge_abstractor import CANDIDATE_STALE_DAYS
+from backend.eval.knowledge_abstractor import FEEDBACK_DEPRECATION_FAILURE_RATE
+from backend.eval.knowledge_abstractor import FEEDBACK_DEPRECATION_MIN_USAGE
+from backend.eval.knowledge_abstractor import FEEDBACK_PROMOTION_MIN_USAGE
+from backend.eval.knowledge_abstractor import FEEDBACK_PROMOTION_SUCCESS_RATE
+from backend.eval.knowledge_abstractor import run_strategy_knowledge_lifecycle
 
 DB_URL = DEFAULT_DB_URL
 
@@ -200,16 +217,45 @@ def prune_active(conn, dry_run: bool) -> dict:
 # --- Main ---
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--mode", required=True, choices=["quality", "cluster", "feedback", "prune"])
-    p.add_argument("--quality-threshold", type=float, default=0.85)
-    p.add_argument("--deprecation-threshold", type=float, default=0.60)
-    p.add_argument("--top-n", type=int, default=3)
-    p.add_argument("--min-usage", type=int, default=5)
-    p.add_argument("--feedback-score", type=float, default=0.7)
+    p.add_argument("--mode", required=True, choices=["lifecycle", "quality", "cluster", "feedback", "prune"])
+    p.add_argument("--quality-threshold", type=float, default=AUTO_PROMOTION_QUALITY_THRESHOLD)
+    p.add_argument("--cluster-threshold", type=float, default=AUTO_PROMOTION_CLUSTER_THRESHOLD)
+    p.add_argument("--deprecation-threshold", type=float, default=CANDIDATE_DEPRECATION_THRESHOLD)
+    p.add_argument("--top-n", type=int, default=AUTO_PROMOTION_CLUSTER_TOP_N)
+    p.add_argument("--min-usage", type=int, default=FEEDBACK_PROMOTION_MIN_USAGE)
+    p.add_argument("--feedback-score", type=float, default=FEEDBACK_PROMOTION_SUCCESS_RATE)
+    p.add_argument("--feedback-deprecation-min-usage", type=int, default=FEEDBACK_DEPRECATION_MIN_USAGE)
+    p.add_argument("--feedback-deprecation-failure-rate", type=float, default=FEEDBACK_DEPRECATION_FAILURE_RATE)
+    p.add_argument("--active-cap", type=int, default=ACTIVE_DOC_CAP_PER_ROLE_TYPE)
+    p.add_argument("--candidate-cap", type=int, default=CANDIDATE_DOC_CAP_PER_ROLE_TYPE)
+    p.add_argument("--candidate-total-cap", type=int, default=CANDIDATE_DOC_TOTAL_CAP)
+    p.add_argument("--stale-days", type=int, default=CANDIDATE_STALE_DAYS)
     p.add_argument("--allow-reflections", action="store_true")
     p.add_argument("--dry-run", action="store_true", default=True)
     p.add_argument("--apply", dest="dry_run", action="store_false")
     args = p.parse_args()
+
+    if args.mode == "lifecycle":
+        result = run_strategy_knowledge_lifecycle(
+            quality_threshold=args.quality_threshold,
+            cluster_threshold=args.cluster_threshold,
+            cluster_top_n=args.top_n,
+            active_cap_per_role_type=args.active_cap,
+            candidate_cap_per_role_type=args.candidate_cap,
+            candidate_total_cap=args.candidate_total_cap,
+            deprecation_threshold=args.deprecation_threshold,
+            stale_days=args.stale_days,
+            feedback_min_usage=args.min_usage,
+            feedback_success_rate=args.feedback_score,
+            feedback_deprecation_min_usage=args.feedback_deprecation_min_usage,
+            feedback_deprecation_failure_rate=args.feedback_deprecation_failure_rate,
+            dry_run=args.dry_run,
+        )
+        print(f"Mode: {args.mode}")
+        print(f"Dry run: {args.dry_run}")
+        for k, v in result.items():
+            print(f"  {k}: {v}")
+        return
 
     import psycopg2
 

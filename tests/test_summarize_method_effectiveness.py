@@ -91,3 +91,19 @@ def test_merge_target_seat_rows_prefers_tracked_real_llm_pilot() -> None:
     assert rows[0]["claim_scope"] == "real_llm_pilot_only"
     assert rows[0]["target_process_score_delta"] == 22.184
     assert rows[1]["claim_scope"] == "smoke_only"
+
+
+def test_target_seat_claim_scope_marks_20_pair_pipeline_not_accepted() -> None:
+    assert summary.target_seat_claim_scope(max_days=20, paired=20, accepted=False) == "pipeline_pilot_not_accepted"
+    assert summary.target_seat_claim_scope(max_days=1, paired=20, accepted=False) == "smoke_only"
+    assert summary.target_seat_claim_scope(max_days=20, paired=80, accepted=False) == "formal_candidate_not_accepted"
+    assert summary.target_seat_claim_scope(max_days=20, paired=20, accepted=True) == "causal_supported"
+
+
+def test_target_seat_boundary_uses_dynamic_paired_count() -> None:
+    row = {"paired_seed_count": 20, "max_days": 20, "claim_scope": "pipeline_pilot_not_accepted"}
+
+    boundary = summary.target_seat_boundary(row)
+
+    assert "20-pair 真实 LLM pipeline pilot" in boundary
+    assert "CI gate 未通过" in boundary
