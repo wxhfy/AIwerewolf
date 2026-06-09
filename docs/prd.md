@@ -208,7 +208,7 @@ Layer 3  策略知识  → 教"怎么赢"（BM25 检索历史经验）
 
 | 层 | 技术 |
 |------|------|
-| 后端 | Python 3.8+ · FastAPI · WebSocket |
+| 后端 | Python 3.12+ · FastAPI · WebSocket |
 | 前端 | Next.js 14 · React 18 · Tailwind CSS |
 | 数据库 | PostgreSQL 16（Docker） |
 | LLM | Anthropic/OpenAI 兼容端点（DeepSeek / 豆包） |

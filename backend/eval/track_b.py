@@ -686,79 +686,85 @@ class HTMLReviewRenderer:
 </section>"""
 
     def _build_model_leaderboard(self):
-        try:
-            import os, psycopg2
-            url = os.getenv("DATABASE_URL", "postgresql://werewolf:wolf_secret_2026@127.0.0.1:5433/werewolf")
-            url = url.replace("postgresql+psycopg2://", "postgresql://")
-            conn = psycopg2.connect(url)
-            cur = conn.cursor()
-            cur.execute("""
-                SELECT provider, COUNT(*) as games,
-                       SUM(CASE WHEN winner='wolf' THEN 1 ELSE 0 END) as ww,
-                       SUM(CASE WHEN winner='village' THEN 1 ELSE 0 END) as vw
-                FROM (SELECT DISTINCT ad.provider, g.id, g.winner
-                      FROM agent_decisions ad JOIN games g ON g.id=ad.game_id
-                      WHERE g.status='finished' AND ad.provider IN ('doubao','deepseek','dsv4flash','weapi')) sub
-                GROUP BY provider ORDER BY games DESC
-            """)
-            rows = cur.fetchall()
-            cur.close(); conn.close()
-            if not rows: return ""
-            items = ""
-            for r in rows:
-                total = r[1] or 1
-                wp = round((r[2] or 0) / total * 100)
-                vp = 100 - wp
-                items += f"""<div class="lb-row">
-  <span class="lb-name">{escape(r[0])}</span>
+        rows = self._leaderboard_rows("provider")
+        if not rows:
+            return ""
+        items = ""
+        for name, total, wolf_wins, village_wins in rows:
+            total = total or 1
+            wp = round(wolf_wins / total * 100)
+            vp = round(village_wins / total * 100)
+            items += f"""<div class="lb-row">
+  <span class="lb-name">{escape(name)}</span>
   <span class="lb-games">{total}局</span>
   <div class="lb-bar-dual"><span class="lb-wolf" style="width:{wp}%"></span><span class="lb-vill" style="width:{vp}%"></span></div>
   <span class="lb-pct"><span class="lb-wolf-txt">🐺{wp}%</span> <span class="lb-vill-txt">🏘️{vp}%</span></span>
 </div>"""
-            return f"""<section class="section" id="model-lb">
+        return f"""<section class="section" id="model-lb">
 <h2 class="section-title">模型胜率榜</h2>
 <div class="leaderboard">{items}</div>
 </section>"""
-        except Exception:
-            return ""
 
     def _build_framework_leaderboard(self):
-        try:
-            import os, psycopg2
-            url = os.getenv("DATABASE_URL", "postgresql://werewolf:wolf_secret_2026@127.0.0.1:5433/werewolf")
-            url = url.replace("postgresql+psycopg2://", "postgresql://")
-            conn = psycopg2.connect(url)
-            cur = conn.cursor()
-            cur.execute("""
-                SELECT model_name, COUNT(*) as games,
-                       SUM(CASE WHEN winner='wolf' THEN 1 ELSE 0 END) as ww,
-                       SUM(CASE WHEN winner='village' THEN 1 ELSE 0 END) as vw
-                FROM (SELECT DISTINCT COALESCE(ad.model_name,'unknown') as model_name, g.id, g.winner
-                      FROM agent_decisions ad JOIN games g ON g.id=ad.game_id
-                      WHERE g.status='finished' AND ad.provider IN ('doubao','deepseek','dsv4flash','weapi')
-                        AND ad.model_name IS NOT NULL AND ad.model_name != '') sub
-                GROUP BY model_name ORDER BY games DESC LIMIT 6
-            """)
-            rows = cur.fetchall()
-            cur.close(); conn.close()
-            if not rows: return ""
-            items = ""
-            for r in rows:
-                total = r[1] or 1
-                wp = round((r[2] or 0) / total * 100)
-                vp = 100 - wp
-                items += f"""<div class="lb-row">
-  <span class="lb-name">{escape(str(r[0])[:40])}</span>
+        rows = self._leaderboard_rows("model_name", limit=6)
+        if not rows:
+            return ""
+        items = ""
+        for name, total, wolf_wins, village_wins in rows:
+            total = total or 1
+            wp = round(wolf_wins / total * 100)
+            vp = round(village_wins / total * 100)
+            items += f"""<div class="lb-row">
+  <span class="lb-name">{escape(name[:40])}</span>
   <span class="lb-games">{total}局</span>
   <div class="lb-bar-dual"><span class="lb-wolf" style="width:{wp}%"></span><span class="lb-vill" style="width:{vp}%"></span></div>
   <span class="lb-pct"><span class="lb-wolf-txt">🐺{wp}%</span> <span class="lb-vill-txt">🏘️{vp}%</span></span>
 </div>"""
-            return f"""<section class="section" id="framework-lb">
+        return f"""<section class="section" id="framework-lb">
 <h2 class="section-title">Agent 框架胜率榜</h2>
 <div class="leaderboard">{items}</div>
 </section>"""
+
+    def _leaderboard_rows(self, group_field: str, *, limit: int | None = None) -> list[tuple[str, int, int, int]]:
+        try:
+            from backend.db.database import SessionLocal
+            from backend.db.models import AgentDecision
+            from backend.db.models import Game
+
+            group_column = AgentDecision.provider if group_field == "provider" else AgentDecision.model_name
+            db = SessionLocal()
+            try:
+                rows = (
+                    db.query(group_column, Game.id, Game.winner)
+                    .join(Game, Game.id == AgentDecision.game_id)
+                    .filter(Game.status == "finished")
+                    .filter(AgentDecision.provider.in_(("doubao", "deepseek", "dsv4flash", "weapi")))
+                    .filter(group_column.isnot(None))
+                    .filter(group_column != "")
+                    .distinct()
+                    .all()
+                )
+            finally:
+                db.close()
+
+            grouped: dict[str, dict[str, int]] = {}
+            for raw_name, game_id, winner in rows:
+                name = str(raw_name or "unknown")
+                if not name:
+                    continue
+                bucket = grouped.setdefault(name, {"games": 0, "wolf": 0, "village": 0})
+                bucket["games"] += 1
+                if winner == "wolf":
+                    bucket["wolf"] += 1
+                elif winner == "village":
+                    bucket["village"] += 1
+
+            ranked = sorted(grouped.items(), key=lambda item: (-item[1]["games"], item[0]))
+            if limit is not None:
+                ranked = ranked[:limit]
+            return [(name, stats["games"], stats["wolf"], stats["village"]) for name, stats in ranked]
         except Exception:
-            return ""
+            return []
 
     # ── full HTML template ────────────────────────────────────────
 
@@ -790,7 +796,7 @@ class HTMLReviewRenderer:
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>复盘报告 · {gid[:8]}</title>
+<title>Track B Review · 复盘报告 · {gid[:8]}</title>
 <style>
 :root{{--bg:#faf7f2;--paper:#fffdf9;--ink:#1f1a17;--muted:#6b6058;--line:#e8ddd0;--accent:#9c5d2c;
   --accent2:#c88448;--danger:#b33a3a;--success:#2d7d55;--gold:#b8801d;--wolf:#c0392b;--village:#2d7d55;
@@ -962,7 +968,7 @@ ul.clean{{list-style:none;padding:0;display:grid;gap:8px;font-size:13px;color:va
 <body>
 <div class="report">
 <header class="report-header">
-  <div class="header-eyebrow">Track B · Post-Game Review</div>
+  <div class="header-eyebrow">Track B Review · Post-Game Review</div>
   <h1 class="header-title">AI Werewolf 复盘报告</h1>
   <div class="header-winner">{winner_label}</div>
   <p class="header-summary">{game_summary}</p>
@@ -2109,6 +2115,9 @@ def _extract_and_store_knowledge(
         from backend.eval.knowledge_abstractor import store_lessons_to_db
         from backend.eval.per_step_scorer import PlayerReviewReport
         from backend.eval.per_step_scorer import ScoredStep
+
+        if not DEFAULT_DB_URL.startswith(("postgres://", "postgresql://")):
+            return 0
 
         # 1. Check if Track B already extracted knowledge for this game
         conn = psycopg2.connect(DEFAULT_DB_URL)

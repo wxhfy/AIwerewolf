@@ -187,6 +187,7 @@ def _build_game(
     rule_pack_id: str = "wolfcha-default",
     phase_delay_ms: float = 0,
 ) -> WerewolfGame:
+    init_db()
     game = WerewolfGame(
         seed=seed,
         player_count=player_count,

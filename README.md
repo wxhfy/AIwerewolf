@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
-  <img src="https://img.shields.io/badge/python-3.8+-blue" alt="Python">
+  <img src="https://img.shields.io/badge/python-3.12+-blue" alt="Python">
   <img src="https://img.shields.io/badge/db-PostgreSQL%2016-336791?logo=postgresql" alt="PostgreSQL">
   <img src="https://img.shields.io/badge/frontend-Next.js%2014-black?logo=next.js" alt="Next.js">
 </p>
@@ -117,6 +117,8 @@ docker compose up -d
 
 ```bash
 cp .env.example .env
+python3.12 -m venv .venv
+. .venv/bin/activate
 pip install -r requirements.txt
 make dev                              # 后端 http://localhost:8000/docs
 ```
@@ -127,7 +129,7 @@ npm install --legacy-peer-deps
 npm run dev                           # 前端 http://localhost:3001
 ```
 
-未配置 `DATABASE_URL` 时，后端使用 SQLite 本地模式，无需 PostgreSQL。
+`.env.example` 默认不设置 `DATABASE_URL`，后端会使用 SQLite 本地模式；如需本地 PostgreSQL，先运行 `make db-up`，再取消 `.env` 中 `DATABASE_URL` 示例行的注释。
 
 ## Demo 路线
 
@@ -145,7 +147,7 @@ npm run dev                           # 前端 http://localhost:3001
 
 | 层 | 技术 |
 |---|---|
-| 后端服务 | Python 3.8+ / FastAPI / WebSocket |
+| 后端服务 | Python 3.12+ / FastAPI / WebSocket |
 | 游戏引擎 | dataclass + Enum 纯逻辑规则引擎 |
 | Agent | `CognitiveAgent` / AgentLoop / Memory / SocialModel / StrategyRetriever |
 | LLM 接入 | `backend.llm.create_client()` |
@@ -177,7 +179,7 @@ AIwerewolf/
 
 | 内容 | 当前位置 |
 |---|---|
-| 代码仓库 | `backend/`, `frontend/`, `configs/` |
+| 代码仓库 | `backend/`, `frontend/`, `configs/`, `scripts/`, `tests/` |
 | 产品原型 | Next.js 前端：大厅、观战、真人操作、复盘、人格配置 |
 | Demo 链接 | 本地后端 `http://localhost:8000/docs`，本地前端 `http://localhost:3001` |
 | 项目介绍文档 | `docs/FINAL_SHOWCASE_REPORT.md`, `docs/ENGINEERING_ARCHITECTURE.md`, `docs/PROJECT_MODULE_DESIGN.md`, `docs/prd.md` |

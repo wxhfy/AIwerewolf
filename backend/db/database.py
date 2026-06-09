@@ -29,7 +29,12 @@ if DATABASE_URL:
     )
 else:
     # SQLite fallback for local development
-    DB_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "werewolf.db"
+    sqlite_path = os.getenv("AIWEREWOLF_SQLITE_PATH", "").strip()
+    DB_PATH = (
+        Path(sqlite_path).expanduser()
+        if sqlite_path
+        else Path(__file__).resolve().parent.parent.parent / "data" / "werewolf.db"
+    )
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     SQLALCHEMY_DATABASE_URL = f"sqlite:///{DB_PATH}"
     engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
