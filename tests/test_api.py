@@ -126,6 +126,101 @@ def test_room_api_flow() -> None:
     assert snapshot["winner"] in {"village", "wolf"}
 
 
+def test_room_create_accepts_json_llm_config_without_echoing_secret() -> None:
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/rooms",
+        json={
+            "name": "JsonLlmRoom",
+            "seed": 17,
+            "player_count": 7,
+            "agent_type": "llm",
+            "human_seat": None,
+            "llm_config": {
+                "provider": "anthropic",
+                "model": "deepseek-v4-flash",
+                "api_key": "example-room-credential",
+                "base_url": "https://api.deepseek.com/anthropic/",
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    room = response.json()
+    assert room["name"] == "JsonLlmRoom"
+    assert room["seed"] == 17
+    assert room["player_count"] == 7
+    assert room["llm_configured"] is True
+    assert room["llm_provider"] == "anthropic"
+    assert room["llm_model"] == "deepseek-v4-flash"
+    assert room["llm_base_url"] == "https://api.deepseek.com/anthropic"
+    assert "example-room-credential" not in response.text
+
+    stored_room = _rooms.get_room(room["id"])
+    assert stored_room.llm_config is not None
+    assert stored_room.llm_config["api_key"] == "example-room-credential"
+    assert stored_room.llm_config["base_url"] == "https://api.deepseek.com/anthropic"
+
+    get_response = client.get(f"/api/rooms/{room['id']}")
+    assert get_response.status_code == 200
+    assert "example-room-credential" not in get_response.text
+
+
+def test_room_game_uses_sanitized_room_llm_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = TestClient(app)
+    captured: dict = {}
+
+    class FakeState:
+        id = "fake-game-from-room-config"
+
+        def snapshot(self, show_private: bool = False) -> dict:
+            return {"id": self.id, "phase": "GAME_END", "winner": "village", "show_private": show_private}
+
+    class FakeGame:
+        state = FakeState()
+
+        def play(self) -> FakeState:
+            return self.state
+
+    def fake_build_game(**kwargs):
+        captured.update(kwargs)
+        return FakeGame()
+
+    monkeypatch.setattr("backend.app._build_game", fake_build_game)
+    room_response = client.post(
+        "/api/rooms",
+        json={
+            "name": "RoomConfigPropagation",
+            "seed": 29,
+            "player_count": 7,
+            "agent_type": "llm",
+            "llm_config": {
+                "provider": "anthropic",
+                "model": "deepseek-v4-flash",
+                "api_key": "example-room-credential",
+                "base_url": "https://api.deepseek.com/anthropic/",
+            },
+        },
+    )
+    assert room_response.status_code == 200
+    room = room_response.json()
+
+    game_response = client.post(f"/api/rooms/{room['id']}/games")
+
+    assert game_response.status_code == 200
+    assert game_response.json()["id"] == "fake-game-from-room-config"
+    assert captured["seed"] == 29
+    assert captured["player_count"] == 7
+    assert captured["agent_type"] == "llm"
+    assert captured["llm_config"] == {
+        "provider": "anthropic",
+        "model": "deepseek-v4-flash",
+        "api_key": "example-room-credential",
+        "base_url": "https://api.deepseek.com/anthropic",
+    }
+
+
 def test_human_room_flow_blocks_and_accepts_action() -> None:
     client = TestClient(app)
     probe_game = WerewolfGame(seed=7, player_count=7)

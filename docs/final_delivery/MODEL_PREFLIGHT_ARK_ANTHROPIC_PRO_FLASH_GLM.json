@@ -1,0 +1,76 @@
+{
+  "checked_at": "2026-06-10T06:34:26+08:00",
+  "status": "ok",
+  "allow_fake": false,
+  "skip_client_check": false,
+  "run_chat_check": true,
+  "raw_models_provided": true,
+  "resolved_models": [
+    {
+      "provider": "anthropic",
+      "model": "deepseek-v4-pro[1m]",
+      "label": "anthropic:deepseek-v4-pro[1m]"
+    },
+    {
+      "provider": "anthropic",
+      "model": "deepseek-v4-flash[1m]",
+      "label": "anthropic:deepseek-v4-flash[1m]"
+    },
+    {
+      "provider": "anthropic",
+      "model": "glm-5.1[1m]",
+      "label": "anthropic:glm-5.1[1m]"
+    }
+  ],
+  "client_checks": [
+    {
+      "label": "anthropic:deepseek-v4-pro[1m]",
+      "provider": "anthropic",
+      "model": "deepseek-v4-pro[1m]",
+      "available": true,
+      "fake": false,
+      "client_class": "AnthropicClient",
+      "base_url_present": true
+    },
+    {
+      "label": "anthropic:deepseek-v4-flash[1m]",
+      "provider": "anthropic",
+      "model": "deepseek-v4-flash[1m]",
+      "available": true,
+      "fake": false,
+      "client_class": "AnthropicClient",
+      "base_url_present": true
+    },
+    {
+      "label": "anthropic:glm-5.1[1m]",
+      "provider": "anthropic",
+      "model": "glm-5.1[1m]",
+      "available": true,
+      "fake": false,
+      "client_class": "AnthropicClient",
+      "base_url_present": true
+    }
+  ],
+  "chat_checks": [
+    {
+      "label": "anthropic:deepseek-v4-pro[1m]",
+      "ok": true,
+      "elapsed_s": 4.046,
+      "response_preview": "OK"
+    },
+    {
+      "label": "anthropic:deepseek-v4-flash[1m]",
+      "ok": true,
+      "elapsed_s": 1.586,
+      "response_preview": "OK\n\n# 思考\n用户要求"
+    },
+    {
+      "label": "anthropic:glm-5.1[1m]",
+      "ok": true,
+      "elapsed_s": 2.359,
+      "response_preview": "OK"
+    }
+  ],
+  "error": null,
+  "safe_for_formal_experiment": true
+}

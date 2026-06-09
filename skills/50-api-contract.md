@@ -70,7 +70,7 @@ updated: 2026-06-08
 
 | Method | Path | Query / Body | 说明 |
 |---|---|---|---|
-| POST | `/api/rooms` | `name`, `seed`, `player_count`, `agent_type`, `human_seat`, `rule_pack_id` | 创建房间 |
+| POST | `/api/rooms` | query 或 JSON body：`name`, `seed`, `player_count`, `agent_type`, `human_seat`, `rule_pack_id`, `llm_config` | 创建房间；`llm_config` 支持 `provider`/`model`/`base_url`/`api_key`，响应只回显脱敏后的 provider/model/base_url 和 `llm_configured` |
 | GET | `/api/rooms` | — | 列出所有内存房间 |
 | GET | `/api/rooms/{room_id}` | — | 获取房间元信息 |
 | GET | `/api/rooms/{room_id}/games` | — | 该房间历史对局 |
@@ -78,7 +78,10 @@ updated: 2026-06-08
 | POST | `/api/rooms/{room_id}/games` | `show_private` | 在房间内创建并运行新对局 |
 | POST | `/api/rooms/{room_id}/prepare` | `show_private` | 创建 SETUP/角色预览快照，不推进完整对局 |
 | POST | `/api/rooms/{room_id}/start` | `show_private` | 开始或恢复真人/同步对局，运行到 pending 或终局 |
-| POST | `/api/rooms/{room_id}/action` | body `{action,target,speech}`, query `show_private` | 提交人类玩家行动 |
+| POST | `/api/rooms/{room_id}/action` | body `{target_id?, speech?, reasoning?, save?}`, query `show_private` | 提交人类玩家行动；后端按当前 `pending_input.request` 推断动作类型 |
+| POST | `/api/rooms/{room_id}/pause` | — | 暂停运行中的房间对局 |
+| POST | `/api/rooms/{room_id}/resume` | — | 恢复暂停中的房间对局 |
+| GET | `/api/rooms/{room_id}/control-status` | — | 查询房间暂停/运行控制状态 |
 
 ### Track B / Leaderboard / Eval
 
@@ -286,11 +289,23 @@ Decision 是内部协议，不直接对外暴露。人类玩家输入经 `submit
 
 ```json
 {
-  "action": "vote",
-  "target": "<player_id>",
-  "speech": "..."
+  "target_id": "<player_id>",
+  "speech": "...",
+  "reasoning": "human explanation",
+  "save": false
 }
 ```
+
+字段说明：
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `target_id` | string | no | 投票、守护、查验、狼刀、猎人开枪、警徽转移、女巫毒药等目标玩家 ID |
+| `speech` | string | no | 发言类 pending input 的文本；缺省时后端使用占位发言 |
+| `reasoning` | string | no | 人类操作理由，进入 `Decision.reasoning` |
+| `save` | boolean | no | 女巫 pending input 使用；为 true 时救当前狼刀目标 |
+
+动作类型不由客户端显式提交；`submit_human_action()` 根据当前 pending input 的 `request` 转换为 `Decision.action_type`。
 
 ### GameEvent
 

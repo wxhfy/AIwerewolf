@@ -15,6 +15,7 @@ class RoomCreateRequest:
     agent_type: str = "llm"
     human_seat: int | None = None
     rule_pack_id: str = "wolfcha-default"
+    llm_config: dict[str, Any] | None = None
 
 
 @dataclass
@@ -26,6 +27,7 @@ class RoomRecord:
     agent_type: str
     human_seat: int | None = None
     rule_pack_id: str = "wolfcha-default"
+    llm_config: dict[str, Any] | None = None
     status: str = "idle"
     created_at: float = field(default_factory=time)
     updated_at: float = field(default_factory=time)
@@ -42,6 +44,7 @@ class RoomRecord:
         agent_type: str,
         human_seat: int | None = None,
         rule_pack_id: str = "wolfcha-default",
+        llm_config: dict[str, Any] | None = None,
     ) -> RoomRecord:
         return cls(
             id=str(uuid4()),
@@ -51,9 +54,11 @@ class RoomRecord:
             agent_type=agent_type,
             human_seat=human_seat,
             rule_pack_id=rule_pack_id,
+            llm_config=llm_config,
         )
 
     def to_dict(self) -> dict[str, Any]:
+        safe_llm = self._safe_llm_config()
         return {
             "id": self.id,
             "name": self.name,
@@ -68,4 +73,17 @@ class RoomRecord:
             "current_game_id": self.current_game_id,
             "game_history": list(self.game_history),
             "latest_snapshot": self.latest_snapshot,
+            "llm_configured": bool(self.llm_config and self.llm_config.get("api_key")),
+            "llm_provider": safe_llm.get("provider"),
+            "llm_model": safe_llm.get("model"),
+            "llm_base_url": safe_llm.get("base_url"),
+        }
+
+    def _safe_llm_config(self) -> dict[str, str]:
+        if not self.llm_config:
+            return {}
+        return {
+            key: str(self.llm_config.get(key) or "")
+            for key in ("provider", "model", "base_url")
+            if self.llm_config.get(key)
         }

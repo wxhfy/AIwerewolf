@@ -27,6 +27,7 @@ class RoomManager:
             request.agent_type,
             request.human_seat,
             request.rule_pack_id,
+            request.llm_config,
         )
         self.rooms[room.id] = room
         return room

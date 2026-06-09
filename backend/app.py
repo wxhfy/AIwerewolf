@@ -5,6 +5,7 @@ from typing import Any
 from typing import Dict
 from typing import Optional
 
+from fastapi import Body
 from fastapi import FastAPI
 from fastapi import HTTPException
 from fastapi import WebSocket
@@ -186,6 +187,7 @@ def _build_game(
     player_count: int = 10,
     rule_pack_id: str = "wolfcha-default",
     phase_delay_ms: float = 0,
+    llm_config: Optional[Dict[str, Any]] = None,
 ) -> WerewolfGame:
     init_db()
     game = WerewolfGame(
@@ -198,18 +200,58 @@ def _build_game(
         on_decisions_flush=_save_decisions,
         on_post_game=_run_post_game_scoring,
     )
+    agent_config: dict[str, Any] = {
+        "type": agent_type,
+        "seed": seed,
+        "human_seat": human_seat,
+        "character_map": game.characters,
+    }
+    if llm_config:
+        agent_config.update(llm_config)
+
     game.attach_agents(
         create_agents(
             game.state.players,
-            {
-                "type": agent_type,
-                "seed": seed,
-                "human_seat": human_seat,
-                "character_map": game.characters,
-            },
+            agent_config,
         )
     )
     return game
+
+
+def _sanitize_room_llm_config(raw: Any) -> Optional[Dict[str, str]]:
+    if not isinstance(raw, dict):
+        return None
+    config: Dict[str, str] = {}
+    for source_key, target_key in (
+        ("provider", "provider"),
+        ("model", "model"),
+        ("api_key", "api_key"),
+        ("base_url", "base_url"),
+    ):
+        value = raw.get(source_key)
+        if value is None:
+            continue
+        text = str(value).strip()
+        if text:
+            config[target_key] = text.rstrip("/") if target_key == "base_url" else text
+    return config or None
+
+
+def _payload_int(payload: Dict[str, Any], key: str, fallback: int) -> int:
+    value = payload.get(key, fallback)
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _payload_optional_int(payload: Dict[str, Any], key: str, fallback: Optional[int]) -> Optional[int]:
+    if key not in payload or payload.get(key) in (None, ""):
+        return fallback
+    try:
+        return int(payload[key])
+    except (TypeError, ValueError):
+        return fallback
 
 
 @app.post("/api/games")
@@ -712,7 +754,16 @@ def create_room(
     agent_type: str = "llm",
     human_seat: Optional[int] = None,
     rule_pack_id: str = "wolfcha-default",
+    payload: Optional[Dict[str, Any]] = Body(default=None),
 ):
+    body = payload or {}
+    name = str(body.get("name", name))
+    seed = _payload_int(body, "seed", seed)
+    player_count = _payload_int(body, "player_count", player_count)
+    agent_type = str(body.get("agent_type", agent_type))
+    human_seat = _payload_optional_int(body, "human_seat", human_seat)
+    rule_pack_id = str(body.get("rule_pack_id", rule_pack_id))
+    llm_config = _sanitize_room_llm_config(body.get("llm_config"))
     request = RoomCreateRequest(
         name=name,
         seed=seed,
@@ -720,6 +771,7 @@ def create_room(
         agent_type=agent_type,
         human_seat=human_seat,
         rule_pack_id=rule_pack_id,
+        llm_config=llm_config,
     )
     room = _rooms.create_room(request)
     return room.to_dict()
@@ -770,6 +822,7 @@ def create_room_game(room_id: str, show_private: bool = False):
         human_seat=room.human_seat,
         player_count=room.player_count,
         rule_pack_id=room.rule_pack_id,
+        llm_config=room.llm_config,
     )
     if room.human_seat is not None:
         _rooms.set_active_game(room_id, game)
@@ -814,6 +867,7 @@ def prepare_room_game(room_id: str, show_private: bool = False):
         human_seat=room.human_seat,
         player_count=room.player_count,
         rule_pack_id=room.rule_pack_id,
+        llm_config=room.llm_config,
     )
     _rooms.set_active_game(room_id, game)
     _rooms.reset_snapshot_buffer(room_id)
@@ -853,6 +907,7 @@ def start_or_resume_room_game(room_id: str, show_private: bool = False):
             human_seat=room.human_seat,
             player_count=room.player_count,
             rule_pack_id=room.rule_pack_id,
+            llm_config=room.llm_config,
         )
     _rooms.set_active_game(room_id, game)
     state = game.play_until_blocked()
@@ -936,6 +991,7 @@ async def stream_game(
     player_count: int = 7,
     rule_pack_id: str = "wolfcha-default",
     delay_ms: float = 800,
+    llm_config: Optional[Dict[str, Any]] = None,
 ) -> GameState:
     """Stream game snapshots to WebSocket in real-time as the game progresses.
 
@@ -977,6 +1033,7 @@ async def stream_game(
             player_count=player_count,
             rule_pack_id=rule_pack_id,
             phase_delay_ms=delay_ms,
+            llm_config=llm_config,
         )
         if room_id:
             _rooms.set_active_game(room_id, game)
@@ -1142,6 +1199,7 @@ async def room_ws(websocket: WebSocket, room_id: str) -> None:
                 player_count=room.player_count,
                 rule_pack_id=room.rule_pack_id,
                 delay_ms=delay_ms,
+                llm_config=room.llm_config,
             )
             final = state.snapshot(show_private=show_private)
             if state.winner is None:
