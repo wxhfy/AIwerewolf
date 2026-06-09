@@ -327,8 +327,3 @@ data/werewolf.db.bak
 
 # Agent skill caches
 .agents/
-
-# Keep local scripts and tests out of repo
-scripts/
-tests/
-.github/

@@ -83,7 +83,7 @@ demo:
 
 test:
 	@if [ -d tests ]; then \
-		_TEST_ALLOW_FAKE_LLM=true LLM_PROVIDER=fake AIWEREWOLF_STRICT_MODE=true ALLOW_FALLBACK=false $(PYTHON) -m pytest tests/ -q; \
+		AIWEREWOLF_SKIP_DOTENV=true DATABASE_URL= _TEST_ALLOW_FAKE_LLM=true LLM_PROVIDER=fake AIWEREWOLF_STRICT_MODE=true ALLOW_FALLBACK=false $(PYTHON) -m pytest tests/ -q; \
 	else \
 		$(PYTHON) -m py_compile backend/app.py backend/run_demo.py backend/eval/post_game.py; \
 	fi
@@ -92,7 +92,7 @@ test-strict:
 	@if [ -f scripts/run_backend_full_strict.py ]; then \
 		$(PYTHON) scripts/run_backend_full_strict.py; \
 	else \
-		echo "Strict validation script is local-only and not tracked in the public repo."; \
+		echo "Strict validation script is missing; restore scripts/run_backend_full_strict.py from the repository."; \
 		exit 2; \
 	fi
 
@@ -100,17 +100,17 @@ test-visibility:
 	@if [ -f scripts/verify_visibility_strict.py ]; then \
 		$(PYTHON) scripts/verify_visibility_strict.py; \
 	else \
-		echo "Visibility validation script is local-only and not tracked in the public repo."; \
+		echo "Visibility validation script is missing; restore scripts/verify_visibility_strict.py from the repository."; \
 		exit 2; \
 	fi
 
 lint:
-	$(PYTHON) -m ruff check backend/
-	$(PYTHON) -m ruff format --check backend/
+	$(PYTHON) -m ruff check backend/ tests/ configs/ scripts/e2e_smoke.py scripts/verify_visibility_strict.py
+	$(PYTHON) -m ruff format --check backend/ tests/ configs/ scripts/e2e_smoke.py scripts/verify_visibility_strict.py
 
 format:
-	$(PYTHON) -m ruff check --fix backend/
-	$(PYTHON) -m ruff format backend/
+	$(PYTHON) -m ruff check --fix backend/ tests/ configs/ scripts/e2e_smoke.py scripts/verify_visibility_strict.py
+	$(PYTHON) -m ruff format backend/ tests/ configs/ scripts/e2e_smoke.py scripts/verify_visibility_strict.py
 
 # ------------------------------------------------------------------
 # 🗄  Database
@@ -180,9 +180,9 @@ help:
 	@echo "  make demo            — one offline AI vs AI game (seed=$(SEED))"
 	@echo ""
 	@echo "🧪  Testing"
-	@echo "  make test            — tracked demo smoke check"
-	@echo "  make test-strict     — local-only strict validation, when scripts/ exists"
-	@echo "  make test-visibility — local-only visibility check, when scripts/ exists"
+	@echo "  make test            — tracked pytest suite with fake LLM"
+	@echo "  make test-strict     — strict backend validation"
+	@echo "  make test-visibility — strict visibility check"
 	@echo "  make lint            — ruff check + format check"
 	@echo "  make format          — ruff auto-fix + format"
 	@echo ""

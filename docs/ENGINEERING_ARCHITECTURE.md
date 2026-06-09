@@ -52,7 +52,7 @@ flowchart TB
         database[(PostgreSQL / local SQLite<br/>events / decisions / reports / knowledge)]
         configs["YAML and env config<br/>rules / models / experiments"]
         checks["Verification hooks<br/>demo / ruff / frontend build"]
-        ops["Operational checks<br/>preflight / local-only strict checks"]
+        ops["Operational checks<br/>preflight / strict checks"]
     end
 
     lobby --> rest_api
@@ -113,7 +113,7 @@ flowchart TB
 | Layer 4 Rule engine and information boundary | 对局状态、规则流转、行动合法性、信息隔离 | `backend/engine/` |
 | Layer 3 Agent cognition and decision runtime | 角色化认知、工具调用、LLM 决策和策略注入 | `backend/agents/cognitive/`, `backend/llm/` |
 | Layer 2 Evaluation and evolution | 赛后复盘、指标看板、策略知识抽取与回流 | `backend/eval/` |
-| Layer 1 Data, configuration and verification | 持久化、配置、demo smoke、ruff、前端构建和本地专项验证 | `backend/db/`, `configs/`, `backend.ops`, local-only `scripts/` / `tests/` |
+| Layer 1 Data, configuration and verification | 持久化、配置、demo smoke、ruff、前端构建和专项验证 | `backend/db/`, `configs/`, `backend.ops`, `scripts/`, `tests/` |
 
 关键设计原则：
 

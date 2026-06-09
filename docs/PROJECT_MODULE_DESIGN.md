@@ -33,7 +33,7 @@
 
 **设计收益**：规则一致、流程可复现、便于验收、便于扩展角色、便于回放和复盘。
 
-**验收方式**：`backend.run_demo`、引擎源码审计，以及 local-only strict 验证材料。
+**验收方式**：`backend.run_demo`、引擎源码审计，以及 `scripts/` 和 `tests/` 中的 strict 验证材料。
 
 ## 2. Visibility / PlayerView
 
@@ -66,7 +66,7 @@
 
 **设计收益**：防止上帝视角；让推理更接近真实玩家；为赛后复盘提供“当时可见事实”边界。
 
-**验收方式**：`backend/engine/visibility.py` 源码审计、PlayerView 投影链路检查，以及 local-only 信息隔离专项验证材料。
+**验收方式**：`backend/engine/visibility.py` 源码审计、PlayerView 投影链路检查，以及 `scripts/` 和 `tests/` 中的信息隔离专项验证材料。
 
 ## 3. CognitiveAgent
 

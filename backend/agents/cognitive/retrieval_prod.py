@@ -57,9 +57,10 @@ class RetrievalPolicy(str, Enum):
       - Our extension: GLOBAL → ROLE → MBTI → PHASE layering
 
     Each policy defines a filtering strategy. SAME_ROLE_ALL_MBTI is the current
-    default because the latest single-agent LLM ablation favored direct
-    same-role recall; HYBRID_ROLE_MBTI_GLOBAL remains available when a caller
-    wants role+MBTI priority with global fallback coverage.
+    highest-precision default: it keeps runtime retrieval inside the current
+    role's active strategy pool, then reranks by keywords, phase, action, and
+    quality. Hybrid policies remain available for ablations or fallback-heavy
+    experiments.
     """
 
     GLOBAL_ONLY = "global_only"  # Only role="global" or role=any docs
@@ -184,6 +185,9 @@ def _resolve_conn_str(conn_str: str = "") -> str:
     """
     if conn_str:
         return conn_str
+    if os.getenv("AIWEREWOLF_SKIP_DOTENV", "").lower() in {"1", "true", "yes", "on"}:
+        resolved = os.getenv("DATABASE_URL", "").strip() or os.getenv("AIWEREWOLF_DB_URL", "").strip()
+        return _normalize_psycopg2_conn_str(resolved) if resolved else ""
     try:
         from backend.llm.env import load_env_file
 
@@ -280,6 +284,42 @@ FIELD_WEIGHTS = {
     "rationale": 0.4,
 }
 
+_ACTION_SCOPE_ALIASES = {
+    "speech": "talk",
+    "talk": "talk",
+    "chat": "talk",
+    "vote": "vote",
+    "ballot": "vote",
+    "attack": "attack",
+    "kill": "attack",
+    "night": "night_action",
+    "night_action": "night_action",
+    "divine": "check",
+    "check": "check",
+    "seer": "check",
+    "witch_save": "save",
+    "save": "save",
+    "witch_poison": "poison",
+    "poison": "poison",
+    "witch_act": "witch_act",
+    "guard": "guard",
+    "protect": "guard",
+    "shoot": "shoot",
+    "boom": "boom",
+}
+
+_ACTION_TEXT_HINTS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("boom", ("自爆", "白狼王", "爆刀", "带走")),
+    ("shoot", ("猎人", "开枪", "带人", "枪口")),
+    ("poison", ("毒药", "投毒", "毒杀", "盲毒", "带毒")),
+    ("save", ("解药", "救人", "银水", "救起", "首夜救")),
+    ("guard", ("守卫", "守护", "空守", "连守", "保护")),
+    ("check", ("预言家", "查验", "验人", "金水", "查杀", "警徽流")),
+    ("attack", ("刀人", "击杀", "刀掉", "刀口", "狼刀", "刀神", "刀民", "自刀")),
+    ("vote", ("投票", "归票", "放逐", "冲票", "跟票", "票型", "抗推", "扛推")),
+    ("talk", ("发言", "表水", "悍跳", "站边", "对跳", "警上", "警下", "跳身份", "报药水")),
+)
+
 
 def _safe_str(val: Any) -> str:
     """Coerce field value to str. Handles tuples, lists from card.content."""
@@ -346,6 +386,149 @@ def _doc_sort_key(doc: Dict[str, Any]) -> tuple[float, float, int, str]:
     )
 
 
+def _normalize_action_scope(value: Any) -> str:
+    raw = _safe_str(value).lower().strip()
+    return _ACTION_SCOPE_ALIASES.get(raw, raw if raw in set(_ACTION_SCOPE_ALIASES.values()) else "")
+
+
+def _phase_action_scope(phase: Any) -> str:
+    phase_upper = _safe_str(phase).upper()
+    if not phase_upper:
+        return ""
+    if "BOOM" in phase_upper:
+        return "boom"
+    if "HUNTER" in phase_upper or "SHOOT" in phase_upper:
+        return "shoot"
+    if "VOTE" in phase_upper or "BALLOT" in phase_upper:
+        return "vote"
+    if "WOLF" in phase_upper:
+        return "attack"
+    if "SEER" in phase_upper:
+        return "check"
+    if "WITCH" in phase_upper:
+        return "witch_act"
+    if "GUARD" in phase_upper:
+        return "guard"
+    if any(token in phase_upper for token in ("SPEECH", "CHAT", "TALK", "BADGE", "LAST_WORDS", "SHERIFF")):
+        return "talk"
+    if "NIGHT" in phase_upper:
+        return "night_action"
+    return ""
+
+
+def _derive_action_scope(doc: Dict[str, Any]) -> str:
+    explicit = _normalize_action_scope(doc.get("action_scope", ""))
+    if explicit:
+        return explicit
+    text = " ".join(
+        _safe_str(doc.get(field, "")) for field in ("situation", "strategy", "rationale", "doc_type")
+    ).lower()
+    matched: set[str] = set()
+    for action, terms in _ACTION_TEXT_HINTS:
+        if any(term.lower() in text for term in terms):
+            matched.add(action)
+    if {"save", "poison"} <= matched:
+        return "witch_act"
+    if matched:
+        return next(action for action, _terms in _ACTION_TEXT_HINTS if action in matched)
+    return _phase_action_scope(doc.get("phase_scope") or doc.get("phase", ""))
+
+
+def _action_match_score(query_action: str, doc_action: str, doc_phase: str = "") -> float:
+    query = _normalize_action_scope(query_action)
+    doc = _normalize_action_scope(doc_action) or _phase_action_scope(doc_phase)
+    if not query or not doc:
+        return 0.5
+    if query == doc:
+        return 1.0
+    if doc == "witch_act" and query in {"save", "poison"}:
+        return 0.85
+    if query == "night_action" and doc in {"attack", "check", "save", "poison", "witch_act", "guard"}:
+        return 0.75
+    if doc == "night_action" and query in {"attack", "check", "save", "poison", "guard"}:
+        return 0.65
+    if query == "talk" and doc in {"vote", "check"}:
+        return 0.35
+    return 0.0
+
+
+def _keyword_overlap_score(doc: Dict[str, Any], keywords: List[str]) -> float:
+    if not keywords:
+        return 0.0
+    text = " ".join(
+        _safe_str(doc.get(field, "")) for field in ("situation", "strategy", "rationale", "doc_type")
+    ).lower()
+    hits = 0.0
+    for keyword in keywords:
+        kw = _safe_str(keyword).lower().strip()
+        if not kw:
+            continue
+        if kw in text:
+            hits += 1.0
+            continue
+        try:
+            import jieba
+
+            tokens = [token.lower() for token in jieba.cut(kw) if len(token.strip()) >= 2]
+        except Exception:
+            tokens = []
+        if tokens:
+            token_hits = sum(1 for token in tokens if token in text)
+            if token_hits:
+                hits += min(0.75, token_hits / max(len(tokens), 1))
+    return min(1.0, hits / max(len(keywords), 1))
+
+
+def _phase_match_score(doc_phase: str, query_phase: str) -> float:
+    doc = _safe_str(doc_phase).lower().strip()
+    query = _safe_str(query_phase).lower().strip()
+    if not query:
+        return 0.5
+    if doc == query:
+        return 1.0
+    if doc in {"", "global", "any"}:
+        return 0.45
+    if query.startswith("day_") and doc.startswith("day_"):
+        return 0.45
+    if query.startswith("night_") and doc.startswith("night_"):
+        return 0.45
+    return 0.0
+
+
+def _role_match_score(doc: Dict[str, Any], role: str, alignment: str = "") -> float:
+    doc_role = _safe_str(doc.get("role_scope", doc.get("role", ""))).lower().strip()
+    query_role = _safe_str(role).lower().strip()
+    if query_role and doc_role == query_role:
+        return 1.0
+    if doc_role in {"global", "any", ""}:
+        return 0.45
+    doc_alignment = _safe_str(doc.get("alignment_scope", "")).lower().strip()
+    if alignment and doc_alignment and doc_alignment == alignment.lower().strip():
+        return 0.35
+    return 0.0
+
+
+def _mbti_match_score(doc_mbti: str, query_mbti: str) -> float:
+    doc = _safe_str(doc_mbti).upper().strip()
+    query = _safe_str(query_mbti).upper().strip()
+    if not query:
+        return 0.5
+    if doc == query:
+        return 1.0
+    if not doc:
+        return 0.45
+    return 0.0
+
+
+def _generic_prompt_noise_penalty(doc: Dict[str, Any], keyword_score: float) -> float:
+    if keyword_score >= 0.34:
+        return 0.0
+    situation = _safe_str(doc.get("situation", ""))
+    doc_id = _safe_str(doc.get("doc_id", ""))
+    noisy_markers = ("重复决策模式", "对局总结", "成功经验", "失败/应避免", "counterfactual", "bad-case")
+    return 0.10 if any(marker in situation or marker in doc_id for marker in noisy_markers) else 0.0
+
+
 def _result_from_doc(doc: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "doc_id": doc.get("doc_id", ""),
@@ -393,7 +576,7 @@ def _normalize_doc_for_policy(doc: Dict[str, Any]) -> Dict[str, Any]:
         normalized.get("alignment_scope") or _derive_alignment_from_role(role_scope)
     )
     normalized["phase_scope"] = _safe_str(normalized.get("phase_scope") or ("" if phase.lower() == "global" else phase))
-    normalized["action_scope"] = _safe_str(normalized.get("action_scope", ""))
+    normalized["action_scope"] = _derive_action_scope(normalized)
     normalized["source_game_id"] = _safe_str(normalized.get("source_game_id", ""))
     normalized["source_decision_id"] = _safe_str(normalized.get("source_decision_id", ""))
     normalized["status"] = _safe_str(normalized.get("status", normalized.get("doc_type", "")))
@@ -676,6 +859,63 @@ def _fill_from_buckets(
     return results[:k], trace
 
 
+def _rerank_buckets_for_context(
+    buckets: Dict[str, List[Dict]],
+    keywords: List[str],
+    role: str,
+    phase: str,
+    ctx: AgentContext,
+) -> Dict[str, List[Dict]]:
+    """Rerank docs inside each policy bucket by current situation fit.
+
+    Policy buckets still control visibility and fallback order. This pass only
+    changes the order within each bucket so top-3 results prefer docs that match
+    the current keywords, phase, action, and role instead of generic high-quality
+    reflections.
+    """
+    reranked: Dict[str, List[Dict]] = {}
+    for bucket_name, docs in buckets.items():
+        enriched: list[Dict] = []
+        for doc in docs:
+            item = dict(doc)
+            keyword_score = _keyword_overlap_score(item, keywords)
+            role_score = _role_match_score(item, role, ctx.alignment)
+            phase_score = _phase_match_score(item.get("phase_scope") or item.get("phase", ""), phase)
+            action_score = _action_match_score(
+                ctx.action_type,
+                item.get("action_scope", ""),
+                item.get("phase_scope") or item.get("phase", ""),
+            )
+            mbti_score = _mbti_match_score(item.get("mbti_scope", ""), ctx.mbti)
+            quality_score = float(item.get("strategy_rank_score", _strategy_rank_score(item)) or 0.0)
+            penalty = _generic_prompt_noise_penalty(item, keyword_score)
+            context_score = (
+                0.35 * keyword_score
+                + 0.18 * phase_score
+                + 0.17 * action_score
+                + 0.14 * role_score
+                + 0.10 * quality_score
+                + 0.04 * mbti_score
+                - penalty
+            )
+            item["_retrieval_context_score"] = round(context_score, 4)
+            item["_keyword_overlap_score"] = round(keyword_score, 4)
+            item["_action_match_score"] = round(action_score, 4)
+            item["_phase_match_score"] = round(phase_score, 4)
+            enriched.append(item)
+        enriched.sort(
+            key=lambda row: (
+                float(row.get("_retrieval_context_score", 0.0) or 0.0),
+                float(row.get("strategy_rank_score", _strategy_rank_score(row)) or 0.0),
+                float(row.get("quality", 0.0) or 0.0),
+                _safe_str(row.get("doc_id", "")),
+            ),
+            reverse=True,
+        )
+        reranked[bucket_name] = enriched
+    return reranked
+
+
 # Default bucket ratios for HYBRID_ROLE_MBTI_GLOBAL (top-3 auto-inject)
 _DEFAULT_HYBRID_BUCKET_RATIOS = {
     "same_role_same_mbti": 1,
@@ -719,6 +959,8 @@ class StrategyRetriever:
 
     def build(self) -> int:
         """Load docs from PostgreSQL and build BM25 + inverted index. ~0.3s."""
+        if not self._conn:
+            return 0
         self._docs = _load_from_pg(self._conn)
         if not self._docs:
             logger.error("No active strategies found in PostgreSQL")
@@ -883,16 +1125,8 @@ class StrategyRetriever:
             total = sum(len(b) for b in buckets.values())
             return [{"match_count": total, "total_docs": len(self._docs)}]
 
-        if len(grep_indices) < 3:
-            return self.search(
-                " ".join(keywords),
-                role,
-                phase,
-                k=k,
-                output_mode=output_mode,
-                retrieval_policy=retrieval_policy,
-                agent_context=agent_context,
-            )
+        if not grep_indices:
+            return []
 
         # Reorder grep results by role priority: same-role > global > other
         grep_indices = self._reorder_by_role_priority(grep_indices, role)
@@ -900,6 +1134,12 @@ class StrategyRetriever:
 
         # Apply policy filtering to scored candidates
         buckets = filter_by_policy(candidates, retrieval_policy, agent_context)
+        buckets = _rerank_buckets_for_context(buckets, keywords, role, phase, agent_context)
+        if not regex_mode:
+            buckets = {
+                bucket_name: [doc for doc in bucket_docs if float(doc.get("_keyword_overlap_score", 0.0) or 0.0) > 0.0]
+                for bucket_name, bucket_docs in buckets.items()
+            }
 
         # Fill from buckets with appropriate ratios
         filled, bucket_trace = _fill_from_buckets(buckets, k)
@@ -910,6 +1150,9 @@ class StrategyRetriever:
                 "doc_id": _safe_str(doc.get("doc_id", "")),
                 "situation": _safe_str(doc.get("situation", "")),
                 "strategy": _safe_str(doc.get("strategy", "")),
+                "rationale": _safe_str(doc.get("rationale", "")),
+                "role": _safe_str(doc.get("role", "")),
+                "phase": _safe_str(doc.get("phase", "")),
                 "quality": doc.get("quality", 0.8),
                 "doc_type": _safe_str(doc.get("doc_type", "")),
                 "rank": rank,
@@ -925,6 +1168,10 @@ class StrategyRetriever:
                 "status": _safe_str(doc.get("status", "")),
                 "quality_score": doc.get("quality", 0.8),
                 "strategy_rank_score": doc.get("strategy_rank_score", _strategy_rank_score(doc)),
+                "retrieval_context_score": doc.get("_retrieval_context_score", 0.0),
+                "keyword_overlap_score": doc.get("_keyword_overlap_score", 0.0),
+                "action_match_score": doc.get("_action_match_score", 0.0),
+                "phase_match_score": doc.get("_phase_match_score", 0.0),
                 "knowledge_epoch": doc.get("knowledge_epoch", 0),
                 "doc_version": _safe_str(doc.get("doc_version", "v1")),
                 "version_group": _safe_str(doc.get("version_group", "")),
@@ -956,12 +1203,16 @@ class StrategyRetriever:
                         "rank",
                         "bucket",
                         "retrieval_policy",
+                        "role",
+                        "phase",
                         "role_scope",
                         "mbti_scope",
                         "phase_scope",
+                        "action_scope",
                         "source_game_id",
                         "status",
                         "strategy_rank_score",
+                        "retrieval_context_score",
                         "knowledge_epoch",
                         "doc_version",
                         "maturity",
@@ -1120,6 +1371,7 @@ class StrategyRetriever:
         import jieba
 
         scores = np.zeros(len(self._docs))
+        lexical_hits: set[int] = set()
 
         if regex_mode:
             # Compile regex patterns once
@@ -1137,11 +1389,13 @@ class StrategyRetriever:
                             text = _safe_str(d.get(field, ""))
                             if pat.search(text):
                                 scores[i] += weight
+                                lexical_hits.add(i)
                     else:
                         for field, weight in FIELD_WEIGHTS.items():
                             text = _safe_str(d.get(field, ""))
                             if pat in text:
                                 scores[i] += weight
+                                lexical_hits.add(i)
         else:
             for i, d in enumerate(self._docs):
                 for kw in keywords:
@@ -1158,8 +1412,10 @@ class StrategyRetriever:
                                     if token in text:
                                         scores[i] += weight
                                         field_hit = True
+                                        lexical_hits.add(i)
                                 if not field_hit:
                                     scores[i] += 0.2
+                                    lexical_hits.add(i)
                     else:
                         # 2. Fallback: literal substring match (for terms jieba doesn't know)
                         kw_str = str(kw)
@@ -1167,8 +1423,11 @@ class StrategyRetriever:
                             text = _safe_str(d.get(field, ""))
                             if kw_str in text:
                                 scores[i] += weight * 0.8  # slightly lower than token match
+                                lexical_hits.add(i)
 
         for i, d in enumerate(self._docs):
+            if i not in lexical_hits:
+                continue
             # Context bonuses
             if d["role"] == role:
                 scores[i] += 0.5
@@ -1193,7 +1452,7 @@ class StrategyRetriever:
             scores[i] += d.get("quality", 0.8) * 0.2
 
         top = np.argsort(scores)[::-1][:k]
-        return [int(i) for i in top if scores[i] > 0]
+        return [int(i) for i in top if scores[i] > 0 and i in lexical_hits]
 
     def _bm25_rerank_subset(
         self,
@@ -1631,14 +1890,15 @@ def get_retriever(conn_str: str = "") -> Optional[StrategyRetriever]:
     if _retriever is not None and _retriever.ready:
         return _retriever
 
-    # Primary: PostgreSQL
-    try:
-        _retriever = StrategyRetriever(conn_str=conn_str)
-        n = _retriever.build()
-        if n > 0:
-            return _retriever
-    except Exception as e:
-        logger.warning("Failed to build production retriever from PG: %s", _redact_conn_error(e))
+    resolved_conn = _resolve_conn_str(conn_str)
+    if resolved_conn:
+        try:
+            _retriever = StrategyRetriever(conn_str=resolved_conn)
+            n = _retriever.build()
+            if n > 0:
+                return _retriever
+        except Exception as e:
+            logger.warning("Failed to build production retriever from PG: %s", _redact_conn_error(e))
 
     # Fallback: in-memory strategy store (cold-start YAML)
     try:

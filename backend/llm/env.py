@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 
@@ -10,11 +11,12 @@ def load_env_file(path: str = ".env") -> None:
     `source .env` before running the backend or CLI tools.
     """
 
+    if os.getenv("AIWEREWOLF_SKIP_DOTENV", "").lower() in {"1", "true", "yes", "on"}:
+        return
+
     env_path = Path(path)
     if not env_path.exists():
         return
-
-    import os
 
     for raw_line in env_path.read_text(encoding="utf-8").splitlines():
         line = raw_line.strip()

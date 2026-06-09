@@ -1,20 +1,4 @@
-# ============================================================================
-# AI Werewolf — Multi-stage production Dockerfile
-# ============================================================================
-# Stage 1: Frontend build
-# ============================================================================
-FROM node:20-alpine AS frontend-builder
-
-WORKDIR /build/frontend
-
-COPY frontend/package.json frontend/package-lock.json* ./
-RUN npm ci --legacy-peer-deps 2>/dev/null || npm install --legacy-peer-deps
-
-COPY frontend/ ./
-RUN npm run build
-
-# ============================================================================
-# Stage 2: Backend dependencies
+# AI Werewolf — Backend production Dockerfile
 # ============================================================================
 FROM python:3.12-slim AS backend-base
 
@@ -34,7 +18,7 @@ COPY requirements.txt ./
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
 # ============================================================================
-# Stage 3: Production runtime
+# Runtime
 # ============================================================================
 FROM python:3.12-slim AS runtime
 
@@ -59,13 +43,6 @@ COPY --from=backend-base /usr/local/bin /usr/local/bin
 # Copy application code
 COPY --chown=werewolf:werewolf backend/ ./backend/
 COPY --chown=werewolf:werewolf configs/ ./configs/
-COPY --chown=werewolf:werewolf scripts/ ./scripts/
-
-# Copy built frontend from Stage 1
-COPY --from=frontend-builder --chown=werewolf:werewolf /build/frontend/.next ./frontend/.next
-COPY --from=frontend-builder --chown=werewolf:werewolf /build/frontend/public ./frontend/public
-COPY --from=frontend-builder --chown=werewolf:werewolf /build/frontend/package.json ./frontend/package.json
-COPY --from=frontend-builder --chown=werewolf:werewolf /build/frontend/node_modules ./frontend/node_modules
 
 # Entrypoint
 COPY --chown=werewolf:werewolf scripts/docker-entrypoint.sh /usr/local/bin/entrypoint
