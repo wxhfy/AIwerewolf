@@ -1004,8 +1004,17 @@ def promote_after_store(source_game_id: str | None = None) -> int:
     Called from post_game.py after each game's lessons are stored.
     Returns total number of candidates promoted to active.
     """
-    result = run_strategy_knowledge_lifecycle(
-        maintenance_batch_size=AUTO_MAINTENANCE_BATCH_SIZE,
-        source_game_id=source_game_id,
+    if not source_game_id:
+        result = run_strategy_knowledge_lifecycle(maintenance_batch_size=AUTO_MAINTENANCE_BATCH_SIZE)
+        return result["feedback_promoted"] + result["quality_promoted"] + result["cluster_promoted"]
+
+    source_result = run_strategy_knowledge_lifecycle(source_game_id=source_game_id)
+    maintenance_result = run_strategy_knowledge_lifecycle(maintenance_batch_size=AUTO_MAINTENANCE_BATCH_SIZE)
+    return (
+        source_result["feedback_promoted"]
+        + source_result["quality_promoted"]
+        + source_result["cluster_promoted"]
+        + maintenance_result["feedback_promoted"]
+        + maintenance_result["quality_promoted"]
+        + maintenance_result["cluster_promoted"]
     )
-    return result["feedback_promoted"] + result["quality_promoted"] + result["cluster_promoted"]
