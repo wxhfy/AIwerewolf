@@ -329,10 +329,10 @@ def summarize_run(run_dir: Path) -> dict[str, Any]:
     }
 
 
-def build_facts(run_dirs: list[Path]) -> dict[str, Any]:
+def build_facts(run_dirs: list[Path], *, generated_at: str | None = None) -> dict[str, Any]:
     runs = [summarize_run(path) for path in run_dirs]
     return {
-        "generated_at": now_iso(),
+        "generated_at": generated_at or now_iso(),
         "report_type": "real_llm_framework_evidence_summary",
         "sources": [run["run_dir"] for run in runs],
         "aggregate": {
@@ -525,13 +525,18 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--output-md", type=Path, default=DEFAULT_REPORT)
     parser.add_argument("--output-json", type=Path, default=DEFAULT_FACTS)
+    parser.add_argument(
+        "--generated-at",
+        default=None,
+        help="Override generated_at for reproducible committed evidence snapshots.",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
     run_dirs = [Path(item) for item in args.input_dir] if args.input_dir else discover_run_dirs(DEFAULT_GLOBS)
-    facts = build_facts(run_dirs)
+    facts = build_facts(run_dirs, generated_at=args.generated_at)
     args.output_json.parent.mkdir(parents=True, exist_ok=True)
     args.output_md.parent.mkdir(parents=True, exist_ok=True)
     args.output_json.write_text(json.dumps(facts, ensure_ascii=False, indent=2), encoding="utf-8")
