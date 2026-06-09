@@ -66,9 +66,9 @@ def create_tools(
         retrieval_policy controls which strategy docs are visible to you:
           - "global_only": Only global/通用 strategies (no role/MBTI filter)
           - "self_mbti_only": Only strategies matching your MBTI
-          - "same_role_all_mbti": All strategies for your role (any MBTI)
+          - "same_role_all_mbti": All strategies for your role (any MBTI, current default)
           - "same_role_same_mbti": Your role + your MBTI only
-          - "hybrid_role_mbti_global": Layered (default) — same_role_same_mbti
+          - "hybrid_role_mbti_global": Layered fallback — same_role_same_mbti
             → same_role_all_mbti → global
           - "hybrid_role_alignment_phase": Same as hybrid + phase/action match
 
@@ -82,12 +82,12 @@ def create_tools(
             policy_raw = (
                 retrieval_policy
                 or default_retrieval_policy
-                or os.getenv("AIWEREWOLF_RETRIEVAL_POLICY", "hybrid_role_mbti_global")
+                or os.getenv("AIWEREWOLF_RETRIEVAL_POLICY", "same_role_all_mbti")
             )
             try:
                 policy = RetrievalPolicy(policy_raw)
             except ValueError:
-                policy = RetrievalPolicy.HYBRID_ROLE_MBTI_GLOBAL
+                policy = RetrievalPolicy.SAME_ROLE_ALL_MBTI
 
             results = retrieve_strategies_prod(
                 obs.player_role,
@@ -284,9 +284,9 @@ def create_tools(
                 "  retrieval_policy — 控制检索范围：\n"
                 '    "global_only" 只看全局通用策略\n'
                 '    "self_mbti_only" 只看自己MBTI的策略\n'
-                '    "same_role_all_mbti" 同角色所有MBTI\n'
+                '    "same_role_all_mbti" 同角色所有MBTI（当前默认）\n'
                 '    "same_role_same_mbti" 同角色同MBTI\n'
-                '    "hybrid_role_mbti_global" 分层混合（默认推荐）\n'
+                '    "hybrid_role_mbti_global" 分层混合兜底\n'
                 "  推荐流程: count → overview → content，逐步缩小范围。\n"
                 "  use_regex=True 时关键词被视为 Python 正则。\n"
                 '  例: search_strategies(keywords=["被查杀"], mode="count")\n'

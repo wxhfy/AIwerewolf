@@ -97,6 +97,7 @@ flowchart TB
 | 决策有效率 | 100%（10,253 / 10,253） |
 | published reviews | 4,971 |
 | strategy knowledge docs | 219,558（active 386 / candidate 1,695 / deprecated 217,477） |
+| 单 Agent 检索 A/B | `same_role_all_mbti` 8.13 vs 无检索 7.33（火山 v4flash，6 个固定场景） |
 
 ### 对局胜率
 

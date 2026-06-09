@@ -79,6 +79,8 @@ Track B 的目标是把“谁赢了”拆解成“每一步为什么好或不好
 
 Track C 的目标是将复盘经验沉淀为可检索策略，并回流到下一局 Agent。系统从 Track B 的高光和失误中抽取策略知识，先进入 candidate 池，再通过质量、聚类和使用反馈晋级为 active，最后由 `StrategyRetriever` 按角色、阶段和适用条件完成检索。
 
+当前默认检索策略为 `same_role_all_mbti`：在 6 个固定单 Agent 场景的火山 v4flash 轻量 A/B 中，综合评分 8.13，相比无检索 7.33 提升 +0.80；`hybrid_role_mbti_global` 保留为可选分层兜底策略。
+
 ## Track C 生命周期
 
 Track C 的策略知识分两层触发：

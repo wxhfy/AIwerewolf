@@ -56,8 +56,10 @@ class RetrievalPolicy(str, Enum):
       - "content" → full text
       - Our extension: GLOBAL → ROLE → MBTI → PHASE layering
 
-    Each policy defines a filtering strategy; HYBRID_ROLE_MBTI_GLOBAL is the
-    recommended default as it balances personalization with coverage.
+    Each policy defines a filtering strategy. SAME_ROLE_ALL_MBTI is the current
+    default because the latest single-agent LLM ablation favored direct
+    same-role recall; HYBRID_ROLE_MBTI_GLOBAL remains available when a caller
+    wants role+MBTI priority with global fallback coverage.
     """
 
     GLOBAL_ONLY = "global_only"  # Only role="global" or role=any docs

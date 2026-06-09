@@ -1563,13 +1563,11 @@ def _retrieve_track_c_strategy_lessons(
         action = _strategy_query_action(action_type)
         mbti_key = _normalize_mbti(mbti)
         alignment_key = (alignment or _derive_alignment(role)).lower().strip()
-        policy_raw = (
-            os.getenv("TRACK_C_AUTO_RETRIEVAL_POLICY", "").strip() or retrieval_policy or "hybrid_role_alignment_phase"
-        )
+        policy_raw = os.getenv("TRACK_C_AUTO_RETRIEVAL_POLICY", "").strip() or retrieval_policy or "same_role_all_mbti"
         try:
             policy = RetrievalPolicy(policy_raw)
         except ValueError:
-            policy = RetrievalPolicy.HYBRID_ROLE_ALIGNMENT_PHASE
+            policy = RetrievalPolicy.SAME_ROLE_ALL_MBTI
         cache_ttl = float(os.getenv("TRACK_C_AUTO_RETRIEVAL_CACHE_SECONDS", "120") or 0)
         limit = _track_c_env_int("TRACK_C_AUTO_RETRIEVAL_LIMIT", 1, minimum=0)
         min_quality = _track_c_env_float("TRACK_C_RUNTIME_MIN_QUALITY", 0.82)
