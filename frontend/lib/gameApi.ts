@@ -68,6 +68,16 @@ export async function fetchRoom(roomId: string): Promise<RoomRecord | null> {
   return parseJson<RoomRecord>(response);
 }
 
+export async function fetchReplayDownload(gameId: string, showPrivate = false): Promise<Record<string, unknown>> {
+  const params = new URLSearchParams({
+    show_private: showPrivate ? "true" : "false",
+    download: "false",
+  });
+  const response = await fetchWithTimeout(apiUrl(`/api/replay/${gameId}.json?${params.toString()}`));
+  if (!response.ok) throw new Error(`Replay export failed (${response.status})`);
+  return parseJson<Record<string, unknown>>(response);
+}
+
 export async function submitHumanAction(roomId: string, data: HumanActionPayload): Promise<GameState> {
   const url = apiUrl(`/api/rooms/${roomId}/action`);
   const response = await fetchWithTimeout(url, {

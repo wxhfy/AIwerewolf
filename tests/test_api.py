@@ -1,3 +1,4 @@
+import pytest
 from fastapi.testclient import TestClient
 
 from backend.app import _build_game
@@ -262,6 +263,61 @@ def test_runtime_metrics_404_for_unknown_game() -> None:
     client = TestClient(app)
     resp = client.get("/api/games/does-not-exist/runtime_metrics")
     assert resp.status_code == 404
+
+
+def test_replay_json_download_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_get_replay(game_id: str, show_private: bool = False):
+        assert game_id == "game-1"
+        return {
+            "game_id": game_id,
+            "show_private": show_private,
+            "events": [{"type": "GAME_START"}],
+            "decisions": [],
+        }
+
+    monkeypatch.setattr("backend.db.persist.get_replay", fake_get_replay)
+    client = TestClient(app)
+
+    response = client.get("/api/replay/game-1.json?show_private=true")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/json")
+    assert response.headers["content-disposition"] == 'attachment; filename="replay-game-1.json"'
+    assert response.json()["show_private"] is True
+    assert response.json()["events"][0]["type"] == "GAME_START"
+
+
+def test_replay_json_inline_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("backend.db.persist.get_replay", lambda game_id, show_private=False: {"game_id": game_id})
+    client = TestClient(app)
+
+    response = client.get("/api/replay/game-2.json?download=false")
+
+    assert response.status_code == 200
+    assert "content-disposition" not in response.headers
+    assert response.json() == {"game_id": "game-2"}
+
+
+def test_replay_json_exports_full_game_process() -> None:
+    client = TestClient(app)
+    create = client.post("/api/games?seed=41&agent_type=llm&player_count=7")
+    assert create.status_code == 200
+    game_id = create.json()["id"]
+
+    response = client.get(f"/api/replay/{game_id}.json?download=false&show_private=true")
+
+    assert response.status_code == 200
+    replay = response.json()
+    assert replay["id"] == game_id
+    assert replay["events"]
+    assert replay["timeline"]
+    assert replay["phase_transitions"]
+    assert replay["decisions"]
+    assert replay["snapshots"]
+    assert replay["votes"]
+    assert replay["snapshot"]["phase"] == "GAME_END"
+    assert all({"seq", "day", "phase", "type", "content"}.issubset(item) for item in replay["timeline"])
+    assert {row["to_phase"] for row in replay["phase_transitions"]} >= {"NIGHT_START", "DAY_START", "GAME_END"}
 
 
 def test_heuristic_agent_type_is_rejected_for_games() -> None:

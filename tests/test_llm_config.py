@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import httpx
 import pytest
 from langchain_core.messages import HumanMessage
@@ -504,6 +506,181 @@ def test_fake_llm_uses_latest_legal_targets_for_pk_revote() -> None:
     content = response["choices"][0]["message"]["content"]
     assert '"target": "Alice"' in content
     assert "Dave" not in content
+
+
+def test_fake_llm_strategy_bias_avoids_checked_good_target() -> None:
+    client = create_client(provider="fake")
+    prompt = (
+        "=== 当前状态 ===\n"
+        "你是 3号:Carol，身份=Villager\n"
+        "合法目标：1号:Alice，2号:Bob，4号:Dave\n"
+        "=== 今日发言 ===\n"
+        "1号:Alice：Bob 是金水，Dave 的票型更可疑。\n"
+        "【任务：投票】\n"
+        "选择一个存活玩家投票放逐。\n"
+        "【本局强制策略规则 — 高优先级，必须严格遵守】\n"
+        "- [vote_policy] 禁止投自己已查的好人\n"
+    )
+
+    response = client.chat_sync([{"role": "user", "content": prompt}])
+
+    content = response["choices"][0]["message"]["content"]
+    assert '"target": "Dave"' in content
+    assert "strategy-aware" in content
+
+
+def test_fake_llm_strategy_bias_skips_pressure_target_when_checked_good() -> None:
+    client = create_client(provider="fake")
+    prompt = (
+        "=== 当前状态 ===\n"
+        "你是 3号:Carol，身份=Villager\n"
+        "合法目标：1号:Alice，2号:Bob，4号:Dave\n"
+        "=== 今日发言 ===\n"
+        "1号:Alice：Bob 是金水，但也有人在归票 Bob。\n"
+        "【任务：投票】\n"
+        "选择一个存活玩家投票放逐。\n"
+        "【本局强制策略规则 — 高优先级，必须严格遵守】\n"
+        "- [vote_policy] 禁止投自己已查的好人\n"
+    )
+
+    response = client.chat_sync([{"role": "user", "content": prompt}])
+
+    content = response["choices"][0]["message"]["content"]
+    assert '"target": "Dave"' in content
+    assert "Bob" not in content
+
+
+def test_fake_llm_werewolf_strategy_avoids_teammate_target() -> None:
+    client = create_client(provider="fake")
+    prompt = (
+        "=== 当前状态 ===\n"
+        "你是 3号:WolfA，身份=Werewolf\n"
+        "存活：1号:SeerA，2号:GuardA，3号:WolfA，4号:WolfB\n"
+        "合法目标：1号:SeerA，2号:GuardA，4号:WolfB\n"
+        "狼队友: WolfB\n"
+        "【任务：夜晚行动】\n"
+        "选择一个目标执行你的夜晚能力。\n"
+        "【本局强制策略规则 — 高优先级，必须严格遵守】\n"
+        "- [skill_policy] 夜里必须优先刀关键身份(预言家/猎人/女巫)\n"
+        "- [vote_policy] 禁止投自己的狼队友\n"
+    )
+
+    response = client.chat_sync([{"role": "user", "content": prompt}])
+
+    content = response["choices"][0]["message"]["content"]
+    assert '"target": "SeerA"' in content
+    assert "WolfB" not in content
+
+
+def test_fake_llm_werewolf_night_strategy_prefers_visible_villager_endgame_target() -> None:
+    client = create_client(provider="fake")
+    prompt = (
+        "=== 当前状态 ===\n"
+        "你是 1号:WolfA，身份=Werewolf\n"
+        "存活：1号:WolfA，2号:WolfB，3号:VillagerA，4号:SeerA，5号:WitchA\n"
+        "合法目标：3号:VillagerA，4号:SeerA，5号:WitchA\n"
+        "狼队友: WolfB\n"
+        "【任务：夜晚行动】\n"
+        "选择一个目标执行你的夜晚能力。\n"
+        "【本局强制策略规则 — 高优先级，必须严格遵守】\n"
+        "- [skill_policy] 夜里必须优先刀关键身份(预言家/猎人/女巫)\n"
+        "- [risk_rules] 终结局优先选择能推进胜利条件的目标\n"
+    )
+
+    response = client.chat_sync([{"role": "user", "content": prompt}])
+
+    content = response["choices"][0]["message"]["content"]
+    assert '"target": "VillagerA"' in content
+    assert "WolfB" not in content
+
+
+def test_fake_llm_werewolf_strategy_uses_private_known_wolves_line() -> None:
+    client = create_client(provider="fake")
+    prompt = (
+        "=== 当前状态 ===\n"
+        "你是 3号:WolfA，身份=Werewolf\n"
+        "存活：1号:SeerA，2号:GuardA，3号:WolfA，4号:WolfB\n"
+        "合法目标：1号:SeerA，2号:GuardA，4号:WolfB\n"
+        "=== 私有信息 ===\n"
+        "  known_wolves: ['3号:WolfA', '4号:WolfB']\n"
+        "=== 今日发言 ===\n"
+        "1号:SeerA：今天可以归票 WolfB。\n"
+        "【任务：投票】\n"
+        "选择一个存活玩家投票放逐。\n"
+        "【本局强制策略规则 — 高优先级，必须严格遵守】\n"
+        "- [vote_policy] 禁止投自己的狼队友\n"
+    )
+
+    response = client.chat_sync([{"role": "user", "content": prompt}])
+
+    content = response["choices"][0]["message"]["content"]
+    assert '"target": "SeerA"' in content
+    assert "WolfB" not in content
+
+
+def test_fake_llm_werewolf_speech_strategy_avoids_teammate_without_legal_targets() -> None:
+    client = create_client(provider="fake")
+    prompt = (
+        "=== 当前状态 ===\n"
+        "你是 1号:WolfA，身份=Werewolf\n"
+        "存活：1号:WolfA，2号:WolfB，3号:VillagerA，4号:SeerA\n"
+        "=== 私有信息 ===\n"
+        "  known_wolves: ['1号:WolfA', '2号:WolfB']\n"
+        "【任务：发言】\n"
+        "请发表白天发言。\n"
+        "【本局强制策略规则 — 高优先级，必须严格遵守】\n"
+        "- [speech_policy] 白天必须积极发言伪装好人\n"
+        "- [vote_policy] 禁止投自己的狼队友\n"
+    )
+
+    response = client.chat_sync([{"role": "user", "content": prompt}])
+
+    content = response["choices"][0]["message"]["content"]
+    assert "WolfB" not in content
+    assert "VillagerA" in content or "SeerA" in content
+    assert "归票" in content
+
+
+def test_fake_llm_guard_strategy_prefers_stable_legal_target() -> None:
+    client = create_client(provider="fake")
+    prompt = (
+        "=== 当前状态 ===\n"
+        "你是 5号:GuardA，身份=Guard\n"
+        "合法目标：1号:SeerA，2号:WitchA，5号:GuardA\n"
+        "【任务：夜晚行动】\n"
+        "选择一个目标执行你的夜晚能力。\n"
+        "【本局强制策略规则 — 高优先级，必须严格遵守】\n"
+        "- [skill_policy] 必须优先守预言家/女巫/猎人\n"
+    )
+
+    response = client.chat_sync([{"role": "user", "content": prompt}])
+
+    content = response["choices"][0]["message"]["content"]
+    assert '"target": "GuardA"' in content
+    assert "strategy-aware" in content
+
+
+def test_fake_llm_witch_strategy_saves_visible_night_victim() -> None:
+    client = create_client(provider="fake")
+    prompt = (
+        "=== 当前状态 ===\n"
+        "你是 4号:WitchA，身份=Witch\n"
+        "合法目标：1号:SeerA，2号:WolfA\n"
+        "【本局强制策略规则 — 高优先级，必须严格遵守】\n"
+        "- [skill_policy] 解药必须留给关键身份(预言家/猎人/守卫)\n"
+        "解药可用\n"
+        "毒药可用\n"
+        "今晚被刀的是: 1号:SeerA\n"
+        "你是女巫，请决定本晚是否用药。\n"
+        '只输出 JSON 对象：{"reasoning": "理由", "save": false, "poison_target": null}\n'
+    )
+
+    response = client.chat_sync([{"role": "user", "content": prompt}])
+
+    payload = json.loads(response["choices"][0]["message"]["content"])
+    assert payload["save"] is True
+    assert payload["poison_target"] is None
+    assert "strategy" in payload["reasoning"]
 
 
 def test_create_agents_applies_role_model_overrides() -> None:

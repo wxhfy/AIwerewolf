@@ -290,6 +290,7 @@ def create_cognitive_agent_with_character(
     character: Any = None,
     strategy_bias: Optional[Dict[str, List[str]]] = None,
     retrieval_policy: str = "",
+    feature_flags: Optional[Dict[str, bool]] = None,
 ) -> CognitiveAgent:
     """Create a CognitiveAgent from a full Character object.
 
@@ -304,6 +305,10 @@ def create_cognitive_agent_with_character(
         player_seat: Seat number.
         character: Character object from backend.agents.characters.
         strategy_bias: Optional forced policy rules.
+        feature_flags: Optional per-agent feature flags such as
+            COGNITIVE_ENABLE_TRACK_C, COGNITIVE_ENABLE_ANTI_PATTERNS, and
+            COGNITIVE_ENABLE_REFLECTION. When omitted, environment variables
+            keep the existing process-wide behavior.
 
     Returns:
         Configured CognitiveAgent.
@@ -357,4 +362,5 @@ def create_cognitive_agent_with_character(
         fallback_heuristic=fallback,
         strict_no_fallback=strict,
         retrieval_policy=retrieval_policy,
+        feature_flags=feature_flags,
     )

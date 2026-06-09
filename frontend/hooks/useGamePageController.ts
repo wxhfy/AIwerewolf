@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAppContext } from "@/context/AppContext";
-import { fetchRoom, pauseRoom, resumeRoom, startRoom, submitHumanAction } from "@/lib/gameApi";
+import { fetchReplayDownload, fetchRoom, pauseRoom, resumeRoom, startRoom, submitHumanAction } from "@/lib/gameApi";
 import { t } from "@/lib/i18n";
 import { placeholderPlayers } from "@/lib/gameView";
 import { isRevealBlockingChat } from "@/lib/eventFilter";
@@ -315,13 +315,24 @@ export function useGamePageController(roomId: string) {
     return placeholderPlayers(from, to, language, humanSeat);
   }
 
-  function exportGameRecord() {
-    const state = latestGameStateRef.current;
-    if (!state || typeof window === "undefined") return;
+  function downloadGameRecord(payload: Record<string, unknown>, fileToken: string) {
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const suffix = new Date().toISOString().replace(/[:.]/g, "-");
+    link.href = url;
+    link.download = `ai-werewolf-game-${fileToken}-${suffix}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
 
-    const payload = {
+  function buildSnapshotExportPayload(state: NonNullable<typeof latestGameStateRef.current>) {
+    return {
       exported_at: new Date().toISOString(),
       export_scope: viewMode === ViewMode.MODERATOR ? "global_view_snapshot" : "audience_view_snapshot",
+      export_source: "frontend_snapshot",
       game: {
         id: state.id,
         room_id: roomId,
@@ -342,17 +353,31 @@ export function useGamePageController(roomId: string) {
       daily_summaries: state.daily_summaries,
       daily_summary_facts: state.daily_summary_facts,
     };
+  }
 
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    const suffix = new Date().toISOString().replace(/[:.]/g, "-");
-    link.href = url;
-    link.download = `ai-werewolf-game-${state.id || roomId}-${suffix}.json`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(url);
+  async function exportGameRecord() {
+    const state = latestGameStateRef.current;
+    if (!state || typeof window === "undefined") return;
+
+    if (state.id) {
+      try {
+        const replay = await fetchReplayDownload(state.id, viewMode === ViewMode.MODERATOR);
+        downloadGameRecord(
+          {
+            exported_at: new Date().toISOString(),
+            export_scope: viewMode === ViewMode.MODERATOR ? "persisted_replay_private" : "persisted_replay_public",
+            export_source: "backend_replay",
+            replay,
+          },
+          state.id,
+        );
+        return;
+      } catch {
+        // Fall back to the current in-browser snapshot when persisted replay is unavailable.
+      }
+    }
+
+    downloadGameRecord(buildSnapshotExportPayload(state), state.id || roomId);
   }
 
   // ── Phase timeout: force-complete stuck CHAT_MESSAGE events ──────

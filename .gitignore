@@ -246,7 +246,8 @@ tsconfig.tsbuildinfo
 data/
 wolf/
 prototype/
-models/open_data/
+models/
+logs/
 
 # Reference images (large, not code)
 frontend/photos/

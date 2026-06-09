@@ -659,6 +659,7 @@ def get_replay(game_id: str, *, show_private: bool = False) -> dict | None:
         snapshot = (
             db.query(GameSnapshot).filter(GameSnapshot.game_id == game_id).order_by(GameSnapshot.day.desc()).first()
         )
+        sorted_events = sorted(game.events, key=lambda x: (x.seq or 0, x.created_at))
         events = [
             {
                 "id": e.id,
@@ -672,8 +673,33 @@ def get_replay(game_id: str, *, show_private: bool = False) -> dict | None:
                 "visibility": e.visibility,
                 "content": e.content,
             }
-            for e in sorted(game.events, key=lambda x: (x.seq or 0, x.created_at))
+            for e in sorted_events
             if show_private or e.visibility == "public"
+        ]
+        timeline = [
+            {
+                "seq": event["seq"],
+                "ts": event["ts"],
+                "day": event["day"],
+                "phase": event["phase"],
+                "type": event["type"],
+                "actor_id": event["actor_id"],
+                "target_id": event["target_id"],
+                "visibility": event["visibility"],
+                "content": event["content"],
+            }
+            for event in events
+        ]
+        phase_transitions = [
+            {
+                "seq": event["seq"],
+                "ts": event["ts"],
+                "day": event["day"],
+                "phase": event["phase"],
+                "to_phase": (event.get("content") or {}).get("phase") or event["phase"],
+            }
+            for event in events
+            if event["type"] == "PHASE_CHANGED"
         ]
         decisions = (
             db.query(AgentDecision)
@@ -681,6 +707,28 @@ def get_replay(game_id: str, *, show_private: bool = False) -> dict | None:
             .order_by(AgentDecision.day, AgentDecision.created_at)
             .all()
         )
+        snapshots = [
+            {
+                "day": row.day,
+                "phase": row.phase,
+                "state": row.truth_state if show_private else row.public_state,
+                "created_at": row.created_at.isoformat() if row.created_at else None,
+            }
+            for row in db.query(GameSnapshot)
+            .filter(GameSnapshot.game_id == game_id)
+            .order_by(GameSnapshot.day, GameSnapshot.phase, GameSnapshot.created_at)
+            .all()
+        ]
+        votes = [
+            {
+                "day": row.day,
+                "voter_id": row.voter_id,
+                "target_id": row.target_id,
+                "is_valid": row.is_valid,
+                "created_at": row.created_at.isoformat() if row.created_at else None,
+            }
+            for row in db.query(Vote).filter(Vote.game_id == game_id).order_by(Vote.day, Vote.created_at).all()
+        ]
         return _clean(
             {
                 "id": game.id,
@@ -702,7 +750,11 @@ def get_replay(game_id: str, *, show_private: bool = False) -> dict | None:
                     for p in sorted(game.players, key=lambda x: x.seat_no)
                 ],
                 "snapshot": (snapshot.truth_state if show_private else snapshot.public_state) if snapshot else None,
+                "snapshots": snapshots,
                 "events": events,
+                "timeline": timeline,
+                "phase_transitions": phase_transitions,
+                "votes": votes,
                 "decisions": [
                     {
                         "id": d.id,

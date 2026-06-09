@@ -26,16 +26,17 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from backend.agents.cognitive.retrieval_prod import AgentContext
-from backend.agents.cognitive.retrieval_prod import RetrievalPolicy
-from backend.agents.cognitive.retrieval_prod import _derive_alignment_from_role
-from backend.agents.cognitive.retrieval_prod import get_retriever
-from backend.llm import create_client
 from scripts.evaluate_retrieval_policies import QUERY_SET
 from scripts.evaluate_retrieval_policies import PolicyMetrics
 from scripts.evaluate_retrieval_policies import build_effect_summary
 from scripts.evaluate_retrieval_policies import compute_metrics
 from scripts.evaluate_retrieval_policies import compute_offline_score
+
+
+def _derive_alignment_for_role(role: str) -> str:
+    from backend.agents.cognitive.retrieval_prod import _derive_alignment_from_role
+
+    return _derive_alignment_from_role(role)
 
 
 def _doc_key(doc: dict[str, Any]) -> str:
@@ -88,7 +89,7 @@ def _build_judge_prompt(query: dict[str, Any], docs: list[dict[str, Any]]) -> st
                 {
                     "query_id": query["query_id"],
                     "role": query["role"],
-                    "alignment": query.get("alignment", _derive_alignment_from_role(query["role"])),
+                    "alignment": query.get("alignment", _derive_alignment_for_role(query["role"])),
                     "mbti": query.get("mbti", ""),
                     "phase": query["phase"],
                     "action_type": query.get("action_type", ""),
@@ -154,6 +155,11 @@ def _judge_query(
 
 
 def _retrieve_all_policies() -> tuple[dict[str, list[dict[str, Any]]], int]:
+    from backend.agents.cognitive.retrieval_prod import AgentContext
+    from backend.agents.cognitive.retrieval_prod import RetrievalPolicy
+    from backend.agents.cognitive.retrieval_prod import _derive_alignment_from_role
+    from backend.agents.cognitive.retrieval_prod import get_retriever
+
     retriever = get_retriever()
     if retriever is None or not retriever.ready:
         raise RuntimeError("retriever_not_available")
@@ -217,6 +223,8 @@ def run_llm_judge(
     max_tokens: int,
     judge_retries: int,
 ) -> dict[str, Any]:
+    from backend.llm import create_client
+
     output = Path(output_dir)
     output.mkdir(parents=True, exist_ok=True)
 

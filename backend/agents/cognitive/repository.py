@@ -7,69 +7,76 @@ No game logic, no LLM calls — pure data access.
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from typing import Any
-from typing import Dict
-from typing import List
 
 from backend.agents.cognitive.profiles import PROFILES
 from backend.agents.cognitive.profiles import Profile
+from backend.agents.cognitive.profiles import clone_profile
+from backend.agents.cognitive.profiles import get_profiles
+
+_ROLE_PROFILE_QUERY = """
+    SELECT role, goal, speech_policy, vote_policy, skill_policy, risk_rules
+    FROM role_strategy_cards
+    WHERE status = 'active' AND version = 'v2'
+"""
 
 
-def load_profiles_from_db(conn_str: str = "") -> Dict[str, Profile]:
+def load_profiles_from_db(conn_str: str = "") -> dict[str, Profile]:
     """Load role profiles from role_strategy_cards table.
 
     Falls back to hardcoded profiles if DB is unavailable.
     """
     try:
-        import psycopg2
-
-        from backend.db.database import DEFAULT_DB_URL
-
-        conn = psycopg2.connect(conn_str or DEFAULT_DB_URL)
-        c = conn.cursor()
-        c.execute("""
-            SELECT role, goal, speech_policy, vote_policy, skill_policy, risk_rules
-            FROM role_strategy_cards
-            WHERE status = 'active' AND version = 'v2'
-        """)
-
         profiles = {}
-        for role, goal, speech, vote, skill, risk in c.fetchall():
+        for role, goal, speech, vote, skill, risk in _fetch_active_role_card_rows(conn_str):
             _parse_jsonb(speech)
             _parse_jsonb(vote)
             _parse_jsonb(skill)
             _parse_jsonb(risk)
+            profiles[role] = _profile_from_role_card_row(role, goal)
 
-            # Build Profile from DB data
-            base = PROFILES.get(role, PROFILES["Villager"])
-            profiles[role] = Profile(
-                role=base.role,
-                goal=goal or base.goal,
-                backstory=base.backstory,
-                personality=base.personality,
-                speech_style=base.speech_style,
-                table_goal=base.table_goal,
-                pressure_style=base.pressure_style,
-                reveal_policy=base.reveal_policy,
-                wolf_disguise=base.wolf_disguise,
-                persona=base.persona,
-                mind=base.mind,
-            )
-
-        conn.close()
-        return profiles if profiles else PROFILES
+        return profiles if profiles else get_profiles()
 
     except Exception:
-        return PROFILES
+        return get_profiles()
 
 
 def load_profile_from_db(role: str, conn_str: str = "") -> Profile:
     """Load a single role profile from DB."""
     profiles = load_profiles_from_db(conn_str)
-    return profiles.get(role, PROFILES.get(role, PROFILES["Villager"]))
+    return clone_profile(profiles.get(role, PROFILES.get(role, PROFILES["Villager"])))
 
 
-def _parse_jsonb(value: Any) -> List[str]:
+def _fetch_active_role_card_rows(conn_str: str = "") -> list[tuple[Any, ...]]:
+    import psycopg2
+
+    conn = psycopg2.connect(conn_str or _default_db_url())
+    try:
+        cursor = conn.cursor()
+        try:
+            cursor.execute(_ROLE_PROFILE_QUERY)
+            return cursor.fetchall()
+        finally:
+            cursor_close = getattr(cursor, "close", None)
+            if callable(cursor_close):
+                cursor_close()
+    finally:
+        conn.close()
+
+
+def _default_db_url() -> str:
+    from backend.db.database import DEFAULT_DB_URL
+
+    return DEFAULT_DB_URL
+
+
+def _profile_from_role_card_row(role: str, goal: str | None) -> Profile:
+    base = clone_profile(PROFILES.get(role, PROFILES["Villager"]))
+    return replace(base, goal=goal or base.goal, personality=list(base.personality))
+
+
+def _parse_jsonb(value: Any) -> list[str]:
     """Parse a JSONB column value into a list of strings."""
     if value is None:
         return []

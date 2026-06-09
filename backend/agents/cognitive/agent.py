@@ -21,13 +21,12 @@ from __future__ import annotations
 
 import json
 import os as _os
+import re
 from typing import Any
-from typing import Dict
-from typing import List
-from typing import Optional
 
 from langchain_core.runnables import Runnable
 
+from backend.agents.cognitive import trace_keys
 from backend.agents.cognitive.agent_loop import get_last_loop_trace
 from backend.agents.cognitive.humanization import build_humanization_profile
 from backend.agents.cognitive.memory import Memory
@@ -40,6 +39,7 @@ from backend.agents.cognitive.pipeline import parse_json_array
 from backend.agents.cognitive.pipeline import parse_json_target
 from backend.agents.cognitive.profiles import Profile
 from backend.agents.cognitive.profiles import get_profile
+from backend.agents.cognitive.prompts import build_strategy_bias_block
 from backend.agents.cognitive.prompts import build_system_prompt
 from backend.agents.cognitive.social_model import DeceptionSignal
 from backend.engine.models import ActionType
@@ -56,6 +56,37 @@ class CognitiveAgent:
     Implements the full Agent protocol.
     """
 
+    _MAX_REQUIRED_ACTION_REPAIR_ROUNDS = 3
+    _NO_ACTION_TARGET_KEYWORDS = {
+        "弃票",
+        "弃权",
+        "abstain",
+        "pass",
+        "none",
+        "null",
+        "无",
+        "空",
+        "不行动",
+        "跳过",
+    }
+    _BOOM_SKIP_KEYWORDS = {"不爆", "不自爆", "放弃", "不炸", "跳过"}
+    _WITCH_NO_POISON_KEYWORDS = {"", "none", "null", "无", "不用", "不毒", "跳过"}
+    _SPEECH_ACCUSATION_KEYWORDS = ("狼", "坏人", "可疑", "票", "出", "查杀", "铁狼")
+    _ROLE_CLAIM_KEYWORDS = (
+        "我是预言家",
+        "我是女巫",
+        "我是守卫",
+        "我是猎人",
+        "我是白痴",
+        "我跳预言家",
+        "我起跳",
+        "查了",
+        "查验",
+        "查杀",
+    )
+    _SELF_ACCUSATION_KEYWORDS = ("是狼", "查杀", "怀疑", "投", "出")
+    _MAJOR_EVENT_KEYWORDS = ("自爆", "翻牌")
+
     def __init__(
         self,
         player_id: str,
@@ -63,11 +94,12 @@ class CognitiveAgent:
         llm: Runnable,
         player_name: str = "",
         player_seat: int = 0,
-        profile: Optional[Profile] = None,
-        strategy_bias: Optional[Dict[str, List[str]]] = None,
+        profile: Profile | None = None,
+        strategy_bias: dict[str, list[str]] | None = None,
         fallback_heuristic: Any = None,
         strict_no_fallback: bool = True,
         retrieval_policy: str = "",
+        feature_flags: dict[str, bool] | None = None,
     ):
         self.player_id = player_id
         self.role = role
@@ -86,6 +118,7 @@ class CognitiveAgent:
 
         # Strategy bias (forced policy for A/B testing)
         self._strategy_bias = strategy_bias or {}
+        self._feature_flags = dict(feature_flags or {})
 
         # Fallback configuration
         self._fallback_heuristic = fallback_heuristic
@@ -105,6 +138,7 @@ class CognitiveAgent:
             persona_style=(self._profile.persona.style_label if self._profile.persona else ""),
             retrieval_policy=retrieval_policy,
             player_id=player_id,
+            feature_flags=self._feature_flags,
         )
 
         # Memory (persists across rounds — includes humanization + playbook)
@@ -117,7 +151,7 @@ class CognitiveAgent:
         self._view: Any = None
 
         # Role-specific tracking
-        self._guard_history: List[str] = []
+        self._guard_history: list[str] = []
         self._witch_save_used = False
         self._witch_poison_used = False
 
@@ -130,10 +164,10 @@ class CognitiveAgent:
 
         # Wolf team coordination (legal visible information, no fixed tactics)
         self._wolf_team_view: Any = None
-        self._wolf_tactics: Dict[str, str] = {}
+        self._wolf_tactics: dict[str, str] = {}
 
         # Speech targets for social model (speech-vote mismatch detection)
-        self._last_speech_targets: List[str] = []
+        self._last_speech_targets: list[str] = []
 
     # === Agent Protocol ===
 
@@ -213,15 +247,15 @@ class CognitiveAgent:
         self._last_speech_targets = segments
 
         # Mark strategic intent as executed if this was the target phase
-        active = self.memory.planner.get_active(self.memory.day, self.memory.phase)
-        if active and "SPEECH" in active.target_phase:
-            self.memory.planner.mark_executed(self.memory.day, self.memory.phase)
+        self._mark_active_intent_executed_if_target_phase_contains("SPEECH")
 
         return self._decision(
             ActionType.TALK,
             speech="\n".join(segments),
             reasoning=reasoning,
-            metadata={"segments": segments, "segment_count": len(segments)},
+            metadata=trace_keys.loop_metadata_from_result(
+                result, {"segments": segments, "segment_count": len(segments)}
+            ),
         )
 
     # ---- Vote ----
@@ -230,20 +264,23 @@ class CognitiveAgent:
     def _skip_optimisations_enabled() -> bool:
         return _os.getenv("_DISABLE_SKIP_OPTIMISATIONS") != "1"
 
+    @staticmethod
+    def _single_legal_target(obs: Observation) -> Any | None:
+        legal_target_ids = {player.id for player in obs.legal_targets}
+        if len(legal_target_ids) == 1:
+            return obs.legal_targets[0]
+        return None
+
     def vote(self) -> Decision:
         obs = self._observe()
         legal_target_ids = {player.id for player in obs.legal_targets}
 
         # ── Optimisation: skip LLM when there is only one legal target ──
-        if self._skip_optimisations_enabled() and len(legal_target_ids) == 1:
-            only_target_id = next(iter(legal_target_ids))
-            only_target = obs.legal_targets[0]
+        only_target = self._single_legal_target(obs)
+        if self._skip_optimisations_enabled() and only_target:
+            only_target_id = only_target.id
             reasoning = f"唯一合法目标 {only_target.seat}号:{only_target.name}，无需LLM决策"
-            self.memory.add_action("vote", only_target_id, f"投{only_target_id}", reasoning)
-            self._detect_speech_vote_mismatch()
-            active = self.memory.planner.get_active(self.memory.day, self.memory.phase)
-            if active and "VOTE" in active.target_phase:
-                self.memory.planner.mark_executed(self.memory.day, self.memory.phase)
+            self._record_vote_followups(only_target_id, only_target_id, reasoning)
             return self._decision(ActionType.VOTE, target_id=only_target_id, reasoning=reasoning)
 
         # ── Optimisation: reuse tentative_vote from speech if nothing changed ──
@@ -254,11 +291,7 @@ class CognitiveAgent:
                 if tentative_target and tentative_target in legal_target_ids:
                     if not self._has_meaningful_new_info_since_speech(obs):
                         reasoning = f"发言立场未变: 投{tentative_target}（" + tentative["raw"] + "）"
-                        self.memory.add_action("vote", tentative_target, f"投{tentative_target}", reasoning)
-                        self._detect_speech_vote_mismatch()
-                        active = self.memory.planner.get_active(self.memory.day, self.memory.phase)
-                        if active and "VOTE" in active.target_phase:
-                            self.memory.planner.mark_executed(self.memory.day, self.memory.phase)
+                        self._record_vote_followups(tentative_target, tentative_target, reasoning)
                         return self._decision(ActionType.VOTE, target_id=tentative_target, reasoning=reasoning)
 
         result = self._pipeline.run_vote(
@@ -271,18 +304,25 @@ class CognitiveAgent:
             target_id = None
         # Abstention: return empty vote as Decision (not dict)
         if not target_id:
-            return self._decision(ActionType.VOTE, target_id="", reasoning=result.get("reasoning", "弃票"))
-        self.memory.add_action("vote", result["target"], f"投{result['target']}", result["reasoning"])
+            return self._decision(
+                ActionType.VOTE,
+                target_id="",
+                reasoning=result.get("reasoning", "弃票"),
+                metadata=trace_keys.loop_metadata_from_result(result),
+            )
+        self._record_vote_followups(result["target"], result["target"], result["reasoning"])
 
-        # Feed 3: Detect speech-vote mismatch and update social model
+        return self._decision(
+            ActionType.VOTE,
+            target_id=target_id,
+            reasoning=result["reasoning"],
+            metadata=trace_keys.loop_metadata_from_result(result),
+        )
+
+    def _record_vote_followups(self, memory_target: str, content_target: str, reasoning: str) -> None:
+        self.memory.add_action("vote", memory_target, f"投{content_target}", reasoning)
         self._detect_speech_vote_mismatch()
-
-        # Mark strategic intent as executed if this was the target phase
-        active = self.memory.planner.get_active(self.memory.day, self.memory.phase)
-        if active and "VOTE" in active.target_phase:
-            self.memory.planner.mark_executed(self.memory.day, self.memory.phase)
-
-        return self._decision(ActionType.VOTE, target_id=target_id, reasoning=result["reasoning"])
+        self._mark_active_intent_executed_if_target_phase_contains("VOTE")
 
     # ---- Night actions ----
 
@@ -310,11 +350,10 @@ class CognitiveAgent:
                     self._wolf_team_view = None
 
         obs = self._observe()
-        legal_target_ids = {player.id for player in obs.legal_targets}
 
         # ── Optimisation: skip LLM when there is only one legal target ──
-        if self._skip_optimisations_enabled() and len(legal_target_ids) == 1:
-            only_target = obs.legal_targets[0]
+        only_target = self._single_legal_target(obs)
+        if self._skip_optimisations_enabled() and only_target:
             reasoning = f"唯一合法击杀目标 {only_target.seat}号:{only_target.name}，无需LLM决策"
             return self._night_decision({"target": only_target.id, "reasoning": reasoning}, ActionType.ATTACK)
 
@@ -322,19 +361,16 @@ class CognitiveAgent:
         result = self._pipeline.run_night(obs, self.memory, extra)
 
         # Mark strategic intent as executed if this was the target phase
-        active = self.memory.planner.get_active(self.memory.day, self.memory.phase)
-        if active and "NIGHT" in active.target_phase and "WOLF" in active.target_phase:
-            self.memory.planner.mark_executed(self.memory.day, self.memory.phase)
+        self._mark_active_intent_executed_if_target_phase_contains("NIGHT", "WOLF")
 
         return self._night_decision(result, ActionType.ATTACK)
 
     def divine(self) -> Decision:
         obs = self._observe()
-        legal_target_ids = {player.id for player in obs.legal_targets}
 
         # ── Optimisation: skip LLM when there is only one legal target ──
-        if self._skip_optimisations_enabled() and len(legal_target_ids) == 1:
-            only_target = obs.legal_targets[0]
+        only_target = self._single_legal_target(obs)
+        if self._skip_optimisations_enabled() and only_target:
             reasoning = f"唯一合法查验目标 {only_target.seat}号:{only_target.name}，无需LLM决策"
             return self._night_decision({"target": only_target.id, "reasoning": reasoning}, ActionType.DIVINE)
 
@@ -348,45 +384,37 @@ class CognitiveAgent:
         else:
             extra = "第一晚守护，没有历史限制。"
         obs = self._observe()
-        legal_target_ids = {player.id for player in obs.legal_targets}
 
         # ── Optimisation: skip LLM when there is only one legal target ──
-        if len(legal_target_ids) == 1:
-            only_target = obs.legal_targets[0]
+        only_target = self._single_legal_target(obs)
+        if only_target:
             reasoning = f"唯一合法守护目标 {only_target.seat}号:{only_target.name}，无需LLM决策"
-            self._guard_history.append(only_target.id)
-            self.memory.role_state.setdefault("protections", []).append(f"D{self.memory.day}: {only_target.id}")
+            self._record_guard_protection(only_target.id)
             return self._night_decision({"target": only_target.id, "reasoning": reasoning}, ActionType.GUARD)
 
         result = self._pipeline.run_night(obs, self.memory, extra)
-        if result["target"]:
-            self._guard_history.append(result["target"])
-            self.memory.role_state.setdefault("protections", []).append(f"D{self.memory.day}: {result['target']}")
-        return self._night_decision(result, ActionType.GUARD)
+        decision = self._night_decision(result, ActionType.GUARD)
+        if decision.target_id:
+            self._record_guard_protection(decision.target_id)
+        return decision
 
-    def witch_act(self, victim_id: Optional[str]) -> List[Decision]:
+    def _record_guard_protection(self, target_id: str) -> None:
+        self._guard_history.append(target_id)
+        self.memory.role_state.setdefault("protections", []).append(f"D{self.memory.day}: {target_id}")
+
+    def witch_act(self, victim_id: str | None) -> list[Decision]:
         # ── Optimisation: skip LLM when no potions available ──
         if self._skip_optimisations_enabled() and self._witch_save_used and self._witch_poison_used:
             return [self._decision(ActionType.SKIP, reasoning="双药已用，无需LLM决策")]
 
-        lines = []
-        if self._witch_save_used:
-            lines.append("解药已使用")
-        else:
-            lines.append("解药可用")
-        if self._witch_poison_used:
-            lines.append("毒药已使用")
-        else:
-            lines.append("毒药可用")
-        if victim_id:
-            victim = self._find_player(victim_id)
-            if victim:
-                lines.append(f"今晚被刀的是: {victim.get('seat', '?')}号:{victim.get('name', '')}")
+        lines = self._witch_status_lines(victim_id)
 
         obs = self._observe()
-        targets = [f"{p.seat}号:{p.name}" for p in obs.alive if p.id != self.player_id]
+        targets = [self._player_label(p) for p in obs.alive if p.id != self.player_id]
         prompt = (
             format_observation(obs)
+            + "\n\n"
+            + self._strategy_bias_text("witch_act")
             + "\n\n"
             + "\n".join(lines)
             + "\n\n你是女巫，请决定本晚是否用药。"
@@ -403,13 +431,12 @@ class CognitiveAgent:
                 raise
             return [self._decision(ActionType.SKIP, reasoning="女巫输出解析失败")]
 
+        data = self._repair_witch_decision_if_needed(data, obs, victim_id, targets)
+
         reasoning = str(data.get("reasoning") or "").strip()
         if not reasoning:
             raise RuntimeError("LLM witch decision missing reasoning")
-        save = bool(data.get("save"))
-        poison = data.get("poison_target")
-        poison_text = "" if poison is None else str(poison).strip()
-        no_poison = poison_text.lower() in {"", "none", "null", "无", "不用", "不毒", "跳过"}
+        save, poison_text, no_poison = self._witch_decision_flags(data)
 
         if save and not victim_id:
             raise RuntimeError("LLM witch decision requested save without wolf victim")
@@ -436,6 +463,70 @@ class CognitiveAgent:
 
         return decisions
 
+    def _repair_witch_decision_if_needed(
+        self,
+        data: dict[str, Any],
+        obs: Observation,
+        victim_id: str | None,
+        poison_targets: list[str],
+    ) -> dict[str, Any]:
+        error = self._witch_decision_error(data, victim_id)
+        rounds = 0
+        while error and rounds < self._MAX_REQUIRED_ACTION_REPAIR_ROUNDS:
+            rounds += 1
+            status_lines = self._witch_status_lines(victim_id)
+            repair_prompt = (
+                format_observation(obs)
+                + "\n\n"
+                + self._strategy_bias_text("witch_act")
+                + "\n\n上一次女巫用药输出无法执行，原因: "
+                + error
+                + "\n上一次输出: "
+                + self._json_for_prompt(data)
+                + "\n当前药品状态:\n"
+                + "\n".join(status_lines)
+                + "\n规则：一晚最多使用一瓶药；已使用的药不能再次使用；如果 save=true，poison_target 必须为 null。"
+                + "\n如果当前不适合或不能用药，输出 save=false 且 poison_target=null。"
+                + f"\n可毒目标: {', '.join(poison_targets) if poison_targets else '无'}"
+                + '\n请重新只输出 JSON 对象：{"reasoning": "理由", "save": false, "poison_target": null}'
+            )
+            raw = self._pipeline.direct_call(repair_prompt, max_tokens=300)
+            data = self._parse_witch_json(raw)
+            error = self._witch_decision_error(data, victim_id)
+        return data
+
+    def _witch_decision_error(self, data: dict[str, Any], victim_id: str | None) -> str:
+        reasoning = str(data.get("reasoning") or "").strip()
+        if not reasoning:
+            return "缺少 reasoning"
+        save, poison_text, no_poison = self._witch_decision_flags(data)
+        if save and not victim_id:
+            return "没有被刀玩家但请求使用解药"
+        if save and self._witch_save_used:
+            return "解药已使用但再次请求解药"
+        if poison_text and not no_poison and self._witch_poison_used:
+            return "毒药已使用但再次请求毒药"
+        if save and poison_text and not no_poison:
+            return "同一晚同时请求解药和毒药"
+        return ""
+
+    def _witch_decision_flags(self, data: dict[str, Any]) -> tuple[bool, str, bool]:
+        save = bool(data.get("save"))
+        poison = data.get("poison_target")
+        poison_text = "" if poison is None else str(poison).strip()
+        return save, poison_text, self._is_no_poison_target(poison_text)
+
+    def _witch_status_lines(self, victim_id: str | None) -> list[str]:
+        lines = [
+            "解药已使用" if self._witch_save_used else "解药可用",
+            "毒药已使用" if self._witch_poison_used else "毒药可用",
+        ]
+        if victim_id:
+            victim = self._find_player(victim_id)
+            if victim:
+                lines.append(f"今晚被刀的是: {self._player_dict_label(victim)}")
+        return lines
+
     @staticmethod
     def _parse_witch_json(text: str) -> dict[str, Any]:
         start = text.find("{")
@@ -452,29 +543,25 @@ class CognitiveAgent:
 
     def shoot(self) -> Decision:
         obs = self._observe()
-        targets = [f"{p.seat}号:{p.name}" for p in obs.alive]
+        targets = self._player_labels(obs.alive)
         prompt = (
             format_observation(obs)
+            + "\n\n"
+            + self._strategy_bias_text("shoot")
             + f'\n\n你已死亡，可开枪带走一人。\n可选: {", ".join(targets)}\n输出 JSON: {{"reasoning": "理由", "target": "玩家名字"}}'
+            "\n注意：猎人开枪阶段不能选择跳过、无、none、null、pass。必须从可选玩家中选择一名目标。"
         )
 
         result = self._pipeline.direct_call(prompt)
         parsed = parse_json_target(result)
-        target_id = self._resolve_target(parsed["target"])
+        parsed_target = self._parsed_target_text(parsed)
+        target_id = self._resolve_target(parsed_target)
         if not target_id:
-            parsed_target = str(parsed.get("target", "")).strip().lower()
-            is_explicit_no_action = parsed_target in (
-                "none",
-                "null",
-                "无",
-                "空",
-                "弃票",
-                "弃权",
-                "abstain",
-                "pass",
-                "跳过",
-                "不行动",
-            )
+            parsed = self._repair_required_shoot_target(obs, parsed)
+            parsed_target = self._parsed_target_text(parsed)
+            target_id = self._resolve_target(parsed_target)
+        if not target_id:
+            is_explicit_no_action = self._normalised_target_text(parsed_target) in self._NO_ACTION_TARGET_KEYWORDS
             if self._strict_no_fallback:
                 detail = (
                     "explicit no-action is not legal for hunter shoot" if is_explicit_no_action else "unresolved target"
@@ -482,6 +569,29 @@ class CognitiveAgent:
                 raise RuntimeError(f"LLM returned invalid shoot target ({detail}): {parsed['target']!r}")
             target_id = None
         return self._decision(ActionType.SHOOT, target_id=target_id, reasoning=parsed["reasoning"])
+
+    def _repair_required_shoot_target(self, obs: Observation, parsed: dict[str, Any]) -> dict[str, Any]:
+        """Ask the same LLM once to replace an invalid hunter target.
+
+        This is a format/contract repair, not a heuristic fallback: the LLM
+        must still choose a legal target and provide reasoning.
+        """
+
+        legal_targets = self._player_labels(obs.legal_targets or obs.alive)
+        if not legal_targets:
+            return parsed
+        repair_prompt = (
+            format_observation(obs)
+            + "\n\n"
+            + self._strategy_bias_text("shoot")
+            + "\n\n上一次猎人开枪输出无法执行："
+            + self._json_for_prompt(parsed)
+            + "\n猎人开枪是强制目标行动，不能输出“无/跳过/none/null/pass/不行动”。"
+            + f"\n合法目标仅限: {', '.join(legal_targets)}"
+            + '\n请重新输出 JSON，格式必须为 {"reasoning": "为什么选择该目标", "target": "目标玩家名字或N号:名字"}。'
+        )
+        repaired = self._pipeline.direct_call(repair_prompt)
+        return self._parse_required_target_repair(repaired, obs.legal_targets or obs.alive)
 
     def boom(self, targets: list[str] | None = None) -> Decision:
         """White Wolf King self-detonate — kill self + one target during day.
@@ -491,7 +601,7 @@ class CognitiveAgent:
         whether the situation warrants it via LLM reasoning.
         """
         obs = self._observe()
-        target_list = [f"{p.seat}号:{p.name}" for p in obs.alive]
+        target_list = self._player_labels(obs.alive)
         extra_parts = [
             "你是白狼王，可在白天自爆带走一名玩家。",
             f"可带走的目标: {', '.join(target_list)}",
@@ -500,13 +610,16 @@ class CognitiveAgent:
             '如果认为不宜自爆，输出 {{"reasoning": "不自爆的理由", "target": "不爆"}}',
         ]
         prompt = format_observation(obs) + "\n\n" + "\n".join(extra_parts)
+        bias_text = self._strategy_bias_text("boom")
+        if bias_text:
+            prompt = format_observation(obs) + "\n\n" + bias_text + "\n\n" + "\n".join(extra_parts)
 
         result = self._pipeline.direct_call(prompt)
         parsed = parse_json_target(result)
         raw_target = (parsed.get("target") or "").strip()
 
         # White Wolf King may choose NOT to self-detonate
-        if not raw_target or raw_target in ("不爆", "不自爆", "放弃", "不炸", "跳过"):
+        if self._is_boom_skip_target(raw_target):
             return self._decision(
                 ActionType.SKIP,
                 reasoning=parsed.get("reasoning", "不自爆"),
@@ -523,29 +636,50 @@ class CognitiveAgent:
             reasoning=parsed.get("reasoning", ""),
         )
 
-    def transfer_badge(self, candidates: List[str]) -> Decision:
+    def transfer_badge(self, candidates: list[str]) -> Decision:
         obs = self._observe()
         candidate_strs = []
+        candidate_players = []
         for cid in candidates:
             p = self._find_player(cid)
             if p:
-                candidate_strs.append(f"{p.get('seat', '?')}号:{p.get('name', '')}")
+                candidate_players.append(p)
+                candidate_strs.append(self._player_label(p))
 
         prompt = (
             format_observation(obs)
+            + "\n\n"
+            + self._strategy_bias_text("transfer_badge")
             + f'\n\n你已死亡，需将警徽移交给一名存活玩家。\n候选人: {", ".join(candidate_strs)}\n输出 JSON: {{"reasoning": "理由", "target": "玩家名字"}}'
         )
 
         result = self._pipeline.direct_call(prompt)
         parsed = parse_json_target(result)
-        target_id = self._resolve_target(parsed["target"])
-        if not target_id:
+        parsed_target = self._parsed_target_text(parsed)
+        target_id = self._resolve_target(parsed_target)
+        rounds = 0
+        while (not target_id or target_id not in candidates) and rounds < self._MAX_REQUIRED_ACTION_REPAIR_ROUNDS:
+            rounds += 1
+            repair_prompt = (
+                format_observation(obs)
+                + "\n\n"
+                + self._strategy_bias_text("transfer_badge")
+                + "\n\n上一次警徽移交目标无法执行: "
+                + self._json_for_prompt(parsed)
+                + f"\n候选人仅限: {', '.join(candidate_strs)}"
+                + '\n请重新只输出 JSON: {"reasoning": "理由", "target": "候选人名字或N号:名字"}'
+            )
+            repaired = self._pipeline.direct_call(repair_prompt)
+            parsed = self._parse_required_target_repair(repaired, candidate_players)
+            parsed_target = self._parsed_target_text(parsed)
+            target_id = self._resolve_target(parsed_target)
+        if not target_id or target_id not in candidates:
             if self._strict_no_fallback:
-                raise RuntimeError(f"LLM returned unresolved badge target: {parsed['target']!r}")
+                raise RuntimeError(f"LLM returned unresolved badge target: {parsed_target!r}")
             target_id = None
         return self._decision(ActionType.VOTE, target_id=target_id, reasoning=parsed["reasoning"])
 
-    def finish(self, winner: Optional[str]) -> None:
+    def finish(self, winner: str | None) -> None:
         self.memory.add_action("game_end", None, f"胜者: {winner}", "")
         # Trigger personal post-game reflection (opt-in via COGNITIVE_ENABLE_REFLECTION)
         self._reflect_on_game(winner)
@@ -562,6 +696,14 @@ class CognitiveAgent:
         self._sync_social_from_tracker(obs)
         self._update_trust_from_events(obs)
         return obs
+
+    def _strategy_bias_text(self, action: str) -> str:
+        action_map = {
+            "shoot": "shoot",
+            "boom": "attack",
+            "transfer_badge": "vote",
+        }
+        return build_strategy_bias_block(self._strategy_bias, action_map.get(action, action))
 
     # ---- Social Model Feeds ----
 
@@ -594,14 +736,14 @@ class CognitiveAgent:
         # Vote alignment: same target → slight trust
         today_votes = [v for v in obs.votes if v.day == obs.day]
         my_vote = next(
-            (v for v in today_votes if v.voter_name == self.player_name or v.voter_id == self.player_id),
+            (v for v in today_votes if self._voter_identity_matches_self(v.voter_name, v.voter_id)),
             None,
         )
         if my_vote and my_vote.target_name:
             my_target = my_vote.target_name
             for v in today_votes:
                 voter_name = v.voter_name or v.voter_id
-                if voter_name == self.player_name or voter_name == self.player_id:
+                if self._voter_label_matches_self(voter_name):
                     continue
                 if v.target_name == my_target:
                     self.memory.social_model.update_trust(
@@ -623,17 +765,14 @@ class CognitiveAgent:
 
         # Accusations in speeches: if someone names the agent as suspicious
         for speech in obs.speeches:
-            if self.player_name in speech.content and speech.player_name != self.player_name:
-                # Check for accusatory language
-                accusatory = any(w in speech.content for w in ["狼", "坏人", "可疑", "票", "出", "查杀", "铁狼"])
-                if accusatory:
-                    self.memory.social_model.update_trust(
-                        self.player_name,
-                        speech.player_name,
-                        -0.10,
-                        f"D{obs.day}: {speech.player_name}在发言中指控你",
-                        day=obs.day,
-                    )
+            if self._speech_from_other_accuses_self(speech):
+                self.memory.social_model.update_trust(
+                    self.player_name,
+                    speech.player_name,
+                    -0.10,
+                    f"D{obs.day}: {speech.player_name}在发言中指控你",
+                    day=obs.day,
+                )
 
     def _detect_speech_vote_mismatch(self) -> None:
         """Feed 3: Check if the agent's own speech accused someone different
@@ -650,10 +789,8 @@ class CognitiveAgent:
                 name = p.get("name", "")
                 if name and name in speech_text:
                     # Check if mentioned in accusatory context
-                    for phrase in [f"投{name}", f"出{name}", f"{name}是狼", f"怀疑{name}", f"查杀{name}"]:
-                        if phrase in speech_text:
-                            speech_targets.add(name)
-                            break
+                    if self._speech_accuses_player(speech_text, name):
+                        speech_targets.add(name)
 
             for vote_a in vote_actions:
                 vote_target = vote_a.target
@@ -691,83 +828,68 @@ class CognitiveAgent:
         for speech in later_speeches:
             content = speech.content.lower()
             # Someone claimed a power role (预言家/女巫/守卫/猎人/白痴)
-            for role_claim_kw in [
-                "我是预言家",
-                "我是女巫",
-                "我是守卫",
-                "我是猎人",
-                "我是白痴",
-                "我跳预言家",
-                "我起跳",
-                "查了",
-                "查验",
-                "查杀",
-            ]:
-                if role_claim_kw in content:
-                    return True
+            if self._has_keyword(content, self._ROLE_CLAIM_KEYWORDS):
+                return True
             # Someone accused this agent specifically
-            my_name = self.player_name.lower()
-            if my_name and my_name in content:
-                for accuse_kw in ["是狼", "查杀", "怀疑", "投", "出"]:
-                    if accuse_kw in content:
-                        return True
+            if self._speech_accuses_self(content):
+                return True
             # Major event: self-explosion, badge transfer, etc.
-            for event_kw in ["自爆", "翻牌"]:
-                if event_kw in content:
-                    return True
+            if self._has_keyword(content, self._MAJOR_EVENT_KEYWORDS):
+                return True
 
         # Check for new role claims from belief tracker
         for claim in getattr(obs, "role_claims", []) or []:
-            if claim.player_name != self.player_name and "预言家" in str(getattr(claim, "claimed_role", "") or ""):
+            if self._role_claim_requires_vote_rethink(claim):
                 return True
 
         return False
 
+    @staticmethod
+    def _has_keyword(text: str, keywords: tuple[str, ...]) -> bool:
+        return any(keyword in text for keyword in keywords)
+
+    @staticmethod
+    def _speech_accuses_player(speech_text: str, name: str) -> bool:
+        phrases = (f"投{name}", f"出{name}", f"{name}是狼", f"怀疑{name}", f"查杀{name}")
+        return any(phrase in speech_text for phrase in phrases)
+
+    def _speech_accuses_self(self, speech_content: str) -> bool:
+        content = speech_content.lower()
+        my_name = self.player_name.lower()
+        return bool(my_name and my_name in content and self._has_keyword(content, self._SELF_ACCUSATION_KEYWORDS))
+
+    def _speech_from_other_accuses_self(self, speech: Any) -> bool:
+        return (
+            self.player_name in speech.content
+            and speech.player_name != self.player_name
+            and self._has_keyword(speech.content, self._SPEECH_ACCUSATION_KEYWORDS)
+        )
+
+    def _role_claim_requires_vote_rethink(self, claim: Any) -> bool:
+        return claim.player_name != self.player_name and "预言家" in str(getattr(claim, "claimed_role", "") or "")
+
+    def _voter_identity_matches_self(self, voter_name: Any, voter_id: Any) -> bool:
+        return voter_name == self.player_name or voter_id == self.player_id
+
+    def _voter_label_matches_self(self, voter_label: Any) -> bool:
+        return voter_label == self.player_name or voter_label == self.player_id
+
     def _decision(
         self,
         action_type: ActionType,
-        target_id: Optional[str] = None,
-        speech: Optional[str] = None,
+        target_id: str | None = None,
+        speech: str | None = None,
         reasoning: str = "",
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> Decision:
         """Create a Decision with standard metadata."""
-        provider = str(getattr(self._llm, "provider", "") or "")
-        model = str(getattr(self._llm, "model", "") or "cognitive")
-        meta = {
-            "source": "llm",
-            "provider": provider,
-            "model": model,
-            "fallback": False,
-        }
+        meta = self._base_decision_metadata()
         if metadata:
             meta.update(metadata)
-
-        # Inject agent-loop tool trace + auto-injected strategies
-        try:
-            trace = get_last_loop_trace(self.player_id)
-            if trace:
-                if trace.get("tool_trace"):
-                    meta["_tool_trace"] = trace["tool_trace"]
-                if trace.get("auto_injected_strategies"):
-                    meta["_auto_injected_strategies"] = trace["auto_injected_strategies"]
-                    meta["retrieval_used"] = True
-                # Use merged retrieved_knowledge_ids (auto-injected + tool-called) if available
-                merged = trace.get("retrieved_knowledge_ids", trace.get("auto_injected_strategies", []))
-                if merged:
-                    meta["retrieved_knowledge_ids"] = merged
-                # Best-effort: record knowledge usage for all retrieved strategies
-                self._record_strategy_usage(merged)
-                # Propagate accumulated token usage from AgentLoop
-                usage = trace.get("usage", {})
-                if usage:
-                    meta["usage"] = {
-                        "prompt_tokens": usage.get("prompt_tokens"),
-                        "completion_tokens": usage.get("completion_tokens"),
-                        "total_tokens": usage.get("total_tokens"),
-                    }
-        except Exception:
-            pass  # trace injection is best-effort
+        direct_retrieved = trace_keys.knowledge_id_list(meta.get(trace_keys.DECISION_RETRIEVED_KNOWLEDGE_IDS, []))
+        if direct_retrieved:
+            self._record_strategy_usage(direct_retrieved)
+        self._merge_compat_loop_trace_metadata(meta)
 
         return Decision(
             actor_id=self.player_id,
@@ -777,6 +899,34 @@ class CognitiveAgent:
             reasoning=reasoning[:200],
             metadata=meta,
         )
+
+    def _merge_compat_loop_trace_metadata(self, meta: dict[str, Any]) -> None:
+        # Prefer per-decision metadata carried from AgentLoop; the global trace
+        # path remains only as compatibility for older Pipeline/direct callers.
+        try:
+            needs_compat_trace = not any(key in meta for key in trace_keys.DECISION_TRACE_KEYS)
+            trace = get_last_loop_trace(self.player_id)
+            if trace and not needs_compat_trace:
+                trace = {}
+            if trace:
+                self._record_strategy_usage(trace_keys.compat_metadata_from_trace(meta, trace))
+        except Exception:
+            pass  # trace injection is best-effort
+
+    def _base_decision_metadata(self) -> dict[str, Any]:
+        provider = str(getattr(self._llm, "provider", "") or "")
+        model = str(getattr(self._llm, "model", "") or "cognitive")
+        return {
+            "source": "llm",
+            "provider": provider,
+            "model": model,
+            "fallback": False,
+        }
+
+    def _mark_active_intent_executed_if_target_phase_contains(self, *phase_tokens: str) -> None:
+        active = self.memory.planner.get_active(self.memory.day, self.memory.phase)
+        if active and all(token in active.target_phase for token in phase_tokens):
+            self.memory.planner.mark_executed(self.memory.day, self.memory.phase)
 
     async def decide_with_fallback(
         self,
@@ -812,10 +962,7 @@ class CognitiveAgent:
                 _log.info(f"Falling back to HeuristicAgent for {self.player_name}.{action_type}")
                 decision = getattr(self._fallback_heuristic, action_type, lambda: None)()
                 if decision is not None:
-                    decision.metadata["fallback_used"] = True
-                    decision.metadata["fallback_from"] = "cognitive"
-                    decision.metadata["fallback_to"] = "heuristic"
-                    decision.metadata["fallback_reason"] = str(last_error)[:200]
+                    decision.metadata.update(self._fallback_metadata("heuristic", str(last_error)[:200]))
                     return decision
             except Exception as e2:
                 _log.error(f"HeuristicAgent fallback also failed for {self.player_name}: {e2}")
@@ -830,13 +977,17 @@ class CognitiveAgent:
             actor_id=self.player_id,
             action_type=ActionType.SKIP,
             reasoning="fallback exhausted",
-            metadata={
-                "fallback_used": True,
-                "fallback_from": "cognitive",
-                "fallback_to": "pass",
-                "fallback_reason": "all fallbacks exhausted",
-            },
+            metadata=self._fallback_metadata("pass", "all fallbacks exhausted"),
         )
+
+    @staticmethod
+    def _fallback_metadata(fallback_to: str, reason: str) -> dict[str, Any]:
+        return {
+            "fallback_used": True,
+            "fallback_from": "cognitive",
+            "fallback_to": fallback_to,
+            "fallback_reason": reason,
+        }
 
     async def _decide_cognitive(
         self,
@@ -846,6 +997,10 @@ class CognitiveAgent:
     ) -> Decision:
         """Execute cognitive decision (internal, called by decide_with_fallback)."""
         self._view = player_view
+        method = self._cognitive_action_method(action_type)
+        return method(**kwargs) if kwargs else method()
+
+    def _cognitive_action_method(self, action_type: str) -> Any:
         method_map = {
             "talk": self.talk,
             "vote": self.vote,
@@ -860,7 +1015,7 @@ class CognitiveAgent:
         method = method_map.get(action_type)
         if method is None:
             raise ValueError(f"Unknown action_type: {action_type}")
-        return method(**kwargs) if kwargs else method()
+        return method
 
     # Night actions where "skip" is a valid strategic choice
     _SKIP_NIGHT_KEYWORDS = {
@@ -886,71 +1041,203 @@ class CognitiveAgent:
         "None",
     }
 
-    def _night_decision(self, result: Dict[str, str], action_type: ActionType) -> Decision:
+    def _night_decision(self, result: dict[str, str], action_type: ActionType) -> Decision:
         """Create a Decision for a night action.
 
         LLM-only mode requires a legal target for night actions that the engine
         requests. Local target synthesis would hide empty or invalid model
         output, so strict mode raises instead.
         """
+        target_id: str | None = None
+        repair_reason = ""
+        for _ in range(self._MAX_REQUIRED_ACTION_REPAIR_ROUNDS + 1):
+            target_id, repair_reason = self._required_night_target_status(result)
+            if not repair_reason:
+                break
+            result = self._repair_required_night_target(result, action_type, repair_reason)
+
         raw_target = (result.get("target") or "").strip()
-        reasoning = str(result.get("reasoning", "") or "")
-        reasoning_mentions_skip = any(keyword and keyword in reasoning for keyword in self._SKIP_NIGHT_KEYWORDS)
-        if raw_target in self._SKIP_NIGHT_KEYWORDS or (not raw_target and reasoning_mentions_skip):
+        if repair_reason == "skip keyword or empty required target":
             if self._strict_no_fallback:
                 raise RuntimeError(f"LLM returned skip keyword for required {action_type.value} target: {raw_target!r}")
             target_id = None
-        else:
-            target_id = self._resolve_target(raw_target)
-
-        if not target_id:
+        elif repair_reason == "unresolved required target":
             if self._strict_no_fallback:
                 raise RuntimeError(f"LLM returned unresolved {action_type.value} target: {result['target']!r}")
-        elif target_id not in self._legal_target_ids():
+        elif repair_reason == "target outside legal target set":
+            target_id = self._resolve_target(raw_target)
             if self._strict_no_fallback:
                 raise RuntimeError(
                     f"LLM returned illegal {action_type.value} target: {result['target']!r} -> {target_id!r}"
                 )
             target_id = None
 
-        return self._decision(action_type, target_id=target_id, reasoning=result.get("reasoning", ""))
+        return self._decision(
+            action_type,
+            target_id=target_id,
+            reasoning=result.get("reasoning", ""),
+            metadata=trace_keys.loop_metadata_from_result(result),
+        )
+
+    def _required_night_target_status(self, result: dict[str, str]) -> tuple[str | None, str]:
+        raw_target = (result.get("target") or "").strip()
+        reasoning = str(result.get("reasoning", "") or "")
+        reasoning_mentions_skip = any(keyword and keyword in reasoning for keyword in self._SKIP_NIGHT_KEYWORDS)
+        if raw_target in self._SKIP_NIGHT_KEYWORDS or (not raw_target and reasoning_mentions_skip):
+            return None, "skip keyword or empty required target"
+
+        target_id = self._resolve_target(raw_target)
+        if not target_id:
+            return None, "unresolved required target"
+        if target_id not in self._legal_target_ids():
+            return target_id, "target outside legal target set"
+        return target_id, ""
+
+    def _repair_required_night_target(
+        self,
+        result: dict[str, str],
+        action_type: ActionType,
+        reason: str,
+    ) -> dict[str, str]:
+        """Ask the LLM once to repair a required night target."""
+
+        if not self._view:
+            return result
+        legal_targets = getattr(self._view, "legal_targets", []) or []
+        if not legal_targets:
+            return result
+        legal_target_lines = [self._player_label(player) for player in legal_targets if player.get("id")]
+        if not legal_target_lines:
+            return result
+
+        obs = self._observe()
+        repair_prompt = (
+            format_observation(obs)
+            + f"\n\n上一次夜间行动无法执行，原因: {reason}。"
+            + "\n上一次输出: "
+            + self._json_for_prompt(result)
+            + f"\n当前动作: {action_type.value}。这是强制目标行动，不能输出“无/跳过/none/null/pass/不行动”。"
+            + f"\n合法目标仅限: {', '.join(legal_target_lines)}"
+            + '\n请重新输出 JSON，格式必须为 {"reasoning": "为什么选择该目标", "target": "目标玩家名字或N号:名字"}。'
+        )
+        repaired = self._pipeline.direct_call(repair_prompt)
+        return self._parse_required_target_repair(repaired, legal_targets)
+
+    def _parse_required_target_repair(self, text: str, legal_targets: list[Any]) -> dict[str, str]:
+        """Parse a repaired target only when the LLM names a legal target."""
+
+        parsed = parse_json_target(text)
+        if self._resolve_target(parsed.get("target", "")) in self._legal_target_ids():
+            return parsed
+
+        for player in legal_targets:
+            name, seat = self._player_name_and_seat(player)
+            if not name:
+                continue
+            if self._required_target_text_matches_player(text, name, seat):
+                reasoning = parsed.get("reasoning") or text.strip()[:300] or "required_target_repair_text_match"
+                return {"target": name, "reasoning": reasoning}
+        return parsed
+
+    @staticmethod
+    def _required_target_text_matches_player(text: str, name: str, seat: str) -> bool:
+        patterns = [re.escape(name)]
+        if seat:
+            patterns.extend([rf"(?<!\d){re.escape(seat)}\s*号", rf"seat\s*{re.escape(seat)}\b"])
+        return any(re.search(pattern, text, re.IGNORECASE) for pattern in patterns)
 
     def _legal_target_ids(self) -> set[str]:
         if not self._view:
             return set()
         return {str(p.get("id", "") or "") for p in getattr(self._view, "legal_targets", []) if p.get("id")}
 
-    def _resolve_target(self, name: str) -> Optional[str]:
+    def _resolve_target(self, name: str) -> str | None:
         """Resolve player name to player id."""
         if not name:
             return None
-        candidate = str(name).strip().lower().lstrip("@")
+        candidate = self._normalised_target_text(name, strip_mention=True)
         # No-action keywords: agent explicitly chooses not to act
-        if candidate in ("弃票", "弃权", "abstain", "pass", "none", "null", "无", "空", "不行动", "跳过"):
+        if candidate in self._NO_ACTION_TARGET_KEYWORDS:
             return None
+        for p in self._candidate_players_for_target_resolution():
+            if self._target_matches_player(candidate, p):
+                return p["id"]
+        return None
+
+    def _candidate_players_for_target_resolution(self) -> list[dict[str, Any]]:
         visible_players = list(getattr(self._view, "players", []) or [])
         legal_players = list(getattr(self._view, "legal_targets", []) or [])
         by_id = {str(p.get("id", "") or ""): p for p in visible_players}
         for p in legal_players:
             player_id = str(p.get("id", "") or "")
             by_id.setdefault(player_id, p)
-        for p in by_id.values():
-            player_name = str(p.get("name", "")).strip()
-            player_id = str(p.get("id", "")).strip()
-            seat = str(p.get("seat", "")).strip()
-            seat_label = f"{seat}号" if seat else ""
-            if (
-                candidate == player_name
-                or candidate == player_id
-                or candidate == seat
-                or candidate == seat_label
-                or (player_name and player_name in candidate)
-                or (seat_label and seat_label in candidate)
-            ):
-                return p["id"]
-        return None
+        return list(by_id.values())
 
-    def _find_player(self, player_id: str) -> Optional[dict]:
+    @staticmethod
+    def _target_matches_player(candidate: str, player: dict[str, Any]) -> bool:
+        player_name = str(player.get("name", "")).strip()
+        player_id = str(player.get("id", "")).strip()
+        seat = str(player.get("seat", "")).strip()
+        seat_label = f"{seat}号" if seat else ""
+        player_name_lower = player_name.lower()
+        player_id_lower = player_id.lower()
+        seat_label_lower = seat_label.lower()
+        return (
+            candidate == player_name_lower
+            or candidate == player_id_lower
+            or candidate == seat
+            or candidate == seat_label_lower
+            or (player_name_lower and player_name_lower in candidate)
+            or (seat_label_lower and seat_label_lower in candidate)
+        )
+
+    @staticmethod
+    def _normalised_target_text(value: Any, *, strip_mention: bool = False) -> str:
+        text = str(value or "").strip().lower()
+        return text.lstrip("@") if strip_mention else text
+
+    @staticmethod
+    def _parsed_target_text(parsed: dict[str, Any]) -> str:
+        return str(parsed.get("target") or "").strip()
+
+    @staticmethod
+    def _json_for_prompt(value: Any) -> str:
+        return json.dumps(value, ensure_ascii=False)
+
+    @classmethod
+    def _player_labels(cls, players: list[Any]) -> list[str]:
+        return [cls._player_label(player) for player in players]
+
+    @classmethod
+    def _player_label(cls, player: Any) -> str:
+        if isinstance(player, dict):
+            return cls._player_dict_label(player)
+        return cls._player_info_label(player)
+
+    @staticmethod
+    def _player_info_label(player: Any) -> str:
+        return f"{player.seat}号:{player.name}"
+
+    @staticmethod
+    def _player_dict_label(player: dict[str, Any]) -> str:
+        return f"{player.get('seat', '?')}号:{player.get('name', '')}"
+
+    @staticmethod
+    def _player_name_and_seat(player: Any) -> tuple[str, str]:
+        if hasattr(player, "name"):
+            return str(getattr(player, "name", "") or ""), str(getattr(player, "seat", "") or "")
+        return str(player.get("name", "") or ""), str(player.get("seat", "") or "")
+
+    @classmethod
+    def _is_no_poison_target(cls, value: Any) -> bool:
+        return cls._normalised_target_text(value) in cls._WITCH_NO_POISON_KEYWORDS
+
+    @classmethod
+    def _is_boom_skip_target(cls, value: Any) -> bool:
+        text = cls._normalised_target_text(value)
+        return not text or text in cls._BOOM_SKIP_KEYWORDS
+
+    def _find_player(self, player_id: str) -> dict[str, Any] | None:
         """Find player dict by id."""
         for p in self._view.players:
             if p["id"] == player_id:
@@ -1022,7 +1309,7 @@ class CognitiveAgent:
         except Exception:
             pass  # best-effort, never block decision flow
 
-    def _reflect_on_game(self, winner: Optional[str]) -> None:
+    def _reflect_on_game(self, winner: str | None) -> None:
         """Trigger post-game personal reflection and persist to PostgreSQL.
 
         Controlled via COGNITIVE_ENABLE_REFLECTION (default: enabled).
@@ -1034,10 +1321,7 @@ class CognitiveAgent:
         Failures are logged but never raised — reflection is best-effort
         and must not block game completion.
         """
-        import os
-
-        val = os.getenv("COGNITIVE_ENABLE_REFLECTION", "").strip().lower()
-        if val in ("0", "false", "no", "off"):
+        if not self._reflection_enabled():
             return
         import logging
 
@@ -1048,47 +1332,77 @@ class CognitiveAgent:
             from backend.agents.cognitive.reflect import save_reflections_to_db
 
             # Determine win/loss
-            won = False
-            if winner and self._profile:
-                alignment = "wolf" if "wolf" in self.role.lower() else "village"
-                won = winner == alignment
+            won = self._did_agent_win(winner)
 
             # Collect real game events from view + belief tracker
             game_events = self._collect_game_events()
             decisions = self._collect_decisions()
 
-            agent_state = {
-                "player_id": self.player_id,
-                "player_name": self.player_name,
-                "role": self.role,
-                "persona": self._profile.persona if self._profile else None,
-                "mind": self._profile.mind if self._profile else None,
-                "won": won,
-                "decisions": decisions,
-                "game_events": game_events,
-            }
+            agent_state = self._reflection_agent_state(won, decisions, game_events)
 
             reflector = Reflector(self._llm)
             results = reflector.reflect_game(
-                game_id=self._game_id or "unknown",
+                game_id=self._reflection_game_id(),
                 agent_states=[agent_state],
             )
             if results:
-                saved = save_reflections_to_db(results, self._game_id or "unknown")
+                saved = save_reflections_to_db(results, self._reflection_game_id())
                 if saved > 0:
-                    _log.info(
-                        f"Agent {self.player_name}({self.role}, "
-                        f"MBTI={self._profile.persona.mbti if self._profile and self._profile.persona else '?'}) "
-                        f"reflection: {saved} knowledge docs saved to PostgreSQL"
-                    )
+                    _log.info(self._reflection_success_log_message(saved))
                 else:
                     _log.warning(f"Agent {self.player_name}: reflection produced no new docs")
-                    if os.getenv("REQUIRE_KNOWLEDGE_WRITE", "").lower() == "true":
+                    if self._require_knowledge_write():
                         _log.error("STRICT FAIL: Reflection produced 0 knowledge docs")
         except Exception as e:
             _log.error(f"Reflection failed for {self.player_name}: {e}")
 
-    def _collect_game_events(self) -> List[Dict[str, Any]]:
+    def _did_agent_win(self, winner: str | None) -> bool:
+        if not (winner and self._profile):
+            return False
+        alignment = "wolf" if "wolf" in self.role.lower() else "village"
+        return winner == alignment
+
+    def _reflection_enabled(self=None) -> bool:
+        if isinstance(self, CognitiveAgent) and "COGNITIVE_ENABLE_REFLECTION" in self._feature_flags:
+            return bool(self._feature_flags["COGNITIVE_ENABLE_REFLECTION"])
+        val = _os.getenv("COGNITIVE_ENABLE_REFLECTION", "").strip().lower()
+        return val not in ("0", "false", "no", "off")
+
+    @staticmethod
+    def _require_knowledge_write() -> bool:
+        return _os.getenv("REQUIRE_KNOWLEDGE_WRITE", "").lower() == "true"
+
+    def _reflection_agent_state(
+        self,
+        won: bool,
+        decisions: list[dict[str, Any]],
+        game_events: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        return {
+            "player_id": self.player_id,
+            "player_name": self.player_name,
+            "role": self.role,
+            "persona": self._profile.persona if self._profile else None,
+            "mind": self._profile.mind if self._profile else None,
+            "won": won,
+            "decisions": decisions,
+            "game_events": game_events,
+        }
+
+    def _profile_mbti_label(self) -> str:
+        return self._profile.persona.mbti if self._profile and self._profile.persona else "?"
+
+    def _reflection_success_log_message(self, saved: int) -> str:
+        return (
+            f"Agent {self.player_name}({self.role}, "
+            f"MBTI={self._profile_mbti_label()}) "
+            f"reflection: {saved} knowledge docs saved to PostgreSQL"
+        )
+
+    def _reflection_game_id(self) -> str:
+        return self._game_id or "unknown"
+
+    def _collect_game_events(self) -> list[dict[str, Any]]:
         """Collect game events visible to this agent for post-game reflection."""
         events = []
         if self._view is None:
@@ -1096,79 +1410,85 @@ class CognitiveAgent:
 
         # Public events (what everyone sees)
         for e in self._view.public_events[-30:]:
-            payload = e.get("payload", {}) or {}
-            desc = ""
             etype = e.get("type", "")
-            if etype == "CHAT_MESSAGE":
-                speaker = payload.get("actor_name", "") or payload.get("speaker", "")
-                speech = (payload.get("speech", "") or "")[:120]
-                desc = f"{speaker}: {speech}"
-            elif etype == "VOTE_CAST":
-                voter = payload.get("voter_name", "")
-                target = payload.get("target_name", "")
-                desc = f"{voter} 投票给 {target}"
-            elif etype == "PLAYER_DIED":
-                name = payload.get("player_name", "")
-                cause = payload.get("cause", payload.get("reason", "?"))
-                desc = f"{name} 死亡({cause})"
-            else:
-                desc = str(payload)[:120]
             events.append(
                 {
                     "type": etype,
                     "day": e.get("day", 0),
                     "phase": e.get("phase", ""),
-                    "description": desc,
+                    "description": self._public_event_description(e),
                 }
             )
 
         # Private events (what only this agent knows)
         for e in self._view.private_events[-10:]:
-            payload = e.get("payload", {}) or {}
-            kind = payload.get("kind", "")
-            if kind == "seer_result":
-                target = payload.get("target_name", "?")
-                is_wolf = payload.get("is_wolf", False)
-                events.append(
-                    {
-                        "type": "PRIVATE_SEER",
-                        "day": e.get("day", 0),
-                        "description": f"查验 {target}: {'狼人' if is_wolf else '好人'}",
-                    }
-                )
-            elif kind == "witch_save":
-                events.append(
-                    {
-                        "type": "PRIVATE_WITCH",
-                        "day": e.get("day", 0),
-                        "description": f"解药救人: {payload.get('target_name', '?')}",
-                    }
-                )
+            private_event = self._private_event_reflection_entry(e)
+            if private_event:
+                events.append(private_event)
 
         # Belief tracker findings
         if self._tracker.contradictions:
             for c in self._tracker.contradictions:
-                events.append(
-                    {
-                        "type": "CONTRADICTION",
-                        "day": self._view.day if self._view else 0,
-                        "description": c.description,
-                    }
-                )
+                events.append(self._contradiction_reflection_entry(c, self._view.day if self._view else 0))
 
         return events
 
-    def _collect_decisions(self) -> List[Dict[str, Any]]:
+    @staticmethod
+    def _public_event_description(event: dict[str, Any]) -> str:
+        payload = event.get("payload", {}) or {}
+        etype = event.get("type", "")
+        if etype == "CHAT_MESSAGE":
+            speaker = payload.get("actor_name", "") or payload.get("speaker", "")
+            speech = (payload.get("speech", "") or "")[:120]
+            return f"{speaker}: {speech}"
+        if etype == "VOTE_CAST":
+            voter = payload.get("voter_name", "")
+            target = payload.get("target_name", "")
+            return f"{voter} 投票给 {target}"
+        if etype == "PLAYER_DIED":
+            name = payload.get("player_name", "")
+            cause = payload.get("cause", payload.get("reason", "?"))
+            return f"{name} 死亡({cause})"
+        return str(payload)[:120]
+
+    @staticmethod
+    def _private_event_reflection_entry(event: dict[str, Any]) -> dict[str, Any] | None:
+        payload = event.get("payload", {}) or {}
+        kind = payload.get("kind", "")
+        if kind == "seer_result":
+            target = payload.get("target_name", "?")
+            is_wolf = payload.get("is_wolf", False)
+            return {
+                "type": "PRIVATE_SEER",
+                "day": event.get("day", 0),
+                "description": f"查验 {target}: {'狼人' if is_wolf else '好人'}",
+            }
+        if kind == "witch_save":
+            return {
+                "type": "PRIVATE_WITCH",
+                "day": event.get("day", 0),
+                "description": f"解药救人: {payload.get('target_name', '?')}",
+            }
+        return None
+
+    @staticmethod
+    def _contradiction_reflection_entry(contradiction: Any, day: int) -> dict[str, Any]:
+        return {
+            "type": "CONTRADICTION",
+            "day": day,
+            "description": contradiction.description,
+        }
+
+    def _collect_decisions(self) -> list[dict[str, Any]]:
         """Collect this agent's decisions for post-game reflection."""
-        decisions = []
-        for a in self.memory.get_recent_actions(30):
-            decisions.append(
-                {
-                    "action_type": a.action_type,
-                    "target": a.target or "",
-                    "speech": a.content,
-                    "day": a.day,
-                    "phase": a.phase,
-                }
-            )
-        return decisions
+        return [self._decision_reflection_entry(action) for action in self.memory.get_recent_actions(30)]
+
+    @staticmethod
+    def _decision_reflection_entry(action: Any) -> dict[str, Any]:
+        return {
+            "action_type": action.action_type,
+            "target": action.target or "",
+            "speech": action.content,
+            "day": action.day,
+            "phase": action.phase,
+        }

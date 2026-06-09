@@ -18,6 +18,7 @@ No LLM calls, no game logic — pure data definitions.
 
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass
 from dataclasses import field
 from typing import List
@@ -486,6 +487,16 @@ PROFILES: dict[str, Profile] = {
 }
 
 
+def clone_profile(profile: Profile) -> Profile:
+    """Return an isolated profile instance safe for per-agent mutation."""
+    return deepcopy(profile)
+
+
+def get_profiles() -> dict[str, Profile]:
+    """Return isolated copies of all default role profiles."""
+    return {role: clone_profile(profile) for role, profile in PROFILES.items()}
+
+
 def get_profile(role: str) -> Profile:
     """Get profile for a role. Falls back to Villager."""
-    return PROFILES.get(role, PROFILES["Villager"])
+    return clone_profile(PROFILES.get(role, PROFILES["Villager"]))

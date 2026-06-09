@@ -109,8 +109,6 @@ export function useRoomStream({
         }
       }
       if (msg.type === "snapshot" && msg.state) {
-        const s = msg.state;
-        console.log(`[GAME] phase=${s.phase} day=${s.day} evt=${s.events?.length||0} alive=${s.alive_count} pending=${s.pending_input?.player_name||"none"} speaker=${s.current_speaker_id?.slice(0,10)||"none"}`);
         if (getIsBlinking?.() && bufferSnapshot) {
           bufferSnapshot(msg.state);
         } else {

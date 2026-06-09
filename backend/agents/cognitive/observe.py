@@ -408,6 +408,11 @@ def observe(view: Any, role: str, tracker: Optional[BeliefTracker] = None) -> Ob
             )
 
     # Private info
+    known_wolves = list(getattr(view, "known_wolves", []) or [])
+    if known_wolves:
+        obs.private["known_wolves"] = [
+            f"{wolf.get('seat', '?')}号:{wolf.get('name', wolf.get('id', '?'))}" for wolf in known_wolves
+        ]
     for e in view.private_events:
         payload = e.get("payload", {}) or {}
         if payload.get("kind") == "seer_result":

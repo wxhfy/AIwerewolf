@@ -15,14 +15,13 @@ from __future__ import annotations
 import json
 import os
 import re
-from typing import Dict
-from typing import List
-from typing import Optional
+from typing import Any
 
 from langchain_core.messages import HumanMessage
 from langchain_core.messages import SystemMessage
 from langchain_core.runnables import Runnable
 
+from backend.agents.cognitive import trace_keys
 from backend.agents.cognitive.agent_loop import AgentLoop
 from backend.agents.cognitive.memory import Memory
 from backend.agents.cognitive.observe import Observation
@@ -53,12 +52,13 @@ class Pipeline:
         self,
         llm: Runnable,
         system_prompt: str,
-        strategy_bias: Optional[Dict[str, List[str]]] = None,
+        strategy_bias: dict[str, list[str]] | None = None,
         persona_mbti: str = "",
         persona_style: str = "",
         use_agent_loop: bool = True,
         retrieval_policy: str = "",
         player_id: str = "",
+        feature_flags: dict[str, bool] | None = None,
     ):
         self._llm = llm
         self._system_prompt = system_prompt
@@ -68,8 +68,9 @@ class Pipeline:
         self._use_agent_loop = use_agent_loop and os.getenv("COGNITIVE_USE_AGENT_LOOP", "true").lower() != "false"
         self._retrieval_policy = retrieval_policy
         self._player_id = player_id
+        self._feature_flags = dict(feature_flags or {})
         self._cached_analysis: str = ""
-        self._tentative_vote: Dict[str, str] = {}  # {target, reasoning} from speech for vote reuse
+        self._tentative_vote: dict[str, str] = {}  # {target, reasoning} from speech for vote reuse
 
     # ================================================================
     # Public API (called by CognitiveAgent)
@@ -81,7 +82,7 @@ class Pipeline:
         memory: Memory,
         is_first_speaker: bool = False,
         is_last_words: bool = False,
-    ) -> Dict[str, str]:
+    ) -> dict[str, Any]:
         """Generate speech via agent loop (or legacy chain)."""
         if self._use_agent_loop:
             return self._run_loop_speech(obs, memory, is_first_speaker, is_last_words)
@@ -92,8 +93,8 @@ class Pipeline:
         self,
         obs: Observation,
         memory: Memory,
-        vote_temperature: Optional[float] = None,
-    ) -> Dict[str, str]:
+        vote_temperature: float | None = None,
+    ) -> dict[str, Any]:
         """Generate vote via agent loop (or legacy chain).
 
         vote_temperature: LLM sampling temperature for vote decisions.
@@ -105,7 +106,7 @@ class Pipeline:
             return self._run_loop_vote(obs, memory, vote_temperature=vote_temperature)
         return self._run_legacy_vote(obs, memory)
 
-    def run_night(self, obs: Observation, memory: Memory, extra: str = "") -> Dict[str, str]:
+    def run_night(self, obs: Observation, memory: Memory, extra: str = "") -> dict[str, Any]:
         """Generate night action via agent loop (or legacy chain)."""
         if self._use_agent_loop:
             return self._run_loop_night(obs, memory, extra)
@@ -115,7 +116,7 @@ class Pipeline:
         """Single LLM call for special actions (shoot, boom, badge transfer)."""
         return self._call_legacy(self._system_prompt, user_prompt, max_tokens=max_tokens)
 
-    def get_tentative_vote(self) -> Dict[str, str]:
+    def get_tentative_vote(self) -> dict[str, str]:
         """Return the tentative vote captured from the last speech (Plan A optimisation)."""
         return dict(self._tentative_vote)
 
@@ -129,7 +130,7 @@ class Pipeline:
         memory: Memory,
         is_first: bool,
         is_last: bool,
-    ) -> Dict[str, str]:
+    ) -> dict[str, Any]:
         extra_parts = []
         if is_first:
             extra_parts.append("你是本阶段第一个发言的人")
@@ -145,6 +146,7 @@ class Pipeline:
             mbti=self._persona_mbti,
             player_id=self._player_id,
             retrieval_policy=self._retrieval_policy,
+            feature_flags=self._feature_flags,
         )
         result = loop.run(obs, memory, extra_context=extra)
         speech = result.get("speech", "")
@@ -156,14 +158,14 @@ class Pipeline:
             self._tentative_vote = {"raw": tentative}
         else:
             self._tentative_vote = {}
-        return {"speech": speech, "reasoning": reasoning}
+        return trace_keys.copy_loop_result_keys(result, {"speech": speech, "reasoning": reasoning})
 
     def _run_loop_vote(
         self,
         obs: Observation,
         memory: Memory,
-        vote_temperature: Optional[float] = None,
-    ) -> Dict[str, str]:
+        vote_temperature: float | None = None,
+    ) -> dict[str, Any]:
         loop = AgentLoop(
             self._llm,
             self._system_prompt,
@@ -173,12 +175,16 @@ class Pipeline:
             mbti=self._persona_mbti,
             player_id=self._player_id,
             retrieval_policy=self._retrieval_policy,
+            feature_flags=self._feature_flags,
         )
         result = loop.run(obs, memory, cached_analysis=self._cached_analysis)
         self._cached_analysis = ""
-        return {"target": result.get("target", ""), "reasoning": result.get("reasoning", "")}
+        return trace_keys.copy_loop_result_keys(
+            result,
+            {"target": result.get("target", ""), "reasoning": result.get("reasoning", "")},
+        )
 
-    def _run_loop_night(self, obs: Observation, memory: Memory, extra: str) -> Dict[str, str]:
+    def _run_loop_night(self, obs: Observation, memory: Memory, extra: str) -> dict[str, Any]:
         loop = AgentLoop(
             self._llm,
             self._system_prompt,
@@ -187,9 +193,13 @@ class Pipeline:
             mbti=self._persona_mbti,
             player_id=self._player_id,
             retrieval_policy=self._retrieval_policy,
+            feature_flags=self._feature_flags,
         )
         result = loop.run(obs, memory, extra_context=extra)
-        return {"target": result.get("target", ""), "reasoning": result.get("reasoning", "")}
+        return trace_keys.copy_loop_result_keys(
+            result,
+            {"target": result.get("target", ""), "reasoning": result.get("reasoning", "")},
+        )
 
     # ================================================================
     # Legacy 3-step Chain (fallback, use_agent_loop=False)
@@ -206,12 +216,12 @@ class Pipeline:
         think_result = self._legacy_think(obs, memory, obs_result)
         return self._legacy_act_speech(obs, think_result, memory, is_first, is_last)
 
-    def _run_legacy_vote(self, obs: Observation, memory: Memory) -> Dict[str, str]:
+    def _run_legacy_vote(self, obs: Observation, memory: Memory) -> dict[str, str]:
         obs_result = self._legacy_observe(obs)
         think_result = self._legacy_think(obs, memory, obs_result)
         return self._legacy_act_vote(obs, think_result)
 
-    def _run_legacy_night(self, obs: Observation, memory: Memory, extra: str) -> Dict[str, str]:
+    def _run_legacy_night(self, obs: Observation, memory: Memory, extra: str) -> dict[str, str]:
         obs_result = self._legacy_observe(obs)
         think_result = self._legacy_think(obs, memory, obs_result)
         return self._legacy_act_night(obs, think_result, extra)
@@ -250,12 +260,12 @@ class Pipeline:
         prompt = build_speech_prompt(obs, think_result, memory, is_first, is_last)
         return self._call_legacy(self._system_prompt, prompt, max_tokens=800)
 
-    def _legacy_act_vote(self, obs: Observation, think_result: str) -> Dict[str, str]:
+    def _legacy_act_vote(self, obs: Observation, think_result: str) -> dict[str, str]:
         prompt = build_vote_prompt(obs, think_result)
         result = self._call_legacy(self._system_prompt, prompt, max_tokens=300)
         return parse_json_target(result)
 
-    def _legacy_act_night(self, obs: Observation, think_result: str, extra: str) -> Dict[str, str]:
+    def _legacy_act_night(self, obs: Observation, think_result: str, extra: str) -> dict[str, str]:
         prompt = build_night_prompt(obs, think_result, extra)
         result = self._call_legacy(self._system_prompt, prompt, max_tokens=300)
         return parse_json_target(result)
@@ -293,7 +303,7 @@ class Pipeline:
 # ============================================================
 
 
-def parse_json_target(text: str) -> Dict[str, str]:
+def parse_json_target(text: str) -> dict[str, str]:
     try:
         m = re.search(r"\{[^}]+\}", text)
         if m:
@@ -304,7 +314,7 @@ def parse_json_target(text: str) -> Dict[str, str]:
     return {"target": "", "reasoning": text[:100]}
 
 
-def parse_json_array(text: str) -> List[str]:
+def parse_json_array(text: str) -> list[str]:
     try:
         m = re.search(r"\[.*?\]", text, re.DOTALL)
         if m:

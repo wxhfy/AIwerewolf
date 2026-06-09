@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 import traceback
@@ -47,8 +48,7 @@ from backend.eval.evolution import TournamentRunner
 from backend.eval.review import MetricsCalculator
 
 STRATEGY_FILE = ROOT / "configs" / "discrimination_strategies.yaml"
-OUTPUT_DIR = ROOT / "data" / "experiment"
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+DEFAULT_OUTPUT_DIR = ROOT / "data" / "experiment"
 
 
 def utc_iso() -> str:
@@ -75,6 +75,13 @@ def make_llm_game_runner(role: str, bias: dict[str, list[str]], strict: bool):
         is_candidate = "candidate" in strategy_version.lower() or "v2" in strategy_version.lower()
         per_role_bias = {role: bias} if is_candidate else {}
         agent_config: dict[str, Any] = {"type": "llm", "seed": seed}
+        model_pool = (
+            os.getenv("EXPERIMENT_MODEL_POOL", "").strip()
+            or os.getenv("MODEL_POOL", "").strip()
+            or os.getenv("DOUBAO_MODEL_POOL", "").strip()
+        )
+        if model_pool:
+            agent_config["model_pool"] = model_pool
         if per_role_bias:
             agent_config["role_models"] = {role: {"strategy_bias": bias}}
         players = build_players(seed=seed)
@@ -121,6 +128,17 @@ def make_llm_game_runner(role: str, bias: dict[str, list[str]], strict: bool):
     return runner
 
 
+def write_json(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+
+
+def append_jsonl(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(payload, ensure_ascii=False, default=str) + "\n")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--role", required=True, help="Target role (Seer/Witch/Hunter/Guard/Werewolf)")
@@ -128,6 +146,8 @@ def main() -> int:
     ap.add_argument("--strict-fallback", default="true")
     ap.add_argument("--baseline-version", default=None)
     ap.add_argument("--candidate-version", default=None)
+    ap.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
+    ap.add_argument("--incremental", default="true")
     args = ap.parse_args()
 
     role = args.role
@@ -140,20 +160,74 @@ def main() -> int:
     print(f"  baseline_version={baseline_version!r}  candidate_version={candidate_version!r}")
     print(f"  seeds={args.seeds!r}  strict_no_fallback={strict}")
     print(f"  good_strategy_bias keys = {list(bias.keys())}")
+    model_pool = (
+        os.getenv("EXPERIMENT_MODEL_POOL", "").strip()
+        or os.getenv("MODEL_POOL", "").strip()
+        or os.getenv("DOUBAO_MODEL_POOL", "").strip()
+    )
+    print(f"  model_pool={model_pool or '(default provider env)'}")
 
     game_runner = make_llm_game_runner(role, bias, strict)
     runner = TournamentRunner(acceptance_policy=AcceptancePolicy(), game_runner=game_runner)
 
     started = time.time()
-    tournament = runner.run_ab_tournament(
-        baseline_version=baseline_version,
-        candidate_version=candidate_version,
-        target_role=role,
-        seeds=list(args.seeds),
-    )
+    incremental = args.incremental.lower() not in {"false", "0", "no", "off"}
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+    label = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    games_jsonl = args.output_dir / f"c_validation_{role}_{label}.games.jsonl"
+    partial_path = args.output_dir / f"c_validation_{role}_{label}.partial_summary.json"
+    baseline_metrics = []
+    candidate_metrics = []
+    if incremental:
+        for side, version, bucket in (
+            ("baseline", baseline_version, baseline_metrics),
+            ("candidate", candidate_version, candidate_metrics),
+        ):
+            for seed in list(args.seeds):
+                print(f"  running {side} seed={seed} version={version}")
+                metric = game_runner(seed, version, role)
+                bucket.append(metric)
+                append_jsonl(
+                    games_jsonl,
+                    {
+                        "side": side,
+                        "seed": seed,
+                        "strategy_version": version,
+                        "metric": runner._metric_summary(metric),
+                        "completed_at": utc_iso(),
+                    },
+                )
+                write_json(
+                    partial_path,
+                    {
+                        "updated_at": utc_iso(),
+                        "role": role,
+                        "strict_no_fallback": strict,
+                        "model_pool": model_pool,
+                        "baseline_games_completed": len(baseline_metrics),
+                        "candidate_games_completed": len(candidate_metrics),
+                        "games_jsonl": str(games_jsonl),
+                    },
+                )
+        comparison = runner.compare_metrics(baseline_version, candidate_version, baseline_metrics, candidate_metrics)
+        decision = runner.acceptance_policy.decide(comparison)
+        cmp = comparison.to_dict()
+        tournament_status = "promoted" if decision.accepted else "rolled_back"
+        baseline_results = [runner._metric_summary(item) for item in baseline_metrics]
+        candidate_results = [runner._metric_summary(item) for item in candidate_metrics]
+    else:
+        tournament = runner.run_ab_tournament(
+            baseline_version=baseline_version,
+            candidate_version=candidate_version,
+            target_role=role,
+            seeds=list(args.seeds),
+        )
+        cmp = tournament.comparison
+        tournament_status = tournament.status
+        baseline_results = tournament.baseline_results
+        candidate_results = tournament.candidate_results
     elapsed = round(time.time() - started, 2)
 
-    cmp = tournament.comparison
     output = {
         "started_at": utc_iso(),
         "elapsed_s": elapsed,
@@ -161,15 +235,20 @@ def main() -> int:
         "baseline_version": baseline_version,
         "candidate_version": candidate_version,
         "seeds": list(args.seeds),
-        "baseline_games_completed": len(tournament.baseline_results),
-        "candidate_games_completed": len(tournament.candidate_results),
+        "model_pool": model_pool,
+        "strict_no_fallback": strict,
+        "incremental": incremental,
+        "games_jsonl": str(games_jsonl) if incremental else "",
+        "baseline_games_completed": len(baseline_results),
+        "candidate_games_completed": len(candidate_results),
+        "baseline_results": baseline_results,
+        "candidate_results": candidate_results,
         "comparison": cmp,
-        "status": tournament.status,
+        "status": tournament_status,
     }
 
-    label = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    out_path = OUTPUT_DIR / f"c_validation_{role}_{label}.json"
-    out_path.write_text(json.dumps(output, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+    out_path = args.output_dir / f"c_validation_{role}_{label}.json"
+    write_json(out_path, output)
     print(f"\nWrote {out_path}")
     print("Comparison:")
     print(f"  baseline_avg_score = {cmp.get('baseline_avg_score')}")
@@ -179,7 +258,7 @@ def main() -> int:
     print(f"  candidate_fallback_count = {cmp.get('candidate_fallback_count')}")
     print(f"  info_leak_count = {cmp.get('info_leak_count')}")
     print(f"  invalid_action_rate = {cmp.get('invalid_action_rate')}")
-    print(f"  status = {tournament.status}")
+    print(f"  status = {tournament_status}")
     return 0
 
 

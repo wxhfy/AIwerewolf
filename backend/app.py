@@ -214,6 +214,29 @@ def game_history_detail(game_id: str):
 # ---------------------------------------------------------------------------
 
 
+@app.get("/api/replay/{game_id}.json")
+def replay_game_json(game_id: str, show_private: bool = False, download: bool = True):
+    """Download the persisted replay payload as JSON.
+
+    This is the audit/export counterpart to `/api/replay/{game_id}`. The
+    payload comes from the same persisted replay source, while `download=true`
+    makes browsers save it with a stable file name.
+    """
+    from backend.db.persist import get_replay
+
+    payload = get_replay(game_id, show_private=show_private)
+    if payload is None:
+        raise HTTPException(status_code=404, detail="Game not found")
+    headers = {}
+    if download:
+        headers["Content-Disposition"] = f'attachment; filename="replay-{game_id}.json"'
+    return Response(
+        content=json.dumps(payload, ensure_ascii=False, indent=2, default=str),
+        media_type="application/json; charset=utf-8",
+        headers=headers,
+    )
+
+
 @app.get("/api/replay/{game_id}")
 def replay_game(game_id: str, show_private: bool = False):
     """Return the full replay payload (snapshots + all events + decisions).

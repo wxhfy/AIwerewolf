@@ -260,6 +260,7 @@ _WEREWOLF_TERMS.sort(key=lambda x: -len(x))  # longest first for greedy matching
 try:
     import jieba
 
+    jieba.setLogLevel(logging.ERROR)
     for term in _WEREWOLF_TERMS:
         jieba.add_word(term, freq=100, tag="nz")
     logger.info(f"Registered {len(_WEREWOLF_TERMS)} werewolf domain terms in jieba")
