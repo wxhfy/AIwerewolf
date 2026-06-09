@@ -173,6 +173,200 @@ def summarize_group_rows(rows: list[dict[str, str]]) -> list[dict[str, Any]]:
     return parsed
 
 
+def compact_counts(mapping: dict[str, Any]) -> str:
+    if not mapping:
+        return ""
+    return ", ".join(f"{key}:{value}" for key, value in sorted(mapping.items()))
+
+
+def summarize_game_run_rows(rows: list[dict[str, Any]], *, scope: str) -> list[dict[str, Any]]:
+    parsed: list[dict[str, Any]] = []
+    for row in rows:
+        model_counts = row.get("model_counts", {}) if isinstance(row.get("model_counts"), dict) else {}
+        provider_counts = row.get("provider_counts", {}) if isinstance(row.get("provider_counts"), dict) else {}
+        parsed.append(
+            {
+                "scope": scope,
+                "seed": row.get("seed", ""),
+                "game_id": row.get("game_id", ""),
+                "framework": row.get("framework", ""),
+                "winner": row.get("winner", ""),
+                "days": inum(row.get("days")),
+                "events": inum(row.get("events")),
+                "elapsed_s": fnum(row.get("elapsed_s")),
+                "decision_count": inum(row.get("decision_count")),
+                "fallback_count": inum(row.get("fallback_count")),
+                "invalid_count": inum(row.get("invalid_count")),
+                "knowledge_hit_rate": fnum(row.get("knowledge_hit_rate")),
+                "provider_mix": compact_counts(provider_counts),
+                "model_mix": compact_counts(model_counts),
+            }
+        )
+    return parsed
+
+
+def build_score_dimension_rows(*groups: tuple[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for scope, group_rows in groups:
+        for row in group_rows:
+            rows.append(
+                {
+                    "scope": scope,
+                    "group_key": row.get("group_key", ""),
+                    "seed": row.get("seed", ""),
+                    "seat_samples": row.get("players", 0),
+                    "win_rate": row.get("win_rate", 0.0),
+                    "adjusted": row.get("avg_adjusted_final_score", 0.0),
+                    "vote": row.get("avg_vote_score", 0.0),
+                    "speech": row.get("avg_speech_score", 0.0),
+                    "skill": row.get("avg_skill_score", 0.0),
+                    "knowledge_hit_rate": row.get("knowledge_hit_rate", 0.0),
+                    "fallback_count": row.get("fallback_count", 0),
+                    "invalid_count": row.get("invalid_count", 0),
+                }
+            )
+    return rows
+
+
+def build_role_seat_rows(model: dict[str, Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    role_distribution = model.get("role_distribution_audit", {})
+    role_win_rates = model.get("role_win_rates", {})
+    if not isinstance(role_distribution, dict):
+        return rows
+    for key, payload in role_distribution.items():
+        if not isinstance(payload, dict):
+            continue
+        win_payload = role_win_rates.get(key, {}) if isinstance(role_win_rates, dict) else {}
+        per_role = win_payload.get("role_win_rates", {}) if isinstance(win_payload, dict) else {}
+        role_rate_text = "; ".join(
+            f"{role}: samples={info.get('samples', 0)}, wins={info.get('wins', 0)}, win_rate={fmt(info.get('win_rate'))}"
+            for role, info in sorted(per_role.items())
+            if isinstance(info, dict)
+        )
+        rows.append(
+            {
+                "group_key": key,
+                "seat_samples": payload.get("seat_samples", 0),
+                "roles": payload.get("roles", {}),
+                "alignments": payload.get("alignments", {}),
+                "macro_role_win_rate": win_payload.get("macro_role_win_rate"),
+                "micro_role_win_rate": win_payload.get("micro_role_win_rate"),
+                "per_role_win_rates": role_rate_text,
+            }
+        )
+    return rows
+
+
+def build_decision_health_rows(
+    framework: dict[str, Any], model: dict[str, Any], aggregate: dict[str, Any]
+) -> list[dict[str, Any]]:
+    rows = []
+    for scope, payload in [("framework_pilot", framework), ("model_pilot", model)]:
+        game_summary = payload.get("game_summary", {})
+        raw_decisions = inum(game_summary.get("raw_decision_count"))
+        fallback_count = inum(game_summary.get("fallback_count"))
+        invalid_count = inum(game_summary.get("invalid_count"))
+        rows.append(
+            {
+                "scope": scope,
+                "games": game_summary.get("game_count", 0),
+                "raw_decisions": raw_decisions,
+                "fallback_count": fallback_count,
+                "invalid_count": invalid_count,
+                "fallback_rate": round(fallback_count / max(raw_decisions, 1), 6),
+                "invalid_rate": round(invalid_count / max(raw_decisions, 1), 6),
+                "avg_days": game_summary.get("avg_days", 0),
+                "avg_events": game_summary.get("avg_events", 0),
+                "avg_elapsed_s": game_summary.get("avg_elapsed_s", 0),
+                "winner_counts": game_summary.get("winner_counts", {}),
+            }
+        )
+    rows.append(
+        {
+            "scope": "aggregate",
+            "games": aggregate["completed_real_llm_games"],
+            "raw_decisions": aggregate["raw_decision_count"],
+            "fallback_count": aggregate["fallback_count"],
+            "invalid_count": aggregate["invalid_count"],
+            "fallback_rate": aggregate["fallback_rate"],
+            "invalid_rate": aggregate["invalid_rate"],
+            "avg_days": "",
+            "avg_events": "",
+            "avg_elapsed_s": "",
+            "winner_counts": {},
+        }
+    )
+    return rows
+
+
+def build_track_b_panels(model_dir: Path) -> list[dict[str, Any]]:
+    return [
+        {
+            "panel": "game_level",
+            "display_name": "对局层",
+            "main_question": "每一局是否完整跑完，胜方、天数、事件数、耗时和真实决策健康如何。",
+            "metrics": ["winner", "days", "events", "elapsed_s", "decision_count", "fallback_count", "invalid_count"],
+            "source": "game_runs.jsonl",
+            "report_boundary": "可展示对局运行和 Track B 输入质量；不能单独推出模型优劣或 Track C 增益。",
+        },
+        {
+            "panel": "version_or_model_level",
+            "display_name": "模型/版本层",
+            "main_question": "同一 scoring pipeline 能否按 framework 或 model 分组形成 leaderboard。",
+            "metrics": [
+                "win_rate",
+                "avg_adjusted_final_score",
+                "avg_vote_score",
+                "avg_speech_score",
+                "avg_skill_score",
+            ],
+            "source": "group_results.csv / leaderboard.json",
+            "report_boundary": "当前 model pilot 只有 1 局且角色不均衡，只能展示分组能力。",
+        },
+        {
+            "panel": "player_role_level",
+            "display_name": "玩家/角色席位层",
+            "main_question": "不同模型实际拿到了哪些角色和阵营，分数解释是否受角色分布影响。",
+            "metrics": ["seat_samples", "roles", "alignments", "macro_role_win_rate", "per_role_win_rates"],
+            "source": "summary.json role_distribution_audit / role_win_rates",
+            "report_boundary": "该层用于解释混杂因素，不用于正式模型排名结论。",
+        },
+        {
+            "panel": "score_dimension_level",
+            "display_name": "评分维度层",
+            "main_question": "Agent 表现可以拆成投票、发言、技能和最终调整分，而不是只看胜负。",
+            "metrics": ["avg_adjusted_final_score", "avg_vote_score", "avg_speech_score", "avg_skill_score"],
+            "source": "group_results.csv",
+            "report_boundary": "维度分用于 Track B 复盘展示；胜率仍只作为辅助指标。",
+        },
+        {
+            "panel": "rubric_level",
+            "display_name": "Rubric 层",
+            "main_question": "项目验收口径如何映射为 single_agent、multi_agent、engineering、advanced_bc 四个维度。",
+            "metrics": ["rubric_total_score", "single_agent", "multi_agent", "engineering", "advanced_bc"],
+            "source": "architecture_evidence_leaderboard.json / csv",
+            "report_boundary": "Rubric 分是展示评分，不是统计显著性检验。",
+        },
+        {
+            "panel": "decision_health_level",
+            "display_name": "决策健康层",
+            "main_question": "真实 LLM 输出是否出现 fallback、invalid、异常失败或决策污染。",
+            "metrics": ["raw_decision_count", "fallback_rate", "invalid_rate", "failed_games"],
+            "source": "game_runs.jsonl / failures.jsonl",
+            "report_boundary": "该层证明输入质量和可审计性，是其他评分层的前置健康条件。",
+        },
+        {
+            "panel": "review_artifact_level",
+            "display_name": "复盘展示层",
+            "main_question": "Track B 输出是否能进入可展示的榜单、rubric 表和报告材料。",
+            "metrics": ["leaderboard.json", "architecture_evidence_leaderboard", "academic_report.md"],
+            "source": rel(model_dir / "academic_report.md"),
+            "report_boundary": "该层展示报告产物存在，不等价于人工评审一致性实验。",
+        },
+    ]
+
+
 def summarize_framework_pilot(run_dir: Path) -> dict[str, Any]:
     summary = read_json(run_dir / "summary.json") or read_json(run_dir / "partial_summary.json")
     game_runs = read_jsonl(run_dir / "game_runs.jsonl")
@@ -196,6 +390,7 @@ def summarize_framework_pilot(run_dir: Path) -> dict[str, Any]:
         "max_days": inum(summary.get("max_days")),
         "model_pool": summary.get("model_pool", []),
         "game_summary": summarize_game_runs(game_runs),
+        "game_rows": summarize_game_run_rows(game_runs, scope="framework_pilot"),
         "group_rows": group_rows,
         "boundary": (
             "本批次完成了 basic_react 的 5 局真实火山 Ark 对局；后续 rag_react/full_cognitive 未完成，"
@@ -230,6 +425,7 @@ def summarize_model_pilot(run_dir: Path) -> dict[str, Any]:
         "role_win_rates": summary.get("role_win_rates", {}),
         "bootstrap_reliability": summary.get("bootstrap_reliability", {}),
         "game_summary": summarize_game_runs(game_runs),
+        "game_rows": summarize_game_run_rows(game_runs, scope="model_pilot"),
         "group_rows": group_rows,
         "leaderboard_entries": leaderboard.get("entries", []) if isinstance(leaderboard, dict) else [],
         "architecture_entries": architecture.get("entries", []) if isinstance(architecture, dict) else [],
@@ -260,6 +456,15 @@ def build_facts(
     fallback_count = framework["game_summary"]["fallback_count"] + model["game_summary"]["fallback_count"]
     invalid_count = framework["game_summary"]["invalid_count"] + model["game_summary"]["invalid_count"]
     completed_games = framework["completed_raw_games"] + model["completed_raw_games"]
+    aggregate = {
+        "completed_real_llm_games": completed_games,
+        "failed_games": framework["failed_games"] + model["failed_games"],
+        "raw_decision_count": raw_decisions,
+        "fallback_count": fallback_count,
+        "invalid_count": invalid_count,
+        "fallback_rate": round(fallback_count / max(raw_decisions, 1), 6),
+        "invalid_rate": round(invalid_count / max(raw_decisions, 1), 6),
+    }
 
     return {
         "generated_at": generated_at or now_iso(),
@@ -281,47 +486,39 @@ def build_facts(
             "failed_models": failed_models,
             "multi_model_checks": model_checks,
         },
-        "aggregate": {
-            "completed_real_llm_games": completed_games,
-            "failed_games": framework["failed_games"] + model["failed_games"],
-            "raw_decision_count": raw_decisions,
-            "fallback_count": fallback_count,
-            "invalid_count": invalid_count,
-            "fallback_rate": round(fallback_count / max(raw_decisions, 1), 6),
-            "invalid_rate": round(invalid_count / max(raw_decisions, 1), 6),
+        "aggregate": aggregate,
+        "track_b_layers": build_track_b_panels(model_dir),
+        "track_b_showcase_panels": {
+            "game_level_rows": framework["game_rows"] + model["game_rows"],
+            "version_or_model_rows": framework["group_rows"] + model["group_rows"],
+            "role_seat_rows": build_role_seat_rows(model),
+            "score_dimension_rows": build_score_dimension_rows(
+                ("framework_pilot", framework["group_rows"]),
+                ("model_pilot", model["group_rows"]),
+            ),
+            "rubric_rows": model["architecture_entries"],
+            "decision_health_rows": build_decision_health_rows(framework, model, aggregate),
+            "review_artifacts": [
+                {
+                    "artifact": "leaderboard.json",
+                    "purpose": "模型/版本榜单条目",
+                    "source": rel(model_dir / "leaderboard.json"),
+                    "exists": (model_dir / "leaderboard.json").exists(),
+                },
+                {
+                    "artifact": "architecture_evidence_leaderboard.json",
+                    "purpose": "项目 rubric 展示分",
+                    "source": rel(model_dir / "architecture_evidence_leaderboard.json"),
+                    "exists": (model_dir / "architecture_evidence_leaderboard.json").exists(),
+                },
+                {
+                    "artifact": "academic_report.md",
+                    "purpose": "实验报告正文材料",
+                    "source": rel(model_dir / "academic_report.md"),
+                    "exists": (model_dir / "academic_report.md").exists(),
+                },
+            ],
         },
-        "track_b_layers": [
-            {
-                "layer": "game_level",
-                "meaning": "完整对局层：胜方、天数、事件数、耗时、provider/model 追踪。",
-                "source": "game_runs.jsonl",
-            },
-            {
-                "layer": "version_or_model_level",
-                "meaning": "版本/模型层：按 framework 或 model 分组的平均分、胜率、榜单排名。",
-                "source": "group_results.csv / leaderboard.json",
-            },
-            {
-                "layer": "player_role_level",
-                "meaning": "席位/角色层：不同模型分到的角色、阵营、席位样本和角色胜率。",
-                "source": "summary.json role_distribution_audit / role_win_rates",
-            },
-            {
-                "layer": "score_dimension_level",
-                "meaning": "评分维度层：adjusted、vote、speech、skill 和 rubric 维度拆解。",
-                "source": "group_results.csv / architecture_evidence_leaderboard.csv",
-            },
-            {
-                "layer": "decision_health_level",
-                "meaning": "决策健康层：真实决策数、fallback、invalid、完成/失败。",
-                "source": "game_runs.jsonl / group_results.csv",
-            },
-            {
-                "layer": "knowledge_auxiliary_level",
-                "meaning": "知识命中辅助层：knowledge_hit_rate 用于展示 Track C 信息注入痕迹，但不作为 Track B 主结论。",
-                "source": "group_results.csv / game_runs.jsonl",
-            },
-        ],
         "framework_pilot": framework,
         "model_pilot": model,
         "claim_boundaries": [
@@ -355,25 +552,31 @@ def render_report(facts: dict[str, Any]) -> str:
     model = facts["model_pilot"]
     aggregate = facts["aggregate"]
     provider = facts["provider_preflight"]
+    panels = facts.get("track_b_showcase_panels", {})
     lines = [
         "# Track B Leaderboard 多层展示实验",
         "",
         f"生成时间：{facts['generated_at']}",
         "",
-        "本文档汇总当前真实 LLM 输出中可用于展示 Track B 的材料。它的定位是“多层复盘与 leaderboard 展示”，不是 Track C 因果增益报告。",
+        "本文档汇总当前真实 LLM 输出中可用于展示 Track B 的材料。它的定位是“多层复盘、逐步评分与 leaderboard 展示”，不是 Track C 因果增益报告。",
         "",
         "```mermaid",
         "flowchart LR",
         "    accTitle: Track B Evidence Flow",
-        "    accDescr: This diagram shows how a real LLM game becomes Track B review metrics, leaderboard entries, rubric dimensions, and report evidence.",
+        "    accDescr: This diagram shows how a real LLM game becomes multi-layer Track B review panels, including game, role, score, rubric, health, and report artifacts.",
         "    game[GameRun / WerewolfGame] --> metrics[MetricsCalculator]",
         "    metrics --> player[PlayerScore]",
         "    metrics --> group[group_results.csv]",
         "    player --> leaderboard[LeaderboardAggregator]",
         "    group --> rubric[architecture_evidence_leaderboard]",
+        "    game --> health[Decision Health]",
+        "    group --> role[Role / Seat Panel]",
+        "    group --> score[Score Dimension Panel]",
         "    leaderboard --> report[Track B Showcase]",
         "    rubric --> report",
-        "    group --> report",
+        "    health --> report",
+        "    role --> report",
+        "    score --> report",
         "```",
         "",
         "## 1. 证据定位",
@@ -387,6 +590,10 @@ def render_report(facts: dict[str, Any]) -> str:
                 ["整局真实决策数", aggregate["raw_decision_count"]],
                 ["fallback / invalid", f"{aggregate['fallback_count']} / {aggregate['invalid_count']}"],
                 ["总决策口径", "以 game_runs.jsonl 为准；模型分组行的 decision_count 不相加"],
+                [
+                    "Track C 字段边界",
+                    "knowledge_hit_rate 只作为知识注入痕迹展示，不作为 Track B 主评分结论，也不写成 Track C 因果增益。",
+                ],
             ],
         ),
         "",
@@ -416,12 +623,61 @@ def render_report(facts: dict[str, Any]) -> str:
         "",
         "## 3. Track B 多层分析框架",
         "",
+        "Track B 的展示重点是把一局真实 LLM 对局拆成多个可解释面板。排行榜只是其中一个面板；更重要的是能同时看到对局是否完成、每个模型或框架拿到什么角色、投票/发言/技能维度如何、rubric 如何映射，以及 fallback/invalid 是否污染评分。",
+        "",
         markdown_table(
-            ["层级", "说明", "来源"],
-            [[row["layer"], row["meaning"], row["source"]] for row in facts["track_b_layers"]],
+            ["展示面板", "分析问题", "核心指标", "来源", "结论边界"],
+            [
+                [
+                    row["display_name"],
+                    row["main_question"],
+                    ", ".join(row["metrics"]),
+                    row["source"],
+                    row["report_boundary"],
+                ]
+                for row in facts["track_b_layers"]
+            ],
         ),
         "",
-        "## 4. Framework Pilot：baseline 层展示",
+        "## 4. 对局层：真实 LLM 对局输入",
+        "",
+        markdown_table(
+            [
+                "Scope",
+                "Seed",
+                "GameId",
+                "Framework",
+                "Winner",
+                "Days",
+                "Events",
+                "ElapsedS",
+                "Decisions",
+                "Fallback",
+                "Invalid",
+                "ModelMix",
+            ],
+            [
+                [
+                    row["scope"],
+                    row["seed"],
+                    row["game_id"],
+                    row["framework"],
+                    row["winner"],
+                    row["days"],
+                    row["events"],
+                    fmt(row["elapsed_s"]),
+                    row["decision_count"],
+                    row["fallback_count"],
+                    row["invalid_count"],
+                    row["model_mix"],
+                ]
+                for row in panels.get("game_level_rows", [])
+            ],
+        ),
+        "",
+        "该层用于说明 Track B 的输入质量：当前 6 局真实 LLM 输出均有完整 game run 记录，整局真实决策数以 `game_runs.jsonl` 为准。",
+        "",
+        "## 5. 模型/版本层：Framework 与 Model 分组",
         "",
         framework["boundary"],
         "",
@@ -443,25 +699,7 @@ def render_report(facts: dict[str, Any]) -> str:
             ],
         ),
         "",
-        "framework pilot 整局健康：",
-        "",
-        markdown_table(
-            ["Games", "RawDecisions", "Fallback", "Invalid", "AvgDays", "AvgEvents", "AvgElapsedS", "WinnerCounts"],
-            [
-                [
-                    framework["game_summary"]["game_count"],
-                    framework["game_summary"]["raw_decision_count"],
-                    framework["game_summary"]["fallback_count"],
-                    framework["game_summary"]["invalid_count"],
-                    fmt(framework["game_summary"]["avg_days"]),
-                    fmt(framework["game_summary"]["avg_events"]),
-                    fmt(framework["game_summary"]["avg_elapsed_s"]),
-                    json.dumps(framework["game_summary"]["winner_counts"], ensure_ascii=False),
-                ]
-            ],
-        ),
-        "",
-        "## 5. Model Leaderboard Pilot：模型层展示",
+        "Model leaderboard pilot：",
         "",
         model["boundary"],
         "",
@@ -495,26 +733,83 @@ def render_report(facts: dict[str, Any]) -> str:
             ],
         ),
         "",
-        "模型 pilot 的角色席位分布：",
+        "该层可以展示 Track B 是否能把不同 framework 或 model 放到同一 scoring pipeline 下比较。当前数据只能说明分组和打分流程可用，不能写成正式模型优劣结论。",
+        "",
+        "## 6. 玩家/角色席位层：角色分布与混杂解释",
         "",
         markdown_table(
-            ["Model", "SeatSamples", "Roles", "Alignments", "MacroRoleWinRate"],
+            ["Model", "SeatSamples", "Roles", "Alignments", "MacroRoleWinRate", "MicroRoleWinRate", "PerRoleWinRates"],
             [
                 [
-                    key,
-                    payload.get("seat_samples", 0),
-                    json.dumps(payload.get("roles", {}), ensure_ascii=False),
-                    json.dumps(payload.get("alignments", {}), ensure_ascii=False),
-                    fmt(model.get("role_win_rates", {}).get(key, {}).get("macro_role_win_rate")),
+                    row["group_key"],
+                    row["seat_samples"],
+                    json.dumps(row["roles"], ensure_ascii=False),
+                    json.dumps(row["alignments"], ensure_ascii=False),
+                    fmt(row["macro_role_win_rate"]),
+                    fmt(row["micro_role_win_rate"]),
+                    row["per_role_win_rates"],
                 ]
-                for key, payload in model.get("role_distribution_audit", {}).items()
+                for row in panels.get("role_seat_rows", [])
             ],
         ),
         "",
-        "## 6. Rubric 维度展示",
+        "该层是 Track B 展示中很关键的一层：狼人杀的分数受角色、阵营和席位影响很大，因此模型或版本榜单必须配套展示角色分布。当前模型 pilot 中两个模型的角色并不均衡，所以只能展示“系统能分层分析”，不能写成正式模型排名。",
+        "",
+        "## 7. 评分维度层：胜负之外的行为拆解",
         "",
         markdown_table(
-            ["Rank", "Group", "RubricTotal", "SingleAgent", "MultiAgent", "Engineering", "AdvancedBC", "SeatSamples"],
+            [
+                "Scope",
+                "Group",
+                "Seed",
+                "SeatSamples",
+                "WinRate",
+                "Adjusted",
+                "Vote",
+                "Speech",
+                "Skill",
+                "KnowledgeHit",
+                "Fallback",
+                "Invalid",
+            ],
+            [
+                [
+                    row["scope"],
+                    row["group_key"],
+                    row["seed"],
+                    row["seat_samples"],
+                    fmt(row["win_rate"]),
+                    fmt(row["adjusted"]),
+                    fmt(row["vote"]),
+                    fmt(row["speech"]),
+                    fmt(row["skill"]),
+                    fmt(row["knowledge_hit_rate"]),
+                    row["fallback_count"],
+                    row["invalid_count"],
+                ]
+                for row in panels.get("score_dimension_rows", [])
+            ],
+        ),
+        "",
+        "该层展示 Track B 的核心价值：不只给出胜负，而是把 Agent 表现拆成投票、发言、技能和调整后总分。`KnowledgeHit` 在这里只作为策略检索痕迹，不能解释为 Track C 的胜率提升。",
+        "",
+        "## 8. Rubric 层：项目验收维度映射",
+        "",
+        markdown_table(
+            [
+                "Rank",
+                "Group",
+                "RubricTotal",
+                "SingleAgent",
+                "MultiAgent",
+                "Engineering",
+                "AdvancedBC",
+                "SeatSamples",
+                "CoreRoleCoverage",
+                "KnowledgeHit",
+                "Fallback",
+                "Invalid",
+            ],
             [
                 [
                     row.get("rank"),
@@ -525,12 +820,69 @@ def render_report(facts: dict[str, Any]) -> str:
                     fmt(row.get("rubric_dimensions", {}).get("engineering")),
                     fmt(row.get("rubric_dimensions", {}).get("advanced_bc")),
                     row.get("evidence_signals", {}).get("seat_samples"),
+                    fmt(row.get("evidence_signals", {}).get("core_role_coverage")),
+                    fmt(row.get("evidence_signals", {}).get("knowledge_hit_rate")),
+                    row.get("evidence_signals", {}).get("fallback_count"),
+                    row.get("evidence_signals", {}).get("invalid_count"),
                 ]
-                for row in model.get("architecture_entries", [])
+                for row in panels.get("rubric_rows", [])
             ],
         ),
         "",
-        "## 7. 可写结论与边界",
+        "该层把项目展示所需的验收语言映射到四类 rubric：single_agent、multi_agent、engineering 和 advanced_bc。它适合放在结项展示中说明“评分维度如何组织”，但不替代统计检验。",
+        "",
+        "## 9. 决策健康层与复盘产物层",
+        "",
+        markdown_table(
+            [
+                "Scope",
+                "Games",
+                "RawDecisions",
+                "Fallback",
+                "Invalid",
+                "FallbackRate",
+                "InvalidRate",
+                "AvgDays",
+                "AvgEvents",
+                "AvgElapsedS",
+                "WinnerCounts",
+            ],
+            [
+                [
+                    row["scope"],
+                    row["games"],
+                    row["raw_decisions"],
+                    row["fallback_count"],
+                    row["invalid_count"],
+                    fmt(row["fallback_rate"]),
+                    fmt(row["invalid_rate"]),
+                    row["avg_days"] if row["avg_days"] == "" else fmt(row["avg_days"]),
+                    row["avg_events"] if row["avg_events"] == "" else fmt(row["avg_events"]),
+                    row["avg_elapsed_s"] if row["avg_elapsed_s"] == "" else fmt(row["avg_elapsed_s"]),
+                    json.dumps(row["winner_counts"], ensure_ascii=False),
+                ]
+                for row in panels.get("decision_health_rows", [])
+            ],
+        ),
+        "",
+        "复盘产物：",
+        "",
+        markdown_table(
+            ["Artifact", "Purpose", "Exists", "Source"],
+            [
+                [
+                    row["artifact"],
+                    row["purpose"],
+                    row["exists"],
+                    row["source"],
+                ]
+                for row in panels.get("review_artifacts", [])
+            ],
+        ),
+        "",
+        "该层用于说明 Track B 展示的输入没有 fallback/invalid 污染，并且已经产出 leaderboard、rubric leaderboard 和报告材料。人工一致性、逐步高光/失误抽样仍是后续可补实验。",
+        "",
+        "## 10. 可写结论与边界",
         "",
         "可以写入报告：",
         "",
@@ -544,7 +896,7 @@ def render_report(facts: dict[str, Any]) -> str:
         "",
         markdown_table(["边界"], [[item] for item in facts["claim_boundaries"]]),
         "",
-        "## 8. 后续补充建议",
+        "## 11. 后续补充建议",
         "",
         markdown_table(
             ["补充项", "建议"],

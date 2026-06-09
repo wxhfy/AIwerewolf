@@ -589,6 +589,14 @@ def build_evidence(
         row for row in usage_role_internal_for_matrix if fnum(row.get("weighted_mean_delta_used_minus_unused")) <= 0
     ]
     track_b_showcase_aggregate = track_b_showcase.get("aggregate", {}) if isinstance(track_b_showcase, dict) else {}
+    track_b_showcase_layers = (
+        track_b_showcase.get("track_b_layers", []) if isinstance(track_b_showcase.get("track_b_layers"), list) else []
+    )
+    track_b_panel_names = [
+        str(row.get("display_name") or row.get("panel") or "")
+        for row in track_b_showcase_layers
+        if isinstance(row, dict) and (row.get("display_name") or row.get("panel"))
+    ]
 
     evidence_matrix = [
         {
@@ -608,19 +616,21 @@ def build_evidence(
             "boundary": "整局 external failure 仍需作为运行稳定性风险披露。",
         },
         {
-            "claim": "Track B leaderboard 可以进行多层评分展示",
+            "claim": "Track B 可以进行多层复盘与评分展示",
             "evidence_level": "real_llm_track_b_showcase",
             "status": "pilot_supported" if track_b_showcase_aggregate else "missing",
             "metric": (
                 f"games={track_b_showcase_aggregate.get('completed_real_llm_games')}; "
                 f"raw_decisions={track_b_showcase_aggregate.get('raw_decision_count')}; "
+                f"panels={len(track_b_panel_names)}; "
+                f"panel_names={','.join(track_b_panel_names)}; "
                 f"fallback={track_b_showcase_aggregate.get('fallback_count')}; "
                 f"invalid={track_b_showcase_aggregate.get('invalid_count')}"
             )
             if track_b_showcase_aggregate
             else "no Track B showcase facts found",
             "source": "docs/PROJECT_TRACK_B_LEADERBOARD_SHOWCASE.json",
-            "boundary": "展示 Track B 的对局层、模型/版本层、角色层、评分维度和 rubric 层；不是 Track C 因果增益或正式模型优劣结论。",
+            "boundary": "展示 Track B 的对局层、模型/版本层、玩家/角色席位层、评分维度层、rubric 层、决策健康层和复盘产物层；不是 Track C 因果增益或正式模型优劣结论。",
         },
         {
             "claim": "核心模块效果已经按多维指标量化",
@@ -937,6 +947,14 @@ def render_report(evidence: dict[str, Any]) -> str:
     track_b_showcase_aggregate = (
         track_b_showcase.get("aggregate", {}) if isinstance(track_b_showcase.get("aggregate"), dict) else {}
     )
+    track_b_showcase_layers = (
+        track_b_showcase.get("track_b_layers", []) if isinstance(track_b_showcase.get("track_b_layers"), list) else []
+    )
+    track_b_panel_names = [
+        str(row.get("display_name") or row.get("panel") or "")
+        for row in track_b_showcase_layers
+        if isinstance(row, dict) and (row.get("display_name") or row.get("panel"))
+    ]
     target_power = (
         evidence.get("target_seat_power_plan", {}) if isinstance(evidence.get("target_seat_power_plan"), dict) else {}
     )
@@ -998,10 +1016,12 @@ def render_report(evidence: dict[str, Any]) -> str:
                     "证明 leaderboard 能区分版本",
                 ],
                 [
-                    "Track B showcase games / decisions",
-                    f"{track_b_showcase_aggregate.get('completed_real_llm_games', 'n/a')} / {track_b_showcase_aggregate.get('raw_decision_count', 'n/a')}",
+                    "Track B showcase games / decisions / panels",
+                    f"{track_b_showcase_aggregate.get('completed_real_llm_games', 'n/a')} / "
+                    f"{track_b_showcase_aggregate.get('raw_decision_count', 'n/a')} / "
+                    f"{len(track_b_panel_names) if track_b_panel_names else 'n/a'}",
                     "docs/PROJECT_TRACK_B_LEADERBOARD_SHOWCASE.json",
-                    f"pilot 展示；fallback={track_b_showcase_aggregate.get('fallback_count', 'n/a')}，invalid={track_b_showcase_aggregate.get('invalid_count', 'n/a')}",
+                    f"pilot 多层展示；panels={len(track_b_panel_names)}，fallback={track_b_showcase_aggregate.get('fallback_count', 'n/a')}，invalid={track_b_showcase_aggregate.get('invalid_count', 'n/a')}",
                 ],
                 [
                     "module effects passed",
@@ -1569,8 +1589,8 @@ def render_report(evidence: dict[str, Any]) -> str:
             [
                 ["系统方法形成 Play -> Evaluate -> Evolve 闭环，且可审计", "正式 v4flash、full audit、DB feedback"],
                 [
-                    "Track B 可以进行多层 leaderboard 展示",
-                    "PROJECT_TRACK_B_LEADERBOARD_SHOWCASE：game/model-role/score/rubric/decision-health",
+                    "Track B 可以进行多层复盘与评分展示",
+                    "PROJECT_TRACK_B_LEADERBOARD_SHOWCASE：game/model-role/score/rubric/decision-health/review-artifacts",
                 ],
                 ["Track C 默认检索策略相对 global_only 在离线 IR 指标上更有效", "P@3、Effective@3、nDCG@5、Coverage"],
                 ["单角色检索能稳定覆盖核心角色", "per_role_results 中默认策略 Coverage/Top5Fill=1"],

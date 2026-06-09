@@ -27,7 +27,7 @@
 | formal v4flash rows | 59 | formal_v4flash_framework_analysis/summary.json | 真实 LLM 正式数据 |
 | formal LLM decisions | 1059 | formal_v4flash_framework_analysis/leaderboard.csv | fallback=0，invalid=0 |
 | rubric spread | 11.5286 | formal_v4flash_framework_analysis/rubric_leaderboard.csv | 证明 leaderboard 能区分版本 |
-| Track B showcase games / decisions | 6 / 216 | docs/PROJECT_TRACK_B_LEADERBOARD_SHOWCASE.json | pilot 展示；fallback=0，invalid=0 |
+| Track B showcase games / decisions / panels | 6 / 216 / 7 | docs/PROJECT_TRACK_B_LEADERBOARD_SHOWCASE.json | pilot 多层展示；panels=7，fallback=0，invalid=0 |
 | module effects passed | 14/14 | module_effect_experiment/module_effects.csv | mean score=90.79 |
 | retrieval query/docs | 26 / 374 | outputs/retrieval_effectiveness_current/results.json | 当前离线检索实验 |
 | default retrieval P@3 / Coverage | 0.2564 / 1.0000 | outputs/retrieval_effectiveness_current/results.json | 弱标注离线指标 |
@@ -245,7 +245,7 @@
 | --- | --- | --- | --- | --- | --- |
 | 正式 v4flash 数据可用于区分框架版本 | formal_real_llm | supported | formal_rows=59; rubric_spread=11.5286 | docs/experiments/formal_v4flash_framework_analysis/summary.json | 证明可度量和可区分，不单独证明最终架构统计显著优于 baseline。 |
 | 正式决策链没有 fallback/invalid 污染 | formal_real_llm | supported | llm_decisions=1059; fallback=0; invalid=0 | docs/experiments/formal_v4flash_framework_analysis/leaderboard.csv | 整局 external failure 仍需作为运行稳定性风险披露。 |
-| Track B leaderboard 可以进行多层评分展示 | real_llm_track_b_showcase | pilot_supported | games=6; raw_decisions=216; fallback=0; invalid=0 | docs/PROJECT_TRACK_B_LEADERBOARD_SHOWCASE.json | 展示 Track B 的对局层、模型/版本层、角色层、评分维度和 rubric 层；不是 Track C 因果增益或正式模型优劣结论。 |
+| Track B 可以进行多层复盘与评分展示 | real_llm_track_b_showcase | pilot_supported | games=6; raw_decisions=216; panels=7; panel_names=对局层,模型/版本层,玩家/角色席位层,评分维度层,Rubric 层,决策健康层,复盘展示层; fallback=0; invalid=0 | docs/PROJECT_TRACK_B_LEADERBOARD_SHOWCASE.json | 展示 Track B 的对局层、模型/版本层、玩家/角色席位层、评分维度层、rubric 层、决策健康层和复盘产物层；不是 Track C 因果增益或正式模型优劣结论。 |
 | 核心模块效果已经按多维指标量化 | consolidated_module_audit | supported | passed_modules=14/14; mean_score=90.79 | docs/experiments/module_effect_experiment/module_effects.csv | 模块分数是综合指标，不等同最终胜率提升。 |
 | Track C 默认检索策略优于纯 global-only 检索 | offline_retrieval_ablation | supported | default_score=0.6991; global_score=-0.1450; default_p3=0.2564; default_coverage=1.0000 | outputs/retrieval_effectiveness_current/results.json | 弱标注离线检索，证明检索设计合理性；不是在线胜率因果证明。 |
 | 单角色默认检索稳定覆盖全部核心角色 | offline_retrieval_per_role | supported | roles=6; all_coverage_1=True; role_bucket_share=0.9923 | outputs/retrieval_effectiveness_current/per_role_results.csv | 每角色 query 数仍偏少；不能声明某个角色的最优 policy 已最终确定。 |
@@ -267,7 +267,7 @@
 | 结论 | 依据 |
 | --- | --- |
 | 系统方法形成 Play -> Evaluate -> Evolve 闭环，且可审计 | 正式 v4flash、full audit、DB feedback |
-| Track B 可以进行多层 leaderboard 展示 | PROJECT_TRACK_B_LEADERBOARD_SHOWCASE：game/model-role/score/rubric/decision-health |
+| Track B 可以进行多层复盘与评分展示 | PROJECT_TRACK_B_LEADERBOARD_SHOWCASE：game/model-role/score/rubric/decision-health/review-artifacts |
 | Track C 默认检索策略相对 global_only 在离线 IR 指标上更有效 | P@3、Effective@3、nDCG@5、Coverage |
 | 单角色检索能稳定覆盖核心角色 | per_role_results 中默认策略 Coverage/Top5Fill=1 |
 | 策略使用决策与更高 Track B 逐步评分相关 | decision_id 联表：per_step_scores + agent_decisions + knowledge_usage_feedback |

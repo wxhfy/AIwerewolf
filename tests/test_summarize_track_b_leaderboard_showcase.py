@@ -216,6 +216,10 @@ def test_build_facts_uses_game_runs_for_total_decisions(tmp_path: Path) -> None:
     assert facts["provider_preflight"]["ok_models"] == ["anthropic:model-a"]
     assert facts["provider_preflight"]["failed_models"] == ["anthropic:model-b"]
     assert "不是 Track C 因果增益" in facts["claim_scope"]
+    assert len(facts["track_b_layers"]) >= 7
+    assert facts["track_b_showcase_panels"]["game_level_rows"][0]["decision_count"] == 10
+    assert facts["track_b_showcase_panels"]["role_seat_rows"][0]["group_key"] == "model:anthropic:model-a"
+    assert facts["track_b_showcase_panels"]["decision_health_rows"][-1]["scope"] == "aggregate"
     assert any("group_results" in boundary for boundary in facts["claim_boundaries"])
 
 
@@ -237,6 +241,10 @@ def test_render_report_states_track_b_boundary(tmp_path: Path) -> None:
 
     assert "Track B Leaderboard 多层展示实验" in report
     assert "不是 Track C 因果增益报告" in report
+    assert "对局层：真实 LLM 对局输入" in report
+    assert "玩家/角色席位层" in report
+    assert "评分维度层" in report
+    assert "决策健康层与复盘产物层" in report
     assert "不能写成正式模型优劣结论" in report
 
 
