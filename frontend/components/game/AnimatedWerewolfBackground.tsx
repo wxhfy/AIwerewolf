@@ -124,20 +124,8 @@ export function AnimatedWerewolfBackground() {
 
   return (
     <div ref={scopeRef} className={styles.werewolfBackground} aria-hidden="true">
-      <img
-        className={`${styles.layer} ${styles.baseMountains}`}
-        data-bg-layer="base"
-        src="/images/werewolf-bg/base-mountains.webp"
-        alt=""
-        draggable={false}
-      />
-      <img
-        className={`${styles.layer} ${styles.moon}`}
-        data-bg-layer="moon"
-        src="/images/werewolf-bg/moon.webp"
-        alt=""
-        draggable={false}
-      />
+      <div className={`${styles.layer} ${styles.baseMountains}`} data-bg-layer="base" />
+      <div className={`${styles.layer} ${styles.moon}`} data-bg-layer="moon" />
       <div className={styles.stars}>
         {starPositions.map((position, index) => (
           <span
@@ -153,34 +141,10 @@ export function AnimatedWerewolfBackground() {
           />
         ))}
       </div>
-      <img
-        className={`${styles.layer} ${styles.fogBack}`}
-        data-bg-layer="fogBack"
-        src="/images/werewolf-bg/fog.webp"
-        alt=""
-        draggable={false}
-      />
-      <img
-        className={`${styles.layer} ${styles.wolf}`}
-        data-bg-layer="wolf"
-        src="/images/werewolf-bg/wolf.webp"
-        alt=""
-        draggable={false}
-      />
-      <img
-        className={`${styles.layer} ${styles.treesFront}`}
-        data-bg-layer="treesFront"
-        src="/images/werewolf-bg/trees-front.webp"
-        alt=""
-        draggable={false}
-      />
-      <img
-        className={`${styles.layer} ${styles.fogFront}`}
-        data-bg-layer="fogFront"
-        src="/images/werewolf-bg/fog.webp"
-        alt=""
-        draggable={false}
-      />
+      <div className={`${styles.layer} ${styles.fogBack}`} data-bg-layer="fogBack" />
+      <div className={`${styles.layer} ${styles.wolf}`} data-bg-layer="wolf" />
+      <div className={`${styles.layer} ${styles.treesFront}`} data-bg-layer="treesFront" />
+      <div className={`${styles.layer} ${styles.fogFront}`} data-bg-layer="fogFront" />
       <div className={styles.centralClarity} />
       <div className={styles.vignette} />
     </div>

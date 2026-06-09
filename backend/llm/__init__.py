@@ -8,9 +8,11 @@ from backend.llm.deepseek import DeepSeekClient
 from backend.llm.deepseek import KeyFallbackClient
 from backend.llm.deepseek import create_key_fallback_client
 from backend.llm.env import load_env_file
+from backend.llm.fake import FakeLLMClient
 
 __all__ = [
     "DeepSeekClient",
+    "FakeLLMClient",
     "KeyFallbackClient",
     "create_client",
     "create_key_fallback_client",
@@ -115,8 +117,6 @@ def create_client(provider: str | None = None, **kwargs) -> Any:
                 "Use real API credentials (DOUBAO_API_KEY / DEEPSEEK_API_KEY) for games. "
                 "For tests, set _TEST_ALLOW_FAKE_LLM=true."
             )
-        from tests.fake_llm import FakeLLMClient  # pragma: no cover — test-only path
-
         model = kwargs.pop("model", None) or "fake-llm"
         return FakeLLMClient(model=str(model))
     if provider == "doubao":

@@ -12,29 +12,40 @@
 
 .layer {
   position: absolute;
-  inset: -2vh -2vw;
-  width: 104vw;
-  height: 104vh;
-  max-width: none;
-  object-fit: cover;
-  object-position: center;
   pointer-events: none;
   user-select: none;
   will-change: transform, opacity;
 }
 
 .baseMountains {
+  inset: 18vh -8vw -8vh;
   z-index: 1;
   opacity: 0.94;
-  filter: saturate(0.94) contrast(0.96);
+  background:
+    linear-gradient(145deg, transparent 0 39%, rgba(87, 68, 48, 0.28) 40% 58%, transparent 59%),
+    linear-gradient(32deg, transparent 0 42%, rgba(44, 35, 28, 0.18) 43% 60%, transparent 61%),
+    linear-gradient(158deg, transparent 0 34%, rgba(93, 78, 58, 0.2) 35% 54%, transparent 55%),
+    linear-gradient(180deg, rgba(255, 250, 240, 0) 0%, rgba(95, 74, 50, 0.13) 62%, rgba(53, 39, 25, 0.18) 100%);
+  clip-path: polygon(0 67%, 10% 58%, 18% 63%, 30% 37%, 42% 62%, 55% 42%, 67% 64%, 79% 46%, 91% 62%, 100% 54%, 100% 100%, 0 100%);
+  filter: saturate(0.94) contrast(0.96) blur(0.2px);
   transform-origin: 50% 52%;
 }
 
 .moon {
+  top: clamp(48px, 7vh, 88px);
+  left: clamp(58%, 66vw, 72%);
+  width: clamp(110px, 15vw, 210px);
+  aspect-ratio: 1;
+  border-radius: 50%;
   z-index: 2;
   opacity: 0.78;
+  background:
+    radial-gradient(circle at 34% 30%, rgba(255, 252, 229, 0.98) 0 14%, rgba(246, 226, 174, 0.9) 38%, rgba(236, 202, 128, 0.58) 62%, rgba(236, 202, 128, 0) 72%);
+  box-shadow:
+    0 0 36px rgba(244, 214, 150, 0.38),
+    0 0 96px rgba(244, 214, 150, 0.2);
   mix-blend-mode: screen;
-  filter: saturate(0.9);
+  filter: saturate(0.9) blur(0.1px);
   transform-origin: 50% 16%;
 }
 
@@ -59,32 +70,77 @@
 }
 
 .fogBack {
+  inset: 36vh -24vw auto;
+  height: 34vh;
   z-index: 4;
   opacity: 0.3;
+  background:
+    radial-gradient(ellipse at 14% 54%, rgba(255, 255, 255, 0.24) 0 28%, rgba(255, 255, 255, 0) 62%),
+    radial-gradient(ellipse at 46% 47%, rgba(255, 255, 255, 0.2) 0 32%, rgba(255, 255, 255, 0) 67%),
+    radial-gradient(ellipse at 78% 55%, rgba(255, 255, 255, 0.19) 0 30%, rgba(255, 255, 255, 0) 66%);
   transform-origin: 50% 80%;
-  filter: blur(0.5px);
+  filter: blur(12px);
 }
 
 .wolf {
+  right: clamp(18px, 9vw, 150px);
+  bottom: clamp(110px, 15vh, 170px);
+  width: clamp(130px, 18vw, 280px);
+  height: clamp(92px, 13vw, 190px);
   z-index: 5;
   opacity: 0.78;
-  object-position: center bottom;
   transform-origin: 78% 82%;
-  filter: saturate(0.88) contrast(0.96);
+  filter: saturate(0.88) contrast(0.96) drop-shadow(0 18px 18px rgba(31, 21, 13, 0.18));
+}
+
+.wolf::before,
+.wolf::after {
+  position: absolute;
+  content: "";
+  background: rgba(38, 28, 20, 0.48);
+}
+
+.wolf::before {
+  left: 9%;
+  right: 16%;
+  bottom: 18%;
+  height: 42%;
+  border-radius: 52% 48% 38% 46%;
+}
+
+.wolf::after {
+  right: 10%;
+  bottom: 40%;
+  width: 35%;
+  height: 42%;
+  clip-path: polygon(3% 76%, 30% 24%, 46% 2%, 56% 26%, 88% 10%, 78% 47%, 98% 64%, 72% 78%, 40% 92%);
 }
 
 .treesFront {
+  inset: auto -4vw -6vh;
+  height: 35vh;
   z-index: 6;
   opacity: 0.68;
-  object-position: center bottom;
+  background:
+    linear-gradient(180deg, rgba(53, 36, 21, 0) 0%, rgba(57, 39, 24, 0.18) 55%, rgba(35, 25, 17, 0.34) 100%),
+    repeating-linear-gradient(92deg, rgba(39, 29, 20, 0) 0 3.8vw, rgba(42, 29, 18, 0.18) 3.8vw 4.1vw, rgba(42, 29, 18, 0) 4.1vw 7.8vw),
+    repeating-linear-gradient(88deg, rgba(34, 24, 17, 0) 0 5.2vw, rgba(34, 24, 17, 0.16) 5.2vw 5.6vw, rgba(34, 24, 17, 0) 5.6vw 10.4vw);
+  clip-path: polygon(0 34%, 4% 20%, 7% 42%, 11% 18%, 15% 46%, 20% 24%, 24% 44%, 30% 16%, 35% 48%, 41% 25%, 46% 51%, 53% 18%, 58% 49%, 64% 26%, 69% 47%, 75% 15%, 80% 50%, 86% 24%, 91% 45%, 96% 19%, 100% 42%, 100% 100%, 0 100%);
   transform-origin: 50% 100%;
-  filter: saturate(0.92) contrast(0.96);
+  filter: saturate(0.92) contrast(0.96) blur(0.15px);
 }
 
 .fogFront {
+  inset: 52vh -22vw auto;
+  height: 38vh;
   z-index: 7;
   opacity: 0.42;
+  background:
+    radial-gradient(ellipse at 18% 48%, rgba(255, 255, 255, 0.28) 0 27%, rgba(255, 255, 255, 0) 63%),
+    radial-gradient(ellipse at 52% 58%, rgba(255, 255, 255, 0.2) 0 36%, rgba(255, 255, 255, 0) 74%),
+    radial-gradient(ellipse at 86% 48%, rgba(255, 255, 255, 0.24) 0 26%, rgba(255, 255, 255, 0) 65%);
   transform-origin: 50% 85%;
+  filter: blur(16px);
 }
 
 .centralClarity {
@@ -107,19 +163,16 @@
 }
 
 @media (max-width: 768px) {
-  .layer {
-    inset: -1vh -24vw;
-    width: 148vw;
-    height: 103vh;
-  }
-
   .moon {
-    object-position: 50% 5%;
+    left: 58vw;
+    width: clamp(92px, 25vw, 150px);
     opacity: 0.65;
   }
 
   .wolf {
-    object-position: 66% bottom;
+    right: -16px;
+    bottom: 13vh;
+    width: clamp(120px, 35vw, 190px);
     opacity: 0.5;
   }
 

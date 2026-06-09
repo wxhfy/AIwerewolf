@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Language } from "@/types";
 import { cn } from "@/lib/utils";
 
@@ -8,6 +8,8 @@ interface BackgroundMusicProps {
   language: Language;
   placement?: "top-right" | "bottom-right";
 }
+
+const BACKGROUND_MUSIC_SRC = process.env.NEXT_PUBLIC_WEREWOLF_BGM_SRC?.trim() ?? "";
 
 function MusicOnIcon() {
   return (
@@ -68,6 +70,10 @@ export function BackgroundMusic({ language, placement = "top-right" }: Backgroun
     }
   }, [enabled]);
 
+  if (!BACKGROUND_MUSIC_SRC) {
+    return null;
+  }
+
   const label = enabled
     ? started
       ? language === Language.ZH ? "背景音乐已开启" : "Background music on"
@@ -76,7 +82,7 @@ export function BackgroundMusic({ language, placement = "top-right" }: Backgroun
 
   return (
     <>
-      <audio ref={audioRef} src="/audio/werewolf-bgm.ogg" preload="auto" />
+      <audio ref={audioRef} src={BACKGROUND_MUSIC_SRC} preload="auto" />
       <button
         type="button"
         onClick={() => setEnabled((value) => !value)}
