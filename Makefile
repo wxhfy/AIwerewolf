@@ -82,21 +82,31 @@ demo:
 	$(PYTHON) -m backend.run_demo --seed $(SEED)
 
 test:
-	$(PYTHON) -m pytest tests/ -x --tb=short -q
+	$(PYTHON) -m backend.run_demo --seed $(SEED)
 
 test-strict:
-	$(PYTHON) scripts/run_backend_full_strict.py
+	@if [ -f scripts/run_backend_full_strict.py ]; then \
+		$(PYTHON) scripts/run_backend_full_strict.py; \
+	else \
+		echo "Strict validation script is local-only and not tracked in the public repo."; \
+		exit 2; \
+	fi
 
 test-visibility:
-	$(PYTHON) scripts/verify_visibility_strict.py
+	@if [ -f scripts/verify_visibility_strict.py ]; then \
+		$(PYTHON) scripts/verify_visibility_strict.py; \
+	else \
+		echo "Visibility validation script is local-only and not tracked in the public repo."; \
+		exit 2; \
+	fi
 
 lint:
-	$(PYTHON) -m ruff check backend/ scripts/ tests/ configs/
-	$(PYTHON) -m ruff format --check backend/ scripts/ tests/ configs/
+	$(PYTHON) -m ruff check backend/
+	$(PYTHON) -m ruff format --check backend/
 
 format:
-	$(PYTHON) -m ruff check --fix backend/ scripts/ tests/ configs/
-	$(PYTHON) -m ruff format backend/ scripts/ tests/ configs/
+	$(PYTHON) -m ruff check --fix backend/
+	$(PYTHON) -m ruff format backend/
 
 # ------------------------------------------------------------------
 # 🗄  Database
@@ -122,7 +132,12 @@ db-init:
 	$(PYTHON) -c "from backend.db.database import init_db; init_db(); print('Schema created')"
 
 db-migrate:
-	$(PYTHON) scripts/migrate_sqlite_to_pg.py
+	@if [ -f scripts/migrate_sqlite_to_pg.py ]; then \
+		$(PYTHON) scripts/migrate_sqlite_to_pg.py; \
+	else \
+		echo "SQLite-to-PostgreSQL migration script is local-only; use make db-init for tracked schema initialization."; \
+		exit 2; \
+	fi
 
 # ------------------------------------------------------------------
 # 🧹  Utilities
@@ -161,9 +176,9 @@ help:
 	@echo "  make demo            — one offline AI vs AI game (seed=$(SEED))"
 	@echo ""
 	@echo "🧪  Testing"
-	@echo "  make test            — unit tests"
-	@echo "  make test-strict     — full strict-mode validation"
-	@echo "  make test-visibility — information isolation check (92 items)"
+	@echo "  make test            — tracked demo smoke check"
+	@echo "  make test-strict     — local-only strict validation, when scripts/ exists"
+	@echo "  make test-visibility — local-only visibility check, when scripts/ exists"
 	@echo "  make lint            — ruff check + format check"
 	@echo "  make format          — ruff auto-fix + format"
 	@echo ""

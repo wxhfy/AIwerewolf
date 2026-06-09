@@ -31,7 +31,7 @@
 
 ## 系统架构
 
-系统按”前端体验 -> API 编排 -> 规则引擎 -> Agent 决策 -> 复盘评测 -> 策略进化 -> 数据持久化”组织。前端只负责展示和交互，游戏真相、行动校验、阶段推进和私有信息过滤都在后端完成；Agent 只通过 `PlayerView` 观察局面，并以结构化 `Decision` 表达意图。
+系统按“前端体验 -> API 编排 -> 规则引擎 -> Agent 决策 -> 复盘评测 -> 策略进化 -> 数据持久化”组织。前端只负责展示和交互，游戏真相、行动校验、阶段推进和私有信息过滤都在后端完成；Agent 只通过 `PlayerView` 观察局面，并以结构化 `Decision` 表达意图。
 
 设计原则：
 
@@ -84,9 +84,11 @@ Track C 的策略知识分两层触发：
 | 层级 | 触发方式 | 作用 |
 |---|---|---|
 | 赛后自动门禁 | 每局结束后由 `run_post_game_scoring()` 调用 `promote_after_store(source_game_id=game_id)` | 只处理本局新知识，按质量、聚类和使用反馈把候选晋级为 active，并做轻量归档 |
-| 批处理治理 | `promote.py --mode lifecycle --apply` | 对全库执行质量晋级、反馈晋级、active 池剪枝、candidate 池上限治理和低质归档 |
+| 批处理治理 | 本地治理脚本或数据库维护任务 | 对全库执行质量晋级、反馈晋级、active 池剪枝、candidate 池上限治理和低质归档 |
 
 生产 Agent 的策略检索只加载 `active` 策略。`candidate` 是候选知识池，不直接进入下一局 Prompt；批处理治理限制候选堆积，低质、过期或超量候选进入 `deprecated`。
+
+初始策略种子在 `configs/seed_strategies.json`（386 条 active 策略，覆盖 14 个角色），首次启动时加载即可获得基线策略能力。
 
 ## 快速开始
 
