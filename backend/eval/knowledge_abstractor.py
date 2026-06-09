@@ -44,6 +44,7 @@ FEEDBACK_PROMOTION_MIN_USAGE = int(os.getenv("TRACKC_FEEDBACK_PROMOTION_MIN_USAG
 FEEDBACK_PROMOTION_SUCCESS_RATE = float(os.getenv("TRACKC_FEEDBACK_PROMOTION_SUCCESS_RATE", "0.70"))
 FEEDBACK_DEPRECATION_MIN_USAGE = int(os.getenv("TRACKC_FEEDBACK_DEPRECATION_MIN_USAGE", "5"))
 FEEDBACK_DEPRECATION_FAILURE_RATE = float(os.getenv("TRACKC_FEEDBACK_DEPRECATION_FAILURE_RATE", "0.70"))
+AUTO_MAINTENANCE_BATCH_SIZE = int(os.getenv("TRACKC_AUTO_MAINTENANCE_BATCH_SIZE", "2000"))
 
 
 @dataclass
@@ -525,11 +526,36 @@ def _run_strategy_knowledge_lifecycle_sql(
     feedback_deprecation_min_usage: int,
     feedback_deprecation_failure_rate: float,
     dry_run: bool,
+    maintenance_batch_size: int | None,
+    source_game_id: str | None,
 ) -> dict[str, int]:
     from sqlalchemy import text
 
     now = datetime.now(timezone.utc)
     stale_cutoff = now - timedelta(days=stale_days)
+    batch_size = int(maintenance_batch_size or 0)
+    candidate_filter = ""
+    if source_game_id:
+        candidate_filter = "AND source_game_id = :source_game_id"
+    elif batch_size > 0:
+        db.execute(text("CREATE TEMPORARY TABLE IF NOT EXISTS trackc_lifecycle_scope (id TEXT PRIMARY KEY)"))
+        db.execute(text("DELETE FROM trackc_lifecycle_scope"))
+        db.execute(
+            text(
+                """
+                INSERT INTO trackc_lifecycle_scope (id)
+                SELECT id
+                FROM strategy_knowledge_docs
+                WHERE status = 'candidate'
+                ORDER BY coalesce(updated_at, created_at) DESC
+                LIMIT :maintenance_batch_size
+                """
+            ),
+            {"maintenance_batch_size": batch_size},
+        )
+        candidate_filter = """
+                  AND id IN (SELECT id FROM trackc_lifecycle_scope)
+        """
     params = {
         "now": now,
         "quality_threshold": quality_threshold,
@@ -544,15 +570,18 @@ def _run_strategy_knowledge_lifecycle_sql(
         "feedback_success_rate": feedback_success_rate,
         "feedback_deprecation_min_usage": feedback_deprecation_min_usage,
         "feedback_deprecation_failure_rate": feedback_deprecation_failure_rate,
+        "maintenance_batch_size": batch_size,
+        "source_game_id": source_game_id,
     }
 
     result["feedback_promoted"] = _statement_rowcount(
         db.execute(
             text(
-                """
+                f"""
                 UPDATE strategy_knowledge_docs
                 SET status = 'active', updated_at = :now
                 WHERE status = 'candidate'
+                  {candidate_filter}
                   AND lower(coalesce(doc_type, '')) NOT LIKE 'reflection%'
                   AND coalesce(usage_count, 0) >= :feedback_min_usage
                   AND (
@@ -569,10 +598,11 @@ def _run_strategy_knowledge_lifecycle_sql(
     result["feedback_deprecated"] = _statement_rowcount(
         db.execute(
             text(
-                """
+                f"""
                 UPDATE strategy_knowledge_docs
                 SET status = 'deprecated', updated_at = :now
                 WHERE status IN ('candidate', 'active')
+                  AND (status = 'active' OR (status = 'candidate' {candidate_filter}))
                   AND coalesce(usage_count, 0) >= :feedback_deprecation_min_usage
                   AND (
                     CAST(coalesce(failure_count, 0) AS FLOAT)
@@ -588,10 +618,11 @@ def _run_strategy_knowledge_lifecycle_sql(
     result["quality_promoted"] = _statement_rowcount(
         db.execute(
             text(
-                """
+                f"""
                 UPDATE strategy_knowledge_docs
                 SET status = 'active', updated_at = :now
                 WHERE status = 'candidate'
+                  {candidate_filter}
                   AND lower(coalesce(doc_type, '')) NOT LIKE 'reflection%'
                   AND coalesce(quality_score, 0.0) >= :quality_threshold
                 """
@@ -603,7 +634,7 @@ def _run_strategy_knowledge_lifecycle_sql(
     result["cluster_promoted"] = _statement_rowcount(
         db.execute(
             text(
-                """
+                f"""
                 UPDATE strategy_knowledge_docs
                 SET status = 'active', updated_at = :now
                 WHERE id IN (
@@ -619,6 +650,7 @@ def _run_strategy_knowledge_lifecycle_sql(
                             ) AS rn
                         FROM strategy_knowledge_docs
                         WHERE status = 'candidate'
+                          {candidate_filter}
                           AND lower(coalesce(doc_type, '')) NOT LIKE 'reflection%'
                           AND coalesce(quality_score, 0.0) >= :cluster_threshold
                     ) ranked
@@ -661,10 +693,11 @@ def _run_strategy_knowledge_lifecycle_sql(
     result["low_quality_deprecated"] = _statement_rowcount(
         db.execute(
             text(
-                """
+                f"""
                 UPDATE strategy_knowledge_docs
                 SET status = 'deprecated', updated_at = :now
                 WHERE status = 'candidate'
+                  {candidate_filter}
                   AND coalesce(quality_score, 0.0) < :deprecation_threshold
                 """
             ),
@@ -675,10 +708,11 @@ def _run_strategy_knowledge_lifecycle_sql(
     result["stale_deprecated"] = _statement_rowcount(
         db.execute(
             text(
-                """
+                f"""
                 UPDATE strategy_knowledge_docs
                 SET status = 'deprecated', updated_at = :now
                 WHERE status = 'candidate'
+                  {candidate_filter}
                   AND coalesce(usage_count, 0) = 0
                   AND coalesce(quality_score, 0.0) < :cluster_threshold
                   AND coalesce(updated_at, created_at) < :stale_cutoff
@@ -688,60 +722,61 @@ def _run_strategy_knowledge_lifecycle_sql(
         )
     )
 
-    result["candidate_pruned"] = _statement_rowcount(
-        db.execute(
-            text(
-                """
-                UPDATE strategy_knowledge_docs
-                SET status = 'deprecated', updated_at = :now
-                WHERE id IN (
-                    SELECT id
-                    FROM (
-                        SELECT
-                            id,
-                            ROW_NUMBER() OVER (
-                                PARTITION BY role, coalesce(doc_type, 'unknown')
-                                ORDER BY coalesce(quality_score, 0.0) DESC,
-                                         coalesce(updated_at, created_at) DESC,
-                                         coalesce(usage_count, 0) DESC
-                            ) AS rn
-                        FROM strategy_knowledge_docs
-                        WHERE status = 'candidate'
-                    ) ranked
-                    WHERE rn > :candidate_cap_per_role_type
-                )
-                """
-            ),
-            params,
+    if batch_size <= 0 and not source_game_id:
+        result["candidate_pruned"] = _statement_rowcount(
+            db.execute(
+                text(
+                    """
+                    UPDATE strategy_knowledge_docs
+                    SET status = 'deprecated', updated_at = :now
+                    WHERE id IN (
+                        SELECT id
+                        FROM (
+                            SELECT
+                                id,
+                                ROW_NUMBER() OVER (
+                                    PARTITION BY role, coalesce(doc_type, 'unknown')
+                                    ORDER BY coalesce(quality_score, 0.0) DESC,
+                                             coalesce(updated_at, created_at) DESC,
+                                             coalesce(usage_count, 0) DESC
+                                ) AS rn
+                            FROM strategy_knowledge_docs
+                            WHERE status = 'candidate'
+                        ) ranked
+                        WHERE rn > :candidate_cap_per_role_type
+                    )
+                    """
+                ),
+                params,
+            )
         )
-    )
 
-    result["candidate_pruned"] += _statement_rowcount(
-        db.execute(
-            text(
-                """
-                UPDATE strategy_knowledge_docs
-                SET status = 'deprecated', updated_at = :now
-                WHERE id IN (
-                    SELECT id
-                    FROM (
-                        SELECT
-                            id,
-                            ROW_NUMBER() OVER (
-                                ORDER BY coalesce(quality_score, 0.0) DESC,
-                                         coalesce(updated_at, created_at) DESC,
-                                         coalesce(usage_count, 0) DESC
-                            ) AS rn
-                        FROM strategy_knowledge_docs
-                        WHERE status = 'candidate'
-                    ) ranked
-                    WHERE rn > :candidate_total_cap
-                )
-                """
-            ),
-            params,
+        result["candidate_pruned"] += _statement_rowcount(
+            db.execute(
+                text(
+                    """
+                    UPDATE strategy_knowledge_docs
+                    SET status = 'deprecated', updated_at = :now
+                    WHERE id IN (
+                        SELECT id
+                        FROM (
+                            SELECT
+                                id,
+                                ROW_NUMBER() OVER (
+                                    ORDER BY coalesce(quality_score, 0.0) DESC,
+                                             coalesce(updated_at, created_at) DESC,
+                                             coalesce(usage_count, 0) DESC
+                                ) AS rn
+                            FROM strategy_knowledge_docs
+                            WHERE status = 'candidate'
+                        ) ranked
+                        WHERE rn > :candidate_total_cap
+                    )
+                    """
+                ),
+                params,
+            )
         )
-    )
 
     counts = db.execute(text("SELECT status, COUNT(*) FROM strategy_knowledge_docs GROUP BY status")).fetchall()
     for status, count in counts:
@@ -770,6 +805,8 @@ def run_strategy_knowledge_lifecycle(
     feedback_success_rate: float = FEEDBACK_PROMOTION_SUCCESS_RATE,
     feedback_deprecation_min_usage: int = FEEDBACK_DEPRECATION_MIN_USAGE,
     feedback_deprecation_failure_rate: float = FEEDBACK_DEPRECATION_FAILURE_RATE,
+    maintenance_batch_size: int | None = None,
+    source_game_id: str | None = None,
     dry_run: bool = False,
 ) -> dict[str, int]:
     """Run the shared Track C knowledge lifecycle.
@@ -820,6 +857,8 @@ def run_strategy_knowledge_lifecycle(
                 feedback_success_rate=feedback_success_rate,
                 feedback_deprecation_min_usage=feedback_deprecation_min_usage,
                 feedback_deprecation_failure_rate=feedback_deprecation_failure_rate,
+                maintenance_batch_size=maintenance_batch_size,
+                source_game_id=source_game_id,
                 dry_run=dry_run,
             )
 
@@ -959,11 +998,14 @@ def run_strategy_knowledge_lifecycle(
         db.close()
 
 
-def promote_after_store() -> int:
+def promote_after_store(source_game_id: str | None = None) -> int:
     """Run automatic post-game candidate promotion and pool governance.
 
     Called from post_game.py after each game's lessons are stored.
     Returns total number of candidates promoted to active.
     """
-    result = run_strategy_knowledge_lifecycle()
+    result = run_strategy_knowledge_lifecycle(
+        maintenance_batch_size=AUTO_MAINTENANCE_BATCH_SIZE,
+        source_game_id=source_game_id,
+    )
     return result["feedback_promoted"] + result["quality_promoted"] + result["cluster_promoted"]

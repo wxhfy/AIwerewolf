@@ -34,6 +34,7 @@ sys.path.insert(0, str(ROOT))
 
 from backend.db.database import DEFAULT_DB_URL
 from backend.eval.knowledge_abstractor import ACTIVE_DOC_CAP_PER_ROLE_TYPE
+from backend.eval.knowledge_abstractor import AUTO_MAINTENANCE_BATCH_SIZE
 from backend.eval.knowledge_abstractor import AUTO_PROMOTION_CLUSTER_THRESHOLD
 from backend.eval.knowledge_abstractor import AUTO_PROMOTION_CLUSTER_TOP_N
 from backend.eval.knowledge_abstractor import AUTO_PROMOTION_QUALITY_THRESHOLD
@@ -230,6 +231,15 @@ def main():
     p.add_argument("--candidate-cap", type=int, default=CANDIDATE_DOC_CAP_PER_ROLE_TYPE)
     p.add_argument("--candidate-total-cap", type=int, default=CANDIDATE_DOC_TOTAL_CAP)
     p.add_argument("--stale-days", type=int, default=CANDIDATE_STALE_DAYS)
+    p.add_argument(
+        "--maintenance-batch-size",
+        type=int,
+        default=0,
+        help=(
+            "Limit candidate maintenance to newest N candidates. "
+            f"Use {AUTO_MAINTENANCE_BATCH_SIZE} to mirror post-game auto mode; default 0 means full batch."
+        ),
+    )
     p.add_argument("--allow-reflections", action="store_true")
     p.add_argument("--dry-run", action="store_true", default=True)
     p.add_argument("--apply", dest="dry_run", action="store_false")
@@ -249,6 +259,7 @@ def main():
             feedback_success_rate=args.feedback_score,
             feedback_deprecation_min_usage=args.feedback_deprecation_min_usage,
             feedback_deprecation_failure_rate=args.feedback_deprecation_failure_rate,
+            maintenance_batch_size=args.maintenance_batch_size or None,
             dry_run=args.dry_run,
         )
         print(f"Mode: {args.mode}")

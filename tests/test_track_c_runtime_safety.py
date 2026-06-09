@@ -5,6 +5,11 @@ from datetime import datetime
 from datetime import timedelta
 from datetime import timezone
 
+from sqlalchemy import create_engine
+from sqlalchemy import text
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
+
 from backend.db import database
 from backend.db import persist
 from backend.eval import knowledge_abstractor
@@ -100,6 +105,18 @@ def test_lifecycle_feedback_can_promote_candidate(monkeypatch) -> None:
     )
 
     assert result["feedback_promoted"] == 1
+    assert rows[0].status == "active"
+    assert session.committed
+
+
+def test_lifecycle_fake_session_accepts_maintenance_batch_size(monkeypatch) -> None:
+    rows = [_FakeKnowledgeRow("quality-good", "per_step_lesson", "Seer", 0.91)]
+    session = _FakeSession(rows)
+    monkeypatch.setattr(database, "SessionLocal", lambda: session)
+
+    result = knowledge_abstractor.run_strategy_knowledge_lifecycle(maintenance_batch_size=1)
+
+    assert result["quality_promoted"] == 1
     assert rows[0].status == "active"
     assert session.committed
 
@@ -241,6 +258,136 @@ def test_lifecycle_dry_run_rolls_back_status_changes(monkeypatch) -> None:
     assert rows[0].status == "candidate"
     assert session.rolled_back
     assert not session.committed
+
+
+def _create_minimal_strategy_knowledge_table(session) -> None:
+    session.execute(
+        text(
+            """
+            CREATE TABLE strategy_knowledge_docs (
+                id TEXT PRIMARY KEY,
+                doc_type TEXT,
+                role TEXT,
+                quality_score FLOAT,
+                status TEXT,
+                usage_count INTEGER,
+                success_count INTEGER,
+                failure_count INTEGER,
+                created_at TIMESTAMP,
+                updated_at TIMESTAMP
+            )
+            """
+        )
+    )
+
+
+def test_lifecycle_sql_path_updates_real_session(monkeypatch) -> None:
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    TestingSession = sessionmaker(bind=engine)
+    session = TestingSession()
+    now = datetime.now(timezone.utc)
+    _create_minimal_strategy_knowledge_table(session)
+    session.execute(
+        text(
+            """
+            INSERT INTO strategy_knowledge_docs (
+                id, doc_type, role, quality_score, status,
+                usage_count, success_count, failure_count, created_at, updated_at
+            )
+            VALUES
+                ('feedback-good', 'per_step_lesson', 'Seer', 0.76, 'candidate', 3, 3, 0, :now, :now),
+                ('feedback-low-quality', 'per_step_lesson', 'Seer', 0.74, 'candidate', 3, 3, 0, :now, :now),
+                ('harmful-active', 'per_step_lesson', 'Guard', 0.70, 'active', 5, 1, 4, :now, :now)
+            """
+        ),
+        {"now": now},
+    )
+    session.commit()
+    monkeypatch.setattr(database, "SessionLocal", lambda: TestingSession())
+
+    result = knowledge_abstractor.run_strategy_knowledge_lifecycle(
+        quality_threshold=0.95,
+        cluster_threshold=0.75,
+        feedback_min_usage=3,
+        feedback_success_rate=0.70,
+        feedback_deprecation_min_usage=5,
+        feedback_deprecation_failure_rate=0.70,
+        candidate_cap_per_role_type=20,
+        candidate_total_cap=20,
+        deprecation_threshold=0.60,
+        stale_days=365,
+    )
+
+    verify = TestingSession()
+    by_id = dict(verify.execute(text("SELECT id, status FROM strategy_knowledge_docs")).fetchall())
+    verify.close()
+    session.close()
+    engine.dispose()
+
+    assert result["feedback_promoted"] == 1
+    assert result["feedback_deprecated"] == 1
+    assert result["active_after"] == 1
+    assert result["candidate_after"] == 1
+    assert result["deprecated_after"] == 1
+    assert by_id == {
+        "feedback-good": "active",
+        "feedback-low-quality": "candidate",
+        "harmful-active": "deprecated",
+    }
+
+
+def test_lifecycle_sql_path_respects_candidate_maintenance_batch(monkeypatch) -> None:
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    TestingSession = sessionmaker(bind=engine)
+    session = TestingSession()
+    now = datetime.now(timezone.utc)
+    _create_minimal_strategy_knowledge_table(session)
+    session.execute(
+        text(
+            """
+            INSERT INTO strategy_knowledge_docs (
+                id, doc_type, role, quality_score, status,
+                usage_count, success_count, failure_count, created_at, updated_at
+            )
+            VALUES
+                ('recent-candidate', 'per_step_lesson', 'Seer', 0.95, 'candidate', 0, 0, 0, :now, :now),
+                ('older-candidate', 'per_step_lesson', 'Seer', 0.96, 'candidate', 0, 0, 0, :older, :older)
+            """
+        ),
+        {"now": now, "older": now - timedelta(days=1)},
+    )
+    session.commit()
+    monkeypatch.setattr(database, "SessionLocal", lambda: TestingSession())
+
+    result = knowledge_abstractor.run_strategy_knowledge_lifecycle(
+        quality_threshold=0.90,
+        cluster_threshold=0.75,
+        candidate_cap_per_role_type=20,
+        candidate_total_cap=20,
+        deprecation_threshold=0.60,
+        stale_days=365,
+        maintenance_batch_size=1,
+    )
+
+    verify = TestingSession()
+    by_id = dict(verify.execute(text("SELECT id, status FROM strategy_knowledge_docs")).fetchall())
+    verify.close()
+    session.close()
+    engine.dispose()
+
+    assert result["quality_promoted"] == 1
+    assert by_id == {
+        "recent-candidate": "active",
+        "older-candidate": "candidate",
+    }
 
 
 class _UpsertQuery:
