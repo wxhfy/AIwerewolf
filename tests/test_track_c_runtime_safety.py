@@ -83,6 +83,47 @@ def test_promote_after_store_does_not_auto_promote_reflections(monkeypatch) -> N
     assert session.committed
 
 
+def test_promote_after_store_triggers_source_and_global_lifecycle(monkeypatch) -> None:
+    calls = []
+
+    def fake_lifecycle(**kwargs):
+        calls.append(kwargs)
+        return {
+            "feedback_promoted": 1,
+            "quality_promoted": 2,
+            "cluster_promoted": 3,
+        }
+
+    monkeypatch.setattr(knowledge_abstractor, "run_strategy_knowledge_lifecycle", fake_lifecycle)
+
+    promoted = knowledge_abstractor.promote_after_store(source_game_id="game-1")
+
+    assert promoted == 12
+    assert calls == [
+        {"source_game_id": "game-1"},
+        {"maintenance_batch_size": knowledge_abstractor.AUTO_MAINTENANCE_BATCH_SIZE},
+    ]
+
+
+def test_promote_after_store_without_source_runs_single_global_lifecycle(monkeypatch) -> None:
+    calls = []
+
+    def fake_lifecycle(**kwargs):
+        calls.append(kwargs)
+        return {
+            "feedback_promoted": 1,
+            "quality_promoted": 0,
+            "cluster_promoted": 0,
+        }
+
+    monkeypatch.setattr(knowledge_abstractor, "run_strategy_knowledge_lifecycle", fake_lifecycle)
+
+    promoted = knowledge_abstractor.promote_after_store()
+
+    assert promoted == 1
+    assert calls == [{"maintenance_batch_size": knowledge_abstractor.AUTO_MAINTENANCE_BATCH_SIZE}]
+
+
 def test_lifecycle_feedback_can_promote_candidate(monkeypatch) -> None:
     rows = [
         _FakeKnowledgeRow(
