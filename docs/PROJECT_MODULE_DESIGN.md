@@ -152,10 +152,12 @@
 
 1. 从 PostgreSQL active 策略知识构建索引。
 2. 根据 Agent 的 `role / mbti / alignment / phase / action_type / keywords` 构造检索上下文。
-3. 先用关键词或正则在 situation、strategy、rationale 等字段中召回候选，候选不足时使用 BM25 兜底。
-4. 按 RetrievalPolicy 选择候选范围；当前默认 `same_role_all_mbti`，即优先使用当前角色的 active 策略池。`hybrid_role_mbti_global` 保留为可选分层兜底策略，可按 `same_role_same_mbti -> same_role_all_mbti -> global` 填充。
-5. 应用质量门禁、去重、Top-K 填充和 4-filter 安全管线。
-6. 返回策略摘要或正文，并将 bucket、policy、doc_id 等写入 trace。
+3. 先用关键词或正则在 situation、strategy、rationale 等字段中召回候选；精度优先路径下，只有真实词面命中的文档才进入候选。
+4. 按 RetrievalPolicy 选择候选范围；当前最高精度默认 `same_role_all_mbti`，即限定当前角色的 active 策略池。`hybrid_role_mbti_global` 保留为可选分层兜底策略，可按 `same_role_same_mbti -> same_role_all_mbti -> global` 填充。
+5. 为文档推导 `action_scope`，覆盖 talk、vote、attack、check、save、poison、guard、shoot、boom 等动作。
+6. 在 policy bucket 内按关键词匹配、阶段匹配、动作匹配、角色匹配和策略质量进行上下文重排。
+7. 应用质量门禁、去重、Top-K 填充和 4-filter 安全管线。
+8. 返回策略摘要或正文，并将 bucket、policy、doc_id、role、phase、action_scope、keyword_overlap_score、retrieval_context_score 等写入 trace。
 
 **关键设计**：
 
@@ -163,6 +165,9 @@
 |---|---|
 | BM25 + 倒排索引 | 本地轻量可解释检索 |
 | RetrievalPolicy | 支持角色、MBTI、全局和混合策略 |
+| action_scope | 将策略卡映射到发言、投票、刀人、查验、用药等动作场景 |
+| 上下文重排 | 在同角色策略池内按关键词、阶段、动作和质量排序 |
+| 词面命中门禁 | 避免无关键词命中的泛策略为凑 Top-K 进入 Prompt |
 | 4-filter | confidence / visibility / privacy / applicability |
 | candidate 屏蔽 | 对局内默认只用 active 知识 |
 
@@ -171,6 +176,13 @@
 | 指标 | 当前值 | 来源 |
 |---|---:|---|
 | 当前默认 policy | `same_role_all_mbti` | `backend/agents/factory.py`, `backend/agents/cognitive/tools.py` |
+| 离线检索 query set | 26 | `outputs/retrieval_precision_after_high_precision_default_final/results.json`（local-only ignored） |
+| active strategy docs | 374 | 同上 |
+| `same_role_all_mbti` P@3 | 1.0000 | 同上 |
+| `same_role_all_mbti` Effective@3 | 1.0000 | 同上 |
+| `same_role_all_mbti` nDCG@5 | 0.9885 | 同上 |
+| `same_role_all_mbti` Coverage | 1.0000 | 同上 |
+| `global_only` P@3 | 0.5385 | 同上 |
 | 轻量 LLM A/B 场景 | 6 | `outputs/single_agent_retrieval_llm_ablation/summary.md`（local-only ignored） |
 | 轻量 LLM A/B 模型 | `anthropic` / `deepseek-v4-flash[1m]` | 同上 |
 | `same_role_all_mbti` 综合分 | 8.13 | 同上 |
@@ -178,7 +190,7 @@
 | `same_role_all_mbti` 提升 | +0.80（+10.9%） | 同上 |
 | `same_role_all_mbti` 场景胜出 | 4 / 6 | 同上 |
 
-补充离线检索覆盖证据：26 条弱标注 query set 中，`hybrid_role_mbti_global` Coverage=1.0000、Effective@3=0.5000、P@3=0.2564、RoleBucketShare=0.9923、GlobalBucketShare=0.0077；`same_role_same_mbti` 单独使用时空检索 22/26。该结果说明 hybrid 分层适合作为覆盖兜底，但最新单 Agent v4flash A/B 中，直接同角色策略池对决策质量更有帮助，因此当前默认选择 `same_role_all_mbti`。
+补充说明：上述离线检索指标来自弱标注 query set，用于证明系统已实现并量化策略检索精度；它不等同于胜率，也不单独构成 Track C 因果增益证明。运行效果仍需结合单 Agent LLM A/B、策略使用反馈和 Track B 决策评分关联来解释。
 
 **设计收益**：策略不写死；无需 GPU；可解释；可安全回流。
 

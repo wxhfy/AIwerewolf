@@ -1,6 +1,8 @@
 import { chromium } from "@playwright/test";
 import { spawn } from "node:child_process";
 import net from "node:net";
+import os from "node:os";
+import path from "node:path";
 
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -76,6 +78,9 @@ const backend = spawn(
       ...process.env,
       _TEST_ALLOW_FAKE_LLM: "true",
       PYTHONPATH: process.cwd(),
+      AIWEREWOLF_SKIP_DOTENV: "true",
+      AIWEREWOLF_SQLITE_PATH: path.join(os.tmpdir(), `aiwerewolf-ui-smoke-${backendPort}.sqlite`),
+      DATABASE_URL: "",
       LLM_PROVIDER: "fake",
       AIWEREWOLF_DEFAULT_AGENT_TYPE: "llm",
       MODEL_POOL: "fake:fake-llm",

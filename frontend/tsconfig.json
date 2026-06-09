@@ -14,7 +14,7 @@
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "jsx": "preserve",
+    "jsx": "react-jsx",
     "incremental": true,
     "plugins": [
       {
@@ -34,12 +34,20 @@
     "**/*.tsx",
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts",
-    ".next-smoke/types/**/*.ts",
     ".next-build-verify/types/**/*.ts",
-    ".next-visual-check/types/**/*.ts",
+    ".next-build-verify/dev/types/**/*.ts",
+    ".next-smoke/types/**/*.ts",
+    ".next-smoke/dev/types/**/*.ts",
     ".next-probe/types/**/*.ts",
+    ".next-probe/dev/types/**/*.ts",
     ".next-human-probe/types/**/*.ts",
-    ".next-pause-probe/types/**/*.ts"
+    ".next-human-probe/dev/types/**/*.ts",
+    ".next-pause-probe/types/**/*.ts",
+    ".next-pause-probe/dev/types/**/*.ts",
+    ".next-real-ui-probe/types/**/*.ts",
+    ".next-real-ui-probe/dev/types/**/*.ts",
+    ".next-visual-check/types/**/*.ts",
+    ".next-visual-check/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

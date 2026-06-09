@@ -115,9 +115,14 @@ Layer 3  策略知识  → 教"怎么赢"（BM25 检索历史经验）
 ### 2.4 策略检索 (StrategyRetriever)
 
 - BM25 + 倒排索引，无需 GPU
-- RetrievalPolicy：支持角色/MBTI/全局/混合策略
+- RetrievalPolicy：支持角色/MBTI/全局/混合策略；当前最高精度默认策略为 `same_role_all_mbti`
+- 精度优先召回：只有关键词或正则真实命中的策略文档进入候选，避免无关高质量复盘策略挤入 Top-K
+- 上下文重排：结合关键词匹配、阶段匹配、动作类型、角色和策略质量进行排序
+- action_scope：将策略卡映射到 talk / vote / attack / check / save / poison / guard / shoot / boom 等动作场景
 - 4-filter 安全管线：confidence / visibility / privacy / applicability
 - candidate/active 知识隔离
+
+离线检索验收结果：在 26 条弱标注 query set、374 条 active strategy docs 上，`same_role_all_mbti` 达到 P@3=1.0000、Effective@3=1.0000、nDCG@5=0.9885、Coverage=1.0000；`global_only` 对照为 P@3=0.5385、Effective@3=0.5385。来源：`outputs/retrieval_precision_after_high_precision_default_final/results.json`（local-only ignored）。该验收只证明检索相关性，不直接等价为胜率或 Track C 因果增益。
 
 ### 2.5 LLM-only 与 strict 模式
 
@@ -209,7 +214,7 @@ Layer 3  策略知识  → 教"怎么赢"（BM25 检索历史经验）
 | 层 | 技术 |
 |------|------|
 | 后端 | Python 3.12+ · FastAPI · WebSocket |
-| 前端 | Next.js 14 · React 18 · Tailwind CSS |
+| 前端 | Next.js 16 · React 18 · Tailwind CSS |
 | 数据库 | PostgreSQL 16（Docker） |
 | LLM | Anthropic/OpenAI 兼容端点（DeepSeek / 豆包） |
 

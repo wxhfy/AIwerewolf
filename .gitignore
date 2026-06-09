@@ -274,6 +274,7 @@ docs/archive/
 docs/DEVELOPMENT_ISSUES.md
 docs/PROJECT_CLOSURE_FACTS.json
 docs/track_b_open_data_sources_manifest.yaml
+docs/track_b_vnext_eval_report.md
 TODO.md
 
 # Planning docs (transient)
@@ -292,6 +293,7 @@ plans/
 .next-real-ui-probe/
 .next-smoke/
 .next-human-probe/
+.next-build-verify/
 
 # Skills cache (tracked via skills/locks/ instead)
 skills/gsap-*

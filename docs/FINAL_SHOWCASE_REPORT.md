@@ -97,7 +97,10 @@ flowchart TB
 | 决策有效率 | 100%（10,253 / 10,253） |
 | published reviews | 4,971 |
 | strategy knowledge docs | 219,558（active 386 / candidate 1,695 / deprecated 217,477） |
+| 高精度检索评估 | `same_role_all_mbti` P@3=1.0000、Effective@3=1.0000、nDCG@5=0.9885（26 条弱标注 query，374 条 active docs） |
 | 单 Agent 检索 A/B | `same_role_all_mbti` 8.13 vs 无检索 7.33（火山 v4flash，6 个固定场景） |
+
+检索评估来源：`outputs/retrieval_precision_after_high_precision_default_final/results.json`（local-only ignored）。该结果说明 StrategyRetriever 已经实现按角色 active 策略池、关键词命中、动作场景和上下文质量重排的高精度检索；该指标是检索相关性证据，不等同于胜率或因果增益。
 
 ### 对局胜率
 

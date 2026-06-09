@@ -89,7 +89,7 @@ def main() -> int:
         assert root_payload["docs"] == "/docs"
 
         status, room_body = http_post(
-            f"http://127.0.0.1:{port}/api/rooms?name=SmokeRoom&seed=5&player_count=7&agent_type=llm"
+            f"http://127.0.0.1:{port}/api/rooms?name=SmokeRoom&seed=7&player_count=7&agent_type=llm"
         )
         assert status == 200
         room = json.loads(room_body)

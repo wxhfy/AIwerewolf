@@ -13,7 +13,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
   <img src="https://img.shields.io/badge/python-3.12+-blue" alt="Python">
   <img src="https://img.shields.io/badge/db-PostgreSQL%2016-336791?logo=postgresql" alt="PostgreSQL">
-  <img src="https://img.shields.io/badge/frontend-Next.js%2014-black?logo=next.js" alt="Next.js">
+  <img src="https://img.shields.io/badge/frontend-Next.js%2016-black?logo=next.js" alt="Next.js">
 </p>
 
 ## 项目定位
@@ -86,7 +86,11 @@ Track B 的目标是把“谁赢了”拆解成“每一步如何影响局势”
 
 Track C 的目标是将复盘经验沉淀为可检索策略，并回流到下一局 Agent。系统从 Track B 的高价值片段和改进点中抽取策略知识，先进入 candidate 池，再通过质量、聚类和使用反馈晋级为 active，最后由 `StrategyRetriever` 按角色、阶段和适用条件完成检索。
 
-当前默认检索策略为 `same_role_all_mbti`：在 6 个固定单 Agent 场景的火山 v4flash 轻量 A/B 中，综合质量 8.13，相比无检索 7.33 提升 +0.80；`hybrid_role_mbti_global` 保留为可选分层兜底策略。
+当前默认检索策略为 `same_role_all_mbti`，即先限定当前角色的 active 策略池，再按关键词、阶段、动作类型和质量分进行上下文重排。`hybrid_role_mbti_global` 保留为可选分层兜底策略，不作为当前最高精度默认口径。
+
+检索精度已经单独评估：在 26 条离线弱标注 query set、374 条 active strategy docs 上，优化后的 `same_role_all_mbti` 达到 P@3=1.0000、Effective@3=1.0000、nDCG@5=0.9885、Coverage=1.0000；对照 `global_only` 为 P@3=0.5385、Effective@3=0.5385。来源：`outputs/retrieval_precision_after_high_precision_default_final/results.json`（local-only ignored）。该指标证明系统已实现并量化策略检索精度，但不等同于胜率或 Track C 因果增益。
+
+运行时 Track C 仍有决策质量侧证据：6 个固定单 Agent 场景的火山 v4flash 轻量 A/B 中，`same_role_all_mbti` 综合质量 8.13，相比无检索 7.33 提升 +0.80。来源：`outputs/single_agent_retrieval_llm_ablation/summary.md`（local-only ignored）。
 
 ## Track C 生命周期
 
@@ -152,7 +156,7 @@ npm run dev                           # 前端 http://localhost:3001
 | Agent | `CognitiveAgent` / AgentLoop / Memory / SocialModel / StrategyRetriever |
 | LLM 接入 | `backend.llm.create_client()` |
 | 数据库 | SQLAlchemy；PostgreSQL 优先，支持 SQLite 本地模式 |
-| 前端 | Next.js 14 / React 18 / TypeScript / Tailwind CSS |
+| 前端 | Next.js 16 / React 18 / TypeScript / Tailwind CSS |
 
 ## 项目结构
 

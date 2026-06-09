@@ -1,6 +1,6 @@
 ---
 name: frontend-conventions
-description: Next.js 14 App Router + React 18 + TypeScript 5 + Tailwind 3 前端开发规范
+description: Next.js 16 App Router + React 18 + TypeScript 5 + Tailwind 3 前端开发规范
 audience: claude, codex, human
 version: 2.2.0
 updated: 2026-06-08
@@ -34,14 +34,14 @@ updated: 2026-06-08
 
 | 工具 | 版本 | 用途 |
 |------|------|------|
-| Next.js | 14.2.x | App Router（不要切回 Pages Router） |
-| React | 18.2.x | function component 风格 |
+| Next.js | 16.2.x | App Router（不要切回 Pages Router） |
+| React | 18.x | function component 风格 |
 | TypeScript | 5.x | strict mode |
 | Tailwind CSS | 3.4.x | utility-first 样式 |
 | `clsx` + `tailwind-merge` | latest | 条件类名拼接（用 `cn()` helper） |
 | `motion` / `gsap` | package.json 当前版本 | 动效与阶段过场，新增动效优先复用现有封装 |
 | `recharts` | package.json 当前版本 | 复盘和进化图表 |
-| Node | ≥ 18（开发用 v24） | 运行环境 |
+| Node | ≥ 20.9（开发用 v24） | 运行环境 |
 
 `frontend/package.json` 是单一事实来源。**新增依赖必须**写清楚为什么不能复用现有依赖；优先用 zero-runtime 或已存在的 `motion` / `gsap` / `recharts`，避免再引入大库。
 

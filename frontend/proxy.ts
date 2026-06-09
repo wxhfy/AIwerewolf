@@ -2,16 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 
 /**
  * Proxy POST /api/rooms/:id/action to the backend.
- * Next.js rewrites() in dev mode can drop POST body — this middleware
- * runs earlier and forwards the raw body correctly.
+ * Next.js rewrites() in dev mode can drop POST body, so this proxy runs
+ * earlier and forwards the raw body correctly.
  */
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const actionMatch = pathname.match(/^\/api\/rooms\/(.+)\/action$/);
 
   if (actionMatch && request.method === "POST") {
     const roomId = actionMatch[1];
-    const backend = process.env.BACKEND_ORIGIN || "http://localhost:3009";
+    const backend = process.env.BACKEND_ORIGIN || "http://127.0.0.1:8000";
     const body = await request.text();
 
     try {

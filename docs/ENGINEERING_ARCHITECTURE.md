@@ -416,27 +416,29 @@ stateDiagram-v2
 ```mermaid
 flowchart TB
     accTitle: Strategy Retrieval Policy
-    accDescr: Retrieval policy for selecting role-safe and phase-relevant strategy cards with lifecycle, confidence, applicability and version ranking.
+    accDescr: Retrieval policy for selecting high-precision role-safe strategy cards with keyword recall, policy filtering, context reranking and usage feedback.
 
     request([Agent requests strategy])
-    role_filter["Role filter<br/>current role and camp"]
-    phase_filter["Phase filter<br/>night / speech / vote / skill"]
+    keyword_recall["Keyword / regex recall<br/>situation / strategy / rationale"]
+    policy_filter["Policy filter<br/>same_role_all_mbti default"]
+    action_scope["Action scope<br/>talk / vote / attack / skill"]
+    context_rank["Context rerank<br/>keyword + phase + action + quality"]
     visibility_filter["Visibility filter<br/>public-safe or role-private"]
     lifecycle_filter["Lifecycle filter<br/>active preferred"]
-    ranker["Ranking<br/>BM25 + confidence + applicability + version"]
     prompt_layer["Prompt layer 3<br/>compact strategy cards"]
     decision["Structured Decision<br/>talk / vote / skill / skip"]
     feedback["Usage feedback<br/>attribution and outcome"]
 
-    request --> role_filter
-    role_filter --> phase_filter
-    phase_filter --> visibility_filter
+    request --> keyword_recall
+    keyword_recall --> policy_filter
+    policy_filter --> action_scope
+    action_scope --> context_rank
+    context_rank --> visibility_filter
     visibility_filter --> lifecycle_filter
-    lifecycle_filter --> ranker
-    ranker --> prompt_layer
+    lifecycle_filter --> prompt_layer
     prompt_layer --> decision
     decision --> feedback
-    feedback --> ranker
+    feedback --> context_rank
 
     classDef start fill:#ede9fe,stroke:#7c3aed,stroke-width:2px,color:#3b0764
     classDef process fill:#dbeafe,stroke:#2563eb,stroke-width:2px,color:#1e3a5f
@@ -444,12 +446,23 @@ flowchart TB
     classDef feedback_style fill:#ffedd5,stroke:#ea580c,stroke-width:2px,color:#7c2d12
 
     class request start
-    class role_filter,phase_filter,visibility_filter,lifecycle_filter,ranker,prompt_layer process
+    class keyword_recall,policy_filter,action_scope,context_rank,visibility_filter,lifecycle_filter,prompt_layer process
     class decision output
     class feedback feedback_style
 ```
 
-这个策略检索链路对应“越往后的策略版本应更精炼”的产品叙事：候选策略先进入生命周期管理，稳定后成为 active；检索阶段再结合角色、阶段、可见性、置信度和版本信息，选择更适合当前局面的策略卡。
+这个策略检索链路对应“越往后的策略版本应更精炼”的产品叙事：候选策略先进入生命周期管理，稳定后成为 active；检索阶段再结合角色、阶段、动作类型、可见性、置信度和版本信息，选择更适合当前局面的策略卡。
+
+当前最高精度运行口径为 `same_role_all_mbti`。它先把候选限制在当前角色的 active 策略池，再用关键词匹配、阶段匹配、动作匹配、角色匹配和策略质量进行桶内重排；只有真实关键词或正则命中的文档才进入候选，避免高质量但泛化的复盘策略挤入 Top-3。`hybrid_role_mbti_global` 和 `hybrid_role_alignment_phase` 保留为消融实验或兜底策略。
+
+离线检索评估结果如下，来源：`outputs/retrieval_precision_after_high_precision_default_final/results.json`（local-only ignored）。评估集为 26 条弱标注 query、374 条 active strategy docs；该指标衡量检索相关性，不等同于胜率或因果增益。
+
+| 策略 | P@3 | Effective@3 | nDCG@5 | Coverage |
+|---|---:|---:|---:|---:|
+| `same_role_all_mbti` | 1.0000 | 1.0000 | 0.9885 | 1.0000 |
+| `hybrid_role_alignment_phase` | 0.9744 | 1.0000 | 0.9930 | 1.0000 |
+| `hybrid_role_mbti_global` | 0.9615 | 0.9615 | 0.9569 | 0.9615 |
+| `global_only` | 0.5385 | 0.5385 | 0.5385 | 0.5385 |
 
 ## 8. 模块索引
 

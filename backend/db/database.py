@@ -53,7 +53,11 @@ def _normalize_psycopg2_url(url: str) -> str:
 DEFAULT_DB_URL = _normalize_psycopg2_url(
     DATABASE_URL
     or os.getenv("AIWEREWOLF_DB_URL", "")
-    or "postgresql://werewolf:werewolf_dev_password@127.0.0.1:5433/werewolf"
+    or (
+        ""
+        if os.getenv("AIWEREWOLF_SKIP_DOTENV", "").lower() in {"1", "true", "yes", "on"}
+        else "postgresql://werewolf:werewolf_dev_password@127.0.0.1:5433/werewolf"
+    )
 )
 
 _db_initialized = False

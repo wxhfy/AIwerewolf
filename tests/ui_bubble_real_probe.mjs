@@ -2,6 +2,7 @@ import { chromium } from "@playwright/test";
 import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import net from "node:net";
+import os from "node:os";
 import path from "node:path";
 
 const root = process.cwd();
@@ -158,6 +159,9 @@ const backend = spawn(
     env: {
       ...process.env,
       PYTHONPATH: root,
+      AIWEREWOLF_SKIP_DOTENV: "true",
+      AIWEREWOLF_SQLITE_PATH: path.join(os.tmpdir(), `aiwerewolf-ui-bubble-${backendPort}.sqlite`),
+      DATABASE_URL: "",
       _TEST_ALLOW_FAKE_LLM: "true",
       LLM_PROVIDER: "fake",
       AIWEREWOLF_DEFAULT_AGENT_TYPE: "llm",
