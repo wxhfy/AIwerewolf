@@ -273,6 +273,7 @@ def _create_minimal_strategy_knowledge_table(session) -> None:
                 usage_count INTEGER,
                 success_count INTEGER,
                 failure_count INTEGER,
+                source_game_id TEXT,
                 created_at TIMESTAMP,
                 updated_at TIMESTAMP
             )
@@ -387,6 +388,56 @@ def test_lifecycle_sql_path_respects_candidate_maintenance_batch(monkeypatch) ->
     assert by_id == {
         "recent-candidate": "active",
         "older-candidate": "candidate",
+    }
+
+
+def test_lifecycle_sql_path_can_scope_to_source_game(monkeypatch) -> None:
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    TestingSession = sessionmaker(bind=engine)
+    session = TestingSession()
+    now = datetime.now(timezone.utc)
+    _create_minimal_strategy_knowledge_table(session)
+    session.execute(
+        text(
+            """
+            INSERT INTO strategy_knowledge_docs (
+                id, doc_type, role, quality_score, status,
+                usage_count, success_count, failure_count, source_game_id, created_at, updated_at
+            )
+            VALUES
+                ('game-scope-candidate', 'per_step_lesson', 'Seer', 0.95, 'candidate', 0, 0, 0, 'game-1', :now, :now),
+                ('other-game-candidate', 'per_step_lesson', 'Seer', 0.96, 'candidate', 0, 0, 0, 'game-2', :now, :now)
+            """
+        ),
+        {"now": now},
+    )
+    session.commit()
+    monkeypatch.setattr(database, "SessionLocal", lambda: TestingSession())
+
+    result = knowledge_abstractor.run_strategy_knowledge_lifecycle(
+        quality_threshold=0.90,
+        cluster_threshold=0.75,
+        candidate_cap_per_role_type=20,
+        candidate_total_cap=20,
+        deprecation_threshold=0.60,
+        stale_days=365,
+        source_game_id="game-1",
+    )
+
+    verify = TestingSession()
+    by_id = dict(verify.execute(text("SELECT id, status FROM strategy_knowledge_docs")).fetchall())
+    verify.close()
+    session.close()
+    engine.dispose()
+
+    assert result["quality_promoted"] == 1
+    assert by_id == {
+        "game-scope-candidate": "active",
+        "other-game-candidate": "candidate",
     }
 
 
