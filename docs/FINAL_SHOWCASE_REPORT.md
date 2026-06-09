@@ -168,7 +168,9 @@ Track B 的展示价值不只是“谁赢了”，而是把一局对战拆成可
 
 ### 5.3 Candidate 生命周期说明
 
-Track C 中的 candidate 不是直接注入下一局的运行策略，而是候选池。新知识由 `KnowledgeAbstractor` 抽取后默认写入 `candidate`，再通过质量、聚类和版本验证进入 `active`；生产检索索引只加载 `active` 策略，避免单局噪声直接污染 Agent Prompt。当前 candidate 数量大，说明抽取层在持续积累候选经验；active 数量小，说明运行时注入走稳定门禁。
+Track C 中的 candidate 不是直接注入下一局的运行策略，而是候选池。新知识由 `KnowledgeAbstractor` 抽取后默认写入 `candidate`，赛后自动门禁会针对本局新知识执行质量晋级、聚类晋级和使用反馈晋级；生产检索索引只加载 `active` 策略，避免单局噪声直接污染 Agent Prompt。
+
+候选池还有独立的批处理治理入口：`python scripts/promote.py --mode lifecycle --apply`。该入口会对全库执行 active 池剪枝、低质归档、过期归档和 candidate 池上限治理，使策略知识保持 `candidate -> active -> deprecated` 的稳定生命周期，而不是持续堆积候选。
 
 ### 5.4 Target-seat Track C Pilot
 
