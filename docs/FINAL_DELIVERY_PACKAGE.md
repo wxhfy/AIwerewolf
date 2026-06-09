@@ -1,8 +1,5 @@
 # AI Werewolf 交付包说明
 
-> 日期：2026-06-09
-> 用途：说明 GitHub 仓库保留内容、运行入口和本地材料边界。
-
 ## 1. GitHub 交付内容
 
 | 类型 | 文件/目录 | 作用 |
@@ -12,7 +9,6 @@
 | 展示概览 | `docs/FINAL_SHOWCASE_REPORT.md` | 粗略展示系统能力、模块和本地汇总口径 |
 | 模块设计 | `docs/PROJECT_MODULE_DESIGN.md` | 核心模块职责、输入输出、内部流程和设计收益 |
 | 需求文档 | `docs/prd.md` | 系统目标、功能范围和验收要求 |
-| 参考工作 | `docs/PROJECT_REFERENCES.md` | 参考项目说明 |
 | 前端代码 | `frontend/` | 大厅、观战、真人操作、复盘、看板和人格配置 |
 | 后端代码 | `backend/` | FastAPI、WebSocket、规则引擎、Agent、评测和持久化 |
 | 自动化验证 | `.github/workflows/ci.yml`, `tests/` | lint、pytest、前端构建和 smoke 测试入口 |

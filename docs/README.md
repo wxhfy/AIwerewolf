@@ -1,7 +1,5 @@
 # AI Werewolf 文档导航
 
-> GitHub 仓库保留项目介绍、粗略展示文档、架构说明和可运行代码。实验数据、截图、PPT/PDF 和 evidence 快照保留在本地，不进入仓库。
-
 ## 推荐阅读顺序
 
 | 顺序 | 文档 | 用途 |
@@ -12,7 +10,6 @@
 | 4 | [`ENGINEERING_ARCHITECTURE.md`](ENGINEERING_ARCHITECTURE.md) | 分层架构图、运行时序图、信息隔离图、数据闭环图 |
 | 5 | [`PROJECT_MODULE_DESIGN.md`](PROJECT_MODULE_DESIGN.md) | 核心模块职责、输入输出、内部流程和设计收益 |
 | 6 | [`prd.md`](prd.md) | 项目需求、系统目标和验收范围 |
-| 7 | [`PROJECT_REFERENCES.md`](PROJECT_REFERENCES.md) | 参考项目说明 |
 
 ## 当前正式文档
 
@@ -23,7 +20,6 @@
 | 架构图谱 | `ENGINEERING_ARCHITECTURE.md` |
 | 模块设计 | `PROJECT_MODULE_DESIGN.md` |
 | 需求文档 | `prd.md` |
-| 参考工作 | `PROJECT_REFERENCES.md` |
 
 ## 仓库边界
 

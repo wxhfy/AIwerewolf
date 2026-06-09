@@ -197,7 +197,7 @@ PORT=3002 npm run dev
 | 后端服务 | Python 3.8+ / FastAPI / WebSocket |
 | 游戏引擎 | dataclass + Enum 纯逻辑规则引擎 |
 | Agent | `CognitiveAgent` / AgentLoop / Memory / SocialModel / StrategyRetriever |
-| LLM 接入 | `backend.llm.create_client()`，支持 doubao / dsv4flash / ark / deepseek / anthropic / weapi / mimo |
+| LLM 接入 | `backend.llm.create_client()` |
 | 数据库 | SQLAlchemy；PostgreSQL 优先，支持 SQLite 本地模式 |
 | 前端 | Next.js 14 / React 18 / TypeScript / Tailwind CSS |
 | 测试与质量 | pytest / ruff / frontend lint / build / GitHub Actions |
@@ -243,7 +243,7 @@ AIwerewolf/
 | 代码仓库 | `backend/`, `frontend/`, `scripts/`, `tests/`, `configs/` |
 | 产品原型 | Next.js 前端：大厅、观战、真人操作、复盘、人格配置 |
 | Demo 链接 | 本地后端 `http://localhost:8000/docs`，本地前端 `http://localhost:3001` |
-| 项目介绍文档 | `docs/FINAL_SHOWCASE_REPORT.md`, `docs/FINAL_DELIVERY_PACKAGE.md`, `docs/ENGINEERING_ARCHITECTURE.md`, `docs/PROJECT_MODULE_DESIGN.md`, `docs/PROJECT_REFERENCES.md`, `docs/prd.md` |
+| 项目介绍文档 | `docs/FINAL_SHOWCASE_REPORT.md`, `docs/FINAL_DELIVERY_PACKAGE.md`, `docs/ENGINEERING_ARCHITECTURE.md`, `docs/PROJECT_MODULE_DESIGN.md`, `docs/prd.md` |
 | 轻量展示资产 | `docs/assets/ai-werewolf-icon.svg` |
 
 ## 文档导航
@@ -255,7 +255,6 @@ AIwerewolf/
 | [`docs/FINAL_DELIVERY_PACKAGE.md`](docs/FINAL_DELIVERY_PACKAGE.md) | 仓库交付内容和清洁边界 |
 | [`docs/ENGINEERING_ARCHITECTURE.md`](docs/ENGINEERING_ARCHITECTURE.md) | 分层架构、运行时序、信息隔离、数据闭环和 Track C 生命周期说明 |
 | [`docs/PROJECT_MODULE_DESIGN.md`](docs/PROJECT_MODULE_DESIGN.md) | 核心模块设计与实现说明 |
-| [`docs/PROJECT_REFERENCES.md`](docs/PROJECT_REFERENCES.md) | 参考项目说明 |
 | [`docs/prd.md`](docs/prd.md) | 需求和系统设计目标 |
 
 ## GitHub 仓库边界
