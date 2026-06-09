@@ -5,6 +5,8 @@ import json
 import pytest
 
 from scripts.target_seat_trackc_ab_experiment import TargetGameSubprocessError
+from scripts.target_seat_trackc_ab_experiment import TargetOutputLockError
+from scripts.target_seat_trackc_ab_experiment import acquire_output_file_lock
 from scripts.target_seat_trackc_ab_experiment import build_failure_record
 from scripts.target_seat_trackc_ab_experiment import completed_sides_by_seed
 from scripts.target_seat_trackc_ab_experiment import load_previous_failures
@@ -12,6 +14,7 @@ from scripts.target_seat_trackc_ab_experiment import load_previous_results
 from scripts.target_seat_trackc_ab_experiment import merge_sidecar_failures
 from scripts.target_seat_trackc_ab_experiment import merge_sidecar_results
 from scripts.target_seat_trackc_ab_experiment import read_jsonl_rows
+from scripts.target_seat_trackc_ab_experiment import release_output_file_lock
 from scripts.target_seat_trackc_ab_experiment import result_seeds
 from scripts.target_seat_trackc_ab_experiment import run_target_game_with_optional_timeout
 from scripts.target_seat_trackc_ab_experiment import validate_resume_payload
@@ -231,3 +234,20 @@ def test_target_game_failure_record_is_structured() -> None:
     assert record["traceback"] == "traceback text"
     assert record["external_failure"] is True
     assert record["timeout_s"] == 30
+
+
+def test_output_file_lock_blocks_second_writer_and_releases(tmp_path) -> None:
+    output_path = tmp_path / "target_seat_ab_Seer.json"
+    first = acquire_output_file_lock(output_path)
+    try:
+        assert first.path == output_path.with_suffix(".json.lock")
+        assert first.path.exists()
+        assert str(output_path) in first.path.read_text(encoding="utf-8")
+
+        with pytest.raises(TargetOutputLockError, match="already locked"):
+            acquire_output_file_lock(output_path)
+    finally:
+        release_output_file_lock(first)
+
+    second = acquire_output_file_lock(output_path)
+    release_output_file_lock(second)

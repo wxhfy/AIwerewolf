@@ -1,59 +1,46 @@
 # AI Werewolf 文档导航
 
-> 这是评审和展示优先阅读的文档入口。历史过程材料已从 GitHub 默认文档集移除，避免默认阅读路径过长。
+> GitHub 仓库保留项目介绍、粗略展示文档、架构说明和可运行代码。实验数据、截图、PPT/PDF 和 evidence 快照保留在本地，不进入仓库。
 
 ## 推荐阅读顺序
 
 | 顺序 | 文档 | 用途 |
 |---:|---|---|
-| 1 | [`FINAL_SHOWCASE_REPORT.md`](FINAL_SHOWCASE_REPORT.md) | 最终展示用精简报告，包含最新关键结果 |
-| 2 | [`ENGINEERING_ARCHITECTURE.md`](ENGINEERING_ARCHITECTURE.md) | 分层架构图、运行时序图、信息隔离图、数据闭环图 |
-| 3 | [`PROJECT_MODULE_DESIGN.md`](PROJECT_MODULE_DESIGN.md) | 核心模块设计与实现入口 |
-| 4 | [`evidence/README.md`](evidence/README.md) | 最新数据结果和证据文件索引 |
-| 5 | [`FINAL_DELIVERY_PACKAGE.md`](FINAL_DELIVERY_PACKAGE.md) | 代码仓库、Demo、技术文档和展示材料交付清单 |
+| 1 | [`../README.md`](../README.md) | 项目定位、核心能力、运行方式和仓库边界 |
+| 2 | [`FINAL_SHOWCASE_REPORT.md`](FINAL_SHOWCASE_REPORT.md) | 粗略展示报告和核心量化概览 |
+| 3 | [`FINAL_DELIVERY_PACKAGE.md`](FINAL_DELIVERY_PACKAGE.md) | 仓库交付内容和清洁边界 |
+| 4 | [`ENGINEERING_ARCHITECTURE.md`](ENGINEERING_ARCHITECTURE.md) | 分层架构图、运行时序图、信息隔离图、数据闭环图 |
+| 5 | [`PROJECT_MODULE_DESIGN.md`](PROJECT_MODULE_DESIGN.md) | 核心模块职责、输入输出、内部流程和设计收益 |
+| 6 | [`prd.md`](prd.md) | 项目需求、系统目标和验收范围 |
+| 7 | [`PROJECT_REFERENCES.md`](PROJECT_REFERENCES.md) | 参考项目和设计取舍 |
 
 ## 当前正式文档
 
 | 类型 | 文件 |
 |---|---|
-| 最终展示 | `FINAL_SHOWCASE_REPORT.md` |
+| 粗略展示 | `FINAL_SHOWCASE_REPORT.md` |
+| 交付边界 | `FINAL_DELIVERY_PACKAGE.md` |
 | 架构图谱 | `ENGINEERING_ARCHITECTURE.md` |
 | 模块设计 | `PROJECT_MODULE_DESIGN.md` |
-| 交付说明 | `FINAL_DELIVERY_PACKAGE.md` |
 | 需求文档 | `prd.md` |
 | 参考工作 | `PROJECT_REFERENCES.md` |
-| 数据证据 | `evidence/` |
 
-## 数据口径
+## 仓库边界
 
-最新可引用结果统一放在 [`evidence/`](evidence/)：
+GitHub 仓库默认不存放实验数据和交付附件。以下内容只保留在本地或单独提交渠道：
 
-- `PROJECT_REAL_LLM_FRAMEWORK_EVIDENCE.*`：真实 LLM 对局与决策健康汇总。
-- `PROJECT_TRACK_B_LEADERBOARD_SHOWCASE.*`：Track B 多层复盘与 leaderboard 展示。
-- `PROJECT_ROLE_RETRIEVAL_FACTS.json`：单角色策略检索量化结果。
-- `PROJECT_STRATEGY_USAGE_DECISION_SCORE_ANALYSIS.*`：策略使用与逐决策质量关联分析。
-- `PROJECT_TARGET_SEAT_TRACKC_PILOT.*`：Track C target-seat pilot 结果。
-- `PROJECT_METHOD_EFFECTIVENESS_FACTS.json`：方法有效性聚合事实快照。
+- 原始 evidence、评估 JSON/JSONL/CSV、数据库快照和运行日志
+- PPT/PDF、截图、长篇过程报告和答辩附件
+- API Key、`.env`、本地参考仓库、构建产物和缓存目录
 
 ## 文档清理策略
 
-过程报告、长篇分析和历史设计记录不作为最终展示默认入口。需要追溯时使用 Git history 或本地副本；GitHub 仓库保留正式文档、最新 evidence 和可运行项目代码。
+过程报告、长篇分析和历史设计记录不作为仓库默认入口。需要追溯时使用 Git history 或本地副本；GitHub 仓库保留项目介绍文档和可运行项目代码。
 
 保留原则：
 
-| 默认展示 | 归档 |
+| GitHub 保留 | 本地保留 |
 |---|---|
-| 精简、最新、可展示、能直接支撑报告 | 过长、过期、过程性、诊断性材料 |
-| 有明确数据来源和边界 | 中间尝试、旧口径、重复叙事 |
-| 评审能在 5-10 分钟内理解 | 需要开发者背景才能读懂 |
-
-## 报告写作建议
-
-最终报告建议按以下结构写：
-
-1. 项目定位：多智能体狼人杀，不是单 Prompt 游戏。
-2. 分层架构：前端体验层、API 编排层、规则引擎层、Agent 认知层、评测进化层、数据层。
-3. 核心实现：`WerewolfGame`、`PlayerView`、`CognitiveAgent`、`AgentLoop`、`StrategyRetriever`、Track B、Track C。
-4. 展示结果：数据库规模、真实 LLM 对局、Track B、Track C、检索和策略使用。
-5. 产品演示：大厅、观战、真人操作、复盘、看板。
-6. 后续建议：扩大 target-seat paired A/B、补强角色策略卡、补充前端图表。
+| 项目定位、架构、模块、需求、参考设计和粗略展示文档 | 实验结果、答辩附件、截图、PPT/PDF |
+| 源码、测试、配置模板和 CI | 数据库、日志、evidence、实验输出 |
+| README logo 等必要轻量资产 | 生成图表、临时图片和过程材料 |

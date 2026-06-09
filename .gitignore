@@ -260,7 +260,14 @@ references/
 # Experiment outputs (local-only, not for repo)
 frontend/public/experiments/
 docs/experiments/
+docs/evidence/
 docs/html_plan/
+docs/presentations/
+docs/assets/closure/
+docs/assets/final_report/
+docs/assets/readme/
+docs/wiki/
+local_delivery/
 
 # Internal dev docs (local-only)
 docs/archive/
@@ -306,7 +313,7 @@ backups/
 /*.json
 outputs/
 
-# Local provider probes; canonical preflight evidence is docs/PROJECT_PROVIDER_PREFLIGHT.json
+# Local provider probes and evidence snapshots stay local.
 docs/PROJECT_PROVIDER_PREFLIGHT.*_probe.json
 
 # Screenshots
