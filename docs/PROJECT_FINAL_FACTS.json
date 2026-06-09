@@ -167,12 +167,16 @@
         "无需 GPU",
         "结果可解释",
         "支持 candidate/active 隔离",
-        "支持检索策略对比"
+        "支持检索策略对比",
+        "支持单角色命中率和检索来源量化"
       ],
       "evidence": [
         "backend/agents/cognitive/retrieval_prod.py",
         "docs/archive/retrieval_policy_design.md",
-        "docs/experiments/retrieval_policy_results.md"
+        "docs/experiments/retrieval_policy_results.md",
+        "docs/PROJECT_ROLE_RETRIEVAL_QUANTIFICATION.md",
+        "outputs/retrieval_effectiveness_current/results.json",
+        "outputs/retrieval_effectiveness_current/per_role_results.csv"
       ],
       "status": "已实现并有离线检索评估报告。",
       "limitations": [
@@ -451,6 +455,28 @@
         },
         "source": "data/experiment/multi_tier/formal_dsv4flash_7p_tier_6x_v2/summary.json",
         "caveat": "各 tier 失败数不均，不能写成稳定提升结论"
+      },
+      {
+        "metric": "default single-role retrieval effective_at_3",
+        "value": 0.5,
+        "source": "outputs/retrieval_effectiveness_current/results.json",
+        "caveat": "离线弱标注检索指标，不是在线胜率因果结论"
+      },
+      {
+        "metric": "default single-role retrieval coverage",
+        "value": 1.0,
+        "source": "outputs/retrieval_effectiveness_current/results.json"
+      },
+      {
+        "metric": "default single-role retrieval role_bucket_share",
+        "value": 0.9923,
+        "source": "outputs/retrieval_effectiveness_current/results.json"
+      },
+      {
+        "metric": "same_role_same_mbti empty retrievals",
+        "value": "22/26",
+        "source": "outputs/retrieval_effectiveness_current/results.json",
+        "caveat": "说明精确 role+MBTI 当前过窄，应作为优先桶而非唯一默认范围"
       }
     ],
     "document_only_metrics": [
@@ -557,6 +583,7 @@
     "图 10 各阶段改进效果表",
     "图 11 多局实验占位图表",
     "图 12 检索策略对比占位图表",
+    "图 13 单角色检索路径与量化结果",
     "SVG: docs/assets/final_report/system-architecture.svg",
     "SVG: docs/assets/final_report/module-map.svg",
     "SVG: docs/assets/final_report/play-evaluate-evolve.svg",
@@ -564,6 +591,7 @@
     "SVG: docs/assets/final_report/evidence-chain.svg",
     "SVG: docs/assets/final_report/design-evolution.svg",
     "SVG: docs/assets/final_report/track-bc-flow.svg",
+    "SVG: docs/assets/final_report/single-role-retrieval.svg",
     "SVG: docs/assets/final_report/placeholder-stability.svg",
     "SVG: docs/assets/final_report/placeholder-retrieval-policy.svg"
   ],

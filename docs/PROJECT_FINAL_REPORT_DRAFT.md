@@ -119,6 +119,12 @@ AgentLoop 暴露的工具包括：
 | privacy | 防止当前局私有信息泄漏 |
 | applicability | 匹配角色、阶段、人数和规则条件 |
 
+单角色检索的默认路径是 `hybrid_role_mbti_global`。当某个 Agent 请求策略时，系统先构造包含 `role / MBTI / alignment / phase / action_type / keywords` 的 `AgentContext`，再按关键词或正则从策略知识字段召回候选；候选不足时使用 BM25 全文检索兜底。随后 RetrievalPolicy 依次尝试 `same_role_same_mbti`、`same_role_all_mbti` 和 `global` 三个桶，并通过质量门禁、去重和 Top-K 填充后进入 Agent 的 Strategy 层。
+
+当前离线量化显示，默认单角色检索在 26 条弱标注查询上 Coverage 为 100.00%，Effective@3 为 50.00%，P@3 为 0.2564；Top-5 结果中 99.23% 来自角色桶，global 兜底占 0.77%。分角色 Effective@3 为 Guard 1.0000、Hunter 1.0000、Seer 0.6000、Villager 0.5000、Werewolf 0.2857、Witch 0.2500。该结果可用于说明“当前检索主要按角色生效并稳定返回结果”，但不能写成在线胜率提升结论。
+
+来源：`outputs/retrieval_effectiveness_current/results.json`、`outputs/retrieval_effectiveness_current/per_role_results.csv`、`outputs/retrieval_effectiveness_current/role_corpus_stats.csv`、`docs/PROJECT_ROLE_RETRIEVAL_QUANTIFICATION.md`。代码依据：`backend/agents/cognitive/retrieval_prod.py`、`backend/agents/cognitive/tools.py`、`backend/eval/knowledge_confidence.py`。
+
 ### 3.5 证据链与复盘
 
 单步决策的证据链：
