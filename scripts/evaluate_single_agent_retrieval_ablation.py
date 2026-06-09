@@ -599,6 +599,19 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 "variants": variants,
             }
         )
+        (output_dir / "partial_results.json").write_text(
+            json.dumps(
+                {
+                    "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+                    "completed_scenarios": len(rows),
+                    "scenario_count": len(scenarios),
+                    "rows": rows,
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
 
     payload = {
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
@@ -641,7 +654,7 @@ def main() -> None:
     parser.add_argument("--top-k", type=int, default=4)
     parser.add_argument("--seed", type=int, default=20260609)
     parser.add_argument("--timeout-seconds", type=float, default=60.0)
-    parser.add_argument("--retries", type=int, default=1)
+    parser.add_argument("--retries", type=int, default=3)
     parser.add_argument("--decision-max-tokens", type=int, default=700)
     parser.add_argument("--judge-max-tokens", type=int, default=1200)
     args = parser.parse_args()
