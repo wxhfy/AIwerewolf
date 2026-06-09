@@ -6,17 +6,6 @@
 |---:|---|---|
 | 1 | [`../README.md`](../README.md) | 项目定位、核心能力、运行方式和仓库边界 |
 | 2 | [`FINAL_SHOWCASE_REPORT.md`](FINAL_SHOWCASE_REPORT.md) | 粗略展示报告和核心量化概览 |
-| 3 | [`FINAL_DELIVERY_PACKAGE.md`](FINAL_DELIVERY_PACKAGE.md) | 仓库交付内容和清洁边界 |
-| 4 | [`ENGINEERING_ARCHITECTURE.md`](ENGINEERING_ARCHITECTURE.md) | 分层架构图、运行时序图、信息隔离图、数据闭环图 |
-| 5 | [`PROJECT_MODULE_DESIGN.md`](PROJECT_MODULE_DESIGN.md) | 核心模块职责、输入输出、内部流程和设计收益 |
-| 6 | [`prd.md`](prd.md) | 项目需求、系统目标和验收范围 |
-
-## 当前正式文档
-
-| 类型 | 文件 |
-|---|---|
-| 粗略展示 | `FINAL_SHOWCASE_REPORT.md` |
-| 交付边界 | `FINAL_DELIVERY_PACKAGE.md` |
-| 架构图谱 | `ENGINEERING_ARCHITECTURE.md` |
-| 模块设计 | `PROJECT_MODULE_DESIGN.md` |
-| 需求文档 | `prd.md` |
+| 3 | [`ENGINEERING_ARCHITECTURE.md`](ENGINEERING_ARCHITECTURE.md) | 分层架构图、运行时序图、信息隔离图、数据闭环图 |
+| 4 | [`PROJECT_MODULE_DESIGN.md`](PROJECT_MODULE_DESIGN.md) | 核心模块职责、输入输出、内部流程和设计收益 |
+| 5 | [`prd.md`](prd.md) | 项目需求、系统目标和验收范围 |

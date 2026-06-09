@@ -243,7 +243,7 @@ AIwerewolf/
 | 代码仓库 | `backend/`, `frontend/`, `scripts/`, `tests/`, `configs/` |
 | 产品原型 | Next.js 前端：大厅、观战、真人操作、复盘、人格配置 |
 | Demo 链接 | 本地后端 `http://localhost:8000/docs`，本地前端 `http://localhost:3001` |
-| 项目介绍文档 | `docs/FINAL_SHOWCASE_REPORT.md`, `docs/FINAL_DELIVERY_PACKAGE.md`, `docs/ENGINEERING_ARCHITECTURE.md`, `docs/PROJECT_MODULE_DESIGN.md`, `docs/prd.md` |
+| 项目介绍文档 | `docs/FINAL_SHOWCASE_REPORT.md`, `docs/ENGINEERING_ARCHITECTURE.md`, `docs/PROJECT_MODULE_DESIGN.md`, `docs/prd.md` |
 | 轻量展示资产 | `docs/assets/ai-werewolf-icon.svg` |
 
 ## 文档导航
@@ -252,7 +252,6 @@ AIwerewolf/
 |---|---|
 | [`docs/README.md`](docs/README.md) | 文档阅读顺序和归档说明 |
 | [`docs/FINAL_SHOWCASE_REPORT.md`](docs/FINAL_SHOWCASE_REPORT.md) | GitHub 粗略展示报告和核心量化概览 |
-| [`docs/FINAL_DELIVERY_PACKAGE.md`](docs/FINAL_DELIVERY_PACKAGE.md) | 仓库交付内容和清洁边界 |
 | [`docs/ENGINEERING_ARCHITECTURE.md`](docs/ENGINEERING_ARCHITECTURE.md) | 分层架构、运行时序、信息隔离、数据闭环和 Track C 生命周期说明 |
 | [`docs/PROJECT_MODULE_DESIGN.md`](docs/PROJECT_MODULE_DESIGN.md) | 核心模块设计与实现说明 |
 | [`docs/prd.md`](docs/prd.md) | 需求和系统设计目标 |
