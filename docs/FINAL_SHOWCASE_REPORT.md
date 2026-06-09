@@ -1,8 +1,5 @@
 # AI Werewolf 系统展示报告
 
-> 日期：2026-06-09
-> 用途：用于 GitHub 粗略展示项目能力、架构主线和核心模块。原始实验数据、截图、PPT/PDF 和 evidence 快照保留在本地，不进入仓库。
-
 ## 1. 项目概述
 
 AI Werewolf 是一个面向社会推理博弈的多智能体狼人杀研究平台。系统将狼人杀对局拆成确定性规则引擎、严格信息隔离、角色化 Agent 决策、赛后复盘评测和策略知识回流五个部分，形成 Play -> Evaluate -> Evolve 的闭环。
@@ -89,18 +86,23 @@ flowchart TB
 | Track C | `backend/eval/knowledge_abstractor.py`, `backend/agents/cognitive/retrieval_prod.py` | 策略抽取、生命周期治理和下一局检索 |
 | 前端 | `frontend/app/`, `frontend/components/`, `frontend/hooks/` | 大厅、观战、真人操作、复盘和统计看板 |
 
-## 5. 粗略量化概览
+## 5. 量化概览（LLM 对局）
 
-以下为本地数据库和本地实验管线的汇总口径，仅作为项目能力展示。原始数据文件不放入 GitHub。
+以下统计 LLM provider 的对局数据，fake provider 不计入。
 
 | 方向 | 当前概览 |
 |---|---:|
-| 本地累计 games | 11,743 |
-| 本地完成 games | 11,330 |
-| 真实 LLM 对局 | 375 |
-| 真实 LLM 决策 | 14,366 |
-| published reviews | 4,968 |
-| strategy knowledge docs | 219,474 |
+| LLM 完成对局 | 292 |
+| LLM 决策 | 10,253 |
+| 决策有效率 | 100%（10,253 / 10,253） |
+| published reviews | 4,971 |
+| strategy knowledge docs | 219,558（active 386 / candidate 1,695 / deprecated 217,477） |
+
+### 对局胜率
+
+| 维度 | 狼胜 | 村民胜 | 总对局 |
+|---|---:|---:|---:|
+| LLM 对局 | 193（66.1%） | 99（33.9%） | 292 |
 
 ## 6. 演示入口
 

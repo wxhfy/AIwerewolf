@@ -1,10 +1,8 @@
 # AI Werewolf 工程架构图谱
 
-> 目的：为 README、项目报告和演示材料提供可维护的工程架构图。本文档使用 Mermaid 作为图表源码，方便在 GitHub 中直接渲染，也方便后续导出为 SVG/PNG。
-
 ## 1. 系统分层架构图
 
-这张图回答“项目整体按哪些工程层次组织、每一层负责什么、层与层之间如何依赖”。这是项目报告和 README 最推荐使用的主架构图。
+这张图回答”项目整体按哪些工程层次组织、每一层负责什么、层与层之间如何依赖”。
 
 ```mermaid
 flowchart TB
@@ -469,14 +467,3 @@ flowchart TB
 | 持久化 | `backend/db/models.py`, `backend/db/persist.py` | 对局、事件、决策、报告、策略知识和指标 |
 | 后端服务 | `backend/app.py`, `backend/protocols/rooms.py` | REST、WebSocket、房间和对局控制 |
 | 前端体验 | `frontend/app/`, `frontend/components/`, `frontend/hooks/` | 大厅、观战、真人操作、复盘和人格配置 |
-
-## 9. 推荐引用方式
-
-| 使用场景 | 推荐引用 |
-|---|---|
-| README 首屏 | 使用系统分层架构图的简化版 |
-| 项目报告第 2 章 | 引用系统分层架构图、单次决策时序、Play -> Evaluate -> Evolve 闭环 |
-| Agent 设计章节 | 引用单次决策时序和 StrategyRetriever 检索策略 |
-| 信息隔离章节 | 引用信息隔离架构 |
-| Track C 章节 | 引用策略知识生命周期和 StrategyRetriever 检索策略 |
-| 演示材料 | 从本文档 Mermaid 图导出 SVG/PNG，保留本文档作为图表源码 |
