@@ -12,7 +12,7 @@
 | 展示概览 | `docs/FINAL_SHOWCASE_REPORT.md` | 粗略展示系统能力、模块和本地汇总口径 |
 | 模块设计 | `docs/PROJECT_MODULE_DESIGN.md` | 核心模块职责、输入输出、内部流程和设计收益 |
 | 需求文档 | `docs/prd.md` | 系统目标、功能范围和验收要求 |
-| 参考工作 | `docs/PROJECT_REFERENCES.md` | 参考项目、借鉴点和设计取舍 |
+| 参考工作 | `docs/PROJECT_REFERENCES.md` | 参考项目说明 |
 | 前端代码 | `frontend/` | 大厅、观战、真人操作、复盘、看板和人格配置 |
 | 后端代码 | `backend/` | FastAPI、WebSocket、规则引擎、Agent、评测和持久化 |
 | 自动化验证 | `.github/workflows/ci.yml`, `tests/` | lint、pytest、前端构建和 smoke 测试入口 |
@@ -61,7 +61,7 @@ npm run dev
 
 ```bash
 git status --short --ignored
-git ls-files | rg '(^|/)(\.env$|__pycache__/|node_modules/|\.next/|data/|models/|references/|docs/evidence/|docs/experiments/|docs/presentations/)|\.(db|log|jsonl|pptx|pdf)$'
+git ls-files | rg '(^|/)(\.env$|__pycache__/|node_modules/|\.next/|data/|models/|outputs/|references/|docs/evidence/|docs/experiments/|docs/presentations/|docs/assets/(readme|closure|final_report)/|docs/wiki/)|\.(db|sqlite|log|jsonl|pptx|pdf|png|jpe?g)$'
 ```
 
 若第二条命令输出数据、日志、PPT/PDF、evidence 或实验目录，说明仓库边界需要继续清理。

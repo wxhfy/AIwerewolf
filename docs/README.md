@@ -12,7 +12,7 @@
 | 4 | [`ENGINEERING_ARCHITECTURE.md`](ENGINEERING_ARCHITECTURE.md) | 分层架构图、运行时序图、信息隔离图、数据闭环图 |
 | 5 | [`PROJECT_MODULE_DESIGN.md`](PROJECT_MODULE_DESIGN.md) | 核心模块职责、输入输出、内部流程和设计收益 |
 | 6 | [`prd.md`](prd.md) | 项目需求、系统目标和验收范围 |
-| 7 | [`PROJECT_REFERENCES.md`](PROJECT_REFERENCES.md) | 参考项目和设计取舍 |
+| 7 | [`PROJECT_REFERENCES.md`](PROJECT_REFERENCES.md) | 参考项目说明 |
 
 ## 当前正式文档
 
