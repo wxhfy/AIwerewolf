@@ -177,8 +177,13 @@ export default function LobbyPage() {
         <Link href="/personas" className="px-3 py-1.5 text-xs font-medium rounded-button border border-border/40 text-text-sub/70 hover:text-primary hover:border-primary/50 transition-colors backdrop-blur-sm">
           {language === "zh" ? "角色库" : "Personas"}
         </Link>
-        <Link href="/demo/replay" className="px-3 py-1.5 text-xs font-medium rounded-button border border-border/40 text-text-sub/70 hover:text-primary hover:border-primary/50 transition-colors backdrop-blur-sm">
-          {language === "zh" ? "固定演示" : "Fixed Demo"}
+        <Link href="/demo/replay" className="flex items-center gap-1.5 rounded-button border border-primary/45 bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary shadow-[0_0_18px_rgba(183,131,63,0.12)] backdrop-blur-sm transition-colors hover:border-primary/70 hover:bg-primary/15">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M3 12a9 9 0 1 0 3-6.7" />
+            <path d="M3 3v6h6" />
+            <path d="M10 8l6 4-6 4V8z" />
+          </svg>
+          {language === "zh" ? "历史回放" : "Replay"}
         </Link>
         <button
           data-testid="open-settings-button"
