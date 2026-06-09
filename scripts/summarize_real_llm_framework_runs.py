@@ -397,7 +397,7 @@ def render_report(facts: dict[str, Any]) -> str:
         "",
         "本文件汇总 `track_bc_leaderboard_experiment.py` 及相关真实 LLM 框架实验产物。它只读取已有输出，不调用 LLM，不写数据库。报告重点是区分“可引用证据”和“暂不能写入结论的实验”。",
         "",
-        "原始实验输出位于 `.gitignore` 覆盖的本地 `docs/experiments/` 与 `outputs/` 目录；本文件和配套 JSON 是可提交的聚合事实快照。",
+        "原始实验输出位于 `.gitignore` 覆盖的本地 `docs/experiments/` 与 `outputs/` 目录；本文件和配套 JSON 是本地 ignored 聚合事实快照。",
         "",
         "## 1. 总览",
         "",
