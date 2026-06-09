@@ -129,7 +129,7 @@ Track C 的策略知识分两层触发：
 | 赛后自动门禁 | 每局结束后由 `run_post_game_scoring()` 调用 `promote_after_store(source_game_id=game_id)` | 只处理本局新知识，按质量、聚类和使用反馈把候选晋级为 active，并做轻量归档 |
 | 批处理治理 | `python scripts/promote.py --mode lifecycle --apply` | 对全库执行质量晋级、反馈晋级、active 池剪枝、candidate 池上限治理和低质归档 |
 
-生产 Agent 的策略检索默认只加载 `active` 策略。`candidate` 是待验证知识池，不会直接污染下一局 Prompt；批处理治理会限制候选堆积，低质、过期或超量候选进入 `deprecated`。
+生产 Agent 的策略检索只加载 `active` 策略。`candidate` 是候选知识池，不直接进入下一局 Prompt；批处理治理限制候选堆积，低质、过期或超量候选进入 `deprecated`。
 
 ## 快速开始
 

@@ -35,8 +35,6 @@
 
 **验收方式**：`scripts/run_backend_full_strict.py` 和信息隔离专项验证命令。
 
-**当前限制**：扩展角色仍需补充更多规则测试；长期并发压力测试需要单独运行。
-
 ## 2. Visibility / PlayerView
 
 **模块定位**：信息隔离层，连接真实 GameState 与 Agent 输入。
@@ -68,9 +66,7 @@
 
 **设计收益**：防止上帝视角；让推理更接近真实玩家；为赛后复盘提供“当时可见事实”边界。
 
-**验收方式**：`scripts/verify_visibility_strict.py`；当前结果以信息隔离专项验证命令为准。
-
-**当前限制**：每新增角色、私有事件或前端视角，都需要补充隔离测试。
+**验收方式**：`scripts/verify_visibility_strict.py`。
 
 ## 3. CognitiveAgent
 
@@ -105,8 +101,6 @@
 **设计收益**：支持角色差异、多轮记忆、狼人协作和可解释决策。
 
 **验收方式**：strict mode Agent Decision；数据库 agent_decisions；工具 trace。
-
-**当前限制**：不同 MBTI 与角色组合的长期稳定性需要补测。
 
 ## 4. AgentLoop
 
@@ -143,8 +137,6 @@
 **设计收益**：降低一次性 Prompt 压力；让 Agent 主动获取信息；tool_trace 可审计；可分析策略是否被实际使用。
 
 **验收方式**：检查 `agent_decisions.metadata` 或 `parsed_action._tool_trace`；strict 验收文档记录 26/27 决策带工具追踪。
-
-**当前限制**：工具调用对过程分和胜率的贡献需要在线 A/B 验证。
 
 ## 5. StrategyRetriever
 
@@ -193,8 +185,6 @@
 
 **验收方式**：`scripts/evaluate_retrieval_policies.py`、`scripts/evaluate_retrieval_policies_llm_judge.py`、tool_trace。
 
-**当前限制**：离线检索分数不能直接说明真实对局效果；在线策略对比需补。
-
 ## 6. PostgreSQL Evidence Chain
 
 **模块定位**：系统证据链和实验数据中心。
@@ -229,9 +219,7 @@
 
 **设计收益**：可审计、可复盘、可统计、可做实验分析、支撑 Track B/C。
 
-**验收方式**：strict preflight；PostgreSQL 查询。当前 PostgreSQL 快照显示 public base tables 为 22，`agent_decisions=250603`，来源：PostgreSQL 查询，2026-06-07 13:55:01 UTC。
-
-**当前限制**：数据库包含历史和运行中数据；正式指标需按 experiment_id / provider / strict 标记过滤。
+**验收方式**：strict preflight；PostgreSQL 查询。
 
 ## 7. PerStepScorer
 
@@ -264,9 +252,7 @@
 
 **设计收益**：不只看胜负；能定位失误；能为 Track C 提供结构化经验。
 
-**验收方式**：复盘链路通过本地数据库和严格模式脚本验证，原始评估输出不进入 GitHub 仓库。
-
-**当前限制**：实际 Tier 触发比例、judge agreement 和人工一致性需要补实验。
+**验收方式**：复盘链路通过本地数据库和严格模式脚本验证。
 
 ## 8. Track C Knowledge Layer
 
@@ -304,9 +290,7 @@ Track C 的完整图谱见 [`ENGINEERING_ARCHITECTURE.md`](ENGINEERING_ARCHITECT
 
 **设计收益**：复盘经验可沉淀；知识可回流；策略池可控。
 
-**验收方式**：strict 验收文档记录 candidate 增量和 active 零污染；当前本地数据库快照显示 `strategy_knowledge_docs` 为 active 387、candidate 216906、deprecated 17。
-
-**当前限制**：晋级后的真实效果需要 paired seed 对照实验。
+**验收方式**：当前本地数据库快照显示 `strategy_knowledge_docs` active 386、candidate 1,695、deprecated 217,477。
 
 ## 9. Frontend Console
 
@@ -340,5 +324,3 @@ Track C 的完整图谱见 [`ENGINEERING_ARCHITECTURE.md`](ENGINEERING_ARCHITECT
 **设计收益**：便于演示、调试、验收和后续 replay viewer 扩展。
 
 **验收方式**：前端代码存在，运行本地前端后可通过大厅、对局页、真人操作页和复盘页验证。
-
-**当前限制**：本轮未重新跑 Playwright 视觉验收；WebSocket 延迟和公开/主持视角切换需专项验证。
