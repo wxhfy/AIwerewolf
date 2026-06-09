@@ -22,7 +22,6 @@
 | 交付说明 | `FINAL_DELIVERY_PACKAGE.md` |
 | 需求文档 | `prd.md` |
 | 参考工作 | `PROJECT_REFERENCES.md` |
-| 展示材料 | `presentations/` |
 | 数据证据 | `evidence/` |
 
 ## 数据口径

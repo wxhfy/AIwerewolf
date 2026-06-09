@@ -118,3 +118,12 @@ def test_target_seat_boundary_uses_dynamic_paired_count() -> None:
 
     assert "20-pair 真实 LLM pipeline pilot" in boundary
     assert "CI gate 未通过" in boundary
+
+
+def test_target_seat_required_experiment_uses_dynamic_paired_count() -> None:
+    row = {"paired_seed_count": 23}
+
+    required = summary.target_seat_required_experiment(row)
+
+    assert "已完成 23-pair pipeline pilot" in required
+    assert "80-120 paired seeds" in required

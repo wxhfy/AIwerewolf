@@ -16,7 +16,7 @@
 | 产品原型 | `frontend/` | 大厅、观战、真人操作、复盘、看板、人格配置 |
 | 后端服务 | `backend/` | FastAPI、WebSocket、对局引擎、Agent、评测与持久化 |
 | 自动化验证 | `.github/workflows/ci.yml`, `tests/` | lint、pytest、前端构建、UI smoke |
-| 展示材料 | `docs/presentations/`, `docs/assets/` | PPT/PDF、小型 SVG/HTML 展示资产 |
+| 展示材料 | `docs/assets/`, `docs/evidence/` | 小型图表资产和机器可读证据 |
 
 ## 2. 当前可展示结果
 
@@ -33,9 +33,9 @@
 | Track B showcase 完成对局 | 6 | `docs/evidence/PROJECT_TRACK_B_LEADERBOARD_SHOWCASE.json` |
 | 单角色检索 Coverage | 100.00% | `docs/evidence/PROJECT_ROLE_RETRIEVAL_FACTS.json` |
 | 策略使用决策质量差异 | +0.0823 | `docs/evidence/PROJECT_STRATEGY_USAGE_DECISION_SCORE_ANALYSIS.json` |
-| Target-seat Seer paired pipeline pilot | 20 pairs | `docs/evidence/PROJECT_TARGET_SEAT_TRACKC_PILOT.json` |
-| Target-seat Seer adjusted delta | +6.0120 | `docs/evidence/PROJECT_TARGET_SEAT_TRACKC_PILOT.json` |
-| Target-seat Seer role-task delta | +0.1008 | `docs/evidence/PROJECT_TARGET_SEAT_TRACKC_PILOT.json` |
+| Target-seat Seer paired pipeline pilot | 23 pairs | `docs/evidence/PROJECT_TARGET_SEAT_TRACKC_PILOT.json` |
+| Target-seat Seer adjusted delta | +6.2817 | `docs/evidence/PROJECT_TARGET_SEAT_TRACKC_PILOT.json` |
+| Target-seat Seer role-task delta | +0.0954 | `docs/evidence/PROJECT_TARGET_SEAT_TRACKC_PILOT.json` |
 
 ## 3. 推荐展示路线
 
@@ -53,7 +53,7 @@
 - 源码：`backend/`、`frontend/`、`scripts/`、`tests/`、`configs/`。
 - 配置模板：`.env.example`、`docker-compose.yml`、`Makefile`、CI workflow。
 - 正式文档：README、需求、最终展示报告、架构图谱、模块设计、交付说明和 evidence。
-- 展示资产：小型 SVG、HTML、PPT/PDF。
+- 展示资产：小型 SVG、HTML 和机器可读证据。
 
 不应保留：
 
@@ -76,4 +76,4 @@ cd frontend && npm run lint && npm run build
 
 ## 6. 当前结论
 
-当前交付包已经具备完整工程化 Demo 的形态：项目说明、运行方式、前后端代码、分层架构图、模块设计、真实 LLM 数据结果、复盘与策略回流证据、演示图表、PPT/PDF 和自动化验证入口。最终展示应突出架构设计、证据链和 Play -> Evaluate -> Evolve 闭环，不展开所有中间实验过程。
+当前交付包已经具备完整工程化 Demo 的形态：项目说明、运行方式、前后端代码、分层架构图、模块设计、真实 LLM 数据结果、复盘与策略回流证据、图表资产和自动化验证入口。最终展示应突出架构设计、证据链和 Play -> Evaluate -> Evolve 闭环，不展开所有中间实验过程。

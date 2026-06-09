@@ -199,6 +199,15 @@ def next_required_experiment_sentence(paired: int, accepted: bool) -> str:
     )
 
 
+def win_delta_interpretation(delta: Any) -> str:
+    value = fnum(delta)
+    if value > 0:
+        return "本 pilot 中目标席位胜率均值为正向变化；胜率仍只作辅助指标。"
+    if value < 0:
+        return "本 pilot 中目标席位胜率均值为负向变化；胜率仍只作辅助指标。"
+    return "本 pilot 中目标席位胜率均值没有变化；胜率仍只作辅助指标。"
+
+
 def build_facts(*, source_path: Path = DEFAULT_SOURCE, generated_at: str | None = None) -> dict[str, Any]:
     payload = read_json(source_path)
     if not payload:
@@ -368,7 +377,7 @@ def render_report(facts: dict[str, Any]) -> str:
                 [
                     "Target win delta",
                     fmt(facts["target_win_rate_delta"]),
-                    "本 pilot 中胜率没有变化，胜率只作辅助指标。",
+                    win_delta_interpretation(facts["target_win_rate_delta"]),
                 ],
                 ["Candidate decisions", facts["candidate_decision_count"], "candidate 侧真实决策数。"],
                 [

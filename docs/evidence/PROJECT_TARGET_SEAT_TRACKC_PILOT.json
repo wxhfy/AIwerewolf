@@ -15,29 +15,12 @@
     "anthropic:deepseek-v4-flash[1m]"
   ],
   "model_assignment_counts": {
-    "anthropic:deepseek-v4-flash[1m]": 140
+    "anthropic:deepseek-v4-flash[1m]": 161
   },
   "requested_seeds": [
-    9801,
-    9802,
-    9803,
-    9804,
-    9805,
-    9806,
-    9807,
-    9808,
-    9809,
-    9810,
-    9811,
-    9812,
-    9813,
-    9814,
-    9815,
-    9816,
-    9817,
-    9818,
-    9819,
-    9820
+    9821,
+    9822,
+    9823
   ],
   "paired_seeds": [
     9801,
@@ -59,53 +42,56 @@
     9817,
     9818,
     9819,
-    9820
+    9820,
+    9821,
+    9822,
+    9823
   ],
   "games_jsonl": "outputs/target_seat_trackc_ab_seer_ark_pilot_20260609/target_seat_ab_Seer_20260609T082838Z.games.jsonl",
   "failures_jsonl": "outputs/target_seat_trackc_ab_seer_ark_pilot_20260609/target_seat_ab_Seer_20260609T082838Z.failures.jsonl",
   "failure_count": 0,
-  "baseline_completed": 20,
-  "candidate_completed": 20,
-  "paired_seed_count": 20,
+  "baseline_completed": 23,
+  "candidate_completed": 23,
+  "paired_seed_count": 23,
   "baseline_target_win_rate": 0.0,
-  "candidate_target_win_rate": 0.0,
-  "target_win_rate_delta": 0.0,
-  "baseline_target_adjusted_score": 34.21150000000001,
-  "candidate_target_adjusted_score": 40.223499999999994,
-  "target_adjusted_score_delta": 6.012,
-  "target_role_task_delta": 0.10082999999999998,
-  "target_process_score_delta": 6.529000000000001,
-  "positive_adjusted_score_delta_seeds": 10,
-  "positive_role_task_delta_seeds": 13,
-  "positive_win_delta_seeds": 0,
-  "candidate_decision_count": 752,
+  "candidate_target_win_rate": 0.043478260869565216,
+  "target_win_rate_delta": 0.043478260869565216,
+  "baseline_target_adjusted_score": 33.95217391304348,
+  "candidate_target_adjusted_score": 40.23391304347825,
+  "target_adjusted_score_delta": 6.281739130434782,
+  "target_role_task_delta": 0.09536086956521739,
+  "target_process_score_delta": 6.138260869565218,
+  "positive_adjusted_score_delta_seeds": 12,
+  "positive_role_task_delta_seeds": 15,
+  "positive_win_delta_seeds": 1,
+  "candidate_decision_count": 875,
   "candidate_fallback_count": 0,
   "candidate_invalid_count": 0,
   "candidate_invalid_rate": 0.0,
   "bootstrap_ci": {
     "adjusted_final_score_delta": {
-      "samples": 20,
-      "mean": 6.012,
-      "ci95_low": -6.3681,
-      "ci95_high": 17.6161
+      "samples": 23,
+      "mean": 6.2817,
+      "ci95_low": -5.1508,
+      "ci95_high": 16.972
     },
     "role_task_score_delta": {
-      "samples": 20,
-      "mean": 0.1008,
-      "ci95_low": -0.0534,
-      "ci95_high": 0.2458
+      "samples": 23,
+      "mean": 0.0954,
+      "ci95_low": -0.0453,
+      "ci95_high": 0.2244
     },
     "process_score_delta": {
-      "samples": 20,
-      "mean": 6.529,
-      "ci95_low": -6.4924,
-      "ci95_high": 19.537
+      "samples": 23,
+      "mean": 6.1383,
+      "ci95_low": -5.3535,
+      "ci95_high": 17.8543
     },
     "target_win_rate_delta": {
-      "samples": 20,
-      "mean": 0.0,
+      "samples": 23,
+      "mean": 0.0435,
       "ci95_low": 0.0,
-      "ci95_high": 0.0
+      "ci95_high": 0.1304
     }
   },
   "acceptance": {
@@ -121,7 +107,7 @@
       "strict_health": true,
       "score_gate": true,
       "role_task_gate": true,
-      "win_gate": false,
+      "win_gate": true,
       "ci_gate": false,
       "improvement_gate": true
     }
@@ -131,7 +117,7 @@
     "strict_health": true,
     "score_gate": true,
     "role_task_gate": true,
-    "win_gate": false,
+    "win_gate": true,
     "ci_gate": false,
     "improvement_gate": true
   },
@@ -575,18 +561,84 @@
       "candidate_decisions": 34,
       "candidate_fallback": 0,
       "candidate_invalid": 0
+    },
+    {
+      "seed": 9821,
+      "target_seat": 6,
+      "target_role": "Seer",
+      "target_alignment": "village",
+      "baseline_game_id": "8a39f2ff-7c91-4053-8171-2da34c4cbd2d",
+      "candidate_game_id": "adc3e6d9-68a9-4eff-8911-fa65fc903915",
+      "baseline_winner": "wolf",
+      "candidate_winner": "wolf",
+      "baseline_target_won": false,
+      "candidate_target_won": false,
+      "adjusted_delta": -19.6,
+      "role_task_delta": 0.305,
+      "process_delta": -21.78,
+      "baseline_adjusted_score": 19.6,
+      "candidate_adjusted_score": 0.0,
+      "baseline_role_task_score": 0.14,
+      "candidate_role_task_score": 0.445,
+      "candidate_decisions": 34,
+      "candidate_fallback": 0,
+      "candidate_invalid": 0
+    },
+    {
+      "seed": 9822,
+      "target_seat": 7,
+      "target_role": "Seer",
+      "target_alignment": "village",
+      "baseline_game_id": "953377b9-dc0d-46bc-a6b1-c60e401db085",
+      "candidate_game_id": "349db88d-38cc-4df0-bbf6-e240dc9e45a4",
+      "baseline_winner": "wolf",
+      "candidate_winner": "village",
+      "baseline_target_won": false,
+      "candidate_target_won": true,
+      "adjusted_delta": 18.22,
+      "role_task_delta": 0.0467,
+      "process_delta": 5.25,
+      "baseline_adjusted_score": 47.89,
+      "candidate_adjusted_score": 66.11,
+      "baseline_role_task_score": 0.75,
+      "candidate_role_task_score": 0.7967,
+      "candidate_decisions": 50,
+      "candidate_fallback": 0,
+      "candidate_invalid": 0
+    },
+    {
+      "seed": 9823,
+      "target_seat": 2,
+      "target_role": "Seer",
+      "target_alignment": "village",
+      "baseline_game_id": "5bc78153-a7c7-42a5-9df5-3552929674c6",
+      "candidate_game_id": "1bd4f84d-63b2-47f2-8a79-f76098bb3028",
+      "baseline_winner": "wolf",
+      "candidate_winner": "wolf",
+      "baseline_target_won": false,
+      "candidate_target_won": false,
+      "adjusted_delta": 25.62,
+      "role_task_delta": -0.175,
+      "process_delta": 27.13,
+      "baseline_adjusted_score": 29.18,
+      "candidate_adjusted_score": 54.8,
+      "baseline_role_task_score": 0.49,
+      "candidate_role_task_score": 0.315,
+      "candidate_decisions": 39,
+      "candidate_fallback": 0,
+      "candidate_invalid": 0
     }
   ],
   "can_write": [
     "真实 LLM target-seat paired A/B runner 已在 Seer 目标席位上跑通。",
-    "本 pilot 中 baseline/candidate 各完成 20 局，candidate fallback/invalid 为 0/0。",
+    "本 pilot 中 baseline/candidate 各完成 23 局，candidate fallback/invalid 为 0/0。",
     "candidate 相对 baseline 的目标席位 adjusted/process/role-task 指标呈正向均值趋势。"
   ],
   "cannot_write": [
     "不能写成 Track C 已经获得单目标席位因果增益。",
     "不能写成 Track C 已经提升最终胜率。",
-    "不能把 20 paired seeds pipeline pilot 替代 80-120 paired seeds 的正式验证。"
+    "不能把 23 paired seeds pipeline pilot 替代 80-120 paired seeds 的正式验证。"
   ],
   "claim_boundary": "该 pilot 是真实 LLM target-seat A/B 阶段性证据。由于 bootstrap CI 下界仍跨 0，acceptance.accepted=false，只能写成正向趋势和链路健康，不能写成 causal_supported。",
-  "next_required_experiment": "当前已完成 20 paired seeds pipeline pilot；下一步按功效计划扩到 80-120 paired seeds，并轮换 Seer/Witch/Guard/Werewolf/Hunter/Villager。"
+  "next_required_experiment": "当前已完成 23 paired seeds pipeline pilot；下一步按功效计划扩到 80-120 paired seeds，并轮换 Seer/Witch/Guard/Werewolf/Hunter/Villager。"
 }

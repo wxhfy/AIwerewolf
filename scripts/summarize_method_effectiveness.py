@@ -199,7 +199,7 @@ def target_seat_required_experiment(row: dict[str, Any] | None) -> str:
             "只升级一个目标席位，固定对手、seed、角色分配。胜率作为辅助指标。"
         )
     return (
-        "已完成 20-pair pipeline pilot；下一步按功效计划扩到 80-120 paired seeds，"
+        f"已完成 {paired}-pair pipeline pilot；下一步按功效计划扩到 80-120 paired seeds，"
         "并轮换 Seer/Witch/Guard/Werewolf/Hunter/Villager。胜率作为辅助指标。"
     )
 
@@ -221,6 +221,10 @@ def read_csv(path: Path) -> list[dict[str, str]]:
         return []
     with path.open(encoding="utf-8", newline="") as f:
         return list(csv.DictReader(f))
+
+
+def committed_facts_snapshot() -> dict[str, Any]:
+    return read_json(DEFAULT_FACTS)
 
 
 def fnum(value: Any, default: float = 0.0) -> float:
@@ -633,6 +637,12 @@ def build_evidence(
     formal_leaderboard = read_csv(FORMAL_LEADERBOARD)
     formal_rubric = read_csv(FORMAL_RUBRIC)
     module_effects = read_csv(MODULE_EFFECTS)
+    previous_facts = committed_facts_snapshot()
+    previous_modules = previous_facts.get("modules", {}) if isinstance(previous_facts, dict) else {}
+    if not module_effects and isinstance(previous_modules, dict):
+        previous_rows = previous_modules.get("rows", [])
+        if isinstance(previous_rows, list):
+            module_effects = [dict(row) for row in previous_rows if isinstance(row, dict)]
     audit = read_json(FULL_AUDIT)
     mbti = read_json(MBTI_TRACK_C)
     retrieval = read_json(RETRIEVAL_RESULTS)
@@ -1753,7 +1763,7 @@ def render_report(evidence: dict[str, Any]) -> str:
         "",
         "## 13. 下一步真实实验命令",
         "",
-        "当前真实 provider 已通过 chat preflight。20-pair pipeline pilot 已完成；下一步按功效计划扩展 target-seat A/B：",
+        "当前真实 provider 已通过 chat preflight。target-seat pipeline pilot 已完成；下一步按功效计划扩展 target-seat A/B：",
         "",
         "```bash",
         "python scripts/target_seat_trackc_ab_experiment.py \\",

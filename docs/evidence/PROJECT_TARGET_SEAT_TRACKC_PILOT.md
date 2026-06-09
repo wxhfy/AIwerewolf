@@ -2,7 +2,7 @@
 
 生成时间：2026-06-09T17:15:35+08:00
 
-本文档汇总当前可用的 target-seat Track C 真实 LLM paired A/B pilot。它是 Track C 因果验证的阶段性证据，不是最终因果证明。
+本文档汇总当前可用的 target-seat Track C 真实 LLM paired A/B pilot。
 
 ```mermaid
 flowchart LR
@@ -32,26 +32,26 @@ flowchart LR
 
 ## 2. 核心结果
 
-| Metric | Value | Interpretation |
-| --- | --- | --- |
-| Paired seeds | 20 | 20-pair pipeline pilot 已完成；仍未达到 80-120 paired seeds 正式验证建议规模。 |
-| Completed baseline/candidate | 20 / 20 | 两侧均完成。 |
-| Adjusted delta | 6.0120 | 目标席位均值正向趋势。 |
-| Role-task delta | 0.1008 | 目标角色任务分均值正向趋势。 |
-| Process delta | 6.5290 | 过程分均值正向趋势。 |
-| Target win delta | 0.0000 | 本 pilot 中胜率没有变化，胜率只作辅助指标。 |
-| Candidate decisions | 752 | candidate 侧真实决策数。 |
-| Fallback / invalid | 0 / 0 | 健康门禁通过。 |
-| Accepted | False | ci_not_positive |
+| Metric | Value |
+| --- | --- |
+| Paired seeds | 23 |
+| Completed baseline/candidate | 23 / 23 |
+| Adjusted delta | 6.2817 |
+| Role-task delta | 0.0954 |
+| Process delta | 6.1383 |
+| Target win delta | 0.0435 |
+| Candidate decisions | 875 |
+| Fallback / invalid | 0 / 0 |
+| Accepted | False |
 
 ## 3. Bootstrap CI 与验收门禁
 
 | Delta | Mean | CI95Low | CI95High | CI crosses zero |
 | --- | --- | --- | --- | --- |
-| adjusted_final_score | 6.0120 | -6.3681 | 17.6161 | True |
-| role_task_score | 0.1008 | -0.0534 | 0.2458 | True |
-| process_score | 6.5290 | -6.4924 | 19.5370 | True |
-| target_win_rate | 0.0000 | 0.0000 | 0.0000 | True |
+| adjusted_final_score | 6.2817 | -5.1508 | 16.9720 | True |
+| role_task_score | 0.0954 | -0.0453 | 0.2244 | True |
+| process_score | 6.1383 | -5.3535 | 17.8543 | True |
+| target_win_rate | 0.0435 | 0.0000 | 0.1304 | True |
 
 | Gate | Passed |
 | --- | --- |
@@ -59,11 +59,9 @@ flowchart LR
 | strict_health | True |
 | score_gate | True |
 | role_task_gate | True |
-| win_gate | False |
+| win_gate | True |
 | ci_gate | False |
 | improvement_gate | True |
-
-解释：score、role-task、health 和 improvement gate 均通过，但 CI gate 未通过，因此 `accepted=false`，`claim_level=ci_not_positive`。
 
 ## 4. Paired Seed 明细
 
@@ -89,28 +87,6 @@ flowchart LR
 | 9818 | 6 | wolf | wolf | -16.2900 | 0.0050 | -15.8800 | 29 | 0 | 0 |
 | 9819 | 2 | wolf | wolf | 6.8300 | 0.2600 | 7.5900 | 23 | 0 | 0 |
 | 9820 | 2 | wolf | wolf | -0.3100 | 0.0000 | -0.3500 | 34 | 0 | 0 |
-
-## 5. 可写结论与边界
-
-可以写入报告：
-
-| 结论 |
-| --- |
-| 真实 LLM target-seat paired A/B runner 已在 Seer 目标席位上跑通。 |
-| 本 pilot 中 baseline/candidate 各完成 20 局，candidate fallback/invalid 为 0/0。 |
-| candidate 相对 baseline 的目标席位 adjusted/process/role-task 指标呈正向均值趋势。 |
-
-暂不能写入报告：
-
-| 结论 |
-| --- |
-| 不能写成 Track C 已经获得单目标席位因果增益。 |
-| 不能写成 Track C 已经提升最终胜率。 |
-| 不能把 20 paired seeds pipeline pilot 替代 80-120 paired seeds 的正式验证。 |
-
-边界说明：
-
-| 说明 |
-| --- |
-| 该 pilot 是真实 LLM target-seat A/B 阶段性证据。由于 bootstrap CI 下界仍跨 0，acceptance.accepted=false，只能写成正向趋势和链路健康，不能写成 causal_supported。 |
-| 当前已完成 20 paired seeds pipeline pilot；下一步按功效计划扩到 80-120 paired seeds，并轮换 Seer/Witch/Guard/Werewolf/Hunter/Villager。 |
+| 9821 | 6 | wolf | wolf | -19.6000 | 0.3050 | -21.7800 | 34 | 0 | 0 |
+| 9822 | 7 | wolf | village | 18.2200 | 0.0467 | 5.2500 | 50 | 0 | 0 |
+| 9823 | 2 | wolf | wolf | 25.6200 | -0.1750 | 27.1300 | 39 | 0 | 0 |

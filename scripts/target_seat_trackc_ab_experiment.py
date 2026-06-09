@@ -632,6 +632,45 @@ def load_previous_failures(payload: dict[str, Any]) -> list[dict[str, Any]]:
     return list(failures or []) if isinstance(failures, list) else []
 
 
+def read_jsonl_rows(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    rows: list[dict[str, Any]] = []
+    with path.open(encoding="utf-8") as f:
+        for line in f:
+            raw = line.strip()
+            if not raw:
+                continue
+            rows.append(json.loads(raw))
+    return rows
+
+
+def merge_sidecar_results(
+    baseline_results: list[dict[str, Any]],
+    candidate_results: list[dict[str, Any]],
+    games_jsonl: Path,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int]:
+    rows = read_jsonl_rows(games_jsonl)
+    if not rows:
+        return baseline_results, candidate_results, 0
+    baseline_rows = [row for row in rows if str(row.get("side") or "") == "baseline"]
+    candidate_rows = [row for row in rows if str(row.get("side") or "") == "candidate"]
+    merged_baseline = dedupe_results_by_seed_side([*baseline_results, *baseline_rows])
+    merged_candidate = dedupe_results_by_seed_side([*candidate_results, *candidate_rows])
+    return merged_baseline, merged_candidate, len(rows)
+
+
+def merge_sidecar_failures(failures: list[dict[str, Any]], failures_jsonl: Path) -> tuple[list[dict[str, Any]], int]:
+    rows = read_jsonl_rows(failures_jsonl)
+    if not rows:
+        return failures, 0
+    merged: dict[tuple[Any, str, str], dict[str, Any]] = {}
+    for row in [*failures, *rows]:
+        key = (row.get("seed"), str(row.get("side") or ""), str(row.get("error_type") or ""))
+        merged[key] = row
+    return list(merged.values()), len(rows)
+
+
 def dedupe_results_by_seed_side(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     by_key: dict[tuple[int, str], dict[str, Any]] = {}
     for row in rows:
@@ -873,6 +912,18 @@ def main() -> int:
             games_jsonl = args.output_dir / f"target_seat_ab_{args.target_role}_{label}.games.jsonl"
             failures_jsonl = args.output_dir / f"target_seat_ab_{args.target_role}_{label}.failures.jsonl"
             partial_path = args.output_dir / f"target_seat_ab_{args.target_role}_{label}.partial.json"
+        if args.append:
+            baseline_results, candidate_results, sidecar_game_rows = merge_sidecar_results(
+                baseline_results,
+                candidate_results,
+                games_jsonl,
+            )
+            failures, sidecar_failure_rows = merge_sidecar_failures(failures, failures_jsonl)
+            if sidecar_game_rows or sidecar_failure_rows:
+                print(
+                    "merged append sidecars "
+                    f"games_jsonl_rows={sidecar_game_rows} failures_jsonl_rows={sidecar_failure_rows}"
+                )
     else:
         out = args.output_dir / f"target_seat_ab_{args.target_role}_{label}.json"
         games_jsonl = args.output_dir / f"target_seat_ab_{args.target_role}_{label}.games.jsonl"
