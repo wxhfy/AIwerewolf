@@ -60,25 +60,96 @@ def _run_post_game_scoring(state: GameState) -> None:
     import logging
     import os
 
+    from backend.db.persist import claim_track_c_post_game_job
+    from backend.db.persist import complete_track_c_post_game_job
+    from backend.db.persist import ensure_track_c_post_game_job
+    from backend.db.persist import fail_track_c_post_game_job
     from backend.eval.post_game import run_post_game_scoring
 
-    count = run_post_game_scoring(state, str(state.id))
+    logger = logging.getLogger(__name__)
+    game_id = str(state.id)
+    ensure_track_c_post_game_job(game_id, source="post_game_hook")
+    job = claim_track_c_post_game_job(game_id)
+    if job is None:
+        logger.info("Track C post-game job already claimed or completed for game %s", game_id)
+        return
+
+    try:
+        result = run_post_game_scoring(state, game_id, return_details=True)
+    except Exception as exc:
+        fail_track_c_post_game_job(game_id, str(exc), retryable=True, metadata={"stage": "post_game_scoring"})
+        raise
+    count = int(result.get("lessons_stored", 0) if isinstance(result, dict) else result)
+    promoted_count = int(result.get("promoted_count", 0) if isinstance(result, dict) else 0)
+
+    complete_track_c_post_game_job(
+        game_id,
+        lessons_stored=count,
+        promoted_count=promoted_count,
+        metadata={"stage": "post_game_scoring"},
+    )
     if count > 0:
-        logging.getLogger(__name__).info(
+        logger.info(
             "Post-game scoring: %s knowledge lessons extracted for game %s",
             count,
-            state.id,
+            game_id,
         )
     elif os.getenv("REQUIRE_POST_GAME_SCORING", "").lower() == "true":
-        logging.getLogger(__name__).error("STRICT FAIL: Post-game scoring produced 0 lessons")
+        logger.error("STRICT FAIL: Post-game scoring produced 0 lessons")
+
+
+def _recover_track_c_post_game_jobs() -> int:
+    import logging
+    import os
+
+    from backend.db.persist import build_post_game_state_from_db
+    from backend.db.persist import fail_track_c_post_game_job
+    from backend.db.persist import list_recoverable_track_c_post_game_jobs
+
+    if os.getenv("TRACK_C_RECOVER_ON_STARTUP", "true").lower() in {"0", "false", "no"}:
+        return 0
+
+    limit = int(os.getenv("TRACK_C_RECOVERY_LIMIT", "5"))
+    stale_after_seconds = int(os.getenv("TRACK_C_JOB_STALE_SECONDS", "900"))
+    logger = logging.getLogger(__name__)
+    recovered = 0
+    for job in list_recoverable_track_c_post_game_jobs(limit=limit, stale_after_seconds=stale_after_seconds):
+        game_id = str(job.get("game_id") or "")
+        if not game_id:
+            continue
+        state = build_post_game_state_from_db(game_id)
+        if state is None:
+            fail_track_c_post_game_job(
+                game_id,
+                "Cannot rebuild finished game state for Track C recovery",
+                retryable=False,
+                metadata={"stage": "startup_recovery"},
+            )
+            continue
+        try:
+            _run_post_game_scoring(state)
+            recovered += 1
+        except Exception:
+            logger.warning("Track C startup recovery failed for game %s", game_id, exc_info=True)
+    return recovered
 
 
 @app.on_event("startup")
 def _initialize_database() -> None:
+    import logging
+
+    logger = logging.getLogger(__name__)
     try:
         init_db()
     except Exception:
-        pass
+        logger.warning("Database initialization failed during startup", exc_info=True)
+        return
+    try:
+        recovered = _recover_track_c_post_game_jobs()
+        if recovered:
+            logger.info("Recovered %s Track C post-game jobs on startup", recovered)
+    except Exception:
+        logger.warning("Track C startup recovery failed", exc_info=True)
 
 
 @app.get("/api/health")

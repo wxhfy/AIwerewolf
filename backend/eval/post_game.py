@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 from backend.db.database import DEFAULT_DB_URL as _DEFAULT_CONN
 
 
-def run_post_game_scoring(game_state: Any, game_id: str) -> int:
+def run_post_game_scoring(game_state: Any, game_id: str, *, return_details: bool = False) -> int | dict[str, int]:
     """Score all decisions and extract knowledge after game end.
 
     Has access to ground truth (true roles/alignments from game_state)
@@ -36,12 +36,12 @@ def run_post_game_scoring(game_state: Any, game_id: str) -> int:
         from backend.llm import create_client
     except ImportError as e:
         logger.warning(f"Post-game scoring skipped (import error): {e}")
-        return 0
+        return {"lessons_stored": 0, "promoted_count": 0} if return_details else 0
 
     # 1. Build ground-truth state dict from game state
     state_dict = _build_state_dict(game_state)
     if not state_dict["players"]:
-        return 0
+        return {"lessons_stored": 0, "promoted_count": 0} if return_details else 0
 
     # 2. Read decisions from agent_decisions table
     conn = psycopg2.connect(_DEFAULT_CONN)
@@ -58,7 +58,7 @@ def run_post_game_scoring(game_state: Any, game_id: str) -> int:
 
     if not rows:
         logger.info(f"No decisions found for game {game_id}, skipping scoring")
-        return 0
+        return {"lessons_stored": 0, "promoted_count": 0} if return_details else 0
 
     # 2.5. Check if this game already has per_step lessons (Track B may have scored it)
     import json as _check_json
@@ -78,7 +78,7 @@ def run_post_game_scoring(game_state: Any, game_id: str) -> int:
             logger.info(
                 f"Game {game_id} already has {existing} per_step lessons (from Track B), skipping post_game scoring"
             )
-            return 0
+            return {"lessons_stored": 0, "promoted_count": 0} if return_details else 0
     except Exception:
         logger.debug(f"Could not check existing lessons for game {game_id}, continuing", exc_info=True)
 
@@ -182,13 +182,14 @@ def run_post_game_scoring(game_state: Any, game_id: str) -> int:
         all_lessons.extend(lessons)
 
     if not all_lessons:
-        return 0
+        return {"lessons_stored": 0, "promoted_count": 0} if return_details else 0
 
     # 9. Store lessons as candidate docs
     stored = store_lessons_to_db(all_lessons)
     logger.info(f"Post-game knowledge: {stored} lessons stored for game {game_id}")
 
     # 10. Promote candidates → active (quality + cluster + prune)
+    promoted = 0
     if stored > 0:
         try:
             from backend.eval.knowledge_abstractor import promote_after_store
@@ -198,6 +199,8 @@ def run_post_game_scoring(game_state: Any, game_id: str) -> int:
         except Exception:
             logger.debug("Promotion skipped (non-critical)", exc_info=True)
 
+    if return_details:
+        return {"lessons_stored": int(stored or 0), "promoted_count": int(promoted or 0)}
     return stored
 
 

@@ -6,10 +6,13 @@ import json
 import re
 from dataclasses import asdict
 from datetime import datetime
+from datetime import timedelta
 from datetime import timezone
 from typing import Any
 
+from sqlalchemy import and_
 from sqlalchemy import func as sa_func
+from sqlalchemy import or_
 
 from backend.db.database import SessionLocal
 from backend.db.database import init_db
@@ -29,8 +32,13 @@ from backend.db.models import ReviewReport
 from backend.db.models import RoleStrategyCard
 from backend.db.models import StrategyKnowledgeDoc
 from backend.db.models import StrategyPatch
+from backend.db.models import TrackCPostGameJob
 from backend.db.models import Vote
+from backend.engine.models import Alignment
 from backend.engine.models import GameState
+from backend.engine.models import Phase
+from backend.engine.models import Player as EnginePlayer
+from backend.engine.models import Role
 from backend.eval.evolution import DreamJob
 from backend.eval.evolution import KnowledgeDocValidator
 from backend.eval.evolution import StrategyKnowledgeDoc as StrategyKnowledgeDocData
@@ -48,6 +56,14 @@ _CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _comparable_utc(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
 
 
 def _clean(value: Any) -> Any:
@@ -106,6 +122,17 @@ def _speech_tag(content: dict) -> str:
     if content.get("pk_speech"):
         return "PK"
     return ""
+
+
+def _alignment_for_role(role: str) -> Alignment:
+    return Alignment.WOLF if role in _WOLF_ROLES else Alignment.VILLAGE
+
+
+def _coerce_role(role: str) -> Role:
+    try:
+        return Role(role)
+    except ValueError:
+        return Role.VILLAGER
 
 
 def save_game_start(state: GameState, model_name: str = "", prompt_version: str = "v1") -> Game:
@@ -426,6 +453,8 @@ def save_game_end(state: GameState) -> None:
                 entry.losses = (entry.losses or 0) + 1
             entry.win_rate = float(entry.wins) / max(1, entry.games_played)
 
+        _ensure_track_c_post_game_job_row(db, state.id, source="game_end")
+
         db.commit()
     finally:
         db.close()
@@ -433,6 +462,224 @@ def save_game_end(state: GameState) -> None:
         save_published_review(state)
     except Exception:
         pass
+
+
+def _ensure_track_c_post_game_job_row(db, game_id: str, *, source: str = "") -> TrackCPostGameJob:
+    row = db.query(TrackCPostGameJob).filter(TrackCPostGameJob.game_id == game_id).first()
+    if row is None:
+        row = TrackCPostGameJob(
+            game_id=game_id,
+            status="pending",
+            attempts=0,
+            max_attempts=3,
+            extra_metadata={"source": source} if source else {},
+        )
+        db.add(row)
+        db.flush()
+        return row
+    if row.status in {"failed"} and (row.attempts or 0) < (row.max_attempts or 3):
+        row.status = "pending"
+        row.last_error = ""
+        row.locked_at = None
+        row.updated_at = _now()
+    return row
+
+
+def ensure_track_c_post_game_job(game_id: str, *, source: str = "") -> dict[str, Any]:
+    """Create the durable Track C post-game job if it does not exist."""
+    init_db()
+    db = SessionLocal()
+    try:
+        row = _ensure_track_c_post_game_job_row(db, game_id, source=source)
+        db.commit()
+        return _track_c_job_to_dict(row)
+    finally:
+        db.close()
+
+
+def claim_track_c_post_game_job(game_id: str, *, stale_after_seconds: int = 900) -> dict[str, Any] | None:
+    """Claim a pending or stale running Track C job for execution."""
+    init_db()
+    db = SessionLocal()
+    try:
+        row = db.query(TrackCPostGameJob).filter(TrackCPostGameJob.game_id == game_id).first()
+        if row is None:
+            game = db.query(Game).filter(Game.id == game_id, Game.status == "finished").first()
+            if game is None:
+                return None
+            row = _ensure_track_c_post_game_job_row(db, game_id, source="claim")
+
+        now = _now()
+        stale_cutoff = now - timedelta(seconds=max(1, stale_after_seconds))
+        status = str(row.status or "")
+        locked_at = _comparable_utc(row.locked_at)
+        is_claimable = status == "pending" or (status == "running" and (locked_at is None or locked_at < stale_cutoff))
+        if status == "completed" or not is_claimable or (row.attempts or 0) >= (row.max_attempts or 3):
+            return None
+
+        row.status = "running"
+        row.attempts = int(row.attempts or 0) + 1
+        row.locked_at = now
+        row.started_at = row.started_at or now
+        row.updated_at = now
+        db.commit()
+        return _track_c_job_to_dict(row)
+    finally:
+        db.close()
+
+
+def complete_track_c_post_game_job(
+    game_id: str,
+    *,
+    lessons_stored: int = 0,
+    promoted_count: int = 0,
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    init_db()
+    db = SessionLocal()
+    try:
+        row = db.query(TrackCPostGameJob).filter(TrackCPostGameJob.game_id == game_id).first()
+        if row is None:
+            return None
+        now = _now()
+        row.status = "completed"
+        row.lessons_stored = int(lessons_stored or 0)
+        row.promoted_count = int(promoted_count or 0)
+        row.last_error = ""
+        row.locked_at = None
+        row.finished_at = now
+        row.updated_at = now
+        row.extra_metadata = {**(row.extra_metadata or {}), **(metadata or {})}
+        db.commit()
+        return _track_c_job_to_dict(row)
+    finally:
+        db.close()
+
+
+def fail_track_c_post_game_job(
+    game_id: str,
+    error: str,
+    *,
+    retryable: bool = True,
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    init_db()
+    db = SessionLocal()
+    try:
+        row = db.query(TrackCPostGameJob).filter(TrackCPostGameJob.game_id == game_id).first()
+        if row is None:
+            return None
+        now = _now()
+        attempts = int(row.attempts or 0)
+        max_attempts = int(row.max_attempts or 3)
+        row.status = "pending" if retryable and attempts < max_attempts else "failed"
+        row.last_error = str(error or "")[:2000]
+        row.locked_at = None
+        row.finished_at = now if row.status == "failed" else None
+        row.updated_at = now
+        row.extra_metadata = {**(row.extra_metadata or {}), **(metadata or {})}
+        db.commit()
+        return _track_c_job_to_dict(row)
+    finally:
+        db.close()
+
+
+def list_recoverable_track_c_post_game_jobs(
+    *,
+    limit: int = 10,
+    stale_after_seconds: int = 900,
+) -> list[dict[str, Any]]:
+    """List pending and stale running Track C jobs after process recovery."""
+    init_db()
+    db = SessionLocal()
+    try:
+        now = _now()
+        stale_cutoff = now - timedelta(seconds=max(1, stale_after_seconds))
+        rows = (
+            db.query(TrackCPostGameJob)
+            .join(Game, Game.id == TrackCPostGameJob.game_id)
+            .filter(Game.status == "finished")
+            .filter(
+                or_(
+                    TrackCPostGameJob.status == "pending",
+                    and_(
+                        TrackCPostGameJob.status == "running",
+                        or_(
+                            TrackCPostGameJob.locked_at.is_(None),
+                            TrackCPostGameJob.locked_at < stale_cutoff,
+                        ),
+                    ),
+                )
+            )
+            .filter(TrackCPostGameJob.attempts < TrackCPostGameJob.max_attempts)
+            .order_by(TrackCPostGameJob.updated_at.asc(), TrackCPostGameJob.created_at.asc())
+            .limit(max(1, limit))
+            .all()
+        )
+        return [_track_c_job_to_dict(row) for row in rows]
+    finally:
+        db.close()
+
+
+def build_post_game_state_from_db(game_id: str) -> GameState | None:
+    """Rebuild the minimal GameState required by post-game Track B/C scoring."""
+    init_db()
+    db = SessionLocal()
+    try:
+        game = db.query(Game).filter(Game.id == game_id).first()
+        if game is None or game.status != "finished":
+            return None
+        players = [
+            EnginePlayer(
+                id=row.id,
+                seat=int(row.seat_no or 0),
+                name=row.name,
+                role=_coerce_role(row.role),
+                alignment=_alignment_for_role(row.role),
+                alive=bool(row.is_alive),
+                is_ai=bool(row.is_ai),
+                agent_type=row.agent_type or "llm",
+                model_name=row.model_name or "",
+                prompt_version=row.prompt_version or "v1",
+                death_day=row.death_day,
+                death_reason=row.death_reason,
+            )
+            for row in sorted(game.players, key=lambda item: item.seat_no)
+        ]
+        winner = None
+        if game.winner:
+            try:
+                winner = Alignment(game.winner)
+            except ValueError:
+                winner = None
+        return GameState(
+            id=game.id,
+            phase=Phase.GAME_END,
+            day=int(game.current_day or 0),
+            players=players,
+            winner=winner,
+        )
+    finally:
+        db.close()
+
+
+def _track_c_job_to_dict(row: TrackCPostGameJob) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "game_id": row.game_id,
+        "status": row.status,
+        "attempts": row.attempts,
+        "max_attempts": row.max_attempts,
+        "lessons_stored": row.lessons_stored,
+        "promoted_count": row.promoted_count,
+        "last_error": row.last_error,
+        "locked_at": row.locked_at.isoformat() if row.locked_at else None,
+        "started_at": row.started_at.isoformat() if row.started_at else None,
+        "finished_at": row.finished_at.isoformat() if row.finished_at else None,
+        "metadata": row.extra_metadata or {},
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+    }
 
 
 def _compute_player_metrics(state: GameState) -> list[dict]:

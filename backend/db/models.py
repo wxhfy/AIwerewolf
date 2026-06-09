@@ -414,6 +414,38 @@ class StrategyKnowledgeDoc(Base):
     )
 
 
+class TrackCPostGameJob(Base):
+    """Durable post-game Track C recovery job.
+
+    A finished game first creates a pending job in the same DB transaction as
+    `save_game_end`. The app then marks the job running while Track B/C scoring
+    executes and completes it after candidate promotion. If the process exits
+    mid-flight, startup recovery can claim stale pending/running jobs and retry.
+    """
+
+    __tablename__ = "track_c_post_game_jobs"
+
+    id = Column(String, primary_key=True, default=_uuid)
+    game_id = Column(String, ForeignKey("games.id"), nullable=False, unique=True, index=True)
+    status = Column(String, default="pending", index=True)  # pending | running | completed | failed
+    attempts = Column(Integer, default=0)
+    max_attempts = Column(Integer, default=3)
+    lessons_stored = Column(Integer, default=0)
+    promoted_count = Column(Integer, default=0)
+    last_error = Column(Text, default="")
+    locked_at = Column(DateTime, nullable=True, index=True)
+    started_at = Column(DateTime, nullable=True)
+    finished_at = Column(DateTime, nullable=True)
+    extra_metadata = Column("metadata", JSON, default=dict)
+    created_at = Column(DateTime, default=_utcnow, index=True)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+    __table_args__ = (
+        Index("ix_track_c_jobs_status_updated", "status", "updated_at"),
+        Index("ix_track_c_jobs_game_status", "game_id", "status"),
+    )
+
+
 # NOTE: Only populated by scripts/build_strategy_graph.py, not the game pipeline.
 class StrategyGraphLink(Base):
     """GraphRAG-lite edge between strategy knowledge entities."""

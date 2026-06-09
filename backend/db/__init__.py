@@ -20,6 +20,7 @@ from backend.db.models import RoleStrategyCard
 from backend.db.models import StrategyGraphLink
 from backend.db.models import StrategyKnowledgeDoc
 from backend.db.models import StrategyPatch
+from backend.db.models import TrackCPostGameJob
 from backend.db.models import Vote
 
 __all__ = [
@@ -37,6 +38,7 @@ __all__ = [
     "PublishedReview",
     "EvolutionRound",
     "StrategyKnowledgeDoc",
+    "TrackCPostGameJob",
     "StrategyGraphLink",
     "RoleStrategyCard",
     "PersonaRoleAdapter",
