@@ -89,6 +89,14 @@ def existing_runtime_feedback(path: Path) -> dict[str, Any] | None:
     return value if isinstance(value, dict) and value else None
 
 
+def existing_target_seat_results(path: Path) -> list[dict[str, Any]]:
+    payload = read_json(path)
+    value = payload.get("target_seat_ab")
+    if not isinstance(value, list):
+        return []
+    return [sanitize_endpoint_ids(row) for row in value if isinstance(row, dict)]
+
+
 def read_csv(path: Path) -> list[dict[str, str]]:
     if not path.exists():
         return []
@@ -484,10 +492,22 @@ def collect_target_seat_results() -> list[dict[str, Any]]:
     return rows
 
 
+def select_target_seat_results(
+    *,
+    target_seat_snapshot: list[dict[str, Any]] | None = None,
+    refresh_target_seat: bool = False,
+) -> list[dict[str, Any]]:
+    if refresh_target_seat:
+        return collect_target_seat_results()
+    return [dict(row) for row in target_seat_snapshot or []]
+
+
 def build_evidence(
     *,
     generated_at: str | None = None,
     runtime_feedback_snapshot: dict[str, Any] | None = None,
+    target_seat_snapshot: list[dict[str, Any]] | None = None,
+    refresh_target_seat: bool = False,
 ) -> dict[str, Any]:
     formal = read_json(FORMAL_SUMMARY)
     formal_leaderboard = read_csv(FORMAL_LEADERBOARD)
@@ -509,7 +529,10 @@ def build_evidence(
         statistics_report = dict(statistics_report)
         statistics_report["runtime_feedback"] = runtime_feedback_ci_from_snapshot(db_feedback)
     smoke_rows = collect_track_c_smoke()
-    target_seat_rows = collect_target_seat_results()
+    target_seat_rows = select_target_seat_results(
+        target_seat_snapshot=target_seat_snapshot,
+        refresh_target_seat=refresh_target_seat,
+    )
 
     retrieval_metrics = retrieval.get("metrics", {}) if isinstance(retrieval, dict) else {}
     default_policy = retrieval_metrics.get("hybrid_role_mbti_global", {})
@@ -1617,13 +1640,24 @@ def main() -> int:
         action="store_true",
         help="Refresh PostgreSQL runtime feedback instead of reusing the existing tracked snapshot",
     )
+    parser.add_argument(
+        "--refresh-target-seat",
+        action="store_true",
+        help="Refresh target-seat A/B evidence from local outputs instead of reusing the existing tracked snapshot",
+    )
     args = parser.parse_args()
 
     report_path = Path(args.report)
     facts_path = Path(args.facts)
     generated_at = args.generated_at or existing_generated_at(facts_path)
     runtime_feedback = None if args.refresh_runtime else existing_runtime_feedback(facts_path)
-    evidence = build_evidence(generated_at=generated_at, runtime_feedback_snapshot=runtime_feedback)
+    target_seat_snapshot = [] if args.refresh_target_seat else existing_target_seat_results(facts_path)
+    evidence = build_evidence(
+        generated_at=generated_at,
+        runtime_feedback_snapshot=runtime_feedback,
+        target_seat_snapshot=target_seat_snapshot,
+        refresh_target_seat=args.refresh_target_seat,
+    )
     report_path.parent.mkdir(parents=True, exist_ok=True)
     facts_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text(render_report(evidence), encoding="utf-8")
