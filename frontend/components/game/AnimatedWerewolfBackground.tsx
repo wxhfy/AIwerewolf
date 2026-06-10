@@ -43,12 +43,12 @@ export function AnimatedWerewolfBackground() {
     media.add("(prefers-reduced-motion: no-preference)", () => {
       const baseMountains = getLayer(root, "base");
       const moon = getLayer(root, "moon");
-      const fogBack = getLayer(root, "fogBack");
-      const fogFront = getLayer(root, "fogFront");
+      const fog = getLayer(root, "fog");
       const wolf = getLayer(root, "wolf");
       const treesFront = getLayer(root, "treesFront");
       const stars = Array.from(root.querySelectorAll<HTMLElement>("[data-bg-star]"));
 
+      /* base mountains — slow drift */
       gsap.fromTo(baseMountains, { scale: 1, y: 0 }, {
         scale: 1.025,
         y: -6,
@@ -58,6 +58,7 @@ export function AnimatedWerewolfBackground() {
         ease: "sine.inOut",
       });
 
+      /* moon — gentle breathing glow */
       gsap.fromTo(moon, { scale: 1, opacity: 0.72 }, {
         scale: 1.06,
         opacity: 0.95,
@@ -67,26 +68,18 @@ export function AnimatedWerewolfBackground() {
         ease: "sine.inOut",
       });
 
-      gsap.fromTo(fogBack, { x: -40, y: 0, opacity: 0.25 }, {
-        x: 40,
+      /* fog — drifting mist */
+      gsap.fromTo(fog, { x: -50, y: 2, opacity: 0.32 }, {
+        x: 50,
         y: -8,
-        opacity: 0.45,
-        duration: 32,
+        opacity: 0.52,
+        duration: 36,
         repeat: -1,
         yoyo: true,
         ease: "sine.inOut",
       });
 
-      gsap.fromTo(fogFront, { x: 60, y: 4, opacity: 0.35 }, {
-        x: -60,
-        y: -6,
-        opacity: 0.58,
-        duration: 38,
-        repeat: -1,
-        yoyo: true,
-        ease: "sine.inOut",
-      });
-
+      /* wolf — subtle sway */
       gsap.fromTo(wolf, { y: 0, scale: 1, opacity: 0.72 }, {
         y: -4,
         scale: 1.015,
@@ -97,6 +90,7 @@ export function AnimatedWerewolfBackground() {
         ease: "sine.inOut",
       });
 
+      /* foreground trees — slow parallax drift */
       gsap.fromTo(treesFront, { scale: 1.01, y: 0 }, {
         scale: 1.025,
         y: -3,
@@ -106,6 +100,7 @@ export function AnimatedWerewolfBackground() {
         ease: "sine.inOut",
       });
 
+      /* twinkling stars */
       stars.forEach((star, index) => {
         gsap.fromTo(star, { opacity: 0.18, scale: 0.8 }, {
           opacity: index % 3 === 0 ? 0.48 : 0.34,
@@ -141,10 +136,9 @@ export function AnimatedWerewolfBackground() {
           />
         ))}
       </div>
-      <div className={`${styles.layer} ${styles.fogBack}`} data-bg-layer="fogBack" />
+      <div className={`${styles.layer} ${styles.fog}`} data-bg-layer="fog" />
       <div className={`${styles.layer} ${styles.wolf}`} data-bg-layer="wolf" />
       <div className={`${styles.layer} ${styles.treesFront}`} data-bg-layer="treesFront" />
-      <div className={`${styles.layer} ${styles.fogFront}`} data-bg-layer="fogFront" />
       <div className={styles.centralClarity} />
       <div className={styles.vignette} />
     </div>
