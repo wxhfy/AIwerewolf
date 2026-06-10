@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="720" viewBox="0 0 900 720">
+  <defs>
+    <linearGradient id="g1" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#2563eb"/><stop offset="100%" stop-color="#3b82f6"/></linearGradient>
+    <linearGradient id="g2" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#0f766e"/><stop offset="100%" stop-color="#14b8a6"/></linearGradient>
+    <linearGradient id="g3" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#059669"/><stop offset="100%" stop-color="#10b981"/></linearGradient>
+    <linearGradient id="g4" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#7c3aed"/><stop offset="100%" stop-color="#8b5cf6"/></linearGradient>
+    <linearGradient id="g5" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#b45309"/><stop offset="100%" stop-color="#f59e0b"/></linearGradient>
+    <linearGradient id="g6" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#334155"/><stop offset="100%" stop-color="#475569"/></linearGradient>
+    <linearGradient id="g7" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#be123c"/><stop offset="100%" stop-color="#e11d48"/></linearGradient>
+    <linearGradient id="g8" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#0ea5e9"/><stop offset="100%" stop-color="#38bdf8"/></linearGradient>
+  </defs>
+
+  <text x="450" y="32" text-anchor="middle" font-size="20" font-weight="700" fill="#1e293b">AI Werewolf 系统分层架构</text>
+
+  <!-- Layer 1: 展示层 -->
+  <rect x="60" y="52" width="780" height="68" rx="6" fill="url(#g1)" opacity="0.15"/>
+  <rect x="60" y="52" width="780" height="68" rx="6" fill="none" stroke="#2563eb" stroke-width="1.5"/>
+  <rect x="60" y="52" width="6" height="68" rx="3" fill="url(#g1)"/>
+  <text x="90" y="82" font-size="15" font-weight="700" fill="#1e3a5f">展示层</text>
+  <text x="90" y="106" font-size="12" fill="#475569">前端 UI · WebSocket 实时推送 · 观战 / 人机混战 / 复盘仪表盘</text>
+
+  <!-- arrow 1→2 -->
+  <line x1="450" y1="120" x2="450" y2="136" stroke="#94a3b8" stroke-width="1" marker-end="url(#arrow)"/>
+
+  <!-- Layer 2: 服务层 -->
+  <rect x="60" y="140" width="780" height="68" rx="6" fill="url(#g2)" opacity="0.12"/>
+  <rect x="60" y="140" width="780" height="68" rx="6" fill="none" stroke="#0f766e" stroke-width="1.5"/>
+  <rect x="60" y="140" width="6" height="68" rx="3" fill="url(#g2)"/>
+  <text x="90" y="170" font-size="15" font-weight="700" fill="#134e4a">服务层</text>
+  <text x="90" y="194" font-size="12" fill="#475569">FastAPI · RoomManager · REST / WebSocket 接口</text>
+
+  <line x1="450" y1="208" x2="450" y2="224" stroke="#94a3b8" stroke-width="1"/>
+
+  <!-- Layer 3: 规则层 -->
+  <rect x="60" y="228" width="780" height="68" rx="6" fill="url(#g3)" opacity="0.12"/>
+  <rect x="60" y="228" width="780" height="68" rx="6" fill="none" stroke="#059669" stroke-width="1.5"/>
+  <rect x="60" y="228" width="6" height="68" rx="3" fill="url(#g3)"/>
+  <text x="90" y="258" font-size="15" font-weight="700" fill="#064e3b">基础流转层</text>
+  <text x="90" y="282" font-size="12" fill="#475569">WerewolfGame · PhaseManager · ActionValidator · 技能结算与胜负判定</text>
+
+  <line x1="450" y1="296" x2="450" y2="312" stroke="#94a3b8" stroke-width="1"/>
+
+  <!-- Layer 4: 隔离层 -->
+  <rect x="60" y="316" width="780" height="68" rx="6" fill="url(#g4)" opacity="0.12"/>
+  <rect x="60" y="316" width="780" height="68" rx="6" fill="none" stroke="#7c3aed" stroke-width="1.5"/>
+  <rect x="60" y="316" width="6" height="68" rx="3" fill="url(#g4)"/>
+  <text x="90" y="346" font-size="15" font-weight="700" fill="#4c1d95">信息隔离层</text>
+  <text x="90" y="370" font-size="12" fill="#475569">Visibility · PlayerView · 狼人 / 神职 / 村民 / 公开 四视角裁剪</text>
+
+  <line x1="450" y1="384" x2="450" y2="400" stroke="#94a3b8" stroke-width="1"/>
+
+  <!-- Layer 5: Agent层 -->
+  <rect x="60" y="404" width="780" height="68" rx="6" fill="url(#g5)" opacity="0.12"/>
+  <rect x="60" y="404" width="780" height="68" rx="6" fill="none" stroke="#b45309" stroke-width="1.5"/>
+  <rect x="60" y="404" width="6" height="68" rx="3" fill="url(#g5)"/>
+  <text x="90" y="434" font-size="15" font-weight="700" fill="#78350f">Agent 决策层</text>
+  <text x="90" y="458" font-size="12" fill="#475569">CognitiveAgent · AgentLoop · 7 工具 · Persona / Role / Strategy 三层 Prompt</text>
+
+  <line x1="450" y1="472" x2="450" y2="488" stroke="#94a3b8" stroke-width="1"/>
+
+  <!-- Layer 6: 数据层 -->
+  <rect x="60" y="492" width="780" height="68" rx="6" fill="url(#g6)" opacity="0.12"/>
+  <rect x="60" y="492" width="780" height="68" rx="6" fill="none" stroke="#334155" stroke-width="1.5"/>
+  <rect x="60" y="492" width="6" height="68" rx="3" fill="url(#g6)"/>
+  <text x="90" y="522" font-size="15" font-weight="700" fill="#1e293b">数据证据层</text>
+  <text x="90" y="546" font-size="12" fill="#475569">PostgreSQL · game_events · agent_decisions · published_reviews · 20+ 表证据链</text>
+
+  <line x1="450" y1="560" x2="450" y2="576" stroke="#94a3b8" stroke-width="1"/>
+
+  <!-- Layer 7: 评测层 -->
+  <rect x="60" y="580" width="780" height="68" rx="6" fill="url(#g7)" opacity="0.12"/>
+  <rect x="60" y="580" width="780" height="68" rx="6" fill="none" stroke="#be123c" stroke-width="1.5"/>
+  <rect x="60" y="580" width="6" height="68" rx="3" fill="url(#g7)"/>
+  <text x="90" y="610" font-size="15" font-weight="700" fill="#881337">评测复盘层</text>
+  <text x="90" y="634" font-size="12" fill="#475569">PerStepScorer · 三级评分级联 · PublishedReview · Leaderboard</text>
+
+  <line x1="450" y1="648" x2="450" y2="664" stroke="#94a3b8" stroke-width="1"/>
+
+  <!-- Layer 8: 进化层 -->
+  <rect x="60" y="668" width="780" height="68" rx="6" fill="url(#g8)" opacity="0.12"/>
+  <rect x="60" y="668" width="780" height="68" rx="6" fill="none" stroke="#0ea5e9" stroke-width="1.5"/>
+  <rect x="60" y="668" width="6" height="68" rx="3" fill="url(#g8)"/>
+  <text x="90" y="698" font-size="15" font-weight="700" fill="#0c4a6e">知识进化层</text>
+  <text x="90" y="722" font-size="12" fill="#475569">KnowledgeAbstractor · StrategyRetriever · candidate→active→deprecated 生命周期</text>
+</svg>

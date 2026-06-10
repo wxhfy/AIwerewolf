@@ -25,7 +25,12 @@
         "private_info_withheld",
         "voted_elsewhere_despite_known_wolf",
         "role_goal_conflict"
-      ]
+      ],
+      "construction": {
+        "visible_situation": "Seer has private night result P1=werewolf; day discussion and vote are open.",
+        "injected_action": "Seer does not publish the P1 check result and votes for another target.",
+        "conflict": "Private wolf result is not converted into public evidence; known wolf is not voted out."
+      }
     },
     {
       "case_id": "control_error_002",
@@ -37,7 +42,12 @@
         "wolf_perspective_leak",
         "teammate_overprotection",
         "lack_of_public_evidence"
-      ]
+      ],
+      "construction": {
+        "visible_situation": "Public table has a seer accusation against P1; wolves need to maintain villager-perspective speech.",
+        "injected_action": "Werewolf speech leaks wolf-side perspective and protects the checked teammate without public evidence.",
+        "conflict": "Speech exposes wolf perspective and overprotects a teammate against public evidence."
+      }
     },
     {
       "case_id": "control_error_003",
@@ -48,7 +58,12 @@
       "detected_reasons": [
         "low_value_kill_target",
         "role_goal_conflict"
-      ]
+      ],
+      "construction": {
+        "visible_situation": "Exposed seer remains alive and can continue producing check information.",
+        "injected_action": "Werewolf attacks a low-value villager target instead of the exposed seer.",
+        "conflict": "Night kill does not suppress the high-value information role."
+      }
     },
     {
       "case_id": "control_positive_001",
@@ -59,7 +74,12 @@
       "detected_reasons": [
         "effective_skill_target",
         "role_goal_alignment"
-      ]
+      ],
+      "construction": {
+        "visible_situation": "Witch receives the night attack target and has antidote available.",
+        "injected_action": "Witch saves the attacked target.",
+        "conflict": "No conflict; action matches role information and camp benefit."
+      }
     }
   ],
   "by_action_type": [
