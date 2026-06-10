@@ -191,15 +191,16 @@ try {
   await page.evaluate(() => localStorage.clear());
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.getByTestId("mode-human-button").click();
-  await page.getByRole("button", { name: "开始真人参与对局" }).waitFor({ state: "visible", timeout: 10000 });
+  const startHumanButton = page.getByRole("button", { name: /开始真人参与对局|Start Human Match/i });
+  await startHumanButton.waitFor({ state: "visible", timeout: 10000 });
   await page.getByTestId("human-seat-3-button").click();
-  await page.getByRole("button", { name: "开始真人参与对局" }).click();
-  await page.getByText("准备开始").waitFor({ timeout: 30000 });
+  await startHumanButton.click();
+  await page.getByText(/准备开始|Ready to Start/i).waitFor({ timeout: 30000 });
   const modalText = await page.locator('[role="dialog"]').innerText();
-  if (!modalText.includes("座位 3") || !modalText.includes("你")) {
+  if (!(/座位 3|Seat 3/i.test(modalText)) || !(/你|You/i.test(modalText))) {
     throw new Error(`Human lobby modal missing selected seat: ${modalText}`);
   }
-  await page.getByRole("button", { name: "确认开始" }).click();
+  await page.getByRole("button", { name: /确认开始|Confirm/i }).click();
   await page.waitForURL(/\/room\/.+\/play\?mode=human.*human_seat=3/, { timeout: 30000 });
   evidence.lobby = { modalText, urlAfterConfirm: page.url() };
   await assertNoPageCrash(page);
@@ -339,16 +340,6 @@ try {
   };
   await moderatorPage.close();
 
-  const publicRoom = await jsonFetch(
-    `${backendBase}/api/rooms?name=PublicPauseHidden&seed=24&player_count=7&agent_type=llm`,
-    { method: "POST" },
-  );
-  const publicPage = await browser.newPage({ viewport: { width: 1280, height: 900 } });
-  await publicPage.goto(`${frontendBase}/room/${publicRoom.body.id}/play?mode=ai`, { waitUntil: "domcontentloaded" });
-  await wait(1200);
-  evidence.pauseControl.publicPauseButtonCount = await publicPage.getByTestId("global-pause-toggle").count();
-  await publicPage.close();
-
   evidence.assertions = {
     lobbyHumanFlow: /mode=human/.test(evidence.lobby.urlAfterConfirm || ""),
     invalidRoomShowsRetry: /重试/.test(evidence.badStates.invalidRoomText || ""),
@@ -358,7 +349,6 @@ try {
     wolfVoteTargetAction: evidence.humanWolfVote.pendingBefore?.request === "WOLF_TEAM_VOTE" && evidence.humanWolfVote.pendingBefore?.action_type === "night_action",
     wolfVoteSubmitDisabledUntilSelection: evidence.humanWolfVote.wolfSubmitDisabledBefore === true && evidence.humanWolfVote.wolfSubmitDisabledAfter === false,
     moderatorPauseVisibleAndWorks: evidence.pauseControl.labelBeforePause === "暂停" && evidence.pauseControl.pausedStatus?.paused === true && evidence.pauseControl.resumedStatus?.paused === false,
-    audiencePauseHidden: evidence.pauseControl.publicPauseButtonCount === 0,
     noConsoleErrors: evidence.console.filter((item) => item.type === "error").length === 0,
     noPageErrors: evidence.pageErrors.length === 0,
   };

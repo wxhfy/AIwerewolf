@@ -84,24 +84,39 @@ async function sampleBottomDialogue(page, durationMs = 4500) {
   const samples = [];
   const start = Date.now();
   while (Date.now() - start < durationMs) {
-    samples.push(await page.evaluate(() => {
-      const dock = document.querySelector('[data-testid="bottom-dialogue-dock"]');
-      const text = document.querySelector('[data-testid="bottom-dialogue-text"]')?.textContent || "";
-      return {
-        t: Date.now(),
-        visible: Boolean(dock),
-        text,
-        length: text.length,
-        label: dock?.textContent?.includes("Speaking") || dock?.textContent?.includes("发言中")
-          ? "speaking"
-          : dock?.textContent?.includes("Dialogue") || dock?.textContent?.includes("当前发言")
-            ? "dialogue"
-            : dock?.textContent?.includes("Thinking") || dock?.textContent?.includes("思考中")
-              ? "thinking"
-              : "other",
-        timelineBubbleCount: document.querySelectorAll('[data-testid="timeline-chat-bubble"]').length,
-      };
-    }));
+    try {
+      samples.push(await page.evaluate(() => {
+        const dock = document.querySelector('[data-testid="bottom-dialogue-dock"]');
+        const eventIds = dock?.getAttribute("data-chat-event-ids") || "";
+        const text = document.querySelector('[data-testid="bottom-dialogue-text"]')?.textContent || "";
+        const matchingTimeline = eventIds
+          ? Array.from(document.querySelectorAll('[data-testid="timeline-chat-bubble"]'))
+            .find((node) => node.getAttribute("data-chat-event-ids") === eventIds)
+          : null;
+        return {
+          t: Date.now(),
+          visible: Boolean(dock),
+          eventIds,
+          text,
+          length: text.length,
+          matchingTimelineText: matchingTimeline?.textContent || "",
+          timelinePairs: Array.from(document.querySelectorAll('[data-testid="timeline-chat-bubble"]')).map((node) => ({
+            eventIds: node.getAttribute("data-chat-event-ids") || "",
+            text: node.textContent || "",
+          })),
+          label: dock?.textContent?.includes("Speaking") || dock?.textContent?.includes("发言中")
+            ? "speaking"
+            : dock?.textContent?.includes("Dialogue") || dock?.textContent?.includes("当前发言")
+              ? "dialogue"
+              : dock?.textContent?.includes("Thinking") || dock?.textContent?.includes("思考中")
+                ? "thinking"
+                : "other",
+          timelineBubbleCount: document.querySelectorAll('[data-testid="timeline-chat-bubble"]').length,
+        };
+      }));
+    } catch (error) {
+      if (!String(error).includes("Execution context was destroyed")) throw error;
+    }
     await wait(350);
   }
   return samples;
@@ -116,6 +131,15 @@ async function openSettingsModal(page) {
     await button.click();
     await page.getByTestId("settings-modal").waitFor({ state: "visible", timeout: 15000 });
   });
+}
+
+async function createRoomForDialogueProbe(backendBase) {
+  const response = await fetch(
+    `${backendBase}/api/rooms?name=BubbleProbe&seed=1&player_count=7&agent_type=llm`,
+    { method: "POST" },
+  );
+  if (!response.ok) throw new Error(`Failed to create bubble probe room: ${response.status}`);
+  return response.json();
 }
 
 function hasTypewriterGrowth(samples) {
@@ -134,6 +158,100 @@ function hasTypewriterGrowth(samples) {
 function hasTimelineReveal(samples) {
   const counts = samples.map((item) => item.timelineBubbleCount);
   return Math.max(...counts) > Math.min(...counts);
+}
+
+async function observeDialogueLogConsistency(page, timeoutMs = 18000) {
+  const observed = [];
+  const start = Date.now();
+  let trackedIds = "";
+  while (Date.now() - start < timeoutMs) {
+    let state;
+    try {
+      state = await page.evaluate(() => {
+        const dock = document.querySelector('[data-testid="bottom-dialogue-dock"]');
+        const eventIds = dock?.getAttribute("data-chat-event-ids") || "";
+        const text = document.querySelector('[data-testid="bottom-dialogue-text"]')?.textContent || "";
+        const matchingTimeline = eventIds
+          ? Array.from(document.querySelectorAll('[data-testid="timeline-chat-bubble"]'))
+            .find((node) => node.getAttribute("data-chat-event-ids") === eventIds)
+          : null;
+        return {
+          eventIds,
+          text,
+          label: dock?.textContent?.includes("Speaking") || dock?.textContent?.includes("发言中")
+            ? "speaking"
+            : dock?.textContent?.includes("Dialogue") || dock?.textContent?.includes("当前发言")
+              ? "dialogue"
+              : dock?.textContent?.includes("Thinking") || dock?.textContent?.includes("思考中")
+                ? "thinking"
+                : "other",
+          matchingTimelineText: matchingTimeline?.textContent || "",
+          timelinePairs: Array.from(document.querySelectorAll('[data-testid="timeline-chat-bubble"]')).map((node) => ({
+            eventIds: node.getAttribute("data-chat-event-ids") || "",
+            text: node.textContent || "",
+          })),
+        };
+      });
+    } catch (error) {
+      if (!String(error).includes("Execution context was destroyed")) throw error;
+      await wait(300);
+      continue;
+    }
+    observed.push({ ...state, t: Date.now() });
+    if (!trackedIds && state.eventIds && state.label === "speaking" && state.text.length >= 8) {
+      trackedIds = state.eventIds;
+    }
+    if (trackedIds) {
+      const timeline = state.timelinePairs.find((item) => item.eventIds === trackedIds);
+      if (timeline) {
+        const finalObserved = observed
+          .filter((item) => item.eventIds === trackedIds && item.text)
+          .sort((a, b) => b.text.length - a.text.length)[0]?.text || "";
+        return {
+          ok: finalObserved.length >= 8 && timeline.text.includes(finalObserved),
+          trackedIds,
+          finalObserved,
+          timelineText: timeline.text,
+          observed,
+        };
+      }
+    }
+    await wait(300);
+  }
+  return { ok: false, trackedIds, finalObserved: "", timelineText: "", observed };
+}
+
+async function verifySampledDialogueLogConsistency(page, samples) {
+  const longestByEvent = new Map();
+  for (const sample of samples) {
+    if (!sample.eventIds || !sample.text || sample.text.length < 8) continue;
+    const current = longestByEvent.get(sample.eventIds) || "";
+    if (sample.text.length > current.length) longestByEvent.set(sample.eventIds, sample.text);
+  }
+
+  const timelinePairs = await page.evaluate(() => (
+    Array.from(document.querySelectorAll('[data-testid="timeline-chat-bubble"]')).map((node) => ({
+      eventIds: node.getAttribute("data-chat-event-ids") || "",
+      text: node.textContent || "",
+    }))
+  ));
+
+  const checked = [];
+  for (const [eventIds, sampledText] of longestByEvent.entries()) {
+    const timeline = timelinePairs.find((item) => item.eventIds === eventIds);
+    if (!timeline) continue;
+    checked.push({ eventIds, sampledText, timelineText: timeline.text });
+    if (!timeline.text.includes(sampledText)) {
+      return { ok: false, reason: "timeline_text_mismatch", checked, timelinePairs };
+    }
+  }
+
+  return {
+    ok: checked.length > 0,
+    reason: checked.length > 0 ? "matched_sampled_dialogue" : "no_sampled_event_reached_timeline",
+    checked,
+    timelinePairs,
+  };
 }
 
 function logEvent(logs, type, payload) {
@@ -275,9 +393,8 @@ try {
   await page.getByRole("button", { name: "保存" }).click();
   await page.waitForFunction(() => !document.body.innerText.includes("管理与测速"), { timeout: 10000 });
 
-  await page.getByRole("button", { name: "开始 AI 对局" }).click();
-  await page.getByText("准备开始").waitFor({ timeout: 30000 });
-  await page.getByRole("button", { name: "确认开始" }).click();
+  const probeRoom = await createRoomForDialogueProbe(`http://127.0.0.1:${backendPort}`);
+  await page.goto(`http://127.0.0.1:${frontendPort}/room/${probeRoom.id}/play?mode=ai&lang=zh`, { waitUntil: "domcontentloaded" });
   await page.waitForURL(/\/room\/.+\/play/, { timeout: 30000 });
   await page.waitForFunction(() => document.querySelector('[data-testid="bottom-dialogue-dock"]') || document.body.innerText.includes("游戏结束"), { timeout: 45000 });
 
@@ -294,10 +411,15 @@ try {
   }, { timeout: 18000 }).catch(() => {});
   const revealSamples = await sampleBottomDialogue(page, 2200);
   firstSamples.push(...revealSamples);
+  const lateDialogueLogConsistency = await observeDialogueLogConsistency(page);
+  const dialogueLogConsistency = lateDialogueLogConsistency.ok
+    ? lateDialogueLogConsistency
+    : await verifySampledDialogueLogConsistency(page, firstSamples);
   await page.screenshot({ path: path.join(outputDir, "ui_real_desktop_bubble.png"), fullPage: true });
   evidence.desktop = {
     afterRun: await samplePage(page),
     bottomSamples: firstSamples,
+    dialogueLogConsistency,
     hasTypewriterGrowth: hasTypewriterGrowth(firstSamples),
     hasTimelineReveal: hasTimelineReveal(firstSamples) || await page.locator('[data-testid="timeline-chat-bubble"]').count() > 0,
     logContainsPartialTypewriterCursor: (await page.locator('[data-testid="timeline-chat-bubble"]').allTextContents())
@@ -324,6 +446,7 @@ try {
     bottomTypewriterGrowth: evidence.desktop.hasTypewriterGrowth,
     timelineRevealObserved: evidence.desktop.hasTimelineReveal || evidence.desktop.afterRun.timelineBubbleCount > 0,
     timelineNoPartialCursor: !evidence.desktop.logContainsPartialTypewriterCursor,
+    dialogueAndLogSameEventText: evidence.desktop.dialogueLogConsistency.ok,
   };
 
   const failed = Object.entries(evidence.assertions).filter(([, value]) => value !== true);
