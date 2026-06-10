@@ -306,7 +306,9 @@ docs/assets/closure/screenshots/
 # Frontend static media (large)
 frontend/pho/
 frontend/public/audio/
-frontend/public/images/
+frontend/public/portraits/ai/
+docs/frontend_browseract_shots/
+tmp/imagegen/
 
 # Local backups
 backups/
