@@ -1,0 +1,1200 @@
+# AI WereWolf 项目成果展示报告
+
+# 摘要
+
+本项目设计并实现了一个 AI 狼人杀多智能体对战与自进化系统。系统围绕完整 AI 对局、赛后过程评测和策略知识回流三个目标展开，采用 Play → Evaluate → Evolve 的闭环架构。在对局执行阶段，系统通过WerewolfGame 实现狼人杀阶段推进、角色技能、投票结算和胜负判定，并通过 PlayerView 为不同身份玩家提供隔离后的局部视角；在 Agent 决策阶段，系统基于 CognitiveAgent 实现 Observe → Think → Act 的角色化决策流程，并通过策略检索工具辅助 Agent 发言、投票和夜间行动；在赛后阶段，系统通过 PerStepScorer 对每一步决策进行评分复盘，并由 KnowledgeAbstractor 将高光决策和失误经验抽象为候选策略知识，最终回流到后续对局。后端验收结果显示，系统已通过 strict mode 全链路验证，完成了对局执行、信息隔离、决策审计、赛后评分和知识抽取等核心能力。
+
+# 1 项目概述与总体架构
+
+本项目实现了一个面向狼人杀场景的 AI 多智能体对战与自进化系统。系统并非单纯实现狼人杀游戏流程，也不是只让大模型生成玩家发言，而是围绕完整 AI 对局、赛后过程评测和策略知识回流三个目标，构建了一个可运行、可追踪、可评测、可迭代的 AI 对战平台。
+
+在系统中，狼人、预言家、女巫、猎人、守卫、村民等角色均由 Agent 扮演。游戏引擎负责规则流转、阶段推进、行动校验和胜负结算；信息隔离模块为不同身份玩家生成各自可见的 PlayerView；CognitiveAgent 基于自身视角进行观察、推理、发言、投票和技能行动；赛后评测模块对每一步 Agent 决策进行多维评分；知识抽取模块则将高光决策和失误经验转化为候选策略知识，并回流到后续对局中。
+
+因此，本项目的系统定位可以概括为：**面向信息不对称博弈的 AI 狼人杀多智能体对战、评测与策略自进化平台。**
+
+## 1\.1 系统定位
+
+本系统的核心目标不是实现一个普通狼人杀游戏，而是构建一个能够支撑 AI Agent 进行完整狼人杀对局的多智能体运行环境。狼人杀场景中，不同玩家拥有不同身份、目标、信息权限和行动空间。为了保证 AI 对局具有真实的信息不对称性，系统没有将完整游戏状态直接暴露给 Agent，而是通过 PlayerView 为每个 Agent 提供局部可见视角，使其只能基于自身身份允许看到的信息进行决策。
+
+同时，系统并不只关注最终胜负，而是进一步记录每个 Agent 在对局过程中的观察、工具调用、原始输出和最终行动。游戏结束后，系统会对发言、投票和技能使用等决策进行逐步评分，从而定位高光决策、关键失误和 bad case。进一步地，系统将复盘结果抽取为策略知识，使历史对局经验能够进入后续 Agent 决策过程。
+
+本系统具有三个基本特征：第一，它是一个完整 AI 对局系统；第二，它是一个可审计、可复盘的多智能体评测系统；第三，它是一个能够沉淀策略经验并回流到后续对局的自进化系统。
+
+## 1\.2 项目完成内容
+
+项目完成内容可以分为三个层次。第一层是基础对局能力，即系统能够完成一局完整的 AI 狼人杀对战；第二层是赛后评测能力，即系统能够记录并评价每一步 Agent 决策；第三层是策略自进化能力，即系统能够将复盘结果沉淀为策略知识，并回流到后续 Agent 决策中。
+
+|**完成方向**|**对应内容**|**说明**|
+|---|---|---|
+|Track A：基础对局|对局引擎、阶段状态机、角色行动、信息隔离、前端观战|支持 AI Agent 按照狼人杀规则完成完整对局|
+|Track B：赛后评测|PerStepScorer、逐决策评分、结构化复盘、bad case 定位|不只统计胜负，而是评价每一步发言、投票和技能决策|
+|Track C：知识回流|KnowledgeAbstractor、AbstractedLesson、策略知识池、StrategyRetriever|将赛后经验抽取为候选策略，并在后续对局中检索使用|
+|工程交付|后端服务、数据库、前端展示、验收报告、实验数据、项目文档|支撑系统运行、结果展示和项目验收|
+
+**表 1\-1 项目完成内容说明**      
+
+从项目交付角度看，系统已经形成了从游戏运行、Agent 决策、数据记录、赛后评分、知识沉淀到策略回流的完整链路。项目成果不只包括代码实现，还包括前端演示界面、后端验收报告、实验输出数据、系统架构文档和项目总结材料。
+
+## 1\.3 Play → Evaluate → Evolve 主线
+
+本项目整体采用 Play → Evaluate → Evolve 的闭环主线。其中，Play 表示系统运行完整 AI 对局；Evaluate 表示系统在对局结束后对 Agent 的每一步决策进行评分和复盘；Evolve 表示系统将复盘结果抽象为策略知识，并在后续对局中被 Agent 检索和使用。
+
+在 Play 阶段，系统由 WerewolfGame 对局引擎负责推进游戏流程。游戏按照狼人杀规则依次执行夜晚行动、白天发言、投票放逐、死亡结算和胜负判定。每个 Agent 在行动前只能获得经过信息隔离处理后的 PlayerView，并基于自身角色、当前阶段和可见信息生成决策。该阶段的目标是保证 AI 对局能够稳定、合法、完整地运行。
+
+Evaluate 阶段中，系统读取对局过程中记录的 Agent 决策数据，对每一步发言、投票和技能行动进行评分。评分不只关注最终胜负，而是进一步分析单步决策是否合理、推理是否充分、时机是否合适、对局势影响如何。通过这种方式，系统能够定位高光决策、关键失误和 bad case，为后续复盘和知识抽取提供依据。
+
+处于 Evolve 阶段时，系统将赛后评测结果进一步抽象为策略知识。高分决策可以沉淀为正向经验，低分失误可以转化为规避建议，策略使用反馈可以用于判断已有策略是否有效。新抽取的知识首先进入 candidate 状态，经过筛选后再进入 active 策略池，并通过 StrategyRetriever 在后续对局中被 Agent 检索使用。
+
+通过 Play → Evaluate → Evolve 三阶段设计，系统从“一局游戏能跑通”进一步扩展为“对局过程可追踪、决策质量可评测、策略经验可沉淀”的闭环平台。
+
+## 1\.4 系统总体架构图
+
+系统整体采用分层闭环架构。前端负责房间创建、对局观战和人机交互；FastAPI 后端负责 API、WebSocket 和房间管理；WerewolfGame 是对局规则核心，负责阶段推进、行动校验和胜负结算；Visibility 模块负责为不同玩家生成隔离后的 PlayerView；CognitiveAgent 基于 PlayerView 进行观察、推理和行动；数据库记录游戏事件、状态快照和 Agent 决策审计；赛后 Track B 模块对决策进行评分复盘；Track C 模块将复盘结果抽取为策略知识，并通过 StrategyRetriever 回流到后续 Agent 决策中。
+
+![Image](https://internal-api-drive-stream.feishu.cn/space/api/box/stream/download/authcode/?code=YWE0Yjg5MGZkMzRjZmEwMWVmZTczYTM1ODgwZDk3NDdfYTAwNjkzMDI5ZDFmNzMyZTVhMjAzNTg3MTcwMTczMTNfSUQ6NzY0OTAzNDE3MDI0ODg3NTIxOV8xNzgxMDk2MTk5OjE3ODExODI1OTlfVjM)
+
+**图 1\-1 AI Werewolf 系统总体架构图**
+
+
+
+|**层级**|**核心模块**|**主要作用**|
+|---|---|---|
+|展示层|前端 UI、WebSocket|展示对局过程，支持观战和交互|
+|服务层|FastAPI、RoomManager|管理房间、对局启动、状态推送|
+|基础流转层|WerewolfGame、Phase、ActionValidator|推进游戏规则、校验行动、完成结算|
+|信息隔离层|Visibility、PlayerView|控制不同 Agent 的可见信息|
+|Agent 决策层|CognitiveAgent、AgentLoop、Tools|完成角色化推理、发言、投票和技能行动|
+|数据证据层|PostgreSQL、agent\_decisions、game\_events|保存事件、决策、快照和审计信息|
+|评测复盘层|PerStepScorer、PublishedReview|对每一步决策进行评分和复盘|
+|知识进化层|KnowledgeAbstractor、StrategyKnowledgeDocs、StrategyRetriever|抽取策略知识并回流到下一局|
+
+**表 1\-2 系统层级架构说明**
+
+## 1\.5 报告结构说明
+
+本报告围绕项目完成内容和系统设计逻辑展开。第 1 章给出项目概述、完成内容和总体架构；第 2 章介绍基础流转层，包括对局引擎、阶段状态机、信息隔离、行动校验和前端观战；第 3 章介绍 Agent 设计层，包括 CognitiveAgent、三层 Prompt、记忆与信念建模、工具调用和策略检索；第 4 章介绍 Track B 赛后评测与结构化复盘机制；第 5 章介绍 Track C 策略知识抽取与自进化闭环；第 6 章展示系统验收和实验结果；第 7 章总结项目能力证明；第 8 章列出最终交付物；第 9 章总结项目完成情况、当前限制和后续优化方向。
+
+为突出项目结项性质，本文直接围绕系统建设目标、架构设计、核心模块、验收结果和项目交付物展开。报告重点说明项目实际完成了什么、为什么采用这样的系统设计、各模块如何协同工作，以及最终通过哪些结果证明系统已经形成完整闭环。
+
+# 2 基础流转层：对局引擎、信息隔离与运行闭环
+
+本章聚焦系统的基础流转层，即一局 AI 狼人杀如何被稳定、合法、可观测地运行起来。该层是整个系统的底座，负责完成游戏规则推进、玩家视角生成、Agent 行动接收、行动合法性校验、死亡与胜负结算，以及前端实时观战。与后续 Agent 认知层、赛后评测层和知识进化层相比，基础流转层更关注“对局本身是否能够正确运行”。只有当对局流程可靠、信息隔离有效、行动校验严格时，后续的 Agent 推理、复盘评分和策略回流才具备可信基础。
+
+## 2\.1 本章架构图：Play 层运行架构
+
+Play 层是系统的基础运行层，其核心目标是保证狼人杀对局能够按照规则完整流转。该层以 `WerewolfGame` 为规则核心，由阶段状态机推进游戏流程，通过 `Visibility` 模块为不同玩家生成 `PlayerView`，再由 Agent 基于自身可见信息生成决策。决策返回后，系统通过行动校验和结算机制更新游戏状态，并将事件和快照推送到前端。
+
+![Image](https://internal-api-drive-stream.feishu.cn/space/api/box/stream/download/authcode/?code=YzlmZjNlYjM0MTcxOGM2ZWYzYWY0MTAyYWYxNDc0MmNfNTI2OGY4ZmM3MTUxNzk4MWJiYmQzOGM4YWNkNWMwNjlfSUQ6NzY0OTAzNTIzNTUxODI3MDY3OV8xNzgxMDk2MTk5OjE3ODExODI1OTlfVjM)
+
+**图 2\-1 Play 层运行架构图。** 
+
+从图 2\-1 可以看出，Play 层不是简单地让多个 Agent 顺序发言，而是形成了“状态推进—信息隔离—Agent 决策—行动校验—规则结算—状态推送”的闭环。该闭环保证了 Agent 的自由生成能力始终受到游戏规则约束，同时也保证前端展示的数据来自后端统一状态，而不是由前端自行推断。
+
+|**模块**|**主要职责**|**设计作用**|
+|---|---|---|
+|前端观战 UI|展示玩家状态、事件时间线、发言、投票和胜负结果|提供可视化观战和人机交互入口|
+|FastAPI / WebSocket|提供房间管理、游戏启动、状态推送接口|连接前端展示层与后端规则层|
+|WerewolfGame|维护真实游戏状态并推动对局运行|作为系统唯一规则核心|
+|PhaseManager|管理夜晚、白天和特殊阶段流转|保证对局按照狼人杀规则推进|
+|Visibility / PlayerView|为不同玩家生成可见视角|保证信息不对称和角色权限边界|
+|ActionValidator|校验 Agent 行动是否合法|防止非法行动污染游戏状态|
+|Resolution|处理死亡、投票、技能和胜负结算|保证规则结果统一产生|
+|GameEvent / Snapshot|记录事件并生成状态快照|支撑前端观战、回放和后续评测|
+
+**表 2\-1 Play 层核心模块说明**
+
+## 2\.2 WerewolfGame 对局引擎
+
+`WerewolfGame` 是基础流转层的核心模块，负责维护一局狼人杀游戏的真实状态，并按照规则推动游戏从开始运行到结束。系统中所有阶段推进、行动校验、事件记录、死亡结算和胜负判定都由 `WerewolfGame` 统一管理。Agent 只负责基于自身视角提出决策，而不能直接修改游戏状态。
+
+这种设计将“大模型决策”和“游戏规则执行”解耦。Agent 可以根据当前局势生成发言、投票或技能目标，但这些输出必须经过游戏引擎校验后才能生效。这样可以避免 LLM 直接控制对局状态导致阶段混乱、非法行动、重复行动或结果不可复现。
+
+`WerewolfGame` 在系统中承担“裁判”和“状态机”的双重角色。一方面，它保存完整的 `GameState`，知道每名玩家的真实身份、存活状态、阶段信息和历史事件；另一方面，它又不会把这些完整信息直接暴露给 Agent，而是通过信息隔离机制生成局部视角
+
+|**对象**|**含义**|**主要作用**|
+|---|---|---|
+|GameState|当前对局的完整真实状态|保存玩家、角色、阶段、事件和胜负状态|
+|Player|单个玩家对象|记录座位号、角色、阵营、存活状态等信息|
+|Role|玩家身份|表示狼人、预言家、女巫、猎人、守卫、村民等角色|
+|Phase|当前游戏阶段|控制当前允许执行的行动类型|
+|Decision|Agent 返回的行动意图|表示发言、投票、查验、袭击、救毒等行为|
+|GameEvent|游戏过程中产生的事件|记录发言、投票、死亡、技能结果等信息|
+|Snapshot|某一时刻的状态快照|用于前端推送、回放和后续分析|
+
+**表 2\-2 WerewolfGame 中的核心对象**
+
+`WerewolfGame`的设计优势在于，它将整个 AI 对局压入一个可控的规则框架中。Agent 可以拥有不同策略和表达风格，但对局状态的改变必须由引擎统一完成。这使系统能够同时兼顾 LLM 的开放生成能力和狼人杀规则的确定性
+
+## 2\.3 阶段状态机与规则流
+
+狼人杀对局具有明确的阶段顺序。为了保证对局流程稳定运行，系统将游戏过程抽象为阶段状态机，并将夜晚、白天和特殊行动拆分为不同阶段。每个阶段只允许特定角色执行特定行动，从而保证游戏流程和角色技能符合规则。本节采用时序图展示阶段推进过程。清晰表达一局游戏从夜晚到白天、再到胜负判定的循环过程。
+
+![Image](https://internal-api-drive-stream.feishu.cn/space/api/box/stream/download/authcode/?code=ZWFiNGIwODc2MjY2ZGZkN2NkYjg1OTg1MjQzZjQ3OWNfZjdiODU3YzhlZmJlMGY2N2IyNmNjZDU1ZjUxODg0NjRfSUQ6NzY0OTA0MjEwNjM2Mjg0MjMyNF8xNzgxMDk2MTk5OjE3ODExODI1OTlfVjM)
+
+**图 2\-2 狼人杀阶段流转时序图**
+
+从图 2\-2 可以看出，系统按照“夜晚行动—夜晚结算—白天公开交互—白天结算—特殊事件处理—胜负判断”的顺序推进游戏。夜晚阶段主要处理角色技能，白天阶段主要处理公开发言和投票，特殊阶段则用于处理猎人开枪、白狼王自爆、警徽移交等非线性事件。
+
+狼人杀对局具有明确的阶段顺序。为了保证对局流程稳定运行，系统将游戏过程抽象为阶段状态机，并将夜晚、白天和特殊行动分别拆分为可执行阶段。每个阶段只允许特定角色执行特定行动，从而保证游戏流程和角色技能符合规则。
+
+除了阶段顺序，系统还需要处理阶段之间的条件跳转。例如，如果夜晚无人死亡，白天仍然正常进入发言阶段；如果白天投票导致猎人死亡，则可能进入猎人开枪阶段；如果某一阵营满足胜利条件，则直接进入 `GAME_END`。因此，阶段状态机不仅是线性流程，也包含特殊事件触发和胜负判断。
+
+|**当前阶段**|**触发条件**|**下一阶段**|**说明**|
+|---|---|---|---|
+|NIGHT\_RESOLVE|夜晚结算完成|DAY\_START|进入白天公开信息阶段|
+|DAY\_SPEECH|所有存活玩家完成发言|VOTE|进入投票阶段|
+|VOTE|所有有效投票完成|DAY\_RESOLVE|统计票型并处理放逐|
+|DAY\_RESOLVE|出现猎人死亡且可开枪|HUNTER\_SHOOT|进入特殊技能阶段|
+|DAY\_RESOLVE|警长死亡且需要移交警徽|BADGE\_TRANSFER|进入警徽处理阶段|
+|任意结算阶段|满足胜负条件|GAME\_END|游戏结束|
+|DAY\_RESOLVE|未满足胜负条件|下一轮 NIGHT\_START|进入下一轮夜晚|
+
+**表 2\-3 阶段转移条件说明**
+
+## 2\.4 PlayerView 信息隔离机制
+
+狼人杀的核心是信息不对称。如果所有 Agent 都能看到完整 `GameState`，那么 AI 对局就会退化为上帝视角推理，失去狼人杀本身的博弈意义。因此，系统在完整游戏状态和 Agent 决策之间引入 `Visibility` 模块，为每个玩家生成独立的 `PlayerView`。
+
+`GameState` 保存完整真实状态，只由游戏引擎持有；`PlayerView` 则是 Agent 能够看到的局部视角。Agent 的任何发言、投票和技能决策都必须基于 `PlayerView`，不能直接读取完整游戏状态。
+
+![Image](https://internal-api-drive-stream.feishu.cn/space/api/box/stream/download/authcode/?code=NTk4YTk5ZjM3YTkzZGQyZGZmMjQ2NzlkNzgxMmNlMjVfYWViMzhhZjU5NDJlM2YwYjY3NTMwZjlkZTgzZjg4YjZfSUQ6NzY0OTA0MzcxNjAxNTIzMDEzMV8xNzgxMDk2MTk5OjE3ODExODI1OTlfVjM)
+
+**图 2\-3 PlayerView 信息隔离分层图**
+
+图 2\-3 展示了信息隔离的核心思想：完整真相只存在于 `GameState` 中，而不同身份玩家获得的是经过过滤后的局部视角。狼人可以看到狼队友信息，神职可以看到自己技能相关结果，村民只能看到公开事件和自身身份，前端公开视角则只展示公共状态。
+
+该机制保证了 AI 对局具有真实的信息不对称性。Agent 无法通过隐藏状态作弊，也不能从数据库或完整 `GameState` 中获得不属于自己的身份信息。后续 Agent 的发言、投票和技能行动都建立在 `PlayerView` 之上，因此信息隔离是整个系统可信运行的前提。
+
+## 2\.5 决策执行、行动校验与结算机制
+
+Agent 在每个阶段返回的结果统一表示为 `Decision`。`Decision` 本质上是一个行动意图，例如白天发言、投票给某名玩家、预言家查验某名玩家、狼人袭击某名玩家、女巫选择救人或毒人等。系统不会直接信任 Agent 输出，而是先经过 `ActionValidator` 进行合法性校验。
+
+![Image](https://internal-api-drive-stream.feishu.cn/space/api/box/stream/download/authcode/?code=ZTlkNTM5NTc2NmIzOGM3YjJiNzI1YmY2NzU5N2RlYjNfMjUwYmM0ZDA0MjFkM2I4Yjc5MWY5ZTlkYjIyNmNmY2ZfSUQ6NzY0OTA0NDM0MTQxNTE2ODk3NF8xNzgxMDk2MTk5OjE3ODExODI1OTlfVjM)
+
+**图 2\-4 Agent 决策执行与行动校验时序图**
+
+从图 2\-4 可以看出，Agent 的输出不会直接修改游戏状态。任何行动都必须经过校验，只有满足规则的行动才会进入结算流程。对于需要延迟处理的行动，例如夜间多角色技能，系统会先记录各角色选择，再在结算阶段统一计算结果。
+
+|**校验维度**|**校验内容**|**示例**|
+|---|---|---|
+|阶段合法性|行动是否发生在正确阶段|预言家查验只能发生在预言家夜间阶段|
+|角色合法性|当前角色是否拥有该行动权限|只有狼人可以提交袭击目标|
+|目标合法性|目标是否存在、是否存活、是否允许选择|投票目标必须是存活玩家|
+|次数合法性|技能是否仍有可用次数|女巫解药、毒药不能重复无限使用|
+|状态合法性|当前玩家是否具备行动资格|死亡玩家不能继续投票或发言|
+|格式合法性|Agent 输出是否能被解析为结构化行动|投票、技能目标需要能解析为有效玩家编号|
+
+**表 2\-4行动合法性校验维度**
+
+行动校验机制的价值在于，它将 LLM 的不确定输出限制在确定性规则之内。即使 Agent 产生格式错误、目标错误或阶段错误的行动，游戏引擎也可以通过校验、重试、兜底或失败处理避免污染真实游戏状态。
+
+在结算机制上，系统区分“立即生效行动”和“延迟统一结算行动”。例如白天发言可以立即记录为公开事件，而夜间狼人袭击、守卫守护、女巫救毒等行动需要在夜晚结算阶段综合处理。这样可以避免某个角色行动过早改变状态，从而影响同一夜晚其他角色的判断。
+
+## 2\.6 前端观战与人机交互
+
+前端主要承担对局展示和人机交互职责。系统通过 WebSocket 将游戏快照实时推送到前端，前端根据快照展示玩家座位、角色状态、存活情况、当前阶段、事件时间线、发言内容、投票结果和游戏胜负。
+
+对于纯 AI 对局，前端主要作为观战界面；对于人机混合模式，前端还可以通过交互面板接收人类玩家的发言、投票或技能目标。无论是哪种模式，前端都不承担规则判定，也不直接修改游戏状态。所有规则流转和状态变化仍由后端 `WerewolfGame` 完成。
+
+|**功能模块**|**展示内容**|**作用**|
+|---|---|---|
+|房间管理|房间创建、玩家加入、游戏启动|提供对局入口|
+|玩家区域|玩家编号、存活状态、角色状态|帮助观察当前局势|
+|阶段展示|当前轮次、夜晚/白天、当前行动阶段|说明游戏推进位置|
+|事件时间线|发言、投票、死亡、技能公开结果|展示对局过程|
+|发言展示|Agent 或人类玩家的发言内容|支撑观战和复盘|
+|行动面板|投票、技能目标、发言输入|支持人机混合操作|
+|结果面板|胜负阵营、死亡玩家、最终状态|展示对局结束结果|
+|视角切换|公开视角、主持或调试视角|区分展示视角和调试视角|
+
+**表 2\-5 前端观战与交互功能说明**
+
+前端的设计边界是：展示后端状态，而不是推断游戏规则。也就是说，前端只消费后端推送的 `Snapshot`，并在有人类玩家参与时提交操作请求。真正的行动合法性、规则结算和胜负判定仍由后端完成。
+
+这种设计避免了前后端规则不一致的问题，也降低了信息泄露风险。公开观战视角只能展示公共状态，而主持或调试视角可以用于开发和复盘，但不会作为 Agent 决策输入。
+
+## 2\.7 本章小结：基础流转层的效果与优势
+
+本章介绍了系统 Play 层的基础流转架构。该层以 `WerewolfGame` 为核心，通过阶段状态机保证狼人杀流程能够按照规则推进；通过 `Visibility` 和 `PlayerView` 保证不同身份玩家只能看到自身权限内的信息；通过 `ActionValidator` 保证 Agent 输出的行动必须满足阶段、角色、目标和状态约束；通过 `GameEvent` 和 `Snapshot` 记录对局过程并支持前端实时观战。
+
+基础流转层的设计优势主要体现在以下几个方面。
+
+|**设计点**|**解决的问题**|**带来的效果**|
+|---|---|---|
+|规则引擎与 Agent 解耦|避免 LLM 直接修改状态|保证规则可控、状态一致|
+|GameState 与 PlayerView 解耦|避免 Agent 获得上帝视角|保证信息不对称|
+|阶段状态机|避免流程混乱和非法阶段跳转|保证对局稳定推进|
+|行动校验机制|避免非法行动污染状态|保证 Agent 输出受规则约束|
+|统一结算机制|避免夜间技能过早生效|保证多角色技能结果一致|
+|GameEvent 与 Snapshot|避免过程不可追踪|支撑前端观战、回放和赛后评测|
+|前后端职责分离|避免前端参与规则判定|保证规则核心集中在后端|
+
+**表 2\-6 基础流转层设计优势总结**
+
+# 3 Agent 设计层：角色化认知智能体与工具增强决策
+
+本章聚焦系统中的 Agent 设计层。基础流转层解决的是“一局游戏如何稳定运行”，而 Agent 设计层解决的是“AI 玩家如何基于自身身份、视角和策略进行决策”。
+
+在本项目中，每个 AI 玩家并不是简单地调用一次大模型生成发言或投票，而是被设计为具备角色身份、人格风格、局势记忆、信念建模、工具调用和策略检索能力的 `CognitiveAgent`。Agent 的输入来自第二章中的 `PlayerView`，输出则是可被游戏引擎校验和执行的 `Decision`。因此，Agent 设计层位于信息隔离层和行动执行层之间，是连接“局部可见信息”和“具体游戏行为”的核心模块。
+
+## 3\.1 本章架构图：CognitiveAgent 决策架构
+
+`CognitiveAgent` 的整体流程可以概括为：
+
+```Plain Text
+PlayerView → Observation → Memory / Belief / SocialModel → AgentLoop → Tools → Decision
+```
+
+其中，`PlayerView` 提供当前 Agent 合法可见的局部信息；`Observation` 将视角信息整理为适合模型理解的上下文；`Memory` 保存历史对局过程；`BeliefTracker` 维护对其他玩家身份的推测；`SocialModel` 刻画玩家之间的互动关系；`AgentLoop` 负责多轮思考和工具调用；最终输出结构化 `Decision`，交回游戏引擎进行校验和执行。
+
+![Image](https://internal-api-drive-stream.feishu.cn/space/api/box/stream/download/authcode/?code=MjQ0NGVlMjcwMmZlYzhjZTkyYThiNGQzMzhmOTc5NTBfOGQ2MTkwYjI1MzEyNDAwNTVlOTJhOTVhNWJiYzk5NGRfSUQ6NzY0OTA0ODQxOTk3NzMxNzU3M18xNzgxMDk2MTk5OjE3ODExODI1OTlfVjM)
+
+**图 3\-1 CognitiveAgent 决策架构图**
+
+从图 3\-1 可以看出，`CognitiveAgent` 不是单一 Prompt，而是一个由视角输入、记忆建模、身份推理、工具调用、策略检索和决策审计共同组成的认知决策框架。它的设计目标不是让大模型自由发挥，而是在明确身份、明确视角、明确规则和明确输出格式的约束下完成角色化决策。
+
+## 3\.2 CognitiveAgent 总体设计
+
+`ognitiveAgent` 是本系统中的 AI 玩家实现。每个 Agent 在对局中对应一名玩家，并根据自己的角色、阵营、可见信息和历史记忆生成行动。它的基本工作流程可以理解为三步：观察、思考和行动。
+
+第一步是 **Observe**。Agent 从 `PlayerView` 中接收当前阶段、可见玩家、公开事件、私有事件、历史发言、投票记录和合法目标等信息。由于 `PlayerView` 已经经过信息隔离处理，因此 Agent 在观察阶段不会接触完整 `GameState`，也不会获得不属于自己身份的信息。
+
+第二步是 **Think**。Agent 将观察结果与自己的记忆、身份推测、社交关系和策略知识结合，形成当前局势判断。这个过程并不是一次性生成，而是通过 `AgentLoop` 支持多轮工具调用。例如，当 Agent 不确定当前阶段规则时，可以查询规则工具；当它需要回顾某名玩家过往发言时，可以调用记忆工具；当它需要寻找类似局势下的打法时，可以调用策略检索工具。
+
+第三步是 **Act**。Agent 最终输出结构化 `Decision`。该决策可能是白天发言、投票目标、狼人袭击目标、语言家查验目标、女巫救毒选择、守卫守护目标或特殊技能目标。输出后，`Decision` 会交给第二章中的 `ActionValidator` 和 `WerewolfGame` 继续处理。
+
+这一设计的关键在于，Agent 并不直接控制游戏状态。它只负责基于自身视角提出行动，最终行动是否生效仍由游戏引擎判断。这样既保留了大模型的语言推理能力，又避免了大模型直接修改规则状态所带来的不确定性。
+
+## 3\.3 Persona / Role / Strategy 三层 Prompt
+
+为了避免不同类型信息混在一起造成行为不稳定，系统将 Agent Prompt 拆分为三层：`Persona`、`Role Identity` 和 `Strategy`。
+
+![Image](https://internal-api-drive-stream.feishu.cn/space/api/box/stream/download/authcode/?code=NDRlM2RjMTcwOTYzNDQyZDJkYTJmYzEwOGFiYWFkZWJfZDhlNzAyYTBlZDZlNDc5ZDM0N2ZjNThjY2Y5M2U5YTJfSUQ6NzY0OTA0OTIxMTIyODc1MzA5MF8xNzgxMDk2MTk5OjE3ODExODI1OTlfVjM)
+
+**图 3\-2 Persona / Role / Strategy 三层 Prompt 结构图**
+
+最底层是 `Persona Layer`，它控制 Agent 的表达风格。例如，有的 Agent 更谨慎，有的 Agent 更外向，有的 Agent 更倾向于分析，有的 Agent 更倾向于情绪化表达。这一层主要解决“怎么说”的问题，而不直接决定游戏策略。
+
+中间层是 `Role Identity Layer`，它定义 Agent 当前的身份、阵营、技能边界和胜利目标。例如狼人需要隐藏身份并配合狼队，预言家需要利用查验结果引导好人阵营，女巫需要判断救药和毒药的使用时机，村民则主要依靠发言和投票进行推理。这一层解决“我是谁”的问题，是 Agent 行为合法性的基础。
+
+最上层是 `Strategy Layer`，它决定当前局势下“怎么玩”。这一层会接收策略检索结果、工具调用结果、历史经验和当前局势分析。与 Persona 和 Role 不同，Strategy 层是可以持续更新和进化的。赛后复盘产生的策略知识不会直接改写 Agent 的人格和角色身份，而是通过 Strategy 层进入下一局决策。
+
+这种三层拆分有一个重要好处：**表达风格、角色身份和策略知识彼此解耦**。人格层不会污染角色规则，角色层不会被历史经验随意改写，策略层则可以在安全过滤后持续吸收新的复盘知识。对于一个需要长期运行和自进化的 Agent 系统来说，这种分层能够降低 Prompt 污染和角色漂移风险。
+
+## 3\.4 角色差异化策略设计
+
+狼人杀中的不同角色拥有不同目标、信息权限和行动空间。因此，本项目没有采用“所有 Agent 共用同一套决策逻辑”的方式，而是在统一 `CognitiveAgent` 框架下，根据角色身份注入不同的角色目标和行动约束。
+
+狼人 Agent 的核心任务是隐藏阵营身份、误导好人阵营，并与狼队形成协作。它在发言时需要控制暴露风险，在投票时需要平衡冲锋、倒钩和跟票，在夜晚行动时需要根据神职威胁和场上信任关系选择袭击目标。预言家 Agent 的核心任务是利用查验结果帮助好人阵营建立可信信息链。它需要决定何时公开身份、如何安排警徽流、如何解释查验逻辑，以及如何在被狼人对跳或抗推时增强自身可信度。女巫 Agent 的核心难点在于技能资源有限。救药和毒药都具有高影响力，但使用过早可能浪费，使用过晚可能错失机会。因此女巫需要结合夜晚信息、白天发言、票型和身份怀疑程度来决定是否用药。
+
+村民 Agent 没有夜间技能，只能依靠公开发言、投票和逻辑分析进行判断。因此村民策略更强调听发言、找矛盾、分析票型、识别狼人站边和推动集体归票。猎人、守卫、白痴、白狼王等角色则体现出更多特殊行动逻辑。例如猎人需要判断死亡后是否开枪，守卫需要避免连续守护同一目标并保护关键神职，白狼王则需要判断自爆时机和带人收益。
+
+这里的设计重点不是让每个角色写死一套规则机器人，而是在统一 Agent 认知框架下，为不同角色提供不同的目标、约束和策略倾向。也就是说，所有角色共享 `Observe → Think → Act` 的结构，但在“看重什么、担心什么、优先做什么”上存在差异。
+
+## 3\.5 Memory、BeliefTracker 与 SocialModel
+
+单轮 Prompt 只能处理当前输入，很难支撑狼人杀这种多轮发言和长期博弈场景。因此，系统在 `CognitiveAgent` 中引入了三个辅助认知模块：`Memory`、`BeliefTracker` 和 `SocialModel`。
+
+![Image](https://internal-api-drive-stream.feishu.cn/space/api/box/stream/download/authcode/?code=ODlkNmIxMWRiOWM2NWE3MTRjNDFmMjNlNTUyMjllNTZfYThjMmVlZjY2Y2UwYTE5ODUyN2Q4ZjMxODBhNmRiNDhfSUQ6NzY0OTA0OTgzNTE2NDc2NTE0MV8xNzgxMDk2MTk5OjE3ODExODI1OTlfVjM)
+
+**图 3\-3 Memory、BeliefTracker 与 SocialModel 的协同关系**
+
+`Memory` 负责保存对局历史。它不仅记录谁说了什么，还记录关键行动、投票变化、身份声明、站边关系和策略使用情况。对 Agent 来说，Memory 的作用是避免“只看当前轮”的短视决策。例如某名玩家前一轮强烈攻击 3 号，后一轮又突然转向保护 3 号，这种前后不一致需要依赖记忆才能发现。
+
+`BeliefTracker` 负责维护身份推测。狼人杀不是所有身份都公开的游戏，Agent 需要根据发言、票型、技能结果和行为矛盾动态判断其他玩家的身份可能性。例如，某名玩家是否像预言家，某名玩家是否可能是倒钩狼，某名玩家是否像被狼人保护的同伴，这些都属于 BeliefTracker 的分析范围。
+
+`SocialModel` 更关注玩家之间的关系。它记录谁信任谁、谁攻击谁、谁跟随谁投票、谁在关键时刻保护了谁。与 BeliefTracker 偏身份推断不同，SocialModel 更偏关系建模。它可以帮助 Agent 判断场上的阵营结构和发言联盟。
+
+这三个模块共同解决一个问题：**Agent 不能只根据当前一句话决策，而要结合历史行为、身份推测和社交关系进行连续判断。** 这也是狼人杀 Agent 与普通问答 Agent 的主要区别之一。
+
+## 3\.6 AgentLoop 工具调用机制
+
+`AgentLoop` 是 `CognitiveAgent` 的核心执行器。它让 Agent 不再依赖一次性 Prompt 输出，而是可以在决策前进行有限轮次的工具调用。
+
+![Image](https://internal-api-drive-stream.feishu.cn/space/api/box/stream/download/authcode/?code=OGRiMjY3MzdkZWY3ZTBlNGY5NDEzN2Q2OGRjOTA0ZGRfODhkNDU5MTRmOGU3Y2YzYWUwZGM1NjY5MGM4ODFkMGVfSUQ6NzY0OTA1Mzg3MTg1NTE5MzA1NF8xNzgxMDk2MTk5OjE3ODExODI1OTlfVjM)
+
+**图 3\-4 AgentLoop 工具调用时序图**
+
+在这个流程中，LLM 可以根据当前不确定性主动请求工具。例如，它可能先查询当前阶段能否投票，再回顾某名玩家前几轮发言，之后检索类似局势下的策略，最后生成投票理由。工具调用不是为了替代 LLM，而是为了让 LLM 在决策时获得更准确的上下文和更可控的外部知识。
+
+AgentLoop 的设计也限制了工具调用的范围和轮次。这样可以避免 Agent 无限思考或过度依赖工具，同时也控制对局运行成本。对于项目结项报告来说，这一部分可以重点强调：系统不是把所有知识一次性塞入 Prompt，而是让 Agent 在需要时主动检索、主动查询、主动整合。
+
+## 3\.7 Agent 专属工具设计
+
+Agent 工具的作用是增强决策，而不是绕过规则。所有工具都服务于当前 Agent 的局部视角，不能让 Agent 获得完整 `GameState` 或其他玩家不可见的私有信息。
+
+|**工具类型**|**主要作用**|
+|---|---|
+|规则查询工具|查询当前阶段、角色技能、行动限制和胜负条件|
+|记忆召回工具|回顾历史发言、投票、身份声明和关键事件|
+|票型分析工具|分析玩家投票关系、跟票、冲票、分票和站边情况|
+|社交信息工具|查询玩家之间的攻击、保护、信任和怀疑关系|
+|策略检索工具|从策略知识库中检索当前局势可参考的打法|
+|战略意图工具|记录当前 Agent 的短期目标和后续计划|
+
+**表 3\-1 Agent 工具类型与作用**
+
+工具设计遵循两个边界。第一，工具返回的信息不能突破 `PlayerView` 的信息隔离。也就是说，如果当前 Agent 是村民，工具不能返回狼人队友、预言家查验结果或女巫用药状态。第二，工具只提供辅助信息，最终决策仍由 Agent 结合角色目标和当前局势生成。
+
+这种设计让 Agent 具备更强的局势处理能力，同时不会破坏狼人杀的信息不对称性。工具系统可以理解为 Agent 的“外部工作台”：规则工具帮助它避免犯规则错误，记忆工具帮助它避免遗忘，票型工具帮助它分析群体行为，策略工具帮助它借鉴历史经验。
+
+## 3\.8 StrategyRetriever 策略检索
+
+`StrategyRetriever` 是 Agent 设计层与 Track C 知识进化层之间的连接点。它负责把历史复盘沉淀出的策略知识，在下一局对局中以可控方式提供给 Agent。
+
+策略检索并不是简单地把所有历史经验都塞给 Agent，而是根据当前角色、阶段、行动类型、局势关键词和可见性约束进行筛选。Agent 可以在 AgentLoop 中主动调用策略检索工具，根据当前问题搜索相关策略。例如，预言家在警上发言前可以检索“警徽流”“对跳”“查杀发言”等相关策略；狼人被怀疑时可以检索“表水”“倒钩”“抗推转移”等策略；女巫在夜晚可以检索“救药使用”“毒药时机”等策略。
+
+![Image](https://internal-api-drive-stream.feishu.cn/space/api/box/stream/download/authcode/?code=YzkwN2I3YTMzYzVjYTUyYjhkZGFmZDMxOGVlODhiNmNfOTVjZjk5MTc5ZmU4ZDc1YTkwOTAwMDJkOTU3MDE4NzJfSUQ6NzY0OTA1MDg4MTc3MzczNTE0N18xNzgxMDk2MTk5OjE3ODExODI1OTlfVjM)
+
+**图 3\-5 StrategyRetriever 策略检索与注入流程**
+
+策略检索的关键不在于“检索越多越好”，而在于“检索到的策略是否适合当前 Agent”。因此系统需要考虑角色匹配、阶段匹配、人数和规则适配、策略可信度以及是否可能泄露当前局私有信息。
+
+在本项目中，策略知识主要进入 Prompt 的 `Strategy Layer`，不会改写 `Persona Layer` 和 `Role Identity Layer`。这意味着策略可以持续迭代，但 Agent 的人格风格和角色规则不会被历史经验污染。这样的设计为后续 Track C 的知识回流提供了安全入口。
+
+## 3\.9 决策审计与 bad case 分析
+
+Agent 决策如果只保留最终行动，后续很难判断它为什么这样做，也无法在赛后进行细粒度复盘。因此系统在 Agent 设计层中加入了决策审计机制，对每次 Agent 行动进行记录。
+
+一次完整的决策审计通常包括：当前 Agent 的可见输入、Prompt 关键信息、工具调用轨迹、检索到的策略、LLM 原始输出、解析后的结构化行动、行动置信度、模型信息和耗时等。
+
+![Image](https://internal-api-drive-stream.feishu.cn/space/api/box/stream/download/authcode/?code=MmQxZjQ3M2Y4MzU1MDFiMmE5YTdkYTg2OWNiZjAxNDJfOGZlMzE3MzI4Njk1OGUyNGFkMjU5NjljNTVmZWExYWNfSUQ6NzY0OTA1MTMwMTU1NjI5MjgyM18xNzgxMDk2MTk5OjE3ODExODI1OTlfVjM)
+
+**图 3\-6 决策审计与 bad case 分析链路**
+
+决策审计机制的价值在于，它把 Agent 行为从“黑盒输出”变成了“可追踪证据链”。当某个 Agent 投错票、错误暴露身份、误用技能或发言逻辑混乱时，系统可以回溯它当时的输入、工具调用和模型输出，从而判断问题来自信息不足、策略检索不合适、Prompt 约束不清、模型推理错误，还是解析和校验环节出现问题。
+
+这也为 Track B 和 Track C 提供了基础。Track B 可以基于审计记录对每一步决策评分，Track C 则可以从高光决策和失误决策中抽取策略知识。如果没有决策审计，后续复盘只能停留在“谁赢了、谁输了”的结果统计层面，无法形成真正可改进的 Agent 闭环。
+
+## 3\.10 本章小结：Agent 设计层的效果与优势
+
+本章介绍了系统中的 Agent 设计层。该层以 `CognitiveAgent` 为核心，在 `PlayerView` 提供的信息隔离基础上，通过观察、记忆、身份推测、社交建模、工具调用和策略检索生成结构化决策。相比于简单 Prompt 调用，本项目的 Agent 设计更强调角色化、可控性、可审计性和可迭代性。
+
+|**设计能力**|**解决的问题**|**带来的效果**|
+|---|---|---|
+|三层 Prompt|人格、身份和策略混杂|降低角色漂移和策略污染风险|
+|角色差异化|不同身份共用同一行为逻辑|支持狼人、神职、村民等差异化决策|
+|Memory / Belief / SocialModel|Agent 只看当前轮、缺少长期判断|支撑多轮推理和关系分析|
+|AgentLoop 工具调用|一次性 Prompt 难以处理复杂局势|支持规则查询、记忆召回和策略检索|
+|StrategyRetriever|历史经验无法进入当前决策|让复盘知识以受控方式回流|
+|DecisionAudit|决策过程不可解释|支撑赛后评分、bad case 分析和知识抽取|
+
+**表 3\-2 Agent 设计层能力总结**
+
+通过上述设计，Agent 设计层使系统中的 AI 玩家不再只是文本生成器，而是能够在身份约束、信息隔离和工具辅助下进行角色化决策的认知智能体。该层向下依赖第二章的基础流转层，确保 Agent 只能基于合法视角行动；向上支撑第四章的 Track B 评测复盘，使每一步决策都可以被评分和分析；同时也连接第五章的 Track C 知识回流，使历史经验能够进入后续对局。
+
+# 4 Track B：赛后多维评测与结构化复盘
+
+本章聚焦系统的 Track B 赛后评测复盘层。前两章解决了对局如何运行、Agent 如何决策的问题，而 Track B 解决的是另一类问题：**一局游戏结束后，系统如何判断 Agent 的每一步行为是好是坏，以及坏在哪里。**如果只统计最终胜负，系统只能知道哪一方获胜，却无法解释某个 Agent 是因为哪一次发言建立了优势，哪一次投票导致阵营崩盘，或者哪一次技能使用改变了游戏走向。因此，本项目在对局结束后引入逐决策评测机制，对 Agent 的发言、投票、夜间技能和特殊行动进行多维评分，并生成结构化复盘报告。
+
+Track B 的核心目标可以概括为：**从“结果可见”进一步走向“过程可解释”。**
+
+## 4\.1 本章架构图：Track B 评测复盘流程
+
+Track B 的输入来自前面章节中已经记录下来的对局数据，包括 `game_events`、`game_snapshots`、`agent_decisions`、玩家身份、阶段信息和最终胜负结果。评测模块并不参与正在进行中的游戏，而是在游戏结束后读取完整证据链，对每一步决策进行赛后分析。
+
+![Image](https://internal-api-drive-stream.feishu.cn/space/api/box/stream/download/authcode/?code=MDhmNGJlYmFkOGU0MTM3MTE3MTJhNDBjN2U1ZDcxZDZfMWUwYTMzMDI3N2U2OWIxNmM2Yjg3MzMwY2EzZjEwMTJfSUQ6NzY0OTA3NzkyNTA1ODAyMjU5M18xNzgxMDk2MTk5OjE3ODExODI1OTlfVjM)
+
+**图 4\-1 Track B 赛后评测复盘流程图**
+
+图 4\-1 展示了 Track B 的整体链路。系统首先从对局结束状态进入赛后处理阶段，读取游戏事件、状态快照和 Agent 决策审计数据。随后，`PerStepScorer` 对每一步决策进行评分，生成 `DecisionScore` 和 `ScoredStep`。这些评分结果进一步汇总为玩家级复盘报告，并形成可展示的 `PublishedReview`、排行榜数据和 bad case 样本。
+
+这一设计使评测不再停留在“哪一方赢了”，而是进一步回答：哪个 Agent 表现好？哪一步决策最关键？哪一步是明显失误？失误来自发言、投票、技能，还是策略判断？这种经验能否进入后续知识抽取？
+
+## 4\.2 Track B 模块目标
+
+Track B 的设计目标不是替代游戏胜负，而是补充胜负指标无法解释的过程信息。一局狼人杀的结果往往受到多个因素共同影响，例如阵营配置、夜间技能、白天发言、关键投票和特殊角色行动。单纯根据胜负评价 Agent，容易产生两个问题。
+
+第一，**胜利方并不代表每个成员都表现好**。好人阵营获胜时，某个村民可能全程误判，只是被其他玩家带赢；狼人阵营失败时，某个狼人也可能有较高质量的伪装和发言，只是被队友失误拖累。
+
+第二，**失败方也可能存在高价值决策**。例如预言家虽然所在阵营失败，但它可能在前期准确查验并给出了合理警徽流；女巫虽然最终输掉对局，但某一次毒药使用可能确实命中了狼人。
+
+因此，Track B 采用逐决策评测方式，把一局游戏拆解成多个可评价的行动单元。每个行动单元都可以独立评分，并结合其对局势的影响进行高光或失误标记。
+
+## 4\.3 PerStepScorer 逐决策评测机制
+
+`PerStepScorer` 是 Track B 的核心模块。它的输入是对局过程中记录的 Agent 决策数据，输出是每一步决策对应的评分结果。与传统胜负统计不同，`PerStepScorer` 的评测粒度更细，它关注的是某个 Agent 在某个阶段、基于某个可见视角，做出了怎样的行为，以及这个行为是否合理。
+
+为了平衡成本、稳定性和评测质量，系统采用三级评分级联机制。
+
+![Image](https://internal-api-drive-stream.feishu.cn/space/api/box/stream/download/authcode/?code=MTkyNjgyMTFkYmUxYzA3ZjQ0M2NkZjY0YjRlZGE2NjZfYjkwY2UyM2YyZDRhZWU1YzFkNDc3YmZiNTQyZTYzOGJfSUQ6NzY0OTA1NjI4Njg5MzQ0NDI5Ml8xNzgxMDk2MTk5OjE3ODExODI1OTlfVjM)
+
+**图 4\-2 PerStepScorer 三级评分级联图**
+
+图 4\-2 展示了 `PerStepScorer` 的评分策略。对于明确可判断的决策，例如死亡玩家投票、无效目标选择、明显非法技能使用等，系统优先使用确定性规则评分。对于需要理解发言内容、推理逻辑或策略意图的决策，则进入 LLM Judge。对于影响较大且判断存在争议的关键步骤，则可以进一步使用更重型的评审方式。
+
+这种设计的优势在于： 确定性规则保证基础评分稳定，轻量 Judge 处理语义模糊场景，重型 Judge 只用于少量高价值决策，从而在成本和质量之间取得平衡。
+
+## 4\.4 发言、投票、技能的评测维度
+
+Track B 并不使用同一把尺子评价所有行动。狼人杀中的发言、投票和技能具有不同语义，因此评测时需要关注不同维度。
+
+发言评测主要关注内容是否符合当前身份、是否能有效表达逻辑、是否暴露不该暴露的信息、是否推动阵营目标。对于好人阵营，好的发言往往能够提供清晰逻辑、指出矛盾、推动归票；对于狼人阵营，好的发言则可能表现为合理伪装、转移怀疑、保护队友或制造错误共识。
+
+投票评测更关注目标选择是否合理。系统会结合当时可见信息、身份推测、票型关系和最终真相判断投票质量。例如，好人投到狼人通常更合理，狼人成功推动抗推好人也可能在阵营目标上获得较高评价，但如果狼人投票暴露队友关系或造成阵营崩盘，也可能被判为低质量决策。
+
+技能评测则更强调时机和影响力。预言家的查验对象是否具有信息增益，女巫救药和毒药是否使用得当，守卫是否保护关键目标，猎人开枪是否命中高价值目标，这些都需要结合阶段状态和对局真相综合判断。
+
+|**决策类型**|**主要评测关注点**|
+|---|---|
+|发言|逻辑完整性、身份一致性、信息贡献、误导或协作效果|
+|投票|目标合理性、票型影响、阵营收益、是否造成关键失误|
+|夜间技能|目标选择、使用时机、信息增益、对胜负走势的影响|
+|特殊行动|触发时机、收益风险、是否改变关键局势|
+
+**表 4\-1 不同决策类型的主要评测关注点**
+
+除了按行动类型区分评测重点外，系统还将评分结果统一归纳到几个核心维度中：`correctness`、`reasoning_quality`、`timeliness` 和 `impact`。其中，`correctness` 表示决策是否接近正确选择；`reasoning_quality` 表示推理依据是否充分；`timeliness` 表示行动时机是否合适；`impact` 表示该行动对局势产生的影响强度。
+
+## 4\.5 高光决策、失误决策与 bad case 定位
+
+Track B 不只是生成分数，还会进一步标记高光决策和失误决策。高光决策通常是指在关键信息不足或局势复杂的情况下，Agent 做出了对阵营有明显帮助的判断；失误决策则通常是指 Agent 在关键阶段做出了明显损害阵营目标的行动
+
+为了直观表达不同决策的分布，可以使用“正确性—影响力”象限图来说明 Track B 如何区分普通决策、高光决策和关键失误。
+
+![Image](https://internal-api-drive-stream.feishu.cn/space/api/box/stream/download/authcode/?code=NzRjNzk1MTIwN2I1MDc3MzMxZTZhYzQ4MWZiZjhhMDNfMjE0NDRhMjgyNmU2ZmM5MTU0NzAwOGZiYjIwMmNhYTZfSUQ6NzY0OTA3Njg5NzI4ODA0NzU2N18xNzgxMDk2MTk5OjE3ODExODI1OTlfVjM)
+
+**图 4\-3 决策正确性与影响力象限图**
+
+图 4\-3 用二维方式展示了 Track B 的核心判断逻辑。横轴表示决策正确性，纵轴表示决策影响力。右上角代表高光决策，即既正确又对局势有较大影响；左上角代表关键失误，即错误且影响较大；右下角代表稳定但影响较小的正确决策；左下角则代表低价值失误。
+
+bad case 定位主要关注左上角区域。因为这类决策不仅错误，而且对局势造成了明显负面影响。例如：好人阵营在关键轮错误归票神职；女巫毒错关键好人导致阵营崩盘。通过这种方式，系统能够从大量 Agent 行为中筛选出最值得复盘的样本。后续 Track C 也可以优先从这些高光和失误样本中抽取策略知识。
+
+## 4\.6 PublishedReview 与 Leaderboard
+
+`PublishedReview` 是 Track B 的结构化输出结果。它不是简单保存一个总分，而是将整局游戏的复盘内容组织成可阅读、可展示、可检索的报告。
+
+一个完整的复盘报告通常包含：对局基本信息、胜负结果、玩家表现概览、关键轮次分析、高光决策、失误决策、bad case 说明、玩家级建议以及可供后续知识抽取使用的结构化字段。
+
+![Image](https://internal-api-drive-stream.feishu.cn/space/api/box/stream/download/authcode/?code=YTUxZjc2ZjhjOWE0ZWVjNzdmOWM4Mjk5NDdkZGZjOWFfNWViM2Y1OGMzN2JkNTkzMWZiOTBmMTRhOGFiMjgxZmRfSUQ6NzY0OTA2NTY1Nzc0MDM2NDk5N18xNzgxMDk2MTk5OjE3ODExODI1OTlfVjM)
+
+**图 4\-4 PublishedReview 结构化复盘报告组成图**
+
+图 4\-4 展示了 `PublishedReview` 的内容结构。它既面向人类阅读，也面向后续系统处理。人类可以通过复盘报告快速理解这一局的关键转折点，系统则可以从报告中提取高光和失误，为 Track C 的知识抽取提供输入。
+
+`Leaderboard` 则用于跨局聚合 Agent 表现。它可以按照玩家、模型、角色、阵营或实验批次统计表现，使系统能够观察不同模型、不同人格、不同策略配置在多局对战中的表现差异。与单局复盘相比，Leaderboard 更关注长期趋势，而不是单局细节。
+
+## 4\.7 与胜负统计型方案的对比
+
+传统游戏评测通常会统计胜率、阵营胜负和平均存活轮次。这类指标简单直观，但不适合单独评价狼人杀 Agent 的能力。因为狼人杀是团队博弈，一个 Agent 的表现可能被队友或对手强烈影响。
+
+Track B 的设计区别在于，它从“局级结果”下沉到“步级决策”。系统不仅知道某个 Agent 赢了还是输了，还能进一步知道它在哪些轮次发挥了作用，哪些行动存在失误，以及这些失误是否真的影响了对局。
+
+|**对比维度**|**胜负统计型方案**|**Track B 逐决策评测**|
+|---|---|---|
+|评价粒度|整局游戏|单步决策、玩家、轮次、整局|
+|主要指标|胜率、存活、阵营结果|正确性、推理质量、时机、影响力|
+|是否解释原因|较弱|可以定位具体高光和失误|
+|是否支持 bad case|不直接支持|支持关键错误定位|
+|是否支持知识回流|较弱|可为 Track C 提供抽取输入|
+|对团队博弈适应性|容易受队友影响|可分析个体过程贡献|
+
+**表 4\-2 Track B 与胜负统计型方案对比**
+
+这种对比可以作为本章的重要论证点：本项目不是只做一个能跑局的系统，而是进一步建立了过程级评测能力。这使后续 Agent 优化不再依赖人工主观判断，而是可以基于结构化复盘结果进行分析。
+
+## 4\.8 可验证结果
+
+Track B 的可验证结果主要体现在四个方面。
+
+第一，系统能够从 `agent_decisions` 中读取每个 Agent 的决策记录。这说明前面章节中的决策审计数据能够被赛后评测模块消费。
+
+第二，系统能够为发言、投票、技能等不同类型行为生成 `DecisionScore`。这说明评测模块不是只处理单一行动，而是覆盖了狼人杀中的主要决策类型。
+
+第三，系统能够生成 `ScoredStep`，并标记高光、失误和影响力。这样后续复盘不再只是分数统计，而是能够定位关键样本。
+
+第四，系统能够将评分结果汇总为 `PublishedReview` 和 Leaderboard 数据，为前端展示、人工复盘和 Track C 知识抽取提供输入。
+
+这一节在最终报告中可以结合第六章的验收结果展开。第四章这里只需要说明 Track B 的可验证输出类型，不建议提前写过多具体实验数字。具体数字、覆盖率和 strict mode 结果放到第六章“项目验收与效果展示”中统一呈现。
+
+## 4\.9 本章小结：评测复盘能力总结
+
+本章介绍了系统的 Track B 赛后多维评测与结构化复盘机制。Track B 以对局结束后的证据链为输入，通过 `PerStepScorer` 对 Agent 的发言、投票、技能和特殊行动进行逐步评分，并进一步生成 `DecisionScore`、`ScoredStep`、`PublishedReview` 和 Leaderboard 等结构化结果。相比于只统计胜负的方案，Track B 的价值在于它能够解释过程。它不仅能说明哪一方赢了，还能说明哪些决策推动了胜利，哪些决策造成了失误，以及这些高光和失误是否值得被后续系统学习。通过该层设计，项目形成了从“对局可运行”到“行为可评价”的能力，为第五章 Track C 的策略知识抽取与自进化闭环提供了直接输入。
+
+# 5 Track C：策略知识抽取与自进化闭环
+
+本章聚焦系统的 Track C 策略知识抽取与自进化闭环。Track B 解决的是“如何评价一局游戏中的每一步决策”，而 Track C 进一步解决的是“如何把这些评价结果转化为下一局可使用的策略知识”。在传统 Prompt 调参方式中，开发者往往需要人工阅读复盘结果，再手动修改角色 Prompt。这种方式不仅效率低，而且容易引入全局副作用：一次针对狼人角色的 Prompt 修改，可能影响所有狼人 Agent；一次针对某个具体局势的经验总结，也可能被错误泛化到不适用的场景。
+
+本项目通过 Track C 将赛后复盘结果转化为结构化策略知识，并通过生命周期管理和策略检索机制，将经过筛选的策略经验回流到下一局 Agent 的决策过程中。由此，系统形成了完整的：Play → Evaluate → Evolve闭环。
+
+## 5\.1 本章架构图：Track C 知识回流流程
+
+Track C 的输入来自 Track B 生成的高光决策、失误决策和 bad case 样本。系统不会直接把整段复盘文本塞回 Prompt，而是先经过 `KnowledgeAbstractor` 抽象为通用策略经验，再存入策略知识库。后续对局中，`StrategyRetriever` 根据角色、阶段、行动类型和局势关键词检索可用策略，并注入到 Agent 的 Strategy Layer。
+
+![Image](https://internal-api-drive-stream.feishu.cn/space/api/box/stream/download/authcode/?code=NWE0Yzg3NzBlNmFkMGRmZTg5YmVmODVlMTk5MTZiZjVfYzg5M2NiN2IwYmIwZGFjOGJlYjBmMGY3NWI1NGM4YjdfSUQ6NzY0OTM5OTgyNjI1MzI1MzgxMl8xNzgxMDk2MTk5OjE3ODExODI1OTlfVjM)
+
+**图 5\-1 Track C 策略知识回流闭环图**
+
+图 5\-1 展示了 Track C 在系统中的位置。Track C 并不是孤立模块，而是连接 Track B 和下一局 Agent 决策的桥梁。它从复盘结果中抽取经验，将经验结构化为策略知识文档，再通过检索机制回流到 Agent。这样，系统的每一局对战都可以成为后续策略改进的数据来源。
+
+## 5\.2 Track C 模块目标
+
+Track C 的目标可以概括为三个层次。
+
+第一，**将单局经验转化为可复用策略**。
+ Track B 的复盘结果通常是围绕某一局、某一轮、某个玩家行为展开的。如果直接保存这些文本，它们很难在下一局中复用。Track C 需要从具体事件中抽象出通用经验，例如“预言家在被对跳时应优先解释查验链和警徽流”，而不是保存“3 号玩家在第 2 天应该这样发言”。
+
+第二，**让策略知识可控地进入 Agent 决策**。
+ 系统不会把所有复盘内容无差别加入 Prompt。策略知识需要经过候选、激活、弃用等生命周期管理。只有处于 `active` 状态且与当前角色、阶段和局势匹配的策略，才会被 `StrategyRetriever` 检索并注入 Agent。
+
+第三，**避免经验污染和信息泄漏**。
+ 狼人杀是信息不对称游戏。即使赛后知道了所有玩家真实身份，下一局 Agent 在决策时也不能使用超出当前视角的信息。因此，Track C 在抽取策略时必须进行去个案化和去泄漏处理，不能把某局中的真实身份、玩家编号或上帝视角结论作为下一局可直接使用的信息。
+
+## 5\.3 KnowledgeAbstractor 知识抽取机制
+
+`KnowledgeAbstractor` 是 Track C 的核心模块。它负责从 Track B 的高光决策、关键失误和 bad case 样本中抽取策略经验。抽取过程不是简单摘要，而是一个“复盘样本 → 策略经验”的转化过程。系统需要识别该决策为什么有效或为什么失败，再将其表达为下一局可复用的策略规则。
+
+![Image](https://internal-api-drive-stream.feishu.cn/space/api/box/stream/download/authcode/?code=OTFhNmE5ZGNiOGFiZjlhMjY5YmIwOTc2ZDgzMTMwMThfNDkxZDA3OGNmNjUwNjk2YmM3NGRlNmZlYzYzOTE5ODVfSUQ6NzY0OTQxMzI1MjA5MjIxODU2M18xNzgxMDk2MTk5OjE3ODExODI1OTlfVjM)
+
+**图 5\-2 KnowledgeAbstractor 策略知识抽取时序图**
+
+图 5\-2 展示了 `KnowledgeAbstractor` 的执行过程。首先，Track B 提供经过评分和标记的复盘样本。随后，`KnowledgeAbstractor` 重建当时的决策上下文，包括角色、阶段、可见信息、行动类型和评分结果。之后，系统通过抽象器生成策略草稿，再经过质量门控检查，最终写入策略知识文档库。
+
+一个有效的策略抽取结果通常需要回答四个问题：
+
+```Plain Text
+这个经验适用于什么角色？
+这个经验适用于什么阶段或行动类型？
+触发这个经验的局势条件是什么？
+Agent 在类似局势下应该做什么，或者避免做什么？
+```
+
+例如，Track B 可能识别出一次预言家发言是高光决策。Track C 不会简单记录“某玩家发言很好”，而是抽象为：“当预言家面临对跳时，应优先明确查验链、解释警徽流，并把怀疑目标与已有发言矛盾关联起来，而不是只强调自己是真预言，这样的经验才可以在后续类似局势中复用。
+
+## 5\.4 AbstractedLesson 与策略知识文档
+
+Track C 的核心数据产物是 `AbstractedLesson`。它不是自然语言复盘片段，而是带有结构化字段的策略知识单元。每条策略经验都需要记录适用范围、触发条件、推荐行为、反面模式、证据来源和生命周期状态。
+
+![Image](https://internal-api-drive-stream.feishu.cn/space/api/box/stream/download/authcode/?code=MTJmM2RjYTVjYWUzYWFjYmFiY2I5MTIwNmM5OGZkYzdfYWJjY2Y1OTAzYmM5NGM2NGU5ODRlNTFiMGI5YWY5NjJfSUQ6NzY0OTQzMTU4MzY0ODI4NzkyNF8xNzgxMDk2MTk5OjE3ODExODI1OTlfVjM)
+
+**图 5\-3 AbstractedLesson 与策略知识文档结构图**
+
+图 5\-3 展示了 Track C 中策略知识的结构。`AbstractedLesson` 负责表达抽象后的策略经验，`EvidenceRef` 负责保留该经验来自哪些对局证据，`StrategyKnowledgeDoc` 负责将经验转化为可检索的策略文档，`StrategyRetriever` 则负责在下一局中检索可用策略。
+
+|**字段**|**说明**|
+|---|---|
+|`role_scope`|策略适用角色，例如狼人、预言家、女巫、村民|
+|`phase_scope`|策略适用阶段，例如夜晚、警长竞选、白天发言、投票|
+|`action_type`|策略对应的行动类型，例如发言、投票、查验、救药、毒药|
+|`trigger_condition`|策略触发条件，即什么局势下应参考该经验|
+|`recommended_action`|推荐行为，即 Agent 在类似局势下应采取的策略|
+|`anti_pattern`|反面模式，即应避免的错误做法|
+|`rationale`|策略原因，解释为什么该经验有效|
+|`evidence_refs`|证据来源，指向原始对局、决策步骤和评分结果|
+|`confidence`|置信度，用于判断经验是否足够可靠|
+|`status`|生命周期状态，包括 candidate、active、deprecated|
+
+**表 5\-1 AbstractedLesson 主要字段说明**
+
+这一设计的关键价值在于：策略知识不是黑箱文本，而是可以被检索、过滤、审计和版本管理的结构化资产。
+
+## 5\.5 策略知识生命周期与版本管理
+
+Track C 不会让所有抽取出的经验立即进入下一局 Agent。每条策略知识都需要经过生命周期管理。系统将策略知识分为三个主要状态：`candidate`、`active` 和 `deprecated`。
+
+![Image](https://internal-api-drive-stream.feishu.cn/space/api/box/stream/download/authcode/?code=MDhhMjk5MDU4MjQ1MDNjNzlhNmEzMjc0YzNiOTkyNjRfZjY5ZmFjMTYzZjdlNmJkN2U0MjQ3ZGU2ZjcwNGMzM2NfSUQ6NzY0OTQzMTIyMjIzMzQ2ODA5OV8xNzgxMDk2MTk5OjE3ODExODI1OTlfVjM)
+
+**图 5\-4 策略知识生命周期状态图**
+
+图 5\-4 展示了策略知识从生成到使用再到弃用的生命周期。新抽取出的经验首先进入 `candidate` 状态。候选策略不会默认进入 Agent Prompt，而是需要经过质量检查。通过检查的策略可以进入 `active` 状态，被 `StrategyRetriever` 检索和注入。若某条策略在后续对局中表现不佳，或被更优版本替代，则可以被标记为 `deprecated`。
+
+这种生命周期设计可以避免两个问题。第一，避免低质量经验污染 Prompt。赛后抽取的经验并不一定都正确，某些经验可能只是单局偶然现象。如果不加筛选地注入 Agent，反而可能降低策略稳定性。第二，避免策略库无限膨胀。随着对局数量增加，策略知识会不断累积。如果没有版本管理和弃用机制，检索结果会变得冗余，Agent 也可能收到互相冲突的策略建议。
+
+## 5\.6 策略知识回流到下一局 Agent
+
+策略知识回流由 `StrategyRetriever` 完成。它不会简单返回所有 active 策略，而是根据当前 Agent 的角色、阶段、行动类型和局势关键词进行筛选。最终只有少量最相关的策略片段进入 Agent 的 Strategy Layer。
+
+![Image](https://internal-api-drive-stream.feishu.cn/space/api/box/stream/download/authcode/?code=ODY2MjIzNGM4MzRjNmI5MzM1ZDhkOWYyM2M0OWNkOGJfMjEzMDA3YTU0NGU4MDQzODYyYjFjNmM1MWE4MmEwY2RfSUQ6NzY0OTQzMDIyNTYwMzgyNDg3N18xNzgxMDk2MTk5OjE3ODExODI1OTlfVjM)
+
+**图 5\-5 策略知识检索与注入时序图**
+
+图 5\-5 展示了策略知识如何回流到下一局 Agent。Agent 在决策前向 `StrategyRetriever` 提交当前局势信息。`StrategyRetriever` 从策略知识库中检索 active 策略，并进行过滤与排序。最终策略片段进入 Prompt 的 Strategy Layer，而不是覆盖 Persona Layer 或 Role Layer。
+
+这种设计保证了策略回流的边界：
+
+```Plain Text
+Persona Layer：控制语言风格和人格特征；
+Role Layer：控制身份、阵营、技能和胜利条件；
+Strategy Layer：注入可复用策略经验。
+```
+
+因此，Track C 不会改变 Agent 的身份设定，也不会破坏人格风格，而是在策略层补充“类似局势下可以参考的打法”。
+
+## 5\.7 与手工 Prompt 调参方案的对比
+
+手工 Prompt 调参通常依赖开发者阅读复盘结果，然后直接修改角色 Prompt。这种方式适合早期调试，但不适合长期迭代。Track C 的优势在于，它把策略优化拆成了可追踪、可筛选、可回滚的知识管理过程。
+
+![Image](https://internal-api-drive-stream.feishu.cn/space/api/box/stream/download/authcode/?code=NWM1ZmQwYjYwYThkOTAyMTMzNjQ4NzczMTNmNWMzMDRfZDBiZWZkOGMzOTJhNTYzNDM0YTI3ZmVmN2EyZWEyMWZfSUQ6NzY0OTQwOTI4ODE5NjQxMDMxMF8xNzgxMDk2MTk5OjE3ODExODI1OTlfVjM)
+
+**图 5\-6 Track C 与手工 Prompt 调参路径对比图**
+
+图 5\-6 展示了两种策略优化方式的差异。手工 Prompt 调参路径更直接，但缺少细粒度控制和证据记录。Track C 路径虽然多了抽取、筛选和检索步骤，但每一步都有明确状态和证据链，因此更适合长期迭代。
+
+Track C 的优势主要体现在：
+
+```Plain Text
+策略来源可追踪：每条经验都能回溯到具体对局和决策步骤；
+策略使用可控制：只有 active 且匹配当前局势的策略才会被注入；
+策略效果可审计：DecisionAudit 可以记录 Agent 使用了哪些策略；
+策略版本可管理：错误策略可以弃用，新策略可以替代旧策略。
+```
+
+## 5\.8 可验证结果与边界说明
+
+Track C 的可验证结果主要体现在策略知识是否能够完成从“复盘结果”到“下一局注入”的闭环。
+
+|**验证点**|**说明**|
+|---|---|
+|知识抽取|能够从高光、失误和 bad case 中生成 `AbstractedLesson`|
+|结构化存储|能够将经验写入 `strategy_knowledge_docs`|
+|生命周期管理|能够区分 candidate、active、deprecated 等状态|
+|策略检索|`StrategyRetriever` 能够按角色、阶段和关键词检索 active 策略|
+|Prompt 注入|检索到的策略能够进入 Agent 的 Strategy Layer|
+|决策审计|Agent 决策记录中能够追踪使用过的策略知识|
+
+**表 5\-2 Track C 可验证输出说明**
+
+Track C 的验收重点不应被简单理解为“Agent 是否马上变强”，而应首先验证系统是否真正打通了从复盘结果到策略回流的工程闭环。也就是说，本节关注的是：Track B 产生的高光、失误和 bad case 是否能够被 Track C 消费；Track C 是否能够生成结构化策略经验；策略经验是否能够进入策略知识库；后续 Agent 是否能够通过 StrategyRetriever 检索并使用这些策略。
+
+从链路上看，Track C 的可验证结果主要体现在六个环节。
+
+第一，**复盘样本可以被消费**。Track C 能够读取 Track B 输出的 `ScoredStep`、高光决策、失误决策和 bad case 样本。这说明 Track B 与 Track C 之间的数据接口是连通的，赛后评测结果不只是展示内容，而是可以继续进入后续知识抽取流程。
+
+第二，**策略经验可以被抽象生成**。`KnowledgeAbstractor` 能够从具体对局样本中生成 `AbstractedLesson`，并将“某一局中的具体行为”转化为“类似局势下可复用的策略建议”。这一点是 Track C 的核心能力，因为系统并不是把复盘文本原样塞回 Prompt，而是尝试把单局经验去个案化、结构化和策略化。
+
+第三，**策略知识可以被结构化存储**。抽取后的策略经验能够写入 `strategy_knowledge_docs` 等策略知识文档中，并携带角色范围、阶段范围、行动类型、触发条件、推荐行为、反面模式、证据来源和生命周期状态等字段。这样，策略知识就不再是一段不可管理的自然语言，而是可以被检索、过滤、审计和版本管理的知识资产。
+
+第四，**策略生命周期可以被区分管理**。系统能够区分 `candidate`、`active` 和 `deprecated` 等状态。新抽取出的经验首先进入候选状态，不会立即影响下一局 Agent；只有通过质量检查或后续验证的策略，才适合进入 active 状态并被检索使用；失效、重复或负收益的策略则可以被弃用。这一机制可以降低低质量经验污染 Prompt 的风险。
+
+第五，**策略知识可以被检索并注入 Agent**。在下一局决策过程中，`StrategyRetriever` 能够根据当前 Agent 的角色、阶段、行动类型和局势关键词，从 active 策略中筛选出少量相关策略，并注入到 Prompt 的 Strategy Layer。这里需要特别强调，策略回流不是全量灌入，也不是直接改写角色 Prompt，而是按需检索、受控注入。
+
+第六，**策略使用过程可以被审计**。当 Agent 使用了某些策略知识后，系统可以在 `DecisionAudit` 中记录对应的 `strategy_ids`、决策上下文、模型输出和最终行动。这样，后续 Track B 可以继续评价这些决策，Track C 也可以进一步判断某些策略是否有效、是否需要修订，或者是否应该被弃用。
+
+系统已经实现了从赛后复盘到策略知识候选生成，再到策略检索注入和决策审计记录的工程闭环原因在于，策略进化效果的验证需要更多对局样本、对照实验和长期统计结果。单次或少量对局中产生的策略经验可能存在偶然性；某些策略在特定角色、阶段和局势下有效，但并不一定能泛化到所有对局；此外，策略是否真正提升 Agent 表现，还受到 Track B 评分质量、KnowledgeAbstractor 抽取质量、StrategyRetriever 检索匹配质量以及 LLM 执行稳定性的共同影响。
+
+Track C 为系统提供了一种可持续迭代的策略进化机制，使每一局对战都可以沉淀为后续可检索、可审计、可回滚的策略资产。至于这些策略资产是否能够在长期实验中稳定提升胜率或决策质量，应放到第六章的实验与验收结果中进一步说明，并在未来通过更多局数和对照组实验验证。
+
+## 5\.9 本章小结：策略进化能力总结
+
+本章介绍了系统的 Track C 策略知识抽取与自进化闭环。Track C 以 Track B 的结构化复盘结果为输入，通过 `KnowledgeAbstractor` 从高光决策、关键失误和 bad case 中抽取可复用策略经验，并将其转化为 `AbstractedLesson` 和策略知识文档。
+
+与手工 Prompt 调参相比，Track C 的核心价值在于可追踪、可筛选、可回滚和可检索。系统不会把复盘文本直接塞回 Prompt，而是通过 candidate、active、deprecated 等生命周期状态管理策略知识，并由 `StrategyRetriever` 在下一局中按需检索和注入。
+
+通过该机制，项目完成了从“对局可运行”到“行为可评价”，再到“经验可回流”的完整闭环。第五章也为第六章的验收与效果展示提供了基础：后续可以通过候选策略数量、active 策略检索结果、策略注入记录和决策审计数据，验证 Track C 是否真正完成了策略进化链路。
+
+# 6 项目验收与效果展示
+
+本章聚焦项目的验收结果与效果展示。前五章分别介绍了系统的基础对局流转、Agent 决策机制、赛后评测复盘以及策略知识回流机制。本章进一步从工程验收角度说明：系统是否能够稳定运行，关键模块是否完成，信息隔离是否有效，Track B 与 Track C 是否形成闭环，以及哪些实验结果可以作为项目完成度证明。
+
+不再重复介绍模块设计细节，而是围绕验收证据展开。主要包括 Strict Mode 全链路验收、信息隔离专项验证、20 局稳定性实验、策略检索离线评估、Track B 评测结果、Track C 知识产出结果，以及最终可写结论与边界说明。
+
+## 6\.1 Strict Mode 全链路验收
+
+Strict Mode 是本项目最重要的全链路验收方式。它要求系统在较严格的运行条件下完成完整对局流程，并验证数据库、LLM 调用、游戏引擎、Agent 决策、信息隔离、策略检索、Track B、Track C 和报告导出等关键模块是否能够协同工作。与单独测试某个函数不同，Strict Mode 更接近真实系统运行状态。它验证的不是某个模块是否能孤立执行，而是整个系统是否能从对局开始运行到赛后复盘和策略回流。
+
+![Image](https://internal-api-drive-stream.feishu.cn/space/api/box/stream/download/authcode/?code=N2VlOWU4NWQ4NjhhYTUyOGQwZWU4OGFhMGVmNzIxODRfNjU5Mjk4YWM1M2MzZGY5ZWRhNjVmZWI0ZWM1ZWM2OWJfSUQ6NzY0OTQzNDcxMzk5MTU5NzI4OV8xNzgxMDk2MTk5OjE3ODExODI1OTlfVjM)
+
+**图 6\-1 Strict Mode 全链路验收流程图**
+
+图 6\-1 展示了 Strict Mode 的验收路径。系统首先完成运行环境与依赖检查，然后执行完整 AI 对局。在对局过程中，系统持续记录事件、快照和 Agent 决策审计数据。对局结束后，Track B 对决策进行逐步评分，Track C 从高光和失误样本中抽取策略知识，最后生成可导出的报告结果。
+
+系统已通过 Strict Mode 全链路验收，Play、Evaluate、Evolve 三个核心阶段均能够完成端到端运行。
+
+## 6\.2 信息隔离专项验证
+
+信息隔离是狼人杀 AI 系统的核心验收点。由于狼人杀本质上是信息不对称博弈，不同玩家在同一时刻拥有的信息范围不同。若 Agent 在决策时读取到了上帝视角信息，例如其他玩家真实身份、夜间行动结果或隐藏角色状态，那么系统虽然可能表现更强，但不再符合狼人杀规则，也无法作为可靠的多智能体博弈环境。
+
+本项目通过 `Visibility` 和 `PlayerView` 机制限制每个 Agent 的输入视角，并对关键边界进行了专项检查。专项验证的目标是确认：Agent 只能看到自己在当前身份和阶段下应当看到的信息，不能越权访问完整 `GameState`。
+
+![Image](https://internal-api-drive-stream.feishu.cn/space/api/box/stream/download/authcode/?code=MGY0ZDIxMDBhZmViMTE1M2M0YzYzYzBjMDkxNmQxNTRfZjllYzFiODM3ODFjZjNhYmU4Y2Q1YmY3ZDIwY2E2YWNfSUQ6NzY0OTQzMzc2MTkzNDc4OTg0Nl8xNzgxMDk2MTk5OjE3ODExODI1OTlfVjM)
+
+**图 6\-2 信息隔离专项验证结构图**
+
+图 6\-2 展示了信息隔离的验证逻辑。完整 `GameState` 不会直接暴露给 Agent，而是先经过可见性规则和 `PlayerView Builder` 转换为局部视角。不同身份得到的信息不同，狼人可以看到狼队信息，神职可以看到自身技能相关结果，村民只能看到公共讨论和公开事件。Agent 决策时只接收 `PlayerView`，从而避免读取上帝视角。
+
+|**验证项**|**验证目标**|**验收含义**|
+|---|---|---|
+|身份可见性|玩家不能看到不属于自己的隐藏身份|防止上帝视角泄漏|
+|夜间行动可见性|夜间技能结果只对合法角色可见|保持信息不对称|
+|死亡与公开事件|公开事件可以进入所有玩家视角|保证公共信息一致|
+|狼队信息|狼人可见队友，非狼人不可见|保证阵营视角差异|
+|Agent 输入检查|Agent 接收的是 PlayerView 而非 GameState|保证决策入口安全|
+
+**表 6\-1 信息隔离专项验证内容**
+
+已整理过的信息显示，信息隔离专项包含 92 项边界检查并通过。信息隔离专项验证覆盖了身份、夜间行动、公开事件和 Agent 输入边界等关键场景，验证结果表明 PlayerView 能够有效限制 Agent 的可见信息范围。
+
+## 6\.3 20 局稳定性实验
+
+除了单次全链路验收，系统还需要通过多局运行观察稳定性。20 局稳定性实验的目标是验证系统在连续对局中是否能够保持基本可用，包括阶段推进是否正常、Agent 是否能够持续产生行动、数据库是否能够持续写入、WebSocket 与前端状态是否能够保持同步、赛后流程是否能够正常触发。
+
+![Image](https://internal-api-drive-stream.feishu.cn/space/api/box/stream/download/authcode/?code=Zjc3YWU0Zjk3MzhmNjg3ZTQ2NWYxYzE5NDM4N2ZmNTBfYWJlOWRlZTJjMmQ1ZjY3NjczNjI3YzY3ZThhMjkzMjBfSUQ6NzY0OTQzNTQ3NTkyNDU1MjkxMV8xNzgxMDk2MTk5OjE3ODExODI1OTlfVjM)
+
+
+
+**图 6\-3 20 局稳定性实验观察维度图**
+
+图 6\-3 展示了 20 局稳定性实验的观察维度。该实验主要关注系统是否能够连续完成多局对战，以及每局是否能够生成可供后续评测和知识抽取使用的数据。相比单局演示，多局稳定性实验更能说明系统不是一次性 Demo，而是具备持续运行能力。20 局稳定性实验表明，系统能够在多局连续运行中保持对局推进、Agent 决策、事件记录和赛后处理链路的基本稳定。
+
+## 6\.4 策略检索离线评估
+
+策略检索离线评估用于验证 `StrategyRetriever` 是否能够在不运行完整对局的情况下，根据角色、阶段、行动类型和关键词检索到合适的策略片段。该评估重点不是判断策略是否一定能提升胜率，而是判断策略检索机制是否可用、是否可控、是否存在明显污染。
+
+![Image](https://internal-api-drive-stream.feishu.cn/space/api/box/stream/download/authcode/?code=MDU2M2I0ZDNiNjg3ODU4MjA1NWIxNjRhYTZiZWU1NGVfOTFkYTE0MWZkNTNkZmUwYWZiMzBhN2IxNDVkZWMxYTFfSUQ6NzY0OTQzOTg1OTM2MjI3MDQzMl8xNzgxMDk2MTk5OjE3ODExODI1OTlfVjM)
+
+**图 6\-4 策略检索离线评估时序图**
+
+图 6\-4 展示了策略检索离线评估流程。测试样例首先构造查询条件，例如“预言家 \+ 白天发言 \+ 对跳局势”或“狼人 \+ 投票阶段 \+ 抗推目标”。`StrategyRetriever` 从策略知识库中召回候选文档，再通过角色、阶段、状态和关键词过滤得到 Top\-k 结果。离线评估关注检索结果是否与当前局势匹配，以及是否出现不应被注入的策略内容。
+
+|**指标**|**说明**|
+|---|---|
+|Top\-k 命中|前 k 条结果是否包含目标策略|
+|角色匹配率|检索结果是否适用于当前角色|
+|阶段匹配率|检索结果是否适用于当前阶段|
+|active 策略占比|返回结果是否来自 active 策略|
+|污染率|是否返回其他角色、隐藏信息或不适用策略|
+|空结果处理|无匹配策略时是否能够安全返回空结果|
+
+**表 6\-3 策略检索离线评估指标**
+
+离线评估结果表明，StrategyRetriever 能够基于角色、阶段和关键词进行受控检索，并避免将不适用或未激活策略直接注入 Agent。
+
+## 6\.5 Track B 评测与复盘结果
+
+Track B 的作用是解决“只看胜负无法解释 Agent 决策质量”的问题。在狼人杀对局中，最终胜负往往由多轮发言、投票、夜间技能和阵营协作共同决定。如果系统只记录哪一方获胜，就无法判断 Agent 哪一步做得好，哪一步导致局势恶化。因此，本项目通过 PerStepScorer 对 `agent_decisions` 中的每条决策进行逐步评分。评分对象包括发言、投票和技能使用，评分结果进一步形成 ScoredStep，并标记高光决策和失误决策。随后系统会生成 PublishedReview 和 LeaderboardEntry，使对局复盘从非结构化描述转变为可查询、可比较、可回溯的数据产物。
+
+后端验收报告显示，Track B Scoring 已通过验证，PerStepScorer 对 27 条决策实现 27/27 覆盖，并产出 PublishedReview、Evaluation 记录和 LeaderboardEntry。 这说明系统已经具备逐决策复盘能力，可以从“这局谁赢了”进一步分析到“哪个 Agent 的哪一步决策影响了局势”。Track B 已经实现了从对局日志到结构化复盘的转换，为 bad case 定位和后续策略知识抽取提供了数据基础。
+
+![Image](https://internal-api-drive-stream.feishu.cn/space/api/box/stream/download/authcode/?code=NTVlNGQ2YmY4MGZiMTU2ODhiMGQ5NmYzODA0YzQzZjRfMDcxYWIwNDFlNGZjMDY3N2FmOGQ4OTE5YjNhZmNjZDVfSUQ6NzY0OTQzNDUzODc5OTU0OTM2OF8xNzgxMDk2MTk5OjE3ODExODI1OTlfVjM)
+
+**图 6\-5 Track B / TrackC验收结果总览** 
+
+## 6\.6 Track C 知识产出结果
+
+Track C 的作用是将 Track B 的复盘结果进一步转化为候选策略知识。它不是简单保存复盘文本，而是从高光决策、失误决策和 Agent 赛后反思中抽取 AbstractedLesson，并写入 `strategy_knowledge_docs` 表，供后续生命周期管理和策略检索使用。
+
+项目数据流文档中将 Track C 的链路描述为：`ScoredStep → KnowledgeAbstractor → AbstractedLesson → strategy_knowledge_docs → StrategyRetriever → Agent Prompt`。 这条链路说明，Track C 的输入来自 Track B 的结构化评分结果，输出则是下一局 Agent 可以通过检索机制使用的策略知识。
+
+后端验收报告显示，本次 strict mode 运行中，系统产出 99 条知识，其中包括 27 条 per\-step lessons 和 72 条 reflection lessons；新知识写入 candidate 状态，Active 池保持 1065→1065，delta=0。 这说明系统已经跑通了从赛后复盘到候选知识写入的工程链路，并且新抽取知识不会直接污染正式策略池。Track C 已经完成“复盘结果到候选策略知识”的工程闭环，为后续策略晋级、A/B 对战和长期自进化实验提供了基础。
+
+## 6\.7 可写结论与不可过度声称内容
+
+|**类型**|**推荐写法**|**不建议写法**|
+|---|---|---|
+|系统完成度|系统已完成 Play、Evaluate、Evolve 主链路|系统已完全解决 AI 狼人杀|
+|对局运行|系统能够完成完整 AI 对局与胜负结算|系统在所有复杂局面下都不会出错|
+|信息隔离|PlayerView 机制通过专项边界验证|系统绝不可能发生信息泄漏|
+|Agent 决策|Agent 能够基于角色、视角和策略进行结构化决策|Agent 已达到人类高水平博弈能力|
+|Track B|系统具备逐决策评分和 bad case 定位能力|评分结果一定等价于专家裁判|
+|Track C|系统实现策略知识抽取与回流闭环|策略进化已稳定提升胜率|
+|稳定性|多局实验表明系统具备连续运行能力|系统已经工业级稳定|
+
+**表 6\-6 可写结论与不可过度声称内容**
+
+项目结项报告需要展示成果，但也要明确结论边界。当前验收结果已经能够证明系统后端核心链路跑通，包括完整对局、信息隔离、Agent 决策审计、赛后评分、知识抽取和候选池写入。但对于长期策略进化效果，需要更多对局、对照组和统计分析支撑。
+
+# 7 项目成果与能力证明
+
+本章从项目能力角度总结 AI Werewolf 系统的实现成果。与第六章侧重验收结果不同，本章重点说明系统在策略深度、多 Agent 协作、可扩展架构、工程化交付、赛后复盘和策略知识回流方面体现出的综合能力。项目最终并非只完成一个能够运行的狼人杀游戏，而是构建了一套包含完整对局、信息隔离、角色化 Agent、决策审计、赛后评测和知识回流的多智能体系统。
+
+## 7\.1 策略深度
+
+本项目的第一类成果是形成了具有策略深度的 AI 狼人杀 Agent。系统并不是简单让大模型在每个阶段随机生成一句发言，而是围绕狼人杀的角色目标、阶段规则、阵营信息和历史上下文构建了分层决策机制。
+
+Agent 的策略深度主要体现在三个方面：
+
+第一，Agent 能够区分不同角色的目标。例如狼人需要隐藏身份、制造误导并推动抗推；预言家需要建立查验链和警徽流；女巫需要权衡救药和毒药时机；村民则需要依靠公开发言和票型进行推理。这说明系统中的 Agent 决策不是单一模板，而是与角色职责绑定。
+
+第二，Agent 能够结合历史信息进行多轮判断。狼人杀不是单轮问答任务，当前发言和投票往往需要参考前几轮的身份声明、站边关系、票型变化和攻击保护关系。因此，系统引入 Memory、BeliefTracker 和 SocialModel，使 Agent 能够在多轮对局中维护局势理解。
+
+第三，Agent 能够接收策略知识辅助决策。通过 StrategyRetriever，系统可以把历史复盘中沉淀出的策略片段注入到 Strategy Layer，使 Agent 在类似局势下参考已有经验，而不是每次从零开始推理。
+
+![Image](https://internal-api-drive-stream.feishu.cn/space/api/box/stream/download/authcode/?code=YTUyNDkyNDI5OTg1MWRlNGE1OTA1MzM2ODc1MjAwZjFfN2U3ZThlMDcxOWQ0MDZjNjlmNzdjMmU2NjZkYWU2NTBfSUQ6NzY0OTQ0MTA3NjAyNTAwMjk2OV8xNzgxMDk2MTk5OjE3ODExODI1OTlfVjM)
+
+**图 7\-1 Agent 策略深度能力结构图**
+
+图 7\-1 展示了系统中策略深度的组成。策略能力不是单点模块，而是由角色目标、历史记忆、身份推理、社交关系和策略检索共同支撑。相比普通文本生成式 Agent，该设计更适合处理狼人杀这类多轮、强对抗、信息不完全的博弈场景。
+
+## 7\.2 多 Agent 协作与信息隔离
+
+本项目的第二类成果是实现了多 Agent 对局中的协作、对抗与信息隔离。狼人杀的核心特征是不同玩家拥有不同信息，且不同阵营存在不同目标。如果系统只维护一个全局视角，再让所有 Agent 共享完整状态，那么对局虽然可以运行，但不符合狼人杀的基本规则。
+
+本项目通过 `Visibility` 和 `PlayerView` 机制，为每个 Agent 构建局部视角。Agent 在决策时只能看到自己应当看到的信息，而不能直接访问完整 `GameState`。这使系统能够支持真正的信息不对称博弈。
+
+![Image](https://internal-api-drive-stream.feishu.cn/space/api/box/stream/download/authcode/?code=MTI4YTBiZmQ3M2EyMzUzZmI0NmJjZGVlNGIyMDU0NmZfZjA1NTU1NmVjZjk1MWU4Y2M0MTkyY2IyYWY1YjRhNTVfSUQ6NzY0OTQ0MTM4ODM2NjYzMDExMl8xNzgxMDk2MTk5OjE3ODExODI1OTlfVjM)
+
+**图 7\-2 多 Agent 信息隔离与决策时序图**
+
+图 7\-2 展示了多 Agent 决策中的信息边界。完整 `GameState` 只存在于对局引擎内部，Agent 只能接收经过 `Visibility` 处理后的 `PlayerView`。这种设计既保证了多 Agent 能够共同参与一局游戏，也保证了每个 Agent 的输入符合自身角色和阶段可见性。
+
+这一能力证明系统不是简单的多角色聊天，而是具备了多智能体环境所需的状态隔离、局部观察和行动回传机制。
+
+## 7\.3 可扩展对局架构
+
+本项目的第三类成果是构建了可扩展的对局架构。狼人杀规则复杂，包含夜晚行动、白天发言、警长竞选、投票放逐、死亡结算、特殊角色技能和胜负判定等多个环节。如果系统将规则逻辑、Agent 决策和前端展示混在一起，后续扩展角色、阶段和策略都会非常困难。
+
+本项目将系统拆分为对局引擎、阶段状态机、信息隔离、行动校验、Agent 决策、事件记录和前端展示等相对独立的模块。`WerewolfGame` 作为规则引擎和状态真源，负责维护完整游戏状态；`PhaseManager` 负责阶段流转；`ActionValidator` 负责行动合法性校验；`CognitiveAgent` 负责生成决策；前端则通过后端 API 和 WebSocket 获取观战状态。
+
+## 7\.4 工程化交付能力
+
+本项目的第四类成果是工程化交付能力。与只在 Notebook 中运行一次实验不同，本项目形成了前后端联动、数据库持久化、WebSocket 实时同步、LLM 调用、Agent 决策审计、赛后评测和策略回流等完整工程链路。
+
+工程化能力主要体现在三个层面：
+
+第一，系统具备完整的运行链路。用户可以通过前端进入房间和对局页面，后端负责创建游戏、推进阶段、调度 Agent、同步状态，并在对局结束后触发复盘和知识抽取。
+
+第二，系统具备数据持久化和证据链。游戏事件、状态快照、Agent 决策、工具调用、评分结果和策略知识都能够被结构化记录。这使项目不是一次性生成结果，而是可以追踪、复盘和审计。
+
+第三，系统具备验收与交付意识。通过 Strict Mode、信息隔离专项检查、多局稳定性实验和模块级验收，项目能够说明哪些能力已经完成，哪些能力仍有边界。
+
+![Image](https://internal-api-drive-stream.feishu.cn/space/api/box/stream/download/authcode/?code=ODI5OWM4NGE5ZDU1MTY1OTQ1NDA3NDZlOTIwZjBjZGVfMjRkNDU5NjM1MTI3NjE2NGM4OTIyMjQxYzhhODU3MmZfSUQ6NzY0OTQ0MTczOTcyNzUwNjM2OF8xNzgxMDk2MTk5OjE3ODExODI1OTlfVjM)
+
+**图 7\-4 工程化交付能力看板图**
+
+图 7\-4 将工程交付能力分为运行交付、数据交付和验收交付三类。运行交付证明系统可以被使用，数据交付证明系统可以被追踪，验收交付证明系统可以被验证。这三类能力共同说明项目已经超出原型 Demo，具备较完整的工程闭环。
+
+## 7\.5 评测复盘能力
+
+本项目的第五类成果是建立了过程级评测复盘能力。狼人杀对局的最终胜负并不能直接反映每个 Agent 的真实表现，因为团队博弈中个体表现会受到队友、对手、角色配置和随机局势的影响。仅看胜负，无法回答某个 Agent 哪一步做得好、哪一步做得差、为什么出错。
+
+Track B 将一局游戏拆分为多个可评价的决策步骤，并通过 `PerStepScorer` 对发言、投票、技能和特殊行动进行评分。系统进一步生成 `DecisionScore`、`ScoredStep`、`PublishedReview`、Leaderboard 和 bad case 样本，从而把对局结果转化为可阅读、可统计、可抽取的数据资产。
+
+![Image](https://internal-api-drive-stream.feishu.cn/space/api/box/stream/download/authcode/?code=ZGMwNTg0ODdlOWMyYmIyNjhiZjdmZjJlNDg3YjQ0ODlfZjQzYWExZTk3ZjFmMWZiMjRjNGRiMmMzYjZkNDI3N2FfSUQ6NzY0OTQ0MjA4MTk3NTk2MjU5NV8xNzgxMDk2MTk5OjE3ODExODI1OTlfVjM)
+
+**图 7\-5 评测复盘能力链路图**
+
+图 7\-5 展示了评测复盘能力的价值链路。系统从原始对局记录出发，先进行逐决策评分，再定位关键高光和失误，最终生成复盘报告、排行榜和知识抽取输入。由此，系统从“能跑一局”进一步提升到“能解释一局”。
+
+## 7\.6 策略知识回流能力
+
+本项目的第六类成果是实现了策略知识回流能力。Track C 使系统能够从 Track B 的高光和失误样本中抽取策略经验，形成 `AbstractedLesson` 和策略知识文档，并通过 `StrategyRetriever` 回流到后续 Agent 决策中。
+
+这一能力是整个项目区别于普通狼人杀 Agent 的关键。普通系统通常依赖人工修改 Prompt；本项目则把策略改进过程拆解为可追踪的数据链路：复盘样本产生经验，经验进入候选池，经过生命周期管理后成为 active 策略，再由检索器按需注入 Agent 的 Strategy Layer。
+
+![Image](https://internal-api-drive-stream.feishu.cn/space/api/box/stream/download/authcode/?code=OTU1NmRiZjZkZDVkNTVhYWY5M2E4NDA0NzZkMDg2ZjZfOTgyOWVjZDVlNTc1NzJiN2Y2MTI3YThhYThkYzA4YWZfSUQ6NzY0OTQ0MjQzNjk2NzgyODczMF8xNzgxMDk2MTk5OjE3ODExODI1OTlfVjM)
+
+**图 7\-6 策略知识回流能力状态图**
+
+图 7\-6 展示了策略知识从对局产生到后续回流的状态转移。该能力证明系统已经具备自进化框架：虽然当前阶段不应过度声称策略一定稳定提升胜率，但系统已经完成了从复盘结果到策略候选，再到策略检索和注入的完整机制。
+
+## 7\.7 本章小结：项目能力证明
+
+本章从能力视角总结了本项目的主要成果。系统不仅完成了一个可运行的 AI 狼人杀对局环境，还进一步实现了角色化 Agent 决策、多 Agent 信息隔离、可扩展游戏架构、工程化交付、赛后评测复盘和策略知识回流。因此，本项目的最终成果不是一个单纯的狼人杀游戏 Demo，而是一个面向信息不对称博弈的 AI 多智能体对战、评测与自进化平台。由此，AI Werewolf 从普通 AI 对局 Demo 扩展为一个具备可运行、可追溯、可评测和可进化基础的多智能体系统。
+
+# 8 项目交付物
+
+本章对本项目的最终交付物进行汇总展示。前几章已经从系统架构、Agent 设计、赛后评测、策略进化和项目验收等角度说明了系统能力，本章进一步从实际交付角度展示项目产出，包括代码仓库、前端 Demo、验收报告、实验数据以及项目文档和图表。通过这些交付物，可以证明系统已经形成从开发、运行、验收到总结汇报的完整闭环。
+
+## 8\.1 代码仓库
+
+**Github仓库地址：****https://github\.com/wxhfy/AIwerewolf**
+
+## 8\.2 前端 Demo 与截图
+
+![Image](https://internal-api-drive-stream.feishu.cn/space/api/box/stream/download/authcode/?code=NTk4OGQ4ZDQ1ODJiZDk0M2E4ZGQwNjFmMjNhOWIwMGJfMmU5ZGE3YWUxOThjMmY3NzhkYTM5OTk5NThmYjFhNzBfSUQ6NzY0OTQ0NTcyNDkwNzY3MDQ3OV8xNzgxMDk2MTk5OjE3ODExODI1OTlfVjM)
+
+**图 8\-1 系统首页对局入口**
+
+
+
+![Image](https://internal-api-drive-stream.feishu.cn/space/api/box/stream/download/authcode/?code=MTljMzUwNjczMTdkZjVhNThiOGE1ZDU0MmJjNDEzNGNfZmZmMGRmODYwOGFiOGEwMDI4OGQwYWZhY2UyZjY0ZWRfSUQ6NzY0OTQ0NjU3NjI1OTEwNzc5MF8xNzgxMDk2MTk5OjE3ODExODI1OTlfVjM)
+
+**图 8\-2 夜晚阶段运行界面**  
+
+
+
+![Image](https://internal-api-drive-stream.feishu.cn/space/api/box/stream/download/authcode/?code=ZWZjMDlmYWJiNmM5ODE4OTkyMmNlNWIxMjlkOGE4YWZfZjRkOGVlODVjMTA0NTU3ZWJhMjVjODcyNzg4MjE2YmFfSUQ6NzY0OTQ0Njc4OTAzNjIxNTU0Nl8xNzgxMDk2MTk5OjE3ODExODI1OTlfVjM)
+
+**图 8\-3 Agent对话与白天发言界面**
+
+
+
+![Image](https://internal-api-drive-stream.feishu.cn/space/api/box/stream/download/authcode/?code=Mjk3NGQ5NjMxYjA5ZjJjYzQwNjUxOGMyNzlmMjY1MDRfNTY5MmFhMWEzNWE1NjIyODA1Mzc0NDYxZjU3NWU1NmRfSUQ6NzY0OTQ0Njk5OTk4NDYwNjE1M18xNzgxMDk2MTk5OjE3ODExODI1OTlfVjM)
+
+**图 8\-4 投票阶段界面**
+
+
+
+![Image](https://internal-api-drive-stream.feishu.cn/space/api/box/stream/download/authcode/?code=NWYzMDc0ZGQ5NjkyNDY4YjJlOWNhYzQ4NGRlNWJiMzBfNDFmNTZjZTVhMzA2NzY1MDU5ZDU5MDBiMTZjYjc1YzBfSUQ6NzY0OTQ0NzQ0MzE4ODIyMzE2OV8xNzgxMDk2MTk5OjE3ODExODI1OTlfVjM)
+
+**图 8\-5 对局结算界面**
+
+
+
+![Image](https://internal-api-drive-stream.feishu.cn/space/api/box/stream/download/authcode/?code=OGNlM2IzNmQyMmM0MzY2NTNkM2M5NjBlOTc5Zjk0ZmVfNTM0OGI2ODVlOWU1M2M0OTk5OGU1MWFiM2QxOWE0NjVfSUQ6NzY0OTQ0NzU5NDIxNjc4NzE3Ml8xNzgxMDk2MTk5OjE3ODExODI1OTlfVjM)
+
+**图 8\-6 赛后复盘结果界面**
+
+## 8.3 验收报告
+
+系统验收通过 Strict Mode 全链路运行、信息隔离专项检查和 20 局稳定性实验三个层次完成。
+
+| 验收项 | 结果 | 验证方式 |
+| --- | --- | --- |
+| Strict Mode 全链路 | 通过 | 从对局启动到赛后复盘全流程跑通 |
+| 信息隔离专项 | 92 项边界检查通过 | 身份可见性、夜间行动隔离、Agent 输入边界 |
+| 20 局稳定性实验 | 连续 20 局正常完成 | 阶段推进、决策记录、数据库写入、赛后流程均稳定 |
+| Track B Scoring | 27/27 决策覆盖 | 产出 PublishedReview、Evaluation、LeaderboardEntry |
+| Track C 知识抽取 | 产出 99 条候选知识 | 27 条 per-step lessons + 72 条 reflection lessons |
+| 前端构建 | 通过 | Next.js 16 build 无报错 |
+| 代码质量 | 通过 | ruff check + ruff format 零警告 |
+
+验收命令详见 `07_runbook.html`，运行方式：
+
+```bash
+make dev                          # 启动后端
+cd frontend && npm run dev        # 启动前端
+python scripts/verify_visibility_strict.py   # 信息隔离验证
+python scripts/run_backend_full_strict.py    # Strict Mode 全链路
+```
+
+## 8.4 实验数据
+
+实验数据存储在 PostgreSQL 数据库中（`127.0.0.1:5433`），并通过 `docs/final_delivery/evidence/` 目录导出快照。
+
+| 数据集 | 主要内容 | 规模 |
+| --- | --- | --- |
+| 对局记录 | 完整对局元数据、玩家角色、胜负结果 | 11,929 局（含 9,376 非 fake 局） |
+| 决策审计 | Agent 原始输出、解析后 Decision、工具调用 trace | 309,010 条 |
+| 复盘报告 | 结构化 PublishedReview、逐步评分、高光/失误标记 | 5,090 篇 |
+| 逐决策评分 | PerStepScorer 对发言、投票、技能的多维评分 | 170,399 步 |
+| 策略知识库 | candidate/active/deprecated 三层生命周期策略文档 | 386 active + 1,695 candidate |
+| 模型排行榜 | 跨模型、跨席位聚合的胜率和评分数据 | 11 模型 / 23 局样本 |
+| 人格库 | MBTI、表达风格、推理习惯等 9 维度参数化人格 | 39 个 |
+
+证据文件快照：
+
+| 文件 | 关键数据 |
+| --- | --- |
+| `evidence/TRACK_B_DB_COVERAGE.json` | 9,376 非 fake 对局、2,830 PublishedReview、170,399 逐决策评分 |
+| `evidence/leaderboard_data_current.json` | 23 局、161 席位、11 模型榜单 |
+| `evidence/PROJECT_SINGLE_AGENT_RETRIEVAL_LLM_ABLATION.json` | 6 场景 4 策略 A/B、374 active 文档、最优综合分 8.13 |
+| `evidence/PROJECT_STRATEGY_USAGE_DECISION_SCORE_ANALYSIS.json` | 3,088 使用策略决策、+0.082 均值差、角色拆解 |
+| `evidence/selected_game_review_summary.json` | 展示对局 184 事件、58 决策、21 反事实案例 |
+
+## 8.5 文档与图表
+
+**项目文档：**
+
+| 文档 | 路径 | 内容 |
+| --- | --- | --- |
+| 项目需求与设计目标 | `REQUIREMENTS.md` | 项目定位、核心需求、架构优势、功能范围 |
+| 核心模块设计 | `docs/PROJECT_MODULE_DESIGN.md` | 9 大核心模块的输入输出、内部流程、关键设计与验收方式 |
+| 工程架构图谱 | `docs/ENGINEERING_ARCHITECTURE.md` | 6 层架构 Mermaid 图、闭环数据流 |
+| 开发技能手册 | `SKILLS.md` | 狼人杀业务知识、参考仓库、角色规则 |
+| 运行说明 | `docs/final_delivery/07_runbook.html` | 环境配置、启动命令、验收步骤 |
+
+**核心图表：**
+
+| 编号 | 文件 | 用途 |
+| --- | --- | --- |
+| 图 1-1 | `assets/system-architecture.svg` | 系统总体架构 |
+| 图 2-1 | `assets/game-operation-flow.svg` | Play 层运行架构 |
+| 图 2-2 | `assets/phase-flow.svg` | 狼人杀阶段流转时序 |
+| 图 2-3 | `assets/visibility-layers.svg` | PlayerView 信息隔离分层 |
+| 图 2-4 | `assets/decision-execution-flow.svg` | Agent 决策执行与校验时序 |
+| 图 3-1 | `assets/cognitive-agent-architecture.svg` | CognitiveAgent 决策架构 |
+| 图 3-2 | `assets/persona-role-strategy-layers.svg` | Persona/Role/Strategy 三层结构 |
+| 图 3-3 | `assets/memory-belief-social.svg` | Memory/BeliefTracker/SocialModel 协同 |
+| 图 3-4 | `assets/agent-loop-tool-call.svg` | AgentLoop 工具调用时序 |
+| 图 3-5 | `assets/strategy-retriever-flow.svg` | StrategyRetriever 检索与注入 |
+| 图 3-6 | `assets/decision-audit-chain.svg` | 决策审计与 bad case 分析 |
+| 图 4-1 | `assets/track-b-review-flow.svg` | Track B 评测复盘流程 |
+| 图 4-2 | `assets/perstep-scorer-cascade.svg` | PerStepScorer 三级评分级联 |
+| 图 4-3 | `assets/decision-correctness-impact.svg` | 决策正确性与影响力象限 |
+| 图 4-4 | `assets/published-review-structure.svg` | PublishedReview 复盘报告组成 |
+| 图 5-1 | `assets/track-c-knowledge-loop.svg` | Track C 知识回流闭环 |
+| 图 5-2 | `assets/knowledge-abstractor-flow.svg` | KnowledgeAbstractor 知识抽取时序 |
+| 图 5-3 | `assets/abstracted-lesson-structure.svg` | AbstractedLesson 知识文档结构 |
+| 图 5-4 | `assets/knowledge-lifecycle.svg` | 策略知识生命周期状态 |
+| 图 5-5 | `assets/strategy-injection-flow.svg` | 策略知识检索与注入时序 |
+| 图 5-6 | `assets/trackc-vs-manual-prompt.svg` | Track C 与手工 Prompt 对比 |
+| 图 6-1 | `assets/strict-mode-flow.svg` | Strict Mode 全链路验收 |
+| 图 6-2 | `assets/visibility-verification.svg` | 信息隔离专项验证 |
+| 图 6-3 | `assets/stability-20-games.svg` | 20 局稳定性实验 |
+| 图 6-4 | `assets/retrieval-offline-eval.svg` | 策略检索离线评估 |
+| 图 6-5 | `assets/track-bc-results.svg` | Track B/C 验收结果总览 |
+| 图 7-1 | `assets/agent-strategy-depth.svg` | Agent 策略深度能力结构 |
+| 图 7-2 | `assets/multi-agent-isolation.svg` | 多 Agent 信息隔离与决策 |
+| 图 7-4 | `assets/engineering-delivery.svg` | 工程化交付能力看板 |
+| 图 7-5 | `assets/evaluation-capability-chain.svg` | 评测复盘能力链路 |
+| 图 7-6 | `assets/knowledge-feedback-state.svg` | 策略知识回流能力状态 |
+| — | `assets/core-evidence-dashboard.svg` | 核心证据数据看板 |
+| — | `assets/leaderboard-snapshot.svg` | 当前模型榜结果快照 |
+| — | `assets/retrieval-ablation-chart.svg` | 单 Agent 策略检索 A/B |
+| — | `assets/strategy-usage-quality-chart.svg` | 策略使用与决策质量关联 |
+| — | `assets/role_quality_trend_*.svg`（4 张） | 角色质量提升曲线 |
+
+# 9 总结与后续工作
+
+## 9.1 项目完成情况
+
+本项目按计划完成了 AI 狼人杀多智能体对战与自进化系统的设计与实现。
+
+**Play 层**：实现了完整的狼人杀对局引擎，支持 7-12 人配置、8 种可玩角色和全部标准阶段（夜晚行动、白天发言、警徽竞选、PK、投票放逐、遗言、猎人开枪、白狼王自爆）。通过 PlayerView 机制实现严格信息隔离，Agent 只能收到自身角色允许的局部视角。
+
+**Agent 层**：实现了 CognitiveAgent 认知决策框架，包含 Persona/Role/Strategy 三层解耦、Memory 记忆系统、BeliefTracker 信念追踪、SocialModel 社交建模、AgentLoop 工具调用循环（7 个工具）、策略检索注入和决策审计。内置 39 个差异化 AI 人格。
+
+**Evaluate 层（Track B）**：实现了 PerStepScorer 逐决策评分机制，覆盖发言、投票、技能三类行动。累计完成 9,376 局非 fake 对局的复盘数据积累，生成 2,830 篇结构化 PublishedReview 和 170,399 条逐步评分。建立了 11 模型的跨对局排行榜。
+
+**Evolve 层（Track C）**：实现了 KnowledgeAbstractor 知识抽取、candidate/active/deprecated 三层生命周期治理、StrategyRetriever 策略检索回流。当前维护 386 条 active 策略文档。单 Agent A/B 实验中 `same_role_all_mbti` 策略综合分 8.13，策略使用与决策评分呈正向关联（+0.082）。
+
+**工程交付**：完成前后端分离架构（FastAPI + Next.js 16）、WebSocket 实时通信、PostgreSQL 证据链（20+ 张表）、Docker 部署、代码质量检查和完整验收流程。
+
+## 9.2 坦诚面对当前系统的不足
+
+一个系统的价值不仅在于它做了什么，也在于它承认自己还没做到什么。
+
+先说策略进化这件事。Track C 的链路是跑通的——从复盘里抽知识、放进候选池、筛选后激活、再被检索器塞进下一局的 Agent Prompt 里。这个机制本身没毛病。但"机制能跑"和"机制真的有用"之间隔着一道需要实验来填的沟。目前我们手里最能拿得出手的证据，是一个 6 场景的单 Agent A/B 实验：开了同角色策略检索之后，综合分从 7.33 涨到了 8.13。六个场景里赢了四个。这个结果不差，但它什么也证明不了——六个场景太少，而且是固定场景不是真实对局，而且评测用的是 LLM Judge 不是人类裁判。策略使用和决策评分之间有一个 +0.082 的正向关联，但这也是相关性不是因果性：用策略的 Agent 本身就是更强的模型驱动的，策略可能只是锦上添花。说到底，我们现在手里没有一局 Target Seat AB 实验能证明"策略回流让某个角色的胜率或者决策质量在统计意义上显著提升了"。自己不做的实验就不要假装做了。
+
+再说 Agent 本身的推理能力。架构搭得挺全的——Memory、BeliefTracker、SocialModel、Planner，名字听起来该有的都有了。但如果你真的去翻一下这些模块的实际运行日志，你会发现 Memory 本质上就是个近期行动的序列存储加关键词匹配，不是真正的情景记忆；BeliefTracker 的更新逻辑基本上是规则驱动的二值判断，没有概率化的信念更新；SocialModel 能告诉你谁投了谁、谁骂了谁，但你要是问它"3 号表面上在攻击 5 号但实际上是在保护 5 号"，它会一脸茫然。整个系统就像一个人搭好了骨架但肌肉还没长出来——它能站能走，但你让它跑个百米冲刺，它会散架。在实际对局里，Agent 经常出现前后发言逻辑断裂、忘记自己上一轮说过什么、或者被简单误导带偏的情况。如果对手是认真的狼人杀玩家而不是随机乱玩的 AI，这些 Agent 的表现会断崖式下跌。
+
+评测体系也有一个根本性的问题——它从来没有和人类校准过。PerStepScorer 给一个发言打 0.75 分，人类裁判会给多少？我们不知道。当前的四个评分维度有没有漏掉人类觉得重要的东西？我们也不知道。更糟糕的是，LLM Judge 本身可能有系统性偏差——它是不是天然喜欢更长、更"像模像样"的发言，而忽略了简短但精准的判断？如果是这样，那我们的评分就不是在衡量"这个发言好不好"，而是在衡量"这个发言看起来像不像一个 AI 认为的好发言"。这完全是两回事。没做过人类校准的自动评测，本质上就是一个自己给自己当裁判的系统——它能告诉你 A 比 B 好，但它说不上 A 到底有多好。
+
+规模的问题更直白一些。九千多局非 fake 对局听起来不少，但一按角色、模型、规则配置交叉分组，每个格子里就剩不下几个样本了。当前模型榜的 Top 排名只有 23 局在支撑——说难听点，多跑两局排名就可能变了。角色覆盖的分布严重不均：核心数据集中在六个标准角色上，白狼王和白痴的样本明显偏少，丘比特、大坏狼这些扩展角色连一局正式实验都没跑过。39 个人格的设计是丰富的，但你真去数据库里查一下，会发现大部分对局用的可能就那么几个"看起来比较正常"的人格，极端人格几乎没被选到过——这导致人格多样性的设计在实际对局中打了很大的折扣。
+
+如果要挑整个系统最弱的一环，我觉得是狼队协作。狼人杀的深度不在单个狼人的伪装能力，而在于多个狼人之间的配合——冲锋、倒钩、做身份、刀口和票型的自洽。这些东西在当前系统里几乎没有。WolfTeamView 只是让狼人互相知道身份，但知道身份和知道怎么配合是两码事。你看对局日志会发现，狼人经常各说各话——一个在猛踩好人，另一个在猛保同一个好人；一个在装预言家，另一个完全不知道该怎么接。这不是单个 Agent 的问题，是缺乏共享心理模型和动态角色分配的问题。而且这个问题靠改 Prompt 解决不了——它需要的是一个真正意义上的多 Agent 协作机制。
+
+最后说工程。后端核心链路是完整的，但前端有几个页面还依赖本地生成流程，没进仓库。部分架构图用的是飞书图床的外链，离线环境下直接裂开。这些问题不影响跑实验的人验收，但如果评审老师想在自己电脑上打开离线包看完整效果，体验会打折扣。
+
+## 9.3 下一步
+
+知道了问题在哪，剩下的事情就是排序。排序的逻辑很简单：不要因为某个方向听起来最酷就排第一，要因为不解决它后面的所有结论都站不住脚。
+
+评测校准必须排在最前面。你现在跟人说 Track B 的评分有多好、Track C 的 +0.80 有多漂亮，对方完全有理由反问一句："你这个分是 LLM 自己给自己打的，我凭什么信？"这个问题不回答，后面所有关于评测和进化的结论都是悬空的。说白了，在 PerStepScorer 和人类判断之间建立校准之前，我们连"好"这个词的标准定义都没统一。
+
+校准做完之后，Track C 的 A/B 实验需要上规模。六个固定场景太少了，需要扩展到几十局真实对战的 Target Seat AB 实验。只有样本量上去了，才能开始区分"策略检索有时候有用"和"策略检索在特定条件下靠谱地有用"这两个完全不同的结论。
+
+Agent 推理深度这件事不能指望一次大改就解决。BeliefTracker 的规则化更新可以逐步替换为概率化的，SocialModel 可以从表层关系检测往高阶策略识别方向迭代，Memory 可以从序列存储往结构化情景重建方向演进。这些改动都不需要推翻现有架构——架构本身是对的，需要的是往每个模块里填充更实在的东西。
+
+狼队协作是最难的方向，但也是最有可能做出差异化的方向。退一步说，策略检索能给 Agent 提供一些狼队配合的参考打法，但要真正解决隐式协调的问题，可能需要跳出当前的 Prompt Engineering 思路，认真考虑多 Agent 联合决策或者共享意图表示的机制。这件事做好了，整个项目的天花板会高很多。
+
+工程补全反而是最简单的——离线页面、本地 SVG、前端交互优化，这些属于做了就一定有效果的工作。排在最后不是因为不重要，而是因为它不会影响结论的可信度，只影响演示的体验。
+
+# 附录
+
+## A 参考工作与设计借鉴
+
+本项目在架构设计、Agent 接口、Prompt 工程和游戏规则方面参考了以下工作：
+
+| 参考项目 | 借鉴内容 |
+| --- | --- |
+| wolfcha | Phase 枚举、Persona 人格体系、游戏阶段设计 |
+| xiong35/werewolf | 房间系统、WebSocket 通信、前后端分离架构 |
+| WereWolfPlus | Prompt 模板体系、多模型对比框架、批量实验设计 |
+| AIWolfPy | Agent 生命周期接口（initialize/update/talk/vote/attack/divine/guard/finish） |
+| werewolf-brain | 角色权重体系、夜晚行动序列、角色技能绑定 |
+| open_mafia_engine | 事件驱动引擎、声明式游戏定义 |
+
+所有参考代码均未直接复制，设计思路经理解后在本项目中重新实现。
+
+## B 关键文件索引
+
+| 文件 | 说明 |
+| --- | --- |
+| `backend/engine/game.py` | WerewolfGame 对局引擎 |
+| `backend/engine/visibility.py` | 信息隔离与 PlayerView 生成 |
+| `backend/agents/cognitive/agent.py` | CognitiveAgent 决策主体 |
+| `backend/agents/cognitive/agent_loop.py` | AgentLoop 工具调用循环 |
+| `backend/agents/cognitive/retrieval_prod.py` | StrategyRetriever 策略检索 |
+| `backend/agents/cognitive/profiles.py` | Persona/Role 三层 Prompt |
+| `backend/eval/per_step_scorer.py` | PerStepScorer 逐决策评分 |
+| `backend/eval/knowledge_abstractor.py` | KnowledgeAbstractor 知识抽取 |
+| `backend/eval/evolution.py` | Track C 进化实验管理 |
+| `backend/db/models.py` | 20+ 张表的 ORM 模型定义 |
+| `frontend/app/room/[id]/play/page.tsx` | 对局观战页面 |
+| `frontend/app/room/[id]/human/page.tsx` | 真人操作页面 |
+| `frontend/components/game/` | 30+ 游戏 UI 组件 |
+
+## C 验收命令
+
+```bash
+# 后端启动
+make dev
+
+# 前端启动
+cd frontend && npm install --legacy-peer-deps && npm run dev
+
+# 代码质量
+ruff check backend/ scripts/ tests/ configs/
+ruff format --check backend/ scripts/ tests/ configs/
+
+# 单元测试
+_TEST_ALLOW_FAKE_LLM=true LLM_PROVIDER=fake python -m pytest tests/ -q
+
+# 前端构建验证
+cd frontend && npm run build
+
+# 信息隔离专项验证
+python scripts/verify_visibility_strict.py
+
+# Strict Mode 全链路验收
+python scripts/run_backend_full_strict.py
+
+# 演示对局
+python -m backend.run_demo --seed 7
+```
+
+## D 数据来源说明
+
+本报告引用的数据来自以下来源：
+
+| 数据 | 来源 | 说明 |
+| --- | --- | --- |
+| 对局记录、复盘报告、决策评分 | PostgreSQL 数据库 `127.0.0.1:5433` | 生产环境数据 |
+| Track B 覆盖数据 | `evidence/TRACK_B_DB_COVERAGE.json` | 数据库快照导出 |
+| 模型排行榜 | `evidence/leaderboard_data_current.json` | 跨实验聚合结果 |
+| 策略检索 A/B | `evidence/PROJECT_SINGLE_AGENT_RETRIEVAL_LLM_ABLATION.json` | 离线评估结果 |
+| 策略使用质量 | `evidence/PROJECT_STRATEGY_USAGE_DECISION_SCORE_ANALYSIS.json` | 数据库关联分析 |
+| 展示对局细节 | `evidence/selected_game_review_summary.json` | 单局完整复盘导出 |
+
+本地开发环境使用 SQLite 作为轻量 fallback（`data/werewolf.db`），生产数据以 PostgreSQL 为准。证据文件为数据库在 2026-06-09 时间点的快照导出，实库数据在此基础上继续增长。
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
