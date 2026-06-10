@@ -1,0 +1,102 @@
+{
+  "claim_scope": "Public final-delivery evidence for Track B controlled error discrimination.",
+  "evaluation_command": "python scripts/evaluate_track_b_vnext.py --suite opportunity",
+  "generated_at": "2026-06-10",
+  "source_fixtures": [
+    "tests.test_track_b_badcase_regression.build_badcase_001_fixture",
+    "tests.test_track_b_badcase_wolf_regression.build_badcase_002_fixture",
+    "tests.test_track_b_cleancase_wolf_regression.build_cleancase_001_fixture"
+  ],
+  "aggregate_result": {
+    "status": "PASS",
+    "total_opportunities": 777,
+    "overall_high_quality_mean": 0.9211,
+    "overall_error_mean": 0.2045,
+    "mean_discrimination_gap": 0.7507
+  },
+  "controlled_cases": [
+    {
+      "case_id": "control_error_001",
+      "role": "Seer",
+      "action_type": "vote",
+      "description": "Seer knows P1 is a werewolf but does not publish the check result and votes elsewhere.",
+      "quality_score": 0.0,
+      "detected_reasons": [
+        "private_info_withheld",
+        "voted_elsewhere_despite_known_wolf",
+        "role_goal_conflict"
+      ]
+    },
+    {
+      "case_id": "control_error_002",
+      "role": "Werewolf",
+      "action_type": "speech",
+      "description": "Werewolf leaks wolf-side perspective and protects a checked teammate without public evidence.",
+      "quality_score": 0.0,
+      "detected_reasons": [
+        "wolf_perspective_leak",
+        "teammate_overprotection",
+        "lack_of_public_evidence"
+      ]
+    },
+    {
+      "case_id": "control_error_003",
+      "role": "Werewolf",
+      "action_type": "werewolf_kill",
+      "description": "Werewolf leaves the exposed seer alive and attacks a low-value villager target.",
+      "quality_score": 0.0,
+      "detected_reasons": [
+        "low_value_kill_target",
+        "role_goal_conflict"
+      ]
+    },
+    {
+      "case_id": "control_positive_001",
+      "role": "Witch",
+      "action_type": "witch_save",
+      "description": "Witch saves the night attack target with available antidote.",
+      "quality_score": 0.968,
+      "detected_reasons": [
+        "effective_skill_target",
+        "role_goal_alignment"
+      ]
+    }
+  ],
+  "by_action_type": [
+    {
+      "action_type": "speech",
+      "n_total": 253,
+      "high_quality_mean": 0.9736,
+      "error_mean": 0.1328,
+      "gap": 0.8408
+    },
+    {
+      "action_type": "vote",
+      "n_total": 277,
+      "high_quality_mean": 0.8688,
+      "error_mean": 0.2067,
+      "gap": 0.6621
+    },
+    {
+      "action_type": "werewolf_kill",
+      "n_total": 92,
+      "high_quality_mean": 0.9923,
+      "error_mean": 0.259,
+      "gap": 0.7333
+    },
+    {
+      "action_type": "witch_poison",
+      "n_total": 10,
+      "high_quality_mean": 0.9508,
+      "error_mean": 0.1433,
+      "gap": 0.8075
+    },
+    {
+      "action_type": "guard_protect",
+      "n_total": 41,
+      "high_quality_mean": 0.7568,
+      "error_mean": 0.1242,
+      "gap": 0.6326
+    }
+  ]
+}
