@@ -853,25 +853,49 @@ Track B 将一局游戏拆分为多个可评价的决策步骤，并通过 `PerS
 
 ## 8.3 验收报告
 
-系统验收通过 Strict Mode 全链路运行、信息隔离专项检查和 20 局稳定性实验三个层次完成。
+系统的验收围绕三个层次组织：单次全链路跑通（Strict Mode）、关键机制专项验证（信息隔离）、以及多局连续稳定性（20 局实验）。三个层次从不同角度回答了"系统是否真正可用"这个问题——Strict Mode 验证链路是通的，信息隔离验证安全边界是有效的，20 局验证它不是一次性的演示。
 
-| 验收项 | 结果 | 验证方式 |
-| --- | --- | --- |
-| Strict Mode 全链路 | 通过 | 从对局启动到赛后复盘全流程跑通 |
-| 信息隔离专项 | 92 项边界检查通过 | 身份可见性、夜间行动隔离、Agent 输入边界 |
-| 20 局稳定性实验 | 连续 20 局正常完成 | 阶段推进、决策记录、数据库写入、赛后流程均稳定 |
-| Track B Scoring | 27/27 决策覆盖 | 产出 PublishedReview、Evaluation、LeaderboardEntry |
-| Track C 知识抽取 | 产出 99 条候选知识 | 27 条 per-step lessons + 72 条 reflection lessons |
-| 前端构建 | 通过 | Next.js 16 build 无报错 |
-| 代码质量 | 通过 | ruff check + ruff format 零警告 |
+**Strict Mode 全链路验收** 是项目最重要的端到端验证方式。它要求系统在严格条件下完成一局完整的 AI 狼人杀对战，并走完 Play → Evaluate → Evolve 的全部环节。具体来说，Strict Mode 会依次检查：运行环境与依赖是否就绪、游戏引擎能否正常创建对局并推进阶段、每个 Agent 能否基于 PlayerView 生成合法决策、决策审计数据是否写入 agent_decisions 表、赛后 Track B 能否对每一步决策生成评分、Track C 能否从高光和失误样本中抽取候选策略知识、最终能否导出结构化复盘报告。一次 Strict Mode 通过意味着系统的 8 个层级——从前端到服务层、规则层、隔离层、Agent 层、数据层、评测层、进化层——能够在一次对局中协同工作而不出现断链。
 
-验收运行方式：
+在实际执行中，Strict Mode 直接对应命令 `python scripts/run_backend_full_strict.py`。该脚本以非交互方式启动对局，运行结束后自动检查数据库中的 games、agent_decisions、evaluations、published_reviews 和 strategy_knowledge_docs 等关键表是否有对应的产出记录。当前验收结果为通过。
+
+**信息隔离专项验证** 是狼人杀 AI 系统区别于普通对话系统的最关键验收项。如果 Agent 在决策时能读到不该读的信息——比如村民看到了狼人队友、预言家看到了其他神职的技能结果——那整个系统的博弈前提就崩塌了。因此，项目设计了 92 项边界检查，覆盖五个维度：
+
+第一，身份可见性——确认玩家不能看到其他玩家的隐藏角色身份，除非规则允许（如狼人可见狼队友）。第二，夜间行动隔离——确认夜间技能结果只对执行该技能的玩家及其阵营合法成员可见。例如狼人袭击目标只对狼队可见，预言家查验结果只对自己可见，女巫获救信息只对女巫和被救玩家可见，守卫守护信息只对守卫自己可见。第三，公开事件一致性——确认死亡公告、放逐结果、投票统计等公开信息对所有存活玩家一致可见。第四，狼队信息边界——确认狼人阵营可以看到队友身份但看不到神职技能结果，非狼人玩家完全看不到狼队任何内部信息。第五，Agent 输入检查——确认每个 Agent 在决策时接收到的是经过 Visibility 裁剪后的 PlayerView，而非完整的 GameState。
+
+专项验证通过命令 `python scripts/verify_visibility_strict.py` 执行，当前验收结果：92 项全部通过。
+
+**20 局稳定性实验** 验证的是系统在连续多局运行中是否保持稳定。单次跑通可能依赖特定的随机种子、角色分配或 LLM 响应，但连续 20 局不出现崩溃、死锁、数据丢失或流程断裂，才能说明系统具备基本的持续运行能力。实验观察的维度包括：每局是否正常完成阶段推进直到 GAME_END、Agent 在每个需要行动的阶段是否成功产生 Decision、数据库是否持续写入 events 和 decisions 而没有中断、WebSocket 推送到前端的快照是否保持连贯、赛后 Track B 和 Track C 流程是否在每局结束后被正确触发。当前验收结果：连续 20 局全部正常完成。
+
+**代码质量与前端构建** 作为工程验收的底线检查。后端代码通过 ruff check（语法和逻辑检查）和 ruff format（格式一致性检查），零警告。前端 Next.js 16 项目通过 `npm run build` 生产构建，无报错。前端构建验证同时也确认了前后端类型契约的一致性——`frontend/types/index.ts` 中的枚举和接口与后端 Pydantic schema 保持同步。
+
+**验收命令汇总：**
 
 ```bash
-make dev                          # 启动后端
-cd frontend && npm run dev        # 启动前端
-python scripts/verify_visibility_strict.py   # 信息隔离验证
-python scripts/run_backend_full_strict.py    # Strict Mode 全链路
+# 后端启动
+make dev
+
+# 前端启动
+cd frontend && npm run dev
+
+# 代码质量
+ruff check backend/ scripts/ tests/ configs/
+ruff format --check backend/ scripts/ tests/ configs/
+
+# 单元测试（使用 fake LLM 离线运行）
+_TEST_ALLOW_FAKE_LLM=true LLM_PROVIDER=fake python -m pytest tests/ -q
+
+# 前端构建验证
+cd frontend && npm run build
+
+# 信息隔离专项验证（92 项边界检查）
+python scripts/verify_visibility_strict.py
+
+# Strict Mode 全链路验收
+python scripts/run_backend_full_strict.py
+
+# 演示对局
+python -m backend.run_demo --seed 7
 ```
 
 ## 8.4 实验数据
