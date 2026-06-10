@@ -5,6 +5,9 @@ FROM node:20-alpine AS base
 
 WORKDIR /app
 
+ARG NPM_REGISTRY
+RUN if [ -n "$NPM_REGISTRY" ]; then npm config set registry $NPM_REGISTRY; fi
+
 # Dependencies
 COPY package.json package-lock.json* ./
 RUN npm ci --legacy-peer-deps 2>/dev/null || npm install --legacy-peer-deps

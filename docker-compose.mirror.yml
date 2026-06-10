@@ -1,0 +1,23 @@
+# ============================================================================
+# AI Werewolf — 国内镜像覆盖文件
+# ============================================================================
+# 用法：
+#   docker compose -f docker-compose.yml -f docker-compose.mirror.yml up -d --build
+#
+# 单独使用 docker-compose.yml 则走默认源（适合海外/CI 环境）
+# ============================================================================
+
+services:
+  backend:
+    build:
+      args:
+        PIP_INDEX_URL: "https://mirrors.aliyun.com/pypi/simple/"
+        PIP_TRUSTED_HOST: "mirrors.aliyun.com"
+
+  frontend:
+    build:
+      args:
+        NPM_REGISTRY: "https://registry.npmmirror.com"
+
+  dev-frontend:
+    command: sh -c "npm config set registry https://registry.npmmirror.com && npm install --legacy-peer-deps && npm run dev"

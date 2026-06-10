@@ -15,6 +15,8 @@ RUN apt-get update \
 WORKDIR /app
 
 COPY requirements.txt ./
+ARG PIP_INDEX_URL
+ARG PIP_TRUSTED_HOST
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
 # ============================================================================
