@@ -20,29 +20,26 @@
 
 /* ── 山脉：底部区域，横向铺满 ─────────────────── */
 .baseMountains {
-  inset: 18vh -8vw -8vh;
+  inset: 0;
   z-index: 1;
   opacity: 0.96;
   background-image: url("/images/werewolf-layers/base-mountains.webp");
   background-size: cover;
-  background-position: center bottom;
+  background-position: center;
   filter: saturate(0.94) contrast(0.96) blur(0.2px);
   transform-origin: 50% 52%;
 }
 
-/* ── 月亮：右上角，固定尺寸 ────────────────────── */
+/* ── 月亮：整屏透明图层，保持与底图的原始对齐 ───────── */
 .moon {
-  top: clamp(48px, 7vh, 88px);
-  left: clamp(58%, 66vw, 72%);
-  width: clamp(110px, 15vw, 210px);
-  aspect-ratio: 1;
+  inset: 0;
   z-index: 2;
   opacity: 0.86;
   background-image: url("/images/werewolf-layers/moon.webp");
-  background-size: contain;
+  background-size: cover;
   background-position: center;
   filter: saturate(0.95) blur(0.1px);
-  transform-origin: 50% 16%;
+  transform-origin: 50% 50%;
 }
 
 /* ── 星星：CSS 点状，铺满 ──────────────────────── */
@@ -68,43 +65,38 @@
 
 /* ── 雾气（后层）：中偏上 ──────────────────────── */
 .fog {
-  inset: 36vh -24vw auto;
-  height: 34vh;
+  inset: 0;
   z-index: 4;
   opacity: 0.42;
   background-image: url("/images/werewolf-layers/fog.webp");
   background-size: cover;
   background-position: center;
   filter: blur(12px);
-  transform-origin: 50% 80%;
+  transform-origin: 50% 50%;
 }
 
-/* ── 狼：右下角，固定尺寸 ──────────────────────── */
+/* ── 狼：整屏透明图层，保持与底图的原始对齐 ─────────── */
 .wolf {
-  right: clamp(18px, 9vw, 150px);
-  bottom: clamp(110px, 15vh, 170px);
-  width: clamp(130px, 18vw, 280px);
-  height: clamp(92px, 13vw, 190px);
+  inset: 0;
   z-index: 5;
   opacity: 0.88;
   background-image: url("/images/werewolf-layers/wolf.webp");
-  background-size: contain;
+  background-size: cover;
   background-position: center;
   filter: saturate(0.92) contrast(1.02) drop-shadow(0 18px 18px rgba(31, 21, 13, 0.16));
-  transform-origin: 78% 82%;
+  transform-origin: 50% 50%;
 }
 
 /* ── 树林：底部，横向铺满 ──────────────────────── */
 .treesFront {
-  inset: auto -4vw -6vh;
-  height: 35vh;
+  inset: 0;
   z-index: 6;
   opacity: 0.78;
   background-image: url("/images/werewolf-layers/trees-front.webp");
   background-size: cover;
-  background-position: center bottom;
+  background-position: center;
   filter: saturate(0.96) contrast(1.02) blur(0.15px);
-  transform-origin: 50% 100%;
+  transform-origin: 50% 50%;
 }
 
 /* ── 雾气（前层）：中部偏下 ────────────────────── */
@@ -131,16 +123,7 @@
 }
 
 @media (max-width: 768px) {
-  .moon {
-    left: 58vw;
-    width: clamp(92px, 25vw, 150px);
-    opacity: 0.72;
-  }
-
   .wolf {
-    right: -16px;
-    bottom: 13vh;
-    width: clamp(120px, 35vw, 190px);
     opacity: 0.62;
   }
 
