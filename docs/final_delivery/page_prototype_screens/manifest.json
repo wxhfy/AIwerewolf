@@ -1,0 +1,13 @@
+{
+  "note": "Page-level module screenshots. 06 uses docs/final_delivery/01_track_b_single_game_review.html; 08 demo replay removed per final delivery request.",
+  "final_delivery_asset": "docs/final_delivery/page_prototype_screens.png",
+  "screenshots": [
+    "docs/frontend_browseract_shots/current_modules/01_lobby_ai_mode.png",
+    "docs/frontend_browseract_shots/current_modules/02_lobby_human_mode.png",
+    "docs/frontend_browseract_shots/current_modules/03_ai_game_play.png",
+    "docs/frontend_browseract_shots/current_modules/04_human_game_play.png",
+    "docs/frontend_browseract_shots/current_modules/05_personas.png",
+    "docs/frontend_browseract_shots/current_modules/06_track_b_single_game_review.png",
+    "docs/frontend_browseract_shots/current_modules/07_game_report_pending.png"
+  ]
+}

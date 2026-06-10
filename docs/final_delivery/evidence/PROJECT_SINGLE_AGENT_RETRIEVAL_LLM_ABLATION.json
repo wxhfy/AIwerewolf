@@ -1,0 +1,19 @@
+{
+  "generated_at": "2026-06-09T21:53:04+0800",
+  "provider": "anthropic",
+  "decision_model": "deepseek-v4-flash[1m]",
+  "judge_model": "deepseek-v4-flash[1m]",
+  "scenario_count": 6,
+  "retriever_size": 374,
+  "best_policy": "same_role_all_mbti",
+  "best_policy_metrics": {
+    "avg_overall": 8.1333,
+    "avg_role_fit": 9.0,
+    "avg_strategic_depth": 8.0,
+    "avg_actionability": 8.0,
+    "avg_information_safety": 8.75,
+    "win_count": 4,
+    "delta_vs_baseline": 0.8
+  },
+  "claim_scope": "Public final-delivery summary for Track C single-agent retrieval evidence."
+}

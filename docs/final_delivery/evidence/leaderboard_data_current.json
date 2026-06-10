@@ -1,0 +1,707 @@
+{
+  "generated_at": "2026-06-10T02:44:35Z",
+  "claim_scope": "Public final-delivery summary of the current model leaderboard.",
+  "source_summary": {
+    "game_count": 23,
+    "player_samples": 161,
+    "model_count": 11,
+    "score_source_rows": 106
+  },
+  "model_rankings_top6": [
+    {
+      "rank": 1,
+      "model": "anthropic:doubao-seed-2-0-pro[1m]",
+      "games_played": 9,
+      "seat_samples": 9,
+      "wins": 5,
+      "win_rate": 0.555556,
+      "avg_score": 53.048889,
+      "avg_final_score": 51.751111,
+      "avg_vote_score": 0.444444,
+      "avg_speech_score": 0.442744,
+      "avg_skill_score": 0.716667,
+      "decision_count": 36.0,
+      "knowledge_hit_rate": 0.868052,
+      "roles": {
+        "Werewolf": 5,
+        "Seer": 2,
+        "Hunter": 1,
+        "Villager": 1
+      },
+      "alignments": {
+        "village": 4,
+        "wolf": 5
+      }
+    },
+    {
+      "rank": 2,
+      "model": "anthropic:doubao-seed-2-0-lite[1m]",
+      "games_played": 9,
+      "seat_samples": 9,
+      "wins": 4,
+      "win_rate": 0.444444,
+      "avg_score": 48.808889,
+      "avg_final_score": 48.531111,
+      "avg_vote_score": 0.518522,
+      "avg_speech_score": 0.505922,
+      "avg_skill_score": 0.608333,
+      "decision_count": 48.0,
+      "knowledge_hit_rate": 0.83968,
+      "roles": {
+        "Werewolf": 4,
+        "Witch": 1,
+        "Hunter": 3,
+        "Guard": 1
+      },
+      "alignments": {
+        "village": 5,
+        "wolf": 4
+      }
+    },
+    {
+      "rank": 3,
+      "model": "anthropic:doubao-seed-2-0-code[1m]",
+      "games_played": 7,
+      "seat_samples": 7,
+      "wins": 3,
+      "win_rate": 0.428571,
+      "avg_score": 56.807143,
+      "avg_final_score": 55.478571,
+      "avg_vote_score": 0.542857,
+      "avg_speech_score": 0.518886,
+      "avg_skill_score": 0.5,
+      "decision_count": 32.0,
+      "knowledge_hit_rate": 0.838821,
+      "roles": {
+        "Werewolf": 1,
+        "Witch": 1,
+        "Hunter": 1,
+        "Guard": 2,
+        "Villager": 2
+      },
+      "alignments": {
+        "village": 6,
+        "wolf": 1
+      }
+    },
+    {
+      "rank": 4,
+      "model": "anthropic:deepseek-v4-flash[1m]",
+      "games_played": 19,
+      "seat_samples": 46,
+      "wins": 19,
+      "win_rate": 0.413043,
+      "avg_score": 42.265,
+      "avg_final_score": 41.745435,
+      "avg_vote_score": 0.086233,
+      "avg_speech_score": 0.101487,
+      "avg_skill_score": 0.605435,
+      "decision_count": 72.0,
+      "knowledge_hit_rate": 0.813604,
+      "roles": {
+        "Werewolf": 17,
+        "Seer": 3,
+        "Witch": 4,
+        "Hunter": 3,
+        "Guard": 10,
+        "Villager": 9
+      },
+      "alignments": {
+        "village": 29,
+        "wolf": 17
+      }
+    },
+    {
+      "rank": 5,
+      "model": "anthropic:kimi-k2-5[1m]",
+      "games_played": 9,
+      "seat_samples": 9,
+      "wins": 3,
+      "win_rate": 0.333333,
+      "avg_score": 69.034444,
+      "avg_final_score": 67.334444,
+      "avg_vote_score": 0.722222,
+      "avg_speech_score": 0.575378,
+      "avg_skill_score": 0.780556,
+      "decision_count": 46.0,
+      "knowledge_hit_rate": 0.851772,
+      "roles": {
+        "Werewolf": 2,
+        "Seer": 1,
+        "Witch": 4,
+        "Villager": 2
+      },
+      "alignments": {
+        "village": 7,
+        "wolf": 2
+      }
+    },
+    {
+      "rank": 6,
+      "model": "anthropic:glm-4-7[1m]",
+      "games_played": 9,
+      "seat_samples": 9,
+      "wins": 3,
+      "win_rate": 0.333333,
+      "avg_score": 48.056667,
+      "avg_final_score": 47.112222,
+      "avg_vote_score": 0.666667,
+      "avg_speech_score": 0.447089,
+      "avg_skill_score": 0.591667,
+      "decision_count": 39.0,
+      "knowledge_hit_rate": 0.866728,
+      "roles": {
+        "Werewolf": 3,
+        "Witch": 2,
+        "Hunter": 2,
+        "Villager": 2
+      },
+      "alignments": {
+        "village": 6,
+        "wolf": 3
+      }
+    }
+  ],
+  "role_analysis": {
+    "roles": [
+      {
+        "role": "Werewolf",
+        "samples": 46,
+        "wins": 42,
+        "win_rate": 0.913043,
+        "models": {
+          "anthropic:deepseek-v3-2[1m]": 3,
+          "anthropic:deepseek-v4-flash[1m]": 17,
+          "anthropic:deepseek-v4-pro[1m]": 2,
+          "anthropic:doubao-seed-2-0-code[1m]": 1,
+          "anthropic:doubao-seed-2-0-lite[1m]": 4,
+          "anthropic:doubao-seed-2-0-mini[1m]": 1,
+          "anthropic:doubao-seed-2-0-pro[1m]": 5,
+          "anthropic:glm-4-7[1m]": 3,
+          "anthropic:kimi-k2-5[1m]": 2,
+          "doubao:ep-20260514115354-k4jz4": 8
+        },
+        "alignments": {
+          "wolf": 46
+        }
+      },
+      {
+        "role": "Seer",
+        "samples": 23,
+        "wins": 2,
+        "win_rate": 0.086957,
+        "models": {
+          "anthropic:deepseek-v3-2[1m]": 2,
+          "anthropic:deepseek-v4-flash[1m]": 3,
+          "anthropic:deepseek-v4-pro[1m]": 2,
+          "anthropic:doubao-seed-2-0-mini[1m]": 2,
+          "anthropic:doubao-seed-2-0-pro[1m]": 2,
+          "anthropic:doubao-seed-code[1m]": 3,
+          "anthropic:kimi-k2-5[1m]": 1,
+          "doubao:ep-20260514115354-k4jz4": 8
+        },
+        "alignments": {
+          "village": 23
+        }
+      },
+      {
+        "role": "Witch",
+        "samples": 23,
+        "wins": 2,
+        "win_rate": 0.086957,
+        "models": {
+          "anthropic:deepseek-v4-flash[1m]": 4,
+          "anthropic:deepseek-v4-pro[1m]": 1,
+          "anthropic:doubao-seed-2-0-code[1m]": 1,
+          "anthropic:doubao-seed-2-0-lite[1m]": 1,
+          "anthropic:doubao-seed-2-0-mini[1m]": 1,
+          "anthropic:doubao-seed-code[1m]": 1,
+          "anthropic:glm-4-7[1m]": 2,
+          "anthropic:kimi-k2-5[1m]": 4,
+          "doubao:ep-20260514115354-k4jz4": 8
+        },
+        "alignments": {
+          "village": 23
+        }
+      },
+      {
+        "role": "Hunter",
+        "samples": 23,
+        "wins": 2,
+        "win_rate": 0.086957,
+        "models": {
+          "anthropic:deepseek-v4-flash[1m]": 3,
+          "anthropic:deepseek-v4-pro[1m]": 3,
+          "anthropic:doubao-seed-2-0-code[1m]": 1,
+          "anthropic:doubao-seed-2-0-lite[1m]": 3,
+          "anthropic:doubao-seed-2-0-mini[1m]": 1,
+          "anthropic:doubao-seed-2-0-pro[1m]": 1,
+          "anthropic:doubao-seed-code[1m]": 1,
+          "anthropic:glm-4-7[1m]": 2,
+          "doubao:ep-20260514115354-k4jz4": 8
+        },
+        "alignments": {
+          "village": 23
+        }
+      },
+      {
+        "role": "Guard",
+        "samples": 23,
+        "wins": 2,
+        "win_rate": 0.086957,
+        "models": {
+          "anthropic:deepseek-v3-2[1m]": 4,
+          "anthropic:deepseek-v4-flash[1m]": 10,
+          "anthropic:deepseek-v4-pro[1m]": 1,
+          "anthropic:doubao-seed-2-0-code[1m]": 2,
+          "anthropic:doubao-seed-2-0-lite[1m]": 1,
+          "anthropic:doubao-seed-code[1m]": 1,
+          "doubao:ep-20260514115354-k4jz4": 4
+        },
+        "alignments": {
+          "village": 23
+        }
+      },
+      {
+        "role": "Villager",
+        "samples": 23,
+        "wins": 2,
+        "win_rate": 0.086957,
+        "models": {
+          "anthropic:deepseek-v4-flash[1m]": 9,
+          "anthropic:doubao-seed-2-0-code[1m]": 2,
+          "anthropic:doubao-seed-2-0-mini[1m]": 3,
+          "anthropic:doubao-seed-2-0-pro[1m]": 1,
+          "anthropic:doubao-seed-code[1m]": 1,
+          "anthropic:glm-4-7[1m]": 2,
+          "anthropic:kimi-k2-5[1m]": 2,
+          "doubao:ep-20260514115354-k4jz4": 3
+        },
+        "alignments": {
+          "village": 23
+        }
+      }
+    ],
+    "per_role_win_rate": {
+      "roles": [
+        "Werewolf",
+        "Seer",
+        "Witch",
+        "Hunter",
+        "Guard",
+        "Villager"
+      ],
+      "models": [
+        "anthropic:doubao-seed-2-0-pro[1m]",
+        "anthropic:doubao-seed-2-0-lite[1m]",
+        "anthropic:doubao-seed-2-0-code[1m]",
+        "anthropic:deepseek-v4-flash[1m]",
+        "anthropic:kimi-k2-5[1m]",
+        "anthropic:glm-4-7[1m]",
+        "anthropic:deepseek-v3-2[1m]",
+        "anthropic:doubao-seed-code[1m]",
+        "doubao:ep-20260514115354-k4jz4",
+        "anthropic:doubao-seed-2-0-mini[1m]",
+        "anthropic:deepseek-v4-pro[1m]"
+      ],
+      "data": [
+        [
+          0,
+          0,
+          100.0,
+          5
+        ],
+        [
+          1,
+          0,
+          0.0,
+          2
+        ],
+        [
+          2,
+          0,
+          null,
+          0
+        ],
+        [
+          3,
+          0,
+          0.0,
+          1
+        ],
+        [
+          4,
+          0,
+          null,
+          0
+        ],
+        [
+          5,
+          0,
+          0.0,
+          1
+        ],
+        [
+          0,
+          1,
+          75.0,
+          4
+        ],
+        [
+          1,
+          1,
+          null,
+          0
+        ],
+        [
+          2,
+          1,
+          0.0,
+          1
+        ],
+        [
+          3,
+          1,
+          33.33,
+          3
+        ],
+        [
+          4,
+          1,
+          0.0,
+          1
+        ],
+        [
+          5,
+          1,
+          null,
+          0
+        ],
+        [
+          0,
+          2,
+          100.0,
+          1
+        ],
+        [
+          1,
+          2,
+          null,
+          0
+        ],
+        [
+          2,
+          2,
+          100.0,
+          1
+        ],
+        [
+          3,
+          2,
+          100.0,
+          1
+        ],
+        [
+          4,
+          2,
+          0.0,
+          2
+        ],
+        [
+          5,
+          2,
+          0.0,
+          2
+        ],
+        [
+          0,
+          3,
+          100.0,
+          17
+        ],
+        [
+          1,
+          3,
+          0.0,
+          3
+        ],
+        [
+          2,
+          3,
+          0.0,
+          4
+        ],
+        [
+          3,
+          3,
+          0.0,
+          3
+        ],
+        [
+          4,
+          3,
+          10.0,
+          10
+        ],
+        [
+          5,
+          3,
+          11.11,
+          9
+        ],
+        [
+          0,
+          4,
+          100.0,
+          2
+        ],
+        [
+          1,
+          4,
+          0.0,
+          1
+        ],
+        [
+          2,
+          4,
+          25.0,
+          4
+        ],
+        [
+          3,
+          4,
+          null,
+          0
+        ],
+        [
+          4,
+          4,
+          null,
+          0
+        ],
+        [
+          5,
+          4,
+          0.0,
+          2
+        ],
+        [
+          0,
+          5,
+          100.0,
+          3
+        ],
+        [
+          1,
+          5,
+          null,
+          0
+        ],
+        [
+          2,
+          5,
+          0.0,
+          2
+        ],
+        [
+          3,
+          5,
+          0.0,
+          2
+        ],
+        [
+          4,
+          5,
+          null,
+          0
+        ],
+        [
+          5,
+          5,
+          0.0,
+          2
+        ],
+        [
+          0,
+          6,
+          66.67,
+          3
+        ],
+        [
+          1,
+          6,
+          0.0,
+          2
+        ],
+        [
+          2,
+          6,
+          null,
+          0
+        ],
+        [
+          3,
+          6,
+          null,
+          0
+        ],
+        [
+          4,
+          6,
+          25.0,
+          4
+        ],
+        [
+          5,
+          6,
+          null,
+          0
+        ],
+        [
+          0,
+          7,
+          null,
+          0
+        ],
+        [
+          1,
+          7,
+          66.67,
+          3
+        ],
+        [
+          2,
+          7,
+          0.0,
+          1
+        ],
+        [
+          3,
+          7,
+          0.0,
+          1
+        ],
+        [
+          4,
+          7,
+          0.0,
+          1
+        ],
+        [
+          5,
+          7,
+          0.0,
+          1
+        ],
+        [
+          0,
+          8,
+          100.0,
+          8
+        ],
+        [
+          1,
+          8,
+          0.0,
+          8
+        ],
+        [
+          2,
+          8,
+          0.0,
+          8
+        ],
+        [
+          3,
+          8,
+          0.0,
+          8
+        ],
+        [
+          4,
+          8,
+          0.0,
+          4
+        ],
+        [
+          5,
+          8,
+          0.0,
+          3
+        ],
+        [
+          0,
+          9,
+          0.0,
+          1
+        ],
+        [
+          1,
+          9,
+          0.0,
+          2
+        ],
+        [
+          2,
+          9,
+          0.0,
+          1
+        ],
+        [
+          3,
+          9,
+          0.0,
+          1
+        ],
+        [
+          4,
+          9,
+          null,
+          0
+        ],
+        [
+          5,
+          9,
+          33.33,
+          3
+        ],
+        [
+          0,
+          10,
+          50.0,
+          2
+        ],
+        [
+          1,
+          10,
+          0.0,
+          2
+        ],
+        [
+          2,
+          10,
+          0.0,
+          1
+        ],
+        [
+          3,
+          10,
+          0.0,
+          3
+        ],
+        [
+          4,
+          10,
+          0.0,
+          1
+        ],
+        [
+          5,
+          10,
+          null,
+          0
+        ]
+      ]
+    }
+  }
+}

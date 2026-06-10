@@ -128,23 +128,19 @@ Track C 将复盘经验治理为策略知识，策略带有角色、阶段、行
 | 工程架构图谱 | `docs/ENGINEERING_ARCHITECTURE.md` |
 | 运行说明 | `docs/final_delivery/07_runbook.html` |
 
-**核心图表（16 张 SVG）：**
+**核心图表（8 张 SVG）：**
 
 | 图表 | 文件 |
 | --- | --- |
 | 核心证据数据看板 | `assets/core-evidence-dashboard.svg` |
-| 系统总体架构 | `assets/system-architecture.svg` |
-| 核心模块全景图 | `assets/module-map.svg` |
-| Play/Evaluate/Evolve 闭环 | `assets/play-evaluate-evolve.svg` |
-| 单局对局端到端流程 | `assets/game-operation-flow.svg` |
-| 决策证据链 | `assets/evidence-chain.svg` |
-| 决策正确性与影响力象限 | `assets/decision-quality-quadrant.svg` |
 | 当前模型榜快照 | `assets/leaderboard-snapshot.svg` |
-| 单角色策略检索流程 | `assets/single-role-retrieval.svg` |
 | 单 Agent 检索 A/B | `assets/retrieval-ablation-chart.svg` |
 | 策略使用质量关联 | `assets/strategy-usage-quality-chart.svg` |
-| 角色质量提升曲线（×4） | `assets/role_quality_trend_*.svg` |
+| 角色质量提升曲线（预言家） | `assets/role_quality_trend_seer.svg` |
+| 角色质量提升曲线（守卫） | `assets/role_quality_trend_guard.svg` |
+| 角色质量提升曲线（狼人） | `assets/role_quality_trend_werewolf.svg` |
+| 角色质量提升曲线（女巫） | `assets/role_quality_trend_witch.svg` |
 
 ## 9. 总结
 
-本项目完成了从规则引擎到策略回流的完整闭环：AI Agent 在严格信息隔离下完成狼人杀对局，Track B 将每一步决策记录为可追溯的评分证据，Track C 将复盘经验转化为受控检索的策略知识并通过生命周期治理确保回流质量。交付材料包含可运行代码仓库、可演示离线 HTML 包、16 张 SVG 图表和 6 份结构化证据文件。
+本项目完成了从规则引擎到策略回流的完整闭环：AI Agent 在严格信息隔离下完成狼人杀对局，Track B 将每一步决策记录为可追溯的评分证据，Track C 将复盘经验转化为受控检索的策略知识并通过生命周期治理确保回流质量。交付材料包含可运行代码仓库、可演示离线 HTML 包、8 张 SVG 图表和 5 份结构化证据文件。

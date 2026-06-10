@@ -1,0 +1,220 @@
+{
+  "selected_game_id": "65946128-14d5-49a2-858e-6d934574b53e",
+  "claim_scope": "Public final-delivery summary for one complete normal game process.",
+  "winner": "village",
+  "days": 3,
+  "events": 184,
+  "decisions": 58,
+  "end_reason": "all_wolves_dead",
+  "players": [
+    {
+      "seat": 1,
+      "name": "苗信",
+      "role": "Werewolf",
+      "alignment": "wolf",
+      "alive": false,
+      "death_day": 3,
+      "death_reason": "vote"
+    },
+    {
+      "seat": 2,
+      "name": "赵铁柱",
+      "role": "Werewolf",
+      "alignment": "wolf",
+      "alive": false,
+      "death_day": 2,
+      "death_reason": "vote"
+    },
+    {
+      "seat": 3,
+      "name": "夏小满",
+      "role": "Seer",
+      "alignment": "village",
+      "alive": false,
+      "death_day": 3,
+      "death_reason": "wolf"
+    },
+    {
+      "seat": 4,
+      "name": "卡卡",
+      "role": "Witch",
+      "alignment": "village",
+      "alive": false,
+      "death_day": 1,
+      "death_reason": "vote"
+    },
+    {
+      "seat": 5,
+      "name": "韩书研",
+      "role": "Guard",
+      "alignment": "village",
+      "alive": true,
+      "death_day": null,
+      "death_reason": null
+    },
+    {
+      "seat": 6,
+      "name": "莫离",
+      "role": "Villager",
+      "alignment": "village",
+      "alive": true,
+      "death_day": null,
+      "death_reason": null
+    },
+    {
+      "seat": 7,
+      "name": "李默",
+      "role": "Hunter",
+      "alignment": "village",
+      "alive": true,
+      "death_day": null,
+      "death_reason": null
+    }
+  ],
+  "personal_reviews": [
+    {
+      "player": "夏小满",
+      "role": "Seer",
+      "summary": "连续建立金水、查杀警长位并在终局补齐狼坑，是本局信息链核心。"
+    },
+    {
+      "player": "莫离",
+      "role": "Villager",
+      "summary": "以公开票型和查验结果为锚点跟进归票，帮助好人阵营形成共识。"
+    },
+    {
+      "player": "李默",
+      "role": "Hunter",
+      "summary": "未急于暴露技能，投票阶段跟随查验链完成阵营收束。"
+    },
+    {
+      "player": "卡卡",
+      "role": "Witch",
+      "summary": "首夜使用解药保住守卫，为后续守护预言家的链路保留关键节点。"
+    },
+    {
+      "player": "韩书研",
+      "role": "Guard",
+      "summary": "围绕公开核心位切换守护目标，并用守卫视角支撑预言家可信度。"
+    },
+    {
+      "player": "赵铁柱",
+      "role": "Werewolf",
+      "summary": "拿到警徽后成为高影响力身份位，后续被预言家查验并推动局势明朗。"
+    },
+    {
+      "player": "苗信",
+      "role": "Werewolf",
+      "summary": "尝试围绕警徽转移和抗辩路径延长生存空间，终局被查验链锁定。"
+    }
+  ],
+  "error_operation_results": [
+    {
+      "day": 3,
+      "phase": "NIGHT_WITCH_ACTION",
+      "type": "技能时机识别",
+      "result": "女巫未在 N3 救夏小满；夏小满作为预言家在同夜被狼队击杀。",
+      "evidence": [
+        "N3 狼队攻击目标为夏小满。",
+        "N3 结算后夏小满死亡，死因为 wolf。",
+        "局部重算记录显示从 1 名死亡可变为 0 名死亡。"
+      ],
+      "verification": "局部重算结果：死亡结果发生改变。"
+    },
+    {
+      "day": 3,
+      "phase": "DAY_SPEECH",
+      "type": "狼队协同识别",
+      "result": "苗信在 D3 发言中继续围绕已出局狼队友赵铁柱构造抗辩线。",
+      "evidence": [
+        "苗信和赵铁柱同属狼人阵营。",
+        "赵铁柱已在 D2 被放逐。",
+        "D3 发言仍引用赵铁柱出局前的指认作为抗辩依据。"
+      ],
+      "verification": "结构化复盘标记为狼队协同问题。"
+    },
+    {
+      "day": 3,
+      "phase": "NIGHT_WOLF_ACTION",
+      "type": "刀口与票型一致性识别",
+      "result": "狼队白天票型指向莫离，夜间击杀目标为夏小满。",
+      "evidence": [
+        "D3 狼队票型目标为莫离。",
+        "N3 狼队击杀目标为夏小满。",
+        "夏小满身份为预言家。"
+      ],
+      "verification": "结构化复盘标记为刀口与票型不一致。"
+    },
+    {
+      "day": 3,
+      "phase": "DAY_VOTE",
+      "type": "投票立场识别",
+      "result": "苗信在 D2 和 D3 连续投向莫离，未改变终局查验链对其身份的锁定。",
+      "evidence": [
+        "苗信 D2 投票目标为莫离。",
+        "苗信 D3 投票目标为莫离。",
+        "D3 夏小满查验苗信为狼人。"
+      ],
+      "verification": "结构化复盘标记为投票立场证据。"
+    },
+    {
+      "day": 3,
+      "phase": "NIGHT_GUARD_ACTION",
+      "type": "守护目标识别",
+      "result": "守卫韩书研 N3 守护莫离；同夜夏小满被狼队击杀。",
+      "evidence": [
+        "N3 狼队攻击夏小满。",
+        "N3 守卫目标为莫离。",
+        "夏小满在 N3 结算后死亡。"
+      ],
+      "verification": "精确重算结果：该守护目标改变未改变死亡结果。"
+    }
+  ],
+  "track_c_ingested_reflection_cards": [
+    {
+      "doc_id": "selected-game-65946128-seer-high-impact-check",
+      "status": "candidate",
+      "role": "Seer",
+      "phase": "NIGHT_SEER_ACTION / DAY_VOTE",
+      "title": "高影响力身份位查验卡",
+      "evidence": "本局夏小满 D2 查验赵铁柱为狼人，结合守卫佐证后完成 D2 归票。",
+      "quality": 0.92
+    },
+    {
+      "doc_id": "selected-game-65946128-guard-public-core-protect",
+      "status": "candidate",
+      "role": "Guard",
+      "phase": "NIGHT_GUARD_ACTION",
+      "title": "公开核心位守护卡",
+      "evidence": "本局韩书研 N2 守护公开预言家夏小满，抵消狼队同夜攻击。",
+      "quality": 0.9
+    },
+    {
+      "doc_id": "selected-game-65946128-witch-tempo-save",
+      "status": "candidate",
+      "role": "Witch",
+      "phase": "NIGHT_WITCH_ACTION",
+      "title": "首夜轮次保留卡",
+      "evidence": "本局卡卡首夜救下韩书研，使后续守卫保护预言家的链路成立。",
+      "quality": 0.87
+    },
+    {
+      "doc_id": "selected-game-65946128-village-vote-convergence",
+      "status": "candidate",
+      "role": "Villager/Hunter",
+      "phase": "DAY_VOTE",
+      "title": "查验链归票卡",
+      "evidence": "本局莫离、李默在 D2/D3 跟随查验链完成赵铁柱、苗信两轮归票。",
+      "quality": 0.89
+    },
+    {
+      "doc_id": "selected-game-65946128-wolf-coherent-counterline",
+      "status": "candidate",
+      "role": "Werewolf",
+      "phase": "DAY_SPEECH / DAY_VOTE",
+      "title": "狼队抗辩自洽卡",
+      "evidence": "本局赵铁柱被查杀后，狼队抗辩空间主要被查验链和守卫佐证压缩。",
+      "quality": 0.84
+    }
+  ]
+}

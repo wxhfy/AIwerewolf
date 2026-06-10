@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Track B Leaderboard</title>
+  <style>
+    :root{--bg:#f5f0e6;--card:#fdf9f4;--ink:#221d18;--muted:#5c5245;--line:rgba(122,59,16,.18);--primary:#7a3b10;--gold:#b4821d;--green:#1b6b2e;--blue:#1976d2;--shadow:0 2px 8px rgba(122,59,16,.08),0 1px 2px rgba(0,0,0,.05)}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.65}
+    body:before{content:"";position:fixed;inset:0;pointer-events:none;background:radial-gradient(circle at 12% 4%,rgba(180,130,29,.13),transparent 30%),linear-gradient(135deg,rgba(122,59,16,.05),transparent 42%);z-index:-1}
+    .container{width:min(1180px,calc(100% - 40px));margin:0 auto}.topbar{position:sticky;top:0;background:rgba(245,240,230,.92);backdrop-filter:blur(14px);z-index:10;border-bottom:1px solid var(--line)}
+    .nav{height:62px;display:flex;align-items:center;justify-content:space-between;gap:16px}.brand{font-family:"Noto Serif SC",serif;font-weight:800;color:var(--primary)}.links{display:flex;gap:8px;flex-wrap:wrap}.links a{color:var(--muted);text-decoration:none;border:1px solid var(--line);padding:7px 10px;border-radius:8px;background:rgba(253,249,244,.72);font-size:13px}
+    .hero{padding:54px 0 28px}.hero-grid{display:grid;grid-template-columns:1.08fr .92fr;gap:22px;align-items:stretch}.hero h1{font-family:"Noto Serif SC",serif;font-size:clamp(34px,5vw,58px);line-height:1.05;margin:10px 0 16px;color:var(--primary);letter-spacing:0}.lead{font-size:18px;color:var(--muted);max-width:760px}.eyebrow{display:inline-flex;border:1px solid rgba(180,130,29,.35);background:rgba(180,130,29,.08);color:var(--primary);border-radius:999px;padding:6px 10px;font-size:13px;font-weight:700}
+    section{padding:22px 0}.grid{display:grid;gap:14px}.grid.five{grid-template-columns:repeat(5,1fr)}.grid.three{grid-template-columns:repeat(3,1fr)}.grid.two{grid-template-columns:repeat(2,1fr)}.panel,.card,.metric,.table-panel{background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow)}.panel{padding:20px}.metric{padding:15px}.metric b{display:block;font-family:"Noto Serif SC",serif;font-size:25px;color:var(--primary);line-height:1.1}.metric span,.metric small{display:block;color:var(--muted);font-size:12px}.card{padding:16px}.card h3,.table-panel h3{font-family:"Noto Serif SC",serif;color:var(--primary);margin:0 0 10px}.tag{display:inline-flex;border-radius:999px;border:1px solid rgba(180,130,29,.32);padding:3px 8px;font-size:12px;background:rgba(180,130,29,.1);color:var(--primary)}
+    .status-row{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid var(--line);padding:10px 0}.status-row:last-child{border-bottom:0}.status-row span{color:var(--muted)}.status-row b{color:var(--primary)}
+    .table-panel{padding:16px;overflow:auto}table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;padding:10px;border-bottom:1px solid rgba(122,59,16,.12);vertical-align:top}th{color:var(--primary);font-weight:700;background:rgba(180,130,29,.06)}tr:last-child td{border-bottom:0}code{background:rgba(122,59,16,.07);border:1px solid var(--line);border-radius:6px;padding:2px 5px}.footer{padding:28px 0 48px;color:var(--muted);font-size:13px}
+    @media(max-width:1000px){.hero-grid,.grid.five,.grid.three,.grid.two{grid-template-columns:1fr}.links{display:none}.container{width:min(100% - 24px,1180px)}}
+  </style>
+</head>
+<body>
+<header class="topbar"><div class="container nav"><div class="brand">AI Werewolf · Leaderboard</div><nav class="links"><a href="track_b_single_game_review.html">Track B</a><a href="track_b_leaderboard.html">Leaderboard</a><a href="track_c_evolution_effect.html">Track C</a></nav></div></header>
+<main>
+  <section class="hero">
+    <div class="container hero-grid">
+      <div>
+        <span class="eyebrow">Track B · Current Model Leaderboard</span>
+        <h1>大模型排行榜</h1>
+        <p class="lead">本页使用当前模型榜作为主口径，展示 11 个大模型在真实 LLM 对局中的排行、席位样本、复盘评分和策略命中结果。</p>
+      </div>
+      <div class="panel">
+        <div class="status-row"><span>覆盖快照</span><b>2026-06-10</b></div>
+        <div class="status-row"><span>评测形态</span><b>真实 LLM 对局</b></div>
+        <div class="status-row"><span>榜单对象</span><b>模型维度</b></div>
+        <div class="status-row"><span>证据文件</span><b>leaderboard_data_current</b></div>
+      </div>
+    </div>
+  </section>
+
+  <section><div class="container grid five">
+    <div class="metric"><b>9,376</b><span>Track B 累计对局</span><small>非 fake DB 覆盖</small></div>
+    <div class="metric"><b>2,830</b><span>PublishedReview</span><small>结构化复盘报告</small></div>
+    <div class="metric"><b>170,399</b><span>逐步评分</span><small>匹配 Agent 决策</small></div>
+    <div class="metric"><b>23 / 161</b><span>当前模型榜</span><small>对局 / 席位样本</small></div>
+    <div class="metric"><b>11</b><span>模型覆盖</span><small>当前榜单统计口径</small></div>
+  </div></section>
+
+  <section><div class="container table-panel">
+    <h3>当前模型榜结果摘要</h3>
+    <table>
+      <thead><tr><th>Rank</th><th>模型</th><th>覆盖对局</th><th>席位样本</th><th>平均分</th><th>胜率</th><th>策略命中</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>anthropic:doubao-seed-2-0-pro[1m]</td><td>9</td><td>9</td><td>53.05</td><td>55.6%</td><td>86.8%</td></tr>
+        <tr><td>2</td><td>anthropic:doubao-seed-2-0-lite[1m]</td><td>9</td><td>9</td><td>48.81</td><td>44.4%</td><td>84.0%</td></tr>
+        <tr><td>3</td><td>anthropic:doubao-seed-2-0-code[1m]</td><td>7</td><td>7</td><td>56.81</td><td>42.9%</td><td>83.9%</td></tr>
+        <tr><td>4</td><td>anthropic:deepseek-v4-flash[1m]</td><td>19</td><td>46</td><td>42.27</td><td>41.3%</td><td>81.4%</td></tr>
+        <tr><td>5</td><td>anthropic:kimi-k2-5[1m]</td><td>9</td><td>9</td><td>69.03</td><td>33.3%</td><td>85.2%</td></tr>
+        <tr><td>6</td><td>anthropic:glm-4-7[1m]</td><td>9</td><td>9</td><td>48.06</td><td>33.3%</td><td>86.7%</td></tr>
+        <tr><td>7</td><td>anthropic:deepseek-v3-2[1m]</td><td>9</td><td>9</td><td>34.46</td><td>33.3%</td><td>85.5%</td></tr>
+        <tr><td>8</td><td>anthropic:doubao-seed-code[1m]</td><td>7</td><td>7</td><td>45.52</td><td>28.6%</td><td>84.2%</td></tr>
+        <tr><td>9</td><td>doubao:ep-20260514115354-k4jz4</td><td>11</td><td>39</td><td>37.75</td><td>20.5%</td><td>76.4%</td></tr>
+        <tr><td>10</td><td>anthropic:doubao-seed-2-0-mini[1m]</td><td>8</td><td>8</td><td>33.45</td><td>12.5%</td><td>84.2%</td></tr>
+        <tr><td>11</td><td>anthropic:deepseek-v4-pro[1m]</td><td>9</td><td>9</td><td>49.58</td><td>11.1%</td><td>87.8%</td></tr>
+      </tbody>
+    </table>
+  </div></section>
+
+  <section><div class="container grid three">
+    <article class="card"><span class="tag">Coverage</span><h3>数据库累计覆盖</h3><p>Track B 已覆盖 9,376 局非 fake 对局，形成 2,830 条 PublishedReview 和 170,399 条逐步评分记录。</p></article>
+    <article class="card"><span class="tag">Leaderboard</span><h3>当前大模型排行</h3><p>当前榜单覆盖 23 局、161 个席位样本和 11 个大模型，支持按模型聚合查看对局表现。</p></article>
+    <article class="card"><span class="tag">Track C</span><h3>策略检索侧证据</h3><p>同角色策略检索在固定单 Agent 场景中取得 8.13 综合分，策略使用决策相对基线分差为 +0.082。</p></article>
+  </div></section>
+
+  <section><div class="container table-panel">
+    <h3>证据文件</h3>
+    <table><tbody>
+      <tr><th>Track B 累计覆盖</th><td><code>evidence/TRACK_B_DB_COVERAGE.json</code></td></tr>
+      <tr><th>当前模型榜</th><td><code>evidence/leaderboard_data_current.json</code></td></tr>
+      <tr><th>Track C 单 Agent 检索</th><td><code>evidence/PROJECT_SINGLE_AGENT_RETRIEVAL_LLM_ABLATION.json</code></td></tr>
+      <tr><th>策略使用质量关联</th><td><code>evidence/PROJECT_STRATEGY_USAGE_DECISION_SCORE_ANALYSIS.json</code></td></tr>
+    </tbody></table>
+  </div></section>
+</main>
+<footer class="footer"><div class="container">AI Werewolf final delivery package · Track B leaderboard · generated from verified local evidence.</div></footer>
+</body>
+</html>

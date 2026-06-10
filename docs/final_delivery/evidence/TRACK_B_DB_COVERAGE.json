@@ -1,0 +1,54 @@
+{
+  "generated_at": "2026-06-09T21:38:56+08:00",
+  "source": "PostgreSQL full query over games, players, published_reviews.report_json.metadata.per_step_scores, agent_decisions; excludes games with players.model_name containing fake",
+  "summary": {
+    "nonfake_games": 9376,
+    "published_reviews": 2830,
+    "games_with_per_step_scores": 2482,
+    "per_step_scores": 170399,
+    "scored_steps_with_decision_id": 170399,
+    "agent_decisions": 196368,
+    "matched_agent_decisions": 170399,
+    "games_with_agent_decisions": 2938,
+    "scored_step_to_agent_decision_match_rate": 0.867753,
+    "scored_steps_with_decision_id_over_agent_decisions": 0.867753
+  },
+  "by_role_top": [
+    {
+      "role": "Werewolf",
+      "scored_steps": 44615,
+      "avg_overall_score": 0.5152215846686421
+    },
+    {
+      "role": "Villager",
+      "scored_steps": 28675,
+      "avg_overall_score": 0.46977363557103136
+    },
+    {
+      "role": "Guard",
+      "scored_steps": 22984,
+      "avg_overall_score": 0.5343756961363822
+    },
+    {
+      "role": "Witch",
+      "scored_steps": 22115,
+      "avg_overall_score": 0.48615410354961686
+    },
+    {
+      "role": "Seer",
+      "scored_steps": 20021,
+      "avg_overall_score": 0.5310782678187853
+    },
+    {
+      "role": "Hunter",
+      "scored_steps": 18072,
+      "avg_overall_score": 0.4823825807879731
+    },
+    {
+      "role": "WhiteWolfKing",
+      "scored_steps": 13917,
+      "avg_overall_score": 0.5039206007041381
+    }
+  ],
+  "claim_boundary": "Coverage snapshot for Track B review evidence. Some decisions may have multiple scored steps or review entries; use distinct matched_agent_decisions for decision-level coverage."
+}

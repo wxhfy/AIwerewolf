@@ -1,0 +1,88 @@
+{
+  "generated_at": "2026-06-09T11:31:45+08:00",
+  "row_counts": {
+    "decision_rows": 170399,
+    "distinct_games": 2482,
+    "distinct_players": 19834,
+    "feedback_decisions": 3088,
+    "used_decisions": 3088,
+    "unused_decisions": 167311,
+    "retrieved_decisions": 3088,
+    "no_retrieval_decisions": 167311
+  },
+  "overall_positive_result": {
+    "strategy_used_count": 3088,
+    "baseline_count": 167311,
+    "strategy_used_mean": 0.5846531735751296,
+    "baseline_mean": 0.5023504073252805,
+    "mean_delta": 0.08230276624984911,
+    "ci": [
+      0.07638752347139507,
+      0.08821800902830315
+    ],
+    "ci_crosses_zero": false
+  },
+  "positive_by_role": [
+    {
+      "role": "Werewolf",
+      "strategy_used_mean": 0.5641145038167938,
+      "baseline_mean": 0.5141955695912857,
+      "delta": 0.049918934225508194,
+      "ci": [
+        0.039099867203996,
+        0.06073800124702039
+      ]
+    },
+    {
+      "role": "Villager",
+      "strategy_used_mean": 0.5909285714285715,
+      "baseline_mean": 0.4682159231394158,
+      "delta": 0.12271264828915568,
+      "ci": [
+        0.10500079781220716,
+        0.1404244987661042
+      ]
+    },
+    {
+      "role": "Guard",
+      "strategy_used_mean": 0.6333930635838151,
+      "baseline_mean": 0.532088137102159,
+      "delta": 0.10130492648165612,
+      "ci": [
+        0.08610516259219855,
+        0.11650469037111369
+      ]
+    },
+    {
+      "role": "Witch",
+      "strategy_used_mean": 0.535268472906404,
+      "baseline_mean": 0.485235570500714,
+      "delta": 0.05003290240569003,
+      "ci": [
+        0.03583485897338193,
+        0.06423094583799813
+      ]
+    },
+    {
+      "role": "Seer",
+      "strategy_used_mean": 0.6481127049180327,
+      "baseline_mean": 0.5281543541698663,
+      "delta": 0.11995835074816641,
+      "ci": [
+        0.10701941985549863,
+        0.1328972816408342
+      ]
+    },
+    {
+      "role": "Hunter",
+      "strategy_used_mean": 0.5358805555555556,
+      "baseline_mean": 0.48129522357723575,
+      "delta": 0.05458533197831983,
+      "ci": [
+        0.038140540505407126,
+        0.07103012345123252
+      ]
+    }
+  ],
+  "claim_scope": "Public final-delivery summary for strategy usage and decision quality association."
+}
