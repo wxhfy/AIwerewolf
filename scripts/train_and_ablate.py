@@ -397,7 +397,13 @@ def compute_ablation(
     # Load outcome data
     init_db()
     db = SessionLocal()
-    clean_ids = set(json.loads(Path("/tmp/clean_llm_game_ids.json").read_text()))
+    clean_ids_path = Path("/tmp/clean_llm_game_ids.json")
+    if clean_ids_path.exists():
+        clean_ids = set(json.loads(clean_ids_path.read_text()))
+    else:
+        # Fallback when the LLM-cleanliness allowlist is absent: use every
+        # game_id referenced by the opportunities so ablation still runs.
+        clean_ids = {o.get("game_id") for o in opportunities if o.get("game_id")}
     games = db.execute(text("SELECT id, winner FROM games WHERE id IN :ids"), {"ids": tuple(clean_ids)}).fetchall()
     winner_map = {g[0]: g[1] for g in games}
     db.close()

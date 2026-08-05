@@ -85,11 +85,23 @@ def _check_imports() -> tuple[bool, str]:
     return True, f"All {len(modules)} modules imported"
 
 
+def _to_psycopg_dsn(db_url: str) -> str:
+    """Normalize a SQLAlchemy DB URL into a plain psycopg2 DSN.
+
+    psycopg2 does not understand the ``postgresql+psycopg2://`` driver suffix
+    that SQLAlchemy uses, so strip it before connecting.
+    """
+    for prefix in ("postgresql+psycopg2://", "postgresql+psycopg://"):
+        if db_url.startswith(prefix):
+            return "postgresql://" + db_url[len(prefix) :]
+    return db_url
+
+
 def _check_db_connection(db_url: str) -> tuple[bool, str]:
     import psycopg2
 
     try:
-        conn = psycopg2.connect(db_url, connect_timeout=5)
+        conn = psycopg2.connect(_to_psycopg_dsn(db_url), connect_timeout=5)
         cur = conn.cursor()
         cur.execute("SELECT 1")
         cur.close()
@@ -113,7 +125,7 @@ def _check_db_tables(db_url: str) -> tuple[bool, str]:
     import psycopg2
 
     try:
-        conn = psycopg2.connect(db_url)
+        conn = psycopg2.connect(_to_psycopg_dsn(db_url))
         cur = conn.cursor()
         cur.execute("SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname='public'")
         existing = {r[0] for r in cur.fetchall()}
@@ -131,7 +143,7 @@ def _check_db_write(db_url: str, strict: bool) -> tuple[bool, str]:
     import psycopg2
 
     try:
-        conn = psycopg2.connect(db_url)
+        conn = psycopg2.connect(_to_psycopg_dsn(db_url))
         cur = conn.cursor()
         cur.execute("SELECT 1 FROM strategy_knowledge_docs LIMIT 1")
         cur.close()
@@ -172,7 +184,7 @@ def _check_active_strategies(db_url: str, strict: bool) -> tuple[bool, str]:
     import psycopg2
 
     try:
-        conn = psycopg2.connect(db_url)
+        conn = psycopg2.connect(_to_psycopg_dsn(db_url))
         cur = conn.cursor()
         cur.execute("SELECT COUNT(*) FROM strategy_knowledge_docs WHERE status='active'")
         active = cur.fetchone()[0]
@@ -193,3 +205,12 @@ def _check_pool_config(strict: bool) -> tuple[bool, str]:
     if strict and int(pool_size) > 5:
         return False, f"DB_POOL_SIZE={pool_size} too high for strict mode"
     return True, f"pool_size={pool_size}, max_overflow={max_overflow}"
+
+
+if __name__ == "__main__":
+    import sys
+
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    summary = run_preflight()
+    print(json.dumps(summary, indent=2, ensure_ascii=False, default=str))
+    sys.exit(0 if summary.get("all_pass") else 1)
