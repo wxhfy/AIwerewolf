@@ -45,8 +45,22 @@ os.environ.setdefault("COGNITIVE_ENABLE_REFLECTION", "true")
 os.environ.setdefault("DB_POOL_SIZE", "5")
 os.environ.setdefault("DB_MAX_OVERFLOW", "5")
 
-# DATABASE_URL (the code hardcodes a fallback; set it explicitly)
-_DB_URL = os.getenv("DATABASE_URL", "postgresql://werewolf:werewolf_dev_password@127.0.0.1:5433/werewolf")
+# DATABASE_URL: load .env first so the project config is honored, then
+# strip the SQLAlchemy driver suffix (postgresql+psycopg2://) so plain
+# psycopg2 connections work alongside SQLAlchemy.
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except Exception:
+    pass
+_raw_db_url = os.getenv(
+    "DATABASE_URL",
+    "postgresql://werewolf:werewolf_dev_password@127.0.0.1:5433/werewolf",
+)
+_DB_URL = _raw_db_url.replace("postgresql+psycopg2://", "postgresql://").replace(
+    "postgresql+psycopg://", "postgresql://"
+)
 os.environ["DATABASE_URL"] = _DB_URL
 
 # ── Logging ─────────────────────────────────────────────────────
@@ -182,27 +196,31 @@ def preflight():
         fail(f"Table check failed: {e}")
 
     # 0d. LLM client
-    logger.info("0d. LLM client health check...")
-    try:
-        from backend.llm import create_client
+    if os.getenv("REQUIRE_LLM", "true").lower() != "true":
+        logger.info("0d. LLM client health check SKIPPED (REQUIRE_LLM=false)")
+        report["checks"]["llm_client"] = "skipped"
+    else:
+        logger.info("0d. LLM client health check...")
+        try:
+            from backend.llm import create_client
 
-        client = create_client()
-        available = getattr(client, "available", True)
-        if not available:
-            fail(f"LLM client unavailable: provider={client.provider}")
-        resp = client.chat_sync([{"role": "user", "content": 'Return ONLY valid JSON: {"ok":true}'}])
-        content = resp.get("choices", [{}])[0].get("message", {}).get("content", "")
-        data = json.loads(content)
-        if data.get("ok") is not True:
-            fail(f"LLM health check returned unexpected: {content[:80]}")
-        logger.info(f"  LLM OK: provider={client.provider}, model={client.model}")
-        report["checks"]["llm_client"] = "pass"
-        report["checks"]["llm_provider"] = client.provider
-        report["checks"]["llm_model"] = client.model
-    except SystemExit:
-        raise
-    except Exception as e:
-        fail(f"LLM client check failed: {e}")
+            client = create_client()
+            available = getattr(client, "available", True)
+            if not available:
+                fail(f"LLM client unavailable: provider={client.provider}")
+            resp = client.chat_sync([{"role": "user", "content": 'Return ONLY valid JSON: {"ok":true}'}])
+            content = resp.get("choices", [{}])[0].get("message", {}).get("content", "")
+            data = json.loads(content)
+            if data.get("ok") is not True:
+                fail(f"LLM health check returned unexpected: {content[:80]}")
+            logger.info(f"  LLM OK: provider={client.provider}, model={client.model}")
+            report["checks"]["llm_client"] = "pass"
+            report["checks"]["llm_provider"] = client.provider
+            report["checks"]["llm_model"] = client.model
+        except SystemExit:
+            raise
+        except Exception as e:
+            fail(f"LLM client check failed: {e}")
 
     # 0e. Active strategy docs
     logger.info("0e. Active strategy docs...")
@@ -276,7 +294,22 @@ def run_game():
     t0 = time.perf_counter()
 
     try:
-        game = WerewolfGame(seed=seed, player_count=player_count)
+        from backend.db.persist import save_decisions_batch, save_game_end, save_game_start
+        from backend.eval.post_game import run_post_game_scoring
+
+        def _on_post_game(state):
+            # Drive Track B scoring + Track C knowledge extraction the same
+            # way backend.app does, so verify_db can see the artifacts.
+            run_post_game_scoring(state, str(state.id), return_details=True)
+
+        game = WerewolfGame(
+            seed=seed,
+            player_count=player_count,
+            on_game_start=save_game_start,
+            on_game_end=save_game_end,
+            on_decisions_flush=save_decisions_batch,
+            on_post_game=_on_post_game,
+        )
 
         # Log role assignment
         for p in game.state.players:
