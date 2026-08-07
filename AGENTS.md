@@ -5,7 +5,7 @@
 
 ## 项目运行模式（最高优先级，覆盖 skills/ 中的多人协作规则）
 
-**当前阶段：单人开发**（owner: wxhfy / 付一涵）。
+**当前阶段：单人开发**。
 
 - AI 可在用户授权后直接 `git push` 到 `main`：无需 PR、无需 review、无需 2 人 approve；merge / rebase / squash / cherry-pick 可自主决定。
 - 仍保留的护栏（任何阶段都不放松）：

@@ -324,7 +324,7 @@ def slide_cover(prs: Presentation) -> None:
         size=14,
     )
     add_pill(slide, "2026-06-08", 0.82, 6.36, 1.35, 0.34, fill=COLORS["panel2"], line=COLORS["line"], size=9)
-    add_pill(slide, "wxhfy / 付一涵", 2.3, 6.36, 1.6, 0.34, fill=COLORS["panel2"], line=COLORS["line"], size=9)
+    add_pill(slide, "AI Werewolf Team", 2.3, 6.36, 1.6, 0.34, fill=COLORS["panel2"], line=COLORS["line"], size=9)
     add_image_fit(slide, ASSET_DIR / "play-evaluate-evolve.png", 6.15, 0.55, 6.45, 5.75)
     add_footer(slide, 1)
 

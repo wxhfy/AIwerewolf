@@ -25,7 +25,7 @@
 | 项目 | 内容 |
 |---|---|
 | GitHub 仓库 | https://github.com/wxhfy/AIwerewolf |
-| 小组成员 | 付一涵、穆玉玲、王松磊 |
+| 小组成员 | AI Werewolf Team |
 
 主线能力：
 
@@ -201,4 +201,4 @@ AIwerewolf/
 
 ## License
 
-MIT © 2026 wxhfy
+MIT © 2026 AI Werewolf Contributors
