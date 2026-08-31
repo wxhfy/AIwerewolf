@@ -47,18 +47,20 @@ flips the flag.
 2. **Register the spec.** Either add to an existing pack file or create a
    new one and import it from `roles/__init__.py`:
    ```python
-   register_role(RoleSpec(
-       role=Role.CUPID,
-       alignment=Alignment.VILLAGE,
-       display_zh="丘比特",
-       display_en="Cupid",
-       description_zh="第 0 夜指定两名情侣...",
-       description_en="Night 0 picks two lovers...",
-       wakes_up_at_night=True,
-       pack="wolfcha",
-       playable=False,  # template only — engine wiring is TODO
-       tags=("lovers", "night-zero"),
-   ))
+   register_role(
+       RoleSpec(
+           role=Role.CUPID,
+           alignment=Alignment.VILLAGE,
+           display_zh="丘比特",
+           display_en="Cupid",
+           description_zh="第 0 夜指定两名情侣...",
+           description_en="Night 0 picks two lovers...",
+           wakes_up_at_night=True,
+           pack="wolfcha",
+           playable=False,  # template only — engine wiring is TODO
+           tags=("lovers", "night-zero"),
+       )
+   )
    ```
 
 3. **Add LLM strategy.** Three layers in `backend/agents/`:
