@@ -7,6 +7,7 @@ from collections import defaultdict
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 
 def _count_pairs(path: str) -> list[dict]:
@@ -22,6 +23,12 @@ def _count_pairs(path: str) -> list[dict]:
                 except json.JSONDecodeError:
                     pass
     return pairs
+
+
+def _require_pairs(path: str) -> list[dict]:
+    if not Path(path).exists():
+        pytest.skip(f"Pairwise expansion artifact is not present: {path}")
+    return _count_pairs(path)
 
 
 def _pair_degenerate_rate(pairs, reg=None):
@@ -51,22 +58,22 @@ def _pair_degenerate_rate(pairs, reg=None):
 
 class TestPairwiseExpansion:
     def test_vote_expansion_generates_minimum_pairs(self):
-        pairs = _count_pairs("data/health/pairwise_vote_expansion_examples.jsonl")
+        pairs = _require_pairs("data/health/pairwise_vote_expansion_examples.jsonl")
         assert len(pairs) >= 70, f"Expected >=70 vote pairs, got {len(pairs)}"
 
     def test_night_action_expansion_generates_minimum_pairs(self):
-        pairs = _count_pairs("data/health/pairwise_night_action_expansion_examples.jsonl")
+        pairs = _require_pairs("data/health/pairwise_night_action_expansion_examples.jsonl")
         assert len(pairs) >= 40, f"Expected >=40 night-action pairs, got {len(pairs)}"
 
     def test_vote_degenerate_rate_improved(self):
-        pairs = _count_pairs("data/health/pairwise_vote_expansion_examples.jsonl")
+        pairs = _require_pairs("data/health/pairwise_vote_expansion_examples.jsonl")
         assert len(pairs) >= 10, "Need vote pairs"
         rate = _pair_degenerate_rate(pairs)
         print(f"\n  Vote degenerate rate: {rate:.1%}")
         assert rate <= 0.35, f"Vote degenerate rate too high: {rate:.1%}"
 
     def test_night_action_degenerate_rate_improved(self):
-        pairs = _count_pairs("data/health/pairwise_night_action_expansion_examples.jsonl")
+        pairs = _require_pairs("data/health/pairwise_night_action_expansion_examples.jsonl")
         assert len(pairs) >= 10, "Need night-action pairs"
         rate = _pair_degenerate_rate(pairs)
         print(f"\n  Night-action degenerate rate: {rate:.1%}")
@@ -74,7 +81,7 @@ class TestPairwiseExpansion:
 
     def test_no_player_id_shortcut_in_expansion_pairs(self):
         for path in ["pairwise_vote_expansion_examples.jsonl", "pairwise_night_action_expansion_examples.jsonl"]:
-            pairs = _count_pairs(f"data/health/{path}")
+            pairs = _require_pairs(f"data/health/{path}")
             for p in pairs[:5]:
                 b_opp = p.get("bad", {}).get("opportunity", {})
                 for k, v in b_opp.items():
@@ -126,8 +133,8 @@ class TestPairwiseExpansion:
         all_pairs = []
         for f in ["pairwise_vote_expansion_examples.jsonl", "pairwise_night_action_expansion_examples.jsonl"]:
             p = Path("data/health") / f
-            if p.exists():
-                all_pairs.extend(pairwise_examples_from_jsonl(p))
+            _require_pairs(str(p))
+            all_pairs.extend(pairwise_examples_from_jsonl(p))
 
         by_type = defaultdict(list)
         for pair in all_pairs:

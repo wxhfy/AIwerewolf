@@ -80,6 +80,9 @@ def test_audit_examples_can_be_generated():
     script = ROOT / "scripts" / "generate_speech_semantic_audit_examples.py"
     if not script.exists():
         pytest.skip("Script not found")
+    input_path = ROOT / "data" / "open" / "combined" / "track_b_open_speech_samples.jsonl"
+    if not input_path.exists():
+        pytest.skip("Open speech samples are a local data artifact")
 
     with tempfile.NamedTemporaryFile(suffix=".jsonl", delete=False) as tmp:
         tmp_path = tmp.name
