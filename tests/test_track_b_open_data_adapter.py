@@ -126,8 +126,8 @@ def adapter():
     from backend.eval.open_data.adapters import WerewolfAmongUsAdapter
 
     instance = WerewolfAmongUsAdapter()
-    if not instance.data_dir.exists():
-        pytest.skip("Open dataset is not present in this checkout")
+    if not instance.load_raw_games(split="train"):
+        pytest.skip("Werewolf Among Us raw games are not present in this checkout")
     return instance
 
 
