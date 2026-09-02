@@ -878,7 +878,8 @@ def prepare_room_game(room_id: str, show_private: bool = False):
     def _observer(state):
         _rooms.append_snapshot(room_id, state.snapshot(show_private=show_private))
 
-    game.observer = _observer
+    game.add_observer(_observer)
+
     game.initialize()
     try:
         from backend.db.persist import save_game_start
@@ -1045,15 +1046,17 @@ async def stream_game(
 
     def observe(state: GameState) -> None:
         snapshot = state.snapshot(show_private=show_private)
-        if room_id:
-            _rooms.append_snapshot(room_id, snapshot)
         with lock:
             queue.append(snapshot)
 
-    # The engine only supports one observer; the previous WS's observer (if
-    # any) is now disconnected and its drain task is dead, so overwriting is
-    # safe — but we still pre-load this client with the full history first.
-    game.observer = observe
+    # Each WebSocket subscribes independently, then receives buffered history.
+    if room_id and not game.state.events:
+
+        def buffer_observer(state: GameState) -> None:
+            _rooms.append_snapshot(room_id, state.snapshot(show_private=show_private))
+
+        game.add_observer(buffer_observer)
+    game.add_observer(observe)
     if room_id and (is_reused_running or game._play_started):
         with lock:
             queue.extend(_rooms.get_snapshot_buffer(room_id))
@@ -1134,6 +1137,7 @@ async def stream_game(
             await drain_task
         except Exception:
             pass
+        game.remove_observer(observe)
 
     _rooms.games[state.id] = state
     return state
