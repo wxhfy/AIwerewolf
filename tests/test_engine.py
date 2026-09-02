@@ -49,6 +49,31 @@ def test_badge_and_last_words_phases_are_exercised() -> None:
     assert any(event.payload.get("last_words") for event in state.events if event.type.value == "CHAT_MESSAGE")
 
 
+def test_game_notifies_all_observers_and_supports_unsubscribe() -> None:
+    game = WerewolfGame(seed=3, player_count=7)
+    first: list[int] = []
+    second: list[int] = []
+
+    def first_observer(state) -> None:
+        first.append(len(state.events))
+
+    def second_observer(state) -> None:
+        second.append(len(state.events))
+
+    game.add_observer(first_observer)
+    game.add_observer(second_observer)
+    game._log(EventType.SYSTEM_MESSAGE, "public", {"message": "fan-out"})
+
+    assert len(first) == 1
+    assert len(second) == 1
+
+    game.remove_observer(first_observer)
+    game._log(EventType.SYSTEM_MESSAGE, "public", {"message": "second-only"})
+
+    assert len(first) == 1
+    assert len(second) == 2
+
+
 def test_visibility_hides_roles_from_villager() -> None:
     game = WerewolfGame(seed=3)
     state = game.state

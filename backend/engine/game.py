@@ -226,7 +226,9 @@ class WerewolfGame:
         )
         self.visibility = Visibility()
         self.validator = ActionValidator()
-        self.observer = observer
+        self._observers: list[Callable[[GameState], None]] = []
+        if observer is not None:
+            self._observers.append(observer)
         self.phase_manager = PhaseManager()
         self.pending_hunter_id: str | None = None
         self.pending_badge_transfer_from_id: str | None = None
@@ -333,6 +335,37 @@ class WerewolfGame:
                     "speech_length_habit": char.persona.speech_length_habit,
                     "vocabulary_style": char.persona.vocabulary_style,
                 }
+
+    @property
+    def observer(self) -> Callable[[GameState], None] | None:
+        """Return the legacy single-observer view of the subscriptions."""
+        return self._observers[0] if self._observers else None
+
+    @observer.setter
+    def observer(self, callback: Callable[[GameState], None] | None) -> None:
+        """Replace all observers for compatibility with older integrations."""
+        self._observers.clear()
+        if callback is not None:
+            self._observers.append(callback)
+
+    def add_observer(self, callback: Callable[[GameState], None]) -> None:
+        """Subscribe to state snapshots without replacing other subscribers."""
+        with self._shared_lock:
+            if callback not in self._observers:
+                self._observers.append(callback)
+
+    def remove_observer(self, callback: Callable[[GameState], None]) -> None:
+        """Remove a state snapshot subscriber if it is still attached."""
+        with self._shared_lock:
+            if callback in self._observers:
+                self._observers.remove(callback)
+
+    def _notify_observers(self) -> None:
+        """Publish the current state to every active snapshot subscriber."""
+        with self._shared_lock:
+            observers = tuple(self._observers)
+        for callback in observers:
+            callback(self.state)
 
     # ------------------------------------------------------------------
     # Resume safety helpers
@@ -1557,8 +1590,7 @@ class WerewolfGame:
                 queued = self.human_action_buffer.get(player.id, [])
                 if not queued:
                     self.state.pending_input = self._build_pending_input(player, request)
-                    if self.observer is not None:
-                        self.observer(self.state)
+                    self._notify_observers()
                     raise GamePaused(f"Waiting for human input: {player.name} {request}")
                 result = queued if many else queued[0]
                 self.human_action_buffer[player.id] = []
@@ -1574,8 +1606,7 @@ class WerewolfGame:
             # frozen for the 4–10s the LLM is actually working.
             prior_speaker = self.state.current_speaker_id
             self.state.current_speaker_id = player.id
-            if self.observer is not None:
-                self.observer(self.state)
+            self._notify_observers()
             try:
                 result = call(agent)
             finally:
@@ -2022,8 +2053,7 @@ class WerewolfGame:
             self.state.phase_cursor[cursor_key] = index
             self.state.current_speaker_id = player.id
             # Notify observer BEFORE LLM call so frontend sees phase transition + speaker
-            if self.observer is not None:
-                self.observer(self.state)
+            self._notify_observers()
             try:
                 handler(player)
             except GamePaused:
@@ -2077,8 +2107,7 @@ class WerewolfGame:
                     visible_to=visible_to,
                 )
             )
-            if self.observer is not None:
-                self.observer(self.state)
+            self._notify_observers()
 
     def _record_decision(
         self,
