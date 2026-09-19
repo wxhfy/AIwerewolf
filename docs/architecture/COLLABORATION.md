@@ -25,7 +25,7 @@ Responsibilities:
 - Own REST/SSE schemas and compatibility versions.
 - Enforce authentication, authorization, visibility, idempotency, and optimistic concurrency.
 - Persist commands, ordered events, snapshots, outbox rows, and match status.
-- Run MatchRunner scheduling, retries, leases, recovery, and post-game jobs.
+- Run Match Worker scheduling, leases, recovery, and post-game jobs.
 - Operate PostgreSQL, Redis, observability, migrations, CI, Docker, and Kubernetes assets.
 - Publish contract fixtures and integration-test environments for the other owners.
 
@@ -55,7 +55,7 @@ Responsibilities:
 - JSON Schema or equivalent typed definitions for commands, events, snapshots, `DecisionRequest`, and `DecisionResult`.
 - Example public, player, and moderator fixtures.
 - Reconnect and duplicate-command test cases.
-- A Docker Compose environment with PostgreSQL, Redis, API, MatchRunner, Agent worker, and frontend.
+- A Docker Compose environment with PostgreSQL, Redis, API, Match Worker, and frontend. Add the Agent Service container when remote execution is implemented.
 - A load-test scenario and a production readiness report.
 
 Independent development means owners do not block on approvals. It does not mean contracts, migrations, or integration tests are optional.

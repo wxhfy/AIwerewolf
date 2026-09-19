@@ -1,5 +1,8 @@
 # AI WereWolf 项目成果展示报告
 
+> [!IMPORTANT]
+> 本报告是历史交付快照，仅用于保存当时的功能展示和实验结论，不是当前架构说明。当前实现状态请以 `../../README.md`、`../../REQUIREMENTS.md` 和 `../architecture/` 为准；旧文中的 WebSocket、真人参与或进程内执行描述不应作为现行接口契约。
+
 # 摘要
 
 本项目设计并实现了一个 AI 狼人杀多智能体对战与自进化系统。系统围绕完整 AI 对局、赛后过程评测和策略知识回流三个目标展开，采用 Play → Evaluate → Evolve 的闭环架构。在对局执行阶段，系统通过WerewolfGame 实现狼人杀阶段推进、角色技能、投票结算和胜负判定，并通过 PlayerView 为不同身份玩家提供隔离后的局部视角；在 Agent 决策阶段，系统基于 CognitiveAgent 实现 Observe → Think → Act 的角色化决策流程，并通过策略检索工具辅助 Agent 发言、投票和夜间行动；在赛后阶段，系统通过 PerStepScorer 对每一步决策进行评分复盘，并由 KnowledgeAbstractor 将高光决策和失误经验抽象为候选策略知识，最终回流到后续对局。后端验收结果显示，系统已通过 strict mode 全链路验证，完成了对局执行、信息隔离、决策审计、赛后评分和知识抽取等核心能力。

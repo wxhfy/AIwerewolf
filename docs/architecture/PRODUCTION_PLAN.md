@@ -17,12 +17,12 @@ PostgreSQL
   -> authoritative matches, commands, events, snapshots, traces, outbox
 
 Redis
-  -> rate limits, short leases, wake-up notifications, ephemeral cache
+  -> rate limits, wake-up notifications, ephemeral cache
 
-MatchRunner workers
+Match Worker processes
   -> load state, execute deterministic domain transitions, commit events
 
-Agent workers
+Future Agent Service workers
   -> consume decision jobs, call model providers, validate and persist results
 
 Post-game workers
@@ -51,8 +51,8 @@ The load test must model realistic endpoint ratios, payload sizes, database stat
 ## Scaling Rules
 
 - Scale API and SSE replicas horizontally behind the ingress.
-- Partition match ownership with short Redis leases, but recover ownership from PostgreSQL.
-- Scale MatchRunner workers by runnable-match queue depth.
+- Partition match ownership with durable PostgreSQL leases; use Redis only to reduce polling and wake consumers.
+- Scale Match Worker processes by runnable-match queue depth.
 - Scale Agent workers separately by provider, model, quota, and latency class.
 - Apply per-user, per-match, and per-provider rate limits.
 - Use PostgreSQL connection pooling and bounded worker concurrency. Do not let every SSE connection hold a database connection.
@@ -62,19 +62,19 @@ The load test must model realistic endpoint ratios, payload sizes, database stat
 
 ## Delivery Stages
 
-### Stage 1: Durable vertical slice
+### Stage 1: Durable vertical slice - complete for AI-only matches
 
 - Persist match start, ordered events, snapshots, final state, and agent traces.
-- Replace the frontend AI-match SSE path with REST start plus SSE delivery.
+- Use REST start plus SSE delivery for the frontend AI-match path.
 - Resume SSE by sequence number.
 - Run PostgreSQL and Redis through Docker Compose.
 
-### Stage 2: Process separation
+### Stage 2: Process separation - partially complete
 
-- Replace FastAPI background threads with durable `match_jobs` and independent MatchRunner processes. Implemented for AI-only matches.
+- Durable `match_jobs` and independent Match Worker processes are implemented for AI-only matches.
 - Add `decision_jobs` and independent Agent workers.
-- Add command idempotency, optimistic `expected_seq`, leases, retries, and dead-letter handling.
-- Add a transactional outbox and Redis wake-up delivery.
+- Command idempotency and optimistic `expected_seq` are implemented for pause/resume. General retries and dead-letter handling remain pending.
+- Transactional outbox storage is defined; the publisher process remains pending. Redis wake-up delivery for SSE is implemented.
 
 ### Stage 3: Production platform
 
@@ -93,10 +93,11 @@ The load test must model realistic endpoint ratios, payload sizes, database stat
 
 ## Current Status
 
-Stage 1 is complete for AI-only matches. The API writes a durable `match_jobs`
-record and an independent Match Worker process owns game execution. The current
-Agent Runtime remains an in-process adapter inside the Match Worker; extracting
-`decision_jobs` and an independent Agent Service is the next boundary.
+Stage 1 is complete for AI-only matches. Stage 2 currently includes durable
+`match_jobs`, an independent Match Worker, command idempotency for pause/resume,
+Agent Service contracts, `agent_decision_jobs` schema, and outbox storage. The
+current Agent Runtime remains a local adapter inside the Match Worker;
+implementing the remote decision worker and outbox publisher is the next boundary.
 
 Human matches are intentionally disabled during this stage. Their command,
 timeout, reconnection, and state-rehydration contracts will be designed after

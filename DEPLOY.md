@@ -1,209 +1,136 @@
-# AI Werewolf — 部署指南
+# AI Werewolf 部署指南
 
-## 快速开始
+## 1. Docker Compose
+
+依赖：Docker 24+、Docker Compose 2.20+。
 
 ```bash
-git clone https://github.com/wxhfy/AIwerewolf.git
-cd AIwerewolf
 cp .env.example .env
-# 编辑 .env，填入 API key
-```
-
----
-
-## 方式一：Docker Compose 部署（推荐）
-
-### 前置要求
-- Docker >= 24.0
-- Docker Compose >= 2.20
-
-### 国内环境（镜像加速）
-
-**1) Docker Hub 镜像**（解决 base image 拉取问题）
-
-编辑 `/etc/docker/daemon.json`：
-```json
-{
-  "registry-mirrors": [
-    "https://docker.1ms.run",
-    "https://docker.xuanyuan.me"
-  ]
-}
-```
-```bash
-sudo systemctl daemon-reload && sudo systemctl restart docker
-```
-
-**2) 使用国内镜像构建**（pip/npmmirror 加速）
-
-```bash
-# 使用覆盖文件（自动配置阿里云 pip 镜像 + npmmirror）
-docker compose -f docker-compose.yml -f docker-compose.mirror.yml up -d --build
-```
-
-**3) 或者手动传 build-arg**
-
-```bash
-docker compose build \
-  --build-arg PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/ \
-  --build-arg PIP_TRUSTED_HOST=mirrors.aliyun.com \
-  --build-arg NPM_REGISTRY=https://registry.npmmirror.com
-```
-
-### 海外环境 / CI
-
-直接用默认源，无需任何额外配置：
-```bash
+# 配置 LLM_PROVIDER 和对应 API key
 docker compose up -d --build
 ```
 
-### 常用命令
+Compose 默认启动：
+
+| 服务 | 作用 |
+|---|---|
+| `postgres` | 对局和任务持久化真相源 |
+| `redis` | SSE 唤醒通知和可选限流 |
+| `backend` | FastAPI REST/SSE 服务 |
+| `match-worker` | 独立执行 AI 对局 |
+| `frontend` | Next.js 展示层 |
+| `nginx` | 统一入口和反向代理 |
+
+访问地址：
+
+- 前端：`http://localhost`
+- API：`http://localhost/api`
+- Swagger：`http://localhost/api/docs`
+- SSE：`http://localhost/api/matches/{match_id}/stream`
+
+常用命令：
 
 ```bash
-make deploy              # 生产部署（默认源）
-make deploy-dev          # 开发模式（热重载）
-make deploy-down         # 停止所有
-make deploy-logs         # 查看日志
-make deploy-status       # 查看状态
+make deploy
+make deploy-logs
+make deploy-status
+make deploy-down
 ```
 
-### 访问地址
+## 2. 本地开发
 
-| 服务 | 地址 |
-|------|------|
-| 前端 | http://localhost |
-| API | http://localhost/api |
-| Swagger | http://localhost/api/docs |
-| SSE | http://localhost/api/matches/{match_id}/stream |
-
----
-
-## 方式二：本地开发（无 Docker）
-
-### 前置要求
-- Python >= 3.12
-- Node.js >= 20
-- npm >= 10
-
-### 安装
+依赖：Python 3.12+、Node.js 20+、npm 10+。
 
 ```bash
-# 后端
-python3 -m venv .venv
-source .venv/bin/activate
+python -m venv .venv
 pip install -r requirements.txt
-# 国内加速：pip install -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/
-
-# 前端
-cd frontend
-npm install --legacy-peer-deps
-# 国内加速：npm config set registry https://registry.npmmirror.com && npm install --legacy-peer-deps
-cd ..
-```
-
-### 配置
-
-```bash
 cp .env.example .env
-# 编辑 .env，至少配置一个 LLM provider
-# 不设置 DATABASE_URL → 自动用 SQLite（无需 PostgreSQL）
 ```
 
-### 启动
+使用 PostgreSQL 和 Redis：
 
 ```bash
-# 终端 1：后端
-source .venv/bin/activate
+docker compose up -d postgres redis
+```
+
+在 `.env` 中启用本地数据库连接：
+
+```env
+DATABASE_URL=postgresql+psycopg2://werewolf:werewolf_dev_password@127.0.0.1:5433/werewolf
+REDIS_URL=redis://127.0.0.1:6380/0
+```
+
+分别启动三个进程：
+
+```bash
+# 终端 1
 make dev
 
-# 终端 2：前端
-cd frontend && PORT=3001 npm run dev
+# 终端 2
+python -m backend.workers.match_worker
+
+# 终端 3
+cd frontend
+npm install --legacy-peer-deps
+npm run dev
 ```
 
-- 前端：http://localhost:3001
-- API：http://localhost:8000
-- Swagger：http://localhost:8000/docs
+本地地址：后端 `http://localhost:8000`，前端 `http://localhost:3001`。
 
----
+SQLite 只能用于测试或单进程临时演示。API 与 Worker 分进程时必须使用 PostgreSQL，否则不能作为可靠部署。
 
-## 方式三：GitHub Actions CI
+## 3. Agent Service 契约进程
 
-Push 到 main 或创建 PR 时自动运行：
-- **Lint**：ruff check + format check
-- **Test**：pytest（fake LLM，不消耗 token）
-- **Frontend**：npm lint + build
+未来远程 Agent Service 可以先独立启动用于接口联调：
 
----
-
-## LLM Provider 配置
-
-在 `.env` 中配置：
-
-### 火山方舟（Doubao）
-```env
-LLM_PROVIDER=doubao
-DOUBAO_API_KEY=<your-key>
-DOUBAO_BASE_URL=https://ark.cn-beijing.volces.com/api/v3
-DOUBAO_MODEL=Doubao-Seed-2.0-pro
+```bash
+uvicorn backend.agent_service:app --host 0.0.0.0 --port 8001
 ```
 
-### DeepSeek
-```env
-LLM_PROVIDER=deepseek
-DEEPSEEK_API_KEY=<your-key>
-DEEPSEEK_BASE_URL=https://api.deepseek.com
-DEEPSEEK_MODEL=deepseek-v4-flash
+当前该进程提供 OpenAPI、健康检查和决策契约，但 `/api/v1/agent/decisions` 返回结构化 `501`，模型决策仍由 Match Worker 中的 `LocalAgentRuntime` 执行。
+
+## 4. 健康检查
+
+Docker Compose 统一入口：
+
+```bash
+curl http://localhost/api/v1/health/live
+curl http://localhost/api/v1/health/ready
+curl http://localhost/api/v1/system/capabilities
 ```
 
-### OpenAI 兼容接口
-通过前端设置面板配置 provider/model/api_key/base_url。
+本地直接启动 FastAPI 时：
 
-### Fake（测试用）
-```env
-LLM_PROVIDER=fake
+```bash
+curl http://localhost:8000/api/v1/health/live
+curl http://localhost:8000/api/v1/health/ready
+curl http://localhost:8000/api/v1/system/capabilities
 ```
 
----
+Match Worker 当前通过进程状态、日志、任务 heartbeat 和 lease 判断健康，不监听 HTTP 端口。不要对 Worker 使用后端的 8000 端口健康检查。
 
-## 数据库
+## 5. 数据库初始化
 
-| 模式 | 说明 |
-|------|------|
-| SQLite | 不设 DATABASE_URL，自动使用，适合本地开发 |
-| PostgreSQL | Docker 部署自动启用，或手动设置 DATABASE_URL |
+启动时 SQLAlchemy 会在 advisory lock 保护下完成当前 bootstrap schema 创建，避免 API 与 Worker 同时启动产生 DDL 竞态。正式生产阶段仍需迁移到 Alembic，并由单独 migration job 执行升级。
 
----
+## 6. 验证
 
-## 常见问题
-
-| 问题 | 解决 |
-|------|------|
-| Docker build 失败：无法连接 Docker Hub | 配置 daemon.json 镜像源 |
-| npm install 超时 | `npm config set registry https://registry.npmmirror.com` |
-| pip install 超时 | `pip install -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/` |
-| 端口被占用 | 修改 .env 中的 PORT 变量 |
-| PostgreSQL 连接失败 | 不设 DATABASE_URL 则自动用 SQLite |
-
----
-
-## 系统架构
-
-```
-┌─────────────┐     ┌─────────────┐     ┌──────────────┐
-│   Nginx:80  │────▶│ Frontend    │     │  PostgreSQL  │
-│  (反向代理)  │     │ (Next.js)   │     │  (5432)      │
-│             │     │  :3001      │     │              │
-│             │     └─────────────┘     └──────┬───────┘
-│             │                                │
-│             │     ┌─────────────┐            │
-│             │────▶│ Backend     │◀───────────┘
-│             │     │ (FastAPI)   │
-│             │     │  :8000      │
-└─────────────┘     └─────────────┘
+```bash
+python -m ruff check backend tests
+pytest -q tests/test_engine.py tests/test_api.py
+python scripts/e2e_smoke.py
+cd frontend && npm run lint && npm run build
 ```
 
-## 更多文档
+## 7. 生产部署边界
 
-- 当前架构与技术选型：`docs/architecture/README.md`
-- 文档导航：`docs/README.md`
-- 产品需求：`docs/prd.md`
+当前 Compose 用于开发、联调和单机验收。以下能力尚未完成，因此不能直接宣称生产就绪：
+
+- JWT/OIDC 与 RBAC。
+- Alembic 单一迁移机制。
+- Outbox Publisher 和死信队列。
+- Prometheus/OpenTelemetry 完整接入。
+- Kubernetes/Helm、HPA、PDB 和资源限额。
+- 3000 QPM、SSE 并发和 LLM 配额联合压测。
+
+生产路线见 [`docs/architecture/PRODUCTION_PLAN.md`](docs/architecture/PRODUCTION_PLAN.md)。

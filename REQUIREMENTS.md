@@ -1,125 +1,79 @@
-# AI Werewolf 项目需求与设计目标
+# AI Werewolf 当前需求规格
 
-## 1. 项目定位
+## 1. 当前交付目标
 
-AI Werewolf 是一个多智能体狼人杀系统。项目目标不是做一个单 prompt 聊天 demo，而是构建一套可运行、可观战、可复盘、可迭代的 Agent Team 架构：
+系统首先交付稳定的 AI-only 狼人杀闭环：多个 LLM Agent 在严格信息隔离下完成一局游戏，所有关键状态和行为均可持久化、查询、回放和复盘。
+
+当前不把真人对战、远程 Agent Service 和 Kubernetes 作为已完成功能。它们保留清晰契约，在后续阶段实现。
+
+## 2. 功能需求
+
+| 编号 | 需求 | 当前状态 |
+|---|---|---|
+| FR-01 | 支持 7-12 人 AI 对局和配置化角色组合 | 已实现 |
+| FR-02 | 引擎负责阶段推进、行动校验、死亡结算和胜负判断 | 已实现 |
+| FR-03 | 每个 Agent 只接收角色允许的 `PlayerView` | 已实现 |
+| FR-04 | AI 使用 LLM-compatible `CognitiveAgent` 产生结构化 `Decision` | 已实现 |
+| FR-05 | 房间、任务、事件、快照、决策和结果写入 PostgreSQL | 已实现 |
+| FR-06 | API 接收命令后立即返回，由独立 Match Worker 执行对局 | 已实现 |
+| FR-07 | 前端通过 REST 启动对局，通过 SSE 接收有序状态 | 已实现 |
+| FR-08 | SSE 支持按序列号恢复，不依赖内存状态补发 | 已实现 |
+| FR-09 | Track B 生成复盘、报告和运行指标 | 已实现 |
+| FR-10 | Track C 抽取、治理并检索策略知识 | 已实现现有链路 |
+| FR-11 | 命令支持 `command_id` 幂等和 `expected_seq` 冲突检测 | 暂停/恢复已实现 |
+| FR-12 | 真人加入 AI 对局 | 暂停开放 |
+| FR-13 | Agent 作为独立远程服务执行决策 | 契约已定义，执行未启用 |
+
+## 3. 非功能需求
+
+- PostgreSQL 是多进程环境唯一持久化真相源。
+- Redis 故障不得导致已经提交的对局记录丢失。
+- API 实例不得在内存中持有不可恢复的对局真相。
+- Match Worker 通过数据库任务和 lease 获取所有权。
+- 每局事件的 `(game_id, seq)` 必须唯一且单调有序。
+- 所有公开投影必须在后端完成信息过滤。
+- 未实现能力必须返回明确的 `501` 或 capability flag，不得伪装成功。
+- 错误响应使用 `application/problem+json`，包含稳定错误码和 `request_id`。
+- 生产目标为 3000 QPM，但必须通过正式压测后才能宣称达标。
+
+## 4. 分层约束
 
 ```text
-规则引擎主控
-  -> 信息隔离投影
-  -> 角色化 Agent 决策
-  -> 结构化事件与决策审计
-  -> 赛后复盘与知识回流
-  -> 下一局策略检索
+Frontend presentation
+  -> REST / SSE contracts
+Application and API
+  -> lifecycle, commands, queries, idempotency
+Domain and Agent contracts
+  -> rules, visibility, decisions
+Infrastructure
+  -> PostgreSQL, Redis, providers, workers
 ```
 
-系统中的每个 AI 玩家拥有独立角色、人格、可见信息、记忆和策略来源，需要在信息不对称条件下完成发言、投票和技能行动。系统同时支持真人玩家加入，与 AI 混合对局。
+- 前端不得推进阶段、修正事件顺序或推断隐藏角色。
+- Agent 不得直接修改游戏状态或读写数据库。
+- 游戏领域层不得依赖 FastAPI、Redis 或前端类型。
+- API 不得同步占用 HTTP 请求执行整场对局。
 
-## 2. 核心需求
+## 5. 验收标准
 
-| 需求 | 目标 | 当前实现入口 |
-|---|---|---|
-| 完整对局引擎 | 能完成标准狼人杀流程，覆盖夜晚行动、白天发言、投票、死亡和胜负判定 | `backend/engine/game.py` |
-| 严格信息隔离 | 每个 Agent 只能看到角色允许的信息，避免上帝视角 | `backend/engine/visibility.py` |
-| 角色化 Agent | 不同角色有不同目标、技能、行动空间和策略倾向 | `backend/agents/cognitive/` |
-| 工具调用决策 | Agent 可按需检索策略、回忆记忆、查询规则、分析票型并提交结构化行动 | `backend/agents/cognitive/agent_loop.py` |
-| 决策证据链 | 保存事件、视图、原始输出、解析行动、工具 trace 和复盘结果 | `backend/db/`, `backend/eval/` |
-| 策略知识回流 | 从赛后复盘中抽取经验，进入 candidate / active / deprecated 生命周期；Track C Wiki 说明长期知识编译与候选 patch 的增量设计 | `backend/eval/knowledge_abstractor.py`, `backend/eval/evolution.py`, `docs/wiki/track-c/overview.md` |
-| 前端体验 | 支持大厅、观战、真人操作、单局报告、复盘仪表盘和人格管理 | `frontend/app/` |
-| 可验证工程 | 通过 pytest、ruff、Next.js build、UI smoke 和 strict run 检查主要链路 | `tests/`, `.github/workflows/ci.yml` |
+一次 AI-only 验收必须覆盖：
 
-## 3. 与常见方法的不同
+1. 创建房间并持久化。
+2. 准备初始角色和 `seq=0` 快照。
+3. 启动接口创建 durable `match_jobs` 任务。
+4. 独立 Worker 领取并执行任务。
+5. Agent 完成发言、投票和角色技能决策。
+6. 对局推进至 `GAME_END`。
+7. 事件、快照、决策、胜方和复盘结果可从数据库查询。
+8. API 或前端重连后可按序列恢复状态。
 
-| 常见方法 | 局限 | 本项目设计 |
-|---|---|---|
-| 单 prompt 模拟一整局 | 状态、规则和角色知识混在上下文里，容易泄露隐藏信息，也难以复盘 | 引擎保存真实状态，Agent 只拿 `PlayerView`，行动由引擎校验和结算 |
-| 简单回调式 Agent | 生命周期清晰，但 Agent 内部记忆、社交判断和工具使用不够透明 | `CognitiveAgent` 拆出 Memory、BeliefTracker、SocialModel、Planner 和 AgentLoop |
-| 普通狼人杀房间系统 | 适合真人局，但不关注 Agent 私有上下文、策略回流和决策审计 | 房间/WebSocket 只是外层，核心是可审计的多 Agent 对局与复盘链路 |
-| 只统计胜负 | 胜负受角色、座位、队友和随机种子影响，无法解释关键行为 | Track B 把发言、投票、技能行动整理成可追溯步骤和关键复盘 |
-| 硬编码角色逻辑 | 新增角色会牵动大量 if/else，Prompt 和规则容易不一致 | RoleRegistry、Phase、ActionValidator、Resolution 分层管理 |
-| 把历史经验全塞进 prompt | 上下文噪声大，成本高，还可能污染当前局信息边界 | StrategyRetriever 只把通过生命周期和安全过滤的 active 策略按需注入；Wiki/Hermes 作为离线知识编译与候选策略设计层 |
+## 6. 当前不在验收范围
 
-## 4. 架构优势
+- 真人输入、真人掉线重连和真人超时托管。
+- 远程 Agent Service 的实际模型调用。
+- Outbox 独立发布和死信处理。
+- JWT/OIDC 和生产 RBAC。
+- Kubernetes、自动扩缩容和滚动升级。
+- 3000 QPM 正式容量验收。
 
-| 优势 | 说明 |
-|---|---|
-| 规则稳定 | `WerewolfGame` 是状态唯一写入者，LLM 输出不能直接修改真实状态 |
-| 信息可信 | `GameState`、`PlayerView`、public snapshot 分离，隐藏身份和私有事件有明确边界 |
-| 行为差异明显 | Persona 控制表达风格，Role 控制身份目标，Strategy 控制玩法经验 |
-| 多 Agent 协作可观察 | 狼队视图、发言、票型、社交怀疑和工具 trace 可在赛后查看 |
-| 新角色可扩展 | 角色元数据、技能、阶段和前端展示都有固定接入点 |
-| 复盘可落地 | 单局报告能定位关键行为、证据和可替代行动，不只展示胜负 |
-| 策略可迭代 | 复盘经验进入候选策略池，经质量门控后回流到 Agent 策略层；Wiki/Hermes 承接后续长期知识组织 |
-| 工程可交付 | 后端、前端、数据库、测试、CI、配置模板和文档均有明确入口 |
-
-## 5. 功能范围
-
-### 5.1 游戏与角色
-
-- 支持 7-12 人局规则配置。
-- 基础可玩角色包括 Villager、Werewolf、Seer、Witch、Hunter、Guard。
-- WhiteWolfKing、Idiot 已进入部分配置；Cupid、BigBadWolf、WolfCub、WolfKing、Knight、Elder 作为模板角色保留扩展入口。
-- 支持警徽、PK、遗言、猎人开枪、白狼王自爆等扩展阶段。
-
-### 5.2 Agent
-
-- AI 席位默认使用 LLM-compatible `CognitiveAgent`。
-- 测试环境允许 `_TEST_ALLOW_FAKE_LLM=true LLM_PROVIDER=fake`。
-- 正式对局不允许静默 heuristic fallback。
-- Agent 输出统一走 `Decision`，由引擎校验后执行。
-
-### 5.3 前端
-
-当前前端页面：
-
-| 页面 | 路由 |
-|---|---|
-| 大厅 | `/` |
-| 对局观战 | `/room/[id]/play` |
-| 真人操作 | `/room/[id]/human` |
-| 复盘仪表盘 | `/eval/dashboard` |
-| 单局报告 | `/games/[id]/report` |
-| 人格管理 | `/personas` |
-
-Track C 的 runtime 策略知识和回流能力通过后端 API、脚本和报告材料呈现，不作为独立前端页面承诺；Track C Wiki 使用 `docs/wiki/` Markdown 形态承载，可用 Obsidian 作为本地浏览和人工审核入口，不直接注入正在对局的 Agent。
-
-## 6. 运行与验证
-
-本地启动：
-
-```bash
-pip install -r requirements.txt
-cp .env.example .env
-make dev
-cd frontend && npm install && npm run dev
-```
-
-常用检查：
-
-```bash
-ruff check backend/ scripts/ tests/ configs/
-ruff format --check backend/ scripts/ tests/ configs/
-_TEST_ALLOW_FAKE_LLM=true LLM_PROVIDER=fake python -m pytest tests/ -q
-cd frontend && npm run lint && npm run build
-```
-
-专项验证：
-
-```bash
-python scripts/verify_visibility_strict.py
-python scripts/run_backend_full_strict.py
-```
-
-## 7. 交付边界
-
-进入 GitHub 的内容应是完整、干净、可复现的项目代码与文档：
-
-- 源码、测试、配置模板、CI workflow。
-- README、PRD、最终展示报告、架构图谱、模块设计、交付说明和 evidence 结果。
-- 小型 SVG/HTML 图表和演示大纲。
-
-不进入 GitHub 的内容：
-
-- `.env`、API Key、真实账号、私有日志。
-- `data/`、`logs/`、`references/`、`models/`、`.venv/`、`node_modules/`、`.next/`。
-- 大体积模型文件、临时截图、实验输出 JSONL、数据库备份。
+详细实施状态见 [`docs/architecture/BACKEND_SKELETON.md`](docs/architecture/BACKEND_SKELETON.md)。

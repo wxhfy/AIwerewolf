@@ -1,5 +1,8 @@
 # AI Werewolf Final Delivery
 
+> [!IMPORTANT]
+> 本目录是历史交付归档，报告、截图和证据数据反映生成时的版本，不等同于当前可用能力。当前架构和启动方式请以根目录 `README.md`、`DEPLOY.md` 与 `docs/architecture/` 为准。
+
 GitHub 仓库：<https://github.com/wxhfy/AIwerewolf>
 
 ## 提交项对应

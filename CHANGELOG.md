@@ -5,6 +5,26 @@ All notable changes to AI Werewolf.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased] - 2026-09-19
+
+### Added
+
+- Independent PostgreSQL-backed Match Worker for AI-only games.
+- Durable rooms, match jobs, ordered snapshots and resumable SSE delivery.
+- Versioned `/api/v1` health, capability, command and Agent Service contracts.
+- Request IDs, security headers, request-size limits, structured problem responses and optional Redis rate limiting.
+- Idempotent pause/resume commands, Agent decision job schema and transactional outbox storage.
+
+### Changed
+
+- Replaced the active WebSocket game flow with REST commands plus SSE delivery.
+- PostgreSQL is now the authoritative multi-process state store; Redis is notification/coordination only.
+- Human matches are explicitly disabled until durable input and reconnect semantics are implemented.
+
+### Removed
+
+- Obsolete internal process documents and overly restrictive per-tool workflow documents.
+
 ## [0.1.0] — 2025-06-05
 
 ### Added

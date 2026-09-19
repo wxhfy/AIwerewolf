@@ -18,7 +18,7 @@ FastAPI interfaces
   -> application services
   -> game domain and agent contracts
 
-MatchRunner
+Match Worker
   -> game domain
   -> AgentRuntime
 
@@ -53,7 +53,7 @@ Adapters implement repositories, Redis coordination, outbox delivery, LLM client
 ```text
 1. Frontend POSTs a command with command_id and expected_seq.
 2. Application validates and persists the command.
-3. MatchRunner obtains a lease and loads the match snapshot plus later events.
+3. Match Worker obtains a lease and loads the match specification and persisted state.
 4. Domain handles the command and emits ordered events.
 5. AgentRuntime is called only when the domain emits a decision request.
 6. Events, snapshots, decision traces, and outbox rows commit in one transaction.
@@ -125,11 +125,11 @@ Browser-provided API keys are neither persisted in rooms nor copied into
 |---|---|---|
 | Frontend | Next.js, React, TypeScript | Keep |
 | HTTP API | Python, FastAPI, Uvicorn | Keep |
-| Live updates | SSE over HTTP | Replace the core SSE flow |
-| Match execution | Independent Python MatchRunner | Extract from the API process |
+| Live updates | SSE over HTTP | Implemented for AI-only matches |
+| Match execution | Independent Python Match Worker | Implemented for AI-only matches |
 | Agent runtime | Python | Keep close to the LLM and evaluation ecosystem |
 | Durable data | PostgreSQL | Required outside isolated tests |
-| Coordination | Redis | Add for leases, notification, rate limits, and short-lived cache |
+| Coordination | PostgreSQL leases + Redis notifications | Worker lease is implemented in PostgreSQL; Redis notifications and optional rate limiting are implemented |
 | Schema migration | Alembic | Add; stop relying on startup table creation |
 | Local orchestration | Docker Compose | Primary local environment |
 | Production orchestration | Kubernetes | Add after service boundaries and health checks stabilize |
@@ -139,7 +139,7 @@ SQLite remains acceptable for unit tests and disposable demos, not for the multi
 
 ## Python and Go Decision
 
-Python is not the current scaling bottleneck. The expensive operations are LLM latency, database access, serialization, and coupling between HTTP connections and match execution. FastAPI can remain the control API while MatchRunner processes scale independently.
+Python is not the current scaling bottleneck. The expensive operations are LLM latency, database access, serialization, and match execution. FastAPI remains the control API while Match Worker processes scale independently.
 
 Do not introduce Go in the first V2 slice. A second language adds duplicated contracts, build pipelines, telemetry, deployment images, and operational ownership before the architecture is stable.
 

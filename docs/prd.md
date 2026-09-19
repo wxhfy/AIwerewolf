@@ -1,242 +1,117 @@
-# 需求规格
+# AI Werewolf 产品需求文档
 
----
+更新日期：2026-09-19。
 
-## 一、游戏规则引擎
+## 1. 产品目标
 
-### 1.1 角色系统
+AI Werewolf 是一个可观测、可复盘、可迭代的多智能体狼人杀平台。当前产品只承诺 AI-only 对局完整可用，优先保证对局状态正确、信息隔离可靠、执行过程可恢复、结果可审计。
 
-| 角色 | 阵营 | 能力 | 使用限制 |
-|------|------|------|----------|
-| 村民 | 好人 | 无特殊能力 | — |
-| 狼人 | 狼人 | 夜晚击杀一人 | 不推荐自刀 |
-| 预言家 | 好人 | 夜晚查验一人身份（好人/狼人） | 每晚一次 |
-| 女巫 | 好人 | 解药+毒药各一瓶，**每夜最多用一瓶** | 首夜可自救 |
-| 猎人 | 好人 | 被投/被刀时可开枪带走一人 | 被毒不能开枪 |
-| 守卫 | 好人 | 夜晚守护一人不被狼刀 | 不可连续两晚守同一人 |
+核心闭环：
 
-**扩展角色**：白痴、白狼王已作为可玩角色进入标准配置。`Cupid`、`BigBadWolf`、`WolfCub`、`WolfKing`、`Knight`、`Elder` 当前是模板角色（registry / prompt / i18n 已有，默认不可玩），详见 `configs/rule_variant_standard.yaml` 与 `backend/engine/roles/`。
-
-### 1.2 伤害交互矩阵
-
-| 伤害来源 | 守卫守护 | 女巫解药 | 结果 |
-|----------|----------|----------|------|
-| 狼刀 | ✓ | — | 存活 |
-| 狼刀 | — | ✓ | 存活 |
-| 狼刀 | ✓ | ✓ | **死亡（同守同救/奶穿）** |
-| 女巫毒 | ✓/— | ✓/— | 死亡（毒药不可防护） |
-| 猎人子弹 | ✓/— | ✓/— | 死亡（子弹不可防护） |
-
-### 1.3 游戏流程
-
-```
-SETUP → NIGHT_START → ... → DAY_RESOLVE → GAME_END
-
-夜晚：
-  NIGHT_START → NIGHT_GUARD_ACTION → NIGHT_WOLF_ACTION
-  → NIGHT_WITCH_ACTION → NIGHT_SEER_ACTION → NIGHT_RESOLVE
-
-白天（仅第一天有警徽竞选）：
-  DAY_START → DAY_BADGE_SIGNUP → DAY_BADGE_SPEECH → DAY_BADGE_ELECTION
-  → DAY_SPEECH → DAY_SHERIFF_CLOSING → DAY_VOTE → DAY_RESOLVE
-
-特殊阶段（事件触发）：DAY_PK_SPEECH（平票 PK）、DAY_LAST_WORDS（遗言）、
-  BADGE_TRANSFER（警徽移交）、HUNTER_SHOOT（猎人开枪）、WHITE_WOLF_KING_BOOM
+```text
+创建 AI 房间
+-> 准备并持久化初始对局
+-> Match Worker 异步执行
+-> Agent 根据 PlayerView 决策
+-> 事件/快照/决策写入 PostgreSQL
+-> SSE 向前端交付有序状态
+-> Track B 复盘
+-> Track C 策略知识回流
 ```
 
-### 1.4 胜负判定
+## 2. 用户与使用场景
 
-| 条件 | 结果 |
-|------|------|
-| 存活狼人数 ≥ 存活好人数 | 狼人获胜 |
-| 所有狼人死亡 | 好人获胜 |
-| 达到 `max_days` 上限 | 狼人胜（`max_days_reached`，防止无限局） |
+### 2.1 研究者或开发者
 
-### 1.5 角色分配
+- 配置人数、规则包、随机种子、模型和人格。
+- 启动 AI 对局并观察阶段推进。
+- 查询事件、Agent 决策、模型消耗和复盘报告。
+- 对比模型、角色、人格和策略版本表现。
 
-- 7-12 人局固定模板，详见 `configs/rule_variant_standard.yaml`
-- 支持自定义角色配置
+### 2.2 观战用户
 
-### 1.6 发言机制
+- 从大厅创建或进入 AI 房间。
+- 查看公开玩家状态、阶段、发言、投票和胜负。
+- 网络中断后恢复到最新持久化状态。
 
-- 并行发言：所有存活玩家同时生成发言（基于各自 PlayerView）
-- 不依赖同轮其他玩家发言，确保信息隔离
+### 2.3 真人玩家
 
-### 1.7 投票平票处理
+真人参与不是当前版本功能。相关页面和部分旧引擎代码仅作为历史原型保留，创建真人席位和提交真人行动会返回 `501`。
 
-- 第一次平票 → PK 发言 → PK 投票
-- 再次平票 → 无人出局，进入夜晚
+## 3. 当前功能范围
 
-### 1.8 遗言规则
+| 模块 | 当前产品行为 |
+|---|---|
+| 房间 | 创建、查询并持久化 AI 房间配置 |
+| 对局准备 | 生成角色、玩家和初始 `seq=0` 快照 |
+| 对局启动 | 写入 durable `match_jobs`，HTTP 请求立即返回 |
+| 对局执行 | 独立 Match Worker 领取任务并驱动 `WerewolfGame` |
+| Agent | `LocalAgentRuntime` 使用现有 `CognitiveAgent` 和 LLM provider |
+| 信息隔离 | 后端生成 public snapshot 和角色安全 `PlayerView` |
+| 实时展示 | 前端通过 SSE 获取有序快照，支持序列恢复 |
+| 持久化 | 保存房间、游戏、事件、快照、决策、任务和复盘数据 |
+| 控制命令 | `command_id` 幂等；暂停、恢复可用；取消暂未实现 |
+| 复盘进化 | 保留 Track B/C 现有能力和接口 |
 
-- 夜晚死亡玩家有遗言机会
-- 被投票出局的玩家无遗言
+## 4. 页面范围
 
----
+| 页面 | 路由 | 当前状态 |
+|---|---|---|
+| 大厅 | `/` | 可用，AI-only |
+| 对局观战 | `/room/[id]/play` | 可用 |
+| 真人操作 | `/room/[id]/human` | 历史原型，不属于当前可用范围 |
+| 复盘仪表盘 | `/eval/dashboard` | 可用 |
+| 单局报告 | `/games/[id]/report` | 可用 |
+| 人格管理 | `/personas` | 可用 |
 
-## 二、Agent 系统
+前端只负责展示和输入，不承担游戏规则、隐藏信息判断或 Agent 编排。
 
-### 2.1 认知架构
+## 5. 关键交互
 
-```
-CognitiveAgent = Observe → Think → Act
+### 5.1 创建并运行对局
 
-输入：PlayerView（信息隔离后的局部视图）
-输出：Decision（talk / vote / attack / divine / guard / witch_act）
+1. 前端调用 `POST /api/rooms` 创建 AI 房间。
+2. 调用 `POST /api/rooms/{room_id}/prepare` 获取初始快照。
+3. 调用 `POST /api/rooms/{room_id}/start` 提交执行任务。
+4. 使用 `GET /api/matches/{match_id}/stream` 接收 SSE。
+5. 断线时携带 `Last-Event-ID` 或 `after_seq` 恢复。
+6. 完成后通过游戏、回放和复盘接口读取结果。
 
-核心组件：
-  - Memory：多轮记忆、策略状态、立场追踪
-  - BeliefTracker：声明/矛盾/投票模式追踪
-  - SocialModel：信任/欺骗信号检测
-  - Planner：跨阶段战略意图管理
-  - AgentLoop：信息工具调用 + `submit_decision` 结构化决策输出
-```
+### 5.2 对局控制
 
-### 2.2 工具系统 (AgentLoop)
+`POST /api/v1/matches/{match_id}/commands` 接收：
 
-| 工具 | 作用 |
-|------|------|
-| `search_strategies` | 策略知识检索（BM25 + 倒排索引） |
-| `recall_memory` | 历史记忆查询 |
-| `check_rules` | 游戏规则查询 |
-| `analyze_votes` | 投票模式分析 |
-| `set_strategic_intent` | 跨阶段意图记录 |
-| `get_social_info` | 社交信任信息 |
-| `submit_decision` | 最终决策结构化输出 |
+- `command_id`：幂等键。
+- `type`：当前支持 `pause`、`resume`；`cancel` 返回 `501`。
+- `expected_seq`：可选乐观并发控制。
+- `payload`：命令扩展数据。
 
-### 2.3 三层 Prompt 架构
+## 6. Agent 产品边界
 
-```
-Layer 1  MBTI 人格  → 决定"怎么思考"（认知风格、说话方式）
-Layer 2  Role 身份  → 定义"我是谁"（角色技能、胜利条件）
-Layer 3  策略知识  → 教"怎么赢"（BM25 检索历史经验）
-```
+- 当前执行路径是 Match Worker 内的 `LocalAgentRuntime`。
+- Agent 只接收角色安全观察和合法动作集合。
+- Agent 返回结构化行动，最终合法性由游戏引擎判断。
+- `/api/v1/agent/decisions` 已固定远程服务契约，但当前返回 `501`。
+- 浏览器不得提交或持久化真实 API Key；密钥由部署环境管理。
 
-### 2.4 策略检索 (StrategyRetriever)
+## 7. 质量要求
 
-- BM25 + 倒排索引，无需 GPU
-- RetrievalPolicy：支持角色/MBTI/全局/混合策略；当前最高精度默认策略为 `same_role_all_mbti`
-- 精度优先召回：只有关键词或正则真实命中的策略文档进入候选，避免无关高质量复盘策略挤入 Top-K
-- 上下文重排：结合关键词匹配、阶段匹配、动作类型、角色和策略质量进行排序
-- action_scope：将策略卡映射到 talk / vote / attack / check / save / poison / guard / shoot / boom 等动作场景
-- 4-filter 安全管线：confidence / visibility / privacy / applicability
-- candidate/active 知识隔离
+- 对局必须能够推进到 `GAME_END`，或以可查询的失败状态终止。
+- Worker 崩溃不得删除已写入的事件和快照。
+- Redis 不可用时，持久化数据仍应完整；SSE 可以降级轮询数据库。
+- 相同 `command_id` 不得造成重复状态转换。
+- 公开接口不得泄露其他角色的私有信息。
+- 未实现能力必须明确返回错误，不得静默降级为另一套规则。
 
-离线检索验收结果：在 26 条弱标注 query set、374 条 active strategy docs 上，`same_role_all_mbti` 达到 P@3=1.0000、Effective@3=1.0000、nDCG@5=0.9885、Coverage=1.0000；`global_only` 对照为 P@3=0.5385、Effective@3=0.5385。来源：`outputs/retrieval_precision_after_high_precision_default_final/results.json`（local-only ignored）。该验收只证明检索相关性，不直接等价为胜率或 Track C 因果增益。
+## 8. 后续版本
 
-### 2.5 LLM-only 与 strict 模式
+优先级顺序：
 
-正式对局 AI 席位使用 LLM-compatible `CognitiveAgent`；`agent_type=heuristic` 会被后端拒绝。默认 strict 语义是：
+1. 真实 LLM provider 集成与失败恢复测试。
+2. Alembic、Outbox Publisher、结构化日志、指标和链路追踪。
+3. 远程 Agent Service 与 durable decision jobs。
+4. 3000 QPM 控制面压测和容量报告。
+5. Kubernetes 部署。
+6. 真人对局、超时、掉线重连和托管策略。
 
-- `AIWEREWOLF_STRICT_MODE=true`
-- LLM 超时、解析异常、非法目标应暴露为错误，不静默替换为启发式动作
-- 正式对局、展示和结果统计只采用真实 LLM provider 路径
-
-### 2.6 真人 vs AI 混战
-
-- `HumanAgent`：暂停游戏等待真人输入
-- 引擎支持 `pending_input` / `submit_human_action` 机制
-- 前端 `/room/[id]/human` 与 `/room/[id]/play` 提供真人操作/观战界面
-
----
-
-## 三、复盘与知识回流系统 (Track B & C)
-
-### 3.1 Track B：赛后复盘分析
-
-- **PerStepScorer**：逐步分析每个决策（talk/vote/skill）
-- 三级级联：确定性规则 → light LLM review → heavy LLM review panel
-- 输出：DecisionScore（correctness/reasoning/timeliness/impact）
-- ScoredStep：标记 highlight（高分）和 mistake（低分）
-- 生成 PublishedReview（Markdown + HTML 复盘报告）
-
-### 3.2 Track C：知识进化
-
-- **KnowledgeAbstractor**：从 highlight/mistake 提取经验
-- **长期知识骨架**：把复盘、策略知识和实验反馈编译成可读策略材料，供人类和 LLM 共读共审；当前不直接注入 Agent
-- **Hermes-style DreamJob**：从复盘材料和策略共识提出 candidate patch
-- 写入 `strategy_knowledge_docs`（status=candidate）
-- promote / A/B tournament / usage feedback 管理 candidate → active → deprecated 生命周期
-- 验证后的知识回流到下一局 Agent 的策略检索中
-
-### 3.3 PostgreSQL 证据链
-
-核心 ORM 表（2026-06-08 代码口径 20 张）：games、players、game_events、game_snapshots、agent_decisions、votes、evaluations、published_reviews、strategy_knowledge_docs、knowledge_usage_feedback、leaderboard_entries、personas 等。历史实验数据库快照可能包含额外实验表。
-
-每条决策可追溯到：GameEvent → AgentDecision → DecisionScore → ScoredStep → AbstractedLesson → StrategyKnowledgeDoc。
-
----
-
-## 四、通信与前端
-
-### 4.1 SSE 实时推送
-
-- `/api/matches/{match_id}/stream`：游戏状态快照实时流
-- 支持 public/private 视角切换
-- Last-Event-ID 支持重连恢复
-
-### 4.2 REST API
-
-- 房间 CRUD（`/api/rooms`）
-- 对局管理（`/api/games`）
-- 复盘报告（`/api/games/{id}/reviews`）
-- 回放数据（`/api/replay/{game_id}`）
-
-### 4.3 事件类型
-
-| 事件 | 说明 |
-|------|------|
-| GAME_START / GAME_END | 游戏开始/结束 |
-| PHASE_CHANGED | 阶段切换 |
-| PRIVATE_INFO | 私有信息（查验/用药结果） |
-| CHAT_MESSAGE / NIGHT_ACTION | 发言/夜晚行动 |
-| VOTE_CAST / PLAYER_DIED | 投票/死亡 |
-| HUNTER_SHOT / WHITE_WOLF_KING_BOOM | 特殊技能 |
-
-事件通过 `visibility`（public/private）+ `visible_to[]` 控制可见范围。
-
-### 4.4 前端页面
-
-| 路由 | 说明 |
-|------|------|
-| `/` | 大厅（创建/进入房间） |
-| `/room/[id]/play` | 对局观战 + 真人操作面板 |
-| `/eval/dashboard` | 复盘仪表盘 |
-| `/games/[id]/report` | 单局复盘报告 |
-| `/personas` | MBTI 人格配置 |
-
----
-
-## 五、配置与部署
-
-### 5.1 技术栈
-
-| 层 | 技术 |
-|------|------|
-| 后端 | Python 3.12+ · FastAPI · SSE |
-| 前端 | Next.js 16 · React 18 · Tailwind CSS |
-| 数据库 | PostgreSQL 16（Docker） |
-| LLM | Anthropic/OpenAI 兼容端点（DeepSeek / 豆包） |
-
-### 5.2 启动方式
-
-```bash
-cp .env.example .env   # 配置 LLM 密钥
-make dev               # 启动后端 http://localhost:8000
-cd frontend && npm run dev  # 启动前端 http://localhost:3001
-python -m backend.run_demo --seed 1  # 跑一局本地 demo
-```
-
-### 5.3 阶段超时（仅混战模式生效）
-
-| 阶段 | 默认时长 |
-|------|----------|
-| 守卫选择 | 20s |
-| 狼人讨论+击杀 | 60s |
-| 预言家查验 | 20s |
-| 女巫行动 | 25s |
-| 猎人开枪 | 20s |
-| 发言（每人） | 90s |
-| 投票 | 30s |
-
----
+架构实现状态以 [`architecture/BACKEND_SKELETON.md`](architecture/BACKEND_SKELETON.md) 为准。

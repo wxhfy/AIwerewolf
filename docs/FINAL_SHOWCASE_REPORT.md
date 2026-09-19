@@ -1,5 +1,8 @@
 # AI Werewolf 系统展示
 
+> [!IMPORTANT]
+> 本文是旧版本展示材料，仅用于保留阶段性成果与研究证据，不代表 2026-09-19 的当前运行架构。当前系统以 PostgreSQL 持久化、独立 Match Worker、REST 命令和 SSE 事件流为准；真人对局暂未开放。请以 `docs/architecture/`、根目录 `README.md` 和 `REQUIREMENTS.md` 为准。
+
 ## 1. 项目概述
 
 系统将狼人杀对局拆成确定性规则引擎、严格信息隔离、角色化 Agent 决策、赛后复盘评测和策略知识回流五个部分，形成 Play -> Evaluate -> Evolve 的闭环。
