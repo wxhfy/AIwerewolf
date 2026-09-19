@@ -4,6 +4,7 @@ from backend.db.database import init_db
 from backend.db.models import AgentDecision
 from backend.db.models import AgentVersion
 from backend.db.models import Base
+from backend.db.models import DecisionEvaluation
 from backend.db.models import Evaluation
 from backend.db.models import EvolutionRound
 from backend.db.models import EvolutionTournament
@@ -29,6 +30,7 @@ __all__ = [
     "Player",
     "GameEvent",
     "AgentDecision",
+    "DecisionEvaluation",
     "GameSnapshot",
     "Vote",
     "Evaluation",

@@ -18,6 +18,7 @@ Compose 默认启动：
 | `redis` | SSE 唤醒通知和可选限流 |
 | `backend` | FastAPI REST/SSE 服务 |
 | `match-worker` | 独立执行 AI 对局 |
+| `analysis-worker` | 异步执行 Track B 逐步评分和 Track C 策略提取 |
 | `frontend` | Next.js 展示层 |
 | `nginx` | 统一入口和反向代理 |
 
@@ -70,6 +71,9 @@ make dev
 python -m backend.workers.match_worker
 
 # 终端 3
+python -m backend.workers.analysis_worker
+
+# 终端 4
 cd frontend
 npm install --legacy-peer-deps
 npm run dev

@@ -11,6 +11,7 @@ This document is the backend handoff baseline. The current priority is an AI-onl
 | API service | Validate requests, create rooms/matches, accept commands, expose reads and SSE | No in-memory source of truth |
 | Match Worker | Claim durable match jobs, run the game engine, call agents, persist progress | Lease in PostgreSQL |
 | Agent runtime | Build per-player context and return one legal decision | Local implementation today; remote contract reserved |
+| Analysis Worker | Claim durable post-game jobs; run Track B scoring and Track C extraction | Retryable job in PostgreSQL |
 | PostgreSQL | Rooms, games, jobs, events, snapshots, decisions, commands, outbox | Authoritative durable state |
 | Redis | SSE wake-up notifications and optional distributed rate limiting | Never authoritative |
 | Frontend | Render projections, issue REST commands, consume SSE | No game-rule decisions |
@@ -28,6 +29,10 @@ Frontend -> REST command -> API -> PostgreSQL job/command
                     events/snapshots/decisions -> PostgreSQL
                                   |
                     Redis notification -> API SSE -> Frontend
+
+Finished match -> post-game job -> Analysis Worker
+                                  |-> Track B decision_evaluations / PublishedReview
+                                  `-> Track C strategy_knowledge_docs
 ```
 
 ## 2. Stable API surface
@@ -45,6 +50,12 @@ New platform endpoints are versioned under `/api/v1`. Existing `/api/*` endpoint
 | `GET /api/matches/{match_id}/stream` | Implemented | Resumable SSE snapshots using `Last-Event-ID` |
 | `GET /api/v1/agent/capabilities` | Implemented contract | Agent protocol discovery |
 | `POST /api/v1/agent/decisions` | Contract only | Returns `501` until remote Agent Service is deployed |
+| `GET /api/v1/matches/{match_id}/analysis` | Implemented | Analysis job status and Track B/C coverage |
+| `GET /api/v1/matches/{match_id}/decisions` | Implemented | Sanitized decision trace metadata |
+| `GET /api/v1/matches/{match_id}/decision-evaluations` | Implemented | Versioned per-step Track B scores |
+| `POST /api/v1/matches/{match_id}/analysis/retry` | Implemented | Requeue analysis for a finished match |
+| `GET /api/v1/strategies` | Implemented | Query persisted Track C strategy knowledge |
+| `GET /api/v1/strategies/{strategy_id}` | Implemented | Read one strategy document |
 
 All platform errors use `application/problem+json` and contain `code`, `detail`, `instance`, and `request_id`. Existing clients can continue reading the `detail` field.
 
@@ -69,6 +80,12 @@ New tables introduced by `004_platform_skeleton.sql`:
 - `outbox_events`: transactionally records domain events before broker publication.
 
 The Outbox publisher is intentionally not started yet. Rows are durable and queryable, and a later process can publish them to Redis Streams, NATS, RabbitMQ, or Kafka without changing application commands.
+
+`005_analysis_pipeline.sql` adds `decision_evaluations`. Each row is keyed by decision plus evaluator version, making Track B rescoring idempotent and allowing future evaluator upgrades without overwriting historical scores. Track C remains durable in `strategy_knowledge_docs`, including provenance, confidence, lifecycle status, version lineage and usage feedback.
+
+Compatibility note: the legacy `PublishedReview` document is still generated synchronously at game end because its current builder consumes the in-memory event-rich `GameState`. Per-step evaluation and strategy extraction are already asynchronous. Moving `PublishedReview` into the Analysis Worker requires reconstructing the complete event, vote and decision projection from PostgreSQL and is the next Track B migration step.
+
+The persistence policy is intentionally not "store hidden chain of thought". Store the observable decision contract: visible observation, legal actions, parsed action, provider response permitted by policy, validation result, latency/tokens/cost, model/prompt identifiers, score evidence and strategy provenance.
 
 ## 5. Agent Service contract
 
@@ -102,5 +119,5 @@ These are visible contracts, not hidden TODO behavior. Callers receive capabilit
 python -m ruff check backend tests
 pytest -q tests/test_engine.py tests/test_api.py
 python scripts/e2e_smoke.py
-docker compose up -d --build postgres redis backend match-worker
+docker compose up -d --build postgres redis backend match-worker analysis-worker
 ```

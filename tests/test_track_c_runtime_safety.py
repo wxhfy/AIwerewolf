@@ -778,13 +778,12 @@ def test_build_post_game_state_from_db_reconstructs_minimal_truth(monkeypatch) -
     assert state.players[1].alignment == Alignment.VILLAGE
 
 
-def test_startup_recovery_runs_pending_track_c_job(monkeypatch) -> None:
-    from backend import app as app_module
+def test_analysis_service_runs_pending_post_game_job(monkeypatch) -> None:
+    from backend.application.analysis import service as service_module
 
     engine, TestingSession = _sqlite_sessionmaker()
     monkeypatch.setattr(persist, "init_db", lambda: None)
     monkeypatch.setattr(persist, "SessionLocal", lambda: TestingSession())
-    monkeypatch.setattr("backend.app.init_db", lambda: None)
 
     session = TestingSession()
     session.add(Game(id="job-game-5", status="finished", current_day=1, current_phase="GAME_END", winner="village"))
@@ -800,16 +799,16 @@ def test_startup_recovery_runs_pending_track_c_job(monkeypatch) -> None:
         calls.append((state.id, game_id, return_details))
         return {"lessons_stored": 3, "promoted_count": 1}
 
-    monkeypatch.setattr("backend.app.run_post_game_scoring", fake_run_post_game_scoring, raising=False)
-    monkeypatch.setattr("backend.eval.post_game.run_post_game_scoring", fake_run_post_game_scoring)
+    monkeypatch.setattr(service_module, "run_post_game_scoring", fake_run_post_game_scoring)
 
-    recovered = app_module._recover_track_c_post_game_jobs()
+    result = service_module.PostGameAnalysisService().execute("job-game-5")
     verify = TestingSession()
     job = verify.query(TrackCPostGameJob).filter(TrackCPostGameJob.game_id == "job-game-5").one()
     verify.close()
     engine.dispose()
 
-    assert recovered == 1
+    assert result is not None
+    assert result["status"] == "completed"
     assert calls == [("job-game-5", "job-game-5", True)]
     assert job.status == "completed"
     assert job.lessons_stored == 3

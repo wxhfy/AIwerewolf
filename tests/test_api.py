@@ -3,10 +3,12 @@ from fastapi.testclient import TestClient
 
 from backend.app import _rooms
 from backend.app import app
+from backend.application.analysis.service import PostGameAnalysisService
 from backend.application.matches.executor import MatchExecutor
 from backend.application.matches.repository import MatchJobRepository
 from backend.db.database import SessionLocal
 from backend.db.database import init_db
+from backend.db.models import DecisionEvaluation
 from backend.db.models import MatchJob
 from backend.db.models import OutboxEvent
 
@@ -75,6 +77,40 @@ def test_create_game_api() -> None:
     assert "AI Werewolf 复盘报告" in html_response.text
 
 
+def test_post_game_analysis_is_async_persisted_and_idempotent() -> None:
+    client = TestClient(app)
+    data = _run_ai_match(client, seed=71, player_count=7)
+
+    queued = client.get(f"/api/v1/matches/{data['id']}/analysis")
+    assert queued.status_code == 200
+    assert queued.json()["job"]["status"] == "pending"
+
+    completed = PostGameAnalysisService().execute(data["id"])
+    assert completed is not None
+    assert completed["status"] == "completed"
+
+    analysis = client.get(f"/api/v1/matches/{data['id']}/analysis")
+    assert analysis.status_code == 200
+    payload = analysis.json()
+    assert payload["decision_count"] > 0
+    assert payload["evaluated_decision_count"] == payload["decision_count"]
+    assert payload["evaluation_coverage"] == 1.0
+
+    evaluations = client.get(f"/api/v1/matches/{data['id']}/decision-evaluations")
+    assert evaluations.status_code == 200
+    assert len(evaluations.json()) == payload["decision_count"]
+
+    assert PostGameAnalysisService().execute(data["id"]) is None
+    with SessionLocal() as db:
+        count = db.query(DecisionEvaluation).filter(DecisionEvaluation.game_id == data["id"]).count()
+    assert count == payload["decision_count"]
+
+    retry = client.post(f"/api/v1/matches/{data['id']}/analysis/retry")
+    assert retry.status_code == 202
+    assert retry.json()["status"] == "pending"
+    assert client.get("/api/v1/strategies").status_code == 200
+
+
 def test_create_game_with_wolfcha_10p_pack() -> None:
     client = TestClient(app)
     data = _run_ai_match(client, seed=13, player_count=10)
@@ -121,6 +157,10 @@ def test_platform_health_capabilities_and_security_headers() -> None:
     assert payload["transport"] == {"commands": "rest", "updates": "sse", "websocket": False}
     assert payload["persistence"]["match_commands"] is True
     assert payload["persistence"]["agent_decision_jobs"] is True
+    assert payload["execution"]["analysis_worker"] is True
+    assert payload["persistence"]["decision_evaluations"] is True
+    assert payload["persistence"]["post_game_analysis_jobs"] is True
+    assert payload["persistence"]["strategy_knowledge"] is True
     assert payload["persistence"]["outbox"] is True
 
 

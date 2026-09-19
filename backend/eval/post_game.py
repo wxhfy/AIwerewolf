@@ -24,6 +24,7 @@ def run_post_game_scoring(game_state: Any, game_id: str, *, return_details: bool
     try:
         from collections import defaultdict
 
+        from backend.application.analysis.repository import AnalysisRepository
         from backend.db.database import SessionLocal
         from backend.db.models import AgentDecision
         from backend.db.models import StrategyKnowledgeDoc
@@ -35,12 +36,12 @@ def run_post_game_scoring(game_state: Any, game_id: str, *, return_details: bool
         from backend.llm import create_client
     except ImportError as e:
         logger.warning(f"Post-game scoring skipped (import error): {e}")
-        return {"lessons_stored": 0, "promoted_count": 0} if return_details else 0
+        return {"decisions_scored": 0, "lessons_stored": 0, "promoted_count": 0} if return_details else 0
 
     # 1. Build ground-truth state dict from game state
     state_dict = _build_state_dict(game_state)
     if not state_dict["players"]:
-        return {"lessons_stored": 0, "promoted_count": 0} if return_details else 0
+        return {"decisions_scored": 0, "lessons_stored": 0, "promoted_count": 0} if return_details else 0
 
     # 2. Read decisions from agent_decisions table
     db = SessionLocal()
@@ -63,14 +64,7 @@ def run_post_game_scoring(game_state: Any, game_id: str, *, return_details: bool
 
     if not decisions:
         logger.info(f"No decisions found for game {game_id}, skipping scoring")
-        return {"lessons_stored": 0, "promoted_count": 0} if return_details else 0
-
-    # 2.5. Check if this game already has per_step lessons (Track B may have scored it)
-    if existing_docs > 0:
-        logger.info(
-            f"Game {game_id} already has {existing_docs} per_step lessons (from Track B), skipping post_game scoring"
-        )
-        return {"lessons_stored": 0, "promoted_count": 0} if return_details else 0
+        return {"decisions_scored": 0, "lessons_stored": 0, "promoted_count": 0} if return_details else 0
 
     # 3. Build decision dicts for scoring
     decision_dicts: list[dict] = []
@@ -128,6 +122,29 @@ def run_post_game_scoring(game_state: Any, game_id: str, *, return_details: bool
     tier_counts = scorer.tally_tiers(scores)
     logger.info(f"Post-game scoring for {game_id}: {tier_counts}, {len(scores)} decisions")
 
+    # Track B is durable and idempotent. Strategy extraction may be skipped on
+    # retries, but every decision score remains queryable and versioned.
+    evaluator_model = None
+    if llm_client is not None:
+        evaluator_model = str(
+            getattr(llm_client, "model", None)
+            or getattr(llm_client, "model_name", None)
+            or getattr(llm_client, "provider", None)
+            or ""
+        ) or None
+    decisions_scored = AnalysisRepository().save_decision_scores(
+        game_id,
+        scores,
+        evaluator_version="per-step-v1",
+        evaluator_model=evaluator_model,
+    )
+
+    if existing_docs > 0:
+        logger.info("Game %s already has %s strategy documents; Track C extraction skipped", game_id, existing_docs)
+        if return_details:
+            return {"decisions_scored": decisions_scored, "lessons_stored": 0, "promoted_count": 0}
+        return 0
+
     # 7. Build ScoredStep objects per player
     by_player: dict[str, list[ScoredStep]] = defaultdict(list)
     for s in scores:
@@ -172,7 +189,9 @@ def run_post_game_scoring(game_state: Any, game_id: str, *, return_details: bool
         all_lessons.extend(lessons)
 
     if not all_lessons:
-        return {"lessons_stored": 0, "promoted_count": 0} if return_details else 0
+        if return_details:
+            return {"decisions_scored": decisions_scored, "lessons_stored": 0, "promoted_count": 0}
+        return 0
 
     # 9. Store lessons as candidate docs
     stored = store_lessons_to_db(all_lessons)
@@ -190,7 +209,11 @@ def run_post_game_scoring(game_state: Any, game_id: str, *, return_details: bool
             logger.debug("Promotion skipped (non-critical)", exc_info=True)
 
     if return_details:
-        return {"lessons_stored": int(stored or 0), "promoted_count": int(promoted or 0)}
+        return {
+            "decisions_scored": decisions_scored,
+            "lessons_stored": int(stored or 0),
+            "promoted_count": int(promoted or 0),
+        }
     return stored
 
 

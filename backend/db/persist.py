@@ -240,8 +240,8 @@ def save_decisions_batch(decisions: list[dict]) -> int:
                     day=d.get("day", 0),
                     phase=str(d.get("phase", "")),
                     observation=d.get("observation", {}),
-                    legal_actions=[],
-                    prompt_version="v1",
+                    legal_actions=d.get("legal_actions", []),
+                    prompt_version=str(d.get("prompt_version", "v1") or "v1"),
                     raw_output=str(d.get("raw_output", "") or ""),
                     parsed_action=d.get("parsed_action", {}),
                     is_valid=bool(d.get("is_valid", True)),
@@ -257,6 +257,7 @@ def save_decisions_batch(decisions: list[dict]) -> int:
                     model_name=d.get("model_name"),
                     provider=d.get("provider"),
                     decision_metadata={
+                        **(d.get("metadata", {}) if isinstance(d.get("metadata"), dict) else {}),
                         "fallback": d.get("fallback_used", False),
                         "fallback_reason": d.get("fallback_reason"),
                     },
@@ -540,7 +541,10 @@ def claim_track_c_post_game_job(game_id: str, *, stale_after_seconds: int = 900)
     init_db()
     db = SessionLocal()
     try:
-        row = db.query(TrackCPostGameJob).filter(TrackCPostGameJob.game_id == game_id).first()
+        query = db.query(TrackCPostGameJob).filter(TrackCPostGameJob.game_id == game_id)
+        if db.bind is not None and db.bind.dialect.name == "postgresql":
+            query = query.with_for_update()
+        row = query.first()
         if row is None:
             game = db.query(Game).filter(Game.id == game_id, Game.status == "finished").first()
             if game is None:

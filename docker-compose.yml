@@ -112,6 +112,35 @@ services:
     networks:
       - werewolf-net
 
+  analysis-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ${ANALYSIS_WORKER_CONTAINER_NAME:-werewolf-analysis-worker}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${COMPOSE_DATABASE_URL:-postgresql+psycopg2://werewolf:werewolf_dev_password@postgres:5432/werewolf}
+      LLM_PROVIDER: ${LLM_PROVIDER:-deepseek}
+      DOUBAO_API_KEY: ${DOUBAO_API_KEY:-}
+      DOUBAO_BASE_URL: ${DOUBAO_BASE_URL:-https://ark.cn-beijing.volces.com/api/v3}
+      DOUBAO_MODEL: ${DOUBAO_MODEL:-Doubao-Seed-2.0-pro}
+      DOUBAO_ENDPOINT: ${DOUBAO_ENDPOINT:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+      DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-v4-flash}
+      AUTO_MIGRATE: "true"
+      ANALYSIS_WORKER_POLL_SECONDS: ${ANALYSIS_WORKER_POLL_SECONDS:-2}
+      ANALYSIS_WORKER_BATCH_SIZE: ${ANALYSIS_WORKER_BATCH_SIZE:-5}
+      ANALYSIS_JOB_STALE_SECONDS: ${ANALYSIS_JOB_STALE_SECONDS:-900}
+    command: python -m backend.workers.analysis_worker
+    healthcheck:
+      disable: true
+    networks:
+      - werewolf-net
+
   # ------------------------------------------------------------------
   # Next.js Frontend
   # ------------------------------------------------------------------
@@ -205,6 +234,35 @@ services:
       - ./configs:/app/configs
       - ./scripts:/app/scripts
     command: python -m backend.workers.match_worker
+    healthcheck:
+      disable: true
+    networks:
+      - werewolf-net
+
+  dev-analysis-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ${DEV_ANALYSIS_WORKER_CONTAINER_NAME:-werewolf-dev-analysis-worker}
+    profiles: ["dev"]
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${COMPOSE_DATABASE_URL:-postgresql+psycopg2://werewolf:werewolf_dev_password@postgres:5432/werewolf}
+      LLM_PROVIDER: ${LLM_PROVIDER:-deepseek}
+      DOUBAO_API_KEY: ${DOUBAO_API_KEY:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      AUTO_MIGRATE: "true"
+      ANALYSIS_WORKER_POLL_SECONDS: ${ANALYSIS_WORKER_POLL_SECONDS:-2}
+      ANALYSIS_WORKER_BATCH_SIZE: ${ANALYSIS_WORKER_BATCH_SIZE:-5}
+      ANALYSIS_JOB_STALE_SECONDS: ${ANALYSIS_JOB_STALE_SECONDS:-900}
+    volumes:
+      - ./backend:/app/backend
+      - ./configs:/app/configs
+      - ./scripts:/app/scripts
+    command: python -m backend.workers.analysis_worker
     healthcheck:
       disable: true
     networks:

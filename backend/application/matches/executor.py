@@ -37,30 +37,12 @@ def persist_snapshot(state: GameState) -> None:
     match_notifications.publish(state.id, seq)
 
 
-def run_post_game_scoring(state: GameState) -> None:
-    from backend.db.persist import claim_track_c_post_game_job
-    from backend.db.persist import complete_track_c_post_game_job
+def enqueue_post_game_analysis(state: GameState) -> None:
     from backend.db.persist import ensure_track_c_post_game_job
-    from backend.db.persist import fail_track_c_post_game_job
-    from backend.eval.post_game import run_post_game_scoring as score_game
 
     game_id = str(state.id)
     ensure_track_c_post_game_job(game_id, source="match_worker")
-    job = claim_track_c_post_game_job(game_id)
-    if job is None:
-        logger.info("Post-game job already claimed or completed for match %s", game_id)
-        return
-    try:
-        result = score_game(state, game_id, return_details=True)
-    except Exception as exc:
-        fail_track_c_post_game_job(game_id, str(exc), retryable=True, metadata={"stage": "post_game_scoring"})
-        raise
-    complete_track_c_post_game_job(
-        game_id,
-        lessons_stored=int(result.get("lessons_stored", 0) if isinstance(result, dict) else result),
-        promoted_count=int(result.get("promoted_count", 0) if isinstance(result, dict) else 0),
-        metadata={"stage": "post_game_scoring"},
-    )
+    logger.info("Post-game analysis queued for match %s", game_id)
 
 
 def build_game(
@@ -120,7 +102,7 @@ def prepare_game(
         on_game_end=save_game_end,
         on_event=save_event,
         on_decisions_flush=save_decisions_batch,
-        on_post_game=run_post_game_scoring,
+        on_post_game=enqueue_post_game_analysis,
         game_id=game_id,
         auto_attach_agents=False,
     )

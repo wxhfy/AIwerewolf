@@ -56,6 +56,7 @@ class Game(Base):
     players = relationship("Player", back_populates="game", cascade="all, delete-orphan")
     events = relationship("GameEvent", back_populates="game", cascade="all, delete-orphan")
     decisions = relationship("AgentDecision", back_populates="game", cascade="all, delete-orphan")
+    decision_evaluations = relationship("DecisionEvaluation", back_populates="game", cascade="all, delete-orphan")
     snapshots = relationship("GameSnapshot", back_populates="game", cascade="all, delete-orphan")
     votes = relationship("Vote", back_populates="game", cascade="all, delete-orphan")
     evaluations = relationship("Evaluation", back_populates="game", cascade="all, delete-orphan")
@@ -287,6 +288,44 @@ class AgentDecision(Base):
         Index("ix_decisions_game_player_day", "game_id", "player_id", "day"),
         Index("ix_decisions_invalid", "is_valid", "error_type"),
         Index("ix_decisions_model", "model_name", "provider"),
+    )
+
+
+class DecisionEvaluation(Base):
+    """Versioned Track B score for one persisted agent decision."""
+
+    __tablename__ = "decision_evaluations"
+
+    id = Column(String, primary_key=True, default=_uuid)
+    game_id = Column(String, ForeignKey("games.id"), nullable=False, index=True)
+    decision_id = Column(String, ForeignKey("agent_decisions.id"), nullable=False, index=True)
+    player_id = Column(String, nullable=False, index=True)
+    day = Column(Integer, default=0)
+    phase = Column(String, default="")
+    action_type = Column(String, default="")
+    role = Column(String, default="")
+    correctness = Column(Float, default=0.0)
+    reasoning_quality = Column(Float, default=0.0)
+    timeliness = Column(Float, default=0.0)
+    impact = Column(Float, default=0.0)
+    overall_score = Column(Float, default=0.0, index=True)
+    scoring_tier = Column(String, default="deterministic", index=True)
+    evidence = Column(JSON, default=list)
+    alternative = Column(Text, default="")
+    is_highlight = Column(Boolean, default=False)
+    is_mistake = Column(Boolean, default=False)
+    evaluator_version = Column(String, default="per-step-v1")
+    evaluator_model = Column(String, nullable=True)
+    extra_metadata = Column("metadata", JSON, default=dict)
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+    game = relationship("Game", back_populates="decision_evaluations")
+
+    __table_args__ = (
+        UniqueConstraint("decision_id", "evaluator_version", name="uq_decision_evaluation_version"),
+        Index("ix_decision_evaluations_game_player", "game_id", "player_id"),
+        Index("ix_decision_evaluations_game_score", "game_id", "overall_score"),
     )
 
 
