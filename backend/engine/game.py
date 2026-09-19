@@ -4,7 +4,6 @@ import hashlib
 import json
 import logging
 import os
-import queue
 import re
 from collections import Counter
 from random import Random
@@ -206,9 +205,12 @@ class WerewolfGame:
         persona_sampler: Callable[[int, int | None], list[dict] | None] | None = None,
         on_game_start: Callable[[GameState], None] | None = None,
         on_game_end: Callable[[GameState], None] | None = None,
+        on_event: Callable[[str, int, GameEvent], None] | None = None,
         on_decisions_flush: Callable[[list[dict]], int] | None = None,
         on_post_game: Callable[[GameState], None] | None = None,
         phase_delay_ms: float = 0,
+        game_id: str | None = None,
+        auto_attach_agents: bool = True,
     ):
         self.rng = Random(seed)
         self.strategy_version = strategy_version
@@ -218,7 +220,7 @@ class WerewolfGame:
             roles = get_role_configuration(player_count)
             players = build_players(roles, seed=seed)
         self.state = GameState(
-            id=str(uuid4()),
+            id=game_id or str(uuid4()),
             phase=Phase.SETUP,
             day=0,
             players=players,
@@ -236,6 +238,7 @@ class WerewolfGame:
         self.persona_sampler = persona_sampler
         self.on_game_start = on_game_start
         self.on_game_end = on_game_end
+        self.on_event = on_event
         self.on_decisions_flush = on_decisions_flush
         self.on_post_game = on_post_game
 
@@ -243,13 +246,8 @@ class WerewolfGame:
         self._pending_decisions: list[dict] = []
         self._decisions_flushed: bool = False
 
-        # Task 3: Streaming token buffer for WebSocket real-time output
-        self._stream_token_buffer: queue.Queue = queue.Queue()
-        # `_play_started` flips True the moment someone calls play() so a
-        # reconnecting WebSocket can tell "this game is already running, just
-        # tail it" apart from "this game was prepared but never started — I
-        # should start it now". play_done fires when play() returns so tailing
-        # clients have a definite signal to stop polling.
+        # Transitional in-process ownership guard. Durable worker leases will
+        # replace this when MatchRunner becomes an independent service.
         import threading as _threading
 
         self._play_started: bool = False
@@ -281,6 +279,8 @@ class WerewolfGame:
         role_models_from_bias: dict[str, dict[str, Any]] = {}
         for role_name, bias in self.strategy_bias_by_role.items():
             role_models_from_bias[role_name] = {"strategy_bias": bias}
+        if not auto_attach_agents:
+            return
         self.attach_agents(
             agents
             or create_agents(
@@ -360,17 +360,13 @@ class WerewolfGame:
                 event.type == EventType.NIGHT_ACTION and event.visibility == "public" and event.phase == phase
                 for event in self.state.events
             )
-            if has_public_action:
-                return
-            self.state.events.append(
-                GameEvent.create(
-                    day=self.state.day,
-                    phase=phase,
-                    type=EventType.NIGHT_ACTION,
-                    visibility="public",
-                    payload={"message": "行动完毕", "phase": phase.value},
-                )
-            )
+        if has_public_action:
+            return
+        self._log(
+            EventType.NIGHT_ACTION,
+            "public",
+            {"message": "action_completed", "phase": phase.value},
+        )
 
     def _clear_phase_done(self, *phases: Phase) -> None:
         with self._shared_lock:
@@ -471,11 +467,7 @@ class WerewolfGame:
         self._check_win()
 
     def play(self) -> GameState:
-        # Idempotent start: if play() was already entered (e.g. another thread
-        # is mid-game), return the current state immediately. A reconnecting
-        # WebSocket detects this case earlier via `_play_started` and switches
-        # to tail-only mode, but the lock here is the authoritative guard
-        # against two threads trying to drive the same game in parallel.
+        # Prevent two in-process runners from driving the same game.
         with self._play_start_lock:
             if self._play_started:
                 return self.state
@@ -513,8 +505,8 @@ class WerewolfGame:
 
     def play_until_blocked(self) -> GameState:
         if not self.state.events:
-            self.initialize()
             self._emit_game_start()
+            self.initialize()
         self.state.pending_input = None
         self.interrupt_phase_cycle = False
         try:
@@ -1805,18 +1797,12 @@ class WerewolfGame:
     def _emit_game_start(self) -> None:
         if self.on_game_start is None:
             return
-        try:
-            self.on_game_start(self.state)
-        except Exception:
-            logger.warning("on_game_start hook failed (non-fatal, game continues)", exc_info=True)
+        self.on_game_start(self.state)
 
     def _emit_game_end(self) -> None:
         if self.on_game_end is None:
             return
-        try:
-            self.on_game_end(self.state)
-        except Exception:
-            logger.warning("on_game_end hook failed (non-fatal)", exc_info=True)
+        self.on_game_end(self.state)
 
     def _run_post_game_hook(self) -> None:
         if self.on_post_game is None:
@@ -2010,7 +1996,7 @@ class WerewolfGame:
     def _set_phase(self, phase: Phase) -> None:
         with self._shared_lock:
             self.state.phase = phase
-            self._log(EventType.PHASE_CHANGED, "public", {"phase": phase.value})
+        self._log(EventType.PHASE_CHANGED, "public", {"phase": phase.value})
 
     def _run_actor_sequence(self, phase: Phase, players: list[Player], handler) -> None:
         cursor_key = phase.value
@@ -2066,19 +2052,22 @@ class WerewolfGame:
         *,
         visible_to: list[str] | None = None,
     ) -> None:
+        event: GameEvent
         with self._shared_lock:
-            self.state.events.append(
-                GameEvent.create(
-                    day=self.state.day,
-                    phase=self.state.phase,
-                    type=type,
-                    visibility=visibility,
-                    payload=payload,
-                    visible_to=visible_to,
-                )
+            event = GameEvent.create(
+                day=self.state.day,
+                phase=self.state.phase,
+                type=type,
+                visibility=visibility,
+                payload=payload,
+                visible_to=visible_to,
+                seq=len(self.state.events) + 1,
             )
-            if self.observer is not None:
-                self.observer(self.state)
+            self.state.events.append(event)
+        if self.on_event is not None:
+            self.on_event(self.state.id, event.seq, event)
+        if self.observer is not None:
+            self.observer(self.state)
 
     def _record_decision(
         self,

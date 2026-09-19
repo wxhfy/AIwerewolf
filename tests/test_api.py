@@ -1,18 +1,41 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from backend.app import _build_game
 from backend.app import _rooms
 from backend.app import app
-from backend.engine.game import WerewolfGame
+from backend.application.matches.executor import MatchExecutor
+from backend.application.matches.repository import MatchJobRepository
+from backend.db.database import SessionLocal
+from backend.db.database import init_db
+from backend.db.models import MatchJob
+from backend.db.models import OutboxEvent
+
+
+def _run_room_match(client: TestClient, room_id: str) -> dict:
+    prepared = client.post(f"/api/rooms/{room_id}/prepare?show_private=true")
+    assert prepared.status_code == 200
+    started = client.post(f"/api/rooms/{room_id}/start?show_private=true")
+    assert started.status_code == 200
+    match_id = started.json()["match_id"]
+    repository = MatchJobRepository()
+    worker_id = f"test-worker-{match_id}"
+    job = repository.claim_game(match_id, worker_id)
+    assert job is not None
+    MatchExecutor(repository, worker_id=worker_id).execute(job)
+    response = client.get(f"/api/games/{match_id}?show_private=true")
+    assert response.status_code == 200
+    return response.json()
+
+
+def _run_ai_match(client: TestClient, *, seed: int, player_count: int = 7) -> dict:
+    room = client.post(f"/api/rooms?name=WorkerTest&seed={seed}&player_count={player_count}&agent_type=llm")
+    assert room.status_code == 200
+    return _run_room_match(client, room.json()["id"])
 
 
 def test_create_game_api() -> None:
     client = TestClient(app)
-    response = client.post("/api/games?seed=7&agent_type=llm")
-
-    assert response.status_code == 200
-    data = response.json()
+    data = _run_ai_match(client, seed=7, player_count=10)
     assert data["winner"] in {"village", "wolf"}
     assert len(data["players"]) == 10
     assert data["events"]
@@ -54,9 +77,7 @@ def test_create_game_api() -> None:
 
 def test_create_game_with_wolfcha_10p_pack() -> None:
     client = TestClient(app)
-    response = client.post("/api/games?seed=13&agent_type=llm&player_count=10")
-    assert response.status_code == 200
-    data = response.json()
+    data = _run_ai_match(client, seed=13, player_count=10)
     roles = {
         player.get("role") for player in client.get(f"/api/games/{data['id']}?show_private=true").json()["players"]
     }
@@ -77,10 +98,124 @@ def test_health_api() -> None:
     assert data["version"]
 
 
+def test_platform_health_capabilities_and_security_headers() -> None:
+    init_db()
+    client = TestClient(app)
+
+    live = client.get("/api/v1/health/live", headers={"X-Request-ID": "test-request-id"})
+    assert live.status_code == 200
+    assert live.json()["status"] == "ok"
+    assert live.headers["x-request-id"] == "test-request-id"
+    assert float(live.headers["x-process-time-ms"]) >= 0
+    assert live.headers["x-content-type-options"] == "nosniff"
+    assert live.headers["x-frame-options"] == "DENY"
+
+    ready = client.get("/api/v1/health/ready")
+    assert ready.status_code == 200
+    assert ready.json()["ready"] is True
+    assert ready.json()["checks"]["database"] == "ok"
+
+    capabilities = client.get("/api/v1/system/capabilities")
+    assert capabilities.status_code == 200
+    payload = capabilities.json()
+    assert payload["transport"] == {"commands": "rest", "updates": "sse", "websocket": False}
+    assert payload["persistence"]["match_commands"] is True
+    assert payload["persistence"]["agent_decision_jobs"] is True
+    assert payload["persistence"]["outbox"] is True
+
+
+def test_remote_agent_contract_is_explicit_but_not_enabled() -> None:
+    client = TestClient(app)
+    capabilities = client.get("/api/v1/agent/capabilities")
+    assert capabilities.status_code == 200
+    assert capabilities.json()["remote_execution_ready"] is False
+
+    response = client.post(
+        "/api/v1/agent/decisions",
+        json={
+            "request_id": "request-12345678",
+            "match_id": "match-placeholder",
+            "player_id": "player-1",
+            "action_type": "vote",
+            "observation": {},
+            "legal_actions": [],
+        },
+    )
+    assert response.status_code == 501
+    assert response.headers["content-type"].startswith("application/problem+json")
+    assert response.json()["code"] == "remote_agent_service_not_enabled"
+    assert response.json()["request_id"]
+
+
+def test_match_command_is_idempotent_and_emits_outbox_event() -> None:
+    client = TestClient(app)
+    room = client.post("/api/rooms?name=CommandRoom&seed=61&player_count=7&agent_type=llm").json()
+    prepared = client.post(f"/api/rooms/{room['id']}/prepare")
+    assert prepared.status_code == 200
+    match_id = prepared.json()["id"]
+    command = {
+        "command_id": f"pause-{match_id}",
+        "type": "pause",
+        "expected_seq": prepared.json()["seq"],
+        "payload": {},
+    }
+
+    first = client.post(f"/api/v1/matches/{match_id}/commands", json=command)
+    duplicate = client.post(f"/api/v1/matches/{match_id}/commands", json=command)
+    assert first.status_code == 200
+    assert duplicate.status_code == 200
+    assert first.json() == duplicate.json()
+    assert first.json()["status"] == "completed"
+    assert first.json()["result"]["control_state"] == "paused"
+
+    with SessionLocal() as db:
+        events = db.query(OutboxEvent).filter(OutboxEvent.aggregate_id == match_id).all()
+    assert len(events) == 1
+    assert events[0].event_type == "match.command.pause.completed"
+
+
+def test_match_command_rejects_stale_snapshot_sequence() -> None:
+    client = TestClient(app)
+    room = client.post("/api/rooms?name=ConflictRoom&seed=67&player_count=7&agent_type=llm").json()
+    prepared = client.post(f"/api/rooms/{room['id']}/prepare").json()
+    response = client.post(
+        f"/api/v1/matches/{prepared['id']}/commands",
+        json={"command_id": f"pause-stale-{prepared['id']}", "type": "pause", "expected_seq": 999999},
+    )
+    assert response.status_code == 409
+    assert response.json()["code"] == "http_409"
+
+
+def test_openapi_exposes_sse_without_legacy_websocket_routes() -> None:
+    client = TestClient(app)
+    paths = client.get("/openapi.json").json()["paths"]
+
+    assert any(path.endswith("/stream") for path in paths)
+    assert all(not path.startswith("/ws") for path in paths)
+
+
+def test_match_events_are_ordered_and_resumable() -> None:
+    client = TestClient(app)
+    match_id = _run_ai_match(client, seed=701)["id"]
+
+    response = client.get(f"/api/matches/{match_id}/events?limit=1000")
+    assert response.status_code == 200
+    events = response.json()["events"]
+    assert events
+    sequences = [event["seq"] for event in events]
+    assert sequences == sorted(sequences)
+    assert len(sequences) == len(set(sequences))
+
+    cursor = sequences[len(sequences) // 2]
+    resumed = client.get(f"/api/matches/{match_id}/events?after_seq={cursor}&limit=1000")
+    assert resumed.status_code == 200
+    assert all(event["seq"] > cursor for event in resumed.json()["events"])
+
+
 def test_leaderboard_api_returns_cross_game_views() -> None:
     client = TestClient(app)
-    client.post("/api/games?seed=31&agent_type=llm")
-    client.post("/api/games?seed=37&agent_type=llm")
+    _run_ai_match(client, seed=31)
+    _run_ai_match(client, seed=37)
 
     response = client.get("/api/leaderboard")
     assert response.status_code == 200
@@ -105,9 +240,7 @@ def test_room_api_flow() -> None:
     assert get_room.json()["id"] == room["id"]
     assert get_room.json()["agent_type"] == "llm"
 
-    game_response = client.post(f"/api/rooms/{room['id']}/games")
-    assert game_response.status_code == 200
-    game = game_response.json()
+    game = _run_room_match(client, room["id"])
     assert game["winner"] in {"village", "wolf"}
     assert game["phase"] == "GAME_END"
     assert "holder_id" in game["badge"]
@@ -117,7 +250,7 @@ def test_room_api_flow() -> None:
     assert history_response.status_code == 200
     history = history_response.json()
     assert len(history) == 1
-    assert history[0]["id"] == game["id"]
+    assert history[0]["match_id"] == game["id"]
 
     snapshot_response = client.get(f"/api/rooms/{room['id']}/snapshot")
     assert snapshot_response.status_code == 200
@@ -159,7 +292,7 @@ def test_room_create_accepts_json_llm_config_without_echoing_secret() -> None:
 
     stored_room = _rooms.get_room(room["id"])
     assert stored_room.llm_config is not None
-    assert stored_room.llm_config["api_key"] == "example-room-credential"
+    assert "api_key" not in stored_room.llm_config
     assert stored_room.llm_config["base_url"] == "https://api.deepseek.com/anthropic"
 
     get_response = client.get(f"/api/rooms/{room['id']}")
@@ -167,27 +300,8 @@ def test_room_create_accepts_json_llm_config_without_echoing_secret() -> None:
     assert "example-room-credential" not in get_response.text
 
 
-def test_room_game_uses_sanitized_room_llm_config(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_match_job_uses_sanitized_room_llm_config() -> None:
     client = TestClient(app)
-    captured: dict = {}
-
-    class FakeState:
-        id = "fake-game-from-room-config"
-
-        def snapshot(self, show_private: bool = False) -> dict:
-            return {"id": self.id, "phase": "GAME_END", "winner": "village", "show_private": show_private}
-
-    class FakeGame:
-        state = FakeState()
-
-        def play(self) -> FakeState:
-            return self.state
-
-    def fake_build_game(**kwargs):
-        captured.update(kwargs)
-        return FakeGame()
-
-    monkeypatch.setattr("backend.app._build_game", fake_build_game)
     room_response = client.post(
         "/api/rooms",
         json={
@@ -205,72 +319,40 @@ def test_room_game_uses_sanitized_room_llm_config(monkeypatch: pytest.MonkeyPatc
     )
     assert room_response.status_code == 200
     room = room_response.json()
+    assert client.post(f"/api/rooms/{room['id']}/prepare").status_code == 200
+    started = client.post(f"/api/rooms/{room['id']}/start")
+    assert started.status_code == 200
 
-    game_response = client.post(f"/api/rooms/{room['id']}/games")
+    with SessionLocal() as db:
+        job = db.query(MatchJob).filter(MatchJob.game_id == started.json()["match_id"]).one()
+        config = dict(job.payload["llm_config"])
+        serialized = str(job.payload)
 
-    assert game_response.status_code == 200
-    assert game_response.json()["id"] == "fake-game-from-room-config"
-    assert captured["seed"] == 29
-    assert captured["player_count"] == 7
-    assert captured["agent_type"] == "llm"
-    assert captured["llm_config"] == {
+    assert config == {
         "provider": "anthropic",
         "model": "deepseek-v4-flash",
-        "api_key": "example-room-credential",
         "base_url": "https://api.deepseek.com/anthropic",
     }
+    assert "example-room-credential" not in serialized
 
 
-def test_human_room_flow_blocks_and_accepts_action() -> None:
+def test_human_room_creation_is_explicitly_disabled() -> None:
     client = TestClient(app)
-    probe_game = WerewolfGame(seed=7, player_count=7)
-    human_seat = next(player.seat for player in probe_game.state.players if player.role.value == "Guard")
+    response = client.post("/api/rooms?name=HumanRoom&seed=7&player_count=7&agent_type=llm&human_seat=1")
+    assert response.status_code == 501
+    assert "temporarily disabled" in response.json()["detail"]
 
-    room_response = client.post(
-        f"/api/rooms?name=HumanRoom&seed=7&player_count=7&agent_type=llm&human_seat={human_seat}"
-    )
+
+def test_human_action_endpoint_is_explicitly_disabled() -> None:
+    client = TestClient(app)
+    room_response = client.post("/api/rooms?name=AiOnly&seed=1&player_count=7&agent_type=llm")
     assert room_response.status_code == 200
     room = room_response.json()
-    assert room["human_seat"] == human_seat
-
-    start_response = client.post(f"/api/rooms/{room['id']}/start")
-    assert start_response.status_code == 200
-    pending_state = start_response.json()
-    assert pending_state["pending_input"] is not None
-    assert pending_state["pending_input"]["seat"] == human_seat
-
-    target_id = pending_state["pending_input"]["options"][0]["id"]
     action_response = client.post(
         f"/api/rooms/{room['id']}/action",
-        json={"target_id": target_id, "reasoning": "test action"},
+        json={"target_id": "P1", "reasoning": "not enabled"},
     )
-    assert action_response.status_code == 200
-    resumed_state = action_response.json()
-    assert resumed_state["id"] == pending_state["id"]
-
-
-def test_human_wolf_team_vote_uses_target_action() -> None:
-    client = TestClient(app)
-    room_response = client.post("/api/rooms?name=HumanWolf&seed=1&player_count=7&agent_type=llm&human_seat=5")
-    assert room_response.status_code == 200
-    room = room_response.json()
-
-    start_response = client.post(f"/api/rooms/{room['id']}/start")
-    assert start_response.status_code == 200
-    pending_state = start_response.json()
-    pending = pending_state["pending_input"]
-    assert pending is not None
-    assert pending["seat"] == 5
-    assert pending["request"] == "WOLF_TEAM_VOTE"
-    assert pending["action_type"] == "night_action"
-
-    target_id = pending["options"][0]["id"]
-    action_response = client.post(
-        f"/api/rooms/{room['id']}/action",
-        json={"target_id": target_id, "reasoning": "wolf target proposal"},
-    )
-    assert action_response.status_code == 200
-    assert action_response.json()["id"] == pending_state["id"]
+    assert action_response.status_code == 501
 
 
 def test_room_pause_resume_control_api() -> None:
@@ -278,8 +360,8 @@ def test_room_pause_resume_control_api() -> None:
     room_response = client.post("/api/rooms?name=PauseRoom&seed=23&player_count=7&agent_type=llm")
     assert room_response.status_code == 200
     room = room_response.json()
-    game = _build_game(seed=23, agent_type="llm", player_count=7)
-    _rooms.set_active_game(room["id"], game)
+    assert client.post(f"/api/rooms/{room['id']}/prepare").status_code == 200
+    assert client.post(f"/api/rooms/{room['id']}/start").status_code == 200
 
     pause_response = client.post(f"/api/rooms/{room['id']}/pause")
     assert pause_response.status_code == 200
@@ -296,12 +378,28 @@ def test_room_pause_resume_control_api() -> None:
     assert resume_response.json()["paused"] is False
 
 
+def test_prepared_match_can_start_after_api_memory_is_lost() -> None:
+    client = TestClient(app)
+    room = client.post("/api/rooms?name=RestartRoom&seed=53&player_count=7&agent_type=llm").json()
+    prepared = client.post(f"/api/rooms/{room['id']}/prepare?show_private=true")
+    assert prepared.status_code == 200
+    match_id = prepared.json()["id"]
+
+    _rooms.active_games.clear()
+
+    restored_room = client.get(f"/api/rooms/{room['id']}")
+    assert restored_room.status_code == 200
+    assert restored_room.json()["current_game_id"] == match_id
+    started = client.post(f"/api/rooms/{room['id']}/start")
+    assert started.status_code == 200
+    assert started.json()["match_id"] == match_id
+    assert started.json()["status"] == "queued"
+
+
 def test_runtime_metrics_and_aggregate_endpoints() -> None:
     """Track B/C dashboard contracts: per-game runtime + cross-game aggregate."""
     client = TestClient(app)
-    create = client.post("/api/games?seed=11&agent_type=llm")
-    assert create.status_code == 200
-    game_id = create.json()["id"]
+    game_id = _run_ai_match(client, seed=11)["id"]
 
     runtime = client.get(f"/api/games/{game_id}/runtime_metrics")
     assert runtime.status_code == 200
@@ -395,9 +493,7 @@ def test_replay_json_inline_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_replay_json_exports_full_game_process() -> None:
     client = TestClient(app)
-    create = client.post("/api/games?seed=41&agent_type=llm&player_count=7")
-    assert create.status_code == 200
-    game_id = create.json()["id"]
+    game_id = _run_ai_match(client, seed=41)["id"]
 
     response = client.get(f"/api/replay/{game_id}.json?download=false&show_private=true")
 
@@ -417,6 +513,6 @@ def test_replay_json_exports_full_game_process() -> None:
 
 def test_heuristic_agent_type_is_rejected_for_games() -> None:
     client = TestClient(app)
-    resp = client.post("/api/games?seed=7&agent_type=heuristic")
+    resp = client.post("/api/rooms?seed=7&agent_type=heuristic")
     assert resp.status_code == 400
-    assert "heuristic agents are disabled" in resp.json()["detail"]
+    assert "Only LLM-backed" in resp.json()["detail"]

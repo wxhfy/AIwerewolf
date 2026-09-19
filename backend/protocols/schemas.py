@@ -73,7 +73,7 @@ class RoomRecord:
             "current_game_id": self.current_game_id,
             "game_history": list(self.game_history),
             "latest_snapshot": self.latest_snapshot,
-            "llm_configured": bool(self.llm_config and self.llm_config.get("api_key")),
+            "llm_configured": bool(self.llm_config),
             "llm_provider": safe_llm.get("provider"),
             "llm_model": safe_llm.get("model"),
             "llm_base_url": safe_llm.get("base_url"),

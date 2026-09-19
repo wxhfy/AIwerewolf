@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from contextlib import asynccontextmanager
 from typing import Any
 from typing import Dict
 from typing import Optional
@@ -8,35 +9,48 @@ from typing import Optional
 from fastapi import Body
 from fastapi import FastAPI
 from fastapi import HTTPException
-from fastapi import WebSocket
-from fastapi import WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.responses import Response
 
-from backend.agents.factory import create_agents
+from backend.application.matches.executor import prepare_game
+from backend.application.matches.repository import MatchJobRepository
+from backend.application.matches.spec import MatchExecutionSpec
+from backend.core.config import settings
+from backend.core.errors import install_exception_handlers
+from backend.core.middleware import install_middleware
 from backend.db.database import init_db
-from backend.engine.game import WerewolfGame
 from backend.engine.models import GameState
+from backend.infrastructure.messaging.match_notifications import match_notifications
+from backend.interfaces.http.agent_api import router as agent_api_router
+from backend.interfaces.http.api_v1 import router as api_v1_router
+from backend.interfaces.http.match_stream import router as match_stream_router
 from backend.protocols import RoomCreateRequest
 from backend.protocols import RoomManager
 
-app = FastAPI(title="AI Werewolf Demo", version="0.2.0")
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    _initialize_database()
+    yield
+
+
+app = FastAPI(title=settings.app_name, version=settings.app_version, lifespan=_lifespan)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=list(settings.cors_origins),
+    allow_credentials=settings.cors_allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+install_middleware(app, settings)
+install_exception_handlers(app)
+app.include_router(api_v1_router)
+app.include_router(agent_api_router)
+app.include_router(match_stream_router)
 
 _rooms = RoomManager()
-
-
-def _sample_personas(count: int, seed: int | None) -> list[dict] | None:
-    from backend.db.persona_db import sample_personas
-
-    return sample_personas(count, seed=seed)
+_match_jobs = MatchJobRepository()
 
 
 def _save_game_start(state: GameState) -> None:
@@ -45,16 +59,20 @@ def _save_game_start(state: GameState) -> None:
     save_game_start(state)
 
 
-def _save_game_end(state: GameState) -> None:
-    from backend.db.persist import save_game_end
+def _save_snapshot(state: GameState) -> None:
+    from backend.db.persist import save_snapshot
 
-    save_game_end(state)
-
-
-def _save_decisions(decisions: list[dict]) -> int:
-    from backend.db.persist import save_decisions_batch
-
-    return save_decisions_batch(decisions)
+    moderator = state.snapshot(show_private=True)
+    public = state.snapshot(show_private=False)
+    save_snapshot(
+        state.id,
+        int(moderator.get("seq") or 0),
+        state.day,
+        state.phase.value,
+        moderator,
+        public,
+    )
+    match_notifications.publish(state.id, int(moderator.get("seq") or 0))
 
 
 def _run_post_game_scoring(state: GameState) -> None:
@@ -135,7 +153,6 @@ def _recover_track_c_post_game_jobs() -> int:
     return recovered
 
 
-@app.on_event("startup")
 def _initialize_database() -> None:
     import logging
 
@@ -174,48 +191,14 @@ def health():
     # LLM check
     provider = os.getenv("LLM_PROVIDER", "unset")
     result["checks"]["llm_provider"] = provider
+    redis_status = match_notifications.health()
+    result["checks"]["redis"] = redis_status
+    if redis_status.startswith("error:"):
+        result["status"] = "degraded"
     result["checks"]["strict_mode"] = os.getenv("AIWEREWOLF_STRICT_MODE", "false")
     result["version"] = "0.1.0"
 
     return result
-
-
-def _build_game(
-    seed: int,
-    agent_type: str = "llm",
-    human_seat: Optional[int] = None,
-    player_count: int = 10,
-    rule_pack_id: str = "wolfcha-default",
-    phase_delay_ms: float = 0,
-    llm_config: Optional[Dict[str, Any]] = None,
-) -> WerewolfGame:
-    init_db()
-    game = WerewolfGame(
-        seed=seed,
-        player_count=player_count,
-        phase_delay_ms=phase_delay_ms,
-        persona_sampler=_sample_personas,
-        on_game_start=_save_game_start,
-        on_game_end=_save_game_end,
-        on_decisions_flush=_save_decisions,
-        on_post_game=_run_post_game_scoring,
-    )
-    agent_config: dict[str, Any] = {
-        "type": agent_type,
-        "seed": seed,
-        "human_seat": human_seat,
-        "character_map": game.characters,
-    }
-    if llm_config:
-        agent_config.update(llm_config)
-
-    game.attach_agents(
-        create_agents(
-            game.state.players,
-            agent_config,
-        )
-    )
-    return game
 
 
 def _sanitize_room_llm_config(raw: Any) -> Optional[Dict[str, str]]:
@@ -225,7 +208,6 @@ def _sanitize_room_llm_config(raw: Any) -> Optional[Dict[str, str]]:
     for source_key, target_key in (
         ("provider", "provider"),
         ("model", "model"),
-        ("api_key", "api_key"),
         ("base_url", "base_url"),
     ):
         value = raw.get(source_key)
@@ -263,37 +245,28 @@ def create_game(
     player_count: int = 10,
     rule_pack_id: str = "wolfcha-default",
 ):
-    try:
-        game = _build_game(
-            seed=seed,
-            agent_type=agent_type,
-            human_seat=human_seat,
-            player_count=player_count,
-            rule_pack_id=rule_pack_id,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    if human_seat is not None:
-        state = game.play_until_blocked()
-        _rooms.games[state.id] = state
-        return state.snapshot(show_private=show_private)
-    state = game.play()
-    _rooms.games[state.id] = state
-    return state.moderator_dict() if show_private else state.public_dict()
+    del seed, show_private, agent_type, human_seat, player_count, rule_pack_id
+    raise HTTPException(
+        status_code=410,
+        detail="Synchronous game execution was removed; create a room, prepare it, then start the AI match.",
+    )
 
 
 @app.get("/api/games/{game_id}")
 def get_game(game_id: str, show_private: bool = False):
-    try:
-        state = _rooms.get_game(game_id)
-    except KeyError:
+    from backend.infrastructure.persistence.match_feed import MatchFeedRepository
+
+    snapshot = MatchFeedRepository().latest_snapshot(game_id, moderator=show_private)
+    if snapshot is None:
         raise HTTPException(status_code=404, detail="Game not found")
-    return state.moderator_dict() if show_private else state.public_dict()
+    return snapshot
 
 
 @app.get("/api/games")
 def list_games():
-    return _rooms.list_games()
+    from backend.db.persist import list_games as db_list_games
+
+    return db_list_games(limit=200)
 
 
 @app.get("/api/history")
@@ -761,7 +734,11 @@ def create_room(
     seed = _payload_int(body, "seed", seed)
     player_count = _payload_int(body, "player_count", player_count)
     agent_type = str(body.get("agent_type", agent_type))
+    if agent_type.strip().lower() not in {"llm", "cognitive"}:
+        raise HTTPException(status_code=400, detail="Only LLM-backed AI rooms are supported")
     human_seat = _payload_optional_int(body, "human_seat", human_seat)
+    if human_seat is not None:
+        raise HTTPException(status_code=501, detail="Human matches are temporarily disabled; use an AI-only room")
     rule_pack_id = str(body.get("rule_pack_id", rule_pack_id))
     llm_config = _sanitize_room_llm_config(body.get("llm_config"))
     request = RoomCreateRequest(
@@ -794,17 +771,25 @@ def get_room(room_id: str):
 @app.get("/api/rooms/{room_id}/games")
 def list_room_games(room_id: str):
     try:
-        return _rooms.list_room_games(room_id)
+        _rooms.get_room(room_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="Room not found")
+    return _match_jobs.list_for_room(room_id)
 
 
 @app.get("/api/rooms/{room_id}/snapshot")
 def get_room_snapshot(room_id: str):
     try:
-        snapshot = _rooms.get_latest_snapshot(room_id)
+        room = _rooms.get_room(room_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="Room not found")
+    snapshot = None
+    if room.current_game_id:
+        from backend.infrastructure.persistence.match_feed import MatchFeedRepository
+
+        snapshot = MatchFeedRepository().latest_snapshot(room.current_game_id, moderator=True)
+    if snapshot is None:
+        snapshot = room.latest_snapshot
     if snapshot is None:
         raise HTTPException(status_code=404, detail="Snapshot not found")
     return snapshot
@@ -812,43 +797,19 @@ def get_room_snapshot(room_id: str):
 
 @app.post("/api/rooms/{room_id}/games")
 def create_room_game(room_id: str, show_private: bool = False):
-    try:
-        room = _rooms.get_room(room_id)
-    except KeyError:
-        raise HTTPException(status_code=404, detail="Room not found")
-    game = _build_game(
-        seed=room.seed,
-        agent_type=room.agent_type,
-        human_seat=room.human_seat,
-        player_count=room.player_count,
-        rule_pack_id=room.rule_pack_id,
-        llm_config=room.llm_config,
+    del show_private
+    raise HTTPException(
+        status_code=410,
+        detail="Synchronous room execution was removed; use /prepare followed by /start.",
     )
-    if room.human_seat is not None:
-        _rooms.set_active_game(room_id, game)
-        state = game.play_until_blocked()
-        snapshot = state.snapshot(show_private=True)
-        _rooms.record_snapshot(room_id, snapshot)
-        if state.winner is not None:
-            _rooms.record_game(room_id, state, snapshot)
-        return snapshot
-    state = game.play()
-    snapshot = state.snapshot(show_private=show_private)
-    _rooms.record_game(room_id, state, snapshot)
-    return snapshot
 
 
 @app.post("/api/rooms/{room_id}/prepare")
 def prepare_room_game(room_id: str, show_private: bool = False):
-    """Create the game shell so the lobby has roles + personas to show
-    immediately, without advancing past SETUP.
+    """Create and persist a match shell without advancing beyond setup.
 
-    Flow: lobby Confirm → POST /prepare → setGameState(snapshot) → navigate to
-    play page → play page sees full roster → WebSocket connects → stream_game
-    detects the prepared active_game and starts game.play() itself.
-
-    Idempotent for a given room: if a game is already prepared but not started
-    (or even already running), we just return its current snapshot.
+    Starting the match is a separate REST command. Clients consume ordered,
+    persisted projections through SSE. Repeated calls return the active match.
     """
     try:
         room = _rooms.get_room(room_id)
@@ -861,33 +822,33 @@ def prepare_room_game(room_id: str, show_private: bool = False):
         snapshot = existing.state.snapshot(show_private=show_private)
         _rooms.record_snapshot(room_id, snapshot)
         return snapshot
-    game = _build_game(
+    if room.current_game_id:
+        existing_job = _match_jobs.get_by_game_id(room.current_game_id)
+        if existing_job is not None:
+            from backend.infrastructure.persistence.match_feed import MatchFeedRepository
+
+            snapshot = MatchFeedRepository().latest_snapshot(room.current_game_id, moderator=show_private)
+            if snapshot is not None:
+                return snapshot
+    game = prepare_game(
+        seed=room.seed,
+        player_count=room.player_count,
+        rule_pack_id=room.rule_pack_id,
+    )
+    _rooms.set_active_game(room_id, game)
+
+    _save_game_start(game.state)
+    _save_snapshot(game.state)
+    spec = MatchExecutionSpec.from_game(
+        game,
+        room_id=room_id,
         seed=room.seed,
         agent_type=room.agent_type,
-        human_seat=room.human_seat,
-        player_count=room.player_count,
         rule_pack_id=room.rule_pack_id,
         llm_config=room.llm_config,
     )
-    _rooms.set_active_game(room_id, game)
-    _rooms.reset_snapshot_buffer(room_id)
-
-    # Wire the observer BEFORE initialize() so the GAME_START event and the
-    # role-assignment private events are captured in the room's snapshot
-    # buffer — a reconnecting client picks them up via the WS reuse path.
-    def _observer(state):
-        _rooms.append_snapshot(room_id, state.snapshot(show_private=show_private))
-
-    game.observer = _observer
-    game.initialize()
-    try:
-        from backend.db.persist import save_game_start
-
-        save_game_start(game.state)
-    except Exception:
-        import logging
-
-        logging.getLogger(__name__).warning("save_game_start failed during room prepare", exc_info=True)
+    _match_jobs.prepare(game_id=game.state.id, room_id=room_id, payload=spec.to_dict())
+    _rooms.set_room_status(room_id, "prepared")
     snapshot = game.state.snapshot(show_private=show_private)
     _rooms.record_snapshot(room_id, snapshot)
     return snapshot
@@ -900,56 +861,67 @@ def start_or_resume_room_game(room_id: str, show_private: bool = False):
     except KeyError:
         raise HTTPException(status_code=404, detail="Room not found")
     game = _rooms.get_active_game(room_id)
-    if game is None:
-        game = _build_game(
+    if room.human_seat is not None:
+        raise HTTPException(status_code=501, detail="Human matches are temporarily disabled")
+    if game is None and not room.current_game_id:
+        prepare_room_game(room_id, show_private=True)
+        room = _rooms.get_room(room_id)
+        game = _rooms.get_active_game(room_id)
+    payload = None
+    match_id = room.current_game_id
+    if game is not None:
+        match_id = game.state.id
+        payload = MatchExecutionSpec.from_game(
+            game,
+            room_id=room_id,
             seed=room.seed,
             agent_type=room.agent_type,
-            human_seat=room.human_seat,
-            player_count=room.player_count,
             rule_pack_id=room.rule_pack_id,
             llm_config=room.llm_config,
-        )
-    _rooms.set_active_game(room_id, game)
-    state = game.play_until_blocked()
-    snapshot = state.snapshot(show_private=show_private or room.human_seat is not None)
-    _rooms.record_snapshot(room_id, snapshot)
-    if state.winner is not None:
-        _rooms.record_game(room_id, state, snapshot)
-    return snapshot
+        ).to_dict()
+    if not match_id:
+        raise HTTPException(status_code=500, detail="Prepared match is unavailable")
+    try:
+        job = _match_jobs.enqueue(game_id=match_id, room_id=room_id, payload=payload)
+    except KeyError:
+        raise HTTPException(status_code=409, detail="Prepared match job is unavailable")
+    _rooms.set_room_status(room_id, job["status"])
+    from backend.infrastructure.persistence.match_feed import MatchFeedRepository
+
+    snapshot = MatchFeedRepository().latest_snapshot(match_id, moderator=show_private)
+    if snapshot is None:
+        raise HTTPException(status_code=500, detail="Prepared match snapshot is unavailable")
+    return {
+        "match_id": match_id,
+        "room_id": room_id,
+        "status": job["status"],
+        "seq": snapshot.get("seq", 0),
+        "snapshot": snapshot,
+    }
 
 
 @app.post("/api/rooms/{room_id}/action")
 def submit_room_action(room_id: str, payload: Dict[str, Any], show_private: bool = False):
+    del payload, show_private
     try:
-        game = _rooms.get_active_game(room_id)
+        _rooms.get_room(room_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="Room not found")
-    if game is None:
-        raise HTTPException(status_code=409, detail="No active game")
-    try:
-        state = game.submit_human_action(payload)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    try:
-        room = _rooms.get_room(room_id)
-    except KeyError:
-        room = None
-    snapshot = state.snapshot(show_private=show_private or (room is not None and room.human_seat is not None))
-    _rooms.record_snapshot(room_id, snapshot)
-    if state.winner is not None:
-        _rooms.record_game(room_id, state, snapshot)
-    return snapshot
+    raise HTTPException(status_code=501, detail="Human matches are temporarily disabled")
 
 
 @app.post("/api/rooms/{room_id}/pause")
 def pause_room_game(room_id: str):
     try:
-        game = _rooms.get_active_game(room_id)
+        room = _rooms.get_room(room_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="Room not found")
-    if game is None or game.state.winner is not None:
+    if not room.current_game_id:
         raise HTTPException(status_code=409, detail="No running game")
-    game.pause()
+    try:
+        _match_jobs.set_control_state(room.current_game_id, "paused")
+    except (KeyError, RuntimeError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
     room = _rooms.set_room_status(room_id, "paused")
     return {"room_id": room_id, "paused": True, "status": room.status}
 
@@ -957,12 +929,15 @@ def pause_room_game(room_id: str):
 @app.post("/api/rooms/{room_id}/resume")
 def resume_room_game(room_id: str):
     try:
-        game = _rooms.get_active_game(room_id)
+        room = _rooms.get_room(room_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="Room not found")
-    if game is None or game.state.winner is not None:
+    if not room.current_game_id:
         raise HTTPException(status_code=409, detail="No running game")
-    game.resume()
+    try:
+        _match_jobs.set_control_state(room.current_game_id, "running")
+    except (KeyError, RuntimeError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
     room = _rooms.set_room_status(room_id, "running")
     return {"room_id": room_id, "paused": False, "status": room.status}
 
@@ -973,258 +948,21 @@ def room_control_status(room_id: str):
         room = _rooms.get_room(room_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="Room not found")
-    game = _rooms.get_active_game(room_id)
+    job = _match_jobs.get_by_game_id(room.current_game_id) if room.current_game_id else None
     return {
         "room_id": room_id,
-        "status": room.status,
-        "paused": bool(game is not None and getattr(game, "is_paused", False)),
-        "running": bool(game is not None and game.state.winner is None),
+        "status": job["status"] if job else room.status,
+        "paused": bool(job and job["control_state"] == "paused"),
+        "running": bool(job and job["status"] in {"queued", "running"}),
     }
 
 
-async def stream_game(
-    websocket: WebSocket,
-    seed: int,
-    show_private: bool,
-    agent_type: str = "llm",
-    room_id: str | None = None,
-    player_count: int = 7,
-    rule_pack_id: str = "wolfcha-default",
-    delay_ms: float = 800,
-    llm_config: Optional[Dict[str, Any]] = None,
-) -> GameState:
-    """Stream game snapshots to WebSocket in real-time as the game progresses.
-
-    Supports reconnect: if the room already has an active (running) game, we
-    attach to it instead of starting a second parallel game. Reconnecting
-    clients first receive the entire snapshot buffer accumulated so far, then
-    follow live frames until the game finishes.
-    """
-    import asyncio as aio
-    import threading
-
-    loop = aio.get_running_loop()
-    # Thread-safe queue for real-time snapshot delivery
-    queue: list[dict] = []
-    lock = threading.Lock()
-    done = threading.Event()
-
-    # Reconnect path: if an unfinished game already runs for this room, attach
-    # to it instead of building a fresh one. There are now TWO reconnect
-    # sub-cases:
-    #   - "prepared, not started" — POST /prepare built the game and called
-    #     initialize() but nobody called play() yet. We're the first WS, so we
-    #     should drive game.play() ourselves.
-    #   - "started, running" — another stream_game call is already executing
-    #     game.play() in its executor. We just tail snapshots.
-    # We distinguish via game._play_started, set inside play()'s start lock.
-    is_reused_running = False
-    game: WerewolfGame | None = None
-    if room_id:
-        existing = _rooms.get_active_game(room_id)
-        if existing is not None and existing.state.winner is None:
-            game = existing
-            is_reused_running = game._play_started
-
-    if game is None:
-        game = _build_game(
-            seed=seed,
-            agent_type=agent_type,
-            player_count=player_count,
-            rule_pack_id=rule_pack_id,
-            phase_delay_ms=delay_ms,
-            llm_config=llm_config,
-        )
-        if room_id:
-            _rooms.set_active_game(room_id, game)
-            _rooms.reset_snapshot_buffer(room_id)
-    else:
-        # Override the delay on an existing game so the WS caller's speed
-        # preference takes effect even when the game was pre-built by /prepare.
-        game.phase_delay_ms = delay_ms
-
-    def observe(state: GameState) -> None:
-        snapshot = state.snapshot(show_private=show_private)
-        if room_id:
-            _rooms.append_snapshot(room_id, snapshot)
-        with lock:
-            queue.append(snapshot)
-
-    # The engine only supports one observer; the previous WS's observer (if
-    # any) is now disconnected and its drain task is dead, so overwriting is
-    # safe — but we still pre-load this client with the full history first.
-    game.observer = observe
-    if room_id and (is_reused_running or game._play_started):
-        with lock:
-            queue.extend(_rooms.get_snapshot_buffer(room_id))
-    elif room_id and game.state.events:
-        # Prepared-not-started: the initialize() call emitted GAME_START and
-        # role_assignment events that the lobby already showed via the
-        # /prepare response. Replay them so the WS client sees the same
-        # baseline before live frames start streaming.
-        with lock:
-            queue.extend(_rooms.get_snapshot_buffer(room_id))
-
-    async def drain_queue() -> None:
-        """Send queued snapshots to the WebSocket as they arrive."""
-        last_idx = 0
-        while not done.is_set():
-            with lock:
-                new_snapshots = queue[last_idx:]
-                last_idx = len(queue)
-            for snap in new_snapshots:
-                msg: dict = {"type": "snapshot", "state": snap}
-                if room_id:
-                    msg["room_id"] = room_id
-                    _rooms.record_snapshot(room_id, snap)
-                await websocket.send_json(msg)
-            # Task 3: Check for streaming tokens from LLM calls
-            stream_tokens = getattr(game, "_stream_token_buffer", None)
-            if stream_tokens:
-                tokens_to_send = []
-                while not stream_tokens.empty():
-                    try:
-                        token = stream_tokens.get_nowait()
-                        tokens_to_send.append(token)
-                    except Exception:
-                        break
-                for token_data in tokens_to_send:
-                    await websocket.send_json({"type": "stream_token", **token_data})
-            await aio.sleep(0.08)  # poll every 80ms (was 300ms — felt sluggish during LLM turns)
-        # Final flush so we don't drop snapshots queued between the last loop
-        # iteration and done.set().
-        with lock:
-            new_snapshots = queue[last_idx:]
-        for snap in new_snapshots:
-            msg = {"type": "snapshot", "state": snap}
-            if room_id:
-                msg["room_id"] = room_id
-                _rooms.record_snapshot(room_id, snap)
-            try:
-                await websocket.send_json(msg)
-            except Exception:
-                break
-        # Task 3: Final flush of any remaining stream tokens
-        stream_tokens = getattr(game, "_stream_token_buffer", None)
-        if stream_tokens:
-            while not stream_tokens.empty():
-                try:
-                    token = stream_tokens.get_nowait()
-                    await websocket.send_json({"type": "stream_token", **token})
-                except Exception:
-                    break
-
-    drain_task = aio.create_task(drain_queue())
-    try:
-        if is_reused_running:
-            # The game is already executing in another thread; just tail the
-            # snapshot stream until it finishes. Poll cadence is generous —
-            # what matters for UX is drain_queue's 80ms cycle.
-            while game.state.winner is None and not game.play_done.is_set():
-                await aio.sleep(0.5)
-            state = game.state
-        else:
-            # Either fresh game or prepared-but-not-started — we drive
-            # game.play() ourselves. The idempotent guard inside play()
-            # makes this safe even if a second WS races us.
-            state = await loop.run_in_executor(None, game.play)
-    finally:
-        done.set()
-        try:
-            await drain_task
-        except Exception:
-            pass
-
-    _rooms.games[state.id] = state
-    return state
-
-
-@app.websocket("/ws/games")
-async def games_ws(websocket: WebSocket) -> None:
-    await websocket.accept()
-    try:
-        while True:
-            payload = await websocket.receive_json()
-            if payload.get("action") != "start":
-                await websocket.send_json({"type": "error", "message": "Unsupported action"})
-                continue
-            seed = int(payload.get("seed", 7))
-            agent_type = str(payload.get("agent_type", "llm"))
-            show_private = bool(payload.get("show_private", False))
-            delay_ms = max(0, float(payload.get("delay_ms", 800)))
-            await websocket.send_json({"type": "status", "status": "starting"})
-            player_count = int(payload.get("player_count", 7))
-            state = await stream_game(
-                websocket, seed, show_private, agent_type=agent_type, player_count=player_count, delay_ms=delay_ms
-            )
-            final = state.snapshot(show_private=show_private)
-            await websocket.send_json({"type": "complete", "state": final})
-    except WebSocketDisconnect:
-        return
-
-
-@app.websocket("/ws/rooms/{room_id}")
-async def room_ws(websocket: WebSocket, room_id: str) -> None:
-    await websocket.accept()
-    try:
-        room = _rooms.get_room(room_id)
-    except KeyError:
-        await websocket.send_json({"type": "error", "message": "Room not found"})
-        await websocket.close()
-        return
-
-    try:
-        while True:
-            payload = await websocket.receive_json()
-            if payload.get("action") != "start":
-                await websocket.send_json({"type": "error", "message": "Unsupported action"})
-                continue
-            if room.human_seat is not None:
-                await websocket.send_json(
-                    {"type": "error", "message": "Human rooms use /api/rooms/{room_id}/start and /action."}
-                )
-                continue
-            show_private = bool(payload.get("show_private", False))
-            room.seed = int(payload.get("seed", room.seed))
-            room.agent_type = str(payload.get("agent_type", room.agent_type))
-            delay_ms = max(0, float(payload.get("delay_ms", 800)))
-            _rooms.set_room_status(room_id, "running")
-            await websocket.send_json({"type": "room", "room": room.to_dict()})
-            state = await stream_game(
-                websocket,
-                room.seed,
-                show_private,
-                agent_type=room.agent_type,
-                room_id=room_id,
-                player_count=room.player_count,
-                rule_pack_id=room.rule_pack_id,
-                delay_ms=delay_ms,
-                llm_config=room.llm_config,
-            )
-            final = state.snapshot(show_private=show_private)
-            if state.winner is None:
-                if getattr(_rooms.get_active_game(room_id), "is_paused", False):
-                    _rooms.record_snapshot(room_id, final)
-                    room = _rooms.set_room_status(room_id, "paused")
-                    try:
-                        await websocket.send_json({"type": "paused", "state": final, "room": room.to_dict()})
-                    except (RuntimeError, WebSocketDisconnect):
-                        return
-                else:
-                    _rooms.record_snapshot(room_id, final)
-                    _rooms.set_room_status(room_id, "running")
-                    try:
-                        await websocket.send_json({"type": "snapshot", "state": final, "room_id": room_id})
-                    except (RuntimeError, WebSocketDisconnect):
-                        return
-                continue
-            room = _rooms.record_game(room_id, state, final)
-            try:
-                await websocket.send_json({"type": "complete", "state": final, "room": room.to_dict()})
-            except (RuntimeError, WebSocketDisconnect):
-                return
-    except WebSocketDisconnect:
-        return
+@app.get("/api/matches/{match_id}")
+def get_match_execution(match_id: str):
+    job = _match_jobs.get_by_game_id(match_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Match execution not found")
+    return job
 
 
 @app.get("/")

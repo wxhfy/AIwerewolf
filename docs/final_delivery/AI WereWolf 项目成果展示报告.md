@@ -929,9 +929,9 @@ python -m backend.run_demo --seed 7
 | 文档 | 路径 | 内容 |
 | --- | --- | --- |
 | 项目需求与设计目标 | `REQUIREMENTS.md` | 项目定位、核心需求、架构优势、功能范围 |
-| 核心模块设计 | `docs/PROJECT_MODULE_DESIGN.md` | 9 大核心模块的输入输出、内部流程、关键设计与验收方式 |
-| 工程架构图谱 | `docs/ENGINEERING_ARCHITECTURE.md` | 6 层架构 Mermaid 图、闭环数据流 |
-| 开发技能手册 | `SKILLS.md` | 狼人杀业务知识、参考仓库、角色规则 |
+| 当前架构与技术选型 | `docs/architecture/README.md` | V2 分层边界、运行信息流、技术选型与职责划分 |
+| 产品需求 | `docs/prd.md` | 项目需求、系统目标和验收范围 |
+| 工程入口 | `AGENTS.md` | 精简后的协作方式、架构方向和验证命令 |
 
 
 **核心图表（共 8 张）：**

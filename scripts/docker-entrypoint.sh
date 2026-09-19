@@ -3,7 +3,6 @@
 # AI Werewolf — Docker Entrypoint
 # ============================================================================
 set -euo pipefail
-
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "🐺  AI Werewolf — Starting..."
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -17,6 +16,8 @@ if [ -n "${DATABASE_URL:-}" ]; then
 import os, psycopg2
 url = os.environ.get('DATABASE_URL', '')
 if url:
+    if url.startswith('postgresql+') or url.startswith('postgres+'):
+        url = url.split('+', 1)[0] + '://' + url.split('://', 1)[1]
     conn = psycopg2.connect(url)
     conn.close()
     print('connected')
@@ -24,7 +25,7 @@ if url:
         ATTEMPTS=$((ATTEMPTS + 1))
         if [ $ATTEMPTS -ge $MAX_ATTEMPTS ]; then
             echo "❌  PostgreSQL did not become ready in time"
-            break
+            exit 1
         fi
         sleep 2
     done
@@ -34,7 +35,7 @@ fi
 # --- Run DB migrations ---
 if [ "${AUTO_MIGRATE:-true}" = "true" ]; then
     echo "🔄  Running database migrations..."
-    python -c "from backend.db.database import init_db; init_db(); print('Schema applied')" || echo "⚠️  Migration skipped (DB may not be ready)"
+    python -c "from backend.db.database import init_db; init_db(); print('Schema applied')"
 fi
 
 # --- Run preflight ---

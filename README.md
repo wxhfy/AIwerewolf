@@ -36,7 +36,7 @@
 | Evolve | Track C 抽取策略知识，维护 `candidate -> active -> deprecated` 生命周期，并通过 `StrategyRetriever` 回流下一局 Agent |
 | Interaction | Next.js 前端提供大厅、观战、真人操作、人格配置、单局复盘和统计看板 |
 
-工程架构说明见 [`docs/ENGINEERING_ARCHITECTURE.md`](docs/ENGINEERING_ARCHITECTURE.md)，核心模块说明见 [`docs/PROJECT_MODULE_DESIGN.md`](docs/PROJECT_MODULE_DESIGN.md)。
+当前架构边界与技术选型见 [`docs/architecture/README.md`](docs/architecture/README.md)。
 
 ## 系统架构
 
@@ -61,9 +61,9 @@
 | 复盘能力 | Track B 逐决策质量评估、复盘报告、关键决策展示、leaderboard 和统计看板 |
 | 进化能力 | Track C 策略知识抽取、candidate/active/deprecated 生命周期、策略检索回流 |
 | 前端能力 | 大厅、对局观战、真人操作、单局复盘、统计看板、人格配置页 |
-| 工程能力 | FastAPI REST/WebSocket、SQLAlchemy 持久化、配置化规则、严格信息隔离验证 |
+| 工程能力 | FastAPI REST/SSE、SQLAlchemy 持久化、配置化规则、严格信息隔离验证 |
 
-核心模块设计详见 [`docs/PROJECT_MODULE_DESIGN.md`](docs/PROJECT_MODULE_DESIGN.md)，覆盖对局引擎、信息隔离、CognitiveAgent、AgentLoop、StrategyRetriever、PostgreSQL 证据链、PerStepScorer、Track C 知识层和前端控制台。
+现有功能仍保留在原模块中；V2 将按展示层、应用层、领域与 Agent 层、基础设施层逐步迁移，迁移边界见 [`docs/architecture/README.md`](docs/architecture/README.md)。
 
 ## Track B：复盘评测
 
@@ -142,7 +142,7 @@ npm run dev                           # 前端 http://localhost:3001
 | API 文档 | `http://localhost:8000/docs` | 后端接口、房间、对局、复盘、策略知识 API |
 | 大厅 | `http://localhost:3001/` | 创建房间、选择 AI/Human 席位、进入对局 |
 | 对局观战 | `/room/[id]/play` | 阶段流转、玩家状态、发言、投票、事件流、观众视角 |
-| 真人操作 | `/room/[id]/human` | 真人玩家身份视图、目标选择、行动提交 |
+| 真人操作 | 暂停开放 | 等 AI-only Worker 流程稳定后再设计持久化命令与重连 |
 | 单局复盘 | `/games/[id]/report` | PublishedReview、关键决策、证据链和回放信息 |
 | 统计看板 | `/eval/dashboard` | 多局统计、leaderboard、角色与策略对比 |
 | 人格配置 | `/personas` | MBTI 人格与 Agent 行为参数 |
@@ -151,7 +151,7 @@ npm run dev                           # 前端 http://localhost:3001
 
 | 层 | 技术 |
 |---|---|
-| 后端服务 | Python 3.12+ / FastAPI / WebSocket |
+| 后端服务 | Python 3.12+ / FastAPI / SSE |
 | 游戏引擎 | dataclass + Enum 纯逻辑规则引擎 |
 | Agent | `CognitiveAgent` / AgentLoop / Memory / SocialModel / StrategyRetriever |
 | LLM 接入 | `backend.llm.create_client()` |
@@ -163,7 +163,7 @@ npm run dev                           # 前端 http://localhost:3001
 ```text
 AIwerewolf/
 ├── backend/
-│   ├── app.py                 # FastAPI / REST / WebSocket
+│   ├── app.py                 # FastAPI / REST / SSE
 │   ├── engine/                # WerewolfGame、规则、阶段、信息隔离
 │   ├── agents/cognitive/      # CognitiveAgent、AgentLoop、Memory、Retriever
 │   ├── eval/                  # Track B/C 复盘评测与知识进化
@@ -186,7 +186,7 @@ AIwerewolf/
 | 代码仓库 | `backend/`, `frontend/`, `configs/`, `scripts/`, `tests/` |
 | 产品原型 | Next.js 前端：大厅、观战、真人操作、复盘、人格配置 |
 | Demo 链接 | 本地后端 `http://localhost:8000/docs`，本地前端 `http://localhost:3001` |
-| 项目介绍文档 | `docs/FINAL_SHOWCASE_REPORT.md`, `docs/ENGINEERING_ARCHITECTURE.md`, `docs/PROJECT_MODULE_DESIGN.md`, `docs/prd.md` |
+| 项目介绍文档 | `docs/architecture/README.md`, `docs/FINAL_SHOWCASE_REPORT.md`, `docs/prd.md` |
 | 轻量展示资产 | `docs/assets/ai-werewolf-icon.svg` |
 
 ## 文档导航
@@ -194,9 +194,8 @@ AIwerewolf/
 | 文档 | 说明 |
 |---|---|
 | [`docs/README.md`](docs/README.md) | 文档阅读顺序和归档说明 |
+| [`docs/architecture/README.md`](docs/architecture/README.md) | V2 分层架构、技术选型、运行信息流和三方职责 |
 | [`docs/FINAL_SHOWCASE_REPORT.md`](docs/FINAL_SHOWCASE_REPORT.md) | GitHub 粗略展示报告和核心量化概览 |
-| [`docs/ENGINEERING_ARCHITECTURE.md`](docs/ENGINEERING_ARCHITECTURE.md) | 分层架构、运行时序、信息隔离、数据闭环和 Track C 生命周期说明 |
-| [`docs/PROJECT_MODULE_DESIGN.md`](docs/PROJECT_MODULE_DESIGN.md) | 核心模块设计与实现说明 |
 | [`docs/prd.md`](docs/prd.md) | 需求和系统设计目标 |
 
 ## License

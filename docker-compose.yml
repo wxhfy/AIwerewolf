@@ -22,12 +22,28 @@ services:
       - "${POSTGRES_PORT:-5433}:5432"
     volumes:
       - werewolf-pg-data:/var/lib/postgresql/data
-      - ./backend/db/migrations:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U werewolf -d werewolf"]
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - werewolf-net
+
+  redis:
+    image: ${REDIS_IMAGE:-redis:7-alpine}
+    container_name: ${REDIS_CONTAINER_NAME:-werewolf-redis}
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    ports:
+      - "${REDIS_PORT:-6380}:6379"
+    volumes:
+      - werewolf-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
     networks:
       - werewolf-net
 
@@ -43,8 +59,11 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
       DATABASE_URL: ${COMPOSE_DATABASE_URL:-postgresql+psycopg2://werewolf:werewolf_dev_password@postgres:5432/werewolf}
+      REDIS_URL: ${COMPOSE_REDIS_URL:-redis://redis:6379/0}
       LLM_PROVIDER: ${LLM_PROVIDER:-deepseek}
       DOUBAO_API_KEY: ${DOUBAO_API_KEY:-}
       DOUBAO_BASE_URL: ${DOUBAO_BASE_URL:-https://ark.cn-beijing.volces.com/api/v3}
@@ -61,6 +80,38 @@ services:
     networks:
       - werewolf-net
 
+  match-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ${MATCH_WORKER_CONTAINER_NAME:-werewolf-match-worker}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${COMPOSE_DATABASE_URL:-postgresql+psycopg2://werewolf:werewolf_dev_password@postgres:5432/werewolf}
+      REDIS_URL: ${COMPOSE_REDIS_URL:-redis://redis:6379/0}
+      LLM_PROVIDER: ${LLM_PROVIDER:-deepseek}
+      DOUBAO_API_KEY: ${DOUBAO_API_KEY:-}
+      DOUBAO_BASE_URL: ${DOUBAO_BASE_URL:-https://ark.cn-beijing.volces.com/api/v3}
+      DOUBAO_MODEL: ${DOUBAO_MODEL:-Doubao-Seed-2.0-pro}
+      DOUBAO_ENDPOINT: ${DOUBAO_ENDPOINT:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+      DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-v4-flash}
+      AIWEREWOLF_STRICT_MODE: ${AIWEREWOLF_STRICT_MODE:-true}
+      ALLOW_FALLBACK: ${ALLOW_FALLBACK:-false}
+      AUTO_MIGRATE: "true"
+      MATCH_WORKER_POLL_SECONDS: ${MATCH_WORKER_POLL_SECONDS:-1}
+    command: python -m backend.workers.match_worker
+    healthcheck:
+      disable: true
+    networks:
+      - werewolf-net
+
   # ------------------------------------------------------------------
   # Next.js Frontend
   # ------------------------------------------------------------------
@@ -74,7 +125,6 @@ services:
       - backend
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost/api}
-      NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-ws://localhost/ws}
       PORT: ${FRONTEND_CONTAINER_PORT:-3001}
     expose:
       - "${FRONTEND_CONTAINER_PORT:-3001}"
@@ -111,8 +161,11 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
       DATABASE_URL: ${COMPOSE_DATABASE_URL:-postgresql+psycopg2://werewolf:werewolf_dev_password@postgres:5432/werewolf}
+      REDIS_URL: ${COMPOSE_REDIS_URL:-redis://redis:6379/0}
       LLM_PROVIDER: ${LLM_PROVIDER:-deepseek}
       DOUBAO_API_KEY: ${DOUBAO_API_KEY:-}
       AIWEREWOLF_STRICT_MODE: "true"
@@ -124,6 +177,36 @@ services:
       - ./configs:/app/configs
       - ./scripts:/app/scripts
     command: uvicorn backend.app:app --host 0.0.0.0 --port 8000 --reload
+    networks:
+      - werewolf-net
+
+  dev-match-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ${DEV_MATCH_WORKER_CONTAINER_NAME:-werewolf-dev-match-worker}
+    profiles: ["dev"]
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${COMPOSE_DATABASE_URL:-postgresql+psycopg2://werewolf:werewolf_dev_password@postgres:5432/werewolf}
+      REDIS_URL: ${COMPOSE_REDIS_URL:-redis://redis:6379/0}
+      LLM_PROVIDER: ${LLM_PROVIDER:-deepseek}
+      DOUBAO_API_KEY: ${DOUBAO_API_KEY:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      AIWEREWOLF_STRICT_MODE: "true"
+      AUTO_MIGRATE: "true"
+    volumes:
+      - ./backend:/app/backend
+      - ./configs:/app/configs
+      - ./scripts:/app/scripts
+    command: python -m backend.workers.match_worker
+    healthcheck:
+      disable: true
     networks:
       - werewolf-net
 
@@ -141,7 +224,6 @@ services:
       - ./frontend:/app
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost/api}
-      NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-ws://localhost/ws}
       PORT: ${FRONTEND_CONTAINER_PORT:-3001}
     command: sh -c "npm install --legacy-peer-deps && npm run dev"
     networks:
@@ -155,3 +237,5 @@ networks:
 volumes:
   werewolf-pg-data:
     name: werewolf-pg-data
+  werewolf-redis-data:
+    name: werewolf-redis-data

@@ -16,6 +16,7 @@ from sqlalchemy import Index
 from sqlalchemy import Integer
 from sqlalchemy import String
 from sqlalchemy import Text
+from sqlalchemy import UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.orm import relationship
 
@@ -58,6 +59,7 @@ class Game(Base):
     snapshots = relationship("GameSnapshot", back_populates="game", cascade="all, delete-orphan")
     votes = relationship("Vote", back_populates="game", cascade="all, delete-orphan")
     evaluations = relationship("Evaluation", back_populates="game", cascade="all, delete-orphan")
+    match_job = relationship("MatchJob", back_populates="game", uselist=False, cascade="all, delete-orphan")
 
     __table_args__ = (
         # History listing: ORDER BY created_at DESC LIMIT N (api/history)
@@ -65,6 +67,124 @@ class Game(Base):
         # Leaderboard / win-rate per rule pack: WHERE status='finished' AND rule_pack_id=?
         Index("ix_games_status_rulepack", "status", "rule_pack_id"),
     )
+
+
+class GameRoom(Base):
+    """Durable room metadata used by stateless API instances."""
+
+    __tablename__ = "rooms"
+
+    id = Column(String, primary_key=True, default=_uuid)
+    name = Column(String, nullable=False)
+    seed = Column(Integer, default=7, nullable=False)
+    player_count = Column(Integer, default=7, nullable=False)
+    agent_type = Column(String, default="llm", nullable=False)
+    human_seat = Column(Integer, nullable=True)
+    rule_pack_id = Column(String, default="wolfcha-default", nullable=False)
+    llm_config = Column(JSON, default=dict, nullable=False)
+    status = Column(String, default="idle", nullable=False, index=True)
+    current_game_id = Column(String, nullable=True, index=True)
+    game_history = Column(JSON, default=list, nullable=False)
+    latest_snapshot = Column(JSON, nullable=True)
+    created_at = Column(Float, default=0.0, nullable=False)
+    updated_at = Column(Float, default=0.0, nullable=False, index=True)
+
+
+class MatchJob(Base):
+    """Durable command consumed by the standalone match worker.
+
+    PostgreSQL owns job state. Redis may wake readers, but it is not required
+    to recover or inspect a match execution.
+    """
+
+    __tablename__ = "match_jobs"
+
+    id = Column(String, primary_key=True, default=_uuid)
+    game_id = Column(String, ForeignKey("games.id"), nullable=False, unique=True, index=True)
+    room_id = Column(String, nullable=False, index=True)
+    status = Column(String, default="queued", nullable=False, index=True)
+    control_state = Column(String, default="running", nullable=False, index=True)
+    payload = Column(JSON, default=dict, nullable=False)
+    attempts = Column(Integer, default=0, nullable=False)
+    max_attempts = Column(Integer, default=1, nullable=False)
+    worker_id = Column(String, nullable=True, index=True)
+    lease_expires_at = Column(DateTime, nullable=True, index=True)
+    heartbeat_at = Column(DateTime, nullable=True)
+    started_at = Column(DateTime, nullable=True)
+    finished_at = Column(DateTime, nullable=True)
+    last_error = Column(Text, default="")
+    created_at = Column(DateTime, default=_utcnow, nullable=False, index=True)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow, nullable=False)
+
+    game = relationship("Game", back_populates="match_job")
+
+    __table_args__ = (
+        Index("ix_match_jobs_claim", "status", "created_at"),
+        Index("ix_match_jobs_room_status", "room_id", "status"),
+    )
+
+
+class MatchCommand(Base):
+    """Idempotent control command accepted by the public API."""
+
+    __tablename__ = "match_commands"
+
+    id = Column(String, primary_key=True)
+    match_id = Column(String, ForeignKey("games.id"), nullable=False, index=True)
+    command_type = Column(String, nullable=False)
+    actor_id = Column(String, nullable=False, default="anonymous")
+    expected_seq = Column(Integer, nullable=True)
+    payload = Column(JSON, default=dict, nullable=False)
+    status = Column(String, default="accepted", nullable=False, index=True)
+    result = Column(JSON, default=dict, nullable=False)
+    error = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=_utcnow, nullable=False, index=True)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow, nullable=False)
+
+    __table_args__ = (Index("ix_match_commands_match_created", "match_id", "created_at"),)
+
+
+class AgentDecisionJob(Base):
+    """Reserved durable boundary for a separately deployed Agent Service."""
+
+    __tablename__ = "agent_decision_jobs"
+
+    id = Column(String, primary_key=True, default=_uuid)
+    request_id = Column(String, nullable=False, unique=True, index=True)
+    match_id = Column(String, ForeignKey("games.id"), nullable=False, index=True)
+    player_id = Column(String, nullable=False, index=True)
+    action_type = Column(String, nullable=False)
+    request_payload = Column(JSON, default=dict, nullable=False)
+    response_payload = Column(JSON, nullable=True)
+    status = Column(String, default="queued", nullable=False, index=True)
+    attempts = Column(Integer, default=0, nullable=False)
+    worker_id = Column(String, nullable=True, index=True)
+    lease_expires_at = Column(DateTime, nullable=True, index=True)
+    last_error = Column(Text, default="", nullable=False)
+    created_at = Column(DateTime, default=_utcnow, nullable=False, index=True)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow, nullable=False)
+
+    __table_args__ = (Index("ix_agent_jobs_claim", "status", "created_at"),)
+
+
+class OutboxEvent(Base):
+    """Transactional outbox row; publication is deliberately a separate process."""
+
+    __tablename__ = "outbox_events"
+
+    id = Column(String, primary_key=True, default=_uuid)
+    aggregate_type = Column(String, nullable=False)
+    aggregate_id = Column(String, nullable=False, index=True)
+    event_type = Column(String, nullable=False, index=True)
+    payload = Column(JSON, default=dict, nullable=False)
+    status = Column(String, default="pending", nullable=False, index=True)
+    attempts = Column(Integer, default=0, nullable=False)
+    available_at = Column(DateTime, default=_utcnow, nullable=False, index=True)
+    published_at = Column(DateTime, nullable=True)
+    last_error = Column(Text, default="", nullable=False)
+    created_at = Column(DateTime, default=_utcnow, nullable=False, index=True)
+
+    __table_args__ = (Index("ix_outbox_publish", "status", "available_at", "created_at"),)
 
 
 class Player(Base):
@@ -113,6 +233,7 @@ class GameEvent(Base):
     game = relationship("Game", back_populates="events")
 
     __table_args__ = (
+        UniqueConstraint("game_id", "seq", name="uq_game_events_game_seq"),
         # Replay: pull every event of one game in sequence order
         Index("ix_events_game_seq", "game_id", "seq"),
         # Filter "all votes / kills / chat in one game"
@@ -174,6 +295,7 @@ class GameSnapshot(Base):
 
     id = Column(String, primary_key=True, default=_uuid)
     game_id = Column(String, ForeignKey("games.id"), nullable=False, index=True)
+    seq = Column(Integer, default=0, nullable=False)
     day = Column(Integer, default=0)
     phase = Column(String, default="")
     truth_state = Column(JSON, default=dict)  # full state (moderator view)
@@ -183,6 +305,7 @@ class GameSnapshot(Base):
     game = relationship("Game", back_populates="snapshots")
 
     __table_args__ = (
+        UniqueConstraint("game_id", "seq", name="uq_game_snapshots_game_seq"),
         # Replay panel: jump to a (day, phase) snapshot in one game
         Index("ix_snapshots_game_day_phase", "game_id", "day", "phase"),
     )

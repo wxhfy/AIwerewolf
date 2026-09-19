@@ -141,12 +141,10 @@ export default function LobbyPage() {
     const config: RoomLlmConfig = {};
     const provider = settings.modelProvider.trim();
     const model = settings.modelName.trim();
-    const apiKey = settings.apiKey.trim();
     const baseUrl = settings.baseUrl.trim().replace(/\/+$/, "");
-    if (!apiKey) return undefined;
+    if (!provider && !model && !baseUrl) return undefined;
     if (provider) config.provider = provider;
     if (model) config.model = model;
-    config.api_key = apiKey;
     if (baseUrl) config.base_url = baseUrl;
     if (settings.apiFormat.trim()) config.api_format = settings.apiFormat.trim();
     return config;

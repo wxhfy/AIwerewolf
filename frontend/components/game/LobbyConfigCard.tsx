@@ -34,10 +34,11 @@ export function LobbyConfigCard(props: LobbyConfigCardProps) {
         <label className="block text-xs font-medium text-text-sub/60 mb-2.5 uppercase tracking-wider min-h-[1em]">{t("gameMode", language)}</label>
         <div className="flex rounded-lg border border-border/40 p-0.5 bg-border/5">
           {(["ai", "human"] as const).map((m) => (
-            <button key={m} data-testid={`mode-${m}-button`} onClick={() => onModeChange(m)}
+            <button key={m} data-testid={`mode-${m}-button`} onClick={() => onModeChange(m)} disabled={m === "human"}
+              title={m === "human" ? (language === "zh" ? "真人对局将在 AI 对局架构稳定后开放" : "Human matches will return after the AI architecture is stable") : undefined}
               className={`flex-1 py-2.5 text-sm font-medium rounded-md transition-all duration-200 ${
                 mode === m ? "bg-primary text-white shadow-[0_2px_8px_rgba(183,131,63,0.3)]" : "text-text-sub/60 hover:text-textPrimary"
-              }`}>
+              } ${m === "human" ? "cursor-not-allowed opacity-35" : ""}`}>
               {m === "ai" ? t("aiVsAi", language) : t("humanPlay", language)}
             </button>
           ))}

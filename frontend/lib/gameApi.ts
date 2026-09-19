@@ -20,6 +20,14 @@ interface HumanActionPayload {
   save?: boolean;
 }
 
+export interface StartMatchResponse {
+  match_id: string;
+  room_id: string;
+  status: "queued" | "running" | "completed";
+  seq: number;
+  snapshot: GameState;
+}
+
 async function parseJson<T>(response: Response): Promise<T> {
   return response.json() as Promise<T>;
 }
@@ -66,6 +74,15 @@ export async function startRoom(roomId: string, showPrivate = false): Promise<Ga
   const response = await fetchWithTimeout(apiUrl(`/api/rooms/${roomId}/start?show_private=${showPrivate ? "true" : "false"}`), { method: "POST" });
   if (!response.ok) throw new Error(`Start failed (${response.status})`);
   return parseJson<GameState>(response);
+}
+
+export async function startAiMatch(roomId: string, showPrivate = false): Promise<StartMatchResponse> {
+  const response = await fetchWithTimeout(
+    apiUrl(`/api/rooms/${roomId}/start?show_private=${showPrivate ? "true" : "false"}`),
+    { method: "POST" },
+  );
+  if (!response.ok) throw new Error(`Start failed (${response.status})`);
+  return parseJson<StartMatchResponse>(response);
 }
 
 export async function fetchRoom(roomId: string): Promise<RoomRecord | null> {

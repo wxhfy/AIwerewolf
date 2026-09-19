@@ -203,6 +203,7 @@ class GameEvent:
     visibility: str
     payload: dict[str, Any]
     visible_to: list[str] = field(default_factory=list)
+    seq: int = 0
 
     @classmethod
     def create(
@@ -214,6 +215,7 @@ class GameEvent:
         visibility: str,
         payload: dict[str, Any],
         visible_to: list[str] | None = None,
+        seq: int = 0,
     ) -> GameEvent:
         return cls(
             id=str(uuid4()),
@@ -224,11 +226,13 @@ class GameEvent:
             visibility=visibility,
             payload=payload,
             visible_to=visible_to or [],
+            seq=seq,
         )
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
+            "seq": self.seq,
             "ts": self.ts,
             "day": self.day,
             "phase": self.phase.value,
@@ -389,6 +393,7 @@ class GameState:
 
     def snapshot(self, *, show_private: bool = False) -> dict[str, Any]:
         data = self.moderator_dict() if show_private else self.public_dict()
+        data["seq"] = max((event.seq for event in self.events), default=0)
         data["alive_count"] = sum(1 for player in self.players if player.alive)
         data["event_count"] = len(data["events"])
         if data["events"]:

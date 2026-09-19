@@ -9,7 +9,7 @@ GitHub 仓库：<https://github.com/wxhfy/AIwerewolf>
 | 代码仓库 | <https://github.com/wxhfy/AIwerewolf> |
 | 产品原型 | `frontend/` |
 | 本地 Demo | 前端 `http://localhost:3001`，API `http://localhost:8000/docs` |
-| 技术文档 | `README.md`，`docs/ENGINEERING_ARCHITECTURE.md`，`DEPLOY.md` |
+| 技术文档 | `README.md`，`docs/architecture/README.md`，`DEPLOY.md` |
 | 数据结果 | 本目录 HTML 报告和 `evidence/` |
 
 本目录保留四个最终展示报告：

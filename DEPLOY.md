@@ -74,7 +74,7 @@ make deploy-status       # 查看状态
 | 前端 | http://localhost |
 | API | http://localhost/api |
 | Swagger | http://localhost/api/docs |
-| WebSocket | ws://localhost/ws |
+| SSE | http://localhost/api/matches/{match_id}/stream |
 
 ---
 
@@ -204,6 +204,6 @@ LLM_PROVIDER=fake
 
 ## 更多文档
 
-- 项目架构：`docs/ENGINEERING_ARCHITECTURE.md`
-- 模块设计：`docs/PROJECT_MODULE_DESIGN.md`
-- API 契约：`skills/50-api-contract.md`
+- 当前架构与技术选型：`docs/architecture/README.md`
+- 文档导航：`docs/README.md`
+- 产品需求：`docs/prd.md`

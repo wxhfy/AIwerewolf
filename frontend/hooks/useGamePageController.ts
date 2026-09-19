@@ -119,8 +119,6 @@ export function useGamePageController(roomId: string) {
     setGameState,
     setIsPlaying,
     setStatusTitle,
-    getIsBlinking: phase.getIsBlinking,
-    bufferSnapshot: phase.bufferSnapshot,
     showPrivate: showPrivateView,
   });
 

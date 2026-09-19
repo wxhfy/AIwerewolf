@@ -169,11 +169,11 @@ Layer 3  策略知识  → 教"怎么赢"（BM25 检索历史经验）
 
 ## 四、通信与前端
 
-### 4.1 WebSocket 实时推送
+### 4.1 SSE 实时推送
 
-- `/ws/games`：游戏状态快照实时流
+- `/api/matches/{match_id}/stream`：游戏状态快照实时流
 - 支持 public/private 视角切换
-- snapshot buffer 支持重连恢复
+- Last-Event-ID 支持重连恢复
 
 ### 4.2 REST API
 
@@ -213,7 +213,7 @@ Layer 3  策略知识  → 教"怎么赢"（BM25 检索历史经验）
 
 | 层 | 技术 |
 |------|------|
-| 后端 | Python 3.12+ · FastAPI · WebSocket |
+| 后端 | Python 3.12+ · FastAPI · SSE |
 | 前端 | Next.js 16 · React 18 · Tailwind CSS |
 | 数据库 | PostgreSQL 16（Docker） |
 | LLM | Anthropic/OpenAI 兼容端点（DeepSeek / 豆包） |

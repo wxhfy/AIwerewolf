@@ -126,6 +126,7 @@ export interface EventPayload {
 
 export interface GameEvent {
   id: string;
+  seq: number;
   ts: number;
   day: number;
   phase: string;
@@ -186,6 +187,7 @@ export interface PendingInput {
 
 export interface GameState {
   id: string;
+  seq: number;
   phase: string;
   day: number;
   players: Player[];
@@ -298,23 +300,6 @@ export interface TrackBReviewDocument {
   created_at?: string | null;
   published_at?: string | null;
 }
-
-export type WebSocketMessage =
-  | { type: "status"; status: string; seed?: number; agent_type?: string }
-  | { type: "snapshot"; state: GameState; room_id?: string }
-  | { type: "complete"; state?: GameState; room?: RoomRecord }
-  | { type: "paused"; state?: GameState; room?: RoomRecord }
-  | { type: "room"; room: RoomRecord }
-  | { type: "error"; message: string }
-  | { type: "stream_token"; player_id: string; player_name: string; delta: string; finish_reason?: string | null };
-
-export type WebSocketRequest = {
-  action: "start";
-  seed?: number;
-  agent_type?: string;
-  show_private?: boolean;
-  delay_ms?: number;
-};
 
 export enum ViewMode {
   PUBLIC = "public",

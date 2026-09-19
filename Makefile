@@ -66,7 +66,7 @@ deploy-status:
 # 🛠  Local Development
 # ------------------------------------------------------------------
 
-.PHONY: install dev demo test lint format
+.PHONY: install dev worker demo test lint format
 
 install:
 	$(PYTHON) -m pip install -r requirements.txt
@@ -74,6 +74,9 @@ install:
 
 dev:
 	$(PYTHON) -m uvicorn backend.app:app --host 0.0.0.0 --port $(PORT) --reload
+
+worker:
+	$(PYTHON) -m backend.workers.match_worker
 
 frontend-dev:
 	cd frontend && PORT=$(FRONTEND_PORT) npm run dev

@@ -57,6 +57,36 @@ def assert_match_payload(data: dict) -> None:
     assert data["daily_summary_facts"]
 
 
+def run_room_match(base_url: str, room_id: str) -> dict:
+    status, prepared_body = http_post(f"{base_url}/api/rooms/{room_id}/prepare?show_private=true")
+    assert status == 200
+    prepared = json.loads(prepared_body)
+    assert prepared["phase"] == "SETUP"
+
+    status, started_body = http_post(f"{base_url}/api/rooms/{room_id}/start?show_private=true")
+    assert status == 200
+    started = json.loads(started_body)
+    match_id = started["match_id"]
+    assert started["status"] in {"queued", "running"}
+
+    deadline = time.time() + 90
+    while time.time() < deadline:
+        status, job_body = http_get(f"{base_url}/api/matches/{match_id}")
+        assert status == 200
+        job = json.loads(job_body)
+        if job["status"] == "completed":
+            break
+        if job["status"] == "failed":
+            raise AssertionError(job["last_error"])
+        time.sleep(0.25)
+    else:
+        raise AssertionError(f"Match {match_id} did not complete")
+
+    status, game_body = http_get(f"{base_url}/api/games/{match_id}?show_private=true")
+    assert status == 200
+    return json.loads(game_body)
+
+
 def main() -> int:
     port = free_port()
     env = os.environ.copy()
@@ -73,9 +103,15 @@ def main() -> int:
         [sys.executable, "-m", "uvicorn", "backend.app:app", "--host", "127.0.0.1", "--port", str(port)],
         cwd=str(ROOT),
         env=env,
-        stdout=subprocess.PIPE,
+        stdout=subprocess.DEVNULL,
         stderr=subprocess.STDOUT,
-        text=True,
+    )
+    worker = subprocess.Popen(
+        [sys.executable, "-m", "backend.workers.match_worker"],
+        cwd=str(ROOT),
+        env=env,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.STDOUT,
     )
 
     try:
@@ -101,16 +137,15 @@ def main() -> int:
         assert status == 200
         assert json.loads(fetched_room)["id"] == room_id
 
-        status, room_game_body = http_post(f"http://127.0.0.1:{port}/api/rooms/{room_id}/games")
-        assert status == 200
-        room_game_payload = json.loads(room_game_body)
+        base_url = f"http://127.0.0.1:{port}"
+        room_game_payload = run_room_match(base_url, room_id)
         assert_match_payload(room_game_payload)
 
         status, room_games_body = http_get(f"http://127.0.0.1:{port}/api/rooms/{room_id}/games")
         assert status == 200
         room_games = json.loads(room_games_body)
         assert len(room_games) == 1
-        assert room_games[0]["id"] == room_game_payload["id"]
+        assert room_games[0]["match_id"] == room_game_payload["id"]
 
         status, room_snapshot_body = http_get(f"http://127.0.0.1:{port}/api/rooms/{room_id}/snapshot")
         assert status == 200
@@ -118,9 +153,11 @@ def main() -> int:
         assert room_snapshot["id"] == room_game_payload["id"]
 
         for seed in (3, 7, 11):
-            status, body = http_post(f"http://127.0.0.1:{port}/api/games?seed={seed}&agent_type=llm&player_count=7")
+            status, body = http_post(
+                f"{base_url}/api/rooms?name=SmokeRoom{seed}&seed={seed}&player_count=7&agent_type=llm"
+            )
             assert status == 200
-            payload = json.loads(body)
+            payload = run_room_match(base_url, json.loads(body)["id"])
             assert_match_payload(payload)
 
             game_id = payload["id"]
@@ -137,7 +174,13 @@ def main() -> int:
         print("E2E smoke passed")
         return 0
     finally:
+        worker.terminate()
         server.terminate()
+        try:
+            worker.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            worker.kill()
+            worker.wait(timeout=5)
         try:
             server.wait(timeout=5)
         except subprocess.TimeoutExpired:

@@ -178,20 +178,39 @@ def save_game_start(state: GameState, model_name: str = "", prompt_version: str 
         db.close()
 
 
-def save_event(game_id: str, event: GameEvent) -> None:
+def set_game_status(game_id: str, status: str) -> None:
     db = SessionLocal()
     try:
+        game = db.query(Game).filter(Game.id == game_id).first()
+        if game is None:
+            raise KeyError(game_id)
+        if game.status != "finished":
+            game.status = status
+        db.commit()
+    finally:
+        db.close()
+
+
+def save_event(game_id: str, seq: int, event: GameEvent) -> None:
+    db = SessionLocal()
+    try:
+        existing = db.query(GameEvent).filter(GameEvent.game_id == game_id, GameEvent.seq == seq).first()
+        if existing is not None:
+            return
+        payload = _clean(event.payload) if isinstance(event.payload, dict) else {}
         db.add(
             GameEvent(
                 id=event.id,
                 game_id=game_id,
+                seq=seq,
+                ts=float(event.ts or 0.0),
                 day=event.day,
                 phase=event.phase.value if hasattr(event.phase, "value") else str(event.phase),
                 event_type=event.type.value if hasattr(event.type, "value") else str(event.type),
-                actor_id=event.payload.get("actor_id"),
-                target_id=event.payload.get("target_id"),
+                actor_id=payload.get("actor_id") or payload.get("player_id") or payload.get("voter_id"),
+                target_id=payload.get("target_id"),
                 visibility=event.visibility,
-                content=event.payload,
+                content=payload,
             )
         )
         db.commit()
@@ -309,10 +328,26 @@ def save_vote(game_id: str, day: int, voter_id: str, target_id: str) -> None:
         db.close()
 
 
-def save_snapshot(game_id: str, day: int, phase: str, truth: dict, public: dict) -> None:
+def save_snapshot(game_id: str, seq: int, day: int, phase: str, truth: dict, public: dict) -> None:
     db = SessionLocal()
     try:
-        db.add(GameSnapshot(game_id=game_id, day=day, phase=phase, truth_state=truth, public_state=public))
+        existing = db.query(GameSnapshot).filter(GameSnapshot.game_id == game_id, GameSnapshot.seq == seq).first()
+        if existing is not None:
+            existing.day = day
+            existing.phase = phase
+            existing.truth_state = truth
+            existing.public_state = public
+        else:
+            db.add(
+                GameSnapshot(
+                    game_id=game_id,
+                    seq=seq,
+                    day=day,
+                    phase=phase,
+                    truth_state=truth,
+                    public_state=public,
+                )
+            )
         db.commit()
     finally:
         db.close()
@@ -340,7 +375,8 @@ def save_game_end(state: GameState) -> None:
 
         # Idempotent bulk-save of events: clear and re-insert (run once at game_end).
         db.query(GameEvent).filter(GameEvent.game_id == state.id).delete()
-        for seq, event in enumerate(state.events):
+        for index, event in enumerate(state.events, start=1):
+            seq = event.seq or index
             payload = _clean(event.payload) if isinstance(event.payload, dict) else {}
             phase = event.phase.value if hasattr(event.phase, "value") else str(event.phase)
             event_type = event.type.value if hasattr(event.type, "value") else str(event.type)
@@ -407,20 +443,22 @@ def save_game_end(state: GameState) -> None:
                     )
                 )
 
-        # Final snapshot for replay
-        db.query(GameSnapshot).filter(GameSnapshot.game_id == state.id).delete()
+        # Keep the ordered live snapshot history for SSE replay and upsert the
+        # final authoritative state at the last committed event sequence.
         try:
-            truth = _clean(state.moderator_dict())
-            public = _clean(state.public_dict())
-            db.add(
-                GameSnapshot(
-                    game_id=state.id,
-                    day=state.day,
-                    phase=state.phase.value,
-                    truth_state=truth,
-                    public_state=public,
-                )
+            truth = _clean(state.snapshot(show_private=True))
+            public = _clean(state.snapshot(show_private=False))
+            final_seq = int(truth.get("seq") or len(state.events))
+            snapshot = (
+                db.query(GameSnapshot).filter(GameSnapshot.game_id == state.id, GameSnapshot.seq == final_seq).first()
             )
+            if snapshot is None:
+                snapshot = GameSnapshot(game_id=state.id, seq=final_seq)
+                db.add(snapshot)
+            snapshot.day = state.day
+            snapshot.phase = state.phase.value
+            snapshot.truth_state = truth
+            snapshot.public_state = public
         except Exception:
             pass
 
@@ -904,7 +942,7 @@ def get_replay(game_id: str, *, show_private: bool = False) -> dict | None:
         if game is None:
             return None
         snapshot = (
-            db.query(GameSnapshot).filter(GameSnapshot.game_id == game_id).order_by(GameSnapshot.day.desc()).first()
+            db.query(GameSnapshot).filter(GameSnapshot.game_id == game_id).order_by(GameSnapshot.seq.desc()).first()
         )
         sorted_events = sorted(game.events, key=lambda x: (x.seq or 0, x.created_at))
         events = [
