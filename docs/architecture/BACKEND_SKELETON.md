@@ -30,8 +30,9 @@ Frontend -> REST command -> API -> PostgreSQL job/command
                                   |
                     Redis notification -> API SSE -> Frontend
 
-Finished match -> post-game job -> Analysis Worker
+Durably completed match -> post-game job -> Analysis Worker
                                   |-> Track B decision_evaluations / PublishedReview
+                                  |-> optional Agent reflection
                                   `-> Track C strategy_knowledge_docs
 ```
 
@@ -83,7 +84,11 @@ The Outbox publisher is intentionally not started yet. Rows are durable and quer
 
 `005_analysis_pipeline.sql` adds `decision_evaluations`. Each row is keyed by decision plus evaluator version, making Track B rescoring idempotent and allowing future evaluator upgrades without overwriting historical scores. Track C remains durable in `strategy_knowledge_docs`, including provenance, confidence, lifecycle status, version lineage and usage feedback.
 
-Compatibility note: the legacy `PublishedReview` document is still generated synchronously at game end because its current builder consumes the in-memory event-rich `GameState`. Per-step evaluation and strategy extraction are already asynchronous. Moving `PublishedReview` into the Analysis Worker requires reconstructing the complete event, vote and decision projection from PostgreSQL and is the next Track B migration step.
+The Match Worker persists only authoritative gameplay facts. `PublishedReview`,
+leaderboard projections, per-step evaluation, strategy extraction, and optional
+Agent reflection run after match completion. The Analysis Worker reconstructs
+the event-rich final state from PostgreSQL, so derived work neither holds the
+match lease nor changes the completed match outcome.
 
 The persistence policy is intentionally not "store hidden chain of thought". Store the observable decision contract: visible observation, legal actions, parsed action, provider response permitted by policy, validation result, latency/tokens/cost, model/prompt identifiers, score evidence and strategy provenance.
 

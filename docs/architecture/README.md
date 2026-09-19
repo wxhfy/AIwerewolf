@@ -22,6 +22,9 @@ Match Worker
   -> game domain
   -> AgentRuntime
 
+Analysis Worker
+  -> post-game scoring, reports, reflection, and strategy extraction
+
 Infrastructure adapters
   -> PostgreSQL
   -> Redis
@@ -56,13 +59,21 @@ Adapters implement repositories, Redis coordination, outbox delivery, LLM client
 3. Match Worker obtains a lease and loads the match specification and persisted state.
 4. Domain handles the command and emits ordered events.
 5. AgentRuntime is called only when the domain emits a decision request.
-6. Events, snapshots, decision traces, and outbox rows commit in one transaction.
-7. Outbox delivery publishes a Redis notification.
-8. SSE reads durable events and pushes them in seq order.
-9. Reconnecting clients resume with Last-Event-ID or after_seq.
+6. Events, snapshots, and decision traces are persisted as authoritative match facts.
+7. Match Worker marks the match job completed.
+8. Only after completion, it creates a durable post-game analysis job.
+9. Analysis Worker rebuilds its input from PostgreSQL and runs scoring, reports,
+   Agent reflection, and strategy extraction without holding the match lease.
+10. SSE reads durable events and pushes them in seq order.
+11. Reconnecting clients resume with Last-Event-ID or after_seq.
 ```
 
 SSE is a delivery channel, not persistence. Recovery always reads PostgreSQL.
+
+Match completion is also a lifecycle boundary. An analysis enqueue failure is
+reported and recoverable, but it cannot turn a durably completed match into a
+failed match. Agent `finish()` ends runtime state only; optional reflection is
+an Analysis Worker capability controlled by its own configuration.
 
 ## Process, Thread, and Coroutine Model
 
@@ -108,6 +119,11 @@ Match Worker
   -> create existing CognitiveAgents through LocalAgentRuntime
   -> execute game and persist ordered events, snapshots, and decisions
   -> mark the job completed or failed
+  -> after completion, enqueue post-game analysis
+Analysis Worker
+  -> reconstruct the event-rich final state from PostgreSQL
+  -> run Track B/C and optional Agent reflection
+  -> persist derived metrics, reports, and strategy knowledge
 SSE
   -> read PostgreSQL projections and resume by sequence
 ```

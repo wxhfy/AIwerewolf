@@ -13,8 +13,8 @@ from backend.application.matches.spec import MatchExecutionSpec
 from backend.db.database import init_db
 from backend.db.persist import save_decisions_batch
 from backend.db.persist import save_event
-from backend.db.persist import save_game_end
 from backend.db.persist import save_game_start
+from backend.db.persist import save_match_end
 from backend.db.persist import save_snapshot
 from backend.engine.game import WerewolfGame
 from backend.engine.models import GameState
@@ -99,10 +99,10 @@ def prepare_game(
         sampled_personas=sampled_personas,
         persona_sampler=_sample_personas,
         on_game_start=save_game_start,
-        on_game_end=save_game_end,
+        on_game_end=save_match_end,
         on_event=save_event,
         on_decisions_flush=save_decisions_batch,
-        on_post_game=enqueue_post_game_analysis,
+        on_post_game=None,
         game_id=game_id,
         auto_attach_agents=False,
     )
@@ -176,6 +176,12 @@ class MatchExecutor:
         persist_snapshot(state)
         self.repository.complete(job.id, self.worker_id)
         logger.info("Match %s completed with winner=%s", state.id, state.winner.value if state.winner else None)
+        try:
+            enqueue_post_game_analysis(state)
+        except Exception:
+            # Gameplay is already durable and complete. Analysis has its own
+            # retry lifecycle and cannot change the match outcome.
+            logger.exception("Match %s completed but post-game enqueue failed", state.id)
         return state
 
 

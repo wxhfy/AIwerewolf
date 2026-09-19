@@ -35,10 +35,16 @@ from backend.db.models import StrategyPatch
 from backend.db.models import TrackCPostGameJob
 from backend.db.models import Vote
 from backend.engine.models import Alignment
+from backend.engine.models import BadgeState
+from backend.engine.models import DecisionAudit
+from backend.engine.models import EventType
+from backend.engine.models import GameEvent as EngineGameEvent
 from backend.engine.models import GameState
+from backend.engine.models import NightActions
 from backend.engine.models import Phase
 from backend.engine.models import Player as EnginePlayer
 from backend.engine.models import Role
+from backend.engine.models import RoleAbilities
 from backend.eval.evolution import DreamJob
 from backend.eval.evolution import KnowledgeDocValidator
 from backend.eval.evolution import StrategyKnowledgeDoc as StrategyKnowledgeDocData
@@ -354,8 +360,13 @@ def save_snapshot(game_id: str, seq: int, day: int, phase: str, truth: dict, pub
         db.close()
 
 
-def save_game_end(state: GameState) -> None:
-    """Persist final game state plus all events/decisions/votes in one transaction."""
+def save_game_end(state: GameState, *, include_post_game: bool = True) -> None:
+    """Persist a final game state.
+
+    ``include_post_game`` keeps the legacy experiment path compatible.
+    Production Match Workers call :func:`save_match_end`, which persists only
+    authoritative gameplay data and leaves derived work to Analysis Workers.
+    """
     db = SessionLocal()
     try:
         game = db.query(Game).filter(Game.id == state.id).first()
@@ -463,44 +474,69 @@ def save_game_end(state: GameState) -> None:
         except Exception:
             pass
 
-        # Per-player evaluation metrics (Track B baseline) — computed here so the
-        # downstream leaderboard / replay UI has data without a separate worker.
-        db.query(Evaluation).filter(Evaluation.game_id == state.id).delete()
-        for metric in _compute_player_metrics(state):
-            db.add(Evaluation(**metric))
-
-        # Update aggregated leaderboard entries (Track B leaderboard).
-        winner = state.winner.value if state.winner else None
-        for p in state.players:
-            agent_label = f"{p.agent_type or 'ai'}+{p.role.value}"
-            entry = (
-                db.query(LeaderboardEntry)
-                .filter(LeaderboardEntry.name == agent_label, LeaderboardEntry.role == p.role.value)
-                .first()
-            )
-            if entry is None:
-                entry = LeaderboardEntry(name=agent_label, role=p.role.value)
-                db.add(entry)
-                db.flush()
-            entry.games_played = (entry.games_played or 0) + 1
-            won = (winner == "village" and p.alignment.value == "village") or (
-                winner == "wolf" and p.alignment.value == "wolf"
-            )
-            if won:
-                entry.wins = (entry.wins or 0) + 1
-            else:
-                entry.losses = (entry.losses or 0) + 1
-            entry.win_rate = float(entry.wins) / max(1, entry.games_played)
-
-        _ensure_track_c_post_game_job_row(db, state.id, source="game_end")
+        if include_post_game:
+            _save_post_game_metrics(db, state)
+            _ensure_track_c_post_game_job_row(db, state.id, source="game_end")
 
         db.commit()
     finally:
         db.close()
+    if include_post_game:
+        try:
+            save_published_review(state)
+        except Exception:
+            pass
+
+
+def save_match_end(state: GameState) -> None:
+    """Persist only the authoritative result owned by the Match Worker."""
+    save_game_end(state, include_post_game=False)
+
+
+def _save_post_game_metrics(db, state: GameState) -> None:
+    db.query(Evaluation).filter(Evaluation.game_id == state.id).delete()
+    for metric in _compute_player_metrics(state):
+        db.add(Evaluation(**metric))
+
+    affected = {(player.agent_type or "ai", player.role.value) for player in state.players}
+    for agent_type, role in affected:
+        agent_label = f"{agent_type}+{role}"
+        entry = (
+            db.query(LeaderboardEntry)
+            .filter(LeaderboardEntry.name == agent_label, LeaderboardEntry.role == role)
+            .first()
+        )
+        if entry is None:
+            entry = LeaderboardEntry(name=agent_label, role=role)
+            db.add(entry)
+            db.flush()
+        rows = (
+            db.query(Game.winner)
+            .join(Player, Player.game_id == Game.id)
+            .filter(
+                Game.status == "finished",
+                Player.agent_type == agent_type,
+                Player.role == role,
+            )
+            .all()
+        )
+        alignment = _alignment_for_role(role).value
+        entry.games_played = len(rows)
+        entry.wins = sum(1 for (row_winner,) in rows if row_winner == alignment)
+        entry.losses = entry.games_played - entry.wins
+        entry.win_rate = float(entry.wins) / max(1, entry.games_played)
+
+
+def save_post_game_artifacts(state: GameState) -> None:
+    """Persist derived metrics and reports owned by the Analysis Worker."""
+    init_db()
+    db = SessionLocal()
     try:
-        save_published_review(state)
-    except Exception:
-        pass
+        _save_post_game_metrics(db, state)
+        db.commit()
+    finally:
+        db.close()
+    save_published_review(state)
 
 
 def _ensure_track_c_post_game_job_row(db, game_id: str, *, source: str = "") -> TrackCPostGameJob:
@@ -664,13 +700,25 @@ def list_recoverable_track_c_post_game_jobs(
 
 
 def build_post_game_state_from_db(game_id: str) -> GameState | None:
-    """Rebuild the minimal GameState required by post-game Track B/C scoring."""
+    """Rebuild the event-rich state consumed by post-game capabilities."""
     init_db()
     db = SessionLocal()
     try:
         game = db.query(Game).filter(Game.id == game_id).first()
         if game is None or game.status != "finished":
             return None
+        snapshot_row = (
+            db.query(GameSnapshot)
+            .filter(GameSnapshot.game_id == game_id)
+            .order_by(GameSnapshot.seq.desc())
+            .first()
+        )
+        snapshot = dict(snapshot_row.truth_state or {}) if snapshot_row is not None else {}
+        snapshot_players = {
+            str(item.get("id") or ""): item
+            for item in snapshot.get("players", [])
+            if isinstance(item, dict) and item.get("id")
+        }
         players = [
             EnginePlayer(
                 id=row.id,
@@ -683,6 +731,7 @@ def build_post_game_state_from_db(game_id: str) -> GameState | None:
                 agent_type=row.agent_type or "llm",
                 model_name=row.model_name or "",
                 prompt_version=row.prompt_version or "v1",
+                persona=dict(snapshot_players.get(row.id, {}).get("persona") or {}),
                 death_day=row.death_day,
                 death_reason=row.death_reason,
             )
@@ -694,13 +743,135 @@ def build_post_game_state_from_db(game_id: str) -> GameState | None:
                 winner = Alignment(game.winner)
             except ValueError:
                 winner = None
-        return GameState(
+
+        events: list[EngineGameEvent] = []
+        snapshot_events = snapshot.get("events") if isinstance(snapshot.get("events"), list) else []
+        if snapshot_events:
+            for index, item in enumerate(snapshot_events, start=1):
+                if not isinstance(item, dict):
+                    continue
+                try:
+                    phase = Phase(str(item.get("phase") or Phase.SETUP.value))
+                    event_type = EventType(str(item.get("type") or EventType.SYSTEM_MESSAGE.value))
+                except ValueError:
+                    continue
+                events.append(
+                    EngineGameEvent(
+                        id=str(item.get("id") or f"{game_id}-event-{index}"),
+                        seq=int(item.get("seq") or index),
+                        ts=float(item.get("ts") or 0.0),
+                        day=int(item.get("day") or 0),
+                        phase=phase,
+                        type=event_type,
+                        visibility=str(item.get("visibility") or "public"),
+                        visible_to=list(item.get("visible_to") or []),
+                        payload=dict(item.get("payload") or {}),
+                    )
+                )
+        else:
+            for row in sorted(game.events, key=lambda item: item.seq):
+                try:
+                    phase = Phase(row.phase)
+                    event_type = EventType(row.event_type)
+                except ValueError:
+                    continue
+                events.append(
+                    EngineGameEvent(
+                        id=row.id,
+                        seq=int(row.seq or 0),
+                        ts=float(row.ts or 0.0),
+                        day=int(row.day or 0),
+                        phase=phase,
+                        type=event_type,
+                        visibility=row.visibility or "public",
+                        payload=dict(row.content or {}),
+                    )
+                )
+
+        decisions = [
+            DecisionAudit(
+                id=row.id,
+                game_id=game_id,
+                player_id=row.player_id,
+                day=int(row.day or 0),
+                phase=row.phase or "",
+                request=row.phase or "",
+                observation=dict(row.observation or {}),
+                legal_actions=list(row.legal_actions or []),
+                prompt_version=row.prompt_version,
+                raw_output=row.raw_output,
+                parsed_action=dict(row.parsed_action or {}),
+                is_valid=bool(row.is_valid),
+                error_type=row.error_type,
+                latency_ms=row.latency_ms,
+                prompt_tokens=row.prompt_tokens,
+                completion_tokens=row.completion_tokens,
+                created_at=row.created_at.timestamp() if row.created_at else 0.0,
+                visible_facts=list(row.visible_facts or []),
+                candidate_actions=list(row.candidate_actions or []),
+                confidence=row.confidence,
+                prompt_hash=row.prompt_hash,
+                cost_usd=row.cost_usd,
+                model_name=row.model_name,
+                provider=row.provider,
+                metadata=dict(row.decision_metadata or {}),
+            )
+            for row in sorted(game.decisions, key=lambda item: (item.day, item.created_at, item.id))
+        ]
+        vote_history: dict[int, dict[str, str]] = {}
+        for row in db.query(Vote).filter(Vote.game_id == game_id).all():
+            vote_history.setdefault(int(row.day or 0), {})[row.voter_id] = row.target_id
+
+        state = GameState(
             id=game.id,
             phase=Phase.GAME_END,
             day=int(game.current_day or 0),
             players=players,
+            events=events,
+            decision_records=decisions,
+            votes=dict(snapshot.get("votes") or {}),
+            vote_history=vote_history,
+            day_history={int(key): value for key, value in dict(snapshot.get("day_history") or {}).items()},
+            daily_summaries={int(key): value for key, value in dict(snapshot.get("daily_summaries") or {}).items()},
+            daily_summary_facts={
+                int(key): value for key, value in dict(snapshot.get("daily_summary_facts") or {}).items()
+            },
             winner=winner,
         )
+        badge = dict(snapshot.get("badge") or {})
+        state.badge = BadgeState(
+            holder_id=badge.get("holder_id"),
+            candidates=list(badge.get("candidates") or []),
+            signup=dict(badge.get("signup") or {}),
+            votes=dict(badge.get("votes") or {}),
+            history={int(key): value for key, value in dict(badge.get("history") or {}).items()},
+            revote_count=int(badge.get("revote_count") or 0),
+        )
+        night = dict(snapshot.get("night_actions") or {})
+        state.night_actions = NightActions(
+            guard_target_id=night.get("guard_target_id"),
+            last_guard_target_id=night.get("last_guard_target_id"),
+            wolf_votes=dict(night.get("wolf_votes") or {}),
+            wolf_target_id=night.get("wolf_target_id"),
+            witch_save=bool(night.get("witch_save")),
+            witch_poison_target_id=night.get("witch_poison_target_id"),
+            seer_target_id=night.get("seer_target_id"),
+            seer_result=night.get("seer_result"),
+            deaths=list(night.get("deaths") or []),
+        )
+        abilities = dict(snapshot.get("role_abilities") or {})
+        state.abilities = RoleAbilities(
+            witch_heal_used=bool(abilities.get("witch_heal_used")),
+            witch_poison_used=bool(abilities.get("witch_poison_used")),
+            hunter_can_shoot=bool(abilities.get("hunter_can_shoot", True)),
+            idiot_revealed=bool(abilities.get("idiot_revealed")),
+            white_wolf_king_boom_used=bool(abilities.get("white_wolf_king_boom_used")),
+        )
+        state.current_speaker_id = snapshot.get("current_speaker_id")
+        state.pk_targets = list(snapshot.get("pk_targets") or [])
+        state.pk_source = snapshot.get("pk_source")
+        state.phase_cursor = dict(snapshot.get("phase_cursor") or {})
+        return state
     finally:
         db.close()
 

@@ -45,6 +45,14 @@ def test_create_game_api() -> None:
     assert data["daily_summaries"]
     assert data["daily_summary_facts"]
 
+    pending_status = client.get(f"/api/games/{data['id']}/reviews/status")
+    assert pending_status.status_code == 200
+    assert pending_status.json()["status"] == "pending"
+
+    completed = PostGameAnalysisService().execute(data["id"])
+    assert completed is not None
+    assert completed["status"] == "completed"
+
     review_response = client.get(f"/api/games/{data['id']}/reviews")
     assert review_response.status_code == 200
     review = review_response.json()
@@ -109,6 +117,34 @@ def test_post_game_analysis_is_async_persisted_and_idempotent() -> None:
     assert retry.status_code == 202
     assert retry.json()["status"] == "pending"
     assert client.get("/api/v1/strategies").status_code == 200
+
+
+def test_analysis_enqueue_failure_does_not_fail_completed_match(monkeypatch: pytest.MonkeyPatch) -> None:
+    from backend.application.matches import executor as executor_module
+
+    client = TestClient(app)
+    room = client.post("/api/rooms?name=EnqueueFailure&seed=73&player_count=7&agent_type=llm")
+    assert room.status_code == 200
+    room_id = room.json()["id"]
+    assert client.post(f"/api/rooms/{room_id}/prepare?show_private=true").status_code == 200
+    started = client.post(f"/api/rooms/{room_id}/start?show_private=true")
+    match_id = started.json()["match_id"]
+
+    repository = MatchJobRepository()
+    worker_id = f"test-worker-{match_id}"
+    job = repository.claim_game(match_id, worker_id)
+    assert job is not None
+
+    def fail_enqueue(_state) -> None:
+        raise RuntimeError("analysis queue unavailable")
+
+    monkeypatch.setattr(executor_module, "enqueue_post_game_analysis", fail_enqueue)
+    state = MatchExecutor(repository, worker_id=worker_id).execute(job)
+
+    assert state.winner is not None
+    persisted_job = repository.get_by_game_id(match_id)
+    assert persisted_job is not None
+    assert persisted_job["status"] == "completed"
 
 
 def test_create_game_with_wolfcha_10p_pack() -> None:
@@ -254,8 +290,10 @@ def test_match_events_are_ordered_and_resumable() -> None:
 
 def test_leaderboard_api_returns_cross_game_views() -> None:
     client = TestClient(app)
-    _run_ai_match(client, seed=31)
-    _run_ai_match(client, seed=37)
+    first = _run_ai_match(client, seed=31)
+    second = _run_ai_match(client, seed=37)
+    assert PostGameAnalysisService().execute(first["id"]) is not None
+    assert PostGameAnalysisService().execute(second["id"]) is not None
 
     response = client.get("/api/leaderboard")
     assert response.status_code == 200

@@ -7,7 +7,10 @@ from backend.db.persist import build_post_game_state_from_db
 from backend.db.persist import claim_track_c_post_game_job
 from backend.db.persist import complete_track_c_post_game_job
 from backend.db.persist import fail_track_c_post_game_job
+from backend.db.persist import save_post_game_artifacts
 from backend.eval.post_game import run_post_game_scoring
+
+from .reflection import run_agent_reflections
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +33,8 @@ class PostGameAnalysisService:
             return None
         try:
             result = run_post_game_scoring(state, game_id, return_details=True)
+            reflection_docs = run_agent_reflections(state)
+            save_post_game_artifacts(state)
         except Exception as exc:
             fail_track_c_post_game_job(
                 game_id,
@@ -46,5 +51,6 @@ class PostGameAnalysisService:
             metadata={
                 "stage": "track_b_track_c",
                 "decisions_scored": int(details.get("decisions_scored", 0)),
+                "reflection_docs": int(reflection_docs),
             },
         )

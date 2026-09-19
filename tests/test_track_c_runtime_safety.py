@@ -800,6 +800,8 @@ def test_analysis_service_runs_pending_post_game_job(monkeypatch) -> None:
         return {"lessons_stored": 3, "promoted_count": 1}
 
     monkeypatch.setattr(service_module, "run_post_game_scoring", fake_run_post_game_scoring)
+    monkeypatch.setattr(service_module, "run_agent_reflections", lambda state: 0)
+    monkeypatch.setattr(service_module, "save_post_game_artifacts", lambda state: None)
 
     result = service_module.PostGameAnalysisService().execute("job-game-5")
     verify = TestingSession()

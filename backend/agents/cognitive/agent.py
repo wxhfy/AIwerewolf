@@ -681,7 +681,13 @@ class CognitiveAgent:
 
     def finish(self, winner: str | None) -> None:
         self.memory.add_action("game_end", None, f"胜者: {winner}", "")
-        # Trigger personal post-game reflection (opt-in via COGNITIVE_ENABLE_REFLECTION)
+
+    def reflect(self, winner: str | None) -> None:
+        """Run optional reflection outside the gameplay lifecycle.
+
+        Production matches rebuild reflection input from durable projections in
+        the Analysis Worker. Local experiments may call this method explicitly.
+        """
         self._reflect_on_game(winner)
 
     # === Internal Helpers ===

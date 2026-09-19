@@ -1376,6 +1376,18 @@ def test_cognitive_agent_reflection_enabled_preserves_env_switch(monkeypatch: py
         assert CognitiveAgent._reflection_enabled() is True
 
 
+def test_cognitive_agent_finish_and_reflection_are_separate_lifecycles(monkeypatch: pytest.MonkeyPatch) -> None:
+    agent = CognitiveAgent("P1", "Villager", DeterministicCognitiveLLM())
+    reflected = []
+    monkeypatch.setattr(agent, "_reflect_on_game", lambda winner: reflected.append(winner))
+
+    agent.finish("village")
+    assert reflected == []
+
+    agent.reflect("village")
+    assert reflected == ["village"]
+
+
 def test_cognitive_agent_require_knowledge_write_preserves_strict_true_only(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("REQUIRE_KNOWLEDGE_WRITE", raising=False)
     assert CognitiveAgent._require_knowledge_write() is False
