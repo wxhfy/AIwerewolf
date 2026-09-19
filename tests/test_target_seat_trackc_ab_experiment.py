@@ -242,7 +242,8 @@ def test_output_file_lock_blocks_second_writer_and_releases(tmp_path) -> None:
     try:
         assert first.path == output_path.with_suffix(".json.lock")
         assert first.path.exists()
-        assert str(output_path) in first.path.read_text(encoding="utf-8")
+        lock_metadata = json.loads(first.path.read_text(encoding="utf-8"))
+        assert lock_metadata["output"] == str(output_path)
 
         with pytest.raises(TargetOutputLockError, match="already locked"):
             acquire_output_file_lock(output_path)

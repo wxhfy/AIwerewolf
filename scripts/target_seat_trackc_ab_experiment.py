@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import argparse
 import atexit
-import fcntl
 import json
 import multiprocessing as mp
 import os
@@ -29,6 +28,12 @@ from random import Random
 from typing import Any
 from typing import Iterable
 from typing import Sequence
+
+try:
+    import fcntl
+except ImportError:  # Windows
+    fcntl = None
+    import msvcrt
 
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
@@ -56,6 +61,7 @@ from scripts.track_bc_leaderboard_experiment import validate_model_specs
 
 DEFAULT_OUTPUT_DIR = ROOT / "outputs" / "target_seat_trackc_ab"
 WOLF_ROLES = {"Werewolf", "WhiteWolfKing"}
+WINDOWS_LOCK_OFFSET = 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -113,6 +119,25 @@ class TargetOutputLockError(RuntimeError):
     """Raised when another process is already writing the same experiment output."""
 
 
+def _lock_file_nonblocking(handle: Any) -> None:
+    if fcntl is not None:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return
+    handle.seek(WINDOWS_LOCK_OFFSET)
+    try:
+        msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+    except OSError as exc:
+        raise BlockingIOError from exc
+
+
+def _unlock_file(handle: Any) -> None:
+    if fcntl is not None:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        return
+    handle.seek(WINDOWS_LOCK_OFFSET)
+    msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+
+
 def utc_iso() -> str:
     return datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"
 
@@ -129,7 +154,7 @@ def acquire_output_file_lock(output_path: Path) -> OutputFileLock:
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     handle = lock_path.open("a+", encoding="utf-8")
     try:
-        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        _lock_file_nonblocking(handle)
     except BlockingIOError as exc:
         handle.close()
         raise TargetOutputLockError(
@@ -157,7 +182,7 @@ def release_output_file_lock(lock: OutputFileLock | None) -> None:
     if lock is None or lock.handle is None:
         return
     try:
-        fcntl.flock(lock.handle.fileno(), fcntl.LOCK_UN)
+        _unlock_file(lock.handle)
     finally:
         lock.handle.close()
         lock.handle = None
