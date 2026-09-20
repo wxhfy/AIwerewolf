@@ -174,7 +174,11 @@ def test_sql_repository_round_trip() -> None:
             "memory_scope": MemoryScope(namespace="match", episode_id=game_id, actor_id=player_id),
         }
     )
-    service.prepare(request)
+    prepared = service.prepare(request)
+    service.record_result(
+        prepared,
+        HarnessResult(status="failed", action=None, events=(), loaded_skills=(), tool_calls=0, error="test"),
+    )
 
     restored = ActorMemoryService(repository)
     restored.prepare(request)
@@ -182,3 +186,44 @@ def test_sql_repository_round_trip() -> None:
     assert state is not None
     assert state.last_event_seq == 1
     assert state.episodic[0].content.endswith("公开信息")
+
+
+def test_speech_claims_build_evidence_graph_and_update_beliefs() -> None:
+    service = ActorMemoryService()
+    speech = _event(1, actor_id="P2", actor_name="P2", speech="I checked P3: P3 is wolf")
+    prepared = service.prepare(_request(events=(speech,)))
+    state = service.get_state("memory-test-game", "P1")
+
+    assert state is not None
+    assert any(claim.kind == "check_claim" and claim.target_id == "P3" for claim in state.claims)
+    assert any(edge.target_player_id == "P3" for edge in state.evidence_graph)
+    assert state.beliefs["P3"].wolf_probability > 0.5
+    assert prepared.information_state.private_memory[0]["recent_claims"]
+
+
+def test_negated_wolf_claim_is_positive_evidence() -> None:
+    service = ActorMemoryService()
+    speech = _event(1, actor_id="P2", actor_name="P2", speech="I checked P3: P3 is not a wolf")
+
+    service.prepare(_request(events=(speech,)))
+    state = service.get_state("memory-test-game", "P1")
+
+    assert state is not None
+    claim = next(item for item in state.claims if item.kind == "check_claim" and item.target_id == "P3")
+    assert claim.value == "village"
+    assert claim.polarity < 0
+    assert state.beliefs["P3"].wolf_probability < 0.5
+
+
+def test_broken_vote_commitment_is_recorded_as_contradiction() -> None:
+    service = ActorMemoryService()
+    events = (
+        _event(1, actor_id="P2", actor_name="P2", speech="I will vote for P3"),
+        _event(2, event_type="VOTE_CAST", voter_id="P2", target_id="P1"),
+    )
+    service.prepare(_request(events=events))
+    state = service.get_state("memory-test-game", "P1")
+
+    assert state is not None
+    assert any(claim.kind == "contradiction" and claim.speaker_id == "P2" for claim in state.claims)
+    assert state.beliefs["P2"].wolf_probability > 0.5

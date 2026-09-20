@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import asdict
 from typing import Any
@@ -13,6 +14,8 @@ from backend.agent_memory.models import BeliefState
 from backend.agent_memory.models import EpisodicMemory
 from backend.agent_memory.models import GoalState
 from backend.agent_memory.models import RelationshipState
+from backend.agent_memory.models import SpeechClaim
+from backend.agent_memory.speech import SpeechInterpreter
 
 _WORD_RE = re.compile(r"[\w\u4e00-\u9fff]+", re.UNICODE)
 
@@ -22,6 +25,7 @@ class CognitiveMemoryReducer:
 
     def __init__(self) -> None:
         self.settings = load_memory_settings()
+        self.speech = SpeechInterpreter()
 
     def dynamics(self, state: ActorMemoryState, request: DecisionRequest) -> CognitiveDynamics:
         return derive_dynamics(self.settings, request.agent_profile, state.affect)
@@ -50,6 +54,9 @@ class CognitiveMemoryReducer:
         dynamics = self.dynamics(state, request)
         self._refresh_working_memory(state, dynamics)
         state.episodic = state.episodic[-self.settings.limits.episodic_capacity :]
+        evidence_capacity = self.settings.limits.episodic_capacity * 2
+        state.claims = state.claims[-evidence_capacity:]
+        state.evidence_graph = state.evidence_graph[-evidence_capacity:]
         state.affect.normalize()
 
     def retrieved(self, state: ActorMemoryState, request: DecisionRequest) -> list[EpisodicMemory]:
@@ -103,6 +110,8 @@ class CognitiveMemoryReducer:
             "relationships": [asdict(item) for item in relationships[:8]],
             "affect": asdict(state.affect),
             "active_goals": [asdict(item) for item in state.goals if item.status == "active"][:4],
+            "recent_claims": [asdict(item) for item in state.claims[-12:]],
+            "evidence_graph": [asdict(item) for item in state.evidence_graph[-16:]],
             "retrieved_episodes": [asdict(item) for item in retrieved],
             "last_action": dict(state.last_action),
             "memory_policy": {
@@ -222,6 +231,7 @@ class CognitiveMemoryReducer:
         if event_type == "VOTE_CAST":
             voter_id = str(payload.get("voter_id") or "")
             target_id = str(payload.get("target_id") or "")
+            self._check_vote_commitment(state, voter_id, target_id, seq, dynamics)
             if target_id == state.actor_id and voter_id and voter_id != state.actor_id:
                 relation = state.relationships.setdefault(voter_id, RelationshipState(player_id=voter_id))
                 response = self.settings.dynamics["event_response_scale"] * dynamics.social_sensitivity
@@ -239,6 +249,18 @@ class CognitiveMemoryReducer:
         if event_type == "CHAT_MESSAGE":
             actor_id = str(payload.get("actor_id") or "")
             speech = str(payload.get("speech") or "")
+            interpretation = self.speech.interpret(
+                event_id=str(event.get("id") or f"event:{seq}"),
+                event_seq=seq,
+                speaker_id=actor_id,
+                speech=speech,
+                players=list(request.information_state.observation.get("players") or []),
+                existing_claims=state.claims,
+            )
+            state.claims.extend(interpretation.claims)
+            state.evidence_graph.extend(interpretation.edges)
+            for claim in interpretation.claims:
+                self._apply_claim(state, claim, dynamics)
             self_name = str(request.information_state.observation.get("self_player", {}).get("name") or "")
             if actor_id and actor_id != state.actor_id and self_name and self_name in speech:
                 relation = state.relationships.setdefault(actor_id, RelationshipState(player_id=actor_id))
@@ -253,6 +275,85 @@ class CognitiveMemoryReducer:
             state.affect.fear += response
             state.affect.arousal += response * 0.7
             state.affect.valence -= response * 0.6
+
+    def _apply_claim(self, state: ActorMemoryState, claim: SpeechClaim, dynamics: CognitiveDynamics) -> None:
+        if not claim.target_id:
+            return
+        if claim.kind == "contradiction":
+            speaker_belief = state.beliefs.setdefault(claim.speaker_id, BeliefState(player_id=claim.speaker_id))
+            self._update_belief(speaker_belief, 0.75, claim.confidence, claim.evidence_text, claim.event_seq)
+            relation = state.relationships.setdefault(
+                claim.speaker_id,
+                RelationshipState(player_id=claim.speaker_id),
+            )
+            relation.trust -= 0.2 * claim.confidence * dynamics.social_sensitivity
+            relation.threat += 0.1 * claim.confidence
+            relation.last_updated_seq = claim.event_seq
+            relation.normalize()
+            return
+        if claim.kind not in {"check_claim", "stance", "vote_commitment"}:
+            return
+        target = state.beliefs.setdefault(claim.target_id, BeliefState(player_id=claim.target_id))
+        speaker_relation = state.relationships.get(claim.speaker_id)
+        trust = speaker_relation.trust if speaker_relation is not None else 0.0
+        credibility = max(0.35, min(1.35, 0.8 + trust * 0.35))
+        kind_weight = {"check_claim": 1.05, "stance": 0.5, "vote_commitment": 0.22}[claim.kind]
+        evidence_strength = claim.polarity * claim.confidence * credibility * kind_weight
+        self._update_belief(target, evidence_strength, claim.confidence, claim.evidence_text, claim.event_seq)
+
+    @staticmethod
+    def _update_belief(
+        belief: BeliefState,
+        evidence_strength: float,
+        confidence: float,
+        evidence: str,
+        event_seq: int,
+    ) -> None:
+        probability = max(0.01, min(0.99, belief.wolf_probability))
+        log_odds = math.log(probability / (1.0 - probability)) + evidence_strength
+        belief.wolf_probability = 1.0 / (1.0 + math.exp(-log_odds))
+        belief.confidence = min(1.0, belief.confidence + abs(evidence_strength) * 0.16 * confidence)
+        bucket = belief.evidence_for if evidence_strength >= 0 else belief.evidence_against
+        bucket.append(evidence[:300])
+        belief.last_updated_seq = event_seq
+        belief.normalize()
+
+    def _check_vote_commitment(
+        self,
+        state: ActorMemoryState,
+        voter_id: str,
+        target_id: str,
+        seq: int,
+        dynamics: CognitiveDynamics,
+    ) -> None:
+        if not voter_id or not target_id:
+            return
+        commitment = next(
+            (
+                claim
+                for claim in reversed(state.claims)
+                if claim.speaker_id == voter_id and claim.kind == "vote_commitment" and not claim.contradicted
+            ),
+            None,
+        )
+        if commitment is None or commitment.target_id == target_id:
+            return
+        commitment.contradicted = True
+        evidence = f"Vote contradicted prior commitment to {commitment.target_id}: actual target {target_id}"
+        contradiction = SpeechClaim(
+            claim_id=f"vote:{seq}:contradiction:{voter_id}",
+            event_seq=seq,
+            speaker_id=voter_id,
+            kind="contradiction",
+            target_id=voter_id,
+            value="vote_commitment_broken",
+            polarity=0.85,
+            confidence=0.9,
+            evidence_text=evidence,
+            contradicted=True,
+        )
+        state.claims.append(contradiction)
+        self._apply_claim(state, contradiction, dynamics)
 
     def _event_memory(
         self,
@@ -343,6 +444,9 @@ class CognitiveMemoryReducer:
                 chunks.append(f"Goal: {goal.description}")
         if state.last_action:
             chunks.append(f"Previous action: {state.last_action.get('action_type')} {state.last_action.get('target_id') or ''}".strip())
+        contradictions = [claim for claim in reversed(state.claims) if claim.kind == "contradiction"]
+        if contradictions:
+            chunks.append(f"Observed contradiction: {contradictions[0].evidence_text}")
         state.working_memory = chunks[: dynamics.working_chunk_limit]
 
     @staticmethod

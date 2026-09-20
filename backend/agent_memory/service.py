@@ -43,15 +43,13 @@ class ActorMemoryService:
                     private_memory=(memory,),
                 ),
             )
-            self._save(state)
             return prepared
 
     def record_result(self, request: DecisionRequest, result: HarnessResult) -> None:
-        if result.status != "completed" or result.action is None:
-            return
         with self._lock:
             state = self._state(request)
-            self.reducer.record_action(state, request, result.action)
+            if result.status == "completed" and result.action is not None:
+                self.reducer.record_action(state, request, result.action)
             self._save(state)
 
     def get_state(self, episode_id: str, actor_id: str) -> ActorMemoryState | None:

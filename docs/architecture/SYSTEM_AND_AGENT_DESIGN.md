@@ -49,7 +49,7 @@ SSE 负责把状态及时送达浏览器，但不是数据库。所有可恢复�
 
 ### 2.5 实时主链路保持短小
 
-当前不为每一步拉取子 Agent，也不在实时决策中执行赛后分析。每次行动最多进行一次主模型调用；记忆更新、检索、合法性校验和状态推进全部使用确定性代码。其效果是减少时延、费用、失败点和上下文泄露风险。
+当前不为每一步拉取子 Agent，也不在实时决策中执行赛后分析。普通行动使用一步主模型调用，高影响行动最多增加一步受预算约束的反思；记忆更新、发言证据提取、检索、合法性校验和状态推进全部使用确定性代码。其效果是控制时延、费用、失败点和上下文泄露风险。
 
 ## 3. 分层架构
 
@@ -128,8 +128,10 @@ WerewolfGame 到达决策点
   -> WerewolfDecisionAdapter.build_request(...)
   -> ActorMemoryService.prepare(...)
   -> AgentHarness.run(...)
-  -> LLMActionPlanner 单次调用模型
+  -> LLMActionPlanner 一步决策或高影响两步反思
+  -> 非法输出一次修复，超时或二次失败使用合法动作兜底
   -> Schema 与 ActionSpace 校验
+  -> agent_harness_events 追加式留痕
   -> ResolvedAction
   -> ActorMemoryService.record_result(...)
   -> WerewolfGame.apply(action)
@@ -256,6 +258,7 @@ Reducer 只能消费 `DecisionRequest.information_state`，不能直接查主持
 | `game_snapshots` | 主持人快照和公开快照 |
 | `agent_decisions` | 模型输入摘要、输出、解析结果和耗时 |
 | `actor_memories` | 每个角色的隔离认知状态 |
+| `agent_harness_events` | 每次 Harness 运行的步骤、修复、接受、失败和降级事件 |
 | `outbox_events` | 与业务事务一致提交的后续工作事实 |
 | Track B/C 表 | 复盘、评分、策略知识和反馈 |
 

@@ -106,7 +106,13 @@ class AnthropicClient:
     # Public API
     # ------------------------------------------------------------------
 
-    def chat_sync(self, messages: list[dict], **kwargs: Any) -> dict[str, Any]:
+    def chat_sync(
+        self,
+        messages: list[dict],
+        *,
+        request_timeout_seconds: float | None = None,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
         """Send request in Anthropic format, return OpenAI-compatible response."""
         self.call_count += 1
         system_prompt, user_messages = self._split_system(messages)
@@ -145,7 +151,13 @@ class AnthropicClient:
             "anthropic-version": "2023-06-01",
         }
 
-        data = self._request_with_retry("POST", "/v1/messages", headers, body)
+        data = self._request_with_retry(
+            "POST",
+            "/v1/messages",
+            headers,
+            body,
+            request_timeout_seconds=request_timeout_seconds,
+        )
         result = self._response_to_openai(data)
 
         # Update global counter
@@ -163,13 +175,24 @@ class AnthropicClient:
     # Retry logic
     # ------------------------------------------------------------------
 
-    def _request_with_retry(self, method: str, path: str, headers: dict, body: dict) -> dict:
+    def _request_with_retry(
+        self,
+        method: str,
+        path: str,
+        headers: dict,
+        body: dict,
+        *,
+        request_timeout_seconds: float | None = None,
+    ) -> dict:
         url = f"{self.base_url}{path}"
         last_exc: Exception | None = None
         for attempt in range(1, self._max_retries + 2):
             try:
                 client = self._get_client()
-                resp = client.request(method, url, headers=headers, json=body)
+                timeout = self._timeout
+                if request_timeout_seconds is not None:
+                    timeout = httpx.Timeout(max(0.1, float(request_timeout_seconds)))
+                resp = client.request(method, url, headers=headers, json=body, timeout=timeout)
                 if resp.status_code < 400:
                     return resp.json()
                 if resp.status_code in _RETRYABLE_STATUSES:

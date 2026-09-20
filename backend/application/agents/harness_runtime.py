@@ -10,6 +10,7 @@ from backend.agent_harness.contracts import DecisionRequest
 from backend.agent_harness.contracts import HarnessResult
 from backend.agent_memory import ActorMemoryService
 from backend.agent_memory import SqlActorMemoryRepository
+from backend.application.agents.harness_event_repository import SqlHarnessEventRepository
 from backend.domains.werewolf.planner import LLMActionPlanner
 from backend.engine.models import Player
 from backend.llm import create_client
@@ -26,12 +27,14 @@ class RoutingHarnessRuntime:
         *,
         deadline_ms: int,
         memory: ActorMemoryService,
+        event_repository: SqlHarnessEventRepository,
     ) -> None:
         self.harnesses = harnesses
         self.profiles = profiles
         self.definition_ids = definition_ids
         self.deadline_ms = deadline_ms
         self.memory = memory
+        self.event_repository = event_repository
 
     def run(self, request: DecisionRequest) -> HarnessResult:
         try:
@@ -40,6 +43,7 @@ class RoutingHarnessRuntime:
             raise RuntimeError(f"No harness configured for actor {request.actor.actor_id}") from exc
         prepared = self.memory.prepare(request)
         result = harness.run(prepared)
+        self.event_repository.save(prepared, result.events)
         self.memory.record_result(prepared, result)
         return result
 
@@ -79,12 +83,17 @@ def build_harness_runtime(players: list[Player], config: dict[str, Any]) -> Rout
         player.is_ai = True
         player.agent_type = "harness"
         player.model_name = str(getattr(client, "model", ""))
+        configured_tool_calling = player_config.get("tool_calling")
+        if configured_tool_calling is None:
+            configured_tool_calling = "xing4.0" in player.model_name.lower()
+        client.supports_tool_calling = bool(configured_tool_calling)
         profiles[player.id] = {
             "display_name": player.name,
             "seat": player.seat,
             "role": player.role.value,
             "persona": player.persona,
             "strategy_bias": player_config.get("strategy_bias") or config.get("strategy_bias") or {},
+            "strategy_version": player_config.get("strategy_version") or config.get("strategy_version") or "",
         }
         definition_ids[player.id] = f"werewolf:{player.role.value}:{player.model_name or 'default'}"
         harnesses[player.id] = AgentHarness(
@@ -98,6 +107,7 @@ def build_harness_runtime(players: list[Player], config: dict[str, Any]) -> Rout
         definition_ids,
         deadline_ms=max(100, deadline_ms),
         memory=ActorMemoryService(SqlActorMemoryRepository()),
+        event_repository=SqlHarnessEventRepository(),
     )
 
 

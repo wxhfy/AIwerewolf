@@ -100,6 +100,7 @@ class DecisionRequest:
     information_state: InformationState
     action_space: ActionSpace
     memory_scope: MemoryScope
+    knowledge_context: tuple[dict[str, Any], ...] = ()
     skill_scope: frozenset[str] = field(default_factory=frozenset)
     tool_scope: frozenset[str] = field(default_factory=frozenset)
     policy_tags: frozenset[str] = field(default_factory=frozenset)
@@ -159,10 +160,15 @@ class ResolvedAction:
 
 @dataclass(frozen=True)
 class HarnessStep:
-    kind: Literal["load_skill", "tool", "select_action"]
+    kind: Literal["reflect", "load_skill", "tool", "select_action"]
+    reflection: str | None = None
     skill_call: SkillCall | None = None
     tool_call: ToolCall | None = None
     action_selection: ActionSelection | None = None
+
+    @classmethod
+    def reflect(cls, reflection: str) -> HarnessStep:
+        return cls(kind="reflect", reflection=reflection)
 
     @classmethod
     def load_skill(cls, name: str) -> HarnessStep:
@@ -202,6 +208,8 @@ class PlannerContext:
     """The complete model-visible harness surface for the next step."""
 
     step: int
+    remaining_ms: int
+    reflections: tuple[str, ...]
     skill_catalog: tuple[SkillDescriptor, ...]
     loaded_skills: tuple[LoadedSkill, ...]
     tool_schemas: tuple[dict[str, Any], ...]

@@ -311,6 +311,28 @@ class ActorMemory(Base):
     )
 
 
+class AgentHarnessEvent(Base):
+    """Append-only execution event emitted by one bounded Harness run."""
+
+    __tablename__ = "agent_harness_events"
+
+    id = Column(String, primary_key=True, default=_uuid)
+    game_id = Column(String, ForeignKey("games.id"), nullable=False, index=True)
+    player_id = Column(String, ForeignKey("players.id"), nullable=False, index=True)
+    request_id = Column(String, nullable=False, index=True)
+    seq = Column(Integer, nullable=False)
+    event_type = Column(String, nullable=False, index=True)
+    step = Column(Integer, nullable=False, default=0)
+    timestamp_ms = Column(Integer, nullable=False)
+    payload = Column(JSON, default=dict, nullable=False)
+    created_at = Column(DateTime, default=_utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("request_id", "seq", name="uq_agent_harness_events_request_seq"),
+        Index("ix_agent_harness_events_game_player_created", "game_id", "player_id", "created_at"),
+    )
+
+
 class DecisionEvaluation(Base):
     """Versioned Track B score for one persisted agent decision."""
 

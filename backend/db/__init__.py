@@ -2,6 +2,7 @@ from backend.db.database import SessionLocal
 from backend.db.database import get_db
 from backend.db.database import init_db
 from backend.db.models import AgentDecision
+from backend.db.models import AgentHarnessEvent
 from backend.db.models import AgentVersion
 from backend.db.models import Base
 from backend.db.models import DecisionEvaluation
@@ -30,6 +31,7 @@ __all__ = [
     "Player",
     "GameEvent",
     "AgentDecision",
+    "AgentHarnessEvent",
     "DecisionEvaluation",
     "GameSnapshot",
     "Vote",

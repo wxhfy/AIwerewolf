@@ -85,6 +85,32 @@ class GoalState:
 
 
 @dataclass
+class SpeechClaim:
+    claim_id: str
+    event_seq: int
+    speaker_id: str
+    kind: str
+    target_id: str | None
+    value: str
+    polarity: float
+    confidence: float
+    evidence_text: str
+    contradicted: bool = False
+
+
+@dataclass
+class EvidenceEdge:
+    edge_id: str
+    event_seq: int
+    source_player_id: str
+    target_player_id: str
+    relation: str
+    weight: float
+    confidence: float
+    evidence_text: str
+
+
+@dataclass
 class ActorMemoryState:
     episode_id: str
     actor_id: str
@@ -97,6 +123,8 @@ class ActorMemoryState:
     relationships: dict[str, RelationshipState] = field(default_factory=dict)
     affect: AffectiveState = field(default_factory=AffectiveState)
     goals: list[GoalState] = field(default_factory=list)
+    claims: list[SpeechClaim] = field(default_factory=list)
+    evidence_graph: list[EvidenceEdge] = field(default_factory=list)
     last_action: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -118,6 +146,8 @@ class ActorMemoryState:
             },
             affect=AffectiveState(**(value.get("affect") or {})),
             goals=[GoalState(**item) for item in value.get("goals") or []],
+            claims=[SpeechClaim(**item) for item in value.get("claims") or []],
+            evidence_graph=[EvidenceEdge(**item) for item in value.get("evidence_graph") or []],
             last_action=dict(value.get("last_action") or {}),
         )
         state.affect.normalize()

@@ -116,6 +116,24 @@ def test_harness_loads_scoped_skill_calls_safe_tool_and_resolves_action() -> Non
     assert started["request"]["domain_metadata"]["role"] == "oracle"
 
 
+def test_harness_can_reflect_before_selecting_an_action() -> None:
+    class Planner:
+        def next_step(self, request, context):
+            del request
+            if not context.reflections:
+                return HarnessStep.reflect("Compare the two public vote histories.")
+            assert context.reflections == ("Compare the two public vote histories.",)
+            return HarnessStep.select_action(ActionSelection(option_id="vote:actor-2"))
+
+    result = AgentHarness(Planner()).run(
+        _request(max_steps=2, skill_scope=frozenset(), tool_scope=frozenset())
+    )
+
+    assert result.status == "completed"
+    assert result.action is not None
+    assert "planner.reflected" in _event_types(result)
+
+
 def test_same_harness_contract_supports_different_hidden_information_domains() -> None:
     class FirstOptionPlanner:
         def next_step(self, request, context):

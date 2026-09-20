@@ -230,14 +230,23 @@ class DeepSeekClient:
             "x-stainless-timeout": str(self.timeout.read if isinstance(self.timeout, httpx.Timeout) else self.timeout),
         }
 
-    def _request_timeout(self) -> httpx.Timeout:
+    def _request_timeout(self, request_timeout_seconds: float | None = None) -> httpx.Timeout:
         """Return the current timeout value for each request.
 
         Some callers update ``client.timeout`` after construction. Passing the
         timeout per request makes those runtime changes effective even though
         the shared ``httpx.Client`` was created with an initial timeout.
         """
-        return self.timeout if isinstance(self.timeout, httpx.Timeout) else httpx.Timeout(self.timeout)
+        base = self.timeout if isinstance(self.timeout, httpx.Timeout) else httpx.Timeout(self.timeout)
+        if request_timeout_seconds is None:
+            return base
+        limit = max(0.1, float(request_timeout_seconds))
+        return httpx.Timeout(
+            connect=min(float(base.connect or limit), limit),
+            read=min(float(base.read or limit), limit),
+            write=min(float(base.write or limit), limit),
+            pool=min(float(base.pool or limit), limit),
+        )
 
     @contextmanager
     def _request_slot(self) -> Iterator[None]:
@@ -265,6 +274,7 @@ class DeepSeekClient:
         max_tokens: int = 2048,
         thinking: bool = True,
         reasoning_effort: str = "medium",
+        request_timeout_seconds: float | None = None,
         **kwargs,
     ) -> dict:
         """Synchronous chat completion with exponential backoff retry."""
@@ -300,7 +310,7 @@ class DeepSeekClient:
                         f"{self.base_url}/chat/completions",
                         headers=headers,
                         json=payload,
-                        timeout=self._request_timeout(),
+                        timeout=self._request_timeout(request_timeout_seconds),
                     )
                 latency_ms = int((time.perf_counter() - t0) * 1000)
 

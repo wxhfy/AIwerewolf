@@ -49,6 +49,7 @@ class AgentHarness:
         catalog = self.skills.catalog(request)
         schemas = self.tools.schemas(self.policy, request)
         loaded = []
+        reflections: list[str] = []
         tool_results: list[ToolResult] = []
         seen_call_ids: set[str] = set()
         session.append(
@@ -72,6 +73,8 @@ class AgentHarness:
                     request,
                     PlannerContext(
                         step=step_number,
+                        remaining_ms=self._remaining_ms(started, request),
+                        reflections=tuple(reflections),
                         skill_catalog=catalog,
                         loaded_skills=tuple(loaded),
                         tool_schemas=schemas,
@@ -79,6 +82,19 @@ class AgentHarness:
                     ),
                 )
                 session.append("model.responded", step=step_number, payload=self._step_snapshot(step))
+
+                if step.kind == "reflect" and step.reflection is not None:
+                    reflection = step.reflection.strip()
+                    if not reflection:
+                        raise PolicyViolation("Planner reflection cannot be empty")
+                    reflections.append(reflection[:4000])
+                    session.append(
+                        "planner.reflected",
+                        step=step_number,
+                        payload={"reflection": reflections[-1]},
+                    )
+                    session.append("step.completed", step=step_number)
+                    continue
 
                 if step.kind == "load_skill" and step.skill_call is not None:
                     if len(loaded) >= request.budget.max_skill_loads:
@@ -236,6 +252,7 @@ class AgentHarness:
                 "visible_history": list(request.information_state.visible_history),
                 "private_memory": list(request.information_state.private_memory),
             },
+            "knowledge_context": list(request.knowledge_context),
             "action_space": [
                 {
                     "option_id": option.option_id,
@@ -268,6 +285,8 @@ class AgentHarness:
     @staticmethod
     def _step_snapshot(step: HarnessStep) -> dict[str, Any]:
         payload: dict[str, Any] = {"kind": step.kind}
+        if step.reflection is not None:
+            payload["reflection"] = step.reflection
         if step.skill_call is not None:
             payload["skill_call"] = {"name": step.skill_call.name}
         if step.tool_call is not None:
@@ -284,6 +303,11 @@ class AgentHarness:
                 "metadata": step.action_selection.metadata,
             }
         return payload
+
+    @staticmethod
+    def _remaining_ms(started: float, request: DecisionRequest) -> int:
+        elapsed_ms = int((time.monotonic() - started) * 1000)
+        return max(100, request.budget.deadline_ms - elapsed_ms)
 
     @staticmethod
     def _failed(session, loaded, tool_results, step: int, error: str) -> HarnessResult:

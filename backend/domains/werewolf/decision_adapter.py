@@ -30,6 +30,16 @@ _TARGET_ACTIONS = {
     "BOOM": ActionType.BOOM,
     "TRANSFER_BADGE": ActionType.VOTE,
 }
+_DELIBERATIVE_REQUESTS = {"WITCH", "SHOOT", "BOOM", "TRANSFER_BADGE"}
+_REASONING_EVENT_TYPES = {
+    "CHAT_MESSAGE",
+    "VOTE_CAST",
+    "PLAYER_DIED",
+    "PRIVATE_INFO",
+    "HUNTER_SHOT",
+    "WHITE_WOLF_KING_BOOM",
+    "GAME_END",
+}
 
 
 class WerewolfDecisionAdapter:
@@ -50,13 +60,26 @@ class WerewolfDecisionAdapter:
         deadline_ms: int = 30_000,
     ) -> DecisionRequest:
         options = self._action_options(state, player, view, request_kind)
+        profile = dict(agent_profile or {})
+        strategy_bias = profile.pop("strategy_bias", None)
+        strategy_version = profile.pop("strategy_version", None)
+        knowledge_context = ()
+        if strategy_bias:
+            knowledge_context = (
+                {
+                    "scope": "cross_episode",
+                    "source": "track_c",
+                    "version": str(strategy_version or "unversioned"),
+                    "content": strategy_bias,
+                },
+            )
         observation = {
             "player_id": view.player_id,
             "day": view.day,
             "phase": view.phase,
-            "self_player": view.self_player,
-            "players": view.players,
-            "known_wolves": view.known_wolves,
+            "self_player": self._compact_player(view.self_player, include_private=True),
+            "players": [self._compact_player(item) for item in view.players],
+            "known_wolves": [self._compact_player(item, include_private=True) for item in view.known_wolves],
             "observations": view.observations,
             "legal_targets": view.legal_targets,
         }
@@ -75,12 +98,17 @@ class WerewolfDecisionAdapter:
                 schema_id="werewolf.player-view",
                 schema_version="1",
                 observation=observation,
-                visible_history=(*view.public_events, *view.private_events),
+                visible_history=tuple(
+                    self._compact_event(event)
+                    for event in (*view.public_events, *view.private_events)
+                    if str(event.get("type") or "") in _REASONING_EVENT_TYPES
+                ),
             ),
             action_space=ActionSpace(options=tuple(options)),
             memory_scope=MemoryScope(namespace="match", episode_id=state.id, actor_id=player.id),
+            knowledge_context=knowledge_context,
             policy_tags=frozenset({"role-safe-view", "environment-owned-actions"}),
-            agent_profile=dict(agent_profile or {}),
+            agent_profile=profile,
             domain_metadata={
                 "request_kind": request_kind,
                 "role": player.role.value,
@@ -88,8 +116,76 @@ class WerewolfDecisionAdapter:
                 "day": state.day,
                 "phase": state.phase.value,
             },
-            budget=HarnessBudget(max_steps=1, max_tool_calls=0, max_skill_loads=0, deadline_ms=deadline_ms),
+            budget=HarnessBudget(
+                max_steps=2 if request_kind in _DELIBERATIVE_REQUESTS else 1,
+                max_tool_calls=0,
+                max_skill_loads=0,
+                max_output_tokens=self._output_token_budget(request_kind, len(options)),
+                deadline_ms=deadline_ms,
+            ),
         )
+
+    @staticmethod
+    def _compact_player(player: dict[str, Any], *, include_private: bool = False) -> dict[str, Any]:
+        compact = {
+            key: player[key]
+            for key in ("id", "seat", "name", "alive")
+            if key in player
+        }
+        persona = dict(player.get("persona") or {})
+        if persona:
+            compact["persona"] = {
+                key: persona[key]
+                for key in ("style_label", "mbti")
+                if persona.get(key)
+            }
+        if include_private:
+            for key in ("role", "alignment"):
+                if key in player:
+                    compact[key] = player[key]
+        return compact
+
+    @staticmethod
+    def _compact_event(event: dict[str, Any]) -> dict[str, Any]:
+        payload = dict(event.get("payload") or {})
+        allowed_payload = {
+            key: payload[key]
+            for key in (
+                "actor_id",
+                "actor_name",
+                "speaker_id",
+                "speaker_name",
+                "voter_id",
+                "voter_name",
+                "target_id",
+                "target_name",
+                "player_id",
+                "player_name",
+                "speech",
+                "message",
+                "reason",
+                "kind",
+                "is_wolf",
+            )
+            if key in payload
+        }
+        return {
+            "id": event.get("id"),
+            "seq": event.get("seq"),
+            "day": event.get("day"),
+            "phase": event.get("phase"),
+            "type": event.get("type"),
+            "visibility": event.get("visibility"),
+            "payload": allowed_payload,
+        }
+
+    @staticmethod
+    def _output_token_budget(request_kind: str, option_count: int) -> int:
+        if request_kind in _SPEECH_REQUESTS:
+            return min(560, 360 + option_count * 12)
+        if request_kind in _DELIBERATIVE_REQUESTS:
+            return min(360, 220 + option_count * 12)
+        return min(280, 140 + option_count * 10)
 
     def to_engine_decisions(
         self,

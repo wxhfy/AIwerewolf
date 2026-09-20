@@ -1,6 +1,6 @@
 # AI Werewolf 当前架构
 
-本文档是系统分层、信息流和技术选型的架构速查。完整设计说明见 [`SYSTEM_AND_AGENT_DESIGN.md`](SYSTEM_AND_AGENT_DESIGN.md)，生产路线见 [`PRODUCTION_PLAN.md`](PRODUCTION_PLAN.md)，智能体框架见 [`AGENT_HARNESS_V2.md`](AGENT_HARNESS_V2.md)，角色记忆见 [`COGNITIVE_MEMORY.md`](COGNITIVE_MEMORY.md)。
+本文档是系统分层、信息流和技术选型的架构速查。完整设计说明见 [`SYSTEM_AND_AGENT_DESIGN.md`](SYSTEM_AND_AGENT_DESIGN.md)，生产路线见 [`PRODUCTION_PLAN.md`](PRODUCTION_PLAN.md)，智能体框架见 [`AGENT_HARNESS_V2.md`](AGENT_HARNESS_V2.md)，角色记忆见 [`COGNITIVE_MEMORY.md`](COGNITIVE_MEMORY.md)，模型实测见 [`MODEL_VALIDATION_2026-09-20.md`](MODEL_VALIDATION_2026-09-20.md)。
 
 ## 系统边界
 
@@ -59,8 +59,8 @@ Repository、LLM Client、Redis 通知、数据库持久化和 Worker 属于基�
 4. Match Worker 使用数据库 lease 领取任务。
 5. 游戏引擎推进到需要角色决策的位置。
 6. 后端裁剪 PlayerView，记忆服务更新角色主观状态。
-7. Agent Harness 进行一次结构化模型调用。
-8. 引擎校验并应用动作，写入事件、快照、决策和角色记忆。
+7. Agent Harness 执行一步决策或高影响两步反思，并处理修复和超时降级。
+8. 引擎校验并应用动作，写入事件、快照、决策、Harness 轨迹和角色记忆。
 9. SSE 从持久化投影读取并按 seq 交付前端。
 10. 对局完成后异步执行 Track B/C。
 ```
@@ -90,7 +90,7 @@ LocalAgentRuntime
   -> ResolvedAction
 ```
 
-当前不使用子智能体。实时链路保持一次决策一次模型调用，记忆更新与检索全部由确定性服务端逻辑执行。
+当前不使用子智能体。普通决策一步，高影响决策最多两步；发言证据提取、记忆更新与检索全部由确定性服务端逻辑执行。
 
 ## 技术选型
 
@@ -121,6 +121,7 @@ game_events
 game_snapshots
 agent_decisions
 actor_memories
+agent_harness_events
 outbox_events
 track_c_post_game_jobs
 ```

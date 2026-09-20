@@ -27,6 +27,8 @@ AI 狼人杀不是把多个模型简单接到聊天室里，而是一套由后�
 | REST 命令与 SSE 有序状态流 | 已实现，支持断线续读 |
 | 对局事件、快照、Agent 决策持久化 | 已实现 |
 | 动态角色认知记忆 | 已实现，按角色隔离并持久化 |
+| 发言声明、站边、承诺与矛盾证据图 | 已实现，驱动主观概率更新 |
+| Harness 独立事件流、修复与超时降级 | 已实现，可按请求审计 |
 | Track B 逐步复盘、报告和运行指标 | 已实现 |
 | Track C 策略知识抽取与检索回流 | 已实现现有链路 |
 | 真人与 AI 混战 | 暂停开放，接口明确返回 `501` |
@@ -84,7 +86,9 @@ PlayerView
 - 状态机负责身份、夜间行动和主持人真相的隔离，不依赖提示词保密。
 - 记忆分为工作记忆、情景记忆、信念、关系、情绪、目标和自身行动。
 - 检索窗口和权重由人格、角色、当前情绪和决策类型动态计算，不给不同角色写死统一比例。
-- 当前实时链路坚持一次决策一次主模型调用，不拉取子 Agent，避免额外时延和不可控信息扩散。
+- 普通决策使用一步模型调用；女巫、开枪、自爆、移交警徽等高影响决策允许一次受预算约束的反思步骤。
+- 非法 JSON 或非法响应允许一次低成本修复；模型超时或修复失败时降级到服务端合法动作并完整标记，不中断整局。
+- 不拉取子 Agent，避免额外时延和不可控信息扩散。
 - 模型输出只是候选动作，最终合法性和状态变更始终由领域引擎决定。
 
 ## 对局信息流
@@ -96,7 +100,7 @@ PlayerView
 5. 引擎推进到决策点，Visibility 为行动角色生成安全视角。
 6. 记忆服务吸收角色可见事件，Harness 组装有限上下文并调用模型。
 7. Harness 解析、校验并返回动作；引擎应用动作并产生新事件。
-8. 事件、快照、决策和角色记忆持续写入 PostgreSQL。
+8. 事件、快照、决策、Harness 轨迹和角色记忆持续写入 PostgreSQL；同一步记忆只提交一次。
 9. SSE 从持久化快照按 `seq` 向前端交付，断线后可以继续读取。
 10. 对局结束事务写入最终状态和 Outbox 事实，后续分析异步执行。
 
@@ -232,6 +236,7 @@ cd frontend && npm run lint && npm run build
 | [`docs/architecture/SYSTEM_AND_AGENT_DESIGN.md`](docs/architecture/SYSTEM_AND_AGENT_DESIGN.md) | 整体架构、Agent 设计、理念、信息流与预期效果 |
 | [`docs/architecture/BACKEND_SKELETON.md`](docs/architecture/BACKEND_SKELETON.md) | 后端接口、中间件、数据表和实现边界 |
 | [`docs/architecture/COGNITIVE_MEMORY.md`](docs/architecture/COGNITIVE_MEMORY.md) | 动态角色记忆与上下文裁剪 |
+| [`docs/architecture/MODEL_VALIDATION_2026-09-20.md`](docs/architecture/MODEL_VALIDATION_2026-09-20.md) | 免费模型接入与真实对局验证 |
 | [`docs/architecture/PRODUCTION_PLAN.md`](docs/architecture/PRODUCTION_PLAN.md) | 3000 QPM 生产化路线 |
 | [`REQUIREMENTS.md`](REQUIREMENTS.md) | 当前需求与验收标准 |
 | [`docs/prd.md`](docs/prd.md) | 产品范围和用户流程 |
