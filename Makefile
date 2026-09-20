@@ -91,14 +91,6 @@ test:
 		$(PYTHON) -m py_compile backend/app.py backend/run_demo.py backend/eval/post_game.py; \
 	fi
 
-test-strict:
-	@if [ -f scripts/run_backend_full_strict.py ]; then \
-		$(PYTHON) scripts/run_backend_full_strict.py; \
-	else \
-		echo "Strict validation script is missing; restore scripts/run_backend_full_strict.py from the repository."; \
-		exit 2; \
-	fi
-
 test-visibility:
 	@if [ -f scripts/verify_visibility_strict.py ]; then \
 		$(PYTHON) scripts/verify_visibility_strict.py; \
@@ -184,7 +176,6 @@ help:
 	@echo ""
 	@echo "🧪  Testing"
 	@echo "  make test            — tracked pytest suite with fake LLM"
-	@echo "  make test-strict     — strict backend validation"
 	@echo "  make test-visibility — strict visibility check"
 	@echo "  make lint            — ruff check + format check"
 	@echo "  make format          — ruff auto-fix + format"

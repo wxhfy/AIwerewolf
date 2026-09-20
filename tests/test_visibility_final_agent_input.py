@@ -13,7 +13,7 @@ Security properties tested (from v2 blueprint §4.3):
   P4: Agent Memory does not contain Hidden Truth
   P5: Strategy retrieval does not return current-game private info
   P6: Post-game reflection results are NOT visible during gameplay
-  P7: HumanAgent legal view = AIPlayer legal view
+  P7: Every player-facing projection obeys the same visibility boundary
   P8: Knowledge feedback does not leak current game to next game
   P9: final_agent_input contains no hidden roles/alignments/skills
   P10: Retrieved docs satisfy visibility_scope and applicability
@@ -163,30 +163,6 @@ def test_villager_cannot_see_wolf_team():
     )
 
     assert len(view.known_wolves) == 0, "Villager must not know wolf team members"
-
-
-# ================================================================
-# P4: Agent Memory does not contain Hidden Truth
-# ================================================================
-
-
-def test_memory_does_not_contain_hidden_truth():
-    """P4: Memory must not store other players' true roles or alignments."""
-    from backend.agents.cognitive.memory import Memory
-
-    mem = Memory("P1", "Villager")
-
-    # Add a normal judgment — should not contain role info
-    mem.add_judgment("P2", "suspicious", 0.6, "Voted weirdly")
-
-    # Check judgments list directly
-    assert len(mem.judgments) > 0, "Judgment should be stored"
-
-    # Memory should not have any key that exposes hidden truth
-    for j in mem.judgments:
-        jdict = j.__dict__ if hasattr(j, "__dict__") else {}
-        assert "true_role" not in jdict, f"Judgment must not contain true_role: {jdict}"
-        assert "true_alignment" not in jdict, f"Judgment must not contain true_alignment: {jdict}"
 
 
 # ================================================================

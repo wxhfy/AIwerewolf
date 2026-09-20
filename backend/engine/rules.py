@@ -151,7 +151,7 @@ def build_players(
     rng = Random(seed)
     rng.shuffle(role_list)
     # Use character names from persona pool for more human feel
-    from backend.agents.characters import PERSONA_POOL
+    from backend.domains.werewolf.personas import PERSONA_POOL
 
     rng_char = Random(seed)
     char_pool = [p["name"] for p in PERSONA_POOL]

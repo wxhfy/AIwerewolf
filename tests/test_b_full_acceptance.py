@@ -545,9 +545,9 @@ def test_b_gate13_markdown_is_localized() -> None:
 # Gate 14: Real engine game → full pipeline → validated report
 # ---------------------------------------------------------------------------
 def test_b_gate14_real_engine_full_pipeline(tmp_path) -> None:
-    from backend.engine.game import WerewolfGame
+    from backend.application.matches.executor import build_game
 
-    game = WerewolfGame(seed=7)
+    game = build_game(seed=7)
     game.play()
     assert game.state.phase == Phase.GAME_END
     payload = generate_review_report(
@@ -577,9 +577,9 @@ def test_b_gate14_real_engine_full_pipeline(tmp_path) -> None:
 # Gate 15: StrategyKnowledge extraction from reports
 # ---------------------------------------------------------------------------
 def test_b_gate15_strategy_knowledge_export(tmp_path) -> None:
-    from backend.engine.game import WerewolfGame
+    from backend.application.matches.executor import build_game
 
-    game = WerewolfGame(seed=11)
+    game = build_game(seed=11)
     game.play()
     state = game.state
     metrics = MetricsCalculator().compute(state)
@@ -618,11 +618,11 @@ def test_b_gate16_json_markdown_score_consistency() -> None:
 # Gate 17: Real engine game → path B to C evolution pipeline
 # ---------------------------------------------------------------------------
 def test_b_gate17_real_engine_b_to_c_pipeline(tmp_path) -> None:
-    from backend.engine.game import WerewolfGame
+    from backend.application.matches.executor import build_game
     from backend.eval.evolution import EvolutionPipeline
     from backend.eval.evolution import export_evolution_summary
 
-    game = WerewolfGame(seed=13)
+    game = build_game(seed=13)
     game.play()
     state = game.state
     metrics = MetricsCalculator().compute(state)

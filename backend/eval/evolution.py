@@ -2849,10 +2849,10 @@ class TournamentRunner:
             metric = self.game_runner(seed, strategy_version, target_role)
             metric.metadata.setdefault("runner_mode", "custom_runner")
         else:
-            from backend.engine.game import WerewolfGame
+            from backend.application.matches.executor import build_game
 
             strategy_bias = self._patch_ops_to_bias(strategy_patch_ops or [])
-            game = WerewolfGame(
+            game = build_game(
                 seed=seed,
                 strategy_version=strategy_version,
                 strategy_bias_by_role={target_role: strategy_bias} if target_role and strategy_bias else {},

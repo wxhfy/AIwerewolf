@@ -4,6 +4,7 @@ This document is the current architecture and technology-selection source of tru
 
 Production capacity and delivery gates are defined in `PRODUCTION_PLAN.md`.
 The three-owner write scopes and integration contract are defined in `COLLABORATION.md`.
+The Agent Harness replacement is defined in `AGENT_HARNESS_V2.md`.
 
 ## Target Boundaries
 
@@ -32,8 +33,9 @@ Infrastructure adapters
 ```
 
 The implemented AI-only deployment has separate API and Match Worker
-processes. The Agent Runtime is currently a local adapter inside each Match
-Worker process and preserves the existing CognitiveAgent behavior.
+processes. Every executable AI match enters the portable
+`backend/agent_harness` through the Werewolf adapter. `WerewolfGame` no longer
+constructs agents or provides a second decision lifecycle.
 
 ### Presentation layer
 
@@ -45,7 +47,12 @@ The FastAPI application owns room and match lifecycle, command validation, autho
 
 ### Domain and agent layer
 
-The game domain owns deterministic state transitions, action legality, visibility, win conditions, and domain events. The AgentRuntime receives a role-safe `PlayerView` and a `DecisionRequest`, then returns a `DecisionResult`. Agents never mutate match state or access match tables directly.
+The game domain owns deterministic state transitions, action legality,
+visibility, win conditions, and domain events. A Werewolf environment adapter
+projects the full state into an actor-scoped `InformationState`, `DecisionPoint`,
+and `ActionSpace`. The portable Agent Harness returns one validated
+`ResolvedAction` plus append-only audit events. Agents never mutate match state
+or access match tables directly.
 
 ### Infrastructure layer
 
@@ -58,7 +65,7 @@ Adapters implement repositories, Redis coordination, outbox delivery, LLM client
 2. Application validates and persists the command.
 3. Match Worker obtains a lease and loads the match specification and persisted state.
 4. Domain handles the command and emits ordered events.
-5. AgentRuntime is called only when the domain emits a decision request.
+5. The Agent Harness is called only when the domain emits a decision request.
 6. Events, snapshots, and decision traces are persisted as authoritative match facts.
 7. Match Worker atomically commits final facts, Match Job completion, the
    Analysis Job, and a transactional outbox event.
@@ -128,7 +135,8 @@ POST /rooms/{id}/start
 Match Worker
   -> SELECT ... FOR UPDATE SKIP LOCKED
   -> rebuild the exact prepared roster
-  -> create existing CognitiveAgents through LocalAgentRuntime
+  -> LocalAgentRuntime creates isolated per-seat AgentHarness instances
+  -> build role-safe DecisionRequests and server-owned legal ActionSpaces
   -> execute game and persist ordered events, snapshots, and decisions
   -> mark the job completed or failed
   -> after completion, enqueue post-game analysis
@@ -146,6 +154,11 @@ reconnection and command recovery will be designed after the AI path is stable.
 LLM credentials are deployment secrets owned by the Agent Runtime environment.
 Browser-provided API keys are neither persisted in rooms nor copied into
 `match_jobs`; room configuration may select an allowed provider/model only.
+
+The current agent vertical slice is
+`LocalAgentRuntime -> WerewolfDecisionAdapter -> DecisionRequest -> AgentHarness -> ResolvedAction`.
+The next slice adds dedicated harness-event persistence and actor-scoped
+memory/tools without changing the game-domain contract.
 
 ## Technology Selection
 

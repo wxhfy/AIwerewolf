@@ -27,7 +27,7 @@ warnings.filterwarnings("ignore")
 
 import psycopg2
 
-from backend.engine.game import WerewolfGame
+from backend.application.matches.executor import build_game
 
 DB_URL = "postgresql://werewolf:werewolf_dev_password@127.0.0.1:5433/werewolf"
 OUTPUT_DIR = ROOT / "outputs"
@@ -73,7 +73,7 @@ def _run_one_game(seed: int) -> dict[str, Any]:
     print(f"{'=' * 50}", flush=True)
 
     try:
-        game = WerewolfGame(seed=seed, player_count=7)
+        game = build_game(seed=seed, player_count=7)
 
         # Log role assignments
         for p in game.state.players:

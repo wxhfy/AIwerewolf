@@ -1,68 +1,35 @@
 # Changelog
 
-All notable changes to AI Werewolf.
+All notable changes to AI Werewolf are recorded here.
 
-Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-versioning follows [Semantic Versioning](https://semver.org/).
-
-## [Unreleased] - 2026-09-19
+## [Unreleased] - 2026-09-20
 
 ### Added
 
-- Independent PostgreSQL-backed Match Worker for AI-only games.
-- Durable rooms, match jobs, ordered snapshots and resumable SSE delivery.
-- Versioned `/api/v1` health, capability, command and Agent Service contracts.
-- Request IDs, security headers, request-size limits, structured problem responses and optional Redis rate limiting.
-- Idempotent pause/resume commands, Agent decision job schema and transactional outbox storage.
+- Portable Agent Harness with typed decision requests, middleware, policy,
+  validation, tools, skills, events, and runtime metrics.
+- Werewolf domain adapter that converts an information-filtered `PlayerView`
+  into Harness input and converts validated Harness output into engine decisions.
+- PostgreSQL-backed match execution with durable jobs, snapshots, events,
+  resumable SSE delivery, and asynchronous analysis jobs.
+- Explicit application, domain, runtime, persistence, and interface boundaries.
 
 ### Changed
 
-- Replaced the active WebSocket game flow with REST commands plus SSE delivery.
-- PostgreSQL is now the authoritative multi-process state store; Redis is notification/coordination only.
-- Human matches are explicitly disabled until durable input and reconnect semantics are implemented.
+- AI matches now follow one execution path: REST command -> Match Worker ->
+  Harness Runtime -> deterministic game engine -> PostgreSQL -> SSE projection.
+- The game engine no longer creates agents, calls model providers, or owns
+  application lifecycle concerns.
+- PostgreSQL is the authoritative state store; Redis is optional coordination,
+  notification, and rate-limiting infrastructure.
+- Demo and experiment entry points construct games through the application
+  configuration layer.
 
 ### Removed
 
-- Obsolete internal process documents and overly restrictive per-tool workflow documents.
-
-## [0.1.0] — 2025-06-05
-
-### Added
-
-- **CognitiveAgent** — Observe-Think-Act architecture with LLM reasoning, BeliefTracker, and Strategy Bias
-- **AgentLoop** — native function-calling with information tools (`search_strategies`, `recall_memory`, `check_rules`, `get_social_info`, `analyze_votes`, `set_strategic_intent`) plus `submit_decision`
-- **6 role strategies** — Villager, Werewolf, Seer, Witch, Hunter, Guard with independent strategy cards
-- **32 named characters** with MBTI-based persona system
-- **WolfTeamView** — secure wolf coordination with private team communication
-- **4-Filter safety pipeline** — confidence_allowed → visibility_allowed → no_current_game_leak → applicability_matches
-- **Three-tier review cascade** — Tier 1 deterministic rules → Tier 2 light LLM review → Tier 3 multi-review panel
-- **CounterfactualAnalyzer** — replay-based counterfactual analysis for post-game review
-- **Knowledge lifecycle** — L0-L4 confidence levels with candidate → active → deprecated states
-- **Replay Viewer** — structured post-game replay with decision traces
-- **HumanAgent** — real-person participation in AI games
-- **WebSocket API** — real-time game state streaming to frontend
-- **Frontend** — Next.js 14 observer UI with Tailwind CSS
-- **20 mapped PostgreSQL ORM tables** — games, players, decisions, events, strategies, and audit trails
-
-### Engine
-
-- Complete Werewolf game loop with 15+ phase transitions
-- Strict information isolation (92 boundary checks verified)
-- Rule variant system (standard / custom / demo)
-- Game state snapshots with full audit history
-- Resume support from any phase
-
-### Review & Evolution
-
-- LLM review panel (3 review passes + critic round)
-- Track B publishing pipeline with structured reports
-- Knowledge abstraction from post-game reviews
-- A/B leaderboard for strategy comparison
-- MBTI × Role win-rate analysis
-
-### Developer Experience
-
-- Preflight check (7 items: imports, DB, LLM, strategies, pool)
-- Strict mode flags for deterministic testing
-- Multi-tier experiment framework
-- Retrieval policy ablation scripts
+- Legacy agent hierarchy and its duplicated planning, memory, and fallback
+  implementations.
+- Placeholder standalone Agent Service and its unused HTTP contracts.
+- WebSocket game delivery and obsolete compatibility paths.
+- Historical delivery reports, generated evidence, stale experiment scripts,
+  and tests coupled to removed agent implementations.

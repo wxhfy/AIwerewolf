@@ -3,10 +3,8 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
-from backend.agents.llm_agent import LLMAgent
 from backend.engine.models import Alignment
 from backend.engine.models import Role
-from backend.engine.visibility import PlayerView
 from backend.eval.evolution import AcceptancePolicy
 from backend.eval.evolution import DreamJob
 from backend.eval.evolution import EvolutionPipeline
@@ -684,50 +682,6 @@ def test_strategy_context_renderer_outputs_prompt_block() -> None:
     assert "doc-1" in lesson
 
 
-def test_llm_agent_retrieves_strategy_knowledge_from_persisted_store(monkeypatch) -> None:
-    def fake_retrieve(query):
-        assert query.role == "Seer"
-        assert query.phase == "DAY_SPEECH"
-        assert query.top_k == 3
-        assert "request=TALK" in query.observation_summary
-        return [
-            {
-                "doc_id": "doc-seer-info",
-                "role": "Seer",
-                "phase": "DAY_SPEECH",
-                "score": 0.91,
-                "trigger": "Seer has a wolf check.",
-                "recommendation": "Convert the check into public vote pressure.",
-                "rationale": "Approved Track B evidence.",
-            }
-        ]
-
-    monkeypatch.setattr("backend.db.persist.retrieve_strategy_knowledge", fake_retrieve)
-    view = PlayerView(
-        player_id="p1",
-        day=1,
-        phase="DAY_SPEECH",
-        self_player={"id": "p1", "seat": 1, "name": "SeerA", "role": "Seer"},
-        players=[],
-        public_events=[{"payload": {"speech": "I need more info", "actor_name": "SeerA"}}],
-        private_events=[],
-        known_wolves=[],
-        observations=[],
-    )
-    agent = LLMAgent("p1", provider="doubao", model="ep-test")
-    agent.initialize(view, {})
-
-    agent.update(view, "TALK")
-    meta = {}
-    agent._attach_retrieval_meta(meta)
-    block = agent._build_retrieved_lessons_block()
-
-    assert meta["retrieval_used"] is True
-    assert meta["retrieved_knowledge_ids"] == ["doc-seer-info"]
-    assert "doc-seer-info" in block
-    assert "Convert the check" in block
-
-
 def test_strategy_knowledge_docs_carry_source_event_ids_end_to_end() -> None:
     """BC penetration gap: source_event_ids must be plumbed from BadCase/CF detectors
     through StrategyKnowledge into StrategyKnowledgeDoc.source_event_ids.
@@ -735,9 +689,9 @@ def test_strategy_knowledge_docs_carry_source_event_ids_end_to_end() -> None:
     Empty source_event_ids on every doc means evidence chain is broken — knowledge
     docs become unreviewable (operator can't audit which events produced them) and
     DreamJob patches inherit zero source_evidence_ids."""
-    from backend.engine.game import WerewolfGame
+    from backend.application.matches.executor import build_game
 
-    state = WerewolfGame(seed=13).play()
+    state = build_game(seed=13).play()
     metrics = MetricsCalculator().compute(state)
     report = ReviewReportBuilder().build(state, metrics)
     report.metadata["validation_result"] = {"passed": True, "publish_allowed": True, "score": 1.5}

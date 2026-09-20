@@ -1,4 +1,4 @@
-from backend.engine.game import WerewolfGame
+from backend.application.matches.executor import build_game
 from backend.eval.review import generate_review_report
 from backend.eval.track_b import ReplayBundleBuilder
 from backend.eval.track_b import ReviewRepairLoop
@@ -9,7 +9,7 @@ from backend.eval.track_b import generate_published_review_document
 
 
 def test_track_b_pipeline_generates_publishable_review_document() -> None:
-    state = WerewolfGame(seed=9).play()
+    state = build_game(seed=9).play()
 
     document = generate_published_review_document(state)
 
@@ -27,7 +27,7 @@ def test_track_b_pipeline_generates_publishable_review_document() -> None:
 
 
 def test_track_b_review_items_have_evidence_event_ids() -> None:
-    state = WerewolfGame(seed=13).play()
+    state = build_game(seed=13).play()
     document = generate_published_review_document(state)
     report = document.review_report
 
@@ -37,7 +37,7 @@ def test_track_b_review_items_have_evidence_event_ids() -> None:
 
 
 def test_track_b_repair_loop_can_fix_missing_evidence_and_publish() -> None:
-    state = WerewolfGame(seed=15).play()
+    state = build_game(seed=15).play()
     replay_bundle = ReplayBundleBuilder().build(state)
     generated = generate_review_report(state)
     review_report = generated["report"]

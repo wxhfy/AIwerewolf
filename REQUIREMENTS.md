@@ -4,7 +4,7 @@
 
 系统首先交付稳定的 AI-only 狼人杀闭环：多个 LLM Agent 在严格信息隔离下完成一局游戏，所有关键状态和行为均可持久化、查询、回放和复盘。
 
-当前不把真人对战、远程 Agent Service 和 Kubernetes 作为已完成功能。它们保留清晰契约，在后续阶段实现。
+当前不把真人对战、远程 Agent Service 和 Kubernetes 作为已完成功能。远程 Agent 仅作为未来传输适配器，不预留伪实现接口。
 
 ## 2. 功能需求
 
@@ -13,7 +13,7 @@
 | FR-01 | 支持 7-12 人 AI 对局和配置化角色组合 | 已实现 |
 | FR-02 | 引擎负责阶段推进、行动校验、死亡结算和胜负判断 | 已实现 |
 | FR-03 | 每个 Agent 只接收角色允许的 `PlayerView` | 已实现 |
-| FR-04 | AI 使用 LLM-compatible `CognitiveAgent` 产生结构化 `Decision` | 已实现 |
+| FR-04 | AI Harness 根据角色安全视角和服务端合法动作空间产生结构化决策 | 已实现 |
 | FR-05 | 房间、任务、事件、快照、决策和结果写入 PostgreSQL | 已实现 |
 | FR-06 | API 接收命令后立即返回，由独立 Match Worker 执行对局 | 已实现 |
 | FR-07 | 前端通过 REST 启动对局，通过 SSE 接收有序状态 | 已实现 |
@@ -22,7 +22,7 @@
 | FR-10 | Track C 抽取、治理并检索策略知识 | 已实现现有链路 |
 | FR-11 | 命令支持 `command_id` 幂等和 `expected_seq` 冲突检测 | 暂停/恢复已实现 |
 | FR-12 | 真人加入 AI 对局 | 暂停开放 |
-| FR-13 | Agent 作为独立远程服务执行决策 | 契约已定义，执行未启用 |
+| FR-13 | Agent 可通过同一 `DecisionRequest` / `HarnessResult` 契约迁移到远程服务 | 后续适配器 |
 
 ## 3. 非功能需求
 

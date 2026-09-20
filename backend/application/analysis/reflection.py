@@ -3,8 +3,8 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from backend.agents.cognitive.reflect import Reflector
-from backend.agents.cognitive.reflect import save_reflections_to_db
+from backend.application.analysis.reflection_engine import Reflector
+from backend.application.analysis.reflection_engine import save_reflections_to_db
 from backend.engine.models import GameEvent
 from backend.engine.models import GameState
 from backend.llm import create_client

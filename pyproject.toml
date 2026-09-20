@@ -1,7 +1,7 @@
 [project]
 name = "ai-werewolf"
 version = "0.1.0"
-description = "AI Werewolf — multi-agent Mafia game with cognitive agents, evaluation, and self-evolution"
+description = "AI Werewolf - durable asymmetric-information matches with a portable agent harness"
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.12"
@@ -88,8 +88,3 @@ quote-style = "double"
 indent-style = "space"
 skip-magic-trailing-comma = false
 line-ending = "lf"
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-python_files = ["test_*.py"]
-addopts = ["-q", "--tb=short"]

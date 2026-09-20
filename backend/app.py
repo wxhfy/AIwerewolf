@@ -22,7 +22,6 @@ from backend.core.middleware import install_middleware
 from backend.db.database import init_db
 from backend.engine.models import GameState
 from backend.infrastructure.messaging.match_notifications import match_notifications
-from backend.interfaces.http.agent_api import router as agent_api_router
 from backend.interfaces.http.analysis_api import router as analysis_api_router
 from backend.interfaces.http.api_v1 import router as api_v1_router
 from backend.interfaces.http.match_stream import router as match_stream_router
@@ -47,7 +46,6 @@ app.add_middleware(
 install_middleware(app, settings)
 install_exception_handlers(app)
 app.include_router(api_v1_router)
-app.include_router(agent_api_router)
 app.include_router(analysis_api_router)
 app.include_router(match_stream_router)
 

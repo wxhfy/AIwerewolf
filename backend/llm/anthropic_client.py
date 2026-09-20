@@ -1,8 +1,7 @@
 """Anthropic-format API Client — for ARK coding endpoint and Anthropic-compatible APIs.
 
-Translates Anthropic Messages API format ↔ OpenAI-compatible format so
-the rest of the codebase (LangChainLLM wrapper, AgentLoop) can use
-Anthropic-format endpoints without changes.
+Translates Anthropic Messages API format into the OpenAI-compatible response
+shape consumed by the Harness model adapter.
 
 Usage:
     from backend.llm.anthropic_client import AnthropicClient
@@ -63,8 +62,8 @@ def _jitter(low: float, high: float) -> float:
 class AnthropicClient:
     """Anthropic Messages API client that returns OpenAI-compatible responses.
 
-    Translates between Anthropic request/response format and OpenAI-compatible
-    format so LangChainLLM / AgentLoop can use Anthropic endpoints unchanged.
+    Translates between Anthropic request/response format and the common model
+    response shape consumed by the Harness runtime.
     """
 
     def __init__(

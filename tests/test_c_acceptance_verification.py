@@ -833,11 +833,11 @@ def test_c14_strategy_context_renderer_prompt_block() -> None:
 # C15: Real engine game → B review → C evolution full pipeline
 # ---------------------------------------------------------------------------
 def test_c15_real_engine_full_b_to_c_pipeline(tmp_path) -> None:
-    from backend.engine.game import WerewolfGame
+    from backend.application.matches.executor import build_game
 
-    game1 = WerewolfGame(seed=7)
+    game1 = build_game(seed=7)
     game1.play()
-    game2 = WerewolfGame(seed=13)
+    game2 = build_game(seed=13)
     game2.play()
 
     reports: list[ReviewReport] = []

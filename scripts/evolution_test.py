@@ -16,7 +16,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from backend.engine.game import WerewolfGame
+from backend.application.matches.executor import build_game
 from backend.eval.evolution import DreamJob
 from backend.eval.review import generate_review_report
 
@@ -41,7 +41,7 @@ def run_evolution_test(n_games: int = 5, start_seed: int = 500) -> None:
 
         try:
             # Step 1: Run game
-            game = WerewolfGame(seed=seed, player_count=7)
+            game = build_game(seed=seed, player_count=7)
             state = game.play()
             elapsed = time.perf_counter() - t0
 

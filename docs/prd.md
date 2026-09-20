@@ -1,6 +1,6 @@
 # AI Werewolf 产品需求文档
 
-更新日期：2026-09-19。
+更新日期：2026-09-20。
 
 ## 1. 产品目标
 
@@ -36,7 +36,7 @@ AI Werewolf 是一个可观测、可复盘、可迭代的多智能体狼人杀�
 
 ### 2.3 真人玩家
 
-真人参与不是当前版本功能。相关页面和部分旧引擎代码仅作为历史原型保留，创建真人席位和提交真人行动会返回 `501`。
+真人参与不是当前版本功能。创建真人席位和提交真人行动会返回 `501`。
 
 ## 3. 当前功能范围
 
@@ -46,7 +46,7 @@ AI Werewolf 是一个可观测、可复盘、可迭代的多智能体狼人杀�
 | 对局准备 | 生成角色、玩家和初始 `seq=0` 快照 |
 | 对局启动 | 写入 durable `match_jobs`，HTTP 请求立即返回 |
 | 对局执行 | 独立 Match Worker 领取任务并驱动 `WerewolfGame` |
-| Agent | `LocalAgentRuntime` 使用现有 `CognitiveAgent` 和 LLM provider |
+| Agent | `LocalAgentRuntime` 为每个席位创建隔离的 `AgentHarness`，通过狼人杀适配器调用 LLM provider |
 | 信息隔离 | 后端生成 public snapshot 和角色安全 `PlayerView` |
 | 实时展示 | 前端通过 SSE 获取有序快照，支持序列恢复 |
 | 持久化 | 保存房间、游戏、事件、快照、决策、任务和复盘数据 |
@@ -59,7 +59,7 @@ AI Werewolf 是一个可观测、可复盘、可迭代的多智能体狼人杀�
 |---|---|---|
 | 大厅 | `/` | 可用，AI-only |
 | 对局观战 | `/room/[id]/play` | 可用 |
-| 真人操作 | `/room/[id]/human` | 历史原型，不属于当前可用范围 |
+| 真人操作 | `/room/[id]/human` | 不属于当前可用范围 |
 | 复盘仪表盘 | `/eval/dashboard` | 可用 |
 | 单局报告 | `/games/[id]/report` | 可用 |
 | 人格管理 | `/personas` | 可用 |
@@ -91,7 +91,7 @@ AI Werewolf 是一个可观测、可复盘、可迭代的多智能体狼人杀�
 - 当前执行路径是 Match Worker 内的 `LocalAgentRuntime`。
 - Agent 只接收角色安全观察和合法动作集合。
 - Agent 返回结构化行动，最终合法性由游戏引擎判断。
-- `/api/v1/agent/decisions` 已固定远程服务契约，但当前返回 `501`。
+- 远程 Agent transport 尚未实现，也不暴露占位 HTTP 接口。
 - 浏览器不得提交或持久化真实 API Key；密钥由部署环境管理。
 
 ## 7. 质量要求

@@ -27,9 +27,9 @@ _SPEECH_META_MARKERS = (
     "我会发言",
 )
 
-from backend.agents.base import Agent
-from backend.agents.characters import build_character_roster
-from backend.agents.factory import create_agents
+from backend.domains.werewolf.decision_adapter import WerewolfDecisionAdapter
+from backend.domains.werewolf.personas import PERSONA_POOL
+from backend.domains.werewolf.personas import build_character_roster
 from backend.engine.actions import ActionValidator
 from backend.engine.models import ActionType
 from backend.engine.models import Alignment
@@ -59,8 +59,6 @@ def _shuffle_personas_pool(count: int, seed: int | None) -> list[dict] | None:
     """
     import random as _random
 
-    from backend.agents.characters import PERSONA_POOL
-
     rng = _random.Random(seed or 0)
     pool = list(PERSONA_POOL)
     rng.shuffle(pool)
@@ -69,38 +67,6 @@ def _shuffle_personas_pool(count: int, seed: int | None) -> list[dict] | None:
     for i in range(count):
         result.append(dict(pool[i % len(pool)]))
     return result
-
-
-def _phase_already_past(current: Phase, target: Phase) -> bool:
-    """Legacy helper — see _phase_done in WerewolfGame for the resume guard.
-
-    Retained because earlier guards reference it; the per-day completion set is
-    the source of truth for resume-after-human-pause behaviour.
-    """
-    _ORDER = {
-        Phase.SETUP: 0,
-        Phase.NIGHT_START: 1,
-        Phase.NIGHT_GUARD_ACTION: 2,
-        Phase.NIGHT_WOLF_ACTION: 3,
-        Phase.NIGHT_WITCH_ACTION: 4,
-        Phase.NIGHT_SEER_ACTION: 5,
-        Phase.NIGHT_RESOLVE: 6,
-        Phase.DAY_START: 7,
-        Phase.DAY_BADGE_SIGNUP: 8,
-        Phase.DAY_BADGE_SPEECH: 9,
-        Phase.DAY_BADGE_ELECTION: 10,
-        Phase.DAY_PK_SPEECH: 11,
-        Phase.DAY_SPEECH: 12,
-        Phase.DAY_SHERIFF_CLOSING: 13,
-        Phase.DAY_VOTE: 14,
-        Phase.DAY_LAST_WORDS: 15,
-        Phase.DAY_RESOLVE: 16,
-        Phase.BADGE_TRANSFER: 17,
-        Phase.HUNTER_SHOOT: 18,
-        Phase.WHITE_WOLF_KING_BOOM: 19,
-        Phase.GAME_END: 20,
-    }
-    return _ORDER.get(current, 0) > _ORDER.get(target, 0)
 
 
 def _strip_public_speech_artifacts(text: str) -> str:
@@ -193,7 +159,6 @@ class WerewolfGame:
         self,
         *,
         players: list[Player] | None = None,
-        agents: dict[str, Agent] | None = None,
         seed: int | None = None,
         max_days: int = 20,
         player_count: int = 10,
@@ -210,7 +175,6 @@ class WerewolfGame:
         on_post_game: Callable[[GameState], None] | None = None,
         phase_delay_ms: float = 0,
         game_id: str | None = None,
-        auto_attach_agents: bool = True,
     ):
         self.rng = Random(seed)
         self.strategy_version = strategy_version
@@ -228,6 +192,8 @@ class WerewolfGame:
         )
         self.visibility = Visibility()
         self.validator = ActionValidator()
+        self.decision_adapter = WerewolfDecisionAdapter()
+        self.decision_runtime: Any | None = None
         self.observer = observer
         self.phase_manager = PhaseManager()
         self.pending_hunter_id: str | None = None
@@ -258,7 +224,6 @@ class WerewolfGame:
         self._pause_event.set()
         self.is_paused: bool = False
         # Agent 独占锁：保护并发 _batch_ask 时的 agent.update() 和决策调用
-        self._agent_locks: dict[str, _threading.RLock] = {}
         sampled_personas = sampled_personas or self._sample_personas(len(self.state.players), seed)
         if not sampled_personas:
             # DB unavailable — shuffle in-memory PERSONA_POOL per seed so
@@ -275,27 +240,17 @@ class WerewolfGame:
             seed=seed or 0,
             sampled_personas=sampled_personas,
         )
-        self.agents = {}
-        role_models_from_bias: dict[str, dict[str, Any]] = {}
-        for role_name, bias in self.strategy_bias_by_role.items():
-            role_models_from_bias[role_name] = {"strategy_bias": bias}
-        if not auto_attach_agents:
-            return
-        self.attach_agents(
-            agents
-            or create_agents(
-                self.state.players,
-                {
-                    "type": os.environ.get("AIWEREWOLF_DEFAULT_AGENT_TYPE", "llm"),
-                    "seed": seed or 0,
-                    "temperature": 1.0,
-                    "speech_temperature": 1.0,
-                    "character_map": self.characters,
-                    "strategy_bias": self.strategy_bias,
-                    "role_models": role_models_from_bias,
-                },
-            )
-        )
+        for player in self.state.players:
+            character = self.characters[player.id]
+            player.persona = {
+                "name": character.persona.name,
+                "mbti": character.persona.mbti,
+                "basic_info": character.persona.basic_info,
+                "style_label": character.persona.style_label,
+                "reasoning_style": character.persona.reasoning_style,
+                "speech_length_habit": character.persona.speech_length_habit,
+                "vocabulary_style": character.persona.vocabulary_style,
+            }
 
     def _sample_personas(self, count: int, seed: int | None) -> list[dict] | None:
         """Try the injected persona sampler, then let the in-memory pool take over.
@@ -310,29 +265,9 @@ class WerewolfGame:
         except Exception:
             return None
 
-    def attach_agents(self, agents: dict[str, Agent]) -> None:
-        import threading as _threading
-
-        self.agents = agents
-        # 为每个 agent 创建独占锁
-        for player_id in agents.keys():
-            if player_id not in self._agent_locks:
-                self._agent_locks[player_id] = _threading.RLock()
-
-        for player in self.state.players:
-            char = self.characters.get(player.id)
-            if char is not None and hasattr(self.agents[player.id], "character"):
-                self.agents[player.id].character = char
-            if char is not None:
-                player.persona = {
-                    "name": char.persona.name,
-                    "mbti": char.persona.mbti,
-                    "basic_info": char.persona.basic_info,
-                    "style_label": char.persona.style_label,
-                    "reasoning_style": char.persona.reasoning_style,
-                    "speech_length_habit": char.persona.speech_length_habit,
-                    "vocabulary_style": char.persona.vocabulary_style,
-                }
+    def attach_decision_runtime(self, runtime: Any) -> None:
+        """Attach the actor-scoped harness runtime used by the Match Worker."""
+        self.decision_runtime = runtime
 
     # ------------------------------------------------------------------
     # Resume safety helpers
@@ -450,11 +385,6 @@ class WerewolfGame:
             },
         )
         for player in self.state.players:
-            view = self.visibility.for_player(self.state, player.id)
-            self.agents[player.id].initialize(
-                view,
-                {"max_days": self.state.max_days, "game_id": self.state.id},
-            )
             self._log(
                 EventType.PRIVATE_INFO,
                 "private",
@@ -554,8 +484,6 @@ class WerewolfGame:
             self._refresh_day_summary()
         if self.state.winner is not None:
             self._set_phase(Phase.GAME_END)
-            for agent in self.agents.values():
-                agent.finish(self.state.winner.value if self.state.winner else None)
             # Task 2: Flush buffered decisions to DB before final save_game_end
             self.flush_decisions_to_db()
             self._emit_game_end()
@@ -604,8 +532,6 @@ class WerewolfGame:
         self.state.votes = {}
         self.interrupt_phase_cycle = False
         self._set_phase(Phase.DAY_START)
-        for agent in self.agents.values():
-            agent.day_start()
         self._log(EventType.SYSTEM_MESSAGE, "public", {"message": f"Day {self.state.day} begins."})
         self._mark_phase_done(Phase.DAY_START)
 
@@ -653,7 +579,7 @@ class WerewolfGame:
         )
 
         # Parallel badge campaign speeches
-        decisions = self._batch_ask(candidates, "BADGE_SPEECH", lambda agent: agent.talk())
+        decisions = self._batch_ask(candidates, "BADGE_SPEECH")
         for player, decision in zip(candidates, decisions):
             if not isinstance(decision, Decision):
                 continue
@@ -693,7 +619,6 @@ class WerewolfGame:
         decisions = self._batch_ask(
             players=voters,
             request="BADGE_ELECTION",
-            call_fn=lambda agent: agent.vote(),
         )
 
         # Sequential result processing (main thread, deterministic order)
@@ -785,7 +710,7 @@ class WerewolfGame:
             self._mark_phase_done(Phase.NIGHT_GUARD_ACTION)
             return
         self._set_phase(Phase.NIGHT_GUARD_ACTION)
-        decision = self._ask(guard, "GUARD", lambda agent: agent.guard())
+        decision = self._ask(guard, "GUARD")
         if not self.validator.validate(self.state, decision):
             if self._requires_strict_llm_decision(guard, decision):
                 self._raise_invalid_llm_decision(
@@ -856,7 +781,7 @@ class WerewolfGame:
                 },
                 visible_to=wolf_ids,
             )
-            decision = self._ask(wolf, "WOLF_TEAM_VOTE", lambda agent: agent.attack())
+            decision = self._ask(wolf, "WOLF_TEAM_VOTE")
             if not self.validator.validate(self.state, decision):
                 if self._requires_strict_llm_decision(wolf, decision):
                     self._raise_invalid_llm_decision(
@@ -910,7 +835,7 @@ class WerewolfGame:
             return
         self._set_phase(Phase.NIGHT_WITCH_ACTION)
         victim_id = self.state.night_actions.wolf_target_id
-        decisions = self._ask(witch, "WITCH", lambda agent: agent.witch_act(victim_id), many=True)
+        decisions = self._ask(witch, "WITCH", many=True)
         for decision in decisions:
             if decision.action_type == ActionType.WITCH_SAVE:
                 if self.state.abilities.witch_heal_used:
@@ -994,7 +919,7 @@ class WerewolfGame:
             self._mark_phase_done(Phase.NIGHT_SEER_ACTION)
             return
         self._set_phase(Phase.NIGHT_SEER_ACTION)
-        decision = self._ask(seer, "DIVINE", lambda agent: agent.divine())
+        decision = self._ask(seer, "DIVINE")
         if not self.validator.validate(self.state, decision):
             if self._requires_strict_llm_decision(seer, decision):
                 self._raise_invalid_llm_decision(
@@ -1085,7 +1010,7 @@ class WerewolfGame:
         # Parallel execution — all players speak simultaneously.
         # Each agent forms opinions independently from public info (not from
         # other speeches in the same round), so parallelism is correct.
-        decisions = self._batch_ask(speakers, "TALK", lambda agent: agent.talk())
+        decisions = self._batch_ask(speakers, "TALK")
         for player, decision in zip(speakers, decisions):
             if not isinstance(decision, Decision):
                 continue
@@ -1123,7 +1048,7 @@ class WerewolfGame:
                 "message": f"警长 {sheriff.name} 进行归票总结。",
             },
         )
-        decision = self._ask(sheriff, "SHERIFF_CLOSING", lambda agent: agent.talk())
+        decision = self._ask(sheriff, "SHERIFF_CLOSING")
         if self._valid_talk_decision(decision):
             self._emit_speech(sheriff, decision, {"sheriff_closing": True})
         elif self._requires_strict_llm_decision(sheriff, decision):
@@ -1145,7 +1070,7 @@ class WerewolfGame:
 
         # Parallel PK speeches
         pk_sorted = self._seat_sorted(pk_players)
-        decisions = self._batch_ask(pk_sorted, "TALK", lambda agent: agent.talk())
+        decisions = self._batch_ask(pk_sorted, "TALK")
         for player, decision in zip(pk_sorted, decisions):
             if not isinstance(decision, Decision):
                 continue
@@ -1174,7 +1099,6 @@ class WerewolfGame:
         decisions = self._batch_ask(
             players=sorted_voters,
             request="VOTE",
-            call_fn=lambda agent: agent.vote(),
         )
 
         # Sequential result processing (main thread, deterministic order)
@@ -1313,7 +1237,7 @@ class WerewolfGame:
 
     def _hunter_shoot(self, hunter: Player) -> None:
         self._set_phase(Phase.HUNTER_SHOOT)
-        decision = self._ask(hunter, "SHOOT", lambda agent: agent.shoot())
+        decision = self._ask(hunter, "SHOOT")
         if not self.validator.validate(self.state, decision):
             if self._requires_strict_llm_decision(hunter, decision):
                 self._raise_invalid_llm_decision(
@@ -1350,7 +1274,7 @@ class WerewolfGame:
             return
         self._set_phase(Phase.DAY_LAST_WORDS)
         self.state.current_speaker_id = player.id
-        decision = self._ask(player, "LAST_WORDS", lambda agent: agent.talk())
+        decision = self._ask(player, "LAST_WORDS")
         if not self._valid_talk_decision(decision):
             if self._requires_strict_llm_decision(player, decision):
                 self._raise_invalid_llm_decision(
@@ -1404,7 +1328,7 @@ class WerewolfGame:
     def _maybe_white_wolf_king_boom(self, player: Player) -> bool:
         if player.role != Role.WHITE_WOLF_KING or not player.alive or self.state.abilities.white_wolf_king_boom_used:
             return False
-        decision = self._ask(player, "BOOM", lambda agent: agent.boom())
+        decision = self._ask(player, "BOOM")
         if decision.action_type != ActionType.BOOM:
             return False
         if not self.validator.validate(self.state, decision):
@@ -1496,7 +1420,6 @@ class WerewolfGame:
         decision = self._ask(
             former,
             "TRANSFER_BADGE",
-            lambda agent: agent.transfer_badge(candidate_ids),
         )
         successor: Player | None = None
         destroyed = False
@@ -1538,142 +1461,118 @@ class WerewolfGame:
             },
         )
 
-    def _ask(self, player: Player, request: str, call, *, many: bool = False):
+    def _ask(self, player: Player, request: str, *, many: bool = False):
         view = self.visibility.for_player(self.state, player.id)
-        agent = self.agents[player.id]
+        if not player.is_ai:
+            queued = self.human_action_buffer.get(player.id, [])
+            if not queued:
+                self.state.pending_input = self._build_pending_input(player, request)
+                if self.observer is not None:
+                    self.observer(self.state)
+                raise GamePaused(f"Waiting for human input: {player.name} {request}")
+            result = queued if many else queued[0]
+            self.human_action_buffer[player.id] = []
+            decisions = result if isinstance(result, list) else [result]
+            for decision in decisions:
+                self._record_decision(player, request, view.__dict__, decision, raw_output="[human]")
+            return result
+        return self._ask_harness(player, request, view, many=many)
 
-        # 用 agent 独占锁保护 update() 和 call()，防止并发访问同一 agent
-        with self._agent_locks.get(player.id, self._shared_lock):
-            agent.update(view, request)
-            if not player.is_ai:
-                queued = self.human_action_buffer.get(player.id, [])
-                if not queued:
-                    self.state.pending_input = self._build_pending_input(player, request)
-                    if self.observer is not None:
-                        self.observer(self.state)
-                    raise GamePaused(f"Waiting for human input: {player.name} {request}")
-                result = queued if many else queued[0]
-                self.human_action_buffer[player.id] = []
-                if isinstance(result, Decision):
-                    self._record_decision(player, request, view.__dict__, result, raw_output="[human]")
-                else:
-                    for item in result:
-                        self._record_decision(player, request, view.__dict__, item, raw_output="[human]")
-                return result
-            # AI turn — emit a "thinking" snapshot BEFORE we block on the LLM
-            # round-trip. The frontend reads `current_speaker_id` to light up the
-            # PlayerCard with a "思考中" pulse; without this frame the UI looks
-            # frozen for the 4–10s the LLM is actually working.
-            prior_speaker = self.state.current_speaker_id
-            self.state.current_speaker_id = player.id
-            if self.observer is not None:
-                self.observer(self.state)
-            try:
-                result = call(agent)
-            finally:
-                # Only clear if we set it for this _ask — phases like DAY_SPEECH
-                # already manage current_speaker_id externally and we shouldn't
-                # blow it away.
-                if self.state.current_speaker_id == player.id and prior_speaker != player.id:
-                    self.state.current_speaker_id = prior_speaker
-            if isinstance(result, Decision):
-                raw = str(result.metadata.get("raw_text", ""))
-                reasoning = str(result.metadata.get("reasoning", ""))
-                if reasoning:
-                    raw = f"[推理]\n{reasoning[:3000]}\n\n[输出]\n{raw}"
-                self._record_decision(player, request, view.__dict__, result, raw_output=raw)
-            elif isinstance(result, list):
-                for item in result:
-                    raw = str(item.metadata.get("raw_text", ""))
-                    reasoning = str(item.metadata.get("reasoning", ""))
-                    if reasoning:
-                        raw = f"[推理]\n{reasoning[:3000]}\n\n[输出]\n{raw}"
-                    self._record_decision(player, request, view.__dict__, item, raw_output=raw)
-            return result if many else result
+    def _ask_harness(self, player: Player, request: str, view, *, many: bool = False):
+        runtime = self.decision_runtime
+        if runtime is None:
+            raise RuntimeError("Decision runtime is not attached")
+        decision_request = self.decision_adapter.build_request(
+            self.state,
+            player,
+            view,
+            request,
+            agent_definition_id=runtime.definition_ids[player.id],
+            agent_profile=runtime.profiles[player.id],
+            deadline_ms=runtime.deadline_ms,
+        )
+        prior_speaker = self.state.current_speaker_id
+        self.state.current_speaker_id = player.id
+        if self.observer is not None:
+            self.observer(self.state)
+        try:
+            result = runtime.run(decision_request)
+        finally:
+            if self.state.current_speaker_id == player.id and prior_speaker != player.id:
+                self.state.current_speaker_id = prior_speaker
+        decisions = self.decision_adapter.to_engine_decisions(player, decision_request, result)
+        view_record = self.decision_adapter.view_record(view)
+        for decision in decisions:
+            self._record_harness_decision(player, request, view_record, decision)
+        if many:
+            return decisions
+        if len(decisions) != 1:
+            raise RuntimeError(f"Harness request {request} returned {len(decisions)} engine decisions")
+        return decisions[0]
 
     def _batch_ask(
         self,
         players: list[Player],
         request: str,
-        call_fn: Callable[[Agent], Any],
     ) -> list[Any]:
-        """Execute LLM calls in parallel for independent agent actions.
+        """Resolve a simultaneous AI batch or preserve the human pause boundary."""
+        if all(player.is_ai for player in players):
+            return self._batch_ask_harness(players, request)
+        return [self._ask(player, request) for player in players]
 
-        Three-phase design ensures thread safety without changing agent code:
-          1. Main thread: agent.update(view, request) for each player (CPU-only, fast)
-          2. ThreadPoolExecutor: call_fn(agent) for each player (LLM I/O, slow)
-          3. Main thread: _record_decision for each player in deterministic order
-
-        Falls back to sequential _ask if any player is human (preserves GamePaused).
-        """
+    def _batch_ask_harness(self, players: list[Player], request: str) -> list[Any]:
         import concurrent.futures as _futures
 
-        # ---- Early exit: mixed human/AI batch falls back to sequential ----
-        for player in players:
-            if not player.is_ai:
-                results: list[Any] = []
-                for p in players:
-                    results.append(self._ask(p, request, call_fn))
-                return results
-
-        n = len(players)
-
-        # ---- Phase 1: Pre-compute views (main thread, no I/O) ----
-        views: list[dict] = []
+        runtime = self.decision_runtime
+        if runtime is None:
+            raise RuntimeError("Decision runtime is not attached")
+        group_id = f"{self.state.id}:{self.state.day}:{self.state.phase.value}:{request}"
+        prepared = []
         for player in players:
             view = self.visibility.for_player(self.state, player.id)
-            agent = self.agents[player.id]
-            agent.update(view, request)
-            views.append(view.__dict__)
+            decision_request = self.decision_adapter.build_request(
+                self.state,
+                player,
+                view,
+                request,
+                agent_definition_id=runtime.definition_ids[player.id],
+                agent_profile=runtime.profiles[player.id],
+                simultaneous_group_id=group_id,
+                deadline_ms=runtime.deadline_ms,
+            )
+            prepared.append((player, view, decision_request))
 
-        # ---- Phase 2: Execute LLM calls in parallel ----
-        # Each agent has its own DeepSeekClient which creates a new
-        # httpx.Client per chat_sync() call, so concurrent access is safe.
         results_by_index: dict[int, Any] = {}
-        with _futures.ThreadPoolExecutor(max_workers=n) as pool:
-            fut_to_idx: dict[_futures.Future, int] = {}
-            for i, player in enumerate(players):
-                agent = self.agents[player.id]
-                fut = pool.submit(call_fn, agent)
-                fut_to_idx[fut] = i
-            for fut in _futures.as_completed(fut_to_idx):
-                idx = fut_to_idx[fut]
-                results_by_index[idx] = fut.result()
+        with _futures.ThreadPoolExecutor(max_workers=max(1, len(prepared))) as pool:
+            futures = {
+                pool.submit(runtime.run, decision_request): index
+                for index, (_, _, decision_request) in enumerate(prepared)
+            }
+            for future in _futures.as_completed(futures):
+                results_by_index[futures[future]] = future.result()
 
-        # ---- Phase 3: Record results (main thread, deterministic order) ----
-        results: list[Any] = []
-        for i in range(n):
-            player = players[i]
-            view = views[i]
-            result = results_by_index[i]
-            results.append(result)
-            self._record_sequential(player, request, view, result)
+        decisions: list[Any] = []
+        for index, (player, view, decision_request) in enumerate(prepared):
+            mapped = self.decision_adapter.to_engine_decisions(
+                player,
+                decision_request,
+                results_by_index[index],
+            )
+            if len(mapped) != 1:
+                raise RuntimeError(f"Batch harness request {request} returned {len(mapped)} engine decisions")
+            decision = mapped[0]
+            decisions.append(decision)
+            self._record_harness_decision(
+                player,
+                request,
+                self.decision_adapter.view_record(view),
+                decision,
+            )
+        return decisions
 
-        return results
-
-    def _record_sequential(
-        self,
-        player: Player,
-        request: str,
-        view: dict,
-        result: Any,
-    ) -> None:
-        """Record a decision from _batch_ask result. Mirrors the recording
-        portion of _ask() so batch results get the same audit trail."""
-        if isinstance(result, Decision):
-            raw = str(result.metadata.get("raw_text", ""))
-            reasoning = str(result.metadata.get("reasoning", ""))
-            if reasoning:
-                raw = f"[推理]\n{reasoning[:3000]}\n\n[输出]\n{raw}"
-            self._record_decision(player, request, view, result, raw_output=raw)
-        elif isinstance(result, list):
-            for item in result:
-                if isinstance(item, Decision):
-                    raw = str(item.metadata.get("raw_text", ""))
-                    reasoning = str(item.metadata.get("reasoning", ""))
-                    if reasoning:
-                        raw = f"[推理]\n{reasoning[:3000]}\n\n[输出]\n{raw}"
-                    self._record_decision(player, request, view, item, raw_output=raw)
+    def _record_harness_decision(self, player: Player, request: str, view: dict, decision: Decision) -> None:
+        raw = str(decision.metadata.get("raw_text", ""))
+        self._record_decision(player, request, view, decision, raw_output=raw)
 
     def _coerce_human_decisions(
         self, player: Player, pending: PendingInput, payload: dict[str, object]

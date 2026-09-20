@@ -44,7 +44,11 @@ def build_game(
     player_count: int = 10,
     rule_pack_id: str = "wolfcha-default",
     phase_delay_ms: float = 0,
+    max_days: int = 20,
     llm_config: dict[str, Any] | None = None,
+    strategy_version: str | None = None,
+    strategy_bias: dict[str, list[str]] | None = None,
+    strategy_bias_by_role: dict[str, dict[str, list[str]]] | None = None,
     game_id: str | None = None,
     players=None,
     sampled_personas: list[dict] | None = None,
@@ -56,18 +60,22 @@ def build_game(
         player_count=player_count,
         rule_pack_id=rule_pack_id,
         phase_delay_ms=phase_delay_ms,
+        max_days=max_days,
         game_id=game_id,
         players=players,
         sampled_personas=sampled_personas,
+        strategy_version=strategy_version,
+        strategy_bias=strategy_bias,
+        strategy_bias_by_role=strategy_bias_by_role,
     )
-    runtime.attach(
-        game,
-        {
-            "type": agent_type,
-            "seed": seed,
-            **(llm_config or {}),
-        },
-    )
+    runtime_config = {"type": agent_type, "seed": seed, **(llm_config or {})}
+    runtime_config.setdefault("strategy_bias", strategy_bias or {})
+    if strategy_bias_by_role:
+        role_models = dict(runtime_config.get("role_models") or {})
+        for role, bias in strategy_bias_by_role.items():
+            role_models[role] = {**dict(role_models.get(role) or {}), "strategy_bias": bias}
+        runtime_config["role_models"] = role_models
+    runtime.attach(game, runtime_config)
     return game
 
 
@@ -77,9 +85,13 @@ def prepare_game(
     player_count: int = 10,
     rule_pack_id: str = "wolfcha-default",
     phase_delay_ms: float = 0,
+    max_days: int = 20,
     game_id: str | None = None,
     players=None,
     sampled_personas: list[dict] | None = None,
+    strategy_version: str | None = None,
+    strategy_bias: dict[str, list[str]] | None = None,
+    strategy_bias_by_role: dict[str, dict[str, list[str]]] | None = None,
 ) -> WerewolfGame:
     del rule_pack_id
     init_db()
@@ -87,8 +99,12 @@ def prepare_game(
         players=players,
         seed=seed,
         player_count=player_count,
+        max_days=max_days,
         phase_delay_ms=phase_delay_ms,
         sampled_personas=sampled_personas,
+        strategy_version=strategy_version,
+        strategy_bias=strategy_bias,
+        strategy_bias_by_role=strategy_bias_by_role,
         persona_sampler=_sample_personas,
         on_game_start=save_game_start,
         on_game_end=None,
@@ -96,19 +112,7 @@ def prepare_game(
         on_decisions_flush=save_decisions_batch,
         on_post_game=None,
         game_id=game_id,
-        auto_attach_agents=False,
     )
-    for player in game.state.players:
-        character = game.characters[player.id]
-        player.persona = {
-            "name": character.persona.name,
-            "mbti": character.persona.mbti,
-            "basic_info": character.persona.basic_info,
-            "style_label": character.persona.style_label,
-            "reasoning_style": character.persona.reasoning_style,
-            "speech_length_habit": character.persona.speech_length_habit,
-            "vocabulary_style": character.persona.vocabulary_style,
-        }
     return game
 
 

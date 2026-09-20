@@ -31,9 +31,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [language, setLanguage] = useState<Language>(Language.ZH);
   const [viewMode, setViewModeState] = useState<ViewMode>(ViewMode.MODERATOR);
   const setViewMode = (_mode: ViewMode) => setViewModeState(ViewMode.MODERATOR);
-  // The user wants every game LLM-driven. Heuristic remains a code path only
-  // as LLMAgent's automatic fallback after 3 retry failures, never as a
-  // user-selectable mode. Default to LLM and reject any URL override below.
+  // AI-only rooms are executed by the server-owned Harness runtime.
+  // Keep the deprecated UI selector fixed to its only supported value.
   const [agentType, setAgentType] = useState<AgentType>(AgentType.LLM);
   const [room, setRoom] = useState<RoomRecord | null>(null);
   const [gameState, setGameState] = useState<GameState | null>(null);
@@ -71,9 +70,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (langParam === "en" || langParam === "zh") {
         setLanguage(langParam as Language);
       }
-      // We intentionally ignore ?agent_type=heuristic from old links — the
-      // public surface is LLM-only now; honoring stale URLs would silently
-      // downgrade users back to heuristic.
+      // Ignore stale agent_type query parameters from pre-Harness links.
     }
     setSettingsLoaded(true);
   }, []);

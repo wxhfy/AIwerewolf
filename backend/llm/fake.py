@@ -27,6 +27,8 @@ class FakeLLMClient:
     def chat_sync(self, messages: list[dict], **kwargs: Any) -> dict[str, Any]:
         self.call_count += 1
         text = "\n".join(str(message.get("content", "")) for message in messages)
+        if "AIWEREWOLF_HARNESS_DECISION" in text:
+            return self._harness_response(text)
         target = self._target_from_prompt(text)
         tools = kwargs.get("tools") or []
         tool_choice = kwargs.get("tool_choice")
@@ -70,6 +72,32 @@ class FakeLLMClient:
                 ensure_ascii=False,
             )
 
+        return {
+            "choices": [{"message": {"role": "assistant", "content": content}}],
+            "_latency_ms": 0,
+            "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+        }
+
+    def _harness_response(self, text: str) -> dict[str, Any]:
+        payload_text = text.split("AIWEREWOLF_HARNESS_DECISION", 1)[1].strip()
+        payload = json.loads(payload_text)
+        options = payload.get("action_options") or []
+        if not options:
+            raise RuntimeError("Harness fake prompt does not contain action options")
+        option = options[0]
+        response: dict[str, Any] = {}
+        schema = option.get("response_schema") or {}
+        if "speech" in (schema.get("properties") or {}):
+            actor = payload.get("actor") or {}
+            response["speech"] = f"{actor.get('actor_id', 'player')} speaks from the visible evidence."
+        content = json.dumps(
+            {
+                "option_id": option["option_id"],
+                "response": response,
+                "reasoning": "deterministic fake harness selection",
+            },
+            ensure_ascii=False,
+        )
         return {
             "choices": [{"message": {"role": "assistant", "content": content}}],
             "_latency_ms": 0,

@@ -35,7 +35,7 @@ import numpy as np
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from backend.engine.game import WerewolfGame
+from backend.application.matches.executor import build_game
 from backend.llm.env import load_env_file
 
 load_env_file()
@@ -74,7 +74,7 @@ def run_one_game(tier: str, seed: int, env_vars: dict, player_count: int = 7) ->
 
     t0 = time.time()
     try:
-        game = WerewolfGame(seed=seed, player_count=player_count)
+        game = build_game(seed=seed, player_count=player_count)
         game.initialize()
         game.play()
         dur = int(time.time() - t0)

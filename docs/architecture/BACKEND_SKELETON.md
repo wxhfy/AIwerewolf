@@ -10,7 +10,7 @@ This document is the backend handoff baseline. The current priority is an AI-onl
 |---|---|---|
 | API service | Validate requests, create rooms/matches, accept commands, expose reads and SSE | No in-memory source of truth |
 | Match Worker | Claim durable match jobs, run the game engine, call agents, persist progress | Lease in PostgreSQL |
-| Agent runtime | Build per-player context and return one legal decision | Local implementation today; remote contract reserved |
+| Agent runtime | Build actor-scoped context and return one legal decision | Per-seat local Harness inside Match Worker |
 | Analysis Worker | Claim durable post-game jobs; run Track B scoring and Track C extraction | Retryable job in PostgreSQL |
 | PostgreSQL | Rooms, games, jobs, events, snapshots, decisions, commands, outbox | Authoritative durable state |
 | Redis | SSE wake-up notifications and optional distributed rate limiting | Never authoritative |
@@ -49,8 +49,6 @@ New platform endpoints are versioned under `/api/v1`. Existing `/api/*` endpoint
 | `POST /api/v1/matches/{match_id}/commands` | Partial | Idempotent pause/resume; cancel is an explicit `501` |
 | `GET /api/matches/{match_id}/events` | Implemented | Ordered public event catch-up |
 | `GET /api/matches/{match_id}/stream` | Implemented | Resumable SSE snapshots using `Last-Event-ID` |
-| `GET /api/v1/agent/capabilities` | Implemented contract | Agent protocol discovery |
-| `POST /api/v1/agent/decisions` | Contract only | Returns `501` until remote Agent Service is deployed |
 | `GET /api/v1/matches/{match_id}/analysis` | Implemented | Analysis job status and Track B/C coverage |
 | `GET /api/v1/matches/{match_id}/decisions` | Implemented | Sanitized decision trace metadata |
 | `GET /api/v1/matches/{match_id}/decision-evaluations` | Implemented | Versioned per-step Track B scores |
@@ -77,7 +75,6 @@ All platform errors use `application/problem+json` and contain `code`, `detail`,
 New tables introduced by `004_platform_skeleton.sql`:
 
 - `match_commands`: command ID is the idempotency key; stores status and result.
-- `agent_decision_jobs`: durable request/response boundary for a future Agent Service worker.
 - `outbox_events`: transactionally records domain events before broker publication.
 
 The Outbox publisher is intentionally not started yet. Rows are durable and queryable, and a later process can publish them to Redis Streams, NATS, RabbitMQ, or Kafka without changing application commands.
@@ -94,26 +91,21 @@ match lease nor changes the completed match outcome.
 
 The persistence policy is intentionally not "store hidden chain of thought". Store the observable decision contract: visible observation, legal actions, parsed action, provider response permitted by policy, validation result, latency/tokens/cost, model/prompt identifiers, score evidence and strategy provenance.
 
-## 5. Agent Service contract
+## 5. Agent runtime contract
 
-`AgentDecisionRequest` contains an immutable observation, legal actions, agent configuration, and deadline. `AgentDecisionResult` contains the selected action, reasoning, usage and trace metadata. Match code must depend on the `AgentGateway` protocol rather than a concrete HTTP client.
-
-The current Match Worker still uses `LocalAgentRuntime`, preserving existing agent behavior. A remote implementation should provide the same contract, add request deduplication by `request_id`, and never receive another player's private state.
-
-The contract can already be started as an independent process for integration work:
-
-```bash
-uvicorn backend.agent_service:app --host 0.0.0.0 --port 8001
-```
-
-This process deliberately returns a structured `501` for decisions until the remote runtime adapter is implemented. Its OpenAPI contract and health endpoint are usable now.
+`DecisionRequest` contains immutable actor-visible information, a server-owned
+legal `ActionSpace`, profile metadata and a hard budget. `HarnessResult`
+contains one validated `ResolvedAction` and append-only runtime events. Match
+code depends on this in-process contract. A future remote transport must adapt
+the same types, deduplicate by `request_id`, and never receive another actor's
+private state. No placeholder HTTP Agent Service is exposed today.
 
 ## 6. Explicitly unfinished work
 
 - Cooperative match cancellation and safe worker interruption.
 - JWT/OIDC token verification and role-based authorization.
 - Outbox publisher process and dead-letter handling.
-- Remote Agent Service process and `AgentDecisionJob` worker.
+- Remote Agent Harness transport and durable request worker.
 - Prometheus metrics, tracing exporter, and centralized JSON logging.
 - Alembic as the single authoritative migration runner. SQL migrations and `create_all` coexist during bootstrap.
 - Human-player command flow.

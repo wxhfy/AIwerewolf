@@ -1,5 +1,6 @@
 import pytest
 
+from backend.application.matches.executor import build_game
 from backend.engine.game import WerewolfGame
 from backend.engine.models import ActionType
 from backend.engine.models import Alignment
@@ -13,7 +14,7 @@ from backend.engine.visibility import Visibility
 
 
 def test_game_plays_to_winner() -> None:
-    game = WerewolfGame(seed=7)
+    game = build_game(seed=7)
     state = game.play()
 
     assert state.winner is not None
@@ -30,13 +31,13 @@ def test_game_plays_to_winner() -> None:
 
 def test_multiple_seeds_finish_without_crashing() -> None:
     for seed in range(1, 8):
-        state = WerewolfGame(seed=seed).play()
+        state = build_game(seed=seed).play()
         assert state.winner is not None
         assert state.phase.value == "GAME_END"
 
 
 def test_badge_and_last_words_phases_are_exercised() -> None:
-    state = WerewolfGame(seed=3, player_count=7).play()
+    state = build_game(seed=3, player_count=7).play()
     phases = {event.phase for event in state.events}
 
     assert Phase.DAY_BADGE_SIGNUP in phases
@@ -87,7 +88,7 @@ def test_werewolf_night_legal_targets_exclude_wolves() -> None:
         Player(id="P3", seat=3, name="Seer", role=Role.SEER, alignment=Alignment.VILLAGE),
         Player(id="P4", seat=4, name="Villager", role=Role.VILLAGER, alignment=Alignment.VILLAGE),
     ]
-    game = WerewolfGame(players=players, agents={p.id: object() for p in players}, seed=13)
+    game = WerewolfGame(players=players, seed=13)
     game.state.phase = Phase.NIGHT_WOLF_ACTION
 
     view = Visibility().for_player(game.state, "P1")
@@ -102,10 +103,10 @@ def test_llm_invalid_day_vote_raises_instead_of_fallback() -> None:
         Player(id="P2", seat=2, name="B", role=Role.WEREWOLF, alignment=Alignment.WOLF),
         Player(id="P3", seat=3, name="C", role=Role.SEER, alignment=Alignment.VILLAGE),
     ]
-    game = WerewolfGame(players=players, agents={p.id: object() for p in players}, seed=11)
+    game = WerewolfGame(players=players, seed=11)
     game.state.day = 1
 
-    def invalid_batch(players, request, call_fn):
+    def invalid_batch(players, request):
         assert request == "VOTE"
         return [
             Decision(player.id, ActionType.VOTE, target_id=player.id, reasoning="self vote", metadata={"source": "llm"})
@@ -126,11 +127,11 @@ def test_llm_invalid_badge_vote_raises_instead_of_fallback() -> None:
         Player(id="P2", seat=2, name="B", role=Role.WEREWOLF, alignment=Alignment.WOLF),
         Player(id="P3", seat=3, name="C", role=Role.SEER, alignment=Alignment.VILLAGE),
     ]
-    game = WerewolfGame(players=players, agents={p.id: object() for p in players}, seed=12)
+    game = WerewolfGame(players=players, seed=12)
     game.state.day = 1
     game.state.badge.candidates = ["P1"]
 
-    def invalid_batch(players, request, call_fn):
+    def invalid_batch(players, request):
         assert request == "BADGE_ELECTION"
         decisions = [
             Decision(
@@ -163,10 +164,10 @@ def test_llm_empty_day_speech_raises_instead_of_skipping() -> None:
         Player(id="P2", seat=2, name="B", role=Role.WEREWOLF, alignment=Alignment.WOLF),
         Player(id="P3", seat=3, name="C", role=Role.SEER, alignment=Alignment.VILLAGE),
     ]
-    game = WerewolfGame(players=players, agents={p.id: object() for p in players}, seed=13)
+    game = WerewolfGame(players=players, seed=13)
     game.state.day = 1
 
-    def empty_speech_batch(players, request, call_fn):
+    def empty_speech_batch(players, request):
         assert request == "TALK"
         return [
             Decision(player.id, ActionType.TALK, speech="", reasoning="empty", metadata={"source": "llm"})
@@ -188,10 +189,10 @@ def test_public_snapshot_hides_specific_night_actions() -> None:
         Player(id="W1", seat=3, name="Wolf", role=Role.WEREWOLF, alignment=Alignment.WOLF),
         Player(id="V1", seat=4, name="Villager", role=Role.VILLAGER, alignment=Alignment.VILLAGE),
     ]
-    game = WerewolfGame(players=players, agents={p.id: object() for p in players}, seed=7)
+    game = WerewolfGame(players=players, seed=7)
     game.state.day = 1
 
-    def scripted_ask(player, request, call, many=False):
+    def scripted_ask(player, request, many=False):
         if request == "GUARD":
             return Decision(player.id, ActionType.GUARD, target_id="G1", reasoning="guard self")
         if request == "DIVINE":
@@ -228,7 +229,7 @@ def test_emit_speech_sanitizes_internal_planning_and_preserves_segments() -> Non
         Player(id="P2", seat=2, name="B", role=Role.WEREWOLF, alignment=Alignment.WOLF),
         Player(id="P3", seat=3, name="C", role=Role.VILLAGER, alignment=Alignment.VILLAGE),
     ]
-    game = WerewolfGame(players=players, agents={p.id: object() for p in players}, seed=17)
+    game = WerewolfGame(players=players, seed=17)
     game.state.day = 1
     game.state.phase = Phase.DAY_SPEECH
     decision = Decision(
@@ -445,7 +446,7 @@ def test_day_vote_tie_enters_pk_and_resolves() -> None:
         game.state.players[6].id: first_target,
     }
 
-    def scripted_ask(player, request, call, many=False):
+    def scripted_ask(player, request, many=False):
         if request in {"TALK", "LAST_WORDS"}:
             return Decision(player.id, ActionType.TALK, speech=f"{player.name} speaks", reasoning="scripted")
         if request == "VOTE":
@@ -462,7 +463,7 @@ def test_day_vote_tie_enters_pk_and_resolves() -> None:
         raise AssertionError(request)
 
     game._ask = scripted_ask  # type: ignore[assignment]
-    game._batch_ask = lambda players, request, call_fn: [scripted_ask(p, request, call_fn) for p in players]  # type: ignore[assignment]
+    game._batch_ask = lambda players, request: [scripted_ask(p, request) for p in players]  # type: ignore[assignment]
     game._speech_phase()
     game._vote_phase()
     game._day_resolve()
@@ -519,7 +520,7 @@ def test_white_wolf_king_boom_interrupts_day_and_kills_target() -> None:
     game.initialize()
     game.state.day = 1
 
-    def scripted_ask(player, request, call, many=False):
+    def scripted_ask(player, request, many=False):
         if request in {"TALK", "LAST_WORDS"}:
             return Decision(player.id, ActionType.TALK, speech=f"{player.name} talks", reasoning="scripted")
         if request == "BOOM":
@@ -527,6 +528,7 @@ def test_white_wolf_king_boom_interrupts_day_and_kills_target() -> None:
         raise AssertionError(request)
 
     game._ask = scripted_ask  # type: ignore[assignment]
+    game._batch_ask = lambda players, request: [scripted_ask(player, request) for player in players]  # type: ignore[assignment]
     game._speech_phase()
     assert game.state.phase == Phase.WHITE_WOLF_KING_BOOM
     assert not game.state.player("W").alive
@@ -546,7 +548,7 @@ def test_wolf_phase_has_private_discussion_vote_and_tally() -> None:
     game.initialize()
     game.state.day = 1
 
-    def scripted_ask(player, request, call, many=False):
+    def scripted_ask(player, request, many=False):
         assert request == "WOLF_TEAM_VOTE"
         return Decision(player.id, ActionType.ATTACK, target_id="V2", reasoning=f"{player.name} votes V2")
 
@@ -584,7 +586,7 @@ def test_actor_sequence_strict_llm_handler_error_is_not_masked_by_nameerror() ->
         ),
         Player(id="V1", seat=2, name="VillagerOne", role=Role.VILLAGER, alignment=Alignment.VILLAGE),
     ]
-    game = WerewolfGame(players=players, agents={p.id: object() for p in players}, seed=33)
+    game = WerewolfGame(players=players, seed=33)
     game.state.phase = Phase.NIGHT_WOLF_ACTION
 
     def failing_handler(player: Player) -> None:

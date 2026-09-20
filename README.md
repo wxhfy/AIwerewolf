@@ -13,7 +13,7 @@
 | Track B 复盘与报告 | 已实现 |
 | Track C 策略知识抽取与检索回流 | 已实现现有链路 |
 | 真人与 AI 混战 | 暂停开放，接口明确返回 `501` |
-| 独立远程 Agent Service | 契约与启动骨架已提供，决策执行尚未启用 |
+| 可迁移 Agent Harness | 已实现本地运行时；远程传输留作后续适配器 |
 | JWT/OIDC、Outbox Publisher、Kubernetes | 规划中 |
 | 3000 QPM 生产验收 | 目标已定义，尚未完成正式压测 |
 
@@ -30,7 +30,7 @@ FastAPI API Service
 
 Match Worker
   -> WerewolfGame domain engine
-  -> LocalAgentRuntime -> CognitiveAgent -> LLM provider
+  -> LocalAgentRuntime -> WerewolfDecisionAdapter -> AgentHarness -> LLM provider
   -> persisted events, decisions and post-game artifacts
 ```
 
@@ -103,7 +103,7 @@ python scripts/e2e_smoke.py
 cd frontend && npm run lint && npm run build
 ```
 
-当前基线：后端 45 个测试通过，独立 API + Worker E2E 通过，Docker PostgreSQL + Redis 对局可推进至 `GAME_END`。
+验收以本仓库测试、离线 demo 和独立 API + Worker E2E 为准，不在文档中固化易过期的测试数量。
 
 ## 文档
 
@@ -116,8 +116,6 @@ cd frontend && npm run lint && npm run build
 | [`docs/architecture/BACKEND_SKELETON.md`](docs/architecture/BACKEND_SKELETON.md) | 后端接口、中间件与未实现边界 |
 | [`docs/architecture/COLLABORATION.md`](docs/architecture/COLLABORATION.md) | 三方协作边界 |
 | [`docs/architecture/PRODUCTION_PLAN.md`](docs/architecture/PRODUCTION_PLAN.md) | 3000 QPM 生产化路线 |
-
-`docs/final_delivery/` 与 `docs/FINAL_SHOWCASE_REPORT.md` 是历史展示材料，不代表当前运行架构。
 
 ## License
 

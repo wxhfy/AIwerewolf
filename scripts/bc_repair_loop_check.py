@@ -17,7 +17,7 @@ if ROOT not in sys.path:
 
 os.environ.setdefault("AIWEREWOLF_DB_URL", "sqlite:///:memory:")
 
-from backend.engine.game import WerewolfGame
+from backend.application.matches.executor import build_game
 from backend.eval.review import generate_review_report
 from backend.eval.track_b import ReplayBundleBuilder
 from backend.eval.track_b import ReviewRepairLoop
@@ -27,7 +27,7 @@ from backend.eval.track_b import TrackBValidator
 
 
 def run_one(seed: int) -> dict:
-    g = WerewolfGame(seed=seed)
+    g = build_game(seed=seed)
     g.play()
     state = g.state
 

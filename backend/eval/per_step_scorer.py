@@ -198,6 +198,40 @@ class PerStepScorer:
             scoring_tier="deterministic",
         )
 
+    def score_other(self, decision: dict) -> DecisionScore:
+        """Keep valid lifecycle decisions auditable even without a domain rubric."""
+        action_type = str(decision.get("action_type", "") or "unknown")
+        reasoning_quality = _reasoning(decision.get("raw_text", ""))
+        correctness = 0.5
+        timeliness = 0.7
+        impact = 0.2
+        overall = round(
+            0.50 * correctness + 0.25 * reasoning_quality + 0.10 * timeliness + 0.15 * impact,
+            3,
+        )
+        evidence = (
+            ["Actor explicitly declined an optional action."]
+            if action_type == "skip"
+            else ["No specialized deterministic rubric is registered for this lifecycle action."]
+        )
+        return DecisionScore(
+            decision_id=decision.get("id", ""),
+            player_id=decision.get("player_id", ""),
+            player_name=decision.get("player_name", ""),
+            role=decision.get("player_role", ""),
+            day=decision.get("day", 0),
+            phase=decision.get("phase", ""),
+            action_type=action_type,
+            correctness=correctness,
+            reasoning_quality=reasoning_quality,
+            timeliness=timeliness,
+            impact=impact,
+            overall_score=overall,
+            evidence=evidence,
+            scoring_tier="deterministic_generic",
+            metadata={"generic_rubric": True},
+        )
+
     # ---- Tier 2: Light LLM Scoring ----
 
     def score_with_light_llm(self, score: DecisionScore, decision: dict, context: dict) -> DecisionScore:
@@ -276,7 +310,7 @@ class PerStepScorer:
             elif "NIGHT" in phase or "HUNTER" in phase:
                 s = self.score_night(d, state)
             else:
-                continue
+                s = self.score_other(d)
             scores.append(s)
 
         # Tier 2: Light LLM for ambiguous decisions

@@ -25,7 +25,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from backend.engine.game import WerewolfGame
+from backend.application.matches.executor import build_game
 
 
 def save_game_state(state, filepath: Path) -> None:
@@ -81,7 +81,7 @@ def run_games(n_games: int, start_seed: int, tag: str, output_dir: Path) -> list
         print(f"  [{i + 1}/{n_games}] seed={seed}...", end=" ", flush=True)
 
         try:
-            game = WerewolfGame(seed=seed, player_count=7)
+            game = build_game(seed=seed, player_count=7)
             state = game.play()
             elapsed = time.perf_counter() - t0
 

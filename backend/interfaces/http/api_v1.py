@@ -50,7 +50,7 @@ def capabilities() -> dict:
         "execution": {
             "match_worker": True,
             "analysis_worker": True,
-            "agent_service": "contract_only",
+            "agent_runtime": "local_harness",
             "human_matches": False,
         },
         "persistence": {

@@ -23,7 +23,7 @@ sys.path.insert(0, str(ROOT))
 
 def reconstruct_mbti(seed: int, player_names: list[str], player_roles: list[str]) -> dict[str, str]:
     """Reconstruct {player_name: mbti} using the same character roster logic."""
-    from backend.agents.characters import build_character_roster
+    from backend.domains.werewolf.personas import build_character_roster
 
     # Build synthetic Player-like objects
     class FakePlayer:

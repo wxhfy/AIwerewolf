@@ -197,29 +197,6 @@ def test_platform_health_capabilities_and_security_headers() -> None:
     assert payload["persistence"]["outbox"] is True
 
 
-def test_remote_agent_contract_is_explicit_but_not_enabled() -> None:
-    client = TestClient(app)
-    capabilities = client.get("/api/v1/agent/capabilities")
-    assert capabilities.status_code == 200
-    assert capabilities.json()["remote_execution_ready"] is False
-
-    response = client.post(
-        "/api/v1/agent/decisions",
-        json={
-            "request_id": "request-12345678",
-            "match_id": "match-placeholder",
-            "player_id": "player-1",
-            "action_type": "vote",
-            "observation": {},
-            "legal_actions": [],
-        },
-    )
-    assert response.status_code == 501
-    assert response.headers["content-type"].startswith("application/problem+json")
-    assert response.json()["code"] == "remote_agent_service_not_enabled"
-    assert response.json()["request_id"]
-
-
 def test_match_command_is_idempotent_and_emits_outbox_event() -> None:
     client = TestClient(app)
     room = client.post("/api/rooms?name=CommandRoom&seed=61&player_count=7&agent_type=llm").json()

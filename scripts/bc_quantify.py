@@ -34,7 +34,7 @@ os.environ.setdefault("STRATEGY_EMBEDDING_PROVIDER", "hashing")
 os.environ.setdefault("STRATEGY_RERANK_PROVIDER", "off")
 os.environ.setdefault("STRATEGY_RERANK_STRICT", "false")
 
-from backend.engine.game import WerewolfGame
+from backend.application.matches.executor import build_game
 from backend.engine.models import DecisionAudit
 from backend.engine.models import Phase
 from backend.eval.evolution import ABComparison
@@ -91,7 +91,7 @@ def step(name: str, total: int) -> Callable[[Callable[[], Any]], dict[str, Any]]
 
 
 def build_heuristic_game(seed: int) -> WerewolfGame:
-    game = WerewolfGame(seed=seed)
+    game = build_game(seed=seed)
     game.play()
     if game.state.phase != Phase.GAME_END:
         raise RuntimeError(f"game did not finish: phase={game.state.phase}")

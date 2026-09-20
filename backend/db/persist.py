@@ -2636,6 +2636,8 @@ def _decision_is_llm(decision: AgentDecision) -> bool:
     source = str(metadata.get("source", "")).lower()
     if source == "llm" and not _decision_is_fallback(decision):
         return True
+    if source == "agent_harness" and bool(metadata.get("model_backed")) and not _decision_is_fallback(decision):
+        return True
     if bool(metadata.get("fallback")) or source == "fallback":
         return False
     return bool(decision.prompt_tokens or decision.completion_tokens) and not _decision_is_fallback(decision)

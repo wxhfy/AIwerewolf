@@ -21,7 +21,7 @@ sys.path.insert(0, str(ROOT))
 
 warnings.filterwarnings("ignore")
 
-from backend.engine.game import WerewolfGame
+from backend.application.matches.executor import build_game
 
 
 def run_experiment(
@@ -39,7 +39,7 @@ def run_experiment(
         seed = start_seed + i
         t0 = time.perf_counter()
         try:
-            game = WerewolfGame(seed=seed, player_count=7)
+            game = build_game(seed=seed, player_count=7)
             state = game.play()
             elapsed = time.perf_counter() - t0
 
