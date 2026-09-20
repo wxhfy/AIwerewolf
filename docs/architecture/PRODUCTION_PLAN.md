@@ -1,104 +1,80 @@
-# Production Target and Delivery Plan
+# 生产目标与交付路线
 
-## Final Objective
+## 最终目标
 
-Deliver an AI Werewolf platform that can be deployed to a production environment, sustains at least 3,000 inbound API requests per minute (50 requests per second) under the defined workload, and can scale horizontally without changing game or agent business logic.
+系统需要可部署、可恢复、可水平扩展，并在定义好的控制面负载下持续承受 3000 QPM，也就是每秒 50 个入站 API 请求。模型吞吐是另一项容量指标，取决于模型时延、上下文长度和每局决策数量。
 
-This target covers the control plane: room queries, match commands, replay queries, and SSE connection setup. LLM throughput is a separate capacity dimension because it depends on provider quotas, latency, token volume, and the number of decisions per match.
-
-## Required Service Boundaries
+## 服务边界
 
 ```text
-Browser
-  -> API service: authentication, commands, queries, idempotency
-  -> SSE service: ordered durable delivery and reconnect
+浏览器
+  -> API：认证、命令、查询、幂等
+  -> SSE：有序交付和断线恢复
 
 PostgreSQL
-  -> authoritative matches, commands, events, snapshots, traces, outbox
+  -> 对局、命令、事件、快照、决策、角色记忆、发件箱
 
 Redis
-  -> rate limits, wake-up notifications, ephemeral cache
+  -> 唤醒通知和短期协调
 
-Match Worker processes
-  -> load state, execute deterministic domain transitions, commit events
+Match Worker
+  -> 加载任务、执行确定性规则、调用智能体、提交状态
 
-Future Agent Service workers
-  -> consume decision jobs, call model providers, validate and persist results
-
-Post-game workers
-  -> review, evaluation, report generation, strategy extraction
+Analysis Worker
+  -> 复盘、评分、报告和策略知识抽取
 ```
 
-API instances must be stateless. A process restart must not lose a match, change event order, or require an in-memory room object to recover.
+## 容量验收
 
-## Capacity Contract
-
-The initial production sizing target is:
-
-| Dimension | Acceptance target |
+| 指标 | 目标 |
 |---|---|
-| Inbound API traffic | 3,000 QPM sustained for 30 minutes |
-| Command endpoints | p95 below 300 ms excluding queued model execution |
-| Query endpoints | p95 below 200 ms for indexed common queries |
-| Error rate | below 0.5% excluding intentional 4xx responses |
-| SSE reconnect | resume from `Last-Event-ID` with no gaps or duplicates |
-| Event durability | acknowledged domain events survive process restart |
-| Command idempotency | repeated `command_id` produces one state transition |
-| Availability | rolling deployment without dropping durable match progress |
+| API 流量 | 3000 QPM 持续 30 分钟 |
+| 命令接口 | 排除模型执行后，P95 小于 300 ms |
+| 常用查询 | P95 小于 200 ms |
+| 非预期错误率 | 小于 0.5% |
+| SSE 恢复 | 无缺失、无重复地从 `Last-Event-ID` 继续 |
+| 事件持久化 | 确认后的事件在进程重启后仍存在 |
+| 命令幂等 | 重复 `command_id` 只产生一次状态转换 |
+| 滚动发布 | 不丢失已经持久化的对局进度 |
 
-The load test must model realistic endpoint ratios, payload sizes, database state, and concurrent SSE connections. A single empty health endpoint benchmark does not satisfy this target.
+## 扩展规则
 
-## Scaling Rules
+- API 和 SSE 实例保持无状态并水平扩容。
+- 一个 Match Worker 同时拥有一局对局，通过增加副本扩展并发局数。
+- 模型调用在单局内只并行处理互不依赖的决策。
+- PostgreSQL 使用连接池，SSE 连接不能长期占用数据库连接。
+- Redis 只发布唤醒信号，数据仍从 PostgreSQL 恢复。
+- 快照在阶段边界或重要状态转换保存，不按模型 Token 保存。
+- 长对局通过动态角色记忆裁剪上下文，不重放全部历史。
 
-- Scale API and SSE replicas horizontally behind the ingress.
-- Partition match ownership with durable PostgreSQL leases; use Redis only to reduce polling and wake consumers.
-- Scale Match Worker processes by runnable-match queue depth.
-- Scale Agent workers separately by provider, model, quota, and latency class.
-- Apply per-user, per-match, and per-provider rate limits.
-- Use PostgreSQL connection pooling and bounded worker concurrency. Do not let every SSE connection hold a database connection.
-- Store ordered events with unique `(match_id, seq)` and use an outbox row in the same transaction.
-- Publish only a wake-up signal through Redis; consumers always recover payloads from PostgreSQL.
-- Snapshot periodically or at meaningful phase boundaries, not once for every token chunk.
+当前阶段按用户要求不实现模型供应商全局限流。该能力只作为未来生产保护措施，不影响当前记忆与时延优化。
 
-## Delivery Stages
+## 交付阶段
 
-### Stage 1: Durable vertical slice - complete for AI-only matches
+### 阶段一：持久化闭环
 
-- Persist match start, ordered events, snapshots, final state, and agent traces.
-- Use REST start plus SSE delivery for the frontend AI-match path.
-- Resume SSE by sequence number.
-- Run PostgreSQL and Redis through Docker Compose.
+已完成 AI 对局的房间、任务、事件、快照、决策、SSE 和回放闭环。
 
-### Stage 2: Process separation - partially complete
+### 阶段二：进程解耦
 
-- Durable `match_jobs` and independent Match Worker processes are implemented for AI-only matches.
-- Add `decision_jobs` and independent Agent workers.
-- Command idempotency and optimistic `expected_seq` are implemented for pause/resume. General retries and dead-letter handling remain pending.
-- Transactional outbox storage is defined; the publisher process remains pending. Redis wake-up delivery for SSE is implemented.
+已完成独立 Match Worker、Analysis Worker、任务 lease、暂停恢复幂等和事务发件箱存储。远程智能体传输和 Outbox Publisher 尚未完成。
 
-### Stage 3: Production platform
+### 阶段三：角色认知
 
-- Add authentication, authorization, request IDs, structured logs, metrics, traces, and alerting.
-- Replace startup schema mutation with versioned Alembic migrations.
-- Add PgBouncer or an equivalent pooler, backups, restore drills, and retention policies.
-- Add Kubernetes manifests or Helm charts, readiness/liveness probes, resource limits, disruption budgets, and autoscaling.
-- Add API, worker, database, provider-failure, and SSE reconnect load tests.
+已实现角色隔离的动态记忆，包括工作记忆、情景记忆、主观信念、社会关系、情绪和目标。下一步通过真实对局数据校准参数并扩展公开发言的主张提取。
 
-### Stage 4: Capacity acceptance
+### 阶段四：生产平台
 
-- Run a production-like 3,000 QPM test for 30 minutes.
-- Record latency percentiles, error rate, queue depth, database saturation, Redis latency, worker utilization, and LLM-provider throttling.
-- Perform API, runner, Redis, and PostgreSQL restart tests during active matches.
-- Approve release only when the capacity contract and recovery tests pass.
+- JWT/OIDC 和权限控制。
+- Alembic 数据库迁移。
+- 结构化日志、指标、链路追踪和告警。
+- PgBouncer、备份和恢复演练。
+- Kubernetes/Helm、健康探针、资源限额和滚动发布。
 
-## Current Status
+### 阶段五：容量验收
 
-Stage 1 is complete for AI-only matches. Stage 2 currently includes durable
-`match_jobs`, an independent Match Worker, command idempotency for pause/resume,
-Agent Service contracts, `agent_decision_jobs` schema, and outbox storage. The
-current Agent Runtime remains a local adapter inside the Match Worker;
-implementing the remote decision worker and outbox publisher is the next boundary.
+- 在生产相似环境运行 3000 QPM 压测。
+- 记录 P50/P95/P99、错误率、队列深度、数据库饱和度、SSE 恢复和模型决策时延。
+- 在活跃对局中执行 API、Worker、Redis 和 PostgreSQL 重启测试。
 
-Human matches are intentionally disabled during this stage. Their command,
-timeout, reconnection, and state-rehydration contracts will be designed after
-the AI-only execution path is stable.
+未完成压测前不得宣称系统已经达到 3000 QPM 生产能力。

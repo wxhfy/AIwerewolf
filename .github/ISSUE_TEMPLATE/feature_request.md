@@ -1,26 +1,30 @@
 ---
-name: Feature Request
-about: Suggest a feature or enhancement
+name: 功能建议
+about: 提议新功能或改进
 title: "[Feature] "
 labels: enhancement
 assignees: []
 ---
 
-**Is your feature request related to a problem? Please describe.**
-A clear description of what the problem is. Ex. I'm always frustrated when [...]
+**要解决的问题**
 
-**Describe the solution you'd like**
-A clear and concise description of what you want to happen.
+请描述当前限制或实际痛点。
 
-**Describe alternatives you've considered**
-Alternative solutions or workarounds you've thought about.
+**期望方案**
 
-**Impact on scoring dimensions**
-Which scoring dimension does this improve?
-- [ ] Single Agent capability (Prompt engineering, decision quality)
-- [ ] Multi-agent collaboration (Context management, game-theoretic behavior)
-- [ ] Engineering completeness (Engine correctness, observability, frontend)
-- [ ] Advanced topic — Evaluation & Replay (Multi-dim scoring, counterfactual, leaderboard)
+请说明希望系统如何工作。
 
-**Additional context**
-Add any other context or references here.
+**考虑过的替代方案**
+
+请列出已经考虑过的其他实现方式或临时方案。
+
+**影响范围**
+
+- [ ] 单智能体能力：Prompt、记忆或决策质量
+- [ ] 多智能体协作：上下文、博弈或社会行为
+- [ ] 工程完整性：引擎、持久化、可观测性或前端
+- [ ] 评估与回放：评分、反事实或排行榜
+
+**补充信息**
+
+请添加相关资料、示例或约束。

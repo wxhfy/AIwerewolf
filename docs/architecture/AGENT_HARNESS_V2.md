@@ -1,216 +1,75 @@
-# Portable Agent Harness For Asymmetric-Information Environments
+# 非对称信息环境智能体执行框架
 
-## Scope
+本文档描述当前智能体执行框架的正式边界。该框架不只服务狼人杀，也适用于阿瓦隆、密封竞价、外交谈判等信息不对称环境。
 
-The harness targets turn-based or phase-based environments where actors have
-different information and must make constrained decisions. Werewolf is the
-first adapter, not the architecture boundary. The same kernel should support
-social deduction, hidden-role games, sealed auctions, card games, negotiation,
-and other actor-observation-action environments.
+## 设计目标
 
-```text
-Environment Adapter
-  -> DecisionRequest
-       InformationState
-       DecisionPoint
-       ActionSpace
-  -> Agent Harness
-  -> ResolvedAction + append-only events
-  -> Environment Adapter.apply_actions()
-```
+- 游戏环境拥有完整隐藏状态，智能体永远拿不到主持人全局状态。
+- 环境先生成角色可见信息和合法动作，再调用模型。
+- 模型只能选择服务端生成的动作编号，不能自行发明目标或修改规则参数。
+- 每次执行都产生可审计事件，便于回放、评估和复现。
+- 智能体运行时不直接访问数据库、Redis、文件系统或任意网络。
+- 角色记忆按对局和角色隔离，由服务端维护，不依赖提示词自觉保密。
 
-The environment owns truth. The harness owns bounded model execution. The
-model owns neither environment state nor infrastructure access.
+## 核心数据契约
 
-## Architectural Boundary
+`DecisionRequest` 包含当前角色、决策点、角色可见信息、合法动作、记忆范围、人格、领域元数据和执行预算。隐藏字段必须从数据中彻底移除，而不是依赖提示词要求模型忽略。
 
-### Portable kernel
-
-`backend/agent_harness` understands only:
-
-- actor identity;
-- actor-scoped information state;
-- a domain-defined decision point;
-- server-generated legal action options;
-- Skill and Tool scopes;
-- execution budgets, policy, validation, and audit events.
-
-It does not understand roles, factions, day/night phases, votes, attacks,
-potions, cards, bids, or win conditions.
-
-### Environment runtime
-
-`backend/game_runtime` defines the adapter and episode-driving seams:
-
-```python
-class EnvironmentAdapter(Protocol):
-    def is_terminal(self, state) -> bool: ...
-    def next_decision_batch(self, state) -> DecisionBatch: ...
-    def apply_actions(self, state, batch, actions): ...
-```
-
-An adapter owns its full hidden state, state machine, visibility projection,
-action-space generation, transition rules, and terminal conditions.
-
-## Core Contracts
-
-### InformationState
-
-An Information State is an actor-scoped projection produced by the environment:
-
-```text
-schema identity and version
-current observation
-visible event history
-actor-private memory
-```
-
-Hidden fields are absent rather than masked by prompts. The Harness and its
-Tools never receive the environment's full state.
-
-### DecisionPoint
-
-The environment defines the semantic decision kind and sequence. Domain values
-such as `werewolf.day.vote` or `auction.submit-bid` are opaque to the kernel.
-An optional `simultaneous_group_id` identifies decisions that must be resolved
-against the same frozen state.
-
-### ActionSpace
-
-The environment generates every legal `ActionOption` before model execution.
-Each option has an opaque ID, canonical action type and canonical parameters.
-The model selects an option ID; it cannot invent a target or overwrite trusted
-parameters.
-
-Open content such as speech is represented by an option with a constrained
-response schema:
+封闭动作由服务端提供不可变参数：
 
 ```json
-{
-  "option_id": "speak",
-  "action_type": "speak",
-  "response_schema": {
-    "type": "object",
-    "properties": {"text": {"type": "string", "minLength": 1}},
-    "required": ["text"],
-    "additionalProperties": false
-  }
-}
+{"option_id":"vote:P3","action_type":"vote","parameters":{"target_id":"P3"}}
 ```
 
-## Runtime Model
+发言等开放内容使用受约束响应结构。`HarnessResult` 包含一个经过校验的 `ResolvedAction` 和追加式执行事件，游戏引擎仍会进行最终领域校验。
+
+## 运行流程
 
 ```text
-DecisionRequest
-  -> filter Skill catalog by request skill_scope
-  -> intersect Tool scope with deployment policy
-  -> append run.started with the complete request surface
-  -> bounded model loop
-       -> load one Skill
-       -> call one scoped Tool
-       -> select one ActionOption
-  -> resolve and validate model response
-  -> append action.accepted and run.completed
+游戏引擎产生决策点
+  -> Visibility 生成角色安全 PlayerView
+  -> WerewolfDecisionAdapter 生成 DecisionRequest
+  -> ActorMemoryService 更新并检索角色记忆
+  -> AgentHarness 调用结构化模型规划器
+  -> 校验动作编号和开放响应结构
+  -> 转换为引擎 Decision
+  -> 游戏引擎确定性应用动作
+  -> 决策、执行轨迹和角色记忆写入 PostgreSQL
 ```
 
-The append-only event log is the source of truth for a run. `run.started`
-snapshots the information state, action space, scopes, schemas, metadata, and
-budgets. Loaded Skill bodies, model steps, Tool calls, Tool results, and the
-resolved action are recorded so historical runs remain reproducible after code
-or strategy changes.
+当前狼人杀规划器坚持一次决策一次模型调用，不通过子智能体增加实时链路时延。
 
-## Simultaneous Decisions
+## 同时决策
 
-A simultaneous `DecisionBatch` is constructed from one frozen environment
-state. The Episode Runner collects every action before calling
-`apply_actions()`. A later actor therefore cannot observe an earlier actor's
-sealed vote, bid, night action, or card choice.
+投票、密封行动和同轮互不可见发言必须从同一个冻结状态生成。系统先收集完整批次结果，再按确定顺序应用动作，避免后执行角色看到同批次前一个角色的行动。
 
-Batch construction rejects mixed environments, mixed episodes, duplicate
-request IDs, duplicate actors, and inconsistent simultaneous group IDs.
+## 角色记忆
 
-The current runner resolves model calls serially but preserves sealed-state
-semantics. A later executor may parallelize calls without changing the adapter
-contract.
+记忆系统不是完整历史重放。每次决策只携带动态数量的近期事件、工作记忆、主观信念、社会关系、情绪状态、当前目标、相关情景记忆和上一次自身行动。
 
-## Skills
+参数由 `configs/cognitive_memory.yaml` 版本化管理，并根据人格、情绪和阶段动态派生。详细设计见 [`COGNITIVE_MEMORY.md`](COGNITIVE_MEMORY.md)。
 
-Skills are trusted strategy or procedure modules. The request explicitly
-provides `skill_scope`; registry metadata may narrow it further by environment,
-decision kind, and policy tags. Only names and descriptions are always visible;
-full instructions load on demand.
+## 技能与工具
 
-Suggested layers:
+技能是可信策略说明，按决策类型和角色范围渐进加载。工具只能读取当前角色已经拥有的信息投影，不能查询主持人数据库。当前实时狼人杀路径关闭额外技能和工具循环，以保持一次模型调用；接口保留给未来受控场景。
 
-- portable: `social-reasoning/evidence`, `negotiation/deception`;
-- environment: `werewolf/day-speech`, `auction/value-estimation`;
-- role/profile: `werewolf/role/seer`, `avalon/role/merlin`.
+## 安全边界
 
-Visibility, legal actions, state transitions, and security policy are mandatory
-runtime code, never optional Skills.
+- 可见性由环境代码执行。
+- 合法动作由环境代码生成。
+- 记忆写入只消费当前角色的 `InformationState`。
+- 私有记忆不能跨角色、跨对局读取。
+- 模型输出不能改变角色身份、决策点或动作参数。
+- 原始隐藏思维链不作为系统事实保存。
 
-## Tools And Infrastructure
-
-The model never receives SQL, database sessions, repositories, Redis clients,
-filesystem access, shell access, unrestricted network clients, or full hidden
-environment state.
-
-Tool availability is the intersection of:
+## 当前实现
 
 ```text
-deployment CapabilityPolicy
-AND DecisionRequest.tool_scope
-AND capability deny rules
+backend/agent_harness/             通用执行内核
+backend/agent_memory/              角色认知记忆
+backend/domains/werewolf/          狼人杀适配器和模型规划器
+backend/application/agents/        本地运行时接线
+backend/game_runtime/              通用环境执行契约
 ```
 
-Trusted Tool context fixes the environment, episode, actor, decision point,
-and Information State. Tool arguments cannot change actor identity or visibility.
-
-## Reference Harness Decisions
-
-| Project | Mechanism retained |
-|---|---|
-| DeepSeek Harness | Append-only typed events, reconstructable requests, call-before-result ordering |
-| OpenAI Codex | Explicit turn context, permission profiles, capability-aware tool boundaries |
-| Pi | Small runtime core and progressive Skill disclosure |
-| DeepAgents | Middleware composition and persistence seams without gameplay filesystem, shell, or subagents |
-
-No framework is adopted wholesale. General coding-agent capabilities are not a
-default fit for a hidden-information environment.
-
-## Werewolf Adapter
-
-The first production adapter is implemented in `backend/domains/werewolf`:
-
-```text
-Match Worker
-  -> WerewolfGame selects the current actor or simultaneous actor set
-  -> Visibility projects a role-safe PlayerView
-  -> WerewolfDecisionAdapter generates DecisionRequest + legal ActionOptions
-  -> per-seat AgentHarness calls the configured LLM planner
-  -> Harness validates the selected option and emits an append-only trace
-  -> adapter maps ResolvedAction back to engine Decision objects
-  -> engine validates and applies the domain action
-```
-
-Role and faction remain `domain_metadata`. Role strategy is composed through
-Agent Profile and scoped Skills rather than subclasses such as `SeerAgent` or
-`WerewolfAgent`.
-
-AI-only matches created by `backend.application.matches.executor.build_game`
-use this path. Harness traces are included in decision metadata and flow
-through the existing PostgreSQL decision persistence. Direct `WerewolfGame`
-construction is domain-only and cannot execute AI decisions until a runtime is
-attached.
-
-## Remaining Replacement Work
-
-There is no compatibility or shadow phase for the old cognitive lifecycle.
-
-1. Add actor-scoped memory and narrow projection Tools.
-2. Move harness traces from decision JSON metadata to a dedicated append-only PostgreSQL table/EventWriter.
-3. Convert the internal engine `_ask` shell to explicit domain decision batches.
-
-The portable kernel is wired into production AI-only match execution. Remote
-Agent Service transport remains a later adapter; the current deployment uses
-the same contract in-process inside the Match Worker.
+当前生产路径以内嵌方式运行于 Match Worker。未来如需拆分远程智能体服务，只替换传输适配器，不改变 `DecisionRequest` 和 `HarnessResult`。

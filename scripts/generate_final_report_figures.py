@@ -15,7 +15,6 @@ import matplotlib.pyplot as plt
 from matplotlib import font_manager
 from matplotlib.font_manager import FontProperties
 
-
 ROOT = Path(__file__).resolve().parents[1]
 DELIVERY = ROOT / "docs" / "final_delivery"
 EVIDENCE = DELIVERY / "evidence"

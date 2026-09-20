@@ -85,6 +85,7 @@ SQLite 仅用于测试或单进程临时演示；API 与 Worker 分进程运行�
 Match Worker
   -> Harness Runtime
   -> Werewolf Decision Adapter
+  -> Actor Memory Service
   -> LLM Client
   -> Decision Validation
   -> Deterministic Game Engine
@@ -92,6 +93,7 @@ Match Worker
 
 这一边界允许未来把 Harness 替换成独立服务，但当前不维护空实现或 `501` 占位接口。
 模型只能接收后端状态机裁剪后的 `PlayerView`，不能直接读取数据库或主持人全局状态。
+角色记忆参数由 `configs/cognitive_memory.yaml` 控制，并持久化在 `actor_memories` 表中。
 
 ## 4. 健康检查
 

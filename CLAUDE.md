@@ -1,5 +1,5 @@
-# Claude Project Entry
+# Claude 项目入口
 
-Read and follow [`AGENTS.md`](AGENTS.md). It is the single repository-level engineering guide.
+请读取并遵循 [`AGENTS.md`](AGENTS.md)，它是仓库级工程规范的唯一入口。
 
-The current architecture and ownership boundaries are documented in [`docs/architecture/README.md`](docs/architecture/README.md).
+当前架构和责任边界见 [`docs/architecture/README.md`](docs/architecture/README.md)。

@@ -1,28 +1,27 @@
-## Summary
+## 变更摘要
 
-<!-- Briefly describe what this PR does -->
+<!-- 简要说明本次变更 -->
 
-## Type
+## 变更类型
 
-- [ ] feat — new feature
-- [ ] fix — bug fix
-- [ ] docs — documentation
-- [ ] refactor — code restructuring (no behavior change)
-- [ ] test — test addition or improvement
-- [ ] chore — maintenance (deps, CI, config)
+- [ ] `feat`：新增功能
+- [ ] `fix`：修复问题
+- [ ] `docs`：文档变更
+- [ ] `refactor`：不改变外部行为的重构
+- [ ] `test`：新增或改进测试
+- [ ] `chore`：依赖、CI 或配置维护
 
-## Verification
+## 验证
 
-<!-- How did you verify this works? -->
-- [ ] `pytest tests/ -q` passes
-- [ ] `python scripts/run_backend_full_strict.py` passes
-- [ ] `python scripts/verify_visibility_strict.py` passes
-- [ ] Manual UI check
+- [ ] `python -m ruff check backend tests` 通过
+- [ ] `pytest -q` 通过
+- [ ] `python scripts/verify_visibility_strict.py` 通过
+- [ ] 已完成人工界面检查（如适用）
 
-## Related Issues
+## 关联问题
 
-<!-- Link to issues this PR addresses: Fixes #123 -->
+<!-- 例如：Fixes #123 -->
 
-## Notes for Reviewer
+## 补充说明
 
-<!-- Any context a reviewer should know -->
+<!-- 记录迁移、兼容性、风险或后续工作 -->

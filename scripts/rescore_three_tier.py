@@ -20,7 +20,8 @@ import os
 import sys
 import time
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime
+from datetime import timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -41,7 +42,8 @@ def load_game_ids(game_runs_file: str) -> list[dict]:
 
 def load_game_from_db(game_id: str) -> dict | None:
     """Load full game state and decisions from the database."""
-    from sqlalchemy import create_engine, text
+    from sqlalchemy import create_engine
+    from sqlalchemy import text
 
     db_url = os.environ.get("DATABASE_URL", "sqlite:///data/werewolf.db")
     engine = create_engine(db_url)

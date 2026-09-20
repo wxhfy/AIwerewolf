@@ -1,61 +1,50 @@
-# Three-Owner Collaboration Contract
+# 三方协作约定
 
-The project has three independent owners. No cross-owner code review is required, so stability comes from strict write scopes, versioned contracts, and automated integration checks.
+项目按前端、后端平台、智能体与评估三个责任域协作。当前单人开发阶段不要求跨域代码审核，但共享契约、数据库迁移和集成测试仍必须保持一致。
 
-## Frontend Owner
+## 前端责任域
 
-Write scope: `frontend/`.
+写入范围：`frontend/`。
 
-Responsibilities:
+- 展示后端提供的公开或角色投影。
+- 使用 REST 提交带 `command_id` 和 `expected_seq` 的命令。
+- 按序消费 SSE，并使用 `Last-Event-ID` 恢复。
+- 只管理标签页、动画进度、表单等界面状态。
+- 不推断隐藏身份，不推进游戏阶段，不修复服务端事件顺序。
 
-- Render server-provided public or player-specific projections.
-- Submit REST commands with `command_id` and `expected_seq`.
-- Consume SSE in sequence order and reconnect with `Last-Event-ID`.
-- Keep UI-only state such as selected tabs, animation progress, and local form input.
-- Generate or consume typed API bindings and add reducer/reconnect tests.
+## 后端平台责任域
 
-The frontend must not infer hidden roles, advance phases, repair event order, or make agent decisions.
+写入范围：API、应用服务、游戏领域、持久化、Worker、部署和共享契约。
 
-## Backend and Platform Owner
+- 维护 REST/SSE Schema 和兼容版本。
+- 强制认证、授权、可见性、幂等和乐观并发。
+- 保存命令、事件、快照、决策、角色记忆和发件箱。
+- 管理 Match Worker、Analysis Worker、lease 和失败恢复。
+- 维护 PostgreSQL、Redis、迁移、CI 和部署资产。
 
-Write scope: API, application services, game domain, persistence, workers, deployment, and shared contracts.
+## 智能体与评估责任域
 
-Responsibilities:
+写入范围：智能体运行时、Prompt、角色记忆、模型适配器、评估和相关测试。
 
-- Own REST/SSE schemas and compatibility versions.
-- Enforce authentication, authorization, visibility, idempotency, and optimistic concurrency.
-- Persist commands, ordered events, snapshots, outbox rows, and match status.
-- Run Match Worker scheduling, leases, recovery, and post-game jobs.
-- Operate PostgreSQL, Redis, observability, migrations, CI, Docker, and Kubernetes assets.
-- Publish contract fixtures and integration-test environments for the other owners.
+- 只消费版本化 `DecisionRequest`。
+- 返回结构化 `HarnessResult`，不得直接修改游戏状态。
+- 角色记忆只能由角色可见信息更新。
+- 维护离线 Fake Model、质量测试和信息隔离测试。
+- 记录模型、Prompt 版本、动作、校验、Token 和时延元数据。
 
-## Agent and Evaluation Owner
+## 契约变更流程
 
-Write scope: agent runtime, prompts, memory, provider adapters, evaluation, and agent tests.
+1. 后端平台更新共享 Schema 和版本。
+2. 前端与智能体实现同步更新类型或 Fixture。
+3. 各责任域运行自己的单元测试。
+4. 集成测试验证完整信息流。
+5. 破坏性变更必须升级版本或使用明确功能开关。
 
-Responsibilities:
+## 必要集成产物
 
-- Consume a versioned `DecisionRequest` containing only role-safe `PlayerView` data.
-- Return a versioned `DecisionResult`; never mutate game state directly.
-- Record model, provider, prompt version/hash, parsed result, validation result, usage, latency, cost, and fallback reason.
-- Handle provider-specific quotas, retries, timeouts, and circuit breakers behind one runtime interface.
-- Maintain offline fake-model fixtures and quality/evaluation suites.
-
-## Shared Contract Workflow
-
-1. Backend publishes the schema change and version.
-2. Frontend and Agent owners update against generated types or fixtures in their own branches.
-3. Each branch runs its own unit checks.
-4. Contract tests run against all three implementations before deployment.
-5. Breaking changes require a version transition or a coordinated release flag, even though no human review is required.
-
-## Mandatory Integration Artifacts
-
-- OpenAPI document for REST endpoints.
-- JSON Schema or equivalent typed definitions for commands, events, snapshots, `DecisionRequest`, and `DecisionResult`.
-- Example public, player, and moderator fixtures.
-- Reconnect and duplicate-command test cases.
-- A Docker Compose environment with PostgreSQL, Redis, API, Match Worker, and frontend. Add the Agent Service container when remote execution is implemented.
-- A load-test scenario and a production readiness report.
-
-Independent development means owners do not block on approvals. It does not mean contracts, migrations, or integration tests are optional.
+- REST OpenAPI 文档。
+- 命令、事件、快照和智能体契约的类型定义。
+- 公开视角、角色视角和主持人视角 Fixture。
+- 断线恢复与重复命令测试。
+- PostgreSQL、Redis、API、Worker 和前端的 Docker Compose 环境。
+- 压测场景与生产准备报告。

@@ -1,0 +1,48 @@
+version: cognitive-memory-v1
+
+limits:
+  episodic_capacity: 96
+  recent_event_base: 10
+  retrieved_episode_base: 5
+  working_chunk_base: 5
+  minimum: 3
+  maximum: 12
+
+event_salience:
+  speech: 0.55
+  vote: 0.72
+  death: 0.94
+  private_information: 0.88
+  role_certainty: 1.0
+  decisive_action: 0.9
+  self_action: 0.7
+
+trait_levels:
+  low: 0.25
+  shallow: 0.25
+  passive: 0.3
+  cautious: 0.35
+  medium: 0.5
+  moderate: 0.5
+  balanced: 0.5
+  calculated: 0.6
+  high: 0.75
+  deep: 0.8
+  aggressive: 0.8
+  bold: 0.85
+
+retrieval_baseline:
+  importance: 1.0
+  relevance: 1.0
+  recency: 1.0
+  goal: 0.6
+  emotion: 0.4
+
+dynamics:
+  trait_influence: 0.65
+  affect_influence: 0.55
+  event_response_scale: 0.2
+  day_decay_base: 0.88
+  social_decay_base: 0.94
+  certainty_floor: 0.01
+  certainty_ceiling: 0.99

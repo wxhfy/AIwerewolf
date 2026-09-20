@@ -1,87 +1,67 @@
-# Role Registry — extension guide
+# 角色注册表扩展指南
 
-The role registry under `backend/engine/roles/` is the single source of truth
-for werewolf role metadata. Every other layer (engine rules, LLM prompts,
-agent profiles, frontend i18n) reads through it.
+`backend/engine/roles/` 是狼人杀角色元数据的唯一事实来源。游戏规则、角色适配器和前端国际化都应通过注册表读取角色定义。
 
-## Layout
+## 目录结构
 
-```
-backend/engine/roles/
-├── __init__.py        # re-exports + imports each pack module (triggers registration)
-├── registry.py        # RoleSpec dataclass + ROLE_REGISTRY + register_role()
-├── basic.py           # VILLAGER
-├── gods.py            # SEER, WITCH, HUNTER, GUARD (神职)
-├── wolves.py          # WEREWOLF, WHITE_WOLF_KING
-├── wolfcha.py         # IDIOT (playable), CUPID + BIG_BAD_WOLF + WOLF_CUB (templates)
-└── extensions.py      # WOLF_KING, KNIGHT, ELDER (templates)
+```text
+roles/
+├── __init__.py        统一导出并触发角色注册
+├── registry.py        RoleSpec、ROLE_REGISTRY 和 register_role
+├── basic.py           村民
+├── gods.py            预言家、女巫、猎人、守卫
+├── wolves.py          狼人、白狼王
+├── wolfcha.py         白痴及部分模板角色
+└── extensions.py      扩展模板角色
 ```
 
-Each pack module calls `register_role(RoleSpec(...))` at import time.
-`__init__.py` imports them all so `from backend.engine.roles import
-ROLE_REGISTRY` works without manual wiring.
+每个角色包在导入时调用 `register_role(RoleSpec(...))`。
 
-## Playable vs template
+## 可玩角色和模板角色
 
-- `playable=True` — the engine has full phase routing for this role and it
-  can appear in `WOLFCHA_ROLE_CONFIGS` (the locked 7-12P seat configs).
-- `playable=False` — the role exists in the registry and has LLM strategy
-  text + i18n, but the engine doesn't yet route its abilities. The role is
-  excluded from `get_playable_roles()` and `WOLFCHA_ROLE_CONFIGS` MUST NOT
-  contain it (validated at import time in `engine/rules.py`).
+- `playable=True`：引擎已经实现完整阶段和行动，可以进入 7～12 人配置。
+- `playable=False`：只存在角色元数据，不得进入正式人数配置。
 
-This split lets us ship role *templates* (Cupid, Wolf King, Knight, Elder,
-Big Bad Wolf, Wolf Cub) without breaking the locked 7-12P configs. Promoting
-a template to playable is a follow-up PR that wires the engine logic, then
-flips the flag.
+模板角色转为可玩角色时，必须先实现阶段推进、动作空间、信息可见性、结算和测试，然后再修改 `playable`。
 
-## Adding a new role
+## 新增角色步骤
 
-1. **Add the enum member** in `backend/engine/models.py`:
-   ```python
-   class Role(str, Enum):
-       ...
-       CUPID = "Cupid"
-   ```
+1. 在 `backend/engine/models.py` 的 `Role` 中增加枚举。
+2. 在对应角色包注册 `RoleSpec`。
+3. 在狼人杀决策适配器中增加角色需要的动作类型和合法动作空间。
+4. 增加角色目标、人格和记忆行为所需的领域元数据。
+5. 在 `frontend/types/index.ts` 和国际化文件中同步角色名称。
+6. 若角色可玩，在 `WOLFCHA_ROLE_CONFIGS` 中增加目标人数配置。
+7. 增加阶段、信息隔离、决策和胜负条件测试。
 
-2. **Register the spec.** Either add to an existing pack file or create a
-   new one and import it from `roles/__init__.py`:
-   ```python
-   register_role(RoleSpec(
-       role=Role.CUPID,
-       alignment=Alignment.VILLAGE,
-       display_zh="丘比特",
-       display_en="Cupid",
-       description_zh="第 0 夜指定两名情侣...",
-       description_en="Night 0 picks two lovers...",
-       wakes_up_at_night=True,
-       pack="wolfcha",
-       playable=False,  # template only — engine wiring is TODO
-       tags=("lovers", "night-zero"),
-   ))
-   ```
+示例：
 
-3. **Add LLM strategy.** Three layers in `backend/agents/`:
-   - `playbooks.py` — `ACTION_PLAYBOOKS[Role.CUPID] = ActionPlaybook(...)`
-   - `profiles.py` — `ROLE_PROFILES[Role.CUPID] = RoleProfile(...)`
-   - `prompts.py` — entry in `ROLE_SYSTEM_PROMPTS`; per-action entries in
-     `ACTION_STRATEGIES` are optional (VILLAGER fallback exists).
+```python
+register_role(
+    RoleSpec(
+        role=Role.CUPID,
+        alignment=Alignment.VILLAGE,
+        display_zh="丘比特",
+        display_en="Cupid",
+        description_zh="首夜指定两名情侣。",
+        description_en="Selects two lovers on the first night.",
+        wakes_up_at_night=True,
+        pack="wolfcha",
+        playable=False,
+        tags=("lovers", "night-zero"),
+    )
+)
+```
 
-4. **Mirror on frontend.** `frontend/types/index.ts` adds the enum value and
-   `frontend/lib/i18n.ts` adds zh + en translations.
+## 验证
 
-5. **If promoting to `playable=True`:** wire the engine phases in
-   `backend/engine/game.py` and add the role to `WOLFCHA_ROLE_CONFIGS`
-   entries that want it. New action types go in
-   `backend/engine/models.py` (`ActionType` enum) and
-   `backend/engine/actions.py` (`ACTION_RULES`).
+`tests/test_role_registry.py` 检查：
 
-## Tests
+- 每个 `Role` 都有对应 `RoleSpec`。
+- 正式人数配置只包含可玩角色。
+- 重复角色注册会失败。
+- 可玩角色具备必要的领域和前端映射。
 
-`tests/test_role_registry.py` enforces the contract:
-- Every `Role` enum member has a `RoleSpec` (no half-added roles)
-- Every `Role` has profile / prompt / playbook entries (no KeyErrors)
-- `WOLFCHA_ROLE_CONFIGS` contains only playable roles
-- `register_role()` rejects duplicate registration
-
-Run with: `pytest tests/test_role_registry.py -v`
+```bash
+pytest tests/test_role_registry.py -v
+```

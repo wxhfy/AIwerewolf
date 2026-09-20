@@ -1,34 +1,39 @@
 ---
-name: Bug Report
-about: Report a bug in AI Werewolf
+name: 问题报告
+about: 报告 AI Werewolf 中的错误
 title: "[Bug] "
 labels: bug
 assignees: []
 ---
 
-**Describe the bug**
-A clear and concise description of what the bug is.
+**问题描述**
 
-**To Reproduce**
-Steps to reproduce the behavior:
-1. Game config: '...'
-2. Agent role: '...'
-3. Phase where bug occurred: '...'
-4. Error message or unexpected behavior: '...'
+请清晰描述发生了什么。
 
-**Expected behavior**
-What should have happened instead.
+**复现步骤**
 
-**Logs / Traceback**
+1. 对局配置：
+2. 角色和模型：
+3. 出现问题的阶段：
+4. 实际错误或异常行为：
+
+**预期行为**
+
+请说明正确行为应该是什么。
+
+**日志或堆栈**
+
+```text
+粘贴相关日志或错误堆栈
 ```
-Paste relevant logs or traceback here.
-```
 
-**Environment**
-- OS: [e.g. Ubuntu 22.04]
-- Python version: [e.g. 3.12]
-- Branch/commit: [e.g. main @ abc1234]
-- LLM backend: [e.g. doubao-seed-2.0-pro]
+**环境**
 
-**Additional context**
-Add any other context about the problem here.
+- 操作系统：
+- Python 版本：
+- 分支和提交：
+- 模型供应商与模型：
+
+**补充信息**
+
+请添加其他有助于定位问题的信息。

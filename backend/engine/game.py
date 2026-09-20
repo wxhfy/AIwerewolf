@@ -250,6 +250,16 @@ class WerewolfGame:
                 "reasoning_style": character.persona.reasoning_style,
                 "speech_length_habit": character.persona.speech_length_habit,
                 "vocabulary_style": character.persona.vocabulary_style,
+                "social_habit": character.persona.social_habit,
+                "pressure_style": character.persona.pressure_style,
+                "uncertainty_style": character.persona.uncertainty_style,
+                "mistake_pattern": character.persona.mistake_pattern,
+                "courage": character.mind.courage,
+                "memory_bias": character.mind.memory_bias,
+                "suspicion_threshold": character.mind.suspicion_threshold,
+                "self_protection": character.mind.self_protection,
+                "logic_depth": character.mind.logic_depth,
+                "table_presence": character.mind.table_presence,
             }
 
     def _sample_personas(self, count: int, seed: int | None) -> list[dict] | None:

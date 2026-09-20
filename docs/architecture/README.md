@@ -1,250 +1,135 @@
-# AI Werewolf V2 Architecture
+# AI Werewolf 当前架构
 
-This document is the current architecture and technology-selection source of truth.
+本文档是系统分层、信息流和技术选型的架构速查。完整设计说明见 [`SYSTEM_AND_AGENT_DESIGN.md`](SYSTEM_AND_AGENT_DESIGN.md)，生产路线见 [`PRODUCTION_PLAN.md`](PRODUCTION_PLAN.md)，智能体框架见 [`AGENT_HARNESS_V2.md`](AGENT_HARNESS_V2.md)，角色记忆见 [`COGNITIVE_MEMORY.md`](COGNITIVE_MEMORY.md)。
 
-Production capacity and delivery gates are defined in `PRODUCTION_PLAN.md`.
-The three-owner write scopes and integration contract are defined in `COLLABORATION.md`.
-The Agent Harness replacement is defined in `AGENT_HARNESS_V2.md`.
-
-## Target Boundaries
-
-The system has four code layers and three independent ownership areas.
+## 系统边界
 
 ```text
-Browser
-  -> REST commands and queries
-  -> SSE ordered event stream
+浏览器展示层
+  -> REST 命令与查询
+  -> SSE 有序状态流
 
-FastAPI interfaces
-  -> application services
-  -> game domain and agent contracts
+FastAPI 接口层
+  -> 应用服务
+  -> PostgreSQL 房间、任务、命令和查询投影
 
 Match Worker
-  -> game domain
-  -> AgentRuntime
+  -> 游戏领域引擎
+  -> 角色可见性投影
+  -> Agent Harness 与角色记忆
+  -> LLM Provider
 
 Analysis Worker
-  -> post-game scoring, reports, reflection, and strategy extraction
+  -> Track B 逐步评分与复盘
+  -> Track C 策略抽取和知识治理
 
-Infrastructure adapters
-  -> PostgreSQL
-  -> Redis
-  -> LLM providers
+基础设施
+  -> PostgreSQL 持久化真相源
+  -> Redis 通知和可选协调
 ```
 
-The implemented AI-only deployment has separate API and Match Worker
-processes. Every executable AI match enters the portable
-`backend/agent_harness` through the Werewolf adapter. `WerewolfGame` no longer
-constructs agents or provides a second decision lifecycle.
+## 分层职责
 
-### Presentation layer
+### 展示层
 
-The Next.js frontend renders public or player-specific projections. It submits commands through REST and reduces ordered SSE events into UI state. It does not start backend threads, evaluate rules, or decide visibility.
+Next.js 前端只展示后端投影、提交命令和消费 SSE。前端不得推进阶段、修正规则、推断隐藏身份或组织智能体上下文。
 
-### Application layer
+### 应用层
 
-The FastAPI application owns room and match lifecycle, command validation, authorization, idempotency, transaction boundaries, runner scheduling, queries, and event-stream endpoints. It coordinates work but does not implement game rules.
+FastAPI 和应用服务负责房间与对局生命周期、命令幂等、任务入队、查询、错误协议和 SSE。HTTP 请求不得同步执行整场对局。
 
-### Domain and agent layer
+### 领域层
 
-The game domain owns deterministic state transitions, action legality,
-visibility, win conditions, and domain events. A Werewolf environment adapter
-projects the full state into an actor-scoped `InformationState`, `DecisionPoint`,
-and `ActionSpace`. The portable Agent Harness returns one validated
-`ResolvedAction` plus append-only audit events. Agents never mutate match state
-or access match tables directly.
+游戏领域层负责确定性状态转换、行动合法性、信息可见性、死亡结算和胜负判断。领域层不依赖 FastAPI、Redis 或前端类型。
 
-### Infrastructure layer
+### 智能体层
 
-Adapters implement repositories, Redis coordination, outbox delivery, LLM clients, telemetry, and deployment integration. PostgreSQL is the durable source of truth. Redis accelerates coordination and delivery but is not authoritative storage.
+狼人杀适配器把 `PlayerView` 转换成 `DecisionRequest` 和合法 `ActionSpace`。角色记忆服务只消费角色可见信息，构造有限认知上下文。Agent Harness 调用模型并返回校验后的动作，不能直接修改游戏状态。
 
-## Runtime Flow
+### 基础设施层
+
+Repository、LLM Client、Redis 通知、数据库持久化和 Worker 属于基础设施适配器。PostgreSQL 保存唯一权威状态；Redis 不保存不可恢复的唯一数据。
+
+## 对局信息流
 
 ```text
-1. Frontend POSTs a command with command_id and expected_seq.
-2. Application validates and persists the command.
-3. Match Worker obtains a lease and loads the match specification and persisted state.
-4. Domain handles the command and emits ordered events.
-5. The Agent Harness is called only when the domain emits a decision request.
-6. Events, snapshots, and decision traces are persisted as authoritative match facts.
-7. Match Worker atomically commits final facts, Match Job completion, the
-   Analysis Job, and a transactional outbox event.
-8. Analysis Worker relays the outbox event and rebuilds its input from
-   PostgreSQL, then runs scoring, reports,
-   Agent reflection, and strategy extraction without holding the match lease.
-10. SSE reads durable events and pushes them in seq order.
-11. Reconnecting clients resume with Last-Event-ID or after_seq.
+1. 前端创建房间并准备对局。
+2. API 持久化初始玩家和 seq=0 快照。
+3. 启动接口写入 match_jobs 后立即返回。
+4. Match Worker 使用数据库 lease 领取任务。
+5. 游戏引擎推进到需要角色决策的位置。
+6. 后端裁剪 PlayerView，记忆服务更新角色主观状态。
+7. Agent Harness 进行一次结构化模型调用。
+8. 引擎校验并应用动作，写入事件、快照、决策和角色记忆。
+9. SSE 从持久化投影读取并按 seq 交付前端。
+10. 对局完成后异步执行 Track B/C。
 ```
 
-SSE is a delivery channel, not persistence. Recovery always reads PostgreSQL.
+SSE 是交付通道，不是持久化机制。断线恢复始终从 PostgreSQL 按序列读取。
 
-Match completion is also a lifecycle boundary. An analysis enqueue failure is
-committed in the same transaction as the completed match, so it cannot create
-a finished match without a recoverable analysis boundary. The outbox relay is
-idempotent and a reconciler repairs older finished matches. Agent `finish()`
-ends runtime state only; optional reflection is an Analysis Worker capability
-controlled by its own configuration.
+## 事务发件箱
 
-### Transactional Outbox
+Match Worker 不直接调用 Analysis Worker。对局完成事实、任务状态和 `outbox_events` 在同一事务提交。中继器随后创建可重试分析任务：提交前崩溃不会产生伪完成，提交后崩溃可以幂等重试。
 
-The Match Worker does not call the Analysis Worker directly. It writes an
-`outbox_events` row in the same PostgreSQL transaction as the final game facts
-and job completion. A relay later turns the committed event into the durable
-`track_c_post_game_jobs` work item. If the process crashes before commit,
-nothing is marked complete; if it crashes after commit, the relay or
-reconciler can safely retry because both operations are idempotent.
+## 进程、线程和协程
 
-## Process, Thread, and Coroutine Model
+- 进程：API、Match Worker、Analysis Worker 分别部署和扩缩容。
+- 线程：单局中仅用于并行等待互不依赖的阻塞模型调用。
+- 协程：用于 HTTP、SSE、Redis 通知等网络等待。
 
-These mechanisms solve different problems and must not be used interchangeably.
+一个 Match Worker 同时拥有一局对局；对局并发通过增加 Worker 副本实现。
 
-### Processes
-
-- FastAPI API instances are stateless operating-system processes.
-- Match Workers are separate processes that claim durable `match_jobs` rows.
-- A Worker crash does not terminate the API or remove persisted jobs, events,
-  snapshots, or decision traces.
-- Worker process count is the primary horizontal scaling control for matches.
-
-### Threads
-
-- A match may use bounded threads when independent Agents can call blocking
-  LLM providers concurrently during one phase.
-- Threads belong inside one Worker-owned match. They do not own rooms, HTTP
-  connections, or cross-match scheduling.
-- The API must not start background threads to run matches.
-
-### Coroutines
-
-- FastAPI and SSE use async coroutines for HTTP and streaming I/O.
-- Coroutines efficiently wait for Redis notifications, disconnects, and
-  network writes without assigning one thread per SSE connection.
-- The synchronous game engine and blocking model clients run in Match Worker
-  processes, never on the API event loop.
-
-In short: processes isolate and scale matches, threads parallelize bounded
-blocking Agent calls inside a match, and coroutines serve HTTP/SSE I/O.
-
-## Current AI-Only Boundary
+## 当前智能体路径
 
 ```text
-POST /rooms/{id}/prepare
-  -> persist prepared roster and snapshot seq=0
-POST /rooms/{id}/start
-  -> insert idempotent match_jobs row and return immediately
-Match Worker
-  -> SELECT ... FOR UPDATE SKIP LOCKED
-  -> rebuild the exact prepared roster
-  -> LocalAgentRuntime creates isolated per-seat AgentHarness instances
-  -> build role-safe DecisionRequests and server-owned legal ActionSpaces
-  -> execute game and persist ordered events, snapshots, and decisions
-  -> mark the job completed or failed
-  -> after completion, enqueue post-game analysis
-Analysis Worker
-  -> reconstruct the event-rich final state from PostgreSQL
-  -> run Track B/C and optional Agent reflection
-  -> persist derived metrics, reports, and strategy knowledge
-SSE
-  -> read PostgreSQL projections and resume by sequence
+LocalAgentRuntime
+  -> WerewolfDecisionAdapter
+  -> ActorMemoryService
+  -> AgentHarness
+  -> LLMActionPlanner
+  -> ResolvedAction
 ```
 
-Human-seat creation and `/action` commands currently return `501`. Human
-reconnection and command recovery will be designed after the AI path is stable.
+当前不使用子智能体。实时链路保持一次决策一次模型调用，记忆更新与检索全部由确定性服务端逻辑执行。
 
-LLM credentials are deployment secrets owned by the Agent Runtime environment.
-Browser-provided API keys are neither persisted in rooms nor copied into
-`match_jobs`; room configuration may select an allowed provider/model only.
+## 技术选型
 
-The current agent vertical slice is
-`LocalAgentRuntime -> WerewolfDecisionAdapter -> DecisionRequest -> AgentHarness -> ResolvedAction`.
-The next slice adds dedicated harness-event persistence and actor-scoped
-memory/tools without changing the game-domain contract.
-
-## Technology Selection
-
-| Concern | Selection | Decision |
+| 范围 | 技术 | 决策 |
 |---|---|---|
-| Frontend | Next.js, React, TypeScript | Keep |
-| HTTP API | Python, FastAPI, Uvicorn | Keep |
-| Live updates | SSE over HTTP | Implemented for AI-only matches |
-| Match execution | Independent Python Match Worker | Implemented for AI-only matches |
-| Agent runtime | Python | Keep close to the LLM and evaluation ecosystem |
-| Durable data | PostgreSQL | Required outside isolated tests |
-| Coordination | PostgreSQL leases + Redis notifications | Worker lease is implemented in PostgreSQL; Redis notifications and optional rate limiting are implemented |
-| Schema migration | Alembic | Add; stop relying on startup table creation |
-| Local orchestration | Docker Compose | Primary local environment |
-| Production orchestration | Kubernetes | Add after service boundaries and health checks stabilize |
-| Observability | OpenTelemetry and structured logs | Add incrementally |
+| 前端 | Next.js、React、TypeScript | 保留 |
+| 控制 API | Python、FastAPI、Uvicorn | 保留 |
+| 实时状态 | SSE | 已实现 |
+| 对局执行 | 独立 Python Match Worker | 已实现 |
+| 智能体运行时 | Python | 已实现 |
+| 权威数据 | PostgreSQL | 多进程环境必需 |
+| 通知协调 | Redis | 可选增强，不作真相源 |
+| 本地编排 | Docker Compose | 当前主要环境 |
+| 生产编排 | Kubernetes | 后续阶段 |
+| 数据迁移 | Alembic | 待替换启动时建表 |
+| 可观测性 | 结构化日志、OpenTelemetry | 逐步接入 |
 
-SQLite remains acceptable for unit tests and disposable demos, not for the multi-process runtime.
+当前性能瓶颈主要是模型时延、上下文长度和数据库事务，不是 Python 本身。现阶段不引入 Go；只有独立 SSE 网关、超高吞吐事件分发或 CPU 密集模拟经过压测证明需要时，才拆出单独服务。
 
-## Python and Go Decision
-
-Python is not the current scaling bottleneck. The expensive operations are LLM latency, database access, serialization, and match execution. FastAPI remains the control API while Match Worker processes scale independently.
-
-Do not introduce Go in the first V2 slice. A second language adds duplicated contracts, build pipelines, telemetry, deployment images, and operational ownership before the architecture is stable.
-
-Go becomes justified only when measurements show one of these isolated components is capacity-limited:
-
-- an SSE gateway maintaining very large numbers of concurrent connections;
-- a high-throughput Redis or event fan-out service;
-- a CPU-heavy simulation service that cannot be solved with process scaling or optimized Python code.
-
-If that happens, replace only that adapter or service. Game rules, agent orchestration, prompts, evaluation, and LLM integration should remain in Python.
-
-## Middleware Baseline
-
-FastAPI should use a small, explicit middleware chain:
-
-1. Trusted proxy and forwarded-header handling at the ingress boundary.
-2. Request ID and correlation ID propagation.
-3. Structured access and error logging.
-4. Authentication and actor context.
-5. Command idempotency and optimistic sequence checks in the application layer.
-6. Rate limiting backed by Redis for public or expensive endpoints.
-7. OpenTelemetry tracing and metrics.
-8. Central exception-to-problem-response mapping.
-
-CORS is needed only when frontend and API use different origins. Compression and proxy buffering must be configured carefully for SSE; event responses require immediate flushing and heartbeat support.
-
-## Data Model Baseline
+## 数据模型基线
 
 ```text
 rooms
-matches
+games
+match_jobs
 match_commands
-match_events
-match_snapshots
-agent_decision_traces
+game_events
+game_snapshots
+agent_decisions
+actor_memories
 outbox_events
-post_game_jobs
+track_c_post_game_jobs
 ```
 
-Every match event has a unique `(match_id, seq)`. Commands have a unique `command_id`. Snapshots record the last included sequence. Outbox rows are written in the same transaction as domain events.
+每个事件具有唯一 `(game_id, seq)`，每个角色记忆具有唯一 `(game_id, player_id)`。
 
-## Ownership
+## 当前限制
 
-| Owner | Write scope |
-|---|---|
-| Frontend | `frontend/`, UI tests, generated client bindings |
-| Backend/platform | API, application, domain, persistence, Redis, workers, deployment, shared contracts |
-| Agent/evaluation | agent runtime, prompts, provider adapters, memory, evaluation, agent tests |
-
-No cross-owner review is required. Shared contracts are versioned by the backend/platform owner; other owners request contract changes instead of editing shared schemas concurrently.
-
-## First Vertical Slice
-
-```text
-create match
--> submit one idempotent command
--> runner loads match
--> fake agent returns one decision
--> domain emits event seq=1
--> PostgreSQL transaction stores event and outbox
--> Redis wakes delivery
--> SSE sends event
--> frontend reducer renders it
--> process restart recovers the same match
-```
-
-Do not migrate all existing endpoints before this slice passes integration tests.
+- 真人输入、掉线重连和托管尚未开放。
+- 远程智能体传输尚未实现。
+- Outbox 独立发布和死信队列尚未完成。
+- JWT/OIDC、Alembic、Kubernetes 和 3000 QPM 正式压测尚未完成。

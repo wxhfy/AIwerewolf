@@ -47,6 +47,7 @@ AI Werewolf 是一个可观测、可复盘、可迭代的多智能体狼人杀�
 | 对局启动 | 写入 durable `match_jobs`，HTTP 请求立即返回 |
 | 对局执行 | 独立 Match Worker 领取任务并驱动 `WerewolfGame` |
 | Agent | `LocalAgentRuntime` 为每个席位创建隔离的 `AgentHarness`，通过狼人杀适配器调用 LLM provider |
+| 角色记忆 | 保存工作记忆、情景记忆、信念、关系、情绪和目标；按人格与当前决策动态裁剪上下文 |
 | 信息隔离 | 后端生成 public snapshot 和角色安全 `PlayerView` |
 | 实时展示 | 前端通过 SSE 获取有序快照，支持序列恢复 |
 | 持久化 | 保存房间、游戏、事件、快照、决策、任务和复盘数据 |
@@ -90,6 +91,7 @@ AI Werewolf 是一个可观测、可复盘、可迭代的多智能体狼人杀�
 
 - 当前执行路径是 Match Worker 内的 `LocalAgentRuntime`。
 - Agent 只接收角色安全观察和合法动作集合。
+- Agent 记忆只消费角色安全 `InformationState`，不能直接查询主持人数据库。
 - Agent 返回结构化行动，最终合法性由游戏引擎判断。
 - 远程 Agent transport 尚未实现，也不暴露占位 HTTP 接口。
 - 浏览器不得提交或持久化真实 API Key；密钥由部署环境管理。

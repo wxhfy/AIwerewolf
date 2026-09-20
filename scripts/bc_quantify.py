@@ -35,6 +35,7 @@ os.environ.setdefault("STRATEGY_RERANK_PROVIDER", "off")
 os.environ.setdefault("STRATEGY_RERANK_STRICT", "false")
 
 from backend.application.matches.executor import build_game
+from backend.engine.game import WerewolfGame
 from backend.engine.models import DecisionAudit
 from backend.engine.models import Phase
 from backend.eval.evolution import ABComparison

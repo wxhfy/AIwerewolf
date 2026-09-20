@@ -8,6 +8,8 @@ from typing import Any
 from backend.agent_harness import AgentHarness
 from backend.agent_harness.contracts import DecisionRequest
 from backend.agent_harness.contracts import HarnessResult
+from backend.agent_memory import ActorMemoryService
+from backend.agent_memory import SqlActorMemoryRepository
 from backend.domains.werewolf.planner import LLMActionPlanner
 from backend.engine.models import Player
 from backend.llm import create_client
@@ -23,18 +25,23 @@ class RoutingHarnessRuntime:
         definition_ids: dict[str, str],
         *,
         deadline_ms: int,
+        memory: ActorMemoryService,
     ) -> None:
         self.harnesses = harnesses
         self.profiles = profiles
         self.definition_ids = definition_ids
         self.deadline_ms = deadline_ms
+        self.memory = memory
 
     def run(self, request: DecisionRequest) -> HarnessResult:
         try:
             harness = self.harnesses[request.actor.actor_id]
         except KeyError as exc:
             raise RuntimeError(f"No harness configured for actor {request.actor.actor_id}") from exc
-        return harness.run(request)
+        prepared = self.memory.prepare(request)
+        result = harness.run(prepared)
+        self.memory.record_result(prepared, result)
+        return result
 
 
 def build_harness_runtime(players: list[Player], config: dict[str, Any]) -> RoutingHarnessRuntime:
@@ -90,6 +97,7 @@ def build_harness_runtime(players: list[Player], config: dict[str, Any]) -> Rout
         profiles,
         definition_ids,
         deadline_ms=max(100, deadline_ms),
+        memory=ActorMemoryService(SqlActorMemoryRepository()),
     )
 
 

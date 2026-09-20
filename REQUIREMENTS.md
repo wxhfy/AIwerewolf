@@ -1,8 +1,8 @@
-# AI Werewolf 当前需求规格
+# AI 狼人杀当前需求规格
 
 ## 1. 当前交付目标
 
-系统首先交付稳定的 AI-only 狼人杀闭环：多个 LLM Agent 在严格信息隔离下完成一局游戏，所有关键状态和行为均可持久化、查询、回放和复盘。
+系统首先交付稳定的纯 AI 狼人杀闭环：多个 LLM 智能体在严格信息隔离下完成一局游戏，所有关键状态和行为均可持久化、查询、回放和复盘。
 
 当前不把真人对战、远程 Agent Service 和 Kubernetes 作为已完成功能。远程 Agent 仅作为未来传输适配器，不预留伪实现接口。
 
@@ -23,6 +23,7 @@
 | FR-11 | 命令支持 `command_id` 幂等和 `expected_seq` 冲突检测 | 暂停/恢复已实现 |
 | FR-12 | 真人加入 AI 对局 | 暂停开放 |
 | FR-13 | Agent 可通过同一 `DecisionRequest` / `HarnessResult` 契约迁移到远程服务 | 后续适配器 |
+| FR-14 | 每个角色维护隔离的动态认知记忆，并避免完整历史重复进入 Prompt | 已实现 |
 
 ## 3. 非功能需求
 
@@ -39,13 +40,13 @@
 ## 4. 分层约束
 
 ```text
-Frontend presentation
+前端展示层
   -> REST / SSE contracts
-Application and API
+应用与 API 层
   -> lifecycle, commands, queries, idempotency
-Domain and Agent contracts
+领域与智能体契约
   -> rules, visibility, decisions
-Infrastructure
+基础设施层
   -> PostgreSQL, Redis, providers, workers
 ```
 

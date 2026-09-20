@@ -291,6 +291,26 @@ class AgentDecision(Base):
     )
 
 
+class ActorMemory(Base):
+    """Durable, actor-scoped subjective memory for one match."""
+
+    __tablename__ = "actor_memories"
+
+    id = Column(String, primary_key=True, default=_uuid)
+    game_id = Column(String, ForeignKey("games.id"), nullable=False, index=True)
+    player_id = Column(String, ForeignKey("players.id"), nullable=False, index=True)
+    version = Column(Integer, default=1, nullable=False)
+    last_event_seq = Column(Integer, default=0, nullable=False)
+    state = Column(JSON, default=dict, nullable=False)
+    created_at = Column(DateTime, default=_utcnow, nullable=False)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("game_id", "player_id", name="uq_actor_memories_game_player"),
+        Index("ix_actor_memories_game_updated", "game_id", "updated_at"),
+    )
+
+
 class DecisionEvaluation(Base):
     """Versioned Track B score for one persisted agent decision."""
 
