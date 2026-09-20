@@ -23,9 +23,12 @@ from backend.db.models import EvolutionRound
 from backend.db.models import EvolutionTournament
 from backend.db.models import Game
 from backend.db.models import GameEvent
+from backend.db.models import GameRoom
 from backend.db.models import GameSnapshot
 from backend.db.models import KnowledgeUsageFeedback
 from backend.db.models import LeaderboardEntry
+from backend.db.models import MatchJob
+from backend.db.models import OutboxEvent
 from backend.db.models import Player
 from backend.db.models import PublishedReview
 from backend.db.models import ReviewReport
@@ -360,124 +363,140 @@ def save_snapshot(game_id: str, seq: int, day: int, phase: str, truth: dict, pub
         db.close()
 
 
-def save_game_end(state: GameState, *, include_post_game: bool = True) -> None:
-    """Persist a final game state.
+def _persist_finished_game(db, state: GameState) -> Game | None:
+    """Write authoritative final facts using the caller's transaction."""
+    game = db.query(Game).filter(Game.id == state.id).first()
+    if game is None:
+        return None
+    game.status = "finished"
+    game.winner = state.winner.value if state.winner else None
+    game.current_day = state.day
+    game.current_phase = state.phase.value
+    game.finished_at = _now()
 
-    ``include_post_game`` keeps the legacy experiment path compatible.
-    Production Match Workers call :func:`save_match_end`, which persists only
-    authoritative gameplay data and leaves derived work to Analysis Workers.
-    """
+    for player_state in state.players:
+        player = db.query(Player).filter(Player.id == player_state.id).first()
+        if player:
+            player.is_alive = player_state.alive
+            player.death_day = player_state.death_day
+            player.death_reason = player_state.death_reason
+
+    # Idempotent bulk-save of events: clear and re-insert at the terminal boundary.
+    db.query(GameEvent).filter(GameEvent.game_id == state.id).delete()
+    for index, event in enumerate(state.events, start=1):
+        seq = event.seq or index
+        payload = _clean(event.payload) if isinstance(event.payload, dict) else {}
+        phase = event.phase.value if hasattr(event.phase, "value") else str(event.phase)
+        event_type = event.type.value if hasattr(event.type, "value") else str(event.type)
+        db.add(
+            GameEvent(
+                id=event.id,
+                game_id=state.id,
+                seq=seq,
+                ts=float(event.ts or 0.0),
+                day=event.day,
+                phase=phase,
+                event_type=event_type,
+                actor_id=payload.get("actor_id") or payload.get("voter_id") or payload.get("hunter_id"),
+                target_id=payload.get("target_id") or (payload.get("target") or {}).get("id")
+                if isinstance(payload.get("target"), dict)
+                else payload.get("target_id"),
+                visibility=event.visibility,
+                content=payload,
+            )
+        )
+
+    db.query(AgentDecision).filter(AgentDecision.game_id == state.id).delete()
+    for record in state.decision_records:
+        db.add(
+            AgentDecision(
+                id=record.id,
+                game_id=state.id,
+                player_id=record.player_id,
+                day=record.day,
+                phase=str(record.phase),
+                observation=_clean(record.observation) if isinstance(record.observation, dict) else {},
+                legal_actions=list(record.legal_actions or []),
+                prompt_version=record.prompt_version or "v1",
+                raw_output=_clean(record.raw_output or ""),
+                parsed_action=_clean(record.parsed_action) if isinstance(record.parsed_action, dict) else {},
+                is_valid=bool(record.is_valid),
+                error_type=record.error_type,
+                latency_ms=record.latency_ms,
+                prompt_tokens=record.prompt_tokens,
+                completion_tokens=record.completion_tokens,
+                candidate_actions=_clean(getattr(record, "candidate_actions", None) or []),
+                visible_facts=_clean(getattr(record, "visible_facts", None) or []),
+                confidence=getattr(record, "confidence", None),
+                prompt_hash=getattr(record, "prompt_hash", None),
+                cost_usd=getattr(record, "cost_usd", None),
+                model_name=getattr(record, "model_name", None),
+                provider=getattr(record, "provider", None),
+                decision_metadata=_clean(getattr(record, "metadata", None) or {}),
+            )
+        )
+
+    db.query(Vote).filter(Vote.game_id == state.id).delete()
+    for day, voted in state.vote_history.items():
+        for voter_id, target_id in voted.items():
+            db.add(Vote(game_id=state.id, day=int(day), voter_id=voter_id, target_id=target_id))
+
+    # Keep the ordered snapshot history and upsert the final authoritative state.
+    try:
+        truth = _clean(state.snapshot(show_private=True))
+        public = _clean(state.snapshot(show_private=False))
+        final_seq = int(truth.get("seq") or len(state.events))
+        snapshot = (
+            db.query(GameSnapshot).filter(GameSnapshot.game_id == state.id, GameSnapshot.seq == final_seq).first()
+        )
+        if snapshot is None:
+            snapshot = GameSnapshot(game_id=state.id, seq=final_seq)
+            db.add(snapshot)
+        snapshot.day = state.day
+        snapshot.phase = state.phase.value
+        snapshot.truth_state = truth
+        snapshot.public_state = public
+    except Exception:
+        pass
+    return game
+
+
+def _ensure_match_analysis_outbox(db, game_id: str, *, source: str) -> OutboxEvent:
+    event = (
+        db.query(OutboxEvent)
+        .filter(
+            OutboxEvent.aggregate_type == "match",
+            OutboxEvent.aggregate_id == game_id,
+            OutboxEvent.event_type == "match.analysis.requested",
+        )
+        .first()
+    )
+    if event is None:
+        event = OutboxEvent(
+            aggregate_type="match",
+            aggregate_id=game_id,
+            event_type="match.analysis.requested",
+            payload={"game_id": game_id, "source": source},
+            status="pending",
+        )
+        db.add(event)
+        db.flush()
+    elif event.status == "failed":
+        event.status = "pending"
+        event.updated_at = _now()
+    return event
+
+
+def save_game_end(state: GameState, *, include_post_game: bool = True) -> None:
+    """Persist a final game state using a single database transaction."""
     db = SessionLocal()
     try:
-        game = db.query(Game).filter(Game.id == state.id).first()
+        game = _persist_finished_game(db, state)
         if game is None:
             return
-        game.status = "finished"
-        game.winner = state.winner.value if state.winner else None
-        game.current_day = state.day
-        game.current_phase = state.phase.value
-        game.finished_at = _now()
-
-        for p in state.players:
-            player = db.query(Player).filter(Player.id == p.id).first()
-            if player:
-                player.is_alive = p.alive
-                player.death_day = p.death_day
-                player.death_reason = p.death_reason
-
-        # Idempotent bulk-save of events: clear and re-insert (run once at game_end).
-        db.query(GameEvent).filter(GameEvent.game_id == state.id).delete()
-        for index, event in enumerate(state.events, start=1):
-            seq = event.seq or index
-            payload = _clean(event.payload) if isinstance(event.payload, dict) else {}
-            phase = event.phase.value if hasattr(event.phase, "value") else str(event.phase)
-            event_type = event.type.value if hasattr(event.type, "value") else str(event.type)
-            db.add(
-                GameEvent(
-                    id=event.id,
-                    game_id=state.id,
-                    seq=seq,
-                    ts=float(event.ts or 0.0),
-                    day=event.day,
-                    phase=phase,
-                    event_type=event_type,
-                    actor_id=payload.get("actor_id") or payload.get("voter_id") or payload.get("hunter_id"),
-                    target_id=payload.get("target_id") or (payload.get("target") or {}).get("id")
-                    if isinstance(payload.get("target"), dict)
-                    else payload.get("target_id"),
-                    visibility=event.visibility,
-                    content=payload,
-                )
-            )
-
-        # Bulk-save decisions
-        db.query(AgentDecision).filter(AgentDecision.game_id == state.id).delete()
-        for record in state.decision_records:
-            db.add(
-                AgentDecision(
-                    id=record.id,
-                    game_id=state.id,
-                    player_id=record.player_id,
-                    day=record.day,
-                    phase=str(record.phase),
-                    observation=_clean(record.observation) if isinstance(record.observation, dict) else {},
-                    legal_actions=list(record.legal_actions or []),
-                    prompt_version=record.prompt_version or "v1",
-                    raw_output=_clean(record.raw_output or ""),
-                    parsed_action=_clean(record.parsed_action) if isinstance(record.parsed_action, dict) else {},
-                    is_valid=bool(record.is_valid),
-                    error_type=record.error_type,
-                    latency_ms=record.latency_ms,
-                    prompt_tokens=record.prompt_tokens,
-                    completion_tokens=record.completion_tokens,
-                    # v2 DecisionTrace fields
-                    candidate_actions=_clean(getattr(record, "candidate_actions", None) or []),
-                    visible_facts=_clean(getattr(record, "visible_facts", None) or []),
-                    confidence=getattr(record, "confidence", None),
-                    prompt_hash=getattr(record, "prompt_hash", None),
-                    cost_usd=getattr(record, "cost_usd", None),
-                    model_name=getattr(record, "model_name", None),
-                    provider=getattr(record, "provider", None),
-                    decision_metadata=_clean(getattr(record, "metadata", None) or {}),
-                )
-            )
-
-        # Bulk-save votes from history
-        db.query(Vote).filter(Vote.game_id == state.id).delete()
-        for day, voted in state.vote_history.items():
-            for voter_id, target_id in voted.items():
-                db.add(
-                    Vote(
-                        game_id=state.id,
-                        day=int(day),
-                        voter_id=voter_id,
-                        target_id=target_id,
-                    )
-                )
-
-        # Keep the ordered live snapshot history for SSE replay and upsert the
-        # final authoritative state at the last committed event sequence.
-        try:
-            truth = _clean(state.snapshot(show_private=True))
-            public = _clean(state.snapshot(show_private=False))
-            final_seq = int(truth.get("seq") or len(state.events))
-            snapshot = (
-                db.query(GameSnapshot).filter(GameSnapshot.game_id == state.id, GameSnapshot.seq == final_seq).first()
-            )
-            if snapshot is None:
-                snapshot = GameSnapshot(game_id=state.id, seq=final_seq)
-                db.add(snapshot)
-            snapshot.day = state.day
-            snapshot.phase = state.phase.value
-            snapshot.truth_state = truth
-            snapshot.public_state = public
-        except Exception:
-            pass
-
         if include_post_game:
             _save_post_game_metrics(db, state)
             _ensure_track_c_post_game_job_row(db, state.id, source="game_end")
-
         db.commit()
     finally:
         db.close()
@@ -489,8 +508,118 @@ def save_game_end(state: GameState, *, include_post_game: bool = True) -> None:
 
 
 def save_match_end(state: GameState) -> None:
-    """Persist only the authoritative result owned by the Match Worker."""
+    """Legacy helper for callers that only persist authoritative match facts."""
     save_game_end(state, include_post_game=False)
+
+
+def complete_match_transaction(state: GameState, *, job_id: str, worker_id: str) -> None:
+    """Atomically finish a match and create its durable analysis boundary.
+
+    The final game facts, Match Job completion, Track B/C job and outbox event
+    commit together. A process crash before commit leaves the match claim
+    recoverable instead of producing a finished match without analysis work.
+    """
+    init_db()
+    db = SessionLocal()
+    try:
+        game = _persist_finished_game(db, state)
+        if game is None:
+            raise RuntimeError(f"Game {state.id} does not exist")
+        job = (
+            db.query(MatchJob)
+            .filter(MatchJob.id == job_id, MatchJob.game_id == state.id, MatchJob.worker_id == worker_id)
+            .first()
+        )
+        if job is None:
+            raise RuntimeError(f"Worker {worker_id} no longer owns match job {job_id}")
+        job.status = "completed"
+        job.control_state = "completed"
+        job.finished_at = _now()
+        job.lease_expires_at = None
+        job.last_error = ""
+
+        room = db.query(GameRoom).filter(GameRoom.id == job.room_id).first()
+        if room is not None:
+            history = list(room.game_history or [])
+            if state.id not in history:
+                history.append(state.id)
+            room.game_history = history
+            room.current_game_id = state.id
+            room.status = "completed"
+            room.updated_at = _now().timestamp()
+            snapshot = (
+                db.query(GameSnapshot)
+                .filter(GameSnapshot.game_id == state.id)
+                .order_by(GameSnapshot.seq.desc())
+                .first()
+            )
+            if snapshot is not None:
+                room.latest_snapshot = snapshot.truth_state
+
+        _ensure_track_c_post_game_job_row(db, state.id, source="match_completion")
+        _ensure_match_analysis_outbox(db, state.id, source="match_completion")
+        db.commit()
+    finally:
+        db.close()
+
+
+def dispatch_match_analysis_outbox(*, limit: int = 50) -> int:
+    """Relay committed analysis events into the durable Analysis Job table."""
+    init_db()
+    db = SessionLocal()
+    try:
+        query = (
+            db.query(OutboxEvent)
+            .filter(OutboxEvent.event_type == "match.analysis.requested", OutboxEvent.status == "pending")
+            .order_by(OutboxEvent.created_at.asc())
+            .limit(max(1, limit))
+        )
+        if db.bind is not None and db.bind.dialect.name == "postgresql":
+            query = query.with_for_update(skip_locked=True)
+        events = query.all()
+        for event in events:
+            game_id = str(event.aggregate_id)
+            _ensure_track_c_post_game_job_row(db, game_id, source="outbox_relay")
+            event.status = "published"
+            event.attempts = int(event.attempts or 0) + 1
+            event.published_at = _now()
+        db.commit()
+        return len(events)
+    finally:
+        db.close()
+
+
+def reconcile_finished_match_analysis(*, limit: int = 100) -> int:
+    """Repair finished games missing either side of the analysis boundary."""
+    init_db()
+    db = SessionLocal()
+    try:
+        rows = (
+            db.query(Game)
+            .outerjoin(TrackCPostGameJob, TrackCPostGameJob.game_id == Game.id)
+            .outerjoin(
+                OutboxEvent,
+                and_(
+                    OutboxEvent.aggregate_type == "match",
+                    OutboxEvent.aggregate_id == Game.id,
+                    OutboxEvent.event_type == "match.analysis.requested",
+                ),
+            )
+            .filter(
+                Game.status == "finished",
+                or_(TrackCPostGameJob.id.is_(None), OutboxEvent.id.is_(None)),
+            )
+            .order_by(Game.finished_at.asc(), Game.id.asc())
+            .limit(max(1, limit))
+            .all()
+        )
+        for game in rows:
+            _ensure_track_c_post_game_job_row(db, game.id, source="reconciler")
+            _ensure_match_analysis_outbox(db, game.id, source="reconciler")
+        db.commit()
+        return len(rows)
+    finally:
+        db.close()
 
 
 def _save_post_game_metrics(db, state: GameState) -> None:

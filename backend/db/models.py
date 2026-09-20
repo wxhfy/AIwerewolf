@@ -579,10 +579,11 @@ class StrategyKnowledgeDoc(Base):
 class TrackCPostGameJob(Base):
     """Durable post-game Track C recovery job.
 
-    A finished game first creates a pending job in the same DB transaction as
-    `save_game_end`. The app then marks the job running while Track B/C scoring
-    executes and completes it after candidate promotion. If the process exits
-    mid-flight, startup recovery can claim stale pending/running jobs and retry.
+    A finished game creates a pending job and an outbox event in the same DB
+    transaction as match completion. The Analysis Worker then marks the job
+    running while Track B/C scoring executes and completes it after candidate
+    promotion. If the process exits mid-flight, recovery can claim stale
+    pending/running jobs and retry.
     """
 
     __tablename__ = "track_c_post_game_jobs"

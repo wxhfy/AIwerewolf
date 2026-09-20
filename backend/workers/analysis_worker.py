@@ -7,7 +7,9 @@ import threading
 
 from backend.application.analysis.service import PostGameAnalysisService
 from backend.db.database import init_db
+from backend.db.persist import dispatch_match_analysis_outbox
 from backend.db.persist import list_recoverable_track_c_post_game_jobs
+from backend.db.persist import reconcile_finished_match_analysis
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +26,8 @@ class AnalysisWorker:
         self.stop_event.set()
 
     def run_once(self) -> int:
+        dispatch_match_analysis_outbox(limit=self.batch_size * 2)
+        reconcile_finished_match_analysis(limit=self.batch_size * 2)
         jobs = list_recoverable_track_c_post_game_jobs(
             limit=self.batch_size,
             stale_after_seconds=self.stale_after_seconds,

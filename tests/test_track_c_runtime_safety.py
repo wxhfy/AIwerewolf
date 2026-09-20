@@ -23,8 +23,11 @@ from backend.db.models import Base
 from backend.db.models import Evaluation
 from backend.db.models import Game
 from backend.db.models import GameEvent
+from backend.db.models import GameRoom
 from backend.db.models import GameSnapshot
 from backend.db.models import LeaderboardEntry
+from backend.db.models import MatchJob
+from backend.db.models import OutboxEvent
 from backend.db.models import Player
 from backend.db.models import TrackCPostGameJob
 from backend.db.models import Vote
@@ -61,6 +64,9 @@ def _sqlite_sessionmaker():
             Evaluation.__table__,
             LeaderboardEntry.__table__,
             TrackCPostGameJob.__table__,
+            MatchJob.__table__,
+            GameRoom.__table__,
+            OutboxEvent.__table__,
         ],
     )
     return engine, sessionmaker(bind=engine)
@@ -687,6 +693,87 @@ def test_save_game_end_creates_track_c_post_game_job(monkeypatch) -> None:
 
     assert job.status == "pending"
     assert job.attempts == 0
+
+
+def test_complete_match_transaction_is_atomic_and_emits_outbox(monkeypatch) -> None:
+    engine, TestingSession = _sqlite_sessionmaker()
+    monkeypatch.setattr(persist, "init_db", lambda: None)
+    monkeypatch.setattr(persist, "SessionLocal", lambda: TestingSession())
+
+    state = GameState(
+        id="atomic-game-1",
+        phase=Phase.GAME_END,
+        day=1,
+        players=[
+            EnginePlayer(id="P1", seat=1, name="狼", role=Role.WEREWOLF, alignment=Alignment.WOLF),
+            EnginePlayer(id="P2", seat=2, name="村民", role=Role.VILLAGER, alignment=Alignment.VILLAGE),
+        ],
+        winner=Alignment.WOLF,
+    )
+    persist.save_game_start(state)
+    session = TestingSession()
+    session.add(GameRoom(id="room-atomic", name="Atomic", player_count=2))
+    session.add(
+        MatchJob(
+            id="match-job-atomic",
+            game_id=state.id,
+            room_id="room-atomic",
+            status="running",
+            worker_id="worker-atomic",
+            payload={},
+        )
+    )
+    session.commit()
+    session.close()
+
+    persist.complete_match_transaction(state, job_id="match-job-atomic", worker_id="worker-atomic")
+
+    verify = TestingSession()
+    game = verify.query(Game).filter(Game.id == state.id).one()
+    job = verify.query(MatchJob).filter(MatchJob.id == "match-job-atomic").one()
+    post_game = verify.query(TrackCPostGameJob).filter(TrackCPostGameJob.game_id == state.id).one()
+    outbox = verify.query(OutboxEvent).filter(OutboxEvent.aggregate_id == state.id).one()
+    verify.close()
+    engine.dispose()
+
+    assert game.status == "finished"
+    assert job.status == "completed"
+    assert post_game.status == "pending"
+    assert outbox.event_type == "match.analysis.requested"
+    assert outbox.status == "pending"
+
+
+def test_match_analysis_outbox_relay_is_idempotent(monkeypatch) -> None:
+    engine, TestingSession = _sqlite_sessionmaker()
+    monkeypatch.setattr(persist, "init_db", lambda: None)
+    monkeypatch.setattr(persist, "SessionLocal", lambda: TestingSession())
+
+    session = TestingSession()
+    session.add(Game(id="atomic-game-2", status="finished", current_day=1, current_phase="GAME_END"))
+    session.add(
+        OutboxEvent(
+            aggregate_type="match",
+            aggregate_id="atomic-game-2",
+            event_type="match.analysis.requested",
+            payload={"game_id": "atomic-game-2"},
+            status="pending",
+        )
+    )
+    session.commit()
+    session.close()
+
+    assert persist.dispatch_match_analysis_outbox(limit=10) == 1
+    assert persist.dispatch_match_analysis_outbox(limit=10) == 0
+
+    verify = TestingSession()
+    job = verify.query(TrackCPostGameJob).filter(TrackCPostGameJob.game_id == "atomic-game-2").one()
+    event = verify.query(OutboxEvent).filter(OutboxEvent.aggregate_id == "atomic-game-2").one()
+    verify.close()
+    engine.dispose()
+
+    assert job.status == "pending"
+    assert event.status == "published"
+    assert event.attempts == 1
 
 
 def test_track_c_post_game_job_claim_complete_and_recoverable(monkeypatch) -> None:

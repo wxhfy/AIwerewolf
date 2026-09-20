@@ -30,7 +30,7 @@ Frontend -> REST command -> API -> PostgreSQL job/command
                                   |
                     Redis notification -> API SSE -> Frontend
 
-Durably completed match -> post-game job -> Analysis Worker
+Durably completed match + outbox event -> relay -> post-game job -> Analysis Worker
                                   |-> Track B decision_evaluations / PublishedReview
                                   |-> optional Agent reflection
                                   `-> Track C strategy_knowledge_docs
@@ -84,7 +84,9 @@ The Outbox publisher is intentionally not started yet. Rows are durable and quer
 
 `005_analysis_pipeline.sql` adds `decision_evaluations`. Each row is keyed by decision plus evaluator version, making Track B rescoring idempotent and allowing future evaluator upgrades without overwriting historical scores. Track C remains durable in `strategy_knowledge_docs`, including provenance, confidence, lifecycle status, version lineage and usage feedback.
 
-The Match Worker persists only authoritative gameplay facts. `PublishedReview`,
+The Match Worker persists authoritative gameplay facts, completes its lease,
+creates the post-game job, and records an outbox event in one transaction.
+`PublishedReview`,
 leaderboard projections, per-step evaluation, strategy extraction, and optional
 Agent reflection run after match completion. The Analysis Worker reconstructs
 the event-rich final state from PostgreSQL, so derived work neither holds the

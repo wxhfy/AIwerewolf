@@ -11,10 +11,10 @@ from backend.application.matches.repository import ClaimedMatchJob
 from backend.application.matches.repository import MatchJobRepository
 from backend.application.matches.spec import MatchExecutionSpec
 from backend.db.database import init_db
+from backend.db.persist import complete_match_transaction
 from backend.db.persist import save_decisions_batch
 from backend.db.persist import save_event
 from backend.db.persist import save_game_start
-from backend.db.persist import save_match_end
 from backend.db.persist import save_snapshot
 from backend.engine.game import WerewolfGame
 from backend.engine.models import GameState
@@ -35,14 +35,6 @@ def persist_snapshot(state: GameState) -> None:
     seq = int(moderator.get("seq") or 0)
     save_snapshot(state.id, seq, state.day, state.phase.value, moderator, public)
     match_notifications.publish(state.id, seq)
-
-
-def enqueue_post_game_analysis(state: GameState) -> None:
-    from backend.db.persist import ensure_track_c_post_game_job
-
-    game_id = str(state.id)
-    ensure_track_c_post_game_job(game_id, source="match_worker")
-    logger.info("Post-game analysis queued for match %s", game_id)
 
 
 def build_game(
@@ -99,7 +91,7 @@ def prepare_game(
         sampled_personas=sampled_personas,
         persona_sampler=_sample_personas,
         on_game_start=save_game_start,
-        on_game_end=save_match_end,
+        on_game_end=None,
         on_event=save_event,
         on_decisions_flush=save_decisions_batch,
         on_post_game=None,
@@ -173,15 +165,10 @@ class MatchExecutor:
 
         game.observer = observe
         state = game.play()
-        persist_snapshot(state)
-        self.repository.complete(job.id, self.worker_id)
+        complete_match_transaction(state, job_id=job.id, worker_id=self.worker_id)
+        final_snapshot = state.snapshot(show_private=True)
+        match_notifications.publish(state.id, int(final_snapshot.get("seq") or len(state.events)))
         logger.info("Match %s completed with winner=%s", state.id, state.winner.value if state.winner else None)
-        try:
-            enqueue_post_game_analysis(state)
-        except Exception:
-            # Gameplay is already durable and complete. Analysis has its own
-            # retry lifecycle and cannot change the match outcome.
-            logger.exception("Match %s completed but post-game enqueue failed", state.id)
         return state
 
 

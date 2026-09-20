@@ -60,9 +60,10 @@ Adapters implement repositories, Redis coordination, outbox delivery, LLM client
 4. Domain handles the command and emits ordered events.
 5. AgentRuntime is called only when the domain emits a decision request.
 6. Events, snapshots, and decision traces are persisted as authoritative match facts.
-7. Match Worker marks the match job completed.
-8. Only after completion, it creates a durable post-game analysis job.
-9. Analysis Worker rebuilds its input from PostgreSQL and runs scoring, reports,
+7. Match Worker atomically commits final facts, Match Job completion, the
+   Analysis Job, and a transactional outbox event.
+8. Analysis Worker relays the outbox event and rebuilds its input from
+   PostgreSQL, then runs scoring, reports,
    Agent reflection, and strategy extraction without holding the match lease.
 10. SSE reads durable events and pushes them in seq order.
 11. Reconnecting clients resume with Last-Event-ID or after_seq.
@@ -71,9 +72,20 @@ Adapters implement repositories, Redis coordination, outbox delivery, LLM client
 SSE is a delivery channel, not persistence. Recovery always reads PostgreSQL.
 
 Match completion is also a lifecycle boundary. An analysis enqueue failure is
-reported and recoverable, but it cannot turn a durably completed match into a
-failed match. Agent `finish()` ends runtime state only; optional reflection is
-an Analysis Worker capability controlled by its own configuration.
+committed in the same transaction as the completed match, so it cannot create
+a finished match without a recoverable analysis boundary. The outbox relay is
+idempotent and a reconciler repairs older finished matches. Agent `finish()`
+ends runtime state only; optional reflection is an Analysis Worker capability
+controlled by its own configuration.
+
+### Transactional Outbox
+
+The Match Worker does not call the Analysis Worker directly. It writes an
+`outbox_events` row in the same PostgreSQL transaction as the final game facts
+and job completion. A relay later turns the committed event into the durable
+`track_c_post_game_jobs` work item. If the process crashes before commit,
+nothing is marked complete; if it crashes after commit, the relay or
+reconciler can safely retry because both operations are idempotent.
 
 ## Process, Thread, and Coroutine Model
 
