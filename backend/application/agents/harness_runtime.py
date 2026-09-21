@@ -11,6 +11,9 @@ from backend.agent_harness.contracts import HarnessResult
 from backend.agent_memory import ActorMemoryService
 from backend.agent_memory import SqlActorMemoryRepository
 from backend.application.agents.harness_event_repository import SqlHarnessEventRepository
+from backend.domains.werewolf.capabilities import build_capability_policy
+from backend.domains.werewolf.capabilities import build_skill_registry
+from backend.domains.werewolf.capabilities import build_tool_gateway
 from backend.domains.werewolf.planner import LLMActionPlanner
 from backend.engine.models import Player
 from backend.llm import create_client
@@ -57,6 +60,9 @@ def build_harness_runtime(players: list[Player], config: dict[str, Any]) -> Rout
     harnesses: dict[str, AgentHarness] = {}
     profiles: dict[str, dict[str, Any]] = {}
     definition_ids: dict[str, str] = {}
+    skills = build_skill_registry()
+    tools = build_tool_gateway()
+    policy = build_capability_policy()
 
     for player in players:
         player_config = deepcopy(config)
@@ -83,9 +89,13 @@ def build_harness_runtime(players: list[Player], config: dict[str, Any]) -> Rout
         player.is_ai = True
         player.agent_type = "harness"
         player.model_name = str(getattr(client, "model", ""))
+        harness_mode = str(player_config.get("harness_mode") or config.get("harness_mode") or "direct").lower()
         configured_tool_calling = player_config.get("tool_calling")
         if configured_tool_calling is None:
-            configured_tool_calling = "xing4.0" in player.model_name.lower()
+            configured_tool_calling = "xing4.0" in player.model_name.lower() or (
+                harness_mode == "agentic"
+                and str(getattr(client, "provider", "")).lower() in {"bigmodel", "siliconflow"}
+            )
         client.supports_tool_calling = bool(configured_tool_calling)
         profiles[player.id] = {
             "display_name": player.name,
@@ -94,10 +104,14 @@ def build_harness_runtime(players: list[Player], config: dict[str, Any]) -> Rout
             "persona": player.persona,
             "strategy_bias": player_config.get("strategy_bias") or config.get("strategy_bias") or {},
             "strategy_version": player_config.get("strategy_version") or config.get("strategy_version") or "",
+            "harness_mode": harness_mode,
         }
         definition_ids[player.id] = f"werewolf:{player.role.value}:{player.model_name or 'default'}"
         harnesses[player.id] = AgentHarness(
-            LLMActionPlanner(client, temperature=float(player_config.get("temperature", 0.7)))
+            LLMActionPlanner(client, temperature=float(player_config.get("temperature", 0.7))),
+            skills=skills,
+            tools=tools,
+            policy=policy,
         )
 
     deadline_ms = int(float(config.get("deadline_ms") or os.getenv("AGENT_DECISION_DEADLINE_MS", "30000")))

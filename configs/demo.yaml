@@ -6,7 +6,8 @@ game:
 agents:
   type: llm
   seed: 7
-  # Set LLM_PROVIDER=fake for local no-cost smoke tests, or configure provider/model below.
+  # Provider resolution: explicit fields below, then LLM_PROVIDER, then the factory default.
+  # Official free GLM example: LLM_PROVIDER=bigmodel, GLM_MODEL=glm-4-flash-250414.
   # provider: doubao
   # model: doubao-seed-2-0-pro-250528
   # role_models:

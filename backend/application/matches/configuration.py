@@ -5,7 +5,7 @@ from typing import Any
 
 import yaml
 
-from backend.application.agents.runtime import LocalAgentRuntime
+from backend.application.matches.executor import build_game
 from backend.engine.game import WerewolfGame
 from backend.engine.models import Role
 from backend.engine.rules import build_players
@@ -35,11 +35,11 @@ def game_from_config(path: str | Path) -> WerewolfGame:
     else:
         players = build_players(seed=seed)
 
-    game = WerewolfGame(
-        players=players,
+    return build_game(
         seed=seed,
-        max_days=int(game_config.get("max_days", 8)),
+        agent_type=str(agent_config.pop("type", "llm")),
         player_count=len(players),
+        max_days=int(game_config.get("max_days", 8)),
+        players=players,
+        llm_config=agent_config,
     )
-    LocalAgentRuntime().attach(game, agent_config)
-    return game

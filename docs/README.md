@@ -14,6 +14,7 @@
 | [`architecture/COLLABORATION.md`](architecture/COLLABORATION.md) | 前端、后端平台、Agent 三方协作边界 |
 | [`architecture/AGENT_HARNESS_V2.md`](architecture/AGENT_HARNESS_V2.md) | 非对称信息智能体执行框架 |
 | [`architecture/COGNITIVE_MEMORY.md`](architecture/COGNITIVE_MEMORY.md) | 动态角色记忆与上下文裁剪设计 |
+| [`architecture/MODEL_VALIDATION_GLM.md`](architecture/MODEL_VALIDATION_GLM.md) | 智谱官方与 SiliconFlow 托管 GLM 的真实整局验证 |
 | [`prd.md`](prd.md) | 产品需求、系统目标和验收范围 |
 | [`../DEPLOY.md`](../DEPLOY.md) | 当前部署与本地运行说明 |
 

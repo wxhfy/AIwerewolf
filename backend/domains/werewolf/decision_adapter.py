@@ -13,6 +13,9 @@ from backend.agent_harness.contracts import HarnessBudget
 from backend.agent_harness.contracts import HarnessResult
 from backend.agent_harness.contracts import InformationState
 from backend.agent_harness.contracts import MemoryScope
+from backend.domains.werewolf.capabilities import EVIDENCE_SKILL
+from backend.domains.werewolf.capabilities import EVIDENCE_TOOL
+from backend.domains.werewolf.capabilities import role_skill_name
 from backend.engine.models import ActionType
 from backend.engine.models import Decision
 from backend.engine.models import GameState
@@ -63,6 +66,10 @@ class WerewolfDecisionAdapter:
         profile = dict(agent_profile or {})
         strategy_bias = profile.pop("strategy_bias", None)
         strategy_version = profile.pop("strategy_version", None)
+        harness_mode = str(profile.get("harness_mode") or "direct").strip().lower()
+        if harness_mode not in {"direct", "agentic"}:
+            harness_mode = "direct"
+        agentic = harness_mode == "agentic"
         knowledge_context = ()
         if strategy_bias:
             knowledge_context = (
@@ -107,6 +114,8 @@ class WerewolfDecisionAdapter:
             action_space=ActionSpace(options=tuple(options)),
             memory_scope=MemoryScope(namespace="match", episode_id=state.id, actor_id=player.id),
             knowledge_context=knowledge_context,
+            skill_scope=(frozenset({EVIDENCE_SKILL, role_skill_name(player.role.value)}) if agentic else frozenset()),
+            tool_scope=frozenset({EVIDENCE_TOOL}) if agentic else frozenset(),
             policy_tags=frozenset({"role-safe-view", "environment-owned-actions"}),
             agent_profile=profile,
             domain_metadata={
@@ -115,11 +124,14 @@ class WerewolfDecisionAdapter:
                 "alignment": player.alignment.value,
                 "day": state.day,
                 "phase": state.phase.value,
+                "harness_mode": harness_mode,
             },
             budget=HarnessBudget(
-                max_steps=2 if request_kind in _DELIBERATIVE_REQUESTS else 1,
-                max_tool_calls=0,
-                max_skill_loads=0,
+                max_steps=(4 if request_kind in _DELIBERATIVE_REQUESTS else 3)
+                if agentic
+                else (2 if request_kind in _DELIBERATIVE_REQUESTS else 1),
+                max_tool_calls=1 if agentic else 0,
+                max_skill_loads=1 if agentic else 0,
                 max_output_tokens=self._output_token_budget(request_kind, len(options)),
                 deadline_ms=deadline_ms,
             ),
@@ -127,18 +139,10 @@ class WerewolfDecisionAdapter:
 
     @staticmethod
     def _compact_player(player: dict[str, Any], *, include_private: bool = False) -> dict[str, Any]:
-        compact = {
-            key: player[key]
-            for key in ("id", "seat", "name", "alive")
-            if key in player
-        }
+        compact = {key: player[key] for key in ("id", "seat", "name", "alive") if key in player}
         persona = dict(player.get("persona") or {})
         if persona:
-            compact["persona"] = {
-                key: persona[key]
-                for key in ("style_label", "mbti")
-                if persona.get(key)
-            }
+            compact["persona"] = {key: persona[key] for key in ("style_label", "mbti") if persona.get(key)}
         if include_private:
             for key in ("role", "alignment"):
                 if key in player:

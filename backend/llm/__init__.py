@@ -29,6 +29,10 @@ _DEFAULT_DEEPSEEK_ANTHROPIC_BASE_URL = "https://api.deepseek.com/anthropic"
 _DEFAULT_DEEPSEEK_ANTHROPIC_MODEL = "deepseek-v4-flash"
 _DEFAULT_ANTHROPIC_BASE_URL = "https://api.anthropic.com"
 _DEFAULT_ANTHROPIC_MODEL = "claude-sonnet-4-6"
+_DEFAULT_SILICONFLOW_BASE_URL = "https://api.siliconflow.cn/v1"
+_DEFAULT_SILICONFLOW_MODEL = "THUDM/GLM-4-9B-0414"
+_DEFAULT_BIGMODEL_BASE_URL = "https://open.bigmodel.cn/api/paas/v4"
+_DEFAULT_BIGMODEL_MODEL = "glm-4-flash-250414"
 
 # Multi-model pool: "provider:model" entries, comma-separated
 # Supports: doubao, dsv4flash, ark (generic Ark API), deepseek, mimo
@@ -62,6 +66,8 @@ def create_client(provider: str | None = None, **kwargs) -> Any:
     - deepseek: DeepSeek v4 Flash (fallback)
     - mimo: local OpenAI-compatible endpoint configured by MIMO_BASE_URL
     - weapi: OpenAI-compatible endpoint at https://weapi.pw/v1
+    - bigmodel: Zhipu BigModel OpenAI-compatible endpoint
+    - siliconflow: SiliconFlow OpenAI-compatible endpoint
     """
     import os
 
@@ -94,6 +100,8 @@ def create_client(provider: str | None = None, **kwargs) -> Any:
                 provider = "deepseek"
             elif "mimo" in base_url:
                 provider = "mimo"
+            elif "open.bigmodel.cn" in base_url:
+                provider = "bigmodel"
             elif "ark." in base_url or "volces" in base_url:
                 provider = "doubao"
         if provider is None and explicit_model:
@@ -106,6 +114,10 @@ def create_client(provider: str | None = None, **kwargs) -> Any:
                 provider = "mimo"
             elif "doubao" in model_name:
                 provider = "doubao"
+            elif model_name.startswith("glm-"):
+                provider = "bigmodel"
+            elif any(marker in model_name for marker in ("thudm/", "qwen/", "tencent/")):
+                provider = "siliconflow"
         if provider is None:
             provider = os.getenv("LLM_PROVIDER", _DEFAULT_PROVIDER)
     provider = str(provider).strip().lower()
@@ -231,6 +243,48 @@ def create_client(provider: str | None = None, **kwargs) -> Any:
         )
         client.provider = "weapi"
         return client
+    elif provider in {"bigmodel", "zhipu", "glm"}:
+        api_key = kwargs.pop("api_key", None) or os.getenv("BIGMODEL_API_KEY", "") or os.getenv("ZHIPU_API_KEY", "")
+        api_key = api_key or os.getenv("GLM_API_KEY", "")
+        raw_base_url = (
+            kwargs.pop("base_url", None)
+            or os.getenv("BIGMODEL_BASE_URL", "")
+            or os.getenv("ZHIPU_BASE_URL", "")
+            or os.getenv("GLM_BASE_URL", "")
+            or _DEFAULT_BIGMODEL_BASE_URL
+        )
+        base_url = _normalize_chat_completions_base_url(str(raw_base_url))
+        model = (
+            kwargs.pop("model", None)
+            or os.getenv("BIGMODEL_MODEL", "")
+            or os.getenv("ZHIPU_MODEL", "")
+            or os.getenv("GLM_MODEL", "")
+            or _DEFAULT_BIGMODEL_MODEL
+        )
+        if not api_key:
+            return _UnavailableLLMClient(provider="bigmodel", model=model, base_url=base_url)
+        client = DeepSeekClient(
+            api_key=api_key,
+            base_url=base_url,
+            model=model,
+            **kwargs,
+        )
+        client.provider = "bigmodel"
+        return client
+    elif provider in {"siliconflow", "silicon_flow"}:
+        api_key = kwargs.pop("api_key", None) or os.getenv("SILICONFLOW_API_KEY", "")
+        base_url = kwargs.pop("base_url", None) or os.getenv("SILICONFLOW_BASE_URL", _DEFAULT_SILICONFLOW_BASE_URL)
+        model = kwargs.pop("model", None) or os.getenv("SILICONFLOW_MODEL", _DEFAULT_SILICONFLOW_MODEL)
+        if not api_key:
+            return _UnavailableLLMClient(provider="siliconflow", model=model, base_url=base_url)
+        client = DeepSeekClient(
+            api_key=api_key,
+            base_url=base_url,
+            model=model,
+            **kwargs,
+        )
+        client.provider = "siliconflow"
+        return client
     elif provider == "anthropic":
         # Anthropic-format API (Messages endpoint). The product settings default
         # to DeepSeek's Anthropic-compatible endpoint, while still accepting the
@@ -288,7 +342,8 @@ def create_client(provider: str | None = None, **kwargs) -> Any:
         return client
     else:
         raise ValueError(
-            f"Unknown LLM provider: {provider}. Supported: doubao, deepseek, dsv4flash, ark, mimo, weapi, anthropic"
+            f"Unknown LLM provider: {provider}. Supported: doubao, deepseek, dsv4flash, ark, mimo, weapi, "
+            "bigmodel, siliconflow, anthropic"
         )
 
 
@@ -297,3 +352,12 @@ def _normalize_openai_compatible_base_url(base_url: str) -> str:
     if stripped.endswith("/v1"):
         return stripped
     return f"{stripped}/v1"
+
+
+def _normalize_chat_completions_base_url(base_url: str) -> str:
+    """Normalize either an API root or a full chat-completions endpoint."""
+    stripped = base_url.rstrip("/")
+    suffix = "/chat/completions"
+    if stripped.endswith(suffix):
+        return stripped[: -len(suffix)]
+    return stripped

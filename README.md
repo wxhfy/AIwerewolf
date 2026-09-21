@@ -235,8 +235,10 @@ cd frontend && npm run lint && npm run build
 |---|---|
 | [`docs/architecture/SYSTEM_AND_AGENT_DESIGN.md`](docs/architecture/SYSTEM_AND_AGENT_DESIGN.md) | 整体架构、Agent 设计、理念、信息流与预期效果 |
 | [`docs/architecture/BACKEND_SKELETON.md`](docs/architecture/BACKEND_SKELETON.md) | 后端接口、中间件、数据表和实现边界 |
+| [`docs/architecture/AGENT_HARNESS_V2.md`](docs/architecture/AGENT_HARNESS_V2.md) | Agent 上下文、Skill/Tool 微循环、发言理解、策略评测与 Track C 协同 |
 | [`docs/architecture/COGNITIVE_MEMORY.md`](docs/architecture/COGNITIVE_MEMORY.md) | 动态角色记忆与上下文裁剪 |
-| [`docs/architecture/MODEL_VALIDATION_2026-09-20.md`](docs/architecture/MODEL_VALIDATION_2026-09-20.md) | 免费模型接入与真实对局验证 |
+| [`docs/architecture/MODEL_VALIDATION_GLM.md`](docs/architecture/MODEL_VALIDATION_GLM.md) | 智谱官方与 SiliconFlow 托管 GLM 的真实整局验证 |
+| [`docs/architecture/MODEL_VALIDATION_2026-09-20.md`](docs/architecture/MODEL_VALIDATION_2026-09-20.md) | Hunyuan、OCR 和 Xing 历史验证 |
 | [`docs/architecture/PRODUCTION_PLAN.md`](docs/architecture/PRODUCTION_PLAN.md) | 3000 QPM 生产化路线 |
 | [`REQUIREMENTS.md`](REQUIREMENTS.md) | 当前需求与验收标准 |
 | [`docs/prd.md`](docs/prd.md) | 产品范围和用户流程 |

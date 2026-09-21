@@ -62,8 +62,11 @@ class LLMActionPlanner:
                         "role": "system",
                         "content": (
                             "You are an autonomous actor in an asymmetric-information environment. "
-                            "Use only the supplied information_state. Select exactly one server-generated option_id. "
-                            "Return JSON only: {\"option_id\": string, \"response\": object, \"reasoning\": string}."
+                            "Use only the supplied actor-visible context. You may load one advertised skill or call "
+                            "one advertised read-only tool when that capability is available and materially useful. "
+                            "Otherwise select exactly one server-generated option_id. Never invent hidden facts. "
+                            "Finish by calling submit_action, or return JSON only: "
+                            '{"option_id": string, "response": object, "reasoning": string}.'
                         ),
                     },
                     {
@@ -75,10 +78,17 @@ class LLMActionPlanner:
                 temperature=self.temperature,
                 max_tokens=request.budget.max_output_tokens,
                 remaining_ms=self._remaining(context.remaining_ms, started),
-                **self._tool_arguments(request),
+                **self._tool_arguments(request, context),
             )
         except Exception as exc:
             return self._fallback_step(request, f"model call failed: {type(exc).__name__}: {exc}")
+
+        try:
+            control_step = self._control_step_from_response(response, context)
+        except Exception as exc:
+            return self._fallback_step(request, f"invalid harness control call: {type(exc).__name__}: {exc}")
+        if control_step is not None:
+            return control_step
         content = self._raw_selection_text(response)
         repair_used = False
         repair_error = ""
@@ -120,7 +130,7 @@ class LLMActionPlanner:
                     temperature=0.0,
                     max_tokens=min(400, request.budget.max_output_tokens),
                     remaining_ms=self._remaining(context.remaining_ms, started),
-                    **self._tool_arguments(request),
+                    **self._tool_arguments(request, context, final_only=True),
                 )
                 content = self._raw_selection_text(repaired)
                 response = repaired
@@ -169,33 +179,78 @@ class LLMActionPlanner:
             **kwargs,
         )
 
-    def _tool_arguments(self, request: DecisionRequest) -> dict[str, Any]:
+    def _tool_arguments(
+        self,
+        request: DecisionRequest,
+        context: PlannerContext,
+        *,
+        final_only: bool = False,
+    ) -> dict[str, Any]:
         if not bool(getattr(self.client, "supports_tool_calling", False)):
             return {}
-        return {
-            "tools": [
-                {
-                    "type": "function",
-                    "function": {
-                        "name": "submit_action",
-                        "description": "Submit exactly one server-generated legal action.",
-                        "parameters": {
-                            "type": "object",
-                            "properties": {
-                                "option_id": {
-                                    "type": "string",
-                                    "enum": [option.option_id for option in request.action_space.options],
+        tools = [self._submit_action_tool(request)]
+        if not final_only:
+            if context.skill_catalog and len(context.loaded_skills) < request.budget.max_skill_loads:
+                tools.append(
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "load_skill",
+                            "description": "Load one advertised trusted strategy skill before deciding.",
+                            "parameters": {
+                                "type": "object",
+                                "properties": {
+                                    "name": {
+                                        "type": "string",
+                                        "enum": [skill.name for skill in context.skill_catalog],
+                                    }
                                 },
-                                "response": {"type": "object"},
-                                "reasoning": {"type": "string"},
+                                "required": ["name"],
+                                "additionalProperties": False,
                             },
-                            "required": ["option_id", "response", "reasoning"],
-                            "additionalProperties": False,
                         },
+                    }
+                )
+            if len(context.tool_results) < request.budget.max_tool_calls:
+                for schema in context.tool_schemas:
+                    tools.append(
+                        {
+                            "type": "function",
+                            "function": {
+                                "name": str(schema["name"]),
+                                "description": str(
+                                    schema.get("description") or "Read actor-visible derived information."
+                                ),
+                                "parameters": dict(schema.get("input_schema") or {"type": "object", "properties": {}}),
+                            },
+                        }
+                    )
+        choice: str | dict[str, Any] = "auto"
+        if len(tools) == 1:
+            choice = {"type": "function", "function": {"name": "submit_action"}}
+        return {"tools": tools, "tool_choice": choice}
+
+    @staticmethod
+    def _submit_action_tool(request: DecisionRequest) -> dict[str, Any]:
+        return {
+            "type": "function",
+            "function": {
+                "name": "submit_action",
+                "description": "Submit exactly one server-generated legal action.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "option_id": {
+                            "type": "string",
+                            "enum": [option.option_id for option in request.action_space.options],
+                        },
+                        "response": {"type": "object"},
+                        "reasoning": {"type": "string"},
                     },
-                }
-            ],
-            "tool_choice": {"type": "function", "function": {"name": "submit_action"}},
+                    "required": ["option_id", "response", "reasoning"],
+                    "additionalProperties": False,
+                },
+            },
         }
 
     @staticmethod
@@ -209,7 +264,39 @@ class LLMActionPlanner:
     @staticmethod
     def _prompt_payload(request: DecisionRequest, context: PlannerContext) -> dict[str, Any]:
         memory = LLMActionPlanner._compact_memory(request.information_state.private_memory)
+        history = list(request.information_state.visible_history[-10:])
+        knowledge = list(request.knowledge_context)
         return {
+            "context_manifest": {
+                "schema_version": "1",
+                "layers": [
+                    "identity_and_policy",
+                    "current_observation",
+                    "visible_recent_history",
+                    "subjective_memory",
+                    "retrieved_cross_episode_knowledge",
+                    "loaded_skills_and_tool_results",
+                    "legal_action_space",
+                ],
+                "limits": {
+                    "visible_history": 10,
+                    "beliefs_per_memory": 8,
+                    "relationships_per_memory": 6,
+                    "recent_claims_per_memory": 8,
+                    "evidence_edges_per_memory": 8,
+                    "retrieved_episodes_per_memory": 4,
+                    "remaining_ms": context.remaining_ms,
+                    "remaining_steps_including_current": max(0, request.budget.max_steps - context.step + 1),
+                },
+                "included": {
+                    "visible_history": len(history),
+                    "private_memory_blocks": len(memory),
+                    "knowledge_items": len(knowledge),
+                    "loaded_skills": len(context.loaded_skills),
+                    "tool_results": len(context.tool_results),
+                    "legal_options": len(request.action_space.options),
+                },
+            },
             "actor": {
                 "actor_id": request.actor.actor_id,
                 "agent_definition_id": request.actor.agent_definition_id,
@@ -220,11 +307,30 @@ class LLMActionPlanner:
             },
             "information_state": {
                 "observation": request.information_state.observation,
-                "visible_history": list(request.information_state.visible_history[-10:]),
+                "visible_history": history,
                 "private_memory": memory,
             },
-            "knowledge_context": list(request.knowledge_context),
+            "knowledge_context": knowledge,
             "prior_reflections": list(context.reflections),
+            "capabilities": {
+                "available_skills": [
+                    {"name": skill.name, "description": skill.description} for skill in context.skill_catalog
+                ],
+                "loaded_skills": [
+                    {"name": skill.name, "instructions": skill.instructions} for skill in context.loaded_skills
+                ],
+                "available_tools": list(context.tool_schemas),
+                "tool_results": [
+                    {
+                        "call_id": result.call_id,
+                        "name": result.name,
+                        "ok": result.ok,
+                        "content": result.content,
+                        "error": result.error,
+                    }
+                    for result in context.tool_results
+                ],
+            },
             "action_options": [
                 {
                     "option_id": option.option_id,
@@ -238,6 +344,35 @@ class LLMActionPlanner:
             "agent_profile": request.agent_profile,
             "domain_metadata": request.domain_metadata,
         }
+
+    @classmethod
+    def _control_step_from_response(
+        cls,
+        response: dict[str, Any],
+        context: PlannerContext,
+    ) -> HarnessStep | None:
+        try:
+            message = response["choices"][0]["message"]
+            tool_calls = message.get("tool_calls") or []
+            if not tool_calls:
+                return None
+            call = tool_calls[0]
+            function = call.get("function") or {}
+            name = str(function.get("name") or "")
+            if name == "submit_action":
+                return None
+            arguments = cls._parse_json_object(str(function.get("arguments") or "{}"))
+            if name == "load_skill":
+                skill_name = str(arguments.get("name") or "")
+                if skill_name not in {skill.name for skill in context.skill_catalog}:
+                    raise RuntimeError(f"LLM requested an unavailable skill: {skill_name}")
+                return HarnessStep.load_skill(skill_name)
+            if name not in {str(schema.get("name") or "") for schema in context.tool_schemas}:
+                raise RuntimeError(f"LLM called an unexpected harness tool: {name}")
+            call_id = str(call.get("id") or f"tool-{context.step}-{name}")
+            return HarnessStep.call_tool(call_id, name, arguments)
+        except (KeyError, IndexError, TypeError, AttributeError) as exc:
+            raise RuntimeError("LLM response contains an invalid harness control call") from exc
 
     @staticmethod
     def _compact_memory(memory_items: tuple[dict[str, Any], ...]) -> list[dict[str, Any]]:
