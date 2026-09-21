@@ -251,6 +251,20 @@ def test_prompt_payload_describes_context_layers_and_loaded_capabilities() -> No
             schema_version="1",
             observation={"players": [{"id": "P1"}, {"id": "P2"}]},
             visible_history=tuple({"seq": index} for index in range(12)),
+            private_memory=(
+                {
+                    "beliefs": [
+                        {
+                            "player_id": "P2",
+                            "wolf_probability": 0.8,
+                            "confidence": 0.7,
+                            "evidence_for": ["P2 contradicted a vote commitment"],
+                        }
+                    ],
+                    "relationships": [],
+                    "recent_claims": [],
+                },
+            ),
         ),
         action_space=ActionSpace(
             options=(ActionOption(option_id="vote:P2", action_type="vote", parameters={"target_id": "P2"}),)
@@ -272,6 +286,9 @@ def test_prompt_payload_describes_context_layers_and_loaded_capabilities() -> No
     assert payload["context_manifest"]["included"]["visible_history"] == 10
     assert payload["context_manifest"]["layers"][-1] == "legal_action_space"
     assert payload["capabilities"]["loaded_skills"] == []
+    assert "derived_strategy_state" in payload["context_manifest"]["layers"]
+    assert payload["strategy_state"]["suspect_ranking"][0]["player_id"] == "P2"
+    assert payload["strategy_state"]["provenance"] == "derived_only_from_actor_visible_memory"
 
 
 def test_llm_planner_can_call_actor_scoped_evidence_tool_then_submit_action() -> None:

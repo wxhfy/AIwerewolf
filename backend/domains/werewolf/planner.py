@@ -11,6 +11,8 @@ from backend.agent_harness.contracts import HarnessStep
 from backend.agent_harness.contracts import PlannerContext
 from backend.agent_harness.validation import ActionValidationError
 from backend.agent_harness.validation import resolve_action
+from backend.domains.werewolf.strategy import build_strategy_snapshot
+from backend.domains.werewolf.strategy import strategy_score_for_option
 
 _DELIBERATIVE_KINDS = {
     "werewolf.witch",
@@ -264,6 +266,8 @@ class LLMActionPlanner:
     @staticmethod
     def _prompt_payload(request: DecisionRequest, context: PlannerContext) -> dict[str, Any]:
         memory = LLMActionPlanner._compact_memory(request.information_state.private_memory)
+        primary_memory = memory[0] if memory else {}
+        strategy = build_strategy_snapshot(request, primary_memory)
         history = list(request.information_state.visible_history[-10:])
         knowledge = list(request.knowledge_context)
         return {
@@ -274,6 +278,7 @@ class LLMActionPlanner:
                     "current_observation",
                     "visible_recent_history",
                     "subjective_memory",
+                    "derived_strategy_state",
                     "retrieved_cross_episode_knowledge",
                     "loaded_skills_and_tool_results",
                     "legal_action_space",
@@ -282,8 +287,8 @@ class LLMActionPlanner:
                     "visible_history": 10,
                     "beliefs_per_memory": 8,
                     "relationships_per_memory": 6,
-                    "recent_claims_per_memory": 8,
-                    "evidence_edges_per_memory": 8,
+                    "recent_claims_per_memory": 12,
+                    "evidence_edges_per_memory": 12,
                     "retrieved_episodes_per_memory": 4,
                     "remaining_ms": context.remaining_ms,
                     "remaining_steps_including_current": max(0, request.budget.max_steps - context.step + 1),
@@ -311,6 +316,7 @@ class LLMActionPlanner:
                 "private_memory": memory,
             },
             "knowledge_context": knowledge,
+            "strategy_state": strategy,
             "prior_reflections": list(context.reflections),
             "capabilities": {
                 "available_skills": [
@@ -385,8 +391,8 @@ class LLMActionPlanner:
                     "relationships": list(item.get("relationships") or [])[:6],
                     "affect": item.get("affect") or {},
                     "active_goals": list(item.get("active_goals") or [])[:4],
-                    "recent_claims": list(item.get("recent_claims") or [])[-8:],
-                    "evidence_graph": list(item.get("evidence_graph") or [])[-8:],
+                    "recent_claims": list(item.get("recent_claims") or [])[-12:],
+                    "evidence_graph": list(item.get("evidence_graph") or [])[-12:],
                     "retrieved_episodes": list(item.get("retrieved_episodes") or [])[:4],
                     "last_action": item.get("last_action") or {},
                 }
@@ -482,55 +488,27 @@ class LLMActionPlanner:
     def _fallback_option(request: DecisionRequest):
         options = list(request.action_space.options)
         memory = (request.information_state.private_memory or ({},))[0]
-        beliefs = {item.get("player_id"): item for item in memory.get("beliefs") or []}
-        relationships = {item.get("player_id"): item for item in memory.get("relationships") or []}
         kind = request.decision_point.kind
 
         def target(option):
             return option.parameters.get("target_id") or option.parameters.get("poison_target_id")
 
-        def suspect_rank(option):
-            player_id = target(option)
-            belief = beliefs.get(player_id) or {}
-            relation = relationships.get(player_id) or {}
-            return (
-                float(belief.get("wolf_probability") or 0.5),
-                float(belief.get("confidence") or 0.0),
-                float(relation.get("threat") or 0.0),
-                float(relation.get("influence") or 0.0),
-                option.option_id,
-            )
-
-        def protect_rank(option):
-            player_id = target(option)
-            belief = beliefs.get(player_id) or {}
-            relation = relationships.get(player_id) or {}
-            return (
-                -float(belief.get("wolf_probability") or 0.5),
-                float(belief.get("confidence") or 0.0),
-                float(relation.get("trust") or 0.0),
-                float(relation.get("influence") or 0.0),
-                option.option_id,
-            )
-
-        def attack_rank(option):
-            player_id = target(option)
-            relation = relationships.get(player_id) or {}
-            return (
-                float(relation.get("influence") or 0.0),
-                float(relation.get("threat") or 0.0),
-                -float(relation.get("trust") or 0.0),
-                option.option_id,
-            )
+        def strategy_rank(option):
+            return (strategy_score_for_option(request, memory, target(option)), option.option_id)
 
         if kind == "werewolf.witch":
             return next((item for item in options if item.option_id == "witch:hold"), options[0])
-        if kind in {"werewolf.guard", "werewolf.transfer_badge"}:
-            return max(options, key=protect_rank)
-        if kind == "werewolf.wolf_team_vote":
-            return max(options, key=attack_rank)
-        if kind in {"werewolf.vote", "werewolf.divine", "werewolf.shoot", "werewolf.boom"}:
-            return max(options, key=suspect_rank)
+        if kind in {
+            "werewolf.guard",
+            "werewolf.transfer_badge",
+            "werewolf.wolf_team_vote",
+            "werewolf.vote",
+            "werewolf.divine",
+            "werewolf.shoot",
+            "werewolf.boom",
+        }:
+            targeted = [option for option in options if target(option)]
+            return max(targeted or options, key=strategy_rank)
         return options[0]
 
     @staticmethod

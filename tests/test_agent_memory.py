@@ -67,9 +67,7 @@ def _request(*, actor_id: str = "P1", profile: dict | None = None, events=()) ->
 
 
 def test_context_is_bounded_but_subjective_memory_keeps_older_events() -> None:
-    events = tuple(
-        _event(seq, actor_id="P2", actor_name="乙", speech=f"第 {seq} 条公开发言") for seq in range(1, 31)
-    )
+    events = tuple(_event(seq, actor_id="P2", actor_name="乙", speech=f"第 {seq} 条公开发言") for seq in range(1, 31))
     service = ActorMemoryService()
     prepared = service.prepare(
         _request(
@@ -227,3 +225,54 @@ def test_broken_vote_commitment_is_recorded_as_contradiction() -> None:
     assert state is not None
     assert any(claim.kind == "contradiction" and claim.speaker_id == "P2" for claim in state.claims)
     assert state.beliefs["P2"].wolf_probability > 0.5
+
+
+def test_retraction_marks_previous_stance_without_creating_a_contradiction() -> None:
+    service = ActorMemoryService()
+    events = (
+        _event(1, actor_id="P2", actor_name="P2", speech="I am suspicious of P3"),
+        _event(2, actor_id="P2", actor_name="P2", speech="I retract what I said about P3"),
+    )
+
+    service.prepare(_request(events=events))
+    state = service.get_state("memory-test-game", "P1")
+
+    assert state is not None
+    stance = next(claim for claim in state.claims if claim.kind == "stance")
+    assert stance.retracted is True
+    assert any(claim.kind == "retraction" for claim in state.claims)
+
+
+def test_fake_seer_accusation_is_extracted_as_suspicion() -> None:
+    service = ActorMemoryService()
+    speech = _event(1, actor_id="P2", actor_name="P2", speech="P3 is a fake seer and is lying")
+
+    service.prepare(_request(events=(speech,)))
+    state = service.get_state("memory-test-game", "P1")
+
+    assert state is not None
+    assert any(claim.kind == "stance" and claim.target_id == "P3" and claim.polarity > 0 for claim in state.claims)
+
+
+def test_self_role_claim_uses_the_self_claim_clause_not_an_earlier_role_reference() -> None:
+    service = ActorMemoryService()
+    speech = _event(1, actor_id="P2", actor_name="P2", speech="P3 claims seer, but I am a villager")
+
+    service.prepare(_request(events=(speech,)))
+    state = service.get_state("memory-test-game", "P1")
+
+    assert state is not None
+    role_claim = next(claim for claim in state.claims if claim.kind == "role_claim")
+    assert role_claim.speaker_id == "P2"
+    assert role_claim.value == "Villager"
+
+
+def test_english_as_role_phrasing_is_extracted_as_self_claim() -> None:
+    service = ActorMemoryService()
+    speech = _event(1, actor_id="P2", actor_name="P2", speech="As P2, the Seer, I checked P3 and P3 is wolf")
+
+    service.prepare(_request(events=(speech,)))
+    state = service.get_state("memory-test-game", "P1")
+
+    assert state is not None
+    assert any(claim.kind == "role_claim" and claim.value == "Seer" for claim in state.claims)

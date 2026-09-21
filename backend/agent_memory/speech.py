@@ -9,7 +9,14 @@ from backend.agent_memory.models import SpeechClaim
 
 _CLAUSE_RE = re.compile(r"[.!?;,\n\u3002\uff01\uff1f\uff1b\uff0c]+")
 _SELF_CLAIM_RE = re.compile(
-    r"(?:\u6211\u662f|\u6211\u8df3|\u6211\u8eab\u4efd(?:\u662f|:)|i am|i'm|claiming)",
+    r"(?:\u6211\u662f|\u6211\u8df3|\u6211\u8eab\u4efd(?:\u662f|:)|"
+    r"(?:\u9884\u8a00\u5bb6|\u5973\u5deb|\u5b88\u536b|\u730e\u4eba|\u767d\u75f4|\u6751\u6c11|\u5e73\u6c11|\u767d\u72fc\u738b)\s*\u662f\u6211|"
+    r"i am|i'm|claiming)",
+    re.IGNORECASE,
+)
+_AS_ROLE_RE = re.compile(
+    r"\bas\s+[^,;:\n]{1,40},?\s+(?:the\s+)?"
+    r"(seer|witch|guard|hunter|idiot|villager|werewolf|white\s+wolf\s+king)\b",
     re.IGNORECASE,
 )
 _CHECK_RE = re.compile(
@@ -22,7 +29,7 @@ _VILLAGE_RESULT_RE = re.compile(
     re.IGNORECASE,
 )
 _SUSPICION_RE = re.compile(
-    r"\u72fc\u4eba|\u662f\u72fc|\u50cf\u72fc|\u6000\u7591|\u8e29|\u60f3\u6295|\u8981\u51fa|\u5f52\u7968|suspicious",
+    r"\u72fc\u4eba|\u662f\u72fc|\u50cf\u72fc|\u6000\u7591|\u8e29|\u60f3\u6295|\u8981\u51fa|\u5f52\u7968|\u5047|\u608d\u8df3|suspicious|fake|lying",
     re.IGNORECASE,
 )
 _SUPPORT_RE = re.compile(
@@ -74,9 +81,26 @@ class SpeechInterpreter:
         claims: list[SpeechClaim] = []
         clauses = [item.strip() for item in _CLAUSE_RE.split(speech) if item.strip()]
 
-        role = self._role_in_text(speech)
-        if role and _SELF_CLAIM_RE.search(speech):
-            claims.append(self._claim(event_id, event_seq, speaker_id, "role_claim", speaker_id, role, 0.0, 0.85, speech))
+        self_claim_clause = next((clause for clause in clauses if _SELF_CLAIM_RE.search(clause)), "")
+        role = self._role_in_text(self_claim_clause)
+        as_role = _AS_ROLE_RE.search(speech)
+        if role is None and as_role is not None:
+            role = self._role_in_text(as_role.group(0))
+            self_claim_clause = as_role.group(0)
+        if role:
+            claims.append(
+                self._claim(
+                    event_id,
+                    event_seq,
+                    speaker_id,
+                    "role_claim",
+                    speaker_id,
+                    role,
+                    0.0,
+                    0.85,
+                    self_claim_clause,
+                )
+            )
 
         for clause in clauses:
             targets = self._targets(clause, players, exclude=speaker_id)
@@ -88,17 +112,23 @@ class SpeechInterpreter:
                 polarity = 1.0 if value == "wolf" else -1.0
                 for target_id in targets:
                     claims.append(
-                        self._claim(event_id, event_seq, speaker_id, "check_claim", target_id, value, polarity, 0.82, clause)
+                        self._claim(
+                            event_id, event_seq, speaker_id, "check_claim", target_id, value, polarity, 0.82, clause
+                        )
                     )
             if _COMMITMENT_RE.search(clause):
                 for target_id in targets:
                     claims.append(
-                        self._claim(event_id, event_seq, speaker_id, "vote_commitment", target_id, "vote", 0.45, 0.75, clause)
+                        self._claim(
+                            event_id, event_seq, speaker_id, "vote_commitment", target_id, "vote", 0.45, 0.75, clause
+                        )
                     )
             if _SUSPICION_RE.search(clause) and not _CHECK_RE.search(clause) and not village_result:
                 for target_id in targets:
                     claims.append(
-                        self._claim(event_id, event_seq, speaker_id, "stance", target_id, "suspicious", 0.7, 0.62, clause)
+                        self._claim(
+                            event_id, event_seq, speaker_id, "stance", target_id, "suspicious", 0.7, 0.62, clause
+                        )
                     )
             if (_SUPPORT_RE.search(clause) or village_result) and not _CHECK_RE.search(clause):
                 for target_id in targets:
@@ -108,7 +138,9 @@ class SpeechInterpreter:
             if _RETRACTION_RE.search(clause):
                 for target_id in targets:
                     claims.append(
-                        self._claim(event_id, event_seq, speaker_id, "retraction", target_id, "retracted", 0.0, 0.72, clause)
+                        self._claim(
+                            event_id, event_seq, speaker_id, "retraction", target_id, "retracted", 0.0, 0.72, clause
+                        )
                     )
 
         for prior, current in self._contradictions(existing_claims, claims):
@@ -127,6 +159,8 @@ class SpeechInterpreter:
                     current.evidence_text,
                 )
             )
+
+        self._mark_retracted_claims(existing_claims, claims)
 
         edges = tuple(
             EvidenceEdge(
@@ -203,7 +237,7 @@ class SpeechInterpreter:
         contradictions: list[tuple[SpeechClaim, SpeechClaim]] = []
         for claim in current:
             for prior in reversed(existing):
-                if prior.speaker_id != claim.speaker_id or prior.contradicted:
+                if prior.speaker_id != claim.speaker_id or prior.contradicted or prior.retracted:
                     continue
                 if claim.kind == prior.kind == "role_claim" and claim.value != prior.value:
                     contradictions.append((prior, claim))
@@ -216,3 +250,15 @@ class SpeechInterpreter:
                     contradictions.append((prior, claim))
                     break
         return contradictions
+
+    @staticmethod
+    def _mark_retracted_claims(existing: list[SpeechClaim], current: list[SpeechClaim]) -> None:
+        for retraction in (claim for claim in current if claim.kind == "retraction"):
+            for prior in reversed(existing):
+                if prior.speaker_id != retraction.speaker_id or prior.retracted:
+                    continue
+                if prior.target_id != retraction.target_id:
+                    continue
+                if prior.kind in {"stance", "vote_commitment", "check_claim"}:
+                    prior.retracted = True
+                    break

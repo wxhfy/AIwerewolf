@@ -96,6 +96,7 @@ class SpeechClaim:
     confidence: float
     evidence_text: str
     contradicted: bool = False
+    retracted: bool = False
 
 
 @dataclass
@@ -141,9 +142,7 @@ class ActorMemoryState:
             working_memory=[str(item) for item in value.get("working_memory") or []],
             episodic=[EpisodicMemory(**item) for item in value.get("episodic") or []],
             beliefs={key: BeliefState(**item) for key, item in (value.get("beliefs") or {}).items()},
-            relationships={
-                key: RelationshipState(**item) for key, item in (value.get("relationships") or {}).items()
-            },
+            relationships={key: RelationshipState(**item) for key, item in (value.get("relationships") or {}).items()},
             affect=AffectiveState(**(value.get("affect") or {})),
             goals=[GoalState(**item) for item in value.get("goals") or []],
             claims=[SpeechClaim(**item) for item in value.get("claims") or []],
