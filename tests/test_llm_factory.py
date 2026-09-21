@@ -45,3 +45,13 @@ def test_bigmodel_factory_accepts_full_chat_completions_url(monkeypatch) -> None
 
     assert client.base_url == "https://open.bigmodel.cn/api/paas/v4"
     client.close()
+
+
+def test_bigmodel_factory_retries_transient_failures_by_default(monkeypatch) -> None:
+    monkeypatch.setenv("BIGMODEL_API_KEY", "test-key")
+    monkeypatch.delenv("LLM_MAX_RETRIES", raising=False)
+
+    client = create_client(provider="bigmodel", timeout=1)
+
+    assert client.max_retries == 2
+    client.close()

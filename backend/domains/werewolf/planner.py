@@ -11,6 +11,8 @@ from backend.agent_harness.contracts import HarnessStep
 from backend.agent_harness.contracts import PlannerContext
 from backend.agent_harness.validation import ActionValidationError
 from backend.agent_harness.validation import resolve_action
+from backend.domains.werewolf.communication import audit_public_speech
+from backend.domains.werewolf.communication import public_communication_policy
 from backend.domains.werewolf.strategy import build_strategy_snapshot
 from backend.domains.werewolf.strategy import strategy_score_for_option
 
@@ -66,6 +68,11 @@ class LLMActionPlanner:
                             "You are an autonomous actor in an asymmetric-information environment. "
                             "Use only the supplied actor-visible context. You may load one advertised skill or call "
                             "one advertised read-only tool when that capability is available and materially useful. "
+                            "For public speech, keep private reasoning out of the speech field: never expose wolf-team "
+                            "knowledge, hidden night actions, internal scores, probabilities, raw IDs, or system terms. "
+                            "Ground public claims in public evidence. A Seer may deliberately publish their own check. "
+                            "If the selected option has no response_schema, return response as an empty object and keep "
+                            "reasoning under 80 words. Do not add a speech field to non-speech actions. "
                             "Otherwise select exactly one server-generated option_id. Never invent hidden facts. "
                             "Finish by calling submit_action, or return JSON only: "
                             '{"option_id": string, "response": object, "reasoning": string}.'
@@ -143,6 +150,21 @@ class LLMActionPlanner:
                 fallback_error = f"{type(exc).__name__}: {exc}"
                 selection = self._fallback_selection(request, repair_error, fallback_error)
                 resolve_action(request, selection)
+        speech_violations: tuple[str, ...] = ()
+        speech_rewritten = False
+        if selection.option_id == "talk":
+            audit = audit_public_speech(request, str(selection.response.get("speech") or ""))
+            speech_violations = audit.violations
+            speech = audit.speech
+            if not audit.accepted:
+                speech = self._fallback_speech(request)
+                speech_rewritten = True
+            selection = ActionSelection(
+                option_id=selection.option_id,
+                response={**selection.response, "speech": speech},
+                reasoning=selection.reasoning,
+                metadata=selection.metadata,
+            )
         usage = response.get("usage") if isinstance(response, dict) else {}
         return HarnessStep.select_action(
             ActionSelection(
@@ -159,6 +181,9 @@ class LLMActionPlanner:
                     "repair_error": repair_error or None,
                     "fallback_used": fallback_used,
                     "fallback_error": fallback_error or None,
+                    "speech_policy_violations": list(speech_violations),
+                    "speech_rewritten": speech_rewritten,
+                    "syntax_recovered": bool(selection.metadata.get("syntax_recovered")),
                 },
             )
         )
@@ -265,10 +290,11 @@ class LLMActionPlanner:
 
     @staticmethod
     def _prompt_payload(request: DecisionRequest, context: PlannerContext) -> dict[str, Any]:
-        memory = LLMActionPlanner._compact_memory(request.information_state.private_memory)
-        primary_memory = memory[0] if memory else {}
-        strategy = build_strategy_snapshot(request, primary_memory)
-        history = list(request.information_state.visible_history[-10:])
+        limits = LLMActionPlanner._context_limits(request.decision_point.kind)
+        memory = LLMActionPlanner._compact_memory(request.information_state.private_memory, limits)
+        source_memory = (request.information_state.private_memory or ({},))[0]
+        strategy = build_strategy_snapshot(request, source_memory)
+        history = list(request.information_state.visible_history[-limits["visible_history"] :])
         knowledge = list(request.knowledge_context)
         return {
             "context_manifest": {
@@ -284,12 +310,7 @@ class LLMActionPlanner:
                     "legal_action_space",
                 ],
                 "limits": {
-                    "visible_history": 10,
-                    "beliefs_per_memory": 8,
-                    "relationships_per_memory": 6,
-                    "recent_claims_per_memory": 12,
-                    "evidence_edges_per_memory": 12,
-                    "retrieved_episodes_per_memory": 4,
+                    **limits,
                     "remaining_ms": context.remaining_ms,
                     "remaining_steps_including_current": max(0, request.budget.max_steps - context.step + 1),
                 },
@@ -349,6 +370,7 @@ class LLMActionPlanner:
             ],
             "agent_profile": request.agent_profile,
             "domain_metadata": request.domain_metadata,
+            "public_communication_policy": public_communication_policy(request),
         }
 
     @classmethod
@@ -381,19 +403,59 @@ class LLMActionPlanner:
             raise RuntimeError("LLM response contains an invalid harness control call") from exc
 
     @staticmethod
-    def _compact_memory(memory_items: tuple[dict[str, Any], ...]) -> list[dict[str, Any]]:
+    def _context_limits(kind: str) -> dict[str, int]:
+        if kind in {"werewolf.talk", "werewolf.badge_speech", "werewolf.pk_speech", "werewolf.sheriff_closing"}:
+            return {
+                "visible_history": 8,
+                "beliefs_per_memory": 7,
+                "relationships_per_memory": 4,
+                "recent_claims_per_memory": 8,
+                "evidence_edges_per_memory": 4,
+                "retrieved_episodes_per_memory": 2,
+            }
+        if kind in {"werewolf.vote", "werewolf.badge_election"}:
+            return {
+                "visible_history": 10,
+                "beliefs_per_memory": 8,
+                "relationships_per_memory": 5,
+                "recent_claims_per_memory": 8,
+                "evidence_edges_per_memory": 6,
+                "retrieved_episodes_per_memory": 2,
+            }
+        return {
+            "visible_history": 6,
+            "beliefs_per_memory": 6,
+            "relationships_per_memory": 4,
+            "recent_claims_per_memory": 4,
+            "evidence_edges_per_memory": 3,
+            "retrieved_episodes_per_memory": 2,
+        }
+
+    @staticmethod
+    def _compact_memory(
+        memory_items: tuple[dict[str, Any], ...],
+        limits: dict[str, int],
+    ) -> list[dict[str, Any]]:
         compacted: list[dict[str, Any]] = []
         for item in memory_items:
             compacted.append(
                 {
                     "working_memory": list(item.get("working_memory") or []),
-                    "beliefs": list(item.get("beliefs") or [])[:8],
-                    "relationships": list(item.get("relationships") or [])[:6],
+                    "beliefs": list(item.get("beliefs") or [])[: limits["beliefs_per_memory"]],
+                    "relationships": list(item.get("relationships") or [])[
+                        : limits["relationships_per_memory"]
+                    ],
                     "affect": item.get("affect") or {},
                     "active_goals": list(item.get("active_goals") or [])[:4],
-                    "recent_claims": list(item.get("recent_claims") or [])[-12:],
-                    "evidence_graph": list(item.get("evidence_graph") or [])[-12:],
-                    "retrieved_episodes": list(item.get("retrieved_episodes") or [])[:4],
+                    "recent_claims": list(item.get("recent_claims") or [])[
+                        -limits["recent_claims_per_memory"] :
+                    ],
+                    "evidence_graph": list(item.get("evidence_graph") or [])[
+                        -limits["evidence_edges_per_memory"] :
+                    ],
+                    "retrieved_episodes": list(item.get("retrieved_episodes") or [])[
+                        : limits["retrieved_episodes_per_memory"]
+                    ],
                     "last_action": item.get("last_action") or {},
                 }
             )
@@ -401,11 +463,49 @@ class LLMActionPlanner:
 
     @classmethod
     def _selection(cls, content: str) -> ActionSelection:
-        parsed = cls._parse_json_object(content)
+        try:
+            parsed = cls._parse_json_object(content)
+        except (RuntimeError, json.JSONDecodeError):
+            return cls._partial_selection(content)
         return ActionSelection(
             option_id=str(parsed.get("option_id") or ""),
             response=parsed.get("response") if isinstance(parsed.get("response"), dict) else {},
             reasoning=str(parsed.get("reasoning") or ""),
+        )
+
+    @staticmethod
+    def _partial_selection(content: str) -> ActionSelection:
+        """Recover only complete JSON string fields from a truncated response.
+
+        The recovered option still passes through ``resolve_action`` against the
+        environment-owned action space. This never invents an action or target.
+        """
+
+        def string_field(name: str) -> str:
+            match = re.search(
+                rf'"{re.escape(name)}"\s*:\s*("(?:\\.|[^"\\])*")',
+                content,
+                flags=re.DOTALL,
+            )
+            if match is None:
+                return ""
+            try:
+                value = json.loads(match.group(1))
+            except json.JSONDecodeError:
+                return ""
+            return str(value)
+
+        option_id = string_field("option_id")
+        if not option_id:
+            raise RuntimeError("LLM did not return a recoverable option_id")
+        speech = string_field("speech")
+        response = {"speech": speech} if speech else {}
+        reasoning = string_field("reasoning") or "Recovered from a truncated structured response."
+        return ActionSelection(
+            option_id=option_id,
+            response=response,
+            reasoning=reasoning,
+            metadata={"syntax_recovered": True},
         )
 
     @classmethod
@@ -489,6 +589,11 @@ class LLMActionPlanner:
         options = list(request.action_space.options)
         memory = (request.information_state.private_memory or ({},))[0]
         kind = request.decision_point.kind
+        role = str(request.domain_metadata.get("role") or "")
+        known_wolves = {
+            str(item.get("id") or "")
+            for item in request.information_state.observation.get("known_wolves") or []
+        }
 
         def target(option):
             return option.parameters.get("target_id") or option.parameters.get("poison_target_id")
@@ -497,6 +602,9 @@ class LLMActionPlanner:
             return (strategy_score_for_option(request, memory, target(option)), option.option_id)
 
         if kind == "werewolf.witch":
+            save_only = next((item for item in options if item.action_type == "witch_save"), None)
+            if int(request.domain_metadata.get("day") or 0) <= 1 and save_only is not None:
+                return save_only
             return next((item for item in options if item.option_id == "witch:hold"), options[0])
         if kind in {
             "werewolf.guard",
@@ -508,16 +616,43 @@ class LLMActionPlanner:
             "werewolf.boom",
         }:
             targeted = [option for option in options if target(option)]
+            if kind == "werewolf.wolf_team_vote" or (
+                kind == "werewolf.vote" and role in {"Werewolf", "WhiteWolfKing"}
+            ):
+                non_teammates = [option for option in targeted if target(option) not in known_wolves]
+                if non_teammates:
+                    targeted = non_teammates
             return max(targeted or options, key=strategy_rank)
         return options[0]
 
     @staticmethod
     def _fallback_speech(request: DecisionRequest) -> str:
         memory = (request.information_state.private_memory or ({},))[0]
+        observation = request.information_state.observation
+        role = str(request.domain_metadata.get("role") or "")
+        known_wolves = {
+            str(item.get("id") or "") for item in observation.get("known_wolves") or []
+        }
+        names = {
+            str(item.get("id") or ""): str(item.get("name") or item.get("id") or "")
+            for item in observation.get("players") or []
+        }
+
+        if role == "Seer":
+            for event in reversed(request.information_state.visible_history):
+                payload = dict(event.get("payload") or {})
+                if event.get("type") != "PRIVATE_INFO" or payload.get("kind") != "seer_result":
+                    continue
+                target_id = str(payload.get("target_id") or "")
+                target_name = str(payload.get("target_name") or names.get(target_id) or "该玩家")
+                result = "狼人" if payload.get("is_wolf") else "好人"
+                return f"我是预言家，昨晚查验了{target_name}，结果是{result}。请结合后续发言和票型验证我的信息。"
+
         beliefs = list(memory.get("beliefs") or [])
-        if beliefs:
+        public_beliefs = [item for item in beliefs if str(item.get("player_id") or "") not in known_wolves]
+        if public_beliefs:
             suspect = max(
-                beliefs,
+                public_beliefs,
                 key=lambda item: (
                     float(item.get("wolf_probability") or 0.5),
                     float(item.get("confidence") or 0.0),
@@ -525,12 +660,9 @@ class LLMActionPlanner:
                 ),
             )
             player_id = str(suspect.get("player_id") or "")
-            probability = float(suspect.get("wolf_probability") or 0.5)
-            return (
-                f"Based on the visible evidence, I am most suspicious of {player_id} "
-                f"(current wolf probability {probability:.2f}). Check claim and vote consistency."
-            )
-        return "I do not have enough reliable evidence yet. Compare claims, commitments, and vote consistency."
+            player_name = names.get(player_id) or "一名玩家"
+            return f"目前我更怀疑{player_name}。请重点核对他的前后发言、站边和实际投票是否一致。"
+        return "目前公开信息还不足，我会继续核对身份声明、站边变化和实际票型，不会无依据下定论。"
 
     def _fallback_step(self, request: DecisionRequest, error: str) -> HarnessStep:
         selection = self._fallback_selection(request, error, "model unavailable")

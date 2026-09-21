@@ -244,6 +244,7 @@ def create_client(provider: str | None = None, **kwargs) -> Any:
         client.provider = "weapi"
         return client
     elif provider in {"bigmodel", "zhipu", "glm"}:
+        kwargs.setdefault("max_retries", 2)
         api_key = kwargs.pop("api_key", None) or os.getenv("BIGMODEL_API_KEY", "") or os.getenv("ZHIPU_API_KEY", "")
         api_key = api_key or os.getenv("GLM_API_KEY", "")
         raw_base_url = (

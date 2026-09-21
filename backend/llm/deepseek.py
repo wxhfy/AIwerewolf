@@ -108,6 +108,8 @@ def _default_concurrency_limit(base_url: str) -> int:
             logger.warning("Invalid LLM_MAX_CONCURRENT_REQUESTS=%r; using provider default", raw)
     if "weapi.pw" in base_url.lower():
         return 2
+    if "open.bigmodel.cn" in base_url.lower():
+        return 1
     return 4
 
 

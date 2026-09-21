@@ -663,7 +663,9 @@ class WerewolfGame:
                     "agent_source": decision.metadata.get("source"),
                     "agent_model": decision.metadata.get("model"),
                     "agent_provider": decision.metadata.get("provider"),
-                    "agent_fallback": bool(decision.metadata.get("fallback", False)),
+                "agent_fallback": bool(
+                    decision.metadata.get("fallback_used") or decision.metadata.get("fallback")
+                ),
                     "badge_election": True,
                 },
             )
@@ -1149,7 +1151,9 @@ class WerewolfGame:
                     "agent_source": decision.metadata.get("source"),
                     "agent_model": decision.metadata.get("model"),
                     "agent_provider": decision.metadata.get("provider"),
-                    "agent_fallback": bool(decision.metadata.get("fallback", False)),
+                    "agent_fallback": bool(
+                        decision.metadata.get("fallback_used") or decision.metadata.get("fallback")
+                    ),
                     "vote_weight": self._vote_weight(voter.id),
                     "is_pk_vote": bool(self.state.pk_targets),
                 },
@@ -1271,7 +1275,9 @@ class WerewolfGame:
                 "agent_source": decision.metadata.get("source"),
                 "agent_model": decision.metadata.get("model"),
                 "agent_provider": decision.metadata.get("provider"),
-                "agent_fallback": bool(decision.metadata.get("fallback", False)),
+                "agent_fallback": bool(
+                    decision.metadata.get("fallback_used") or decision.metadata.get("fallback")
+                ),
             },
         )
         if self.pending_badge_transfer_from_id and self.state.winner is None:
@@ -1320,7 +1326,17 @@ class WerewolfGame:
                 "agent_source": decision.metadata.get("source") if i == 0 else "",
                 "agent_model": decision.metadata.get("model") if i == 0 else "",
                 "agent_provider": decision.metadata.get("provider") if i == 0 else "",
-                "agent_fallback": bool(decision.metadata.get("fallback", False)) if i == 0 else False,
+                "agent_fallback": bool(
+                    decision.metadata.get("fallback_used") or decision.metadata.get("fallback")
+                )
+                if i == 0
+                else False,
+                "agent_speech_rewritten": bool(decision.metadata.get("speech_rewritten")) if i == 0 else False,
+                "agent_speech_policy_violations": list(
+                    decision.metadata.get("speech_policy_violations") or []
+                )
+                if i == 0
+                else [],
                 **extra_fields,
             }
             self._log(EventType.CHAT_MESSAGE, "public", payload)
@@ -1380,7 +1396,9 @@ class WerewolfGame:
                 "agent_source": decision.metadata.get("source"),
                 "agent_model": decision.metadata.get("model"),
                 "agent_provider": decision.metadata.get("provider"),
-                "agent_fallback": bool(decision.metadata.get("fallback", False)),
+                    "agent_fallback": bool(
+                        decision.metadata.get("fallback_used") or decision.metadata.get("fallback")
+                    ),
             },
         )
         self._log(
@@ -1948,7 +1966,7 @@ class WerewolfGame:
             "agent_source": decision.metadata.get("source"),
             "agent_model": decision.metadata.get("model"),
             "agent_provider": decision.metadata.get("provider"),
-            "agent_fallback": bool(decision.metadata.get("fallback", False)),
+            "agent_fallback": bool(decision.metadata.get("fallback_used") or decision.metadata.get("fallback")),
             **payload,
         }
         self._log(EventType.NIGHT_ACTION, visibility, full_payload, visible_to=visible_to)
@@ -2066,8 +2084,9 @@ class WerewolfGame:
             "cost_usd": cost_usd,
             "model_name": meta.get("model"),
             "provider": meta.get("provider"),
-            "fallback_used": bool(meta.get("fallback", False)),
-            "fallback_reason": meta.get("fallback_reason"),
+            "fallback_used": bool(meta.get("fallback_used") or meta.get("fallback")),
+            "fallback_reason": meta.get("fallback_reason") or meta.get("fallback_error"),
+            "metadata": meta,
         }
         self._pending_decisions.append(decision_data)
 
@@ -2108,8 +2127,8 @@ class WerewolfGame:
                     cost_usd=cost_usd,
                     model_name=meta.get("model"),
                     provider=meta.get("provider"),
-                    fallback_used=bool(meta.get("fallback", False)),
-                    fallback_reason=meta.get("fallback_reason"),
+                    fallback_used=bool(meta.get("fallback_used") or meta.get("fallback")),
+                    fallback_reason=meta.get("fallback_reason") or meta.get("fallback_error"),
                     metadata=decision.metadata if isinstance(decision.metadata, dict) else {},
                 )
             )

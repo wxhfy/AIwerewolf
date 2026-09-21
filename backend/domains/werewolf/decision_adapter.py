@@ -200,16 +200,24 @@ class WerewolfDecisionAdapter:
         if result.status != "completed" or result.action is None:
             raise RuntimeError(f"Agent harness failed for {request.request_id}: {result.error or result.status}")
         action = result.action
+        fallback_used = bool(action.metadata.get("fallback_used") or action.metadata.get("fallback"))
+        fallback_reason = action.metadata.get("fallback_error") or action.metadata.get("fallback_reason")
+        event_types = [event.event_type for event in result.events]
         metadata = {
             "source": "agent_harness",
             "model_backed": bool(action.metadata.get("model") or action.metadata.get("provider")),
             "harness_request_id": request.request_id,
             "harness_option_id": action.option_id,
-            "harness_events": [event.to_record() for event in result.events],
+            "harness_event_count": len(result.events),
+            "harness_event_types": event_types,
+            "harness_trace_storage": "agent_harness_events",
             "candidate_actions": [
                 {"option_id": option.option_id, **option.parameters} for option in request.action_space.options
             ],
             **action.metadata,
+            "fallback": fallback_used,
+            "fallback_used": fallback_used,
+            "fallback_reason": fallback_reason,
         }
         reasoning = action.reasoning
 
