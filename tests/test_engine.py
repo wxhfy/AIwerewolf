@@ -594,3 +594,67 @@ def test_actor_sequence_strict_llm_handler_error_is_not_masked_by_nameerror() ->
 
     with pytest.raises(RuntimeError, match="remote read timeout"):
         game._run_actor_sequence(Phase.NIGHT_WOLF_ACTION, [players[0]], failing_handler)
+
+
+def test_pk_second_round_tie_eliminates_no_one() -> None:
+    """PK second round re-tie must eliminate nobody (rule boundary regression).
+
+    First round: three players tie (2/2/2/1) -> PK round opens with those
+    three as candidates. PK round: the four non-candidates vote 2/2/0 among
+    the candidates -> re-tie -> the engine must log "PK vote tied again" and
+    eliminate nobody instead of crashing or picking an arbitrary winner.
+    """
+    game = WerewolfGame(seed=7, player_count=7)
+    game.initialize()
+    game.state.day = 1
+    game.state.badge.holder_id = None
+
+    p0 = game.state.players[0].id
+    p1 = game.state.players[1].id
+    p2 = game.state.players[2].id
+    p3 = game.state.players[3].id
+
+    first_round = {
+        game.state.players[0].id: p1,
+        game.state.players[1].id: p0,
+        game.state.players[2].id: p0,
+        game.state.players[3].id: p1,
+        game.state.players[4].id: p2,
+        game.state.players[5].id: p2,
+        game.state.players[6].id: p3,
+    }
+    pk_round = {
+        game.state.players[3].id: p0,
+        game.state.players[4].id: p1,
+        game.state.players[5].id: p0,
+        game.state.players[6].id: p1,
+    }
+
+    def scripted_ask(player, request, call, many=False):
+        if request in {"TALK", "LAST_WORDS"}:
+            return Decision(player.id, ActionType.TALK, speech=f"{player.name} speaks", reasoning="scripted")
+        if request == "VOTE":
+            target = pk_round[player.id] if game.state.pk_targets else first_round[player.id]
+            return Decision(player.id, ActionType.VOTE, target_id=target, reasoning="scripted")
+        if request == "BOOM":
+            return Decision(player.id, ActionType.SKIP, reasoning="scripted")
+        if request == "SHOOT":
+            return Decision(player.id, ActionType.SKIP, reasoning="no target")
+        if request == "BADGE_TRANSFER":
+            return Decision(player.id, ActionType.VOTE, target_id=game.state.alive_players[-1].id, reasoning="scripted")
+        raise AssertionError(request)
+
+    game._ask = scripted_ask  # type: ignore[assignment]
+    game._batch_ask = lambda players, request, call_fn: [scripted_ask(p, request, call_fn) for p in players]  # type: ignore[assignment]
+    game._speech_phase()
+    game._vote_phase()
+    game._day_resolve()
+
+    assert game.state.day_history[1]["voteTie"] is True
+    assert all(player.alive for player in game.state.players)
+    assert game.state.pk_targets == []
+    assert game.state.pk_source is None
+    assert any(
+        event.type.value == "SYSTEM_MESSAGE" and "PK vote tied again" in str(event.payload.get("message", ""))
+        for event in game.state.events
+    )
