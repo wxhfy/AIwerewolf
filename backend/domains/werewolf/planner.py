@@ -94,8 +94,9 @@ class LLMActionPlanner:
                             "Ground public claims in public evidence. You may claim a role, bluff a check or night action, hedge, or mislead as a deliberate public strategy; other players will judge the claim. "
                             "If the selected option has no response_schema, return response as an empty object and keep "
                             "reasoning under 80 words. Do not add a speech field to non-speech actions. "
-                            "Otherwise select exactly one server-generated option_id. Never invent hidden facts. "
-                            "Finish by calling submit_action, or return JSON only: "
+                            "For non-speech actions, select exactly one option_id from action_options. If skip is not listed, never return skip; "
+                            "when legal target options are listed, choose one of those targets. Never invent target IDs or repeat a completed role action when another legal target exists. "
+                            "Never invent hidden facts. Finish by calling submit_action, or return JSON only: "
                             '{"option_id": string, "response": object, "reasoning": string}.'
                         ),
                     },
@@ -400,9 +401,9 @@ class LLMActionPlanner:
             if window:
                 configured = int(window) - 2048
         try:
-            return max(2048, int(configured or 12000))
+            return max(2048, int(configured or 10000))
         except (TypeError, ValueError):
-            return 12000
+            return 10000
 
     @staticmethod
     def _prompt_payload(
