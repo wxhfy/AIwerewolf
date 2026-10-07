@@ -117,6 +117,11 @@ class ActorMemoryState:
     actor_id: str
     version: int = 1
     last_event_seq: int = 0
+    context_version: str = "werewolf.actor-context.v2"
+    last_context_seq: int = 0
+    last_context_phase: str = ""
+    last_context_day: int = 0
+    last_delta_event_count: int = 0
     last_day: int = 0
     working_memory: list[str] = field(default_factory=list)
     episodic: list[EpisodicMemory] = field(default_factory=list)
@@ -138,6 +143,11 @@ class ActorMemoryState:
             actor_id=str(value.get("actor_id") or ""),
             version=int(value.get("version") or 1),
             last_event_seq=int(value.get("last_event_seq") or 0),
+            context_version=str(value.get("context_version") or "werewolf.actor-context.v2"),
+            last_context_seq=int(value.get("last_context_seq") or value.get("last_event_seq") or 0),
+            last_context_phase=str(value.get("last_context_phase") or ""),
+            last_context_day=int(value.get("last_context_day") or value.get("last_day") or 0),
+            last_delta_event_count=int(value.get("last_delta_event_count") or 0),
             last_day=int(value.get("last_day") or 0),
             working_memory=[str(item) for item in value.get("working_memory") or []],
             episodic=[EpisodicMemory(**item) for item in value.get("episodic") or []],

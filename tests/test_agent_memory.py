@@ -343,3 +343,40 @@ def test_english_as_role_phrasing_is_extracted_as_self_claim() -> None:
 
     assert state is not None
     assert any(claim.kind == "role_claim" and claim.value == "Seer" for claim in state.claims)
+
+
+def test_actor_context_checkpoint_advances_incrementally() -> None:
+    service = ActorMemoryService()
+    first = service.prepare(_request(events=(_event(10, actor_id="P2", actor_name="P2", speech="first"), _event(20, actor_id="P3", actor_name="P3", speech="second"))))
+    checkpoint = first.information_state.private_memory[0]["context_checkpoint"]
+    assert checkpoint["visible_seq"] == 20
+    assert checkpoint["delta_event_count"] == 2
+    first_version = checkpoint["memory_version"]
+
+    second = service.prepare(
+        _request(
+            events=(
+                _event(10, actor_id="P2", actor_name="P2", speech="first"),
+                _event(20, actor_id="P3", actor_name="P3", speech="second"),
+                _event(35, actor_id="P2", actor_name="P2", speech="third"),
+            )
+        )
+    )
+    checkpoint = second.information_state.private_memory[0]["context_checkpoint"]
+    assert checkpoint["visible_seq"] == 35
+    assert checkpoint["delta_event_count"] == 1
+    assert checkpoint["memory_version"] > first_version
+
+    third = service.prepare(
+        _request(
+            events=(
+                _event(10, actor_id="P2", actor_name="P2", speech="first"),
+                _event(20, actor_id="P3", actor_name="P3", speech="second"),
+                _event(35, actor_id="P2", actor_name="P2", speech="third"),
+            )
+        )
+    )
+    checkpoint = third.information_state.private_memory[0]["context_checkpoint"]
+    assert checkpoint["visible_seq"] == 35
+    assert checkpoint["delta_event_count"] == 0
+    assert checkpoint["memory_version"] == second.information_state.private_memory[0]["context_checkpoint"]["memory_version"]

@@ -34,6 +34,8 @@ class CognitiveMemoryReducer:
     def update(self, state: ActorMemoryState, request: DecisionRequest) -> None:
         observation = request.information_state.observation
         day = int(observation.get("day") or request.domain_metadata.get("day") or 0)
+        phase = str(observation.get("phase") or request.domain_metadata.get("phase") or "")
+        previous_phase = state.last_context_phase
         if state.last_day and day > state.last_day:
             self._decay_between_days(state, day - state.last_day, self.dynamics(state, request))
         state.last_day = max(state.last_day, day)
@@ -52,6 +54,12 @@ class CognitiveMemoryReducer:
             state.last_event_seq = max(state.last_event_seq, int(event.get("seq") or 0))
 
         self._refresh_goals(state, request)
+        state.last_delta_event_count = len(events)
+        state.last_context_seq = state.last_event_seq
+        state.last_context_phase = phase
+        state.last_context_day = day
+        if events or phase != previous_phase:
+            state.version += 1
         dynamics = self.dynamics(state, request)
         self._refresh_working_memory(state, dynamics)
         state.episodic = state.episodic[-self.settings.limits.episodic_capacity :]
@@ -132,6 +140,15 @@ class CognitiveMemoryReducer:
             "evidence_graph": [asdict(item) for item in state.evidence_graph[-16:]],
             "retrieved_episodes": [asdict(item) for item in retrieved],
             "last_action": dict(state.last_action),
+            "context_checkpoint": {
+                "schema": state.context_version,
+                "memory_version": state.version,
+                "visible_seq": state.last_context_seq,
+                "phase": state.last_context_phase,
+                "day": state.last_context_day,
+                "delta_event_count": state.last_delta_event_count,
+                "incremental": True,
+            },
             "memory_policy": {
                 "version": self.settings.version,
                 "raw_event_window": dynamics.recent_event_limit,
