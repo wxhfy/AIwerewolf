@@ -4,6 +4,7 @@ import json
 import os
 import re
 import time
+from difflib import SequenceMatcher
 from typing import Any
 
 from backend.agent_harness.contracts import ActionSelection
@@ -179,6 +180,7 @@ class LLMActionPlanner:
         speech_rewritten = False
         speech_repetition_detected = False
         speech_repetition_repaired = False
+        speech_repetition_score = 0.0
         if selection.option_id == "talk":
             audit = audit_public_speech(request, str(selection.response.get("speech") or ""))
             speech_violations = audit.violations
@@ -186,7 +188,8 @@ class LLMActionPlanner:
             if not audit.accepted:
                 speech = self._fallback_speech(request)
                 speech_rewritten = True
-            if self._is_recent_speech_duplicate(request, speech):
+            speech_repetition_score = self._recent_speech_similarity(request, speech)
+            if speech_repetition_score >= 0.82:
                 speech_repetition_detected = True
                 repaired = self._repair_repeated_speech(request, speech, context, started)
                 if repaired:
@@ -218,6 +221,7 @@ class LLMActionPlanner:
                     "speech_rewritten": speech_rewritten,
                     "speech_repetition_detected": speech_repetition_detected,
                     "speech_repetition_repaired": speech_repetition_repaired,
+                    "speech_repetition_score": round(speech_repetition_score, 3),
                     "syntax_recovered": bool(selection.metadata.get("syntax_recovered")),
                     "policy_overridden": bool(selection.metadata.get("policy_overridden")),
                     "policy_original_option_id": selection.metadata.get("policy_original_option_id"),
@@ -232,18 +236,24 @@ class LLMActionPlanner:
         return re.sub(r"\s+", "", str(speech or "")).strip().lower()
 
     @classmethod
-    def _is_recent_speech_duplicate(cls, request: DecisionRequest, speech: str) -> bool:
+    def _recent_speech_similarity(cls, request: DecisionRequest, speech: str) -> float:
         normalized = cls._normalize_speech_for_comparison(speech)
-        if not normalized:
-            return False
+        if len(normalized) < 40:
+            return 0.0
+        best = 0.0
         for event in reversed(request.information_state.visible_history):
             payload = dict(event.get("payload") or {})
             if str(payload.get("actor_id") or payload.get("speaker_id") or "") != request.actor.actor_id:
                 continue
             previous = cls._normalize_speech_for_comparison(str(payload.get("speech") or ""))
-            if previous:
-                return normalized == previous
-        return False
+            if len(previous) < 40:
+                continue
+            best = max(best, SequenceMatcher(None, normalized, previous).ratio())
+        return best
+
+    @classmethod
+    def _is_recent_speech_duplicate(cls, request: DecisionRequest, speech: str) -> bool:
+        return cls._recent_speech_similarity(request, speech) >= 0.82
 
     def _repair_repeated_speech(
         self,
