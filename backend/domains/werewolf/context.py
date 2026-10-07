@@ -213,7 +213,22 @@ def _decision_frame(request: DecisionRequest) -> dict[str, Any]:
             "Prefer a coherent stance supported by one or two relevant observations over listing the whole context.",
         ],
     }
-    if kind in {"werewolf.talk", "werewolf.badge_speech", "werewolf.pk_speech", "werewolf.sheriff_closing"}:
+    if kind in {"werewolf.talk", "werewolf.badge_speech", "werewolf.pk_speech", "werewolf.sheriff_closing", "werewolf.last_words"}:
+        if kind == "werewolf.last_words":
+            return {
+                **common,
+                "objective": "Leave a final, useful public record before elimination: clarify your strongest read, unresolved claim, or actionable clue.",
+                "conversation_moves": [
+                    "state the most important evidence other players should revisit",
+                    "separate confidence from uncertainty and identify what could prove you wrong",
+                    "make a final recommendation only when it follows from visible or confirmed evidence",
+                ],
+                "avoid": [
+                    "starting a routine introduction",
+                    "repeating the entire day's discussion",
+                    "revealing private facts that the role has not publicly claimed",
+                ],
+            }
         return {
             **common,
             "objective": "Advance your current social strategy with a concise, natural public statement.",

@@ -176,6 +176,8 @@ class LLMActionPlanner:
         resolve_action(request, selection)
         speech_violations: tuple[str, ...] = ()
         speech_rewritten = False
+        speech_repetition_detected = False
+        speech_repetition_repaired = False
         if selection.option_id == "talk":
             audit = audit_public_speech(request, str(selection.response.get("speech") or ""))
             speech_violations = audit.violations
@@ -183,6 +185,12 @@ class LLMActionPlanner:
             if not audit.accepted:
                 speech = self._fallback_speech(request)
                 speech_rewritten = True
+            if self._is_recent_speech_duplicate(request, speech):
+                speech_repetition_detected = True
+                repaired = self._repair_repeated_speech(request, speech, context, started)
+                if repaired:
+                    speech = repaired
+                    speech_repetition_repaired = True
             selection = ActionSelection(
                 option_id=selection.option_id,
                 response={**selection.response, "speech": speech},
@@ -207,6 +215,8 @@ class LLMActionPlanner:
                     "fallback_error": fallback_error or None,
                     "speech_policy_violations": list(speech_violations),
                     "speech_rewritten": speech_rewritten,
+                    "speech_repetition_detected": speech_repetition_detected,
+                    "speech_repetition_repaired": speech_repetition_repaired,
                     "syntax_recovered": bool(selection.metadata.get("syntax_recovered")),
                     "policy_overridden": bool(selection.metadata.get("policy_overridden")),
                     "policy_original_option_id": selection.metadata.get("policy_original_option_id"),
@@ -215,6 +225,70 @@ class LLMActionPlanner:
                 },
             )
         )
+
+    @staticmethod
+    def _normalize_speech_for_comparison(speech: str) -> str:
+        return re.sub(r"\s+", "", str(speech or "")).strip().lower()
+
+    @classmethod
+    def _is_recent_speech_duplicate(cls, request: DecisionRequest, speech: str) -> bool:
+        normalized = cls._normalize_speech_for_comparison(speech)
+        if not normalized:
+            return False
+        for event in reversed(request.information_state.visible_history):
+            payload = dict(event.get("payload") or {})
+            if str(payload.get("actor_id") or payload.get("speaker_id") or "") != request.actor.actor_id:
+                continue
+            previous = cls._normalize_speech_for_comparison(str(payload.get("speech") or ""))
+            if previous:
+                return normalized == previous
+        return False
+
+    def _repair_repeated_speech(
+        self,
+        request: DecisionRequest,
+        speech: str,
+        context: PlannerContext,
+        started: float,
+    ) -> str:
+        """Ask for one bounded, phase-aware rewrite without changing game facts."""
+        try:
+            response = self._chat(
+                [
+                    {
+                        "role": "system",
+                        "content": (
+                            "Rewrite one public game speech. Return JSON only as {\"speech\": string}. "
+                            "Keep the actor's role strategy and visible evidence, but add a new conversational move "
+                            "for the current phase. Do not invent facts, reveal private knowledge, or mention this rewrite."
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": json.dumps(
+                            {
+                                "phase": request.domain_metadata.get("phase"),
+                                "request_kind": request.domain_metadata.get("request_kind"),
+                                "current_speech": speech,
+                                "recent_public_timeline": list(request.information_state.visible_history)[-8:],
+                            },
+                            ensure_ascii=False,
+                        ),
+                    },
+                ],
+                temperature=min(self.temperature, 0.5),
+                max_tokens=220,
+                remaining_ms=self._remaining(context.remaining_ms, started),
+            )
+            raw = self._raw_selection_text(response)
+            parsed = self._parse_json_object(raw)
+            candidate = str(parsed.get("speech") or "").strip()
+            audit = audit_public_speech(request, candidate)
+            if audit.accepted and not self._is_recent_speech_duplicate(request, audit.speech):
+                return audit.speech
+        except Exception:
+            return ""
+        return ""
 
     def _chat(
         self,
@@ -442,7 +516,7 @@ class LLMActionPlanner:
 
     @staticmethod
     def _context_limits(kind: str) -> dict[str, int]:
-        if kind in {"werewolf.talk", "werewolf.badge_speech", "werewolf.pk_speech", "werewolf.sheriff_closing"}:
+        if kind in {"werewolf.talk", "werewolf.badge_speech", "werewolf.pk_speech", "werewolf.sheriff_closing", "werewolf.last_words"}:
             return {
                 "public_timeline": 12,
                 "private_facts": 8,
