@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from datetime import datetime
 from datetime import timedelta
@@ -12,6 +13,7 @@ from backend.db.database import SessionLocal
 from backend.db.models import Game
 from backend.db.models import GameRoom
 from backend.db.models import GameSnapshot
+from backend.db.models import MatchCheckpoint
 from backend.db.models import MatchJob
 
 
@@ -52,17 +54,24 @@ class MatchJobRepository:
         room_id: str,
         payload: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        configured_max_attempts = max(1, int(os.getenv("MATCH_MAX_ATTEMPTS", "3")))
         with SessionLocal.begin() as db:
             row = db.query(MatchJob).filter(MatchJob.game_id == game_id).first()
             if row is None:
                 if payload is None:
                     raise KeyError(game_id)
-                row = MatchJob(game_id=game_id, room_id=room_id, payload=payload)
+                row = MatchJob(
+                    game_id=game_id,
+                    room_id=room_id,
+                    payload=payload,
+                    max_attempts=max(1, int(os.getenv("MATCH_MAX_ATTEMPTS", "3"))),
+                )
                 db.add(row)
                 db.flush()
             elif row.status not in {"running", "completed"}:
                 row.status = "queued"
                 row.control_state = "running"
+                row.max_attempts = max(int(row.max_attempts or 0), configured_max_attempts)
                 row.finished_at = None
                 row.last_error = ""
                 if payload is not None:
@@ -120,14 +129,29 @@ class MatchJobRepository:
             db.flush()
             return ClaimedMatchJob(row.id, row.game_id, row.room_id, dict(row.payload or {}), row.attempts)
 
-    def heartbeat(self, job_id: str, worker_id: str, *, lease_seconds: int = 600) -> str:
+    def heartbeat(
+        self,
+        job_id: str,
+        worker_id: str,
+        *,
+        lease_seconds: int = 600,
+        checkpoint_seq: int | None = None,
+    ) -> str:
         now = _now()
         with SessionLocal.begin() as db:
-            row = db.query(MatchJob).filter(MatchJob.id == job_id, MatchJob.worker_id == worker_id).first()
+            row = (
+                db.query(MatchJob)
+                .filter(MatchJob.id == job_id, MatchJob.worker_id == worker_id, MatchJob.status == "running")
+                .first()
+            )
             if row is None:
                 raise RuntimeError(f"Worker {worker_id} no longer owns job {job_id}")
+            if row.lease_expires_at is None or row.lease_expires_at.replace(tzinfo=timezone.utc) <= now:
+                raise RuntimeError(f"Worker {worker_id} lease expired for job {job_id}")
             row.heartbeat_at = now
             row.lease_expires_at = now + timedelta(seconds=lease_seconds)
+            if checkpoint_seq is not None:
+                row.checkpoint_seq = int(checkpoint_seq)
             return str(row.control_state)
 
     def complete(self, job_id: str, worker_id: str) -> None:
@@ -163,15 +187,22 @@ class MatchJobRepository:
             row = db.query(MatchJob).filter(MatchJob.id == job_id, MatchJob.worker_id == worker_id).first()
             if row is None:
                 return
-            row.status = "failed"
-            row.finished_at = _now()
+            checkpoint = db.query(MatchCheckpoint).filter(MatchCheckpoint.game_id == row.game_id).first()
+            recoverable = checkpoint is not None and int(row.attempts or 0) < int(row.max_attempts or 1)
+            row.status = "queued" if recoverable else "failed"
+            row.control_state = "running" if recoverable else row.control_state
+            row.worker_id = None if recoverable else row.worker_id
+            row.finished_at = None if recoverable else _now()
             row.lease_expires_at = None
-            row.last_error = error[:8000]
+            row.heartbeat_at = None
+            row.last_error = (
+                f"{error[:7600]} | requeued from checkpoint seq={checkpoint.seq}" if recoverable else error[:8000]
+            )
             game = db.query(Game).filter(Game.id == row.game_id).first()
             if game is not None and game.status != "finished":
-                game.status = "failed"
+                game.status = row.status
             room = db.query(GameRoom).filter(GameRoom.id == row.room_id).first()
-            if room is not None:
+            if room is not None and not recoverable:
                 room.status = "failed"
                 room.updated_at = _now().timestamp()
 
@@ -214,12 +245,23 @@ class MatchJobRepository:
                 .all()
             )
             for row in rows:
-                row.status = "failed"
-                row.finished_at = now
-                row.last_error = "Worker lease expired; automatic replay is disabled to avoid duplicate LLM actions."
+                checkpoint = db.query(MatchCheckpoint).filter(MatchCheckpoint.game_id == row.game_id).first()
+                if checkpoint is not None and int(row.attempts or 0) < int(row.max_attempts or 1):
+                    row.status = "queued"
+                    row.control_state = "running"
+                    row.worker_id = None
+                    row.lease_expires_at = None
+                    row.heartbeat_at = None
+                    row.finished_at = None
+                    row.last_error = f"Worker lease expired; requeued from checkpoint seq={checkpoint.seq}."
+                else:
+                    row.status = "failed"
+                    row.finished_at = now
+                    row.lease_expires_at = None
+                    row.last_error = "Worker lease expired without a recoverable checkpoint or retry budget."
                 game = db.query(Game).filter(Game.id == row.game_id).first()
                 if game is not None and game.status != "finished":
-                    game.status = "failed"
+                    game.status = row.status
             return len(rows)
 
     @staticmethod
@@ -237,4 +279,5 @@ class MatchJobRepository:
             "created_at": row.created_at.isoformat() if row.created_at else None,
             "started_at": row.started_at.isoformat() if row.started_at else None,
             "finished_at": row.finished_at.isoformat() if row.finished_at else None,
+            "checkpoint_seq": row.checkpoint_seq,
         }

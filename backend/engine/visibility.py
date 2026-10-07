@@ -38,7 +38,7 @@ class Visibility:
         if player.alignment == Alignment.WOLF:
             known_wolves = [p.private_dict() for p in state.players if p.alignment == Alignment.WOLF]
 
-        return PlayerView(
+        view = PlayerView(
             player_id=player_id,
             day=state.day,
             phase=state.phase.value,
@@ -51,6 +51,40 @@ class Visibility:
             legal_targets=self._legal_targets(state, player),
             game_id=state.id,
         )
+        self._assert_safe(view, player)
+        return view
+
+    @staticmethod
+    def _assert_safe(view: PlayerView, viewer: Player) -> None:
+        """Fail closed if a projection accidentally contains hidden role data."""
+        if view.self_player.get("id") != viewer.id:
+            raise RuntimeError("PlayerView self_player does not match viewer")
+        if "role" not in view.self_player or "alignment" not in view.self_player:
+            raise RuntimeError("PlayerView must include the viewer's private role data")
+
+        known_wolf_ids = {str(item.get("id")) for item in view.known_wolves}
+        if viewer.alignment != Alignment.WOLF and known_wolf_ids:
+            raise RuntimeError("Non-wolf PlayerView cannot contain known wolf teammates")
+        if any(item.get("alignment") != Alignment.WOLF.value for item in view.known_wolves):
+            raise RuntimeError("Known wolf projection contains a non-wolf player")
+
+        for item in view.players:
+            is_self = str(item.get("id")) == viewer.id
+            is_wolf_teammate = str(item.get("id")) in known_wolf_ids
+            if is_self or is_wolf_teammate:
+                if "role" not in item or "alignment" not in item:
+                    raise RuntimeError("Private teammate projection lost required role data")
+            elif "role" in item or "alignment" in item:
+                raise RuntimeError("PlayerView leaked another player's role or alignment")
+
+        for event in view.public_events:
+            if str(event.get("visibility") or "public") == "private":
+                raise RuntimeError("Private event entered public PlayerView history")
+        for event in view.private_events:
+            if str(event.get("visibility") or "") != "private":
+                raise RuntimeError("Non-private event entered private PlayerView history")
+            if viewer.id not in list(event.get("visible_to") or []):
+                raise RuntimeError("Private event is not addressed to the viewer")
 
     def _visible_player(self, viewer: Player, target: Player) -> dict[str, Any]:
         if viewer.id == target.id:

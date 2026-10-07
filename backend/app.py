@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from contextlib import asynccontextmanager
 from typing import Any
 from typing import Dict
@@ -12,13 +13,16 @@ from fastapi import HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.responses import Response
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from backend.application.matches.executor import prepare_game
 from backend.application.matches.repository import MatchJobRepository
 from backend.application.matches.spec import MatchExecutionSpec
 from backend.core.config import settings
+from backend.core.config import validate_production_configuration
 from backend.core.errors import install_exception_handlers
 from backend.core.middleware import install_middleware
+from backend.core.security import actor_from_authorization
 from backend.db.database import init_db
 from backend.engine.models import GameState
 from backend.infrastructure.messaging.match_notifications import match_notifications
@@ -31,11 +35,38 @@ from backend.protocols import RoomManager
 
 @asynccontextmanager
 async def _lifespan(_app: FastAPI):
+    validate_production_configuration()
     _initialize_database()
     yield
 
 
 app = FastAPI(title=settings.app_name, version=settings.app_version, lifespan=_lifespan)
+
+
+class ApiAuthenticationMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        auth_mode = os.getenv("AUTH_MODE", settings.auth_mode).strip().lower()
+        if auth_mode == "disabled" or not request.url.path.startswith("/api/"):
+            return await call_next(request)
+        if request.url.path in {"/api/v1/health/live", "/api/v1/health/ready", "/api/health"}:
+            return await call_next(request)
+        try:
+            actor = actor_from_authorization(request.headers.get("authorization"))
+            if request.query_params.get("show_private", "false").lower() == "true" or (
+                request.url.path.endswith("/rooms/snapshot")
+            ) or request.query_params.get("moderator", "false").lower() == "true":
+                if "moderator" not in actor.roles:
+                    from fastapi.responses import JSONResponse
+
+                    return JSONResponse(status_code=403, content={"detail": "Moderator role required"})
+        except HTTPException as exc:
+            from fastapi.responses import JSONResponse
+
+            return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+        return await call_next(request)
+
+
+app.add_middleware(ApiAuthenticationMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=list(settings.cors_origins),
@@ -76,14 +107,7 @@ def _save_snapshot(state: GameState) -> None:
 
 
 def _initialize_database() -> None:
-    import logging
-
-    logger = logging.getLogger(__name__)
-    try:
-        init_db()
-    except Exception:
-        logger.warning("Database initialization failed during startup", exc_info=True)
-        return
+    init_db()
 
 
 @app.get("/api/health")

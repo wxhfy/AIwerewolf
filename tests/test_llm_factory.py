@@ -13,6 +13,17 @@ def test_siliconflow_factory_uses_free_glm_defaults(monkeypatch) -> None:
     assert client.provider == "siliconflow"
     assert client.model == "THUDM/GLM-4-9B-0414"
     assert client.base_url == "https://api.siliconflow.cn/v1"
+    assert client.max_retries == 0
+    client.close()
+
+
+def test_siliconflow_factory_retries_transient_failures_by_default(monkeypatch) -> None:
+    monkeypatch.setenv("SILICONFLOW_API_KEY", "test-key")
+    monkeypatch.delenv("LLM_MAX_RETRIES", raising=False)
+
+    client = create_client(provider="siliconflow", timeout=1)
+
+    assert client.max_retries == 2
     client.close()
 
 

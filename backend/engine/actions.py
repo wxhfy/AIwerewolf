@@ -6,6 +6,7 @@ from backend.engine.models import ActionType
 from backend.engine.models import Alignment
 from backend.engine.models import Decision
 from backend.engine.models import GameState
+from backend.engine.models import Phase
 from backend.engine.models import Role
 
 
@@ -61,5 +62,12 @@ class ActionValidator:
             # 狼人不能攻击狼队友（CLAUDE.md 关键规则 #1）
             if decision.action_type == ActionType.ATTACK:
                 if target.alignment == Alignment.WOLF:
+                    return False
+            if decision.action_type == ActionType.VOTE:
+                if state.phase == Phase.DAY_BADGE_ELECTION and target.id not in set(state.badge.candidates):
+                    return False
+                if state.phase == Phase.DAY_VOTE and state.pk_targets and target.id not in set(state.pk_targets):
+                    return False
+                if state.phase == Phase.BADGE_TRANSFER and target.id == actor.id:
                     return False
         return True

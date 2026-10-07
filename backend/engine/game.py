@@ -171,7 +171,9 @@ class WerewolfGame:
         on_game_start: Callable[[GameState], None] | None = None,
         on_game_end: Callable[[GameState], None] | None = None,
         on_event: Callable[[str, int, GameEvent], None] | None = None,
+        on_decision_persist: Callable[[list[dict]], int] | None = None,
         on_decisions_flush: Callable[[list[dict]], int] | None = None,
+        decision_replayer: Callable[[str, Player, str], Decision | None] | None = None,
         on_post_game: Callable[[GameState], None] | None = None,
         phase_delay_ms: float = 0,
         game_id: str | None = None,
@@ -205,7 +207,9 @@ class WerewolfGame:
         self.on_game_start = on_game_start
         self.on_game_end = on_game_end
         self.on_event = on_event
+        self.on_decision_persist = on_decision_persist
         self.on_decisions_flush = on_decisions_flush
+        self.decision_replayer = decision_replayer
         self.on_post_game = on_post_game
 
         # Task 2: Deferred DB write — buffer all decisions in memory, flush at game end.
@@ -245,15 +249,21 @@ class WerewolfGame:
             player.persona = {
                 "name": character.persona.name,
                 "mbti": character.persona.mbti,
+                "gender": character.persona.gender,
+                "age": character.persona.age,
                 "basic_info": character.persona.basic_info,
                 "style_label": character.persona.style_label,
+                "voice_rules": list(character.persona.voice_rules),
                 "reasoning_style": character.persona.reasoning_style,
+                "logic_style": character.persona.logic_style,
                 "speech_length_habit": character.persona.speech_length_habit,
                 "vocabulary_style": character.persona.vocabulary_style,
                 "social_habit": character.persona.social_habit,
                 "pressure_style": character.persona.pressure_style,
                 "uncertainty_style": character.persona.uncertainty_style,
                 "mistake_pattern": character.persona.mistake_pattern,
+                "trigger_topics": list(character.persona.trigger_topics),
+                "werewolf_experience": character.persona.werewolf_experience,
                 "courage": character.mind.courage,
                 "memory_bias": character.mind.memory_bias,
                 "suspicion_threshold": character.mind.suspicion_threshold,
@@ -588,9 +598,9 @@ class WerewolfGame:
             [self.state.player(candidate_id) for candidate_id in self.state.badge.candidates]
         )
 
-        # Parallel badge campaign speeches
-        decisions = self._batch_ask(candidates, "BADGE_SPEECH")
-        for player, decision in zip(candidates, decisions):
+        # Sequential badge campaign speeches: each candidate sees prior claims.
+        for player in candidates:
+            decision = self._sequential_public_speech(player, "BADGE_SPEECH")
             if not isinstance(decision, Decision):
                 continue
             if player.alive and self._valid_talk_decision(decision):
@@ -663,9 +673,7 @@ class WerewolfGame:
                     "agent_source": decision.metadata.get("source"),
                     "agent_model": decision.metadata.get("model"),
                     "agent_provider": decision.metadata.get("provider"),
-                "agent_fallback": bool(
-                    decision.metadata.get("fallback_used") or decision.metadata.get("fallback")
-                ),
+                    "agent_fallback": bool(decision.metadata.get("fallback_used") or decision.metadata.get("fallback")),
                     "badge_election": True,
                 },
             )
@@ -1019,11 +1027,10 @@ class WerewolfGame:
         self._set_phase(Phase.DAY_SPEECH)
 
         speakers = self._day_speech_order()
-        # Parallel execution — all players speak simultaneously.
-        # Each agent forms opinions independently from public info (not from
-        # other speeches in the same round), so parallelism is correct.
-        decisions = self._batch_ask(speakers, "TALK")
-        for player, decision in zip(speakers, decisions):
+        # Sequential public discussion: each speaker sees the events emitted
+        # by earlier speakers in this round.
+        for player in speakers:
+            decision = self._sequential_public_speech(player, "TALK")
             if not isinstance(decision, Decision):
                 continue
             if not self._valid_talk_decision(decision):
@@ -1080,10 +1087,10 @@ class WerewolfGame:
         names = ", ".join(player.name for player in pk_players)
         self._log(EventType.SYSTEM_MESSAGE, "public", {"message": f"Vote tie. PK speeches between {names}."})
 
-        # Parallel PK speeches
+        # Sequential PK speeches: each side can answer the prior speaker.
         pk_sorted = self._seat_sorted(pk_players)
-        decisions = self._batch_ask(pk_sorted, "TALK")
-        for player, decision in zip(pk_sorted, decisions):
+        for player in pk_sorted:
+            decision = self._sequential_public_speech(player, "TALK")
             if not isinstance(decision, Decision):
                 continue
             if self._valid_talk_decision(decision):
@@ -1151,9 +1158,7 @@ class WerewolfGame:
                     "agent_source": decision.metadata.get("source"),
                     "agent_model": decision.metadata.get("model"),
                     "agent_provider": decision.metadata.get("provider"),
-                    "agent_fallback": bool(
-                        decision.metadata.get("fallback_used") or decision.metadata.get("fallback")
-                    ),
+                    "agent_fallback": bool(decision.metadata.get("fallback_used") or decision.metadata.get("fallback")),
                     "vote_weight": self._vote_weight(voter.id),
                     "is_pk_vote": bool(self.state.pk_targets),
                 },
@@ -1275,9 +1280,7 @@ class WerewolfGame:
                 "agent_source": decision.metadata.get("source"),
                 "agent_model": decision.metadata.get("model"),
                 "agent_provider": decision.metadata.get("provider"),
-                "agent_fallback": bool(
-                    decision.metadata.get("fallback_used") or decision.metadata.get("fallback")
-                ),
+                "agent_fallback": bool(decision.metadata.get("fallback_used") or decision.metadata.get("fallback")),
             },
         )
         if self.pending_badge_transfer_from_id and self.state.winner is None:
@@ -1326,15 +1329,14 @@ class WerewolfGame:
                 "agent_source": decision.metadata.get("source") if i == 0 else "",
                 "agent_model": decision.metadata.get("model") if i == 0 else "",
                 "agent_provider": decision.metadata.get("provider") if i == 0 else "",
-                "agent_fallback": bool(
-                    decision.metadata.get("fallback_used") or decision.metadata.get("fallback")
-                )
+                "agent_fallback": bool(decision.metadata.get("fallback_used") or decision.metadata.get("fallback"))
                 if i == 0
                 else False,
                 "agent_speech_rewritten": bool(decision.metadata.get("speech_rewritten")) if i == 0 else False,
-                "agent_speech_policy_violations": list(
-                    decision.metadata.get("speech_policy_violations") or []
-                )
+                "agent_speech_policy_violations": list(decision.metadata.get("speech_policy_violations") or [])
+                if i == 0
+                else [],
+                "agent_speech_policy_warnings": list(decision.metadata.get("speech_policy_warnings") or [])
                 if i == 0
                 else [],
                 **extra_fields,
@@ -1396,9 +1398,7 @@ class WerewolfGame:
                 "agent_source": decision.metadata.get("source"),
                 "agent_model": decision.metadata.get("model"),
                 "agent_provider": decision.metadata.get("provider"),
-                    "agent_fallback": bool(
-                        decision.metadata.get("fallback_used") or decision.metadata.get("fallback")
-                    ),
+                "agent_fallback": bool(decision.metadata.get("fallback_used") or decision.metadata.get("fallback")),
             },
         )
         self._log(
@@ -1523,6 +1523,12 @@ class WerewolfGame:
         self.state.current_speaker_id = player.id
         if self.observer is not None:
             self.observer(self.state)
+        if self.decision_replayer is not None:
+            replayed = self.decision_replayer(decision_request.request_id, player, request)
+            if replayed is not None:
+                replayed.metadata = {**replayed.metadata, "replayed": True}
+                self._record_decision(player, request, view.__dict__, replayed, raw_output="[replayed]")
+                return replayed
         try:
             result = runtime.run(decision_request)
         finally:
@@ -1548,6 +1554,11 @@ class WerewolfGame:
             return self._batch_ask_harness(players, request)
         return [self._ask(player, request) for player in players]
 
+    def _sequential_public_speech(self, player: Player, request: str) -> Any:
+        """Resolve one public speech after prior speeches are committed."""
+        decisions = self._batch_ask([player], request)
+        return decisions[0] if decisions else None
+
     def _batch_ask_harness(self, players: list[Player], request: str) -> list[Any]:
         import concurrent.futures as _futures
 
@@ -1571,31 +1582,42 @@ class WerewolfGame:
             prepared.append((player, view, decision_request))
 
         results_by_index: dict[int, Any] = {}
+        replayed_by_index: dict[int, Decision] = {}
+        missing = []
+        if self.decision_replayer is not None:
+            for index, (player, _view, decision_request) in enumerate(prepared):
+                replayed = self.decision_replayer(decision_request.request_id, player, request)
+                if replayed is not None:
+                    replayed.metadata = {**replayed.metadata, "replayed": True}
+                    replayed_by_index[index] = replayed
+                else:
+                    missing.append((index, decision_request))
+        else:
+            missing = [(index, decision_request) for index, (_, _, decision_request) in enumerate(prepared)]
         with _futures.ThreadPoolExecutor(max_workers=max(1, len(prepared))) as pool:
             futures = {
-                pool.submit(runtime.run, decision_request): index
-                for index, (_, _, decision_request) in enumerate(prepared)
+                pool.submit(runtime.run, decision_request): index for index, decision_request in missing
             }
             for future in _futures.as_completed(futures):
                 results_by_index[futures[future]] = future.result()
 
         decisions: list[Any] = []
         for index, (player, view, decision_request) in enumerate(prepared):
-            mapped = self.decision_adapter.to_engine_decisions(
-                player,
-                decision_request,
-                results_by_index[index],
-            )
-            if len(mapped) != 1:
-                raise RuntimeError(f"Batch harness request {request} returned {len(mapped)} engine decisions")
-            decision = mapped[0]
+            if index in replayed_by_index:
+                decision = replayed_by_index[index]
+                self._record_decision(player, request, view.__dict__, decision, raw_output="[replayed]")
+            else:
+                mapped = self.decision_adapter.to_engine_decisions(player, decision_request, results_by_index[index])
+                if len(mapped) != 1:
+                    raise RuntimeError(f"Batch harness request {request} returned {len(mapped)} engine decisions")
+                decision = mapped[0]
+                self._record_harness_decision(
+                    player,
+                    request,
+                    self.decision_adapter.view_record(view),
+                    decision,
+                )
             decisions.append(decision)
-            self._record_harness_decision(
-                player,
-                request,
-                self.decision_adapter.view_record(view),
-                decision,
-            )
         return decisions
 
     def _record_harness_decision(self, player: Player, request: str, view: dict, decision: Decision) -> None:
@@ -2032,8 +2054,16 @@ class WerewolfGame:
             sv = view.get("self_player", {})
             visible_facts.append("role=" + str(sv.get("role", "?")))
             visible_facts.append("alive=" + str(sv.get("alive", "?")))
-            alive = view.get("alive_players", [])
-            visible_facts.append("alive_count=" + str(len(alive) if isinstance(alive, list) else "?"))
+            # PlayerView stores the roster under ``players``. The old
+            # ``alive_players`` lookup silently produced alive_count=0 in
+            # persisted traces and polluted later decision context.
+            players = view.get("players", [])
+            alive_count = (
+                sum(1 for item in players if isinstance(item, dict) and bool(item.get("alive")))
+                if isinstance(players, list)
+                else "?"
+            )
+            visible_facts.append("alive_count=" + str(alive_count))
 
         # Populate candidate actions from legal actions or metadata
         candidate_actions = meta.get("candidate_actions", [])
@@ -2052,8 +2082,9 @@ class WerewolfGame:
                     if target.id != player.id and (allowed is None or target.id in allowed):
                         candidate_actions.append({"target_id": target.id, "target_name": target.name})
 
-        # Task 2: Buffer decision for deferred batch DB write
         decision_data = {
+            "id": str(uuid4()),
+            "request_id": meta.get("harness_request_id"),
             "game_id": self.state.id,
             "player_id": player.id,
             "player_name": player.name,
@@ -2088,7 +2119,16 @@ class WerewolfGame:
             "fallback_reason": meta.get("fallback_reason") or meta.get("fallback_error"),
             "metadata": meta,
         }
-        self._pending_decisions.append(decision_data)
+        # Persist each decision as soon as it is resolved. The pending list is
+        # only a compensation buffer for transient database failures.
+        if self.on_decision_persist is None:
+            self._pending_decisions.append(decision_data)
+        else:
+            try:
+                self.on_decision_persist([decision_data])
+            except Exception:
+                logger.exception("Failed to persist decision immediately; keeping compensation record")
+                self._pending_decisions.append(decision_data)
 
         with self._shared_lock:
             self.state.decision_records.append(

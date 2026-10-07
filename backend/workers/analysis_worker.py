@@ -6,6 +6,7 @@ import signal
 import threading
 
 from backend.application.analysis.service import PostGameAnalysisService
+from backend.core.config import validate_production_configuration
 from backend.db.database import init_db
 from backend.db.persist import dispatch_match_analysis_outbox
 from backend.db.persist import list_recoverable_track_c_post_game_jobs
@@ -46,6 +47,7 @@ class AnalysisWorker:
         return processed
 
     def run_forever(self) -> None:
+        validate_production_configuration()
         init_db()
         logger.info("Analysis worker started")
         while not self.stop_event.is_set():

@@ -12,12 +12,17 @@ from backend.application.matches.repository import MatchJobRepository
 from backend.application.matches.spec import MatchExecutionSpec
 from backend.db.database import init_db
 from backend.db.persist import complete_match_transaction
+from backend.db.persist import get_agent_decision_by_request_id
+from backend.db.persist import get_match_checkpoint
 from backend.db.persist import save_decisions_batch
 from backend.db.persist import save_event
 from backend.db.persist import save_game_start
-from backend.db.persist import save_snapshot
+from backend.db.persist import save_snapshot_and_checkpoint
 from backend.engine.game import WerewolfGame
+from backend.engine.models import ActionType
+from backend.engine.models import Decision
 from backend.engine.models import GameState
+from backend.engine.models import Player
 from backend.infrastructure.messaging.match_notifications import match_notifications
 
 logger = logging.getLogger(__name__)
@@ -29,12 +34,41 @@ def _sample_personas(count: int, seed: int | None) -> list[dict] | None:
     return sample_personas(count, seed=seed)
 
 
-def persist_snapshot(state: GameState) -> None:
+def persist_snapshot(state: GameState, *, job_id: str | None = None) -> None:
     moderator = state.snapshot(show_private=True)
     public = state.snapshot(show_private=False)
     seq = int(moderator.get("seq") or 0)
-    save_snapshot(state.id, seq, state.day, state.phase.value, moderator, public)
+    save_snapshot_and_checkpoint(
+        state.id,
+        job_id=job_id,
+        seq=seq,
+        day=state.day,
+        phase=state.phase.value,
+        truth=moderator,
+        public=public,
+        cursor={
+            "last_event_seq": seq,
+            "phase": state.phase.value,
+            "decision_count": len(state.decision_records),
+        },
+    )
     match_notifications.publish(state.id, seq)
+
+
+def restore_game_from_checkpoint(game: WerewolfGame, checkpoint: dict[str, Any] | None) -> bool:
+    """Restore an executable game from the latest durable moderator snapshot."""
+    if not checkpoint or str(checkpoint.get("status") or "running") in {"finished", "completed"}:
+        return False
+    truth_state = checkpoint.get("truth_state")
+    if not isinstance(truth_state, dict) or not truth_state.get("id"):
+        return False
+    restored = GameState.from_moderator_snapshot(truth_state)
+    cursor = dict(checkpoint.get("cursor") or {})
+    # The sequence is advanced while constructing a request, before the next
+    # observer checkpoint. Reconcile it with the last durably confirmed count.
+    restored.phase_cursor["__decision_sequence__"] = int(cursor.get("decision_count") or 0)
+    game.state = restored
+    return True
 
 
 def build_game(
@@ -53,6 +87,7 @@ def build_game(
     players=None,
     sampled_personas: list[dict] | None = None,
     agent_runtime: AgentRuntime | None = None,
+    decision_replayer=None,
 ) -> WerewolfGame:
     runtime = agent_runtime or LocalAgentRuntime()
     game = prepare_game(
@@ -75,6 +110,7 @@ def build_game(
         for role, bias in strategy_bias_by_role.items():
             role_models[role] = {**dict(role_models.get(role) or {}), "strategy_bias": bias}
         runtime_config["role_models"] = role_models
+    game.decision_replayer = decision_replayer
     runtime.attach(game, runtime_config)
     return game
 
@@ -109,6 +145,7 @@ def prepare_game(
         on_game_start=save_game_start,
         on_game_end=None,
         on_event=save_event,
+        on_decision_persist=save_decisions_batch,
         on_decisions_flush=save_decisions_batch,
         on_post_game=None,
         game_id=game_id,
@@ -139,6 +176,27 @@ class MatchExecutor:
         if any(not bool(player.get("is_ai", True)) for player in spec.players):
             raise ValueError("Match Worker currently accepts AI-only matches")
 
+        def decision_replayer(request_id: str, player: Player, request: str) -> Decision | None:
+            del request
+            persisted = get_agent_decision_by_request_id(request_id)
+            if persisted is None:
+                return None
+            action = dict(persisted.get("parsed_action") or {})
+            try:
+                action_type = ActionType(str(action.get("action_type")))
+            except ValueError:
+                return None
+            metadata = dict(persisted.get("metadata") or {})
+            metadata.update({"source": "agent_replay", "harness_request_id": request_id})
+            return Decision(
+                actor_id=str(persisted.get("player_id") or player.id),
+                action_type=action_type,
+                target_id=action.get("target_id"),
+                speech=action.get("speech"),
+                reasoning=str(action.get("reasoning") or "[replayed persisted decision]"),
+                metadata=metadata,
+            )
+
         game = build_game(
             seed=spec.seed,
             agent_type=spec.agent_type,
@@ -150,14 +208,28 @@ class MatchExecutor:
             players=spec.build_players(),
             sampled_personas=spec.personas,
             agent_runtime=self.agent_runtime,
+            decision_replayer=decision_replayer,
         )
 
+        checkpoint = get_match_checkpoint(spec.match_id)
+        if restore_game_from_checkpoint(game, checkpoint):
+            logger.info(
+                "Match %s restored from checkpoint seq=%s phase=%s",
+                spec.match_id,
+                checkpoint.get("seq") if checkpoint else None,
+                checkpoint.get("phase") if checkpoint else None,
+            )
+
         def observe(state: GameState) -> None:
-            persist_snapshot(state)
+            # Fence a worker whose lease expired while it was waiting on a
+            # model request before it overwrites the next owner's checkpoint.
+            self.repository.heartbeat(job.id, self.worker_id, lease_seconds=self.lease_seconds)
+            persist_snapshot(state, job_id=job.id)
             control_state = self.repository.heartbeat(
                 job.id,
                 self.worker_id,
                 lease_seconds=self.lease_seconds,
+                checkpoint_seq=int(state.snapshot(show_private=True).get("seq") or 0),
             )
             while control_state == "paused":
                 time.sleep(0.5)

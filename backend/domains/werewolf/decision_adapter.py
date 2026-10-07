@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import asdict
 from typing import Any
-from uuid import uuid4
 
 from backend.agent_harness.contracts import ActionOption
 from backend.agent_harness.contracts import ActionSpace
@@ -90,9 +90,13 @@ class WerewolfDecisionAdapter:
             "observations": view.observations,
             "legal_targets": view.legal_targets,
         }
-        sequence = len(state.decision_records) + 1
+        sequence = int(state.phase_cursor.get("__decision_sequence__", len(state.decision_records))) + 1
+        state.phase_cursor["__decision_sequence__"] = sequence
         return DecisionRequest(
-            request_id=f"{state.id}:{sequence}:{uuid4().hex[:8]}",
+            # The request must be reproducible after a worker restart. A
+            # random suffix would turn a retry of the same decision into a
+            # second model request with no idempotency key.
+            request_id=f"{state.id}:{sequence}:{player.id}:{request_kind}",
             environment_id=self.environment_id,
             episode_id=state.id,
             actor=ActorRef(actor_id=player.id, agent_definition_id=agent_definition_id),
@@ -125,6 +129,8 @@ class WerewolfDecisionAdapter:
                 "day": state.day,
                 "phase": state.phase.value,
                 "harness_mode": harness_mode,
+                "player_count": len(state.players),
+                "role_configuration": dict(Counter(item.role.value for item in state.players)),
             },
             budget=HarnessBudget(
                 max_steps=(4 if request_kind in _DELIBERATIVE_REQUESTS else 3)
@@ -313,6 +319,17 @@ class WerewolfDecisionAdapter:
                 option_id=f"{action_type.value}:{target_id}",
                 action_type=action_type.value,
                 parameters={"target_id": target_id},
+                model_hint=(
+                    "Choose this server-generated legal target: "
+                    + next(
+                        (
+                            str(target.get("name") or target_id)
+                            for target in view.legal_targets
+                            if str(target.get("id")) == target_id
+                        ),
+                        target_id,
+                    )
+                ),
             )
             for target_id in self._target_ids(state, player, view, request_kind)
         ]

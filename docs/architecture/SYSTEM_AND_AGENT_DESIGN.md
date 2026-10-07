@@ -162,6 +162,8 @@ SSE 客户端掉线后不会要求 Worker 重放内存消息，而是从 Postgre
 
 对局进入 `GAME_END` 后，最终游戏状态、任务完成状态和 `outbox_events` 在同一事务提交。后续 Analysis Worker 再执行 Track B/C，避免赛后分析阻塞实时对局。
 
+Agent 决策采用“实时写入 + 补偿缓冲”策略：决策完成后立即写入 `agent_decisions`，并使用稳定请求 ID 保证重试幂等；只有数据库暂时不可用时才保留在进程内补偿队列。Worker 在每个可观察边界写入阶段级 checkpoint。租约失效后，若仍有重试预算则重新入队，Worker 重建 `GameState`，对已有请求优先读取并重放已持久化结果，未完成请求才重新进入 Harness。
+
 当前已具备事务内 Outbox 写入边界；独立 Publisher、完整重试治理和死信队列仍是后续生产化工作。
 
 ## 5. Agent Harness 设计
@@ -276,6 +278,7 @@ Reducer 只能消费 `DecisionRequest.information_state`，不能直接查主持
 | `games` | 对局权威状态和最终结果 |
 | `players` | 席位、角色和存活状态 |
 | `match_jobs` | 可领取、可恢复的对局任务 |
+| `match_checkpoints` | Worker 最近一次确认提交的阶段、事件序号和恢复游标 |
 | `match_commands` | 幂等暂停、恢复等控制命令 |
 | `game_events` | 按 `seq` 排序的领域事件 |
 | `game_snapshots` | 主持人快照和公开快照 |
@@ -325,7 +328,7 @@ Reducer 只能消费 `DecisionRequest.information_state`，不能直接查主持
 4. 所有 Agent 只收到角色安全信息。
 5. 模型行动经过 Harness 与领域引擎校验。
 6. 对局最终进入 `GAME_END`。
-7. 数据库可查到最终胜方、连续事件、快照、Agent 决策和角色记忆。
+7. 数据库可查到最终胜方、连续事件、快照、Agent 决策、角色记忆和最近 checkpoint。
 8. SSE 能按 `seq` 交付，断线后可以续读。
 9. 对局完成后产生可重试的异步分析事实。
 

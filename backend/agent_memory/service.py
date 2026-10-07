@@ -32,7 +32,11 @@ class ActorMemoryService:
             retrieved = self.reducer.retrieved(state, request)
             memory = self.reducer.prompt_snapshot(state, request, retrieved)
             recent_limit = self.reducer.dynamics(state, request).recent_event_limit
-            recent = tuple(request.information_state.visible_history[-recent_limit:])
+            ordered_history = sorted(
+                request.information_state.visible_history,
+                key=lambda event: int(event.get("seq") or 0),
+            )
+            recent = tuple(ordered_history[-recent_limit:])
             prepared = replace(
                 request,
                 information_state=InformationState(

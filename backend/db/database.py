@@ -51,6 +51,7 @@ else:
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.close()
 
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
@@ -110,6 +111,42 @@ def _ensure_event_stream_schema(connection: Connection | None = None) -> None:
             "CREATE UNIQUE INDEX IF NOT EXISTS uq_game_snapshots_game_seq ON game_snapshots (game_id, seq)"
         )
         conn.exec_driver_sql("CREATE UNIQUE INDEX IF NOT EXISTS uq_game_events_game_seq ON game_events (game_id, seq)")
+
+
+def _ensure_compatibility_schema(connection: Connection | None = None) -> None:
+    """Apply small additive migrations for existing local databases.
+
+    ``create_all`` creates new tables but deliberately does not add columns to
+    tables that already exist. Local SQLite databases are frequently reused
+    across development runs, so the recent recovery/idempotency columns must be
+    added before repositories issue queries against them.
+    """
+    bind = connection or engine
+    inspector = inspect(bind)
+    tables = set(inspector.get_table_names())
+    additions = {
+        "match_jobs": {"checkpoint_seq": "INTEGER"},
+        "agent_decisions": {"request_id": "VARCHAR"},
+    }
+    owns_transaction = connection is None
+    context = engine.begin() if owns_transaction else nullcontext(connection)
+    with context as conn:
+        for table, columns in additions.items():
+            if table not in tables:
+                continue
+            existing_columns = {column["name"] for column in inspector.get_columns(table)}
+            for column, sql_type in columns.items():
+                if column in existing_columns:
+                    continue
+                conn.exec_driver_sql(f'ALTER TABLE "{table}" ADD COLUMN "{column}" {sql_type}')
+        if "agent_decisions" in tables:
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_decisions_request_id ON agent_decisions (request_id)")
+        if "match_checkpoints" in tables:
+            conn.exec_driver_sql(
+                "CREATE INDEX IF NOT EXISTS ix_match_checkpoints_game_seq ON match_checkpoints (game_id, seq)"
+            )
+
+
 def init_db() -> None:
     global _db_initialized
     if _db_initialized:
@@ -132,6 +169,7 @@ def init_db() -> None:
             try:
                 Base.metadata.create_all(bind=connection)
                 _ensure_event_stream_schema(connection)
+                _ensure_compatibility_schema(connection)
                 connection.commit()
             except Exception:
                 connection.rollback()
@@ -142,6 +180,7 @@ def init_db() -> None:
     else:
         Base.metadata.create_all(bind=engine)
         _ensure_event_stream_schema()
+        _ensure_compatibility_schema()
     # Seed the persona library on first boot so games can sample from DB even
     # before any human ever adds a custom persona.
     try:

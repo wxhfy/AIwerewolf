@@ -29,6 +29,28 @@ def test_game_plays_to_winner() -> None:
     assert any(item for item in state.daily_summaries.values())
 
 
+def test_decision_is_persisted_immediately_with_stable_id() -> None:
+    players = [
+        Player(id="P1", seat=1, name="A", role=Role.VILLAGER, alignment=Alignment.VILLAGE),
+        Player(id="P2", seat=2, name="B", role=Role.WEREWOLF, alignment=Alignment.WOLF),
+    ]
+    persisted: list[dict] = []
+    game = WerewolfGame(
+        players=players,
+        seed=11,
+        on_decision_persist=lambda rows: persisted.extend(rows) or len(rows),
+    )
+    decision = Decision("P1", ActionType.TALK, speech="我会继续核对发言和投票。", metadata={"source": "test"})
+    view = game.visibility.for_player(game.state, "P1")
+
+    game._record_decision(players[0], "TALK", view.__dict__, decision)
+
+    assert len(persisted) == 1
+    assert persisted[0]["id"]
+    assert persisted[0]["game_id"] == game.state.id
+    assert game._pending_decisions == []
+
+
 def test_multiple_seeds_finish_without_crashing() -> None:
     for seed in range(1, 8):
         state = build_game(seed=seed).play()
@@ -97,6 +119,28 @@ def test_werewolf_night_legal_targets_exclude_wolves() -> None:
     assert all(target["id"] not in {"P1", "P2"} for target in view.legal_targets)
 
 
+def test_action_validator_enforces_badge_and_pk_vote_scopes() -> None:
+    from backend.engine.actions import ActionValidator
+
+    players = [
+        Player(id="P1", seat=1, name="A", role=Role.VILLAGER, alignment=Alignment.VILLAGE),
+        Player(id="P2", seat=2, name="B", role=Role.WEREWOLF, alignment=Alignment.WOLF),
+        Player(id="P3", seat=3, name="C", role=Role.SEER, alignment=Alignment.VILLAGE),
+    ]
+    game = WerewolfGame(players=players, seed=13)
+    validator = ActionValidator()
+
+    game.state.phase = Phase.DAY_BADGE_ELECTION
+    game.state.badge.candidates = ["P2"]
+    assert validator.validate(game.state, Decision("P1", ActionType.VOTE, target_id="P2"))
+    assert not validator.validate(game.state, Decision("P1", ActionType.VOTE, target_id="P3"))
+
+    game.state.phase = Phase.DAY_VOTE
+    game.state.pk_targets = ["P2", "P3"]
+    assert validator.validate(game.state, Decision("P1", ActionType.VOTE, target_id="P2"))
+    assert not validator.validate(game.state, Decision("P1", ActionType.VOTE, target_id="P1"))
+
+
 def test_llm_invalid_day_vote_raises_instead_of_fallback() -> None:
     players = [
         Player(id="P1", seat=1, name="A", role=Role.VILLAGER, alignment=Alignment.VILLAGE),
@@ -156,6 +200,40 @@ def test_llm_invalid_badge_vote_raises_instead_of_fallback() -> None:
     assert invalid_records[0].player_id == "P2"
     assert invalid_records[0].error_type
     assert "badge candidates" in invalid_records[0].error_type
+
+
+def test_decision_visible_facts_use_the_projected_alive_roster() -> None:
+    players = [
+        Player(id="P1", seat=1, name="A", role=Role.VILLAGER, alignment=Alignment.VILLAGE),
+        Player(id="P2", seat=2, name="B", role=Role.WEREWOLF, alignment=Alignment.WOLF),
+        Player(id="P3", seat=3, name="C", role=Role.SEER, alignment=Alignment.VILLAGE, alive=False),
+    ]
+    game = WerewolfGame(players=players, seed=11)
+    player = players[0]
+    view = game.visibility.for_player(game.state, player.id)
+    game._record_decision(
+        player,
+        "TALK",
+        view.__dict__,
+        Decision(player.id, ActionType.TALK, speech="继续观察。", metadata={"source": "test"}),
+    )
+
+    assert "alive_count=2" in game.state.decision_records[-1].visible_facts
+
+
+def test_wolf_border_win_is_explicit_when_all_villagers_are_dead() -> None:
+    players = [
+        Player(id="W1", seat=1, name="Wolf", role=Role.WEREWOLF, alignment=Alignment.WOLF),
+        Player(id="S1", seat=2, name="Seer", role=Role.SEER, alignment=Alignment.VILLAGE),
+        Player(id="G1", seat=3, name="Guard", role=Role.GUARD, alignment=Alignment.VILLAGE),
+        Player(id="V1", seat=4, name="Villager", role=Role.VILLAGER, alignment=Alignment.VILLAGE, alive=False),
+    ]
+    game = WerewolfGame(players=players, seed=11)
+
+    assert game._check_win() is True
+    assert game.state.winner == Alignment.WOLF
+    end_events = [event for event in game.state.events if event.type == EventType.GAME_END]
+    assert end_events[-1].payload["reason"] == "all_villagers_dead"
 
 
 def test_llm_empty_day_speech_raises_instead_of_skipping() -> None:

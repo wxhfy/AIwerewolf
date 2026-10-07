@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 from fastapi import HTTPException
+from fastapi import Response
 from sqlalchemy import inspect
 
 from backend.application.commands.contracts import MatchCommandRequest
@@ -12,6 +13,7 @@ from backend.core.config import settings
 from backend.core.errors import NotImplementedServiceError
 from backend.core.security import CurrentActor
 from backend.db.database import engine
+from backend.db.persist import get_match_checkpoint
 from backend.infrastructure.messaging.match_notifications import match_notifications
 from backend.infrastructure.persistence.match_feed import MatchFeedRepository
 
@@ -27,7 +29,7 @@ def liveness() -> dict:
 
 
 @router.get("/health/ready", tags=["health"])
-def readiness() -> dict:
+def readiness(response: Response) -> dict:
     checks: dict[str, str] = {}
     try:
         with engine.connect() as connection:
@@ -37,6 +39,8 @@ def readiness() -> dict:
         checks["database"] = f"error: {exc}"
     checks["redis"] = match_notifications.health()
     ready = checks["database"] == "ok"
+    if not ready:
+        response.status_code = 503
     return {"status": "ready" if ready else "not_ready", "ready": ready, "checks": checks}
 
 
@@ -58,11 +62,14 @@ def capabilities() -> dict:
             "rooms": "rooms" in tables,
             "match_jobs": "match_jobs" in tables,
             "match_commands": "match_commands" in tables,
+            "match_checkpoints": "match_checkpoints" in tables,
             "agent_decision_jobs": "agent_decision_jobs" in tables,
             "decision_evaluations": "decision_evaluations" in tables,
             "post_game_analysis_jobs": "track_c_post_game_jobs" in tables,
             "strategy_knowledge": "strategy_knowledge_docs" in tables,
             "outbox": "outbox_events" in tables,
+            "actor_memories": "actor_memories" in tables,
+            "agent_harness_events": "agent_harness_events" in tables,
         },
         "auth_mode": settings.auth_mode,
     }
@@ -74,7 +81,13 @@ def get_match(match_id: str) -> dict:
     if job is None:
         raise HTTPException(status_code=404, detail="Match not found")
     snapshot = match_feed.latest_snapshot(match_id)
-    return {**job, "latest_seq": int((snapshot or {}).get("seq") or 0), "snapshot": snapshot}
+    checkpoint = get_match_checkpoint(match_id)
+    return {
+        **job,
+        "latest_seq": int((snapshot or {}).get("seq") or 0),
+        "snapshot": snapshot,
+        "checkpoint": checkpoint,
+    }
 
 
 @router.post(

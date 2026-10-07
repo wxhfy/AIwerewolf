@@ -67,20 +67,24 @@ Harness 不理解“狼人”“女巫”或“查杀”。它只理解：
 
 ## 2. 上下文如何组织
 
-当前上下文不是一段不断追加的聊天记录，而是每个决策点重新装配的 `Context Envelope`。顺序和所有权如下：
+当前上下文不是一段不断追加的聊天记录，也不再把原始事件、整份记忆、证据图和策略快照重复塞给模型。每个决策点由 `build_decision_context_v1` 重新装配一份单一的 `werewolf.decision_context.v1` 投影：
 
 | 层 | 内容 | 所有者 | 是否可被模型修改 |
 |---|---|---|---|
-| L0 身份与策略边界 | Actor、Agent 定义、Policy Tag、Deadline | Harness | 否 |
-| L1 当前观察 | 天数、阶段、自己、可见玩家、合法目标 | Visibility / Adapter | 否 |
-| L2 近期可见历史 | 最近公开事件和该角色私有事件 | Memory Service | 否 |
-| L3 主观认知 | 工作记忆、信念、关系、情绪、目标、声明与证据图 | Actor Memory | 间接更新 |
-| L4 检索记忆 | 与当前决策相关的情景记忆 | Retriever | 否 |
-| L5 跨局策略 | Track C 已发布且适用的策略知识 | Knowledge Retriever | 否 |
-| L6 渐进能力 | Skill 目录、已加载 Skill、工具结果 | Harness | 只能请求 |
-| L7 合法动作 | `option_id`、固定参数和开放响应 Schema | Environment | 否 |
+| L0 `identity` | 自己的身份、阵营、座位和 Agent 定义 | Visibility / Adapter | 否 |
+| L1 `agent_profile` | 白名单化的人格表达、注意偏好和风险倾向；不含运行时配置 | Agent Adapter | 否 |
+| L2 `situation` | 天数、阶段、公开玩家名单和当前决策类型 | Visibility / Adapter | 否 |
+| L3 `confirmed_private_facts` | 狼队友、自己的查验结果等亲知事实 | Memory Service | 否 |
+| L4 `public_timeline` | 按事件序号排列的近期公开发言、投票和死亡 | Memory Service | 否 |
+| L5 `public_claims` | 归属于发言者的身份、查验、立场、承诺、反悔和矛盾 | Actor Memory | 间接更新 |
+| L6 `inferences` | 主观倾向及少量支持/反对它的带来源声明；只使用定性信心 | Strategy Projection | 否 |
+| L7 `agent_state` | 当前目标、注意焦点、相关回忆、主观关系、情绪等级、自身近期立场和上一次行动 | Actor Memory | 间接更新 |
+| L8 `external_knowledge` | Track C 已发布且适用的跨局建议 | Knowledge Retriever | 否 |
+| L9 `current_task` | 决策指导、剩余时间、剩余步数和反思 | Harness | 否 |
 
-Planner 的 Payload 中包含 `context_manifest`，记录本次实际装配的层、数量上限、包含数量、剩余步数和剩余时间。这样可以回答“模型为什么没有看到某条信息”，也能对上下文长度和裁剪效果做指标统计。
+合法动作和渐进能力仍作为 Context Envelope 的受控同级字段提供。人格通过 `agent_profile` 的白名单字段单独传递，并明确只影响表达和风险偏好，不能覆盖身份、证据或游戏规则。当前 Profile 投影分为三层：`persona` 保存身份、语言和经历；`behavior.cognitive_bias` 描述记忆、情绪和矛盾敏感度；`behavior.decision_style` 与 `behavior.conversation_style` 描述风险、改票、防御和互动倾向。这些数值是软偏好，不是动作规则，必须结合当前证据和角色状态动态解释。Planner 的 Payload 中包含 `context_manifest`，记录本次实际装配的层、数量上限和实际数量。
+
+`epistemic_contract` 强制规定来源语义：私有确定事实可以相信但不一定可以公开；公开发言只代表“某人说过”；公开声明必须绑定说话者；推断可能出错；跨局知识不能证明本局事实。模型因此不能再把“另一名玩家声称查验了某人”误认为“我昨晚查验了某人”。
 
 ### 上下文优先级
 
@@ -99,15 +103,20 @@ Track C 的策略只能提供建议，不能覆盖当前对局事实；人格只
 
 ### 裁剪与压缩
 
-目前采用结构化窗口而不是全文摘要：
+目前采用按信息来源分别裁剪的结构化窗口，而不是全文摘要：
 
-- 可见历史最多注入最近 10 条关键事件。
-- 信念最多 8 个，关系最多 6 个。
-- 最近声明和证据边各 8 条。
-- 情景检索最多 4 条。
+- 发言决策最多注入 12 条近期公开事件，投票决策最多 14 条。
+- 私有确定事实独立保留，窗口滚动不能丢失旧的查验结果。
+- 公开声明最多 10 条，并始终保留说话者和“未经验证”状态。
+- 主观推断最多 6 名玩家，只输出狼倾向、村倾向或不确定及高、中、低置信度。
+- 跨局策略最多 2 条，并标记为通用建议而非本局事实。
 - 数据库保留完整状态，Prompt 只携带决策窗口。
 
-后续需要继续补充真正的 Token Budget Manager：在模型上下文接近上限时，按层级缩减，而不是对整个 Prompt 粗暴截断。压缩结果必须保留来源 ID、时间范围和被省略数量。
+当前已经接入 `ContextTokenBudgetManager`。它对结构化 Payload 做完整字段/列表项级裁剪，不截断 JSON 字符串，也不删除身份、角色私有事实、当前局面、合法动作和当前任务约束。裁剪顺序由信息价值决定：跨局建议、旧回忆、低置信推断和普通旧发言优先淘汰；死亡、投票、身份/查验声明和较高置信推断优先保留。
+
+预算由 `LLMActionPlanner(input_token_budget=...)` 控制，也可以通过模型实例的 `context_input_tokens`、`context_window_tokens` 或环境变量 `AGENT_CONTEXT_INPUT_TOKENS` 提供；默认预算为 12000 个估算输入 token。每次决策的 `context_manifest.context_budget` 会记录原始估算量、裁剪后估算量、保留余量、裁剪类别和估算器版本，随 Harness 决策元数据持久化。当前估算器是稳定的 UTF-8 字节近似，不冒充模型供应商的真实 tokenizer；真实消耗仍以模型侧返回的 usage 为准。
+
+如果连最小必需上下文都无法放入预算，预算器会抛出明确错误，而不是静默丢弃关键事实。这样可以在配置阶段发现模型上下文窗口不足，避免模型在缺少身份或合法动作的情况下继续决策。
 
 ### 对开源 Harness 的吸收
 
@@ -336,7 +345,7 @@ backend/game_runtime/              通用环境执行契约
 | 信息隔离 | Visibility + Actor InformationState | 核心边界已成立 |
 | 合法动作 | 服务端 ActionSpace + 双重校验 | 已可用 |
 | 持久化审计 | 决策、记忆、Harness Event、快照 | 已可用 |
-| 上下文组织 | 已分层并输出 Manifest | 可用，仍缺 Token 级预算器 |
+| 上下文组织 | 已分层并输出 Manifest | 已接入结构化 Token 预算与裁剪审计 |
 | Skill / Tool | 通用循环已接通，狼人杀支持可配置 Agentic 模式 | 实验阶段 |
 | 发言语义 | 规则型声明图和矛盾检测 | 基础可用，深层语义不足 |
 | Track B | 三级评分和 Judge Panel | 可用，需人工校准 |

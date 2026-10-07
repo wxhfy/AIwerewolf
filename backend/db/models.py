@@ -111,6 +111,7 @@ class MatchJob(Base):
     worker_id = Column(String, nullable=True, index=True)
     lease_expires_at = Column(DateTime, nullable=True, index=True)
     heartbeat_at = Column(DateTime, nullable=True)
+    checkpoint_seq = Column(Integer, nullable=True)
     started_at = Column(DateTime, nullable=True)
     finished_at = Column(DateTime, nullable=True)
     last_error = Column(Text, default="")
@@ -254,6 +255,7 @@ class AgentDecision(Base):
     __tablename__ = "agent_decisions"
 
     id = Column(String, primary_key=True, default=_uuid)
+    request_id = Column(String, nullable=True, index=True)
     game_id = Column(String, ForeignKey("games.id"), nullable=False, index=True)
     player_id = Column(String, ForeignKey("players.id"), nullable=False, index=True)
     day = Column(Integer, default=0)
@@ -286,9 +288,35 @@ class AgentDecision(Base):
 
     __table_args__ = (
         Index("ix_decisions_game_player_day", "game_id", "player_id", "day"),
+        Index("ix_decisions_request_id", "request_id"),
         Index("ix_decisions_invalid", "is_valid", "error_type"),
         Index("ix_decisions_model", "model_name", "provider"),
     )
+
+
+class MatchCheckpoint(Base):
+    """Latest durable execution cursor for one match.
+
+    The checkpoint is an operational recovery record, not the public event
+    stream. It stores the last state that the worker confirmed as persisted.
+    """
+
+    __tablename__ = "match_checkpoints"
+
+    id = Column(String, primary_key=True, default=_uuid)
+    game_id = Column(String, ForeignKey("games.id"), nullable=False, unique=True, index=True)
+    job_id = Column(String, ForeignKey("match_jobs.id"), nullable=True, index=True)
+    seq = Column(Integer, nullable=False)
+    day = Column(Integer, nullable=False, default=0)
+    phase = Column(String, nullable=False, default="")
+    status = Column(String, nullable=False, default="running")
+    truth_state = Column(JSON, default=dict, nullable=False)
+    public_state = Column(JSON, default=dict, nullable=False)
+    cursor = Column(JSON, default=dict, nullable=False)
+    created_at = Column(DateTime, default=_utcnow, nullable=False)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow, nullable=False)
+
+    __table_args__ = (Index("ix_match_checkpoints_game_seq", "game_id", "seq"),)
 
 
 class ActorMemory(Base):

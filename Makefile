@@ -2,7 +2,7 @@
 # AI Werewolf — Makefile
 # ============================================================================
 # Quick reference:
-#   make deploy        — one-command production deploy (Docker full stack)
+#   make deploy        — local Docker stack (NOT production)
 #   make dev           — local development server
 # ============================================================================
 
@@ -35,7 +35,7 @@ COMPOSE := docker compose --env-file $(ENV_FILE)
 .PHONY: deploy deploy-dev deploy-down deploy-logs deploy-status
 
 deploy: .env
-	@echo "🐺  AI Werewolf — Production Deploy"
+	@echo "AI Werewolf local stack (NOT production-ready)"
 	@echo "========================================"
 	$(COMPOSE) up -d --build --wait
 	@echo ""
@@ -54,7 +54,7 @@ deploy-dev: .env
 	@echo "    Frontend : http://localhost:$(FRONTEND_PORT)"
 
 deploy-down:
-	$(COMPOSE) down -v
+	$(COMPOSE) down
 
 deploy-logs:
 	$(COMPOSE) logs -f

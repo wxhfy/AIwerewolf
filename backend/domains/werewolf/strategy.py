@@ -147,8 +147,9 @@ def _decision_guidance(kind: str) -> list[str]:
     ]
     if kind in {"werewolf.talk", "werewolf.badge_speech", "werewolf.pk_speech", "werewolf.sheriff_closing"}:
         return common + [
-            "State one primary read, cite concrete public evidence, and name one plausible alternative.",
-            "Keep the public story consistent with prior commitments and the actor's information boundary.",
+            "Respond to the most relevant new statement, event, or unresolved question; update or defend an earlier read when useful.",
+            "Choose a conversational move that fits the moment instead of following a fixed multi-part speech template.",
+            "Keep the public story consistent unless new evidence or deliberate strategy justifies changing it.",
         ]
     if kind in {"werewolf.vote", "werewolf.divine", "werewolf.shoot", "werewolf.boom"}:
         return common + ["Compare the top candidates and select the option with the strongest explainable case."]

@@ -428,4 +428,105 @@ class GameState:
             "white_wolf_king_boom_used": self.abilities.white_wolf_king_boom_used,
         }
         data["phase_cursor"] = dict(self.phase_cursor)
+        data["phase_done"] = {str(day): list(phases) for day, phases in self.phase_done.items()}
+        data["max_days"] = self.max_days
         return data
+
+    @classmethod
+    def from_moderator_snapshot(cls, snapshot: dict[str, Any]) -> GameState:
+        """Rebuild an executable state from a private checkpoint snapshot."""
+        players = []
+        for raw in snapshot.get("players") or []:
+            players.append(
+                Player(
+                    id=str(raw["id"]),
+                    seat=int(raw.get("seat", 0)),
+                    name=str(raw.get("name", "")),
+                    role=Role(str(raw["role"])),
+                    alignment=Alignment(str(raw["alignment"])),
+                    alive=bool(raw.get("alive", True)),
+                    is_ai=bool(raw.get("is_ai", True)),
+                    agent_type=str(raw.get("agent_type") or "llm"),
+                    model_name=str(raw.get("model_name") or ""),
+                    prompt_version=str(raw.get("prompt_version") or "v1"),
+                    persona=dict(raw.get("persona") or {}),
+                    death_day=raw.get("death_day"),
+                    death_reason=raw.get("death_reason"),
+                )
+            )
+
+        events = []
+        for raw in snapshot.get("events") or []:
+            events.append(
+                GameEvent(
+                    id=str(raw["id"]),
+                    seq=int(raw.get("seq", 0)),
+                    ts=float(raw.get("ts", 0.0)),
+                    day=int(raw.get("day", 0)),
+                    phase=Phase(str(raw.get("phase", Phase.SETUP.value))),
+                    type=EventType(str(raw.get("type", EventType.SYSTEM_MESSAGE.value))),
+                    visibility=str(raw.get("visibility") or "public"),
+                    payload=dict(raw.get("payload") or {}),
+                    visible_to=list(raw.get("visible_to") or []),
+                )
+            )
+
+        badge_raw = dict(snapshot.get("badge") or {})
+        badge = BadgeState(
+            holder_id=badge_raw.get("holder_id"),
+            candidates=list(badge_raw.get("candidates") or []),
+            signup=dict(badge_raw.get("signup") or {}),
+            votes=dict(badge_raw.get("votes") or {}),
+            history={int(key): value for key, value in dict(badge_raw.get("history") or {}).items()},
+            revote_count=int(badge_raw.get("revote_count") or 0),
+        )
+        night_raw = dict(snapshot.get("night_actions") or {})
+        night_actions = NightActions(
+            guard_target_id=night_raw.get("guard_target_id"),
+            last_guard_target_id=night_raw.get("last_guard_target_id"),
+            wolf_votes=dict(night_raw.get("wolf_votes") or {}),
+            wolf_target_id=night_raw.get("wolf_target_id"),
+            witch_save=bool(night_raw.get("witch_save")),
+            witch_poison_target_id=night_raw.get("witch_poison_target_id"),
+            seer_target_id=night_raw.get("seer_target_id"),
+            seer_result=night_raw.get("seer_result"),
+            deaths=list(night_raw.get("deaths") or []),
+        )
+        abilities_raw = dict(snapshot.get("role_abilities") or {})
+        abilities = RoleAbilities(
+            witch_heal_used=bool(abilities_raw.get("witch_heal_used")),
+            witch_poison_used=bool(abilities_raw.get("witch_poison_used")),
+            hunter_can_shoot=bool(abilities_raw.get("hunter_can_shoot", True)),
+            idiot_revealed=bool(abilities_raw.get("idiot_revealed")),
+            white_wolf_king_boom_used=bool(abilities_raw.get("white_wolf_king_boom_used")),
+        )
+        winner = snapshot.get("winner")
+        phase_done = {int(day): list(phases) for day, phases in dict(snapshot.get("phase_done") or {}).items()}
+        pending_raw = snapshot.get("pending_input")
+        pending = PendingInput(**pending_raw) if isinstance(pending_raw, dict) else None
+        state = cls(
+            id=str(snapshot["id"]),
+            phase=Phase(str(snapshot.get("phase", Phase.SETUP.value))),
+            day=int(snapshot.get("day", 0)),
+            players=players,
+            events=events,
+            votes=dict(snapshot.get("votes") or {}),
+            vote_history={int(day): value for day, value in dict(snapshot.get("vote_history") or {}).items()},
+            day_history={int(day): value for day, value in dict(snapshot.get("day_history") or {}).items()},
+            badge=badge,
+            night_actions=night_actions,
+            abilities=abilities,
+            current_speaker_id=snapshot.get("current_speaker_id"),
+            pk_targets=list(snapshot.get("pk_targets") or []),
+            pk_source=snapshot.get("pk_source"),
+            pending_input=pending,
+            phase_cursor=dict(snapshot.get("phase_cursor") or {}),
+            daily_summaries={int(day): value for day, value in dict(snapshot.get("daily_summaries") or {}).items()},
+            daily_summary_facts={
+                int(day): value for day, value in dict(snapshot.get("daily_summary_facts") or {}).items()
+            },
+            phase_done=phase_done,
+            winner=Alignment(str(winner)) if winner else None,
+            max_days=int(snapshot.get("max_days", 20)),
+        )
+        return state

@@ -77,8 +77,12 @@ async def stream_match(
                     last_heartbeat = time.monotonic()
 
                 status = await asyncio.to_thread(repository.match_status, match_id)
-                if status == "finished" and not snapshots:
+                if status in {"finished", "completed"} and not snapshots:
                     yield f'event: complete\ndata: {{"match_id":"{match_id}","seq":{cursor}}}\n\n'
+                    return
+                if status == "failed" and not snapshots:
+                    payload = json.dumps({"match_id": match_id, "seq": cursor, "status": "failed"})
+                    yield f"event: failed\ndata: {payload}\n\n"
                     return
 
                 if subscription is not None:

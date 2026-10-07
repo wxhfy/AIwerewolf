@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import time
 from typing import Any
@@ -13,7 +14,10 @@ from backend.agent_harness.validation import ActionValidationError
 from backend.agent_harness.validation import resolve_action
 from backend.domains.werewolf.communication import audit_public_speech
 from backend.domains.werewolf.communication import public_communication_policy
-from backend.domains.werewolf.strategy import build_strategy_snapshot
+from backend.domains.werewolf.context import build_decision_context_v1
+from backend.domains.werewolf.context import project_agent_profile_v1
+from backend.domains.werewolf.context_budget import ContextTokenBudgetManager
+from backend.domains.werewolf.decision_policy import apply_role_policy
 from backend.domains.werewolf.strategy import strategy_score_for_option
 
 _DELIBERATIVE_KINDS = {
@@ -27,12 +31,20 @@ _DELIBERATIVE_KINDS = {
 class LLMActionPlanner:
     """One bounded structured LLM call for a harness decision."""
 
-    def __init__(self, client: Any, *, temperature: float = 0.7) -> None:
+    def __init__(self, client: Any, *, temperature: float = 0.7, input_token_budget: int | None = None) -> None:
         self.client = client
         self.temperature = temperature
+        self.context_budget = ContextTokenBudgetManager()
+        self.input_token_budget = input_token_budget or self._resolve_input_token_budget(client)
 
     def next_step(self, request: DecisionRequest, context: PlannerContext) -> HarnessStep:
         started = time.monotonic()
+        prompt_payload = self._prompt_payload(
+            request,
+            context,
+            input_token_budget=self.input_token_budget,
+            fixed_parts=("AIWEREWOLF_HARNESS_DECISION",),
+        )
         if context.step == 1 and request.decision_point.kind in _DELIBERATIVE_KINDS and request.budget.max_steps > 1:
             try:
                 response = self._chat(
@@ -42,13 +54,13 @@ class LLMActionPlanner:
                             "content": (
                                 "You are preparing a high-impact decision in an asymmetric-information game. "
                                 "Use only the supplied information. Produce a compact strategic assessment, "
-                                "compare the legal options, and do not invent hidden facts."
+                                "compare the legal options, and do not invent hidden facts. Let the supplied persona "
+                                "shape risk preference without overriding role knowledge or game rules."
                             ),
                         },
                         {
                             "role": "user",
-                            "content": "AIWEREWOLF_DELIBERATION\n"
-                            + json.dumps(self._prompt_payload(request, context), ensure_ascii=False),
+                            "content": "AIWEREWOLF_DELIBERATION\n" + json.dumps(prompt_payload, ensure_ascii=False),
                         },
                     ],
                     temperature=min(self.temperature, 0.4),
@@ -66,11 +78,20 @@ class LLMActionPlanner:
                         "role": "system",
                         "content": (
                             "You are an autonomous actor in an asymmetric-information environment. "
-                            "Use only the supplied actor-visible context. You may load one advertised skill or call "
+                            "Use only decision_context. Treat confirmed_private_facts as direct knowledge, "
+                            "public_timeline as observations, public_claims as unverified statements attributed to "
+                            "their speakers, and inferences as fallible estimates. Never treat another player's "
+                            "claim as your own check, action, or memory. You may load one advertised skill or call "
                             "one advertised read-only tool when that capability is available and materially useful. "
+                            "Use agent_profile.persona for identity and voice, and agent_profile.behavior for soft "
+                            "attention, social, risk, and conversation tendencies. These are preferences, not evidence, "
+                            "and cannot override role knowledge, legal options, or game rules. Adapt them to the "
+                            "current situation instead of mechanically following them. Avoid caricature and repeated catchphrases. Use the actor memory and "
+                            "evidence attached to inferences as fallible, attributed context. Check agent_state.recent_public_speeches "
+                            "before speaking and add new evidence or a new conversational move instead of repeating yourself. "
                             "For public speech, keep private reasoning out of the speech field: never expose wolf-team "
-                            "knowledge, hidden night actions, internal scores, probabilities, raw IDs, or system terms. "
-                            "Ground public claims in public evidence. A Seer may deliberately publish their own check. "
+                            "knowledge, hidden night actions as system facts, internal scores, probabilities, raw IDs, or system terms. "
+                            "Ground public claims in public evidence. You may claim a role, bluff a check or night action, hedge, or mislead as a deliberate public strategy; other players will judge the claim. "
                             "If the selected option has no response_schema, return response as an empty object and keep "
                             "reasoning under 80 words. Do not add a speech field to non-speech actions. "
                             "Otherwise select exactly one server-generated option_id. Never invent hidden facts. "
@@ -80,8 +101,7 @@ class LLMActionPlanner:
                     },
                     {
                         "role": "user",
-                        "content": "AIWEREWOLF_HARNESS_DECISION\n"
-                        + json.dumps(self._prompt_payload(request, context), ensure_ascii=False),
+                        "content": "AIWEREWOLF_HARNESS_DECISION\n" + json.dumps(prompt_payload, ensure_ascii=False),
                     },
                 ],
                 temperature=self.temperature,
@@ -146,10 +166,14 @@ class LLMActionPlanner:
                 selection = self._normalize_selection(request, self._selection_from_response(repaired))
                 resolve_action(request, selection)
             except Exception as exc:
+                if not self._fallback_allowed():
+                    raise RuntimeError(f"Model action repair failed and fallback is disabled: {exc}") from exc
                 fallback_used = True
                 fallback_error = f"{type(exc).__name__}: {exc}"
                 selection = self._fallback_selection(request, repair_error, fallback_error)
                 resolve_action(request, selection)
+        selection = apply_role_policy(request, selection)
+        resolve_action(request, selection)
         speech_violations: tuple[str, ...] = ()
         speech_rewritten = False
         if selection.option_id == "talk":
@@ -184,6 +208,10 @@ class LLMActionPlanner:
                     "speech_policy_violations": list(speech_violations),
                     "speech_rewritten": speech_rewritten,
                     "syntax_recovered": bool(selection.metadata.get("syntax_recovered")),
+                    "policy_overridden": bool(selection.metadata.get("policy_overridden")),
+                    "policy_original_option_id": selection.metadata.get("policy_original_option_id"),
+                    "policy_reason": selection.metadata.get("policy_reason"),
+                    "context_budget": prompt_payload.get("context_manifest", {}).get("context_budget"),
                 },
             )
         )
@@ -289,57 +317,74 @@ class LLMActionPlanner:
         return remaining
 
     @staticmethod
-    def _prompt_payload(request: DecisionRequest, context: PlannerContext) -> dict[str, Any]:
+    def _resolve_input_token_budget(client: Any) -> int:
+        configured = getattr(client, "context_input_tokens", None)
+        if configured is None:
+            configured = os.getenv("AGENT_CONTEXT_INPUT_TOKENS")
+        if configured is None:
+            window = getattr(client, "context_window_tokens", None)
+            if window:
+                configured = int(window) - 2048
+        try:
+            return max(2048, int(configured or 12000))
+        except (TypeError, ValueError):
+            return 12000
+
+    @staticmethod
+    def _prompt_payload(
+        request: DecisionRequest,
+        context: PlannerContext,
+        *,
+        input_token_budget: int | None = None,
+        fixed_parts: tuple[str, ...] = (),
+    ) -> dict[str, Any]:
         limits = LLMActionPlanner._context_limits(request.decision_point.kind)
-        memory = LLMActionPlanner._compact_memory(request.information_state.private_memory, limits)
-        source_memory = (request.information_state.private_memory or ({},))[0]
-        strategy = build_strategy_snapshot(request, source_memory)
-        history = list(request.information_state.visible_history[-limits["visible_history"] :])
-        knowledge = list(request.knowledge_context)
-        return {
+        decision_context = build_decision_context_v1(request, context, limits)
+        payload = {
             "context_manifest": {
-                "schema_version": "1",
+                "schema_version": "werewolf.decision_context.v1",
                 "layers": [
-                    "identity_and_policy",
-                    "current_observation",
-                    "visible_recent_history",
-                    "subjective_memory",
-                    "derived_strategy_state",
-                    "retrieved_cross_episode_knowledge",
-                    "loaded_skills_and_tool_results",
-                    "legal_action_space",
+                    "identity",
+                    "agent_profile",
+                    "situation",
+                    "confirmed_private_facts",
+                    "public_timeline",
+                    "public_claims",
+                    "inferences",
+                    "agent_state",
+                    "external_knowledge",
+                    "current_task",
                 ],
-                "limits": {
-                    **limits,
-                    "remaining_ms": context.remaining_ms,
-                    "remaining_steps_including_current": max(0, request.budget.max_steps - context.step + 1),
-                },
+                "limits": limits,
                 "included": {
-                    "visible_history": len(history),
-                    "private_memory_blocks": len(memory),
-                    "knowledge_items": len(knowledge),
-                    "loaded_skills": len(context.loaded_skills),
-                    "tool_results": len(context.tool_results),
+                    "private_facts": len(decision_context["confirmed_private_facts"]),
+                    "public_timeline": len(decision_context["public_timeline"]),
+                    "public_claims": len(decision_context["public_claims"]),
+                    "inferences": len(decision_context["inferences"]),
+                    "external_knowledge": len(decision_context["external_knowledge"]),
+                    "persona_fields": len(project_agent_profile_v1(request.agent_profile)["persona"]),
+                    "attention_focus": len(decision_context["agent_state"]["attention_focus"]),
+                    "recalled_episodes": len(decision_context["agent_state"]["recalled_episodes"]),
+                    "social_reads": len(decision_context["agent_state"]["social_reads"]),
                     "legal_options": len(request.action_space.options),
                 },
             },
-            "actor": {
-                "actor_id": request.actor.actor_id,
-                "agent_definition_id": request.actor.agent_definition_id,
-            },
-            "decision_point": {
-                "kind": request.decision_point.kind,
-                "sequence": request.decision_point.sequence,
-            },
-            "information_state": {
-                "observation": request.information_state.observation,
-                "visible_history": history,
-                "private_memory": memory,
-            },
-            "knowledge_context": knowledge,
-            "strategy_state": strategy,
-            "prior_reflections": list(context.reflections),
-            "capabilities": {
+            "decision_context": decision_context,
+            "action_options": [
+                {
+                    "option_id": option.option_id,
+                    "action_type": option.action_type,
+                    **({"parameters": option.parameters} if option.parameters else {}),
+                    **({"response_schema": option.response_schema} if option.response_schema else {}),
+                    **({"model_hint": option.model_hint} if option.model_hint else {}),
+                }
+                for option in request.action_space.options
+            ],
+            "agent_profile": project_agent_profile_v1(request.agent_profile),
+            "public_communication_policy": public_communication_policy(request),
+        }
+        if context.skill_catalog or context.loaded_skills or context.tool_schemas or context.tool_results:
+            payload["capabilities"] = {
                 "available_skills": [
                     {"name": skill.name, "description": skill.description} for skill in context.skill_catalog
                 ],
@@ -353,25 +398,18 @@ class LLMActionPlanner:
                         "name": result.name,
                         "ok": result.ok,
                         "content": result.content,
-                        "error": result.error,
+                        **({"error": result.error} if result.error else {}),
                     }
                     for result in context.tool_results
                 ],
-            },
-            "action_options": [
-                {
-                    "option_id": option.option_id,
-                    "action_type": option.action_type,
-                    "parameters": option.parameters,
-                    "response_schema": option.response_schema,
-                    "model_hint": option.model_hint,
-                }
-                for option in request.action_space.options
-            ],
-            "agent_profile": request.agent_profile,
-            "domain_metadata": request.domain_metadata,
-            "public_communication_policy": public_communication_policy(request),
-        }
+            }
+        if input_token_budget is None:
+            return payload
+        return ContextTokenBudgetManager().fit(
+            payload,
+            input_token_budget=input_token_budget,
+            fixed_parts=fixed_parts,
+        )
 
     @classmethod
     def _control_step_from_response(
@@ -406,60 +444,36 @@ class LLMActionPlanner:
     def _context_limits(kind: str) -> dict[str, int]:
         if kind in {"werewolf.talk", "werewolf.badge_speech", "werewolf.pk_speech", "werewolf.sheriff_closing"}:
             return {
-                "visible_history": 8,
-                "beliefs_per_memory": 7,
-                "relationships_per_memory": 4,
-                "recent_claims_per_memory": 8,
-                "evidence_edges_per_memory": 4,
-                "retrieved_episodes_per_memory": 2,
+                "public_timeline": 12,
+                "private_facts": 8,
+                "public_claims": 10,
+                "inferences": 5,
+                "external_knowledge": 2,
+                "working_memory": 4,
+                "retrieved_episodes": 3,
+                "social_reads": 4,
             }
         if kind in {"werewolf.vote", "werewolf.badge_election"}:
             return {
-                "visible_history": 10,
-                "beliefs_per_memory": 8,
-                "relationships_per_memory": 5,
-                "recent_claims_per_memory": 8,
-                "evidence_edges_per_memory": 6,
-                "retrieved_episodes_per_memory": 2,
+                "public_timeline": 14,
+                "private_facts": 8,
+                "public_claims": 10,
+                "inferences": 6,
+                "external_knowledge": 2,
+                "working_memory": 4,
+                "retrieved_episodes": 4,
+                "social_reads": 5,
             }
         return {
-            "visible_history": 6,
-            "beliefs_per_memory": 6,
-            "relationships_per_memory": 4,
-            "recent_claims_per_memory": 4,
-            "evidence_edges_per_memory": 3,
-            "retrieved_episodes_per_memory": 2,
+            "public_timeline": 8,
+            "private_facts": 8,
+            "public_claims": 6,
+            "inferences": 5,
+            "external_knowledge": 2,
+            "working_memory": 3,
+            "retrieved_episodes": 2,
+            "social_reads": 4,
         }
-
-    @staticmethod
-    def _compact_memory(
-        memory_items: tuple[dict[str, Any], ...],
-        limits: dict[str, int],
-    ) -> list[dict[str, Any]]:
-        compacted: list[dict[str, Any]] = []
-        for item in memory_items:
-            compacted.append(
-                {
-                    "working_memory": list(item.get("working_memory") or []),
-                    "beliefs": list(item.get("beliefs") or [])[: limits["beliefs_per_memory"]],
-                    "relationships": list(item.get("relationships") or [])[
-                        : limits["relationships_per_memory"]
-                    ],
-                    "affect": item.get("affect") or {},
-                    "active_goals": list(item.get("active_goals") or [])[:4],
-                    "recent_claims": list(item.get("recent_claims") or [])[
-                        -limits["recent_claims_per_memory"] :
-                    ],
-                    "evidence_graph": list(item.get("evidence_graph") or [])[
-                        -limits["evidence_edges_per_memory"] :
-                    ],
-                    "retrieved_episodes": list(item.get("retrieved_episodes") or [])[
-                        : limits["retrieved_episodes_per_memory"]
-                    ],
-                    "last_action": item.get("last_action") or {},
-                }
-            )
-        return compacted
 
     @classmethod
     def _selection(cls, content: str) -> ActionSelection:
@@ -591,8 +605,7 @@ class LLMActionPlanner:
         kind = request.decision_point.kind
         role = str(request.domain_metadata.get("role") or "")
         known_wolves = {
-            str(item.get("id") or "")
-            for item in request.information_state.observation.get("known_wolves") or []
+            str(item.get("id") or "") for item in request.information_state.observation.get("known_wolves") or []
         }
 
         def target(option):
@@ -616,9 +629,7 @@ class LLMActionPlanner:
             "werewolf.boom",
         }:
             targeted = [option for option in options if target(option)]
-            if kind == "werewolf.wolf_team_vote" or (
-                kind == "werewolf.vote" and role in {"Werewolf", "WhiteWolfKing"}
-            ):
+            if kind == "werewolf.wolf_team_vote" or (kind == "werewolf.vote" and role in {"Werewolf", "WhiteWolfKing"}):
                 non_teammates = [option for option in targeted if target(option) not in known_wolves]
                 if non_teammates:
                     targeted = non_teammates
@@ -630,9 +641,7 @@ class LLMActionPlanner:
         memory = (request.information_state.private_memory or ({},))[0]
         observation = request.information_state.observation
         role = str(request.domain_metadata.get("role") or "")
-        known_wolves = {
-            str(item.get("id") or "") for item in observation.get("known_wolves") or []
-        }
+        known_wolves = {str(item.get("id") or "") for item in observation.get("known_wolves") or []}
         names = {
             str(item.get("id") or ""): str(item.get("name") or item.get("id") or "")
             for item in observation.get("players") or []
@@ -665,6 +674,8 @@ class LLMActionPlanner:
         return "目前公开信息还不足，我会继续核对身份声明、站边变化和实际票型，不会无依据下定论。"
 
     def _fallback_step(self, request: DecisionRequest, error: str) -> HarnessStep:
+        if not self._fallback_allowed():
+            raise RuntimeError(f"Model action failed and fallback is disabled: {error}")
         selection = self._fallback_selection(request, error, "model unavailable")
         return HarnessStep.select_action(
             ActionSelection(
@@ -683,6 +694,14 @@ class LLMActionPlanner:
                     "fallback_error": error,
                 },
             )
+        )
+
+    @staticmethod
+    def _fallback_allowed() -> bool:
+        """Allow deterministic fallback only in explicit test/dev mode."""
+        return (
+            os.getenv("ALLOW_FALLBACK", "false").strip().lower() == "true"
+            or os.getenv("_TEST_ALLOW_FAKE_LLM", "false").strip().lower() == "true"
         )
 
     @staticmethod

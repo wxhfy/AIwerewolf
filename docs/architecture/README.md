@@ -60,12 +60,14 @@ Repository、LLM Client、Redis 通知、数据库持久化和 Worker 属于基�
 5. 游戏引擎推进到需要角色决策的位置。
 6. 后端裁剪 PlayerView，记忆服务更新角色主观状态。
 7. Agent Harness 执行一步决策或高影响两步反思，并处理修复和超时降级。
-8. 引擎校验并应用动作，写入事件、快照、决策、Harness 轨迹和角色记忆。
+8. 引擎校验并应用动作；决策在完成后立即持久化，事件、快照、Harness 轨迹和角色记忆按各自事务边界写入。
 9. SSE 从持久化投影读取并按 seq 交付前端。
 10. 对局完成后异步执行 Track B/C。
 ```
 
 SSE 是交付通道，不是持久化机制。断线恢复始终从 PostgreSQL 按序列读取。
+
+Agent 决策不再等到整局结束才批量写入。正常路径按决策实时写入 `agent_decisions`，请求 ID 稳定且可幂等重放；数据库短暂失败时才进入引擎补偿缓冲，并在阶段或对局结束时重试。Worker 在阶段边界写入 `match_checkpoints`，租约过期后从最近 checkpoint 恢复，并优先重放已经持久化的决策，避免重复调用模型。
 
 ## 事务发件箱
 
@@ -116,6 +118,7 @@ LocalAgentRuntime
 rooms
 games
 match_jobs
+match_checkpoints
 match_commands
 game_events
 game_snapshots

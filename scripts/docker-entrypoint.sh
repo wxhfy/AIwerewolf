@@ -32,21 +32,20 @@ if url:
     echo "✅  PostgreSQL ready"
 fi
 
+# --- Reject unsupported production configuration before mutating the database ---
+python -c "from backend.core.config import validate_production_configuration; validate_production_configuration()"
+
 # --- Run DB migrations ---
 if [ "${AUTO_MIGRATE:-true}" = "true" ]; then
     echo "🔄  Running database migrations..."
     python -c "from backend.db.database import init_db; init_db(); print('Schema applied')"
 fi
 
-# --- Run preflight ---
-echo "🔍  Running preflight checks..."
-python -c "from backend.ops.preflight import run_preflight; r = run_preflight(); print(f'Preflight: {\"PASS\" if r[\"all_pass\"] else \"WARN\"}')" || echo "⚠️  Preflight skipped"
-
 # --- Show config ---
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "🚀  Starting server..."
 echo "    LLM Provider : ${LLM_PROVIDER:-default}"
-echo "    Database     : ${DATABASE_URL:-sqlite}"
+echo "    Database     : ${DATABASE_URL:+configured}"
 echo "    Strict Mode  : ${AIWEREWOLF_STRICT_MODE:-false}"
 echo "    Allow Fallbk : ${ALLOW_FALLBACK:-false}"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

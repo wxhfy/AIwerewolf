@@ -18,6 +18,7 @@ from backend.agent_memory.models import SpeechClaim
 from backend.agent_memory.speech import SpeechInterpreter
 
 _WORD_RE = re.compile(r"[\w\u4e00-\u9fff]+", re.UNICODE)
+_CJK_RE = re.compile(r"[\u4e00-\u9fff]+")
 
 
 class CognitiveMemoryReducer:
@@ -60,7 +61,7 @@ class CognitiveMemoryReducer:
         state.affect.normalize()
 
     def retrieved(self, state: ActorMemoryState, request: DecisionRequest) -> list[EpisodicMemory]:
-        query = self._query_terms(request)
+        query = self._query_terms(request, state)
         memory_bias = str(request.agent_profile.get("persona", {}).get("memory_bias") or "comprehensive")
         current_seq = max(state.last_event_seq, 1)
         dynamics = self.dynamics(state, request)
@@ -70,9 +71,11 @@ class CognitiveMemoryReducer:
             age = max(0, current_seq - memory.event_seq)
             recency = 1.0 / (1.0 + age / 8.0)
             relevance = self._overlap(query, self._tokens(memory.content + " " + " ".join(memory.tags)))
-            unresolved = 1.0 if any(
-                goal.status == "active" and goal.target_player_id in memory.actor_ids for goal in state.goals
-            ) else 0.0
+            unresolved = (
+                1.0
+                if any(goal.status == "active" and goal.target_player_id in memory.actor_ids for goal in state.goals)
+                else 0.0
+            )
             emotional = min(1.0, abs(memory.valence))
             if memory_bias == "first_impression":
                 recency = max(recency, 1.0 / (1.0 + memory.event_seq / max(1, current_seq)))
@@ -104,6 +107,20 @@ class CognitiveMemoryReducer:
             reverse=True,
         )
         dynamics = self.dynamics(state, request)
+        confirmed_private_facts = [
+            {
+                "fact_id": item.memory_id,
+                "event_seq": item.event_seq,
+                "day": item.day,
+                "kind": item.kind,
+                "summary": item.content,
+                "actor_ids": list(item.actor_ids),
+                "tags": list(item.tags),
+                "certainty": "confirmed",
+            }
+            for item in state.episodic
+            if item.source == "private" and "role_assignment" not in item.tags
+        ][-12:]
         return {
             "working_memory": list(state.working_memory),
             "beliefs": [asdict(item) for item in beliefs[:8]],
@@ -111,6 +128,7 @@ class CognitiveMemoryReducer:
             "affect": asdict(state.affect),
             "active_goals": [asdict(item) for item in state.goals if item.status == "active"][:4],
             "recent_claims": [asdict(item) for item in state.claims[-12:]],
+            "confirmed_private_facts": confirmed_private_facts,
             "evidence_graph": [asdict(item) for item in state.evidence_graph[-16:]],
             "retrieved_episodes": [asdict(item) for item in retrieved],
             "last_action": dict(state.last_action),
@@ -443,7 +461,9 @@ class CognitiveMemoryReducer:
             if goal.status == "active":
                 chunks.append(f"Goal: {goal.description}")
         if state.last_action:
-            chunks.append(f"Previous action: {state.last_action.get('action_type')} {state.last_action.get('target_id') or ''}".strip())
+            chunks.append(
+                f"Previous action: {state.last_action.get('action_type')} {state.last_action.get('target_id') or ''}".strip()
+            )
         contradictions = [claim for claim in reversed(state.claims) if claim.kind == "contradiction"]
         if contradictions:
             chunks.append(f"Observed contradiction: {contradictions[0].evidence_text}")
@@ -455,7 +475,7 @@ class CognitiveMemoryReducer:
         elapsed_days: int,
         dynamics: CognitiveDynamics,
     ) -> None:
-        factor = dynamics.day_decay**max(1, elapsed_days)
+        factor = dynamics.day_decay ** max(1, elapsed_days)
         state.affect.arousal *= factor
         state.affect.fear *= factor
         state.affect.anger *= factor
@@ -468,19 +488,41 @@ class CognitiveMemoryReducer:
 
     @staticmethod
     def _tokens(text: str) -> set[str]:
-        return {token.lower() for token in _WORD_RE.findall(text) if len(token) > 1}
+        tokens = {token.lower() for token in _WORD_RE.findall(text) if len(token) > 1}
+        for phrase in _CJK_RE.findall(text):
+            tokens.update(phrase[index : index + 2] for index in range(len(phrase) - 1))
+        return tokens
 
-    def _query_terms(self, request: DecisionRequest) -> set[str]:
+    def _query_terms(self, request: DecisionRequest, state: ActorMemoryState) -> set[str]:
         observation = request.information_state.observation
-        text = " ".join(
-            [
-                request.decision_point.kind,
-                str(request.domain_metadata.get("role") or ""),
-                str(request.domain_metadata.get("phase") or ""),
-                " ".join(str(item.get("name") or item.get("id") or "") for item in observation.get("legal_targets") or []),
-            ]
+        parts = [
+            request.decision_point.kind,
+            str(request.domain_metadata.get("role") or ""),
+            str(request.domain_metadata.get("phase") or ""),
+            " ".join(str(item.get("name") or item.get("id") or "") for item in observation.get("legal_targets") or []),
+        ]
+        history = sorted(
+            request.information_state.visible_history,
+            key=lambda event: int(event.get("seq") or 0),
         )
-        return self._tokens(text)
+        for event in history[-4:]:
+            payload = dict(event.get("payload") or {})
+            event_type = str(event.get("type") or "")
+            if event_type == "CHAT_MESSAGE":
+                parts.extend(
+                    [
+                        str(payload.get("actor_name") or payload.get("speaker_name") or ""),
+                        str(payload.get("speech") or payload.get("message") or "")[:400],
+                    ]
+                )
+            elif event_type in {"VOTE_CAST", "PLAYER_DIED", "PRIVATE_INFO"}:
+                parts.extend(
+                    str(payload.get(key) or "") for key in ("voter_name", "target_name", "player_name", "message")
+                )
+        for claim in state.claims[-6:]:
+            parts.extend([str(claim.value), claim.evidence_text[:240]])
+        parts.extend(goal.description for goal in state.goals if goal.status == "active")
+        return self._tokens(" ".join(parts))
 
     @staticmethod
     def _overlap(left: set[str], right: set[str]) -> float:

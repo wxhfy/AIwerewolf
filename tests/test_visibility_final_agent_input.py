@@ -23,6 +23,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import pytest
+
 # ================================================================
 # Helpers
 # ================================================================
@@ -163,6 +165,31 @@ def test_villager_cannot_see_wolf_team():
     )
 
     assert len(view.known_wolves) == 0, "Villager must not know wolf team members"
+
+
+def test_visibility_projection_fails_closed_on_hidden_role_leak():
+    from backend.engine.models import Alignment
+    from backend.engine.models import Player
+    from backend.engine.models import Role
+    from backend.engine.visibility import PlayerView
+    from backend.engine.visibility import Visibility
+
+    viewer = Player(id="P1", name="村民", seat=1, role=Role.VILLAGER, alignment=Alignment.VILLAGE)
+    leaked = Player(id="P2", name="狼人", seat=2, role=Role.WEREWOLF, alignment=Alignment.WOLF)
+    view = PlayerView(
+        player_id=viewer.id,
+        day=1,
+        phase="DAY_SPEECH",
+        self_player=viewer.private_dict(),
+        players=[viewer.private_dict(), leaked.private_dict()],
+        public_events=[],
+        private_events=[],
+        known_wolves=[],
+        observations=[],
+    )
+
+    with pytest.raises(RuntimeError, match="leaked"):
+        Visibility._assert_safe(view, viewer)
 
 
 # ================================================================

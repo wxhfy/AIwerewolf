@@ -107,8 +107,15 @@ def build_harness_runtime(players: list[Player], config: dict[str, Any]) -> Rout
             "harness_mode": harness_mode,
         }
         definition_ids[player.id] = f"werewolf:{player.role.value}:{player.model_name or 'default'}"
+        context_input_tokens = player_config.get("context_input_tokens")
+        if context_input_tokens is None:
+            context_input_tokens = config.get("context_input_tokens")
         harnesses[player.id] = AgentHarness(
-            LLMActionPlanner(client, temperature=float(player_config.get("temperature", 0.7))),
+            LLMActionPlanner(
+                client,
+                temperature=float(player_config.get("temperature", 0.7)),
+                input_token_budget=int(context_input_tokens) if context_input_tokens is not None else None,
+            ),
             skills=skills,
             tools=tools,
             policy=policy,

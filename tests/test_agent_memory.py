@@ -13,6 +13,9 @@ from backend.agent_harness.contracts import HarnessResult
 from backend.agent_harness.contracts import ResolvedAction
 from backend.agent_memory import ActorMemoryService
 from backend.agent_memory import SqlActorMemoryRepository
+from backend.agent_memory.models import ActorMemoryState
+from backend.agent_memory.models import EpisodicMemory
+from backend.agent_memory.reducer import CognitiveMemoryReducer
 from backend.db.database import SessionLocal
 from backend.db.database import init_db
 from backend.db.models import Game
@@ -83,6 +86,70 @@ def test_context_is_bounded_but_subjective_memory_keeps_older_events() -> None:
     assert len(prepared.information_state.visible_history) < len(events)
     assert len(state.episodic) == len(events)
     assert prepared.information_state.private_memory[0]["retrieved_episodes"]
+
+
+def test_memory_retrieval_uses_recent_visible_speech_and_chinese_terms() -> None:
+    reducer = CognitiveMemoryReducer()
+    request = _request(
+        events=(
+            _event(
+                20,
+                actor_id="P2",
+                actor_name="乙",
+                speech="P2 之前承诺投票给 P3，今天却改票了",
+            ),
+        )
+    )
+    state = ActorMemoryState(episode_id=request.episode_id, actor_id=request.actor.actor_id, last_event_seq=20)
+    state.episodic = [
+        EpisodicMemory(
+            memory_id="relevant",
+            event_seq=12,
+            day=1,
+            phase="DAY_SPEECH",
+            kind="chat_message",
+            content="P2 之前承诺投票给 P3，今天却改票了",
+            source="public",
+            importance=0.55,
+        ),
+        EpisodicMemory(
+            memory_id="unrelated",
+            event_seq=12,
+            day=1,
+            phase="DAY_SPEECH",
+            kind="chat_message",
+            content="天气很好，大家聊了水果和旅行",
+            source="public",
+            importance=0.55,
+        ),
+    ]
+
+    retrieved = reducer.retrieved(state, request)
+
+    assert retrieved[0].memory_id == "relevant"
+
+
+def test_recent_history_is_sorted_and_old_private_facts_remain_projected() -> None:
+    seer_result = _event(
+        1,
+        event_type="PRIVATE_INFO",
+        visibility="private",
+        kind="seer_result",
+        target_id="P2",
+        target_name="P2",
+        is_wolf=True,
+    )
+    public_events = tuple(
+        _event(seq, actor_id="P3", actor_name="P3", speech=f"public statement {seq}") for seq in range(2, 32)
+    )
+    service = ActorMemoryService()
+    prepared = service.prepare(_request(events=(*public_events, seer_result)))
+
+    recent_sequences = [int(event["seq"]) for event in prepared.information_state.visible_history]
+    assert recent_sequences == sorted(recent_sequences)
+    assert 1 not in recent_sequences
+    private_facts = prepared.information_state.private_memory[0]["confirmed_private_facts"]
+    assert any(fact["event_seq"] == 1 and "divine result" in fact["summary"] for fact in private_facts)
 
 
 def test_personality_and_affect_generate_dynamic_memory_policy() -> None:

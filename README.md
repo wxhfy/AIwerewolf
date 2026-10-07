@@ -17,7 +17,7 @@ AI 狼人杀不是把多个模型简单接到聊天室里，而是一套由后�
 3. **完整留痕**：房间、任务、事件、快照、模型决策、角色记忆和赛后产物均可持久化和审计。
 4. **持续演化**：对局完成后通过 Track B 复盘评估，再由 Track C 抽取和治理可复用策略知识。
 
-## 当前能力
+## 核心能力
 
 | 能力 | 状态 |
 |---|---|
@@ -31,10 +31,6 @@ AI 狼人杀不是把多个模型简单接到聊天室里，而是一套由后�
 | Harness 独立事件流、修复与超时降级 | 已实现，可按请求审计 |
 | Track B 逐步复盘、报告和运行指标 | 已实现 |
 | Track C 策略知识抽取与检索回流 | 已实现现有链路 |
-| 真人与 AI 混战 | 暂停开放，接口明确返回 `501` |
-| 远程 Agent Service | 尚未实现，当前使用进程内 Harness Runtime |
-| JWT/OIDC、Alembic、独立 Outbox Publisher | 规划中 |
-| Kubernetes 与 3000 QPM 正式验收 | 目标已定义，尚未完成压测 |
 
 ## 总体架构
 
@@ -116,7 +112,6 @@ PlayerView
 | 数据库 | SQLAlchemy、PostgreSQL；SQLite 仅用于单进程测试 |
 | 通知 | Redis，可降级为数据库轮询 |
 | 本地编排 | Docker Compose |
-| 生产方向 | Kubernetes、OpenTelemetry、Prometheus、Alembic |
 
 ## 项目结构
 
@@ -239,19 +234,16 @@ cd frontend && npm run lint && npm run build
 | [`docs/architecture/COGNITIVE_MEMORY.md`](docs/architecture/COGNITIVE_MEMORY.md) | 动态角色记忆与上下文裁剪 |
 | [`docs/architecture/MODEL_VALIDATION_GLM.md`](docs/architecture/MODEL_VALIDATION_GLM.md) | 智谱官方与 SiliconFlow 托管 GLM 的真实整局验证 |
 | [`docs/architecture/MODEL_VALIDATION_2026-09-20.md`](docs/architecture/MODEL_VALIDATION_2026-09-20.md) | Hunyuan、OCR 和 Xing 历史验证 |
-| [`docs/architecture/PRODUCTION_PLAN.md`](docs/architecture/PRODUCTION_PLAN.md) | 3000 QPM 生产化路线 |
-| [`REQUIREMENTS.md`](REQUIREMENTS.md) | 当前需求与验收标准 |
 | [`docs/prd.md`](docs/prd.md) | 产品范围和用户流程 |
 | [`DEPLOY.md`](DEPLOY.md) | 部署、运行和健康检查 |
 | [`docs/architecture/COLLABORATION.md`](docs/architecture/COLLABORATION.md) | 前端、后端平台与 Agent 的协作边界 |
 
-## 当前限制
+## 支持范围
 
-- 真人输入、超时托管和断线重连尚未开放。
-- 远程 Agent Service transport 尚未实现。
-- Outbox 当前保证终局事务内写入，独立 Publisher、重试治理和死信队列仍待完成。
-- 启动时仍使用 SQLAlchemy bootstrap 建表，正式生产需要统一迁移到 Alembic。
-- 3000 QPM 是设计目标，不代表当前已经通过容量验收。
+- 当前版本面向纯 AI 对局，支持房间创建、对局执行、状态流订阅、历史回放和赛后分析。
+- 真人席位、真人行动提交和混合对局不属于当前公开功能范围。
+- SQLite 适用于单进程测试和本地演示；多进程运行使用 PostgreSQL 与 Redis。
+- 详细部署约束、运维门槛和内部工程状态请查看 `docs/architecture/` 下的架构文档，不在项目首页展开。
 
 ## 许可证
 

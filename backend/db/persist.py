@@ -27,6 +27,7 @@ from backend.db.models import GameRoom
 from backend.db.models import GameSnapshot
 from backend.db.models import KnowledgeUsageFeedback
 from backend.db.models import LeaderboardEntry
+from backend.db.models import MatchCheckpoint
 from backend.db.models import MatchJob
 from backend.db.models import OutboxEvent
 from backend.db.models import Player
@@ -240,10 +241,22 @@ def save_decisions_batch(decisions: list[dict]) -> int:
         return 0
     db = SessionLocal()
     try:
+        decision_ids = [str(d.get("id")) for d in decisions if d.get("id")]
+        existing_ids = {row[0] for row in db.query(AgentDecision.id).filter(AgentDecision.id.in_(decision_ids)).all()}
+        request_ids = [str(d.get("request_id")) for d in decisions if d.get("request_id")]
+        existing_request_ids = {
+            row[0] for row in db.query(AgentDecision.request_id).filter(AgentDecision.request_id.in_(request_ids)).all()
+        }
         rows = []
         for d in decisions:
+            decision_id = str(d.get("id") or "")
+            request_id = str(d.get("request_id") or "")
+            if (decision_id and decision_id in existing_ids) or (request_id and request_id in existing_request_ids):
+                continue
             rows.append(
                 AgentDecision(
+                    id=decision_id or None,
+                    request_id=request_id or None,
                     game_id=d["game_id"],
                     player_id=d["player_id"],
                     day=d.get("day", 0),
@@ -363,6 +376,124 @@ def save_snapshot(game_id: str, seq: int, day: int, phase: str, truth: dict, pub
         db.close()
 
 
+def save_snapshot_and_checkpoint(
+    game_id: str,
+    *,
+    job_id: str | None,
+    seq: int,
+    day: int,
+    phase: str,
+    truth: dict,
+    public: dict,
+    cursor: dict[str, Any] | None = None,
+) -> None:
+    """Persist the read model and recovery cursor under one database commit."""
+    db = SessionLocal()
+    try:
+        snapshot = db.query(GameSnapshot).filter(GameSnapshot.game_id == game_id, GameSnapshot.seq == seq).first()
+        if snapshot is None:
+            snapshot = GameSnapshot(game_id=game_id, seq=seq)
+            db.add(snapshot)
+        snapshot.day = day
+        snapshot.phase = phase
+        snapshot.truth_state = truth
+        snapshot.public_state = public
+
+        checkpoint = db.query(MatchCheckpoint).filter(MatchCheckpoint.game_id == game_id).first()
+        if checkpoint is None:
+            checkpoint = MatchCheckpoint(game_id=game_id)
+            db.add(checkpoint)
+        checkpoint.job_id = job_id
+        checkpoint.seq = int(seq)
+        checkpoint.day = int(day)
+        checkpoint.phase = str(phase)
+        checkpoint.status = "running"
+        checkpoint.truth_state = _clean(truth)
+        checkpoint.public_state = _clean(public)
+        checkpoint.cursor = _clean(cursor or {})
+        if job_id:
+            job = db.query(MatchJob).filter(MatchJob.id == job_id).first()
+            if job is not None:
+                job.checkpoint_seq = int(seq)
+        db.commit()
+    finally:
+        db.close()
+
+
+def save_match_checkpoint(
+    game_id: str,
+    *,
+    job_id: str | None,
+    seq: int,
+    day: int,
+    phase: str,
+    truth: dict,
+    public: dict,
+    status: str = "running",
+    cursor: dict[str, Any] | None = None,
+) -> None:
+    """Upsert the last confirmed execution state for a match."""
+    db = SessionLocal()
+    try:
+        checkpoint = db.query(MatchCheckpoint).filter(MatchCheckpoint.game_id == game_id).first()
+        if checkpoint is None:
+            checkpoint = MatchCheckpoint(game_id=game_id)
+            db.add(checkpoint)
+        checkpoint.job_id = job_id
+        checkpoint.seq = int(seq)
+        checkpoint.day = int(day)
+        checkpoint.phase = str(phase)
+        checkpoint.status = str(status)
+        checkpoint.truth_state = _clean(truth)
+        checkpoint.public_state = _clean(public)
+        checkpoint.cursor = _clean(cursor or {})
+        if job_id:
+            job = db.query(MatchJob).filter(MatchJob.id == job_id).first()
+            if job is not None:
+                job.checkpoint_seq = int(seq)
+        db.commit()
+    finally:
+        db.close()
+
+
+def get_match_checkpoint(game_id: str) -> dict[str, Any] | None:
+    """Return the latest durable cursor used by recovery tooling."""
+    with SessionLocal() as db:
+        row = db.query(MatchCheckpoint).filter(MatchCheckpoint.game_id == game_id).first()
+        if row is None:
+            return None
+        return {
+            "game_id": row.game_id,
+            "job_id": row.job_id,
+            "seq": row.seq,
+            "day": row.day,
+            "phase": row.phase,
+            "status": row.status,
+            "truth_state": dict(row.truth_state or {}),
+            "public_state": dict(row.public_state or {}),
+            "cursor": dict(row.cursor or {}),
+            "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+        }
+
+
+def get_agent_decision_by_request_id(request_id: str) -> dict[str, Any] | None:
+    """Read a previously completed decision for idempotent match recovery."""
+    if not request_id:
+        return None
+    with SessionLocal() as db:
+        row = db.query(AgentDecision).filter(AgentDecision.request_id == request_id).first()
+        if row is None:
+            return None
+        return {
+            "id": row.id,
+            "request_id": row.request_id,
+            "player_id": row.player_id,
+            "parsed_action": dict(row.parsed_action or {}),
+            "metadata": dict(row.decision_metadata or {}),
+            "raw_output": row.raw_output or "",
+        }
+
+
 def _persist_finished_game(db, state: GameState) -> Game | None:
     """Write authoritative final facts using the caller's transaction."""
     game = db.query(Game).filter(Game.id == state.id).first()
@@ -411,6 +542,7 @@ def _persist_finished_game(db, state: GameState) -> Game | None:
         db.add(
             AgentDecision(
                 id=record.id,
+                request_id=(getattr(record, "metadata", None) or {}).get("harness_request_id"),
                 game_id=state.id,
                 player_id=record.player_id,
                 day=record.day,
@@ -527,7 +659,12 @@ def complete_match_transaction(state: GameState, *, job_id: str, worker_id: str)
             raise RuntimeError(f"Game {state.id} does not exist")
         job = (
             db.query(MatchJob)
-            .filter(MatchJob.id == job_id, MatchJob.game_id == state.id, MatchJob.worker_id == worker_id)
+            .filter(
+                MatchJob.id == job_id,
+                MatchJob.game_id == state.id,
+                MatchJob.worker_id == worker_id,
+                MatchJob.status == "running",
+            )
             .first()
         )
         if job is None:
@@ -558,6 +695,25 @@ def complete_match_transaction(state: GameState, *, job_id: str, worker_id: str)
 
         _ensure_track_c_post_game_job_row(db, state.id, source="match_completion")
         _ensure_match_analysis_outbox(db, state.id, source="match_completion")
+        # Keep completion compatible with databases created before the
+        # checkpoint migration. Fresh deployments always have this table;
+        # legacy test/dev schemas should still be able to finish a match.
+        connection = db.connection()
+        has_checkpoint_table = connection.dialect.has_table(connection, "match_checkpoints")
+        if has_checkpoint_table:
+            checkpoint = db.query(MatchCheckpoint).filter(MatchCheckpoint.game_id == state.id).first()
+            if checkpoint is not None:
+                checkpoint.status = "finished"
+                checkpoint.seq = int(state.snapshot(show_private=True).get("seq") or len(state.events))
+                checkpoint.day = state.day
+                checkpoint.phase = state.phase.value
+                checkpoint.truth_state = _clean(state.snapshot(show_private=True))
+                checkpoint.public_state = _clean(state.snapshot(show_private=False))
+                checkpoint.cursor = {
+                    **dict(checkpoint.cursor or {}),
+                    "last_event_seq": checkpoint.seq,
+                    "decision_count": len(state.decision_records),
+                }
         db.commit()
     finally:
         db.close()
@@ -837,10 +993,7 @@ def build_post_game_state_from_db(game_id: str) -> GameState | None:
         if game is None or game.status != "finished":
             return None
         snapshot_row = (
-            db.query(GameSnapshot)
-            .filter(GameSnapshot.game_id == game_id)
-            .order_by(GameSnapshot.seq.desc())
-            .first()
+            db.query(GameSnapshot).filter(GameSnapshot.game_id == game_id).order_by(GameSnapshot.seq.desc()).first()
         )
         snapshot = dict(snapshot_row.truth_state or {}) if snapshot_row is not None else {}
         snapshot_players = {

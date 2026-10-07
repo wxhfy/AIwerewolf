@@ -273,6 +273,7 @@ def create_client(provider: str | None = None, **kwargs) -> Any:
         client.provider = "bigmodel"
         return client
     elif provider in {"siliconflow", "silicon_flow"}:
+        kwargs.setdefault("max_retries", 2)
         api_key = kwargs.pop("api_key", None) or os.getenv("SILICONFLOW_API_KEY", "")
         base_url = kwargs.pop("base_url", None) or os.getenv("SILICONFLOW_BASE_URL", _DEFAULT_SILICONFLOW_BASE_URL)
         model = kwargs.pop("model", None) or os.getenv("SILICONFLOW_MODEL", _DEFAULT_SILICONFLOW_MODEL)

@@ -51,10 +51,44 @@ def test_implicit_wolf_objective_is_rejected() -> None:
     assert "wolf_private_perspective" in audit.violations
 
 
+def test_wolf_target_and_team_decision_are_rejected() -> None:
+    audit = audit_public_speech(
+        _request("Werewolf"),
+        "昨晚狼队的目标是 Carol，我们团队讨论后决定攻击她。",
+    )
+
+    assert "wolf_private_perspective" in audit.violations
+
+
+def test_wolf_success_claim_is_rejected() -> None:
+    audit = audit_public_speech(
+        _request("WhiteWolfKing"),
+        "昨晚狼队攻击成功，目标已经倒下。",
+    )
+
+    assert "wolf_private_perspective" in audit.violations
+
+
+def test_subtle_wolf_team_support_is_preserved_as_a_strategic_warning() -> None:
+    audit = audit_public_speech(
+        _request("Werewolf"),
+        "大家可能对狼队有些怀疑，但我相信狼队一定会找到真相。",
+    )
+
+    assert audit.accepted
+    assert "wolf_strategic_claim" in audit.warnings
+
+
 def test_witch_private_action_is_rejected() -> None:
     audit = audit_public_speech(_request("Witch"), "I kept my potion and did not save anyone.")
 
-    assert "witch_night_action_disclosure" in audit.violations
+    assert "witch_night_action_claim" in audit.warnings
+
+
+def test_witch_cannot_disclose_current_potion_plan_without_time_marker() -> None:
+    audit = audit_public_speech(_request("Witch"), "我暂时不使用解药，继续观察。")
+
+    assert "witch_night_action_claim" in audit.warnings
 
 
 def test_seer_may_publish_own_check_and_ids_are_rendered_as_names() -> None:
@@ -74,4 +108,16 @@ def test_internal_probability_is_rejected() -> None:
 def test_non_seer_cannot_claim_a_private_check() -> None:
     audit = audit_public_speech(_request("Guard"), "I checked P3 last night and my check says P3 is safe.")
 
-    assert "role_capability_mismatch" in audit.violations
+    assert "role_capability_claim" in audit.warnings
+
+
+def test_non_guard_cannot_claim_a_private_guard_action() -> None:
+    audit = audit_public_speech(_request("Hunter"), "第一天晚上我守了云锦，但她没有死。")
+
+    assert "role_capability_claim" in audit.warnings
+
+
+def test_non_witch_cannot_claim_a_private_potion_action() -> None:
+    audit = audit_public_speech(_request("Villager"), "昨晚我用了解药救了 Bob。")
+
+    assert "role_capability_claim" in audit.warnings

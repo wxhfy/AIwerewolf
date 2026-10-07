@@ -19,7 +19,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-werewolf_dev_password}
       POSTGRES_DB: ${POSTGRES_DB:-werewolf}
     ports:
-      - "${POSTGRES_PORT:-5433}:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
     volumes:
       - werewolf-pg-data:/var/lib/postgresql/data
     healthcheck:
@@ -36,7 +36,7 @@ services:
     restart: unless-stopped
     command: redis-server --appendonly yes
     ports:
-      - "${REDIS_PORT:-6380}:6379"
+      - "127.0.0.1:${REDIS_PORT:-6380}:6379"
     volumes:
       - werewolf-redis-data:/data
     healthcheck:
@@ -64,7 +64,13 @@ services:
     environment:
       DATABASE_URL: ${COMPOSE_DATABASE_URL:-postgresql+psycopg2://werewolf:werewolf_dev_password@postgres:5432/werewolf}
       REDIS_URL: ${COMPOSE_REDIS_URL:-redis://redis:6379/0}
+      APP_ENV: ${APP_ENV:-development}
+      AUTH_MODE: ${AUTH_MODE:-disabled}
+      AUTH_TOKENS: ${AUTH_TOKENS:-}
       LLM_PROVIDER: ${LLM_PROVIDER:-deepseek}
+      GLM_API_KEY: ${GLM_API_KEY:-}
+      GLM_BASE_URL: ${GLM_BASE_URL:-https://open.bigmodel.cn/api/paas/v4}
+      GLM_MODEL: ${GLM_MODEL:-glm-4-flash-250414}
       DOUBAO_API_KEY: ${DOUBAO_API_KEY:-}
       DOUBAO_BASE_URL: ${DOUBAO_BASE_URL:-https://ark.cn-beijing.volces.com/api/v3}
       DOUBAO_MODEL: ${DOUBAO_MODEL:-Doubao-Seed-2.0-pro}
@@ -94,7 +100,13 @@ services:
     environment:
       DATABASE_URL: ${COMPOSE_DATABASE_URL:-postgresql+psycopg2://werewolf:werewolf_dev_password@postgres:5432/werewolf}
       REDIS_URL: ${COMPOSE_REDIS_URL:-redis://redis:6379/0}
+      APP_ENV: ${APP_ENV:-development}
+      AUTH_MODE: ${AUTH_MODE:-disabled}
+      AUTH_TOKENS: ${AUTH_TOKENS:-}
       LLM_PROVIDER: ${LLM_PROVIDER:-deepseek}
+      GLM_API_KEY: ${GLM_API_KEY:-}
+      GLM_BASE_URL: ${GLM_BASE_URL:-https://open.bigmodel.cn/api/paas/v4}
+      GLM_MODEL: ${GLM_MODEL:-glm-4-flash-250414}
       DOUBAO_API_KEY: ${DOUBAO_API_KEY:-}
       DOUBAO_BASE_URL: ${DOUBAO_BASE_URL:-https://ark.cn-beijing.volces.com/api/v3}
       DOUBAO_MODEL: ${DOUBAO_MODEL:-Doubao-Seed-2.0-pro}
@@ -123,7 +135,13 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: ${COMPOSE_DATABASE_URL:-postgresql+psycopg2://werewolf:werewolf_dev_password@postgres:5432/werewolf}
+      APP_ENV: ${APP_ENV:-development}
+      AUTH_MODE: ${AUTH_MODE:-disabled}
+      AUTH_TOKENS: ${AUTH_TOKENS:-}
       LLM_PROVIDER: ${LLM_PROVIDER:-deepseek}
+      GLM_API_KEY: ${GLM_API_KEY:-}
+      GLM_BASE_URL: ${GLM_BASE_URL:-https://open.bigmodel.cn/api/paas/v4}
+      GLM_MODEL: ${GLM_MODEL:-glm-4-flash-250414}
       DOUBAO_API_KEY: ${DOUBAO_API_KEY:-}
       DOUBAO_BASE_URL: ${DOUBAO_BASE_URL:-https://ark.cn-beijing.volces.com/api/v3}
       DOUBAO_MODEL: ${DOUBAO_MODEL:-Doubao-Seed-2.0-pro}
@@ -171,7 +189,7 @@ services:
       - backend
       - frontend
     ports:
-      - "${NGINX_PORT:-80}:80"
+      - "127.0.0.1:${NGINX_PORT:-80}:80"
     volumes:
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
     networks:
