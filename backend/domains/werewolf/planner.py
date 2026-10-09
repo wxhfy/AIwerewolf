@@ -434,6 +434,7 @@ class LLMActionPlanner:
                     "situation",
                     "confirmed_private_facts",
                     "public_timeline",
+                    "public_phase_summaries",
                     "public_claims",
                     "inferences",
                     "agent_state",
@@ -444,6 +445,7 @@ class LLMActionPlanner:
                 "included": {
                     "private_facts": len(decision_context["confirmed_private_facts"]),
                     "public_timeline": len(decision_context["public_timeline"]),
+                    "public_phase_summaries": len(decision_context["public_phase_summaries"]),
                     "public_claims": len(decision_context["public_claims"]),
                     "inferences": len(decision_context["inferences"]),
                     "external_knowledge": len(decision_context["external_knowledge"]),
@@ -529,7 +531,8 @@ class LLMActionPlanner:
     def _context_limits(kind: str) -> dict[str, int]:
         if kind in {"werewolf.talk", "werewolf.badge_speech", "werewolf.pk_speech", "werewolf.sheriff_closing", "werewolf.last_words"}:
             return {
-                "public_timeline": 12,
+                "public_timeline": 10,
+                "phase_summaries": 4,
                 "private_facts": 8,
                 "public_claims": 10,
                 "inferences": 5,
@@ -541,6 +544,7 @@ class LLMActionPlanner:
         if kind in {"werewolf.vote", "werewolf.badge_election"}:
             return {
                 "public_timeline": 14,
+                "phase_summaries": 5,
                 "private_facts": 8,
                 "public_claims": 10,
                 "inferences": 6,
@@ -550,7 +554,8 @@ class LLMActionPlanner:
                 "social_reads": 5,
             }
         return {
-            "public_timeline": 8,
+            "public_timeline": 6,
+            "phase_summaries": 3,
             "private_facts": 8,
             "public_claims": 6,
             "inferences": 5,

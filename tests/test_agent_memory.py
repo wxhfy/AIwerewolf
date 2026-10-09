@@ -380,3 +380,44 @@ def test_actor_context_checkpoint_advances_incrementally() -> None:
     assert checkpoint["visible_seq"] == 35
     assert checkpoint["delta_event_count"] == 0
     assert checkpoint["memory_version"] == second.information_state.private_memory[0]["context_checkpoint"]["memory_version"]
+
+
+def test_public_phase_summary_merges_only_public_events() -> None:
+    service = ActorMemoryService()
+    prepared = service.prepare(
+        _request(
+            events=(
+                _event(1, event_type="CHAT_MESSAGE", actor_id="P2", actor_name="P2", speech="质疑 P3"),
+                _event(2, event_type="VOTE_CAST", voter_id="P2", target_id="P3"),
+                _event(3, event_type="PRIVATE_INFO", visibility="private", message="secret result"),
+                _event(4, event_type="PLAYER_DIED", player_id="P4", reason="vote"),
+            )
+        )
+    )
+    memory = prepared.information_state.private_memory[0]
+    summaries = memory["public_phase_summaries"]
+    assert len(summaries) == 1
+    summary = summaries[0]
+    assert summary["event_count"] == 3
+    assert len(summary["speeches"]) == 1
+    assert len(summary["votes"]) == 1
+    assert len(summary["deaths"]) == 1
+    assert "secret result" not in str(summary)
+
+
+def test_public_phase_summary_is_incremental() -> None:
+    service = ActorMemoryService()
+    first = service.prepare(_request(events=(_event(1, actor_id="P2", actor_name="P2", speech="first"),)))
+    first_summary = dict(first.information_state.private_memory[0]["public_phase_summaries"][0])
+    second = service.prepare(
+        _request(
+            events=(
+                _event(1, actor_id="P2", actor_name="P2", speech="first"),
+                _event(2, actor_id="P3", actor_name="P3", speech="second"),
+            )
+        )
+    )
+    second_summary = second.information_state.private_memory[0]["public_phase_summaries"][0]
+    assert first_summary["event_count"] == 1
+    assert second_summary["event_count"] == 2
+    assert second_summary["last_seq"] == 2

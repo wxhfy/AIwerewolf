@@ -43,6 +43,7 @@ class ContextTokenBudgetManager:
         for source, key in (
             ("confirmed_private_facts", "private_facts"),
             ("public_timeline", "public_timeline"),
+            ("public_phase_summaries", "public_phase_summaries"),
             ("public_claims", "public_claims"),
             ("inferences", "inferences"),
             ("external_knowledge", "external_knowledge"),
@@ -108,6 +109,10 @@ class ContextTokenBudgetManager:
         for index, item in enumerate(decision.get("public_timeline") or []):
             candidates.append(
                 (("decision_context", "public_timeline", index), "public_timeline", self._timeline_priority(item))
+            )
+        for index, _item in enumerate(decision.get("public_phase_summaries") or []):
+            candidates.append(
+                (("decision_context", "public_phase_summaries", index), "public_phase_summaries", 45)
             )
         for index, item in enumerate(decision.get("public_claims") or []):
             candidates.append(

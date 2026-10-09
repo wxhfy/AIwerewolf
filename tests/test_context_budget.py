@@ -22,6 +22,9 @@ def _payload() -> dict:
                 {"kind": "speech", "seq": index, "text": "old speech " + "x" * 100} for index in range(12)
             ]
             + [{"kind": "player_death", "seq": 99, "text": "p3 died"}],
+            "public_phase_summaries": [
+                {"day": 1, "phase": "day_discussion", "event_count": index + 1} for index in range(3)
+            ],
             "public_claims": [{"kind": "speech", "speaker_id": "p2", "text": "claim " + "y" * 100} for _ in range(8)]
             + [{"kind": "role_claim", "speaker_id": "p2", "role": "seer"}],
             "inferences": [{"target_id": "p2", "confidence": 0.2, "summary": "weak" + "z" * 100} for _ in range(6)],
@@ -49,6 +52,9 @@ def test_budget_prunes_complete_low_value_items_and_keeps_invariants() -> None:
     assert context["confirmed_private_facts"] == original["decision_context"]["confirmed_private_facts"]
     assert fitted["action_options"][0]["option_id"] == "talk"
     assert context["public_timeline"][-1]["kind"] == "player_death"
+    assert fitted["context_manifest"]["included"]["public_phase_summaries"] == len(
+        context["public_phase_summaries"]
+    )
     report = fitted["context_manifest"]["context_budget"]
     assert report["original_estimated_input_tokens"] > report["estimated_input_tokens"]
     assert report["pruned_counts"]

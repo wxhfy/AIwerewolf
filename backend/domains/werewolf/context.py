@@ -86,6 +86,9 @@ def build_decision_context_v1(
             limits["private_facts"],
         ),
         "public_timeline": timeline,
+        "public_phase_summaries": [
+            dict(item) for item in list(memory.get("public_phase_summaries") or [])[-limits.get("phase_summaries", 4):]
+        ],
         "public_claims": claims,
         "inferences": inferences,
         "agent_state": agent_state,

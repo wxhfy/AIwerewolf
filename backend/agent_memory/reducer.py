@@ -54,6 +54,7 @@ class CognitiveMemoryReducer:
             state.last_event_seq = max(state.last_event_seq, int(event.get("seq") or 0))
 
         self._refresh_goals(state, request)
+        self._update_phase_summaries(state, events)
         state.last_delta_event_count = len(events)
         state.last_context_seq = state.last_event_seq
         state.last_context_phase = phase
@@ -140,6 +141,7 @@ class CognitiveMemoryReducer:
             "evidence_graph": [asdict(item) for item in state.evidence_graph[-16:]],
             "retrieved_episodes": [asdict(item) for item in retrieved],
             "last_action": dict(state.last_action),
+            "public_phase_summaries": list(state.phase_summaries.values())[-6:],
             "context_checkpoint": {
                 "schema": state.context_version,
                 "memory_version": state.version,
@@ -159,6 +161,81 @@ class CognitiveMemoryReducer:
             },
             "decision_kind": request.decision_point.kind,
         }
+
+    def _update_phase_summaries(self, state: ActorMemoryState, events: list[dict[str, Any]]) -> None:
+        """Build compact public phase summaries from only actor-visible deltas."""
+        for event in events:
+            if str(event.get("visibility") or "public") == "private":
+                continue
+            payload = dict(event.get("payload") or {})
+            day = int(event.get("day") or 0)
+            phase = str(event.get("phase") or "")
+            key = f"{day}:{phase}"
+            summary = state.phase_summaries.setdefault(
+                key,
+                {
+                    "key": key,
+                    "day": day,
+                    "phase": phase,
+                    "first_seq": int(event.get("seq") or 0),
+                    "last_seq": int(event.get("seq") or 0),
+                    "event_count": 0,
+                    "speeches": [],
+                    "votes": [],
+                    "deaths": [],
+                    "highlights": [],
+                },
+            )
+            seq = int(event.get("seq") or 0)
+            summary["first_seq"] = min(int(summary.get("first_seq") or seq), seq)
+            summary["last_seq"] = max(int(summary.get("last_seq") or seq), seq)
+            summary["event_count"] = int(summary.get("event_count") or 0) + 1
+            event_type = str(event.get("type") or "")
+            if event_type == "CHAT_MESSAGE":
+                speech = str(payload.get("speech") or payload.get("message") or "").strip()
+                if speech:
+                    speeches = list(summary.get("speeches") or [])
+                    speeches.append(
+                        {
+                            "seq": seq,
+                            "speaker_id": str(payload.get("actor_id") or payload.get("speaker_id") or ""),
+                            "speaker_name": str(payload.get("actor_name") or payload.get("speaker_name") or ""),
+                            "text": speech[:240],
+                        }
+                    )
+                    summary["speeches"] = speeches[-6:]
+            elif event_type == "VOTE_CAST":
+                votes = list(summary.get("votes") or [])
+                votes.append(
+                    {
+                        "seq": seq,
+                        "voter_id": str(payload.get("voter_id") or ""),
+                        "target_id": str(payload.get("target_id") or ""),
+                    }
+                )
+                summary["votes"] = votes[-8:]
+            elif event_type == "PLAYER_DIED":
+                deaths = list(summary.get("deaths") or [])
+                deaths.append(
+                    {
+                        "seq": seq,
+                        "player_id": str(payload.get("player_id") or ""),
+                        "reason": str(payload.get("reason") or ""),
+                    }
+                )
+                summary["deaths"] = deaths[-4:]
+            elif event_type in {"GAME_END", "HUNTER_SHOT", "WHITE_WOLF_KING_BOOM"}:
+                message = str(payload.get("message") or "").strip()
+                if message:
+                    highlights = list(summary.get("highlights") or [])
+                    highlights.append({"seq": seq, "type": event_type, "text": message[:240]})
+                    summary["highlights"] = highlights[-4:]
+        if len(state.phase_summaries) > 12:
+            retained = sorted(
+                state.phase_summaries.values(),
+                key=lambda item: (int(item.get("day") or 0), int(item.get("last_seq") or 0)),
+            )[-12:]
+            state.phase_summaries = {str(item.get("key")): item for item in retained}
 
     def record_action(self, state: ActorMemoryState, request: DecisionRequest, action: Any) -> None:
         parameters = dict(getattr(action, "parameters", {}) or {})
