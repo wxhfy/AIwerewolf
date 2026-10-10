@@ -17,6 +17,7 @@ from backend.agent_harness.events import HarnessEvent
 from backend.agent_harness.events import HarnessSession
 from backend.agent_harness.model import ModelCallError
 from backend.agent_harness.model import ModelClient
+from backend.agent_harness.response import ModelResponseError
 from backend.agent_harness.runner import AgentHarness
 from backend.agent_harness.skills import Skill
 from backend.agent_harness.skills import SkillRegistry
@@ -40,6 +41,7 @@ __all__ = [
     "MemoryScope",
     "ModelCallError",
     "ModelClient",
+    "ModelResponseError",
     "PlannerContext",
     "ResolvedAction",
     "Skill",

@@ -14,6 +14,10 @@ from backend.agent_harness.contracts import PlannerContext
 from backend.agent_harness.model import classify_model_error
 from backend.agent_harness.model import complete_chat
 from backend.agent_harness.model import supports_tool_calling
+from backend.agent_harness.response import content_text
+from backend.agent_harness.response import tool_arguments
+from backend.agent_harness.response import tool_calls
+from backend.agent_harness.response import tool_name
 from backend.agent_harness.validation import ActionValidationError
 from backend.agent_harness.validation import resolve_action
 from backend.domains.werewolf.communication import audit_public_speech
@@ -511,16 +515,14 @@ class LLMActionPlanner:
         context: PlannerContext,
     ) -> HarnessStep | None:
         try:
-            message = response["choices"][0]["message"]
-            tool_calls = message.get("tool_calls") or []
-            if not tool_calls:
+            calls = tool_calls(response)
+            if not calls:
                 return None
-            call = tool_calls[0]
-            function = call.get("function") or {}
-            name = str(function.get("name") or "")
+            call = calls[0]
+            name = tool_name(call)
             if name == "submit_action":
                 return None
-            arguments = cls._parse_json_object(str(function.get("arguments") or "{}"))
+            arguments = cls._parse_json_object(tool_arguments(call))
             if name == "load_skill":
                 skill_name = str(arguments.get("name") or "")
                 if skill_name not in {skill.name for skill in context.skill_catalog}:
@@ -621,13 +623,12 @@ class LLMActionPlanner:
     @classmethod
     def _selection_from_response(cls, response: dict[str, Any]) -> ActionSelection:
         try:
-            message = response["choices"][0]["message"]
-            tool_calls = message.get("tool_calls") or []
-            if tool_calls:
-                function = tool_calls[0].get("function") or {}
-                if function.get("name") != "submit_action":
+            calls = tool_calls(response)
+            if calls:
+                call = calls[0]
+                if tool_name(call) != "submit_action":
                     raise RuntimeError("LLM called an unexpected action tool")
-                return cls._selection(str(function.get("arguments") or ""))
+                return cls._selection(tool_arguments(call))
         except (KeyError, IndexError, TypeError, AttributeError) as exc:
             raise RuntimeError("LLM response does not contain a valid action tool call") from exc
         return cls._selection(cls._content(response))
@@ -635,10 +636,9 @@ class LLMActionPlanner:
     @classmethod
     def _raw_selection_text(cls, response: dict[str, Any]) -> str:
         try:
-            message = response["choices"][0]["message"]
-            tool_calls = message.get("tool_calls") or []
-            if tool_calls:
-                return str((tool_calls[0].get("function") or {}).get("arguments") or "")
+            calls = tool_calls(response)
+            if calls:
+                return tool_arguments(calls[0])
         except (KeyError, IndexError, TypeError, AttributeError):
             pass
         return cls._content(response)
@@ -795,9 +795,9 @@ class LLMActionPlanner:
     @staticmethod
     def _content(response: dict[str, Any]) -> str:
         try:
-            return str(response["choices"][0]["message"].get("content") or "")
-        except (KeyError, IndexError, TypeError) as exc:
-            raise RuntimeError("LLM response does not contain assistant content") from exc
+            return content_text(response)
+        except Exception as exc:
+            raise RuntimeError(str(exc)) from exc
 
     @staticmethod
     def _parse_json_object(content: str) -> dict[str, Any]:
