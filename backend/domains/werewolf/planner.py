@@ -11,6 +11,8 @@ from backend.agent_harness.contracts import ActionSelection
 from backend.agent_harness.contracts import DecisionRequest
 from backend.agent_harness.contracts import HarnessStep
 from backend.agent_harness.contracts import PlannerContext
+from backend.agent_harness.model import complete_chat
+from backend.agent_harness.model import supports_tool_calling
 from backend.agent_harness.validation import ActionValidationError
 from backend.agent_harness.validation import resolve_action
 from backend.domains.werewolf.communication import audit_public_speech
@@ -310,7 +312,8 @@ class LLMActionPlanner:
         remaining_ms: int,
         **kwargs: Any,
     ) -> dict[str, Any]:
-        return self.client.chat_sync(
+        return complete_chat(
+            self.client,
             messages,
             temperature=temperature,
             max_tokens=max_tokens,
@@ -326,7 +329,7 @@ class LLMActionPlanner:
         *,
         final_only: bool = False,
     ) -> dict[str, Any]:
-        if not bool(getattr(self.client, "supports_tool_calling", False)):
+        if not supports_tool_calling(self.client):
             return {}
         tools = [self._submit_action_tool(request)]
         if not final_only:

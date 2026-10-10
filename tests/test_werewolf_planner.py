@@ -64,6 +64,39 @@ def test_profile_projection_exposes_soft_behavior_without_runtime_config() -> No
     assert behavior["conversation_style"]["must_reference_recent_evidence"] is True
 
 
+class CanonicalModelClient:
+    model = "portable-model"
+    provider = "portable-provider"
+    supports_tool_calling = False
+
+    def complete(self, messages, **kwargs):
+        return {
+            "choices": [
+                {"message": {"content": '{"option_id":"vote:P2","response":{},"reasoning":"portable"}'}}
+            ],
+            "usage": {},
+        }
+
+
+def test_planner_uses_provider_neutral_complete_contract() -> None:
+    request = DecisionRequest(
+        request_id="request-portable",
+        environment_id="werewolf",
+        episode_id="game-1",
+        actor=ActorRef(actor_id="P1", agent_definition_id="test"),
+        decision_point=DecisionPoint(kind="werewolf.vote", sequence=1),
+        information_state=InformationState(schema_id="test", schema_version="1", observation={}),
+        action_space=ActionSpace(
+            options=(ActionOption(option_id="vote:P2", action_type="vote", parameters={"target_id": "P2"}),)
+        ),
+        memory_scope=MemoryScope(namespace="match", episode_id="game-1", actor_id="P1"),
+    )
+    step = LLMActionPlanner(CanonicalModelClient()).next_step(request, PlannerContext(1, 2500, (), (), (), (), ()))
+    assert step.action_selection is not None
+    assert step.action_selection.option_id == "vote:P2"
+
+
+
 def test_planner_repairs_invalid_json_once_with_remaining_deadline() -> None:
     request = DecisionRequest(
         request_id="request-1",

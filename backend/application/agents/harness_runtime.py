@@ -8,6 +8,7 @@ from typing import Any
 from backend.agent_harness import AgentHarness
 from backend.agent_harness.contracts import DecisionRequest
 from backend.agent_harness.contracts import HarnessResult
+from backend.agent_harness.model import supports_tool_calling
 from backend.agent_memory import ActorMemoryService
 from backend.agent_memory import SqlActorMemoryRepository
 from backend.application.agents.harness_event_repository import SqlHarnessEventRepository
@@ -92,10 +93,7 @@ def build_harness_runtime(players: list[Player], config: dict[str, Any]) -> Rout
         harness_mode = str(player_config.get("harness_mode") or config.get("harness_mode") or "direct").lower()
         configured_tool_calling = player_config.get("tool_calling")
         if configured_tool_calling is None:
-            configured_tool_calling = "xing4.0" in player.model_name.lower() or (
-                harness_mode == "agentic"
-                and str(getattr(client, "provider", "")).lower() in {"bigmodel", "siliconflow"}
-            )
+            configured_tool_calling = supports_tool_calling(client)
         client.supports_tool_calling = bool(configured_tool_calling)
         profiles[player.id] = {
             "display_name": player.name,

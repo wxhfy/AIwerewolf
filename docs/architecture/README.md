@@ -137,3 +137,6 @@ track_c_post_game_jobs
 - 远程智能体传输尚未实现。
 - Outbox 独立发布和死信队列尚未完成。
 - JWT/OIDC、Alembic、Kubernetes 和 3000 QPM 正式压测尚未完成。
+
+
+模型无关 Agent 设计：见 [MODEL_NEUTRAL_AGENT.md](MODEL_NEUTRAL_AGENT.md)。
