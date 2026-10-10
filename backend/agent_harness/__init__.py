@@ -15,6 +15,7 @@ from backend.agent_harness.contracts import PlannerContext
 from backend.agent_harness.contracts import ResolvedAction
 from backend.agent_harness.events import HarnessEvent
 from backend.agent_harness.events import HarnessSession
+from backend.agent_harness.model import ModelCallError
 from backend.agent_harness.model import ModelClient
 from backend.agent_harness.runner import AgentHarness
 from backend.agent_harness.skills import Skill
@@ -37,6 +38,7 @@ __all__ = [
     "HarnessStep",
     "InformationState",
     "MemoryScope",
+    "ModelCallError",
     "ModelClient",
     "PlannerContext",
     "ResolvedAction",

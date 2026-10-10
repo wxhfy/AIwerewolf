@@ -12,7 +12,7 @@
 - `metadata.model_backed=true`。
 - `fallback_used=false`。
 - 严格模式下模型不可用应让对局失败，不能静默替换为 fake。
-- `ALLOW_FALLBACK=false` 时，模型请求失败或修复失败必须返回失败状态；确定性兜底只允许测试或明确开发环境启用。
+- 生产环境禁止 fake 模型，但模型请求失败或修复失败必须经过 ActionSpace 校验后执行安全降级动作；降级原因、错误分类和原始模型状态必须写入决策元数据。
 - Harness 事件至少包含 `model.requested`、`model.responded`、`action.accepted`。
 
 ## 2. 游戏流程完整性

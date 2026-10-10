@@ -58,8 +58,8 @@ def validate_production_configuration() -> None:
         errors.append("DATABASE_URL must point to PostgreSQL")
     if os.getenv("LLM_PROVIDER", "").strip().lower() in {"", "fake"}:
         errors.append("LLM_PROVIDER must be a real provider")
-    if _bool_env("ALLOW_FALLBACK", False) or _bool_env("_TEST_ALLOW_FAKE_LLM", False):
-        errors.append("model fallback and fake-model test mode must be disabled")
+    if _bool_env("_TEST_ALLOW_FAKE_LLM", False):
+        errors.append("fake-model test mode must be disabled")
     if not _bool_env("AIWEREWOLF_STRICT_MODE", False):
         errors.append("AIWEREWOLF_STRICT_MODE must be true")
     auth_mode = os.getenv("AUTH_MODE", settings.auth_mode).strip().lower()

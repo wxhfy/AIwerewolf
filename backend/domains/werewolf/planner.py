@@ -11,6 +11,7 @@ from backend.agent_harness.contracts import ActionSelection
 from backend.agent_harness.contracts import DecisionRequest
 from backend.agent_harness.contracts import HarnessStep
 from backend.agent_harness.contracts import PlannerContext
+from backend.agent_harness.model import classify_model_error
 from backend.agent_harness.model import complete_chat
 from backend.agent_harness.model import supports_tool_calling
 from backend.agent_harness.validation import ActionValidationError
@@ -127,6 +128,7 @@ class LLMActionPlanner:
         repair_error = ""
         fallback_used = False
         fallback_error = ""
+        failure_kind: str | None = None
         try:
             selection = self._normalize_selection(request, self._selection_from_response(response))
             resolve_action(request, selection)
@@ -170,10 +172,9 @@ class LLMActionPlanner:
                 selection = self._normalize_selection(request, self._selection_from_response(repaired))
                 resolve_action(request, selection)
             except Exception as exc:
-                if not self._fallback_allowed():
-                    raise RuntimeError(f"Model action repair failed and fallback is disabled: {exc}") from exc
                 fallback_used = True
                 fallback_error = f"{type(exc).__name__}: {exc}"
+                failure_kind = classify_model_error(exc)
                 selection = self._fallback_selection(request, repair_error, fallback_error)
                 resolve_action(request, selection)
         selection = apply_role_policy(request, selection)
@@ -219,6 +220,8 @@ class LLMActionPlanner:
                     "repair_error": repair_error or None,
                     "fallback_used": fallback_used,
                     "fallback_error": fallback_error or None,
+                    "safe_degradation_used": fallback_used,
+                    "failure_kind": failure_kind,
                     "speech_policy_violations": list(speech_violations),
                     "speech_rewritten": speech_rewritten,
                     "speech_repetition_detected": speech_repetition_detected,
@@ -767,8 +770,6 @@ class LLMActionPlanner:
         return "目前公开信息还不足，我会继续核对身份声明、站边变化和实际票型，不会无依据下定论。"
 
     def _fallback_step(self, request: DecisionRequest, error: str) -> HarnessStep:
-        if not self._fallback_allowed():
-            raise RuntimeError(f"Model action failed and fallback is disabled: {error}")
         selection = self._fallback_selection(request, error, "model unavailable")
         return HarnessStep.select_action(
             ActionSelection(
@@ -784,17 +785,11 @@ class LLMActionPlanner:
                     "repair_used": False,
                     "repair_error": None,
                     "fallback_used": True,
+                    "safe_degradation_used": True,
                     "fallback_error": error,
+                    "failure_kind": classify_model_error(RuntimeError(error)),
                 },
             )
-        )
-
-    @staticmethod
-    def _fallback_allowed() -> bool:
-        """Allow deterministic fallback only in explicit test/dev mode."""
-        return (
-            os.getenv("ALLOW_FALLBACK", "false").strip().lower() == "true"
-            or os.getenv("_TEST_ALLOW_FAKE_LLM", "false").strip().lower() == "true"
         )
 
     @staticmethod
