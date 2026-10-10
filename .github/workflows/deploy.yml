@@ -1,0 +1,59 @@
+name: Deploy Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "GHCR image tag, normally sha-<commit> or latest"
+        required: true
+        default: latest
+        type: string
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: read
+
+env:
+  DEPLOY_PATH: ${{vars.DEPLOY_PATH}}
+  IMAGE_OWNER: ${{github.repository_owner}}
+
+jobs:
+  deploy:
+    name: Deploy via SSH
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate deployment contract
+        env:
+          DEPLOY_HOST: ${{secrets.DEPLOY_HOST}}
+          DEPLOY_USER: ${{secrets.DEPLOY_USER}}
+          DEPLOY_SSH_KEY: ${{secrets.DEPLOY_SSH_KEY}}
+        run: |
+          test -n "$DEPLOY_HOST"
+          test -n "$DEPLOY_USER"
+          test -n "$DEPLOY_SSH_KEY"
+          test -n "$DEPLOY_PATH"
+      - name: Configure SSH
+        env:
+          DEPLOY_SSH_KEY: ${{secrets.DEPLOY_SSH_KEY}}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "${{secrets.DEPLOY_HOST}}" >> ~/.ssh/known_hosts
+      - name: Deploy immutable image tag
+        env:
+          DEPLOY_HOST: ${{secrets.DEPLOY_HOST}}
+          DEPLOY_USER: ${{secrets.DEPLOY_USER}}
+          IMAGE_TAG: ${{inputs.image_tag}}
+          GHCR_TOKEN: ${{secrets.GITHUB_TOKEN}}
+        run: |
+          set -euo pipefail
+          ssh "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            "DEPLOY_PATH='${DEPLOY_PATH}' IMAGE_OWNER='${IMAGE_OWNER}' IMAGE_TAG='${IMAGE_TAG}' GHCR_TOKEN='${GHCR_TOKEN}' bash -s" \
+            < scripts/deploy_remote.sh

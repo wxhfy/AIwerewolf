@@ -1,0 +1,36 @@
+name: Acceptance Evaluation
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '30 18 * * *'
+
+concurrency:
+  group: acceptance-${{github.ref}}
+  cancel-in-progress: false
+
+env:
+  _TEST_ALLOW_FAKE_LLM: "true"
+  LLM_PROVIDER: fake
+  AIWEREWOLF_SKIP_DOTENV: "true"
+  AIWEREWOLF_STRICT_MODE: "true"
+
+jobs:
+  long-running-acceptance:
+    name: Track B/C long-running acceptance
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - run: python -m pip install --upgrade pip
+      - run: pip install -r requirements.txt
+      - run: >-
+          python -m pytest tests/test_b_full_acceptance.py
+          tests/test_c_acceptance_verification.py
+          tests/test_track_b_badcase_regression.py
+          -q --timeout=600

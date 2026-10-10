@@ -51,6 +51,7 @@ services:
   # FastAPI Backend
   # ------------------------------------------------------------------
   backend:
+    image: ${BACKEND_IMAGE:-aiwerewolf-backend:local}
     build:
       context: .
       dockerfile: Dockerfile
@@ -87,6 +88,7 @@ services:
       - werewolf-net
 
   match-worker:
+    image: ${BACKEND_IMAGE:-aiwerewolf-backend:local}
     build:
       context: .
       dockerfile: Dockerfile
@@ -125,6 +127,7 @@ services:
       - werewolf-net
 
   analysis-worker:
+    image: ${BACKEND_IMAGE:-aiwerewolf-backend:local}
     build:
       context: .
       dockerfile: Dockerfile
@@ -163,6 +166,7 @@ services:
   # Next.js Frontend
   # ------------------------------------------------------------------
   frontend:
+    image: ${FRONTEND_IMAGE:-aiwerewolf-frontend:local}
     build:
       context: .
       dockerfile: frontend/Dockerfile
