@@ -106,6 +106,14 @@ class AnthropicClient:
     # Public API
     # ------------------------------------------------------------------
 
+    def complete(
+        self,
+        messages: list[dict],
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        """Canonical provider-neutral completion entrypoint."""
+        return self.chat_sync(messages, **kwargs)
+
     def chat_sync(
         self,
         messages: list[dict],

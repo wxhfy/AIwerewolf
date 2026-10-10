@@ -24,6 +24,10 @@ class FakeLLMClient:
         self.available = True
         self.call_count = 0
 
+    def complete(self, messages: list[dict], **kwargs: Any) -> dict[str, Any]:
+        """Canonical provider-neutral completion entrypoint."""
+        return self.chat_sync(messages, **kwargs)
+
     def chat_sync(self, messages: list[dict], **kwargs: Any) -> dict[str, Any]:
         self.call_count += 1
         text = "\n".join(str(message.get("content", "")) for message in messages)

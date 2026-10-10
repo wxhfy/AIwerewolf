@@ -268,6 +268,14 @@ class DeepSeekClient:
     # chat_sync — production-grade with retry + backoff + jitter
     # ------------------------------------------------------------------
 
+    def complete(
+        self,
+        messages: list[dict],
+        **kwargs,
+    ) -> dict:
+        """Canonical provider-neutral completion entrypoint."""
+        return self.chat_sync(messages, **kwargs)
+
     def chat_sync(
         self,
         messages: list[dict],
@@ -663,6 +671,10 @@ class KeyFallbackClient:
     def timeout(self, value: float) -> None:
         for c in self._clients:
             c.timeout = value if isinstance(value, httpx.Timeout) else httpx.Timeout(value)
+
+    def complete(self, messages: list[dict], **kwargs) -> dict:
+        """Canonical provider-neutral completion entrypoint."""
+        return self.chat_sync(messages, **kwargs)
 
     def chat_sync(self, messages: list[dict], **kwargs) -> dict:
         """Try primary key first, fall through backups on failure."""
