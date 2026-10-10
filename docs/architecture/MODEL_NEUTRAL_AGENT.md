@@ -126,3 +126,17 @@ Provider Adapter 返回统一的 Chat Completion 结构后，Harness 还会经�
 - Planner 只消费标准化结果，不处理厂商返回格式差异。
 
 这层的意义是把“模型能力差异”和“接口格式差异”分开。模型换代不应要求修改狼人杀策略或领域引擎。
+
+
+## 动作契约校验
+
+模型只能选择环境生成的 option_id。其 response 会在执行前由 Harness 校验有限 JSON Schema：
+
+- required 和 additionalProperties
+- string 的长度边界
+- number 的最小值和最大值
+- enum 枚举值
+- array 的元素 schema 与数量边界
+- nested object 的递归字段约束
+
+因此模型能力弱或模型格式变化时，最多触发修复或安全降级，不会把未满足环境契约的数据交给领域引擎。

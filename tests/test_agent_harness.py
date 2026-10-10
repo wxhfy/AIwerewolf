@@ -282,3 +282,75 @@ def test_session_events_are_append_only_and_payloads_are_immutable() -> None:
     with pytest.raises(TypeError):
         event.payload["nested"]["value"] = 3
     assert event.to_record()["payload"] == {"nested": {"value": 1}}
+
+
+
+def test_open_action_nested_schema_enforces_enum_and_array_items() -> None:
+    action = ActionOption(
+        option_id="structured",
+        action_type="structured",
+        response_schema={
+            "type": "object",
+            "properties": {
+                "stance": {"type": "string", "enum": ["press", "hold"]},
+                "targets": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {"type": "string", "minLength": 2},
+                },
+                "evidence": {
+                    "type": "object",
+                    "properties": {"confidence": {"type": "number", "minimum": 0, "maximum": 1}},
+                    "required": ["confidence"],
+                    "additionalProperties": False,
+                },
+            },
+            "required": ["stance", "targets", "evidence"],
+            "additionalProperties": False,
+        },
+    )
+
+    class Planner:
+        def next_step(self, request, context):
+            del request, context
+            return HarnessStep.select_action(
+                ActionSelection(
+                    option_id="structured",
+                    response={
+                        "stance": "unknown",
+                        "targets": ["P2"],
+                        "evidence": {"confidence": 0.8},
+                    },
+                )
+            )
+
+    result = AgentHarness(Planner()).run(
+        _request(options=(action,), skill_scope=frozenset(), tool_scope=frozenset())
+    )
+    assert result.status == "rejected"
+    assert "must be one of" in str(result.error)
+
+
+def test_open_action_nested_schema_rejects_invalid_array_item() -> None:
+    action = ActionOption(
+        option_id="structured",
+        action_type="structured",
+        response_schema={
+            "type": "object",
+            "properties": {"targets": {"type": "array", "items": {"type": "string", "minLength": 2}}},
+            "required": ["targets"],
+        },
+    )
+
+    class Planner:
+        def next_step(self, request, context):
+            del request, context
+            return HarnessStep.select_action(
+                ActionSelection(option_id="structured", response={"targets": ["x"]})
+            )
+
+    result = AgentHarness(Planner()).run(
+        _request(options=(action,), skill_scope=frozenset(), tool_scope=frozenset())
+    )
+    assert result.status == "rejected"
+    assert "targets[0]" in str(result.error)

@@ -34,33 +34,73 @@ def _validate_response(response: dict[str, Any], schema: dict[str, Any] | None) 
         if response:
             raise ActionValidationError("Selected action does not accept a response payload")
         return
-    if schema.get("type", "object") != "object":
-        raise ActionValidationError("Only object response schemas are supported")
+    _validate_schema_value(response, schema, "response", root=True)
 
-    properties = schema.get("properties", {})
-    required = schema.get("required", [])
-    missing = [name for name in required if name not in response]
-    if missing:
-        raise ActionValidationError(f"Missing response fields: {', '.join(sorted(missing))}")
-    if schema.get("additionalProperties") is False:
-        unknown = sorted(set(response) - set(properties))
-        if unknown:
-            raise ActionValidationError(f"Unknown response fields: {', '.join(unknown)}")
 
-    for name, value in response.items():
-        property_schema = properties.get(name)
-        if property_schema is None:
-            continue
-        expected_type = property_schema.get("type")
-        if expected_type and not _matches_type(value, expected_type):
-            raise ActionValidationError(f"Response field {name!r} must be {expected_type}")
-        if isinstance(value, str):
-            min_length = property_schema.get("minLength")
-            max_length = property_schema.get("maxLength")
-            if min_length is not None and len(value) < int(min_length):
-                raise ActionValidationError(f"Response field {name!r} is too short")
-            if max_length is not None and len(value) > int(max_length):
-                raise ActionValidationError(f"Response field {name!r} is too long")
+def _validate_schema_value(value: Any, schema: dict[str, Any], path: str, *, root: bool = False) -> None:
+    if not isinstance(schema, dict):
+        raise ActionValidationError(f"Schema for {path!r} must be an object")
+
+    expected_type = schema.get("type")
+    if expected_type and not _matches_type(value, str(expected_type)):
+        if root:
+            raise ActionValidationError("Only object response schemas are supported")
+        raise ActionValidationError(f"Response field {path!r} must be {expected_type}")
+
+    if "enum" in schema and value not in schema.get("enum", []):
+        allowed = ", ".join(repr(item) for item in schema.get("enum", []))
+        raise ActionValidationError(f"Response field {path!r} must be one of: {allowed}")
+
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        minimum = schema.get("minimum")
+        maximum = schema.get("maximum")
+        if minimum is not None and value < minimum:
+            raise ActionValidationError(f"Response field {path!r} must be at least {minimum}")
+        if maximum is not None and value > maximum:
+            raise ActionValidationError(f"Response field {path!r} must be at most {maximum}")
+
+    if isinstance(value, str):
+        min_length = schema.get("minLength")
+        max_length = schema.get("maxLength")
+        if min_length is not None and len(value) < int(min_length):
+            raise ActionValidationError(_length_error(path, "too short"))
+        if max_length is not None and len(value) > int(max_length):
+            raise ActionValidationError(_length_error(path, "too long"))
+
+    if isinstance(value, list):
+        min_items = schema.get("minItems")
+        max_items = schema.get("maxItems")
+        if min_items is not None and len(value) < int(min_items):
+            raise ActionValidationError(f"Response field {path!r} must contain at least {int(min_items)} items")
+        if max_items is not None and len(value) > int(max_items):
+            raise ActionValidationError(f"Response field {path!r} must contain at most {int(max_items)} items")
+        item_schema = schema.get("items")
+        if isinstance(item_schema, dict):
+            for index, item in enumerate(value):
+                _validate_schema_value(item, item_schema, f"{path}[{index}]")
+
+    if isinstance(value, dict):
+        properties = schema.get("properties") or {}
+        required = schema.get("required") or []
+        missing = [name for name in required if name not in value]
+        if missing:
+            if root:
+                raise ActionValidationError(f"Missing response fields: {', '.join(sorted(missing))}")
+            raise ActionValidationError(f"Response field {path!r} is missing: {', '.join(sorted(missing))}")
+        if schema.get("additionalProperties") is False:
+            unknown = sorted(set(value) - set(properties))
+            if unknown:
+                if root:
+                    raise ActionValidationError(f"Unknown response fields: {', '.join(unknown)}")
+                raise ActionValidationError(f"Response field {path!r} has unknown fields: {', '.join(unknown)}")
+        for name, item in value.items():
+            child_schema = properties.get(name)
+            if isinstance(child_schema, dict):
+                _validate_schema_value(item, child_schema, str(name) if root else f"{path}.{name}")
+
+
+def _length_error(path: str, message: str) -> str:
+    return f"Response field {path!r} is {message}"
 
 
 def _matches_type(value: Any, expected_type: str) -> bool:
