@@ -140,3 +140,5 @@ track_c_post_game_jobs
 
 
 模型无关 Agent 设计：见 [MODEL_NEUTRAL_AGENT.md](MODEL_NEUTRAL_AGENT.md)。
+
+跨模型兼容性评测：见 MODEL_COMPATIBILITY_EVAL.md。

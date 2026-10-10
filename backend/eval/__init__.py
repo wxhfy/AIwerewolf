@@ -116,6 +116,7 @@ __all__ = [
     "MockReviewLLM",
     "MetricsCalculator",
     "MVPResult",
+    "ModelCompatibilityResult",
     "MVPSelector",
     "PatchOperation",
     "PatchValidationIssue",
@@ -159,5 +160,11 @@ __all__ = [
     "export_review_report",
     "export_strategy_knowledge",
     "generate_review_report",
+    "evaluate_model",
+    "summarize_results",
     "load_strategy_knowledge",
 ]
+
+from backend.eval.model_compatibility import ModelCompatibilityResult
+from backend.eval.model_compatibility import evaluate_model
+from backend.eval.model_compatibility import summarize_results
