@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 from fastapi import HTTPException
 from fastapi import Response
+from sqlalchemy import func
 from sqlalchemy import inspect
 
 from backend.application.commands.contracts import MatchCommandRequest
@@ -11,12 +12,17 @@ from backend.application.commands.repository import MatchCommandRepository
 from backend.application.matches.repository import MatchJobRepository
 from backend.core.config import settings
 from backend.core.errors import NotImplementedServiceError
+from backend.core.observability import metrics_snapshot
 from backend.core.security import CurrentActor
+from backend.db.database import SessionLocal
 from backend.db.database import engine
+from backend.db.models import OutboxEvent
+from backend.db.models import TrackCPostGameJob
 from backend.db.persist import analysis_enabled
 from backend.db.persist import get_match_checkpoint
 from backend.infrastructure.messaging.match_notifications import match_notifications
 from backend.infrastructure.persistence.match_feed import MatchFeedRepository
+from backend.ops.worker_health import worker_health
 
 router = APIRouter(prefix="/api/v1")
 match_jobs = MatchJobRepository()
@@ -36,13 +42,28 @@ def readiness(response: Response) -> dict:
         with engine.connect() as connection:
             connection.exec_driver_sql("SELECT 1")
         checks["database"] = "ok"
-    except Exception as exc:
-        checks["database"] = f"error: {exc}"
-    checks["redis"] = match_notifications.health()
+    except Exception:
+        checks["database"] = "error: unavailable"
+    redis_status = match_notifications.health()
+    checks["redis"] = "error: unavailable" if redis_status.startswith("error") else redis_status
     ready = checks["database"] == "ok"
     if not ready:
         response.status_code = 503
     return {"status": "ready" if ready else "not_ready", "ready": ready, "checks": checks}
+
+
+@router.get("/health/workers", tags=["health"])
+def workers_health() -> dict:
+    return worker_health()
+
+
+@router.get("/system/metrics", tags=["system"])
+def system_metrics() -> dict:
+    """Process counters plus durable queue state; IDs are never metric labels."""
+    with SessionLocal() as db:
+        analysis = db.query(TrackCPostGameJob.status, func.count()).group_by(TrackCPostGameJob.status).all()
+        outbox = db.query(OutboxEvent.status, func.count()).group_by(OutboxEvent.status).all()
+    return {**metrics_snapshot(), "queues": {"analysis": dict(analysis), "outbox": dict(outbox)}}
 
 
 @router.get("/system/capabilities", tags=["system"])
