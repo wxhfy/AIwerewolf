@@ -6,7 +6,8 @@ import { cn } from "@/lib/utils";
 
 interface BackgroundMusicProps {
   language: Language;
-  placement?: "top-right" | "bottom-right";
+  placement?: "top-right" | "bottom-right" | "inline";
+  className?: string;
 }
 
 const BACKGROUND_MUSIC_SRC = process.env.NEXT_PUBLIC_WEREWOLF_BGM_SRC?.trim() ?? "";
@@ -33,7 +34,7 @@ function MusicOffIcon() {
   );
 }
 
-export function BackgroundMusic({ language, placement = "top-right" }: BackgroundMusicProps) {
+export function BackgroundMusic({ language, placement = "top-right", className }: BackgroundMusicProps) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [enabled, setEnabled] = useState(true);
   const [started, setStarted] = useState(false);
@@ -87,9 +88,11 @@ export function BackgroundMusic({ language, placement = "top-right" }: Backgroun
         type="button"
         onClick={() => setEnabled((value) => !value)}
         className={cn(
-          "fixed z-[80] flex h-10 w-10 items-center justify-center rounded-full border border-border bg-cardBackground/85 text-textPrimary shadow-float backdrop-blur transition hover:border-primary/50 hover:text-primary",
-          placement === "top-right" ? "right-4 top-4" : "bottom-4 right-4",
+          "flex h-10 w-10 shrink-0 items-center justify-center rounded-button border border-border bg-cardBackground/85 text-textPrimary transition-colors duration-200 hover:border-primary/50 hover:text-primary",
+          placement !== "inline" && "fixed z-[80] rounded-full shadow-float backdrop-blur",
+          placement === "top-right" ? "right-4 top-4" : placement === "bottom-right" ? "bottom-4 right-4" : "h-9 w-9",
           enabled && started && "border-primary/40 text-primary",
+          className,
         )}
         title={label}
         aria-label={label}

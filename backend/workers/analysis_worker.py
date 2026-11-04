@@ -4,14 +4,19 @@ import logging
 import os
 import signal
 import threading
+from uuid import uuid4
 
 from backend.application.analysis.service import PostGameAnalysisService
 from backend.core.config import validate_production_configuration
+from backend.core.observability import count
+from backend.core.observability import log_event
+from backend.core.observability import operation_context
 from backend.db.database import init_db
 from backend.db.persist import analysis_enabled
 from backend.db.persist import dispatch_match_analysis_outbox
 from backend.db.persist import list_recoverable_track_c_post_game_jobs
 from backend.db.persist import reconcile_finished_match_analysis
+from backend.ops.worker_health import WorkerHeartbeatLoop
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +24,7 @@ logger = logging.getLogger(__name__)
 class AnalysisWorker:
     def __init__(self) -> None:
         self.service = PostGameAnalysisService()
+        self.worker_id = f"analysis-{uuid4().hex[:12]}"
         self.stop_event = threading.Event()
         self.poll_seconds = max(0.2, float(os.getenv("ANALYSIS_WORKER_POLL_SECONDS", "2")))
         self.batch_size = max(1, int(os.getenv("ANALYSIS_WORKER_BATCH_SIZE", "5")))
@@ -28,6 +34,7 @@ class AnalysisWorker:
         self.stop_event.set()
 
     def run_once(self) -> int:
+        count("analysis.worker.tick")
         dispatch_match_analysis_outbox(limit=self.batch_size * 2)
         reconcile_finished_match_analysis(limit=self.batch_size * 2)
         jobs = list_recoverable_track_c_post_game_jobs(
@@ -40,26 +47,49 @@ class AnalysisWorker:
             if not game_id:
                 continue
             try:
-                result = self.service.execute(game_id, stale_after_seconds=self.stale_after_seconds)
+                with operation_context(match_id=game_id, request_id=str(job.get("id") or "")):
+                    result = self.service.execute(game_id, stale_after_seconds=self.stale_after_seconds)
                 if result is not None:
                     processed += 1
-            except Exception:
-                logger.exception("Post-game analysis failed for match %s", game_id)
+                    count("analysis.job.completed")
+                    log_event(logger, "analysis.job.completed", match_id=game_id, request_id=job.get("id"))
+            except Exception as exc:
+                count("analysis.job.failed")
+                log_event(
+                    logger,
+                    "analysis.job.failed",
+                    level=logging.ERROR,
+                    match_id=game_id,
+                    request_id=job.get("id"),
+                    error_type=type(exc).__name__,
+                )
         return processed
 
     def run_forever(self) -> None:
         validate_production_configuration()
         init_db()
-        if not analysis_enabled():
-            logger.info("Analysis worker idle: ANALYSIS_ENABLED is false")
+        with WorkerHeartbeatLoop(self.worker_id, "analysis"):
+            if not analysis_enabled():
+                log_event(logger, "analysis.worker.disabled", worker_id=self.worker_id)
+                while not self.stop_event.is_set():
+                    self.stop_event.wait(max(self.poll_seconds, 5))
+                return
+            log_event(logger, "analysis.worker.started", worker_id=self.worker_id)
             while not self.stop_event.is_set():
-                self.stop_event.wait(max(self.poll_seconds, 5))
-            return
-        logger.info("Analysis worker started")
-        while not self.stop_event.is_set():
-            processed = self.run_once()
-            if processed == 0:
-                self.stop_event.wait(self.poll_seconds)
+                try:
+                    processed = self.run_once()
+                except Exception as exc:
+                    count("analysis.worker.poll_failed")
+                    log_event(
+                        logger,
+                        "analysis.worker.poll_failed",
+                        level=logging.ERROR,
+                        worker_id=self.worker_id,
+                        error_type=type(exc).__name__,
+                    )
+                    processed = 0
+                if processed == 0:
+                    self.stop_event.wait(self.poll_seconds)
 
 
 def main() -> None:

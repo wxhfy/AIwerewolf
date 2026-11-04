@@ -12,7 +12,11 @@ from backend.application.matches.executor import MatchExecutor
 from backend.application.matches.executor import worker_poll_interval
 from backend.application.matches.repository import MatchJobRepository
 from backend.core.config import validate_production_configuration
+from backend.core.observability import count
+from backend.core.observability import log_event
+from backend.core.observability import operation_context
 from backend.db.database import init_db
+from backend.ops.worker_health import WorkerHeartbeatLoop
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +34,10 @@ class MatchWorker:
     def run_forever(self) -> None:
         validate_production_configuration()
         init_db()
+        with WorkerHeartbeatLoop(self.worker_id, "match"):
+            self._run_loop()
+
+    def _run_loop(self) -> None:
         logger.info("Match worker %s started", self.worker_id)
         poll_interval = worker_poll_interval()
         recovery_interval = max(1.0, float(os.getenv("MATCH_LEASE_RECOVERY_SECONDS", "30")))
@@ -46,9 +54,22 @@ class MatchWorker:
                 self.stop_event.wait(poll_interval)
                 continue
             try:
-                self.executor.execute(job)
+                with operation_context(match_id=job.game_id, room_id=job.room_id, request_id=job.id):
+                    log_event(logger, "match.started", worker_id=self.worker_id)
+                    self.executor.execute(job)
+                    count("match.completed")
+                    log_event(logger, "match.completed", worker_id=self.worker_id)
             except Exception as exc:
-                logger.exception("Match %s failed", job.game_id)
+                count("match.failed")
+                log_event(
+                    logger,
+                    "match.failed",
+                    level=logging.ERROR,
+                    match_id=job.game_id,
+                    room_id=job.room_id,
+                    request_id=job.id,
+                    error_type=type(exc).__name__,
+                )
                 self.repository.fail(job.id, self.worker_id, str(exc))
 
 

@@ -26,6 +26,7 @@ interface PlayerCardProps {
   selectable?: boolean;
   isTarget?: boolean;
   onSelectTarget?: () => void;
+  compact?: boolean;
 }
 
 export function PlayerCard({
@@ -43,6 +44,7 @@ export function PlayerCard({
   selectable = false,
   isTarget = false,
   onSelectTarget,
+  compact = false,
 }: PlayerCardProps) {
   const { viewMode, language } = useAppContext();
   const [roleRevealed, setRoleRevealed] = useState(true);
@@ -52,6 +54,7 @@ export function PlayerCard({
   const isVillage = player.alignment === Alignment.VILLAGE;
   const isModerator = viewMode === "moderator";
   const isInteractive = !isDead && (isModerator || Boolean(onClick));
+  const isClickable = selectable || isInteractive;
   const persona = player.persona;
   const roleVisible = showOwnRole || (isModerator && roleRevealed);
   const roleLabel = roleVisible && player.role ? tRole(player.role, language) : isModerator ? t("revealRole", language) : t("hiddenRole", language);
@@ -60,29 +63,30 @@ export function PlayerCard({
   // isSpeaking: ring (box-shadow, no layout impact), no scale
   // isThinking: badge in proc area + subtle ring on container
   const containerClass = cn(
-    "relative grid min-h-[108px] px-3.5 py-3 rounded-card transition-all duration-300 select-none",
+    "relative grid rounded-card border select-none transition-[background-color,border-color,box-shadow,opacity] duration-200",
+    compact ? "min-h-[96px] gap-x-2 px-2.5 py-2 [@media(max-height:500px)]:min-h-16 [@media(max-height:500px)]:py-1.5" : "min-h-[120px] px-3 py-3",
     "bg-cardBackground",
     // 默认显示边框，高亮状态下隐藏默认边框避免和ring混杂
-    !(isSpeaking || isThinking || isNightActive || isTarget) && "border border-border/70",
-    isInteractive ? "cursor-pointer" : "cursor-default",
-    isDead && "opacity-50 grayscale",
-    isSpeaking && "ring-[3px] ring-success shadow-lg shadow-success/20 motion-safe:animate-[pulse_1s_ease-in-out_infinite]",
-    isThinking && !isSpeaking && "ring-2 ring-info/60 motion-safe:animate-pulse",
-    isNightActive && !isSpeaking && !isThinking && "ring-[3px] ring-accent/70 shadow-lg shadow-accent/20 motion-safe:animate-[pulse_1.5s_ease-in-out_infinite]",
+    "border-border",
+    isClickable ? "cursor-pointer hover:border-primary/40" : "cursor-default",
+    isDead && "opacity-70 grayscale",
+    isSpeaking && "border-success/50 ring-1 ring-success/30",
+    isThinking && !isSpeaking && "border-info/50 ring-1 ring-info/20",
+    isNightActive && !isSpeaking && !isThinking && "border-accent/50 ring-1 ring-accent/20",
     selectable && !isTarget && "cursor-pointer hover:ring-2 hover:ring-accent/50 hover:shadow-md",
-    isTarget && "ring-[3px] ring-accent shadow-lg shadow-accent/20",
+    isTarget && "border-accent ring-2 ring-accent/60 bg-accent/5",
     "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary",
   );
 
   function handleClick() {
     if (selectable && onSelectTarget) { onSelectTarget(); return; }
-    if (!isInteractive) return;
+    if (!isClickable) return;
     if (isModerator) setRoleRevealed((v) => !v);
     onClick?.();
   }
 
   function handleKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
-    if (!isInteractive) return;
+    if (!isClickable) return;
     if (event.key !== "Enter" && event.key !== " ") return;
     event.preventDefault();
     handleClick();
@@ -118,10 +122,9 @@ export function PlayerCard({
       className={`${containerClass} player-card-grid`}
       onClick={handleClick}
       onKeyDown={handleKeyDown}
-      role={isInteractive ? "button" : undefined}
-      tabIndex={isInteractive ? 0 : undefined}
-      aria-disabled={isInteractive ? isDead : undefined}
-      aria-pressed={isInteractive ? isTarget : undefined}
+      role={isClickable ? "button" : undefined}
+      tabIndex={isClickable ? 0 : undefined}
+      aria-pressed={selectable ? isTarget : undefined}
       aria-label={`${player.seat}. ${player.name}. ${roleLabel}`}
       data-phase-aware
       data-testid="player-card"
@@ -132,10 +135,10 @@ export function PlayerCard({
       {/* ── Portrait ─────────────────────────────────────── */}
       <div style={{ gridArea: "portrait" }} className="flex items-start">
         <div className="relative">
-          <PlayerPortrait player={player} size="sm" isHighlighted={isSpeaking || isNightActive || isTarget} />
+          <PlayerPortrait player={player} size="sm" isHighlighted={isSpeaking || isNightActive || isTarget} className={compact ? "h-10 w-10 rounded-button [@media(max-height:500px)]:h-8 [@media(max-height:500px)]:w-8" : "h-12 w-12 rounded-button"} />
           <span className={cn(
             "absolute -bottom-1 -right-1 flex h-6 min-w-6 items-center justify-center rounded-full border-2 border-cardBackground px-1 text-[11px] font-bold leading-none shadow-sm",
-            isDead ? "bg-text-sub text-white" : isSpeaking ? "bg-success text-white" : "bg-primary text-white",
+            isDead ? "bg-cardBackground text-textSecondary" : "bg-primary text-onPrimary",
           )}>
             {isDead ? "✝" : player.seat}
           </span>
@@ -145,7 +148,8 @@ export function PlayerCard({
       {/* ── Row 1 Left: Identity ─────────────────────────── */}
       <div style={{ gridArea: "identity" }} className="flex min-w-0 items-center gap-2">
         <span className={cn(
-          "min-w-0 truncate font-display font-semibold leading-tight text-textPrimary",
+          "min-w-0 truncate font-display font-semibold leading-snug text-textPrimary",
+          compact && "text-sm",
           isDead && "text-text-sub"
         )}>
           {player.name}
@@ -153,7 +157,7 @@ export function PlayerCard({
       </div>
 
       {/* ── Row 1 Right: Identity Badges ─────────────────── */}
-      <div style={{ gridArea: "badges" }} className="flex items-start justify-end gap-1 min-w-[72px] flex-wrap">
+      <div style={{ gridArea: "badges" }} className="flex min-w-0 flex-wrap items-center gap-1 pt-1">
         {showOwnRole && (
           <span className="inline-flex text-[11px] bg-primary/20 text-primary px-1.5 py-0.5 rounded-full font-bold shrink-0">
             {language === "zh" ? "我" : "Me"}
@@ -175,19 +179,19 @@ export function PlayerCard({
       </div>
 
       {/* ── Row 2: Persona ────────────────────────────────── */}
-      <div style={{ gridArea: "persona" }} className="min-h-[1.5em]">
+      <div style={{ gridArea: "persona" }} className={compact ? "hidden" : "mt-2 min-w-0"}>
         {persona && (
           <div className="mt-1 w-full space-y-0.5">
             {persona.mbti && (
               <p className="truncate text-[11px] leading-tight text-text-sub">
                 <span className="font-medium">{persona.mbti}</span>
                 {persona.style_label && (
-                  <span className="text-text-sub/70"> · {persona.style_label}</span>
+                  <span> · {persona.style_label}</span>
                 )}
               </p>
             )}
             {persona.basic_info && (
-              <p className="line-clamp-2 text-[11px] leading-tight text-text-sub/80">
+              <p className="line-clamp-2 text-xs leading-relaxed text-text-sub">
                 {persona.basic_info}
               </p>
             )}
@@ -201,14 +205,14 @@ export function PlayerCard({
       </div>
 
       {/* ── Row 3 Left: Process State ────────────────────── */}
-      <div style={{ gridArea: "proc" }} className="flex items-end gap-1 min-h-[22px] flex-wrap">
+      <div style={{ gridArea: "proc" }} className={cn("flex min-h-[20px] flex-wrap items-end gap-1 pt-1", compact && "[@media(max-height:500px)]:hidden")}>
         {procLabel && (
           <span className={cn(
             "inline-flex whitespace-nowrap rounded-badge px-2 py-0.5 text-[11px] leading-tight transition-opacity duration-200",
             (isSpeaking && isVotePhase) ? "bg-accent/15 text-accent font-medium" :
             isSpeaking ? "bg-success/15 text-success font-medium" :
-            isThinking ? "bg-info/15 text-info motion-safe:animate-pulse" :
-            isNightActive ? "bg-accent/15 text-accent font-medium motion-safe:animate-pulse" :
+            isThinking ? "bg-info/15 text-info" :
+            isNightActive ? "bg-accent/15 text-accent font-medium" :
             "border border-dashed border-warning bg-warning/15 text-primary"
           )}>
             {procLabel}
@@ -217,9 +221,9 @@ export function PlayerCard({
       </div>
 
       {/* ── Row 3 Right: Result State ────────────────────── */}
-      <div style={{ gridArea: "result" }} className="flex items-end justify-end gap-1 min-h-[22px] flex-wrap">
+      <div style={{ gridArea: "result" }} className={cn("flex items-end justify-end gap-1 min-h-[22px] flex-wrap", compact && "[@media(max-height:500px)]:hidden")}>
         {resultItems.map((item, i) => (
-          <span key={i} className="inline-flex whitespace-nowrap text-[11px] text-text-sub/60 leading-tight">
+          <span key={i} className="inline-flex whitespace-nowrap text-[11px] text-text-sub leading-tight">
             {item}
           </span>
         ))}

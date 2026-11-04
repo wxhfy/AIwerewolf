@@ -562,7 +562,13 @@ class WerewolfGame:
             self._run_post_game_hook()
         return self.state
 
-    def submit_human_action(self, payload: dict[str, object]) -> GameState:
+    def apply_human_action(self, payload: dict[str, object]) -> GameState:
+        """Record a human decision without advancing AI seats.
+
+        Clears pending_input and buffers the coerced decisions so a later
+        play_until_blocked() call can resume the phase. Callers that need a
+        non-blocking HTTP response should apply then continue in background.
+        """
         pending = self.state.pending_input
         if pending is None:
             raise ValueError("No human input is pending.")
@@ -570,6 +576,11 @@ class WerewolfGame:
         decisions = self._coerce_human_decisions(player, pending, payload)
         self.human_action_buffer[player.id] = decisions
         self.state.pending_input = None
+        return self.state
+
+    def submit_human_action(self, payload: dict[str, object]) -> GameState:
+        """Apply human input then run until the next human block or GAME_END."""
+        self.apply_human_action(payload)
         return self.play_until_blocked()
 
     def _begin_night(self) -> None:
@@ -1622,8 +1633,6 @@ class WerewolfGame:
         return decisions[0] if decisions else None
 
     def _batch_ask_harness(self, players: list[Player], request: str) -> list[Any]:
-        import concurrent.futures as _futures
-
         runtime = self.decision_runtime
         if runtime is None:
             raise RuntimeError("Decision runtime is not attached")
@@ -1643,7 +1652,6 @@ class WerewolfGame:
             )
             prepared.append((player, view, decision_request))
 
-        results_by_index: dict[int, Any] = {}
         replayed_by_index: dict[int, Decision] = {}
         missing = []
         if self.decision_replayer is not None:
@@ -1686,9 +1694,7 @@ class WerewolfGame:
         runtime = self.decision_runtime
         results_by_index: dict[int, Any] = {}
         with _futures.ThreadPoolExecutor(max_workers=max(1, len(prepared))) as pool:
-            futures = {
-                pool.submit(runtime.run, decision_request): index for index, decision_request in missing
-            }
+            futures = {pool.submit(runtime.run, decision_request): index for index, decision_request in missing}
             for future in _futures.as_completed(futures):
                 results_by_index[futures[future]] = future.result()
 

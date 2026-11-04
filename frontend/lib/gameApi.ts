@@ -24,7 +24,7 @@ interface HumanActionPayload {
 export interface StartMatchResponse {
   match_id: string;
   room_id: string;
-  status: "queued" | "running" | "completed";
+  status: "queued" | "running" | "completed" | "accepted" | "waiting_human";
   seq: number;
   snapshot: GameState;
 }
@@ -71,10 +71,39 @@ export async function prepareRoom(roomId: string, showPrivate = false): Promise<
   return parseJson<GameState>(response);
 }
 
-export async function startRoom(roomId: string, showPrivate = false): Promise<GameState> {
+export interface HumanActionResponse {
+  status: "accepted" | "completed" | "running";
+  match_id: string;
+  room_id: string;
+  seq: number;
+  snapshot: GameState;
+}
+
+function unwrapStartPayload(body: any): StartMatchResponse {
+  if (body && typeof body === "object" && body.snapshot && body.match_id) {
+    return {
+      match_id: String(body.match_id),
+      room_id: String(body.room_id || ""),
+      status: (body.status as StartMatchResponse["status"]) || "running",
+      seq: Number(body.seq || 0),
+      snapshot: body.snapshot as GameState,
+    };
+  }
+  const snapshot = body as GameState;
+  return {
+    match_id: String(snapshot.id || ""),
+    room_id: "",
+    status: snapshot.winner ? "completed" : "running",
+    seq: Number((snapshot as any).seq || 0),
+    snapshot,
+  };
+}
+
+export async function startRoom(roomId: string, showPrivate = false): Promise<StartMatchResponse> {
   const response = await fetchWithTimeout(apiUrl(`/api/rooms/${roomId}/start?show_private=${showPrivate ? "true" : "false"}`), { method: "POST" });
-  if (!response.ok) throw new Error(`Start failed (${response.status})`);
-  return parseJson<GameState>(response);
+  // Human rooms return 202 (accepted, continue via SSE); AI rooms return 200.
+  if (!response.ok && response.status !== 202) throw new Error(`Start failed (${response.status})`);
+  return unwrapStartPayload(await parseJson<any>(response));
 }
 
 export async function startAiMatch(roomId: string, showPrivate = false): Promise<StartMatchResponse> {
@@ -102,7 +131,7 @@ export async function fetchReplayDownload(gameId: string, showPrivate = false): 
   return parseJson<Record<string, unknown>>(response);
 }
 
-export async function submitHumanAction(roomId: string, data: HumanActionPayload): Promise<GameState> {
+export async function submitHumanAction(roomId: string, data: HumanActionPayload): Promise<HumanActionResponse> {
   const url = apiUrl(`/api/rooms/${roomId}/action`);
   const response = await fetchWithTimeout(url, {
     method: "POST",
@@ -114,8 +143,27 @@ export async function submitHumanAction(roomId: string, data: HumanActionPayload
       reasoning: "Human action from UI",
     }),
   });
-  if (!response.ok) throw new Error("Action failed");
-  return parseJson<GameState>(response);
+  // Async human continuation returns 202 Accepted.
+  if (!response.ok && response.status !== 202) throw new Error("Action failed");
+  const body = await parseJson<any>(response);
+  if (body && body.snapshot && body.match_id) {
+    return {
+      status: (body.status as HumanActionResponse["status"]) || "accepted",
+      match_id: String(body.match_id),
+      room_id: String(body.room_id || roomId),
+      seq: Number(body.seq || 0),
+      snapshot: body.snapshot as GameState,
+    };
+  }
+  // Backward-compatible: older servers returned the snapshot directly.
+  const snapshot = body as GameState;
+  return {
+    status: snapshot.winner ? "completed" : "accepted",
+    match_id: String(snapshot.id || ""),
+    room_id: roomId,
+    seq: Number((snapshot as any).seq || 0),
+    snapshot,
+  };
 }
 
 export async function pauseRoom(roomId: string): Promise<{ paused: boolean; status: string }> {

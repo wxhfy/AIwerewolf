@@ -123,6 +123,7 @@ class _FakeSession:
 
 
 def test_promote_after_store_does_not_auto_promote_reflections(monkeypatch) -> None:
+    monkeypatch.setattr(knowledge_abstractor, "_automatic_promotion_calibrated", lambda: True)
     rows = [
         _FakeKnowledgeRow("reflection-high", "reflection", "Seer", 0.99),
         _FakeKnowledgeRow("lesson-high", "per_step_lesson", "Seer", 0.91),
@@ -140,6 +141,7 @@ def test_promote_after_store_does_not_auto_promote_reflections(monkeypatch) -> N
 
 
 def test_promote_after_store_triggers_source_and_global_lifecycle(monkeypatch) -> None:
+    monkeypatch.setattr(knowledge_abstractor, "_automatic_promotion_calibrated", lambda: True)
     calls = []
 
     def fake_lifecycle(**kwargs):
@@ -162,6 +164,7 @@ def test_promote_after_store_triggers_source_and_global_lifecycle(monkeypatch) -
 
 
 def test_promote_after_store_without_source_runs_single_global_lifecycle(monkeypatch) -> None:
+    monkeypatch.setattr(knowledge_abstractor, "_automatic_promotion_calibrated", lambda: True)
     calls = []
 
     def fake_lifecycle(**kwargs):
@@ -888,7 +891,7 @@ def test_analysis_service_runs_pending_post_game_job(monkeypatch) -> None:
 
     monkeypatch.setattr(service_module, "run_post_game_scoring", fake_run_post_game_scoring)
     monkeypatch.setattr(service_module, "run_agent_reflections", lambda state: 0)
-    monkeypatch.setattr(service_module, "save_post_game_artifacts", lambda state: None)
+    monkeypatch.setattr(service_module, "save_post_game_artifacts", lambda state, **kwargs: None)
 
     result = service_module.PostGameAnalysisService().execute("job-game-5")
     verify = TestingSession()

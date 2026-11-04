@@ -125,9 +125,7 @@ def test_harness_can_reflect_before_selecting_an_action() -> None:
             assert context.reflections == ("Compare the two public vote histories.",)
             return HarnessStep.select_action(ActionSelection(option_id="vote:actor-2"))
 
-    result = AgentHarness(Planner()).run(
-        _request(max_steps=2, skill_scope=frozenset(), tool_scope=frozenset())
-    )
+    result = AgentHarness(Planner()).run(_request(max_steps=2, skill_scope=frozenset(), tool_scope=frozenset()))
 
     assert result.status == "completed"
     assert result.action is not None
@@ -284,7 +282,6 @@ def test_session_events_are_append_only_and_payloads_are_immutable() -> None:
     assert event.to_record()["payload"] == {"nested": {"value": 1}}
 
 
-
 def test_open_action_nested_schema_enforces_enum_and_array_items() -> None:
     action = ActionOption(
         option_id="structured",
@@ -324,9 +321,7 @@ def test_open_action_nested_schema_enforces_enum_and_array_items() -> None:
                 )
             )
 
-    result = AgentHarness(Planner()).run(
-        _request(options=(action,), skill_scope=frozenset(), tool_scope=frozenset())
-    )
+    result = AgentHarness(Planner()).run(_request(options=(action,), skill_scope=frozenset(), tool_scope=frozenset()))
     assert result.status == "rejected"
     assert "must be one of" in str(result.error)
 
@@ -345,12 +340,8 @@ def test_open_action_nested_schema_rejects_invalid_array_item() -> None:
     class Planner:
         def next_step(self, request, context):
             del request, context
-            return HarnessStep.select_action(
-                ActionSelection(option_id="structured", response={"targets": ["x"]})
-            )
+            return HarnessStep.select_action(ActionSelection(option_id="structured", response={"targets": ["x"]}))
 
-    result = AgentHarness(Planner()).run(
-        _request(options=(action,), skill_scope=frozenset(), tool_scope=frozenset())
-    )
+    result = AgentHarness(Planner()).run(_request(options=(action,), skill_scope=frozenset(), tool_scope=frozenset()))
     assert result.status == "rejected"
     assert "targets[0]" in str(result.error)

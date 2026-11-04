@@ -6,81 +6,53 @@ import { Player } from "@/types";
 import { PlayerPortrait } from "@/components/game/PlayerPortrait";
 
 export interface SpeechCardProps {
-  /** 玩家信息 */
   player?: Player;
-  /** 玩家座位号（兼容旧版） */
   seat?: number;
-  /** 玩家姓名（兼容旧版） */
   name: string;
-  /** 发言正文 */
   children: React.ReactNode;
-  /** 当前正在发言（高亮卡片） */
   isSpeaking?: boolean;
-  /** header 右侧额外内容（如 "发言中" 标签） */
   headerRight?: React.ReactNode;
-  /** 附加样式 */
   className?: string;
   testId?: string;
   dataEventIds?: string;
 }
 
-/**
- * 发言卡片共享骨架 — ChatBubble 和 ThinkingBubble 共用。
- *
- * 结构：
- *   ┌─ header: 座位号 + 姓名 + 右侧状态 ─┐
- *   │                                     │
- *   │  body: 发言正文 / 思考占位           │
- *   └─────────────────────────────────────┘
- */
+/** Shared, phase-aware presentation for speech and thinking messages. */
 export function SpeechCard({ player, seat, name, children, isSpeaking, headerRight, className, testId, dataEventIds }: SpeechCardProps) {
   const displaySeat = seat ?? player?.seat;
   const displayName = player?.name || name;
-  
+
   return (
-    <div className={cn("py-1.5 animate-slide-in", className)} data-testid={testId} data-chat-event-ids={dataEventIds}>
+    <div className={cn("py-1", className)} data-testid={testId} data-chat-event-ids={dataEventIds}>
       <div
         className={cn(
-          // 基础样式
-          "speech-card rounded-2xl overflow-hidden transition-all duration-300 flex",
-          // 白天：暖白底 + 微妙边框 + 柔和阴影
-          "bg-[#FFFBF7] border border-amber-100/60",
-          "shadow-[0_2px_8px_rgba(0,0,0,0.06),0_1px_2px_rgba(0,0,0,0.04)]",
-          "text-gray-700",
-          // 正在发言时的高亮
-          isSpeaking && "shadow-xl ring-2 ring-primary/25 border-primary/30",
+          "speech-card flex overflow-hidden rounded-card border border-border bg-cardBackground text-textPrimary shadow-card transition-[border-color,box-shadow] duration-200",
+          isSpeaking && "border-primary/40 ring-1 ring-primary/20",
         )}
       >
-        {/* 立绘区域 - 左侧 */}
         {player && (
-          <div className="speech-card-portrait shrink-0 p-3 bg-amber-50/40">
-            <PlayerPortrait
-              player={player}
-              size="md"
-              isHighlighted={isSpeaking}
-            />
+          <div className="speech-card-portrait shrink-0 bg-primary/5 p-2 sm:p-3">
+            <PlayerPortrait player={player} size="md" isHighlighted={isSpeaking} />
           </div>
         )}
 
-        {/* 内容区域 - 右侧 */}
-        <div className="flex-1 min-w-0">
-          {/* Header */}
-          <div className="flex items-center gap-2 px-4 pt-3 pb-1.5">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-3 pb-2 pt-3 sm:px-4">
             {displaySeat != null && (
-              <span className="speech-card-seat text-sm font-semibold text-amber-700 tabular-nums tracking-wide">
-                {displaySeat}号
+              <span className="speech-card-seat inline-flex h-6 min-w-6 items-center justify-center rounded-md bg-primary/10 px-1.5 text-xs font-semibold tabular-nums text-primary">
+                {displaySeat}
               </span>
             )}
-            <span className="speech-card-name text-base font-medium text-gray-800">{displayName}</span>
+            <span className="speech-card-name min-w-0 break-words text-sm font-semibold text-textPrimary">
+              {displayName}
+            </span>
             {headerRight && (
-              <span className="text-xs text-primary font-medium animate-pulse">
+              <span className="ml-auto text-xs font-medium text-primary">
                 {headerRight}
               </span>
             )}
           </div>
-
-          {/* Body */}
-          <div className="speech-card-body px-4 pb-3 text-base leading-relaxed whitespace-pre-wrap break-words text-gray-700">
+          <div className="speech-card-body whitespace-pre-wrap break-words px-3 pb-3 text-sm leading-7 text-textPrimary sm:px-4 sm:text-base">
             {children}
           </div>
         </div>

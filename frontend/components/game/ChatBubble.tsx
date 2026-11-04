@@ -51,14 +51,14 @@ export const ChatBubble = memo(function ChatBubble({
       name={speakerName}
       isSpeaking={isSpeaking}
       headerRight={phaseLabel || undefined}
-      className={cn(isOwn && "opacity-90")}
+      className={cn(isOwn && "[&_.speech-card]:border-primary/30")}
       testId={testId}
       dataEventIds={dataEventIds}
     >
       {displayContent ? (
         <MentionText text={displayContent} players={players} className="text-textPrimary" />
       ) : (
-        <span className="text-text-sub/60">{phaseLabel || "记录已生成"}</span>
+        <span className="text-text-sub">{phaseLabel || "记录已生成"}</span>
       )}
     </SpeechCard>
   );

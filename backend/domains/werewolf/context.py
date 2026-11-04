@@ -87,7 +87,7 @@ def build_decision_context_v1(
         ),
         "public_timeline": timeline,
         "public_phase_summaries": [
-            dict(item) for item in list(memory.get("public_phase_summaries") or [])[-limits.get("phase_summaries", 4):]
+            dict(item) for item in list(memory.get("public_phase_summaries") or [])[-limits.get("phase_summaries", 4) :]
         ],
         "public_claims": claims,
         "inferences": inferences,
@@ -216,7 +216,13 @@ def _decision_frame(request: DecisionRequest) -> dict[str, Any]:
             "Prefer a coherent stance supported by one or two relevant observations over listing the whole context.",
         ],
     }
-    if kind in {"werewolf.talk", "werewolf.badge_speech", "werewolf.pk_speech", "werewolf.sheriff_closing", "werewolf.last_words"}:
+    if kind in {
+        "werewolf.talk",
+        "werewolf.badge_speech",
+        "werewolf.pk_speech",
+        "werewolf.sheriff_closing",
+        "werewolf.last_words",
+    }:
         if kind == "werewolf.last_words":
             return {
                 **common,

@@ -316,7 +316,7 @@ Reducer 只能消费 `DecisionRequest.information_state`，不能直接查主持
 6. 需要跨机器独立扩展 Agent 时，再实现远程 Transport Adapter。
 7. 生产边界稳定后再引入 Kubernetes、HPA、PDB 和滚动升级。
 8. 建立发言语义标注集，补齐复杂声明、条件、指代和讽刺理解。
-9. 用人工标注校准 Track B Judge，并实现 Track C 并行 Coordinator。
+9. Track B 人工校准流水线与 Track C 并行 Coordinator 已实现；仍需真实人工标注、生产模型配对实验及容量验证。合成/fake 结果只能验证流程，不能自动晋升。运维协议见 [`TRACK_B_C_OPERATIONS.md`](TRACK_B_C_OPERATIONS.md)。
 
 ## 11. 验收标准
 

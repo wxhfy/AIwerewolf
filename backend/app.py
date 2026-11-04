@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
+import threading
 from contextlib import asynccontextmanager
 from typing import Any
 from typing import Dict
@@ -12,16 +14,19 @@ from fastapi import FastAPI
 from fastapi import HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
+from fastapi.responses import JSONResponse
 from fastapi.responses import Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from backend.application.matches.executor import prepare_game
 from backend.application.agents.runtime import LocalAgentRuntime
+from backend.application.matches.executor import prepare_game
 from backend.application.matches.repository import MatchJobRepository
 from backend.application.matches.spec import MatchExecutionSpec
 from backend.core.config import settings
 from backend.core.config import validate_production_configuration
+from backend.core.errors import ServiceError
 from backend.core.errors import install_exception_handlers
+from backend.core.errors import problem_response
 from backend.core.middleware import install_middleware
 from backend.core.security import actor_from_authorization
 from backend.db.database import init_db
@@ -53,17 +58,19 @@ class ApiAuthenticationMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
         try:
             actor = actor_from_authorization(request.headers.get("authorization"))
-            if request.query_params.get("show_private", "false").lower() == "true" or (
-                request.url.path.endswith("/rooms/snapshot")
-            ) or request.query_params.get("moderator", "false").lower() == "true":
+            if (
+                request.query_params.get("show_private", "false").lower() == "true"
+                or (request.url.path.endswith("/rooms/snapshot"))
+                or request.query_params.get("moderator", "false").lower() == "true"
+            ):
                 if "moderator" not in actor.roles:
-                    from fastapi.responses import JSONResponse
-
-                    return JSONResponse(status_code=403, content={"detail": "Moderator role required"})
+                    return problem_response(
+                        request, status=403, code="moderator_required", detail="Moderator role required"
+                    )
         except HTTPException as exc:
-            from fastapi.responses import JSONResponse
-
-            return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+            return problem_response(
+                request, status=exc.status_code, code="authentication_required", detail=str(exc.detail)
+            )
         return await call_next(request)
 
 
@@ -83,6 +90,10 @@ app.include_router(match_stream_router)
 
 _rooms = RoomManager()
 _match_jobs = MatchJobRepository()
+
+_logger = logging.getLogger("aiwerewolf.app")
+_human_runners: dict[str, threading.Thread] = {}
+_human_runner_lock = threading.Lock()
 
 
 def _save_game_start(state: GameState) -> None:
@@ -109,6 +120,7 @@ def _save_snapshot(state: GameState) -> None:
 
 def _initialize_database() -> None:
     init_db()
+
 
 def _mark_human_seat(game, human_seat: int | None) -> None:
     if human_seat is None:
@@ -137,21 +149,8 @@ def _human_room_observe(room_id: str):
     return observe
 
 
-def _start_human_room(room_id: str, *, show_private: bool = False) -> dict:
-    room = _rooms.get_room(room_id)
-    game = _rooms.get_active_game(room_id)
-    if game is None:
-        prepare_room_game(room_id, show_private=True)
-        room = _rooms.get_room(room_id)
-        game = _rooms.get_active_game(room_id)
-    if game is None:
-        raise HTTPException(status_code=500, detail="Prepared human match is unavailable")
-    _mark_human_seat(game, room.human_seat)
-    _attach_room_runtime(game, room)
-    game.observer = _human_room_observe(room_id)
-    state = game.play_until_blocked()
+def _finalize_human_room_state(room_id: str, state: GameState) -> None:
     _save_snapshot(state)
-    snapshot = state.snapshot(show_private=show_private)
     _rooms.record_snapshot(room_id, state.snapshot(show_private=True))
     if state.winner is not None:
         from backend.db.persist import save_game_end
@@ -162,8 +161,123 @@ def _start_human_room(room_id: str, *, show_private: bool = False) -> dict:
         _rooms.set_room_status(room_id, "waiting_human")
     else:
         _rooms.set_room_status(room_id, "running")
-    return snapshot
 
+
+def _human_runner_active(room_id: str) -> bool:
+    with _human_runner_lock:
+        thread = _human_runners.get(room_id)
+        return bool(thread and thread.is_alive())
+
+
+def _continue_human_room_in_background(room_id: str) -> None:
+    """Resume play_until_blocked off the request thread; SSE gets observer snapshots."""
+
+    def run() -> None:
+        try:
+            room = _rooms.get_room(room_id)
+            game = _rooms.get_active_game(room_id)
+            if game is None:
+                _logger.warning("human background runner: no active game for room %s", room_id)
+                return
+            _mark_human_seat(game, room.human_seat)
+            _attach_room_runtime(game, room)
+            game.observer = _human_room_observe(room_id)
+            state = game.play_until_blocked()
+            _finalize_human_room_state(room_id, state)
+        except Exception:
+            _logger.exception("human background runner failed for room %s", room_id)
+            try:
+                _rooms.set_room_status(room_id, "failed")
+            except Exception:
+                pass
+        finally:
+            with _human_runner_lock:
+                current = _human_runners.get(room_id)
+                if current is threading.current_thread():
+                    _human_runners.pop(room_id, None)
+
+    with _human_runner_lock:
+        existing = _human_runners.get(room_id)
+        if existing is not None and existing.is_alive():
+            raise HTTPException(status_code=409, detail="Match continuation already in progress")
+        thread = threading.Thread(
+            target=run,
+            name=f"human-room-{room_id}",
+            daemon=True,
+        )
+        _human_runners[room_id] = thread
+        thread.start()
+
+
+def _start_human_room(room_id: str, *, show_private: bool = False):
+    """Prepare (if needed) and continue a human match in the background.
+
+    Returns HTTP 202 immediately with the current snapshot so the client can
+    open match SSE while night AI seats resolve.
+    """
+    room = _rooms.get_room(room_id)
+    game = _rooms.get_active_game(room_id)
+    if game is None:
+        prepare_room_game(room_id, show_private=True)
+        room = _rooms.get_room(room_id)
+        game = _rooms.get_active_game(room_id)
+    if game is None:
+        raise HTTPException(status_code=500, detail="Prepared human match is unavailable")
+    if game.state.winner is not None:
+        snapshot = game.state.snapshot(show_private=show_private)
+        return JSONResponse(
+            status_code=200,
+            content={
+                "status": "completed",
+                "match_id": game.state.id,
+                "room_id": room_id,
+                "seq": int(snapshot.get("seq") or 0),
+                "snapshot": snapshot,
+            },
+        )
+    if game.state.pending_input is not None:
+        snapshot = game.state.snapshot(show_private=show_private)
+        _rooms.set_room_status(room_id, "waiting_human")
+        return JSONResponse(
+            status_code=200,
+            content={
+                "status": "waiting_human",
+                "match_id": game.state.id,
+                "room_id": room_id,
+                "seq": int(snapshot.get("seq") or 0),
+                "snapshot": snapshot,
+            },
+        )
+    if _human_runner_active(room_id):
+        snapshot = game.state.snapshot(show_private=show_private)
+        return JSONResponse(
+            status_code=202,
+            content={
+                "status": "accepted",
+                "match_id": game.state.id,
+                "room_id": room_id,
+                "seq": int(snapshot.get("seq") or 0),
+                "snapshot": snapshot,
+            },
+        )
+    _mark_human_seat(game, room.human_seat)
+    _attach_room_runtime(game, room)
+    game.observer = _human_room_observe(room_id)
+    _save_snapshot(game.state)
+    snapshot = game.state.snapshot(show_private=show_private)
+    _rooms.record_snapshot(room_id, game.state.snapshot(show_private=True))
+    _rooms.set_room_status(room_id, "running")
+    _continue_human_room_in_background(room_id)
+    return JSONResponse(
+        status_code=202,
+        content={
+            "status": "accepted",
+            "match_id": game.state.id,
+            "room_id": room_id,
+            "seq": int(snapshot.get("seq") or 0),
+            "snapshot": snapshot,
+        },
+    )
 
 
 @app.get("/api/health")
@@ -180,19 +294,26 @@ def health():
         with engine.connect() as conn:
             conn.exec_driver_sql("SELECT 1")
         result["checks"]["database"] = "ok"
-    except Exception as exc:
-        result["checks"]["database"] = f"error: {exc}"
+    except Exception:
+        result["checks"]["database"] = "error: unavailable"
         result["status"] = "degraded"
 
     # LLM check
     provider = os.getenv("LLM_PROVIDER", "unset")
     result["checks"]["llm_provider"] = provider
     redis_status = match_notifications.health()
-    result["checks"]["redis"] = redis_status
+    result["checks"]["redis"] = "error: unavailable" if redis_status.startswith("error") else redis_status
     if redis_status.startswith("error:"):
         result["status"] = "degraded"
     result["checks"]["strict_mode"] = os.getenv("AIWEREWOLF_STRICT_MODE", "false")
     result["version"] = "0.1.0"
+
+    from backend.ops.worker_health import worker_health
+
+    try:
+        result["workers"] = worker_health()
+    except Exception:
+        result["workers"] = {"status": "unavailable"}
 
     return result
 
@@ -343,8 +464,8 @@ def game_metrics(game_id: str):
 
     metrics = get_game_metrics(game_id)
     if metrics is None:
-        raise HTTPException(status_code=404, detail="Game not found")
-    return metrics
+        raise ServiceError(404, "match_not_found", "Game not found")
+    return {**metrics, "analysis": _review_lifecycle(game_id)}
 
 
 @app.get("/api/games/{game_id}/runtime_metrics")
@@ -357,7 +478,7 @@ def game_runtime_metrics(game_id: str):
 
     metrics = get_runtime_metrics(game_id)
     if metrics is None:
-        raise HTTPException(status_code=404, detail="Game not found")
+        raise ServiceError(404, "match_not_found", "Game not found")
     return metrics
 
 
@@ -431,9 +552,39 @@ def game_reviews(game_id: str):
     from backend.db.persist import get_review_reports
 
     payload = get_review_reports(game_id)
-    if payload is None:
-        raise HTTPException(status_code=404, detail="Review not found")
+    if payload is None or payload.get("status") == "missing":
+        _raise_review_unavailable(game_id)
     return payload
+
+
+def _review_lifecycle(game_id: str) -> dict:
+    from backend.application.analysis.repository import AnalysisRepository
+
+    summary = AnalysisRepository().get_summary(game_id)
+    if summary is None:
+        raise ServiceError(404, "match_not_found", "Game not found")
+    job = summary["job"]
+    status = job.get("lifecycle_status") or {"completed": "published", "not_scheduled": "pending"}.get(
+        job["status"], job["status"]
+    )
+    return {
+        "status": status,
+        "attempts": job["attempts"],
+        "retryable": status == "failed",
+        "retry_url": f"/api/v1/matches/{game_id}/analysis/retry",
+    }
+
+
+def _raise_review_unavailable(game_id: str) -> None:
+    lifecycle = _review_lifecycle(game_id)
+    failed = lifecycle["status"] == "failed"
+    raise ServiceError(
+        409 if failed else 425,
+        "analysis_failed" if failed else "analysis_not_ready",
+        "Analysis failed; request a retry." if failed else "Analysis has not published this artifact yet.",
+        extra={"analysis": lifecycle},
+        headers=None if failed else {"Retry-After": "2"},
+    )
 
 
 @app.get("/api/games/{game_id}/reviews/status")
@@ -445,12 +596,16 @@ def game_review_status(game_id: str):
     """
     from backend.db.persist import get_review_reports
 
+    lifecycle = _review_lifecycle(game_id)
     payload = get_review_reports(game_id) or {}
     has_html = bool(payload.get("html_report"))
     has_markdown = bool(str(payload.get("markdown") or "").strip())
     return {
         "game_id": game_id,
         "status": "ready" if has_html or has_markdown else "pending",
+        "lifecycle_status": lifecycle["status"],
+        "retryable": lifecycle["retryable"],
+        "attempts": lifecycle["attempts"],
         "hasHtml": has_html,
         "hasMarkdown": has_markdown,
         "publishAllowed": bool(payload.get("publish_allowed")),
@@ -466,7 +621,7 @@ def game_review_html(game_id: str):
 
     payload = get_review_html(game_id)
     if payload is None:
-        raise HTTPException(status_code=404, detail="HTML review not found")
+        _raise_review_unavailable(game_id)
     return HTMLResponse(payload)
 
 
@@ -483,7 +638,7 @@ def game_review_markdown(game_id: str, download: bool = True):
 
     payload = get_review_markdown(game_id)
     if payload is None:
-        raise HTTPException(status_code=404, detail="Markdown review not found")
+        _raise_review_unavailable(game_id)
     headers = {}
     if download:
         headers["Content-Disposition"] = f'attachment; filename="review-{game_id}.md"'
@@ -901,6 +1056,12 @@ def start_or_resume_room_game(room_id: str, show_private: bool = False):
 
 @app.post("/api/rooms/{room_id}/action")
 def submit_room_action(room_id: str, payload: Dict[str, Any], show_private: bool = False):
+    """Accept a human action quickly; AI seats continue in a background thread.
+
+    Returns HTTP 202 with the post-apply snapshot. Clients should follow match
+    SSE (`/api/matches/{match_id}/stream`) for runtime_progress and the next
+    pending_input / GAME_END.
+    """
     try:
         room = _rooms.get_room(room_id)
     except KeyError:
@@ -910,28 +1071,33 @@ def submit_room_action(room_id: str, payload: Dict[str, Any], show_private: bool
     game = _rooms.get_active_game(room_id)
     if game is None:
         raise HTTPException(status_code=409, detail="No active human match in this process")
+    if _human_runner_active(room_id):
+        raise HTTPException(status_code=409, detail="Match continuation already in progress")
     if game.state.pending_input is None:
         raise HTTPException(status_code=409, detail="No human input is pending")
     _mark_human_seat(game, room.human_seat)
     _attach_room_runtime(game, room)
     game.observer = _human_room_observe(room_id)
     try:
-        state = game.submit_human_action(dict(payload or {}))
+        state = game.apply_human_action(dict(payload or {}))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     _save_snapshot(state)
     snapshot = state.snapshot(show_private=show_private)
     _rooms.record_snapshot(room_id, state.snapshot(show_private=True))
-    if state.winner is not None:
-        from backend.db.persist import save_game_end
-
-        save_game_end(state, include_post_game=True)
-        _rooms.set_room_status(room_id, "completed")
-    elif state.pending_input is not None:
-        _rooms.set_room_status(room_id, "waiting_human")
-    else:
-        _rooms.set_room_status(room_id, "running")
-    return snapshot
+    _rooms.set_room_status(room_id, "running")
+    _continue_human_room_in_background(room_id)
+    return JSONResponse(
+        status_code=202,
+        content={
+            "status": "accepted",
+            "match_id": state.id,
+            "room_id": room_id,
+            "seq": int(snapshot.get("seq") or 0),
+            "snapshot": snapshot,
+        },
+    )
 
 
 @app.post("/api/rooms/{room_id}/pause")

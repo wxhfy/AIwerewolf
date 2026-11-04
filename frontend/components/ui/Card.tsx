@@ -9,7 +9,7 @@ export function Card({ className, ...props }: CardProps) {
   return (
     <div
       className={cn(
-        "bg-cardBackground rounded-card border border-border shadow-sm",
+        "min-w-0 bg-cardBackground rounded-card border border-border shadow-card",
         className
       )}
       {...props}
@@ -22,7 +22,7 @@ interface CardHeaderProps extends React.HTMLAttributes<HTMLDivElement> {}
 export function CardHeader({ className, ...props }: CardHeaderProps) {
   return (
     <div
-      className={cn("flex items-center justify-between p-4 border-b border-border", className)}
+      className={cn("flex flex-wrap items-center justify-between gap-3 p-4 sm:p-5 border-b border-border", className)}
       {...props}
     />
   );
@@ -31,11 +31,11 @@ export function CardHeader({ className, ...props }: CardHeaderProps) {
 interface CardTitleProps extends React.HTMLAttributes<HTMLHeadingElement> {}
 
 export function CardTitle({ className, ...props }: CardTitleProps) {
-  return <h3 className={cn("text-lg font-semibold text-textPrimary", className)} {...props} />;
+  return <h3 className={cn("text-base font-semibold leading-snug text-textPrimary", className)} {...props} />;
 }
 
 interface CardContentProps extends React.HTMLAttributes<HTMLDivElement> {}
 
 export function CardContent({ className, ...props }: CardContentProps) {
-  return <div className={cn("p-4", className)} {...props} />;
+  return <div className={cn("p-4 sm:p-5", className)} {...props} />;
 }

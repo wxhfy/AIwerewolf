@@ -1,6 +1,23 @@
 "use client";
 
 import { Component, type ReactNode } from "react";
+import { useAppContext } from "@/context/AppContext";
+import { Button } from "@/components/ui/Button";
+import { EmptyState } from "@/components/ui/Feedback";
+
+function GameErrorFallback() {
+  const { language } = useAppContext();
+  return (
+    <main data-theme="dark" className="flex min-h-screen items-center justify-center bg-background px-4">
+      <EmptyState
+        title={language === "zh" ? "页面暂时无法显示" : "Something went wrong"}
+        description={language === "zh" ? "请返回大厅重试，你可以重新进入房间查看对局。" : "Return to the lobby and reopen the room to view the match."}
+      >
+        <Button onClick={() => window.location.assign("/")}>{language === "zh" ? "返回大厅" : "Back to lobby"}</Button>
+      </EmptyState>
+    </main>
+  );
+}
 
 interface Props {
   children: ReactNode;
@@ -23,15 +40,7 @@ export class ErrorBoundary extends Component<Props, State> {
 
   render() {
     if (this.state.hasError) {
-      return this.props.fallback || (
-        <div className="flex h-screen flex-col items-center justify-center gap-4 bg-background px-6 text-center">
-          <p className="font-display text-lg text-textPrimary">Something went wrong</p>
-          <p className="text-sm text-text-sub">The game page encountered an error. Please return to the lobby and try again.</p>
-          <a href="/" className="rounded-button bg-primary px-5 py-2 text-sm font-medium text-white hover:bg-primaryHover transition-colors">
-            Back to Lobby
-          </a>
-        </div>
-      );
+      return this.props.fallback || <GameErrorFallback />;
     }
     return this.props.children;
   }

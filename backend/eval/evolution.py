@@ -100,6 +100,7 @@ class EvolutionComparison:
     stability_score: float = 0.0
     total_info_leak_count: int = 0
     total_invalid_action_count: int = 0
+    total_rule_violation_count: int = 0
     total_patch_caused_fallback_count: int = 0
     total_infra_fallback_count: int = 0
     camp_win_rate_delta: float = 0.0
@@ -2416,7 +2417,7 @@ class AcceptancePolicy:
             hard_results["role_task_score_delta >= 0"] = (
                 ec.mean_deltas.get("role_task_score_delta", 0.0) >= self.ROLE_TASK_DEGRADATION_FLOOR
             )
-            hard_results["rule_violation_count == 0"] = True  # engine-level guarantee
+            hard_results["rule_violation_count == 0"] = ec.total_rule_violation_count == 0
             passed_hard = all(hard_results.values())
         elif comparison is not None:
             hard_results["info_leak_count == 0"] = comparison.info_leak_count == 0
@@ -2594,7 +2595,9 @@ class TournamentRunner:
 
         Each seed produces a pair: baseline_metrics[seed_i] vs candidate_metrics[seed_i].
         """
-        num_seeds = min(len(baseline_results), len(candidate_results))
+        if len(baseline_results) != len(candidate_results):
+            raise ValueError("Paired tournament requires equal baseline/candidate sample counts")
+        num_seeds = len(baseline_results)
         paired: list[PairedSeedResult] = []
         target_deltas: list[float] = []
         mistake_deltas: list[float] = []
@@ -2606,6 +2609,10 @@ class TournamentRunner:
         for i in range(num_seeds):
             bm = baseline_results[i]
             cm = candidate_results[i]
+            if bm.metadata.get("tournament_seed", i + 1) != cm.metadata.get("tournament_seed", i + 1):
+                raise ValueError("Paired tournament seed mismatch")
+            if bm.metadata.get("lineup_hash") != cm.metadata.get("lineup_hash"):
+                raise ValueError("Paired tournament seat/role/persona/model mismatch")
 
             # Compute per-seed deltas for the target role
             b_records = self._records([bm])
@@ -2627,15 +2634,17 @@ class TournamentRunner:
                 (c_mistakes - b_mistakes) / max(1, b_mistakes + c_mistakes) if (b_mistakes + c_mistakes) > 0 else 0.0
             )
 
-            b_win = 1 if bm.winner == "village" else 0
-            c_win = 1 if cm.winner == "village" else 0
+            target_alignment = self._target_alignment([cm, bm], target_role) or "village"
+            b_win = 1 if bm.winner == target_alignment else 0
+            c_win = 1 if cm.winner == target_alignment else 0
             win_delta = c_win - b_win
 
             # Fallback events
             b_fb = int(bm.metadata.get("fallback_count", 0))
             c_fb = int(cm.metadata.get("fallback_count", 0))
-            patch_caused_fb = 0  # defaults — infrastructure can override
-            infra_fb = max(0, c_fb - b_fb)  # excess candidate fallbacks attributed to infra
+            # Unknown fallback attribution cannot silently pass a safety gate.
+            patch_caused_fb = int(cm.metadata.get("patch_caused_fallback_count", c_fb))
+            infra_fb = int(cm.metadata.get("infra_fallback_count", 0))
 
             candidate_better = score_delta >= 0 and role_delta >= self.acceptance_policy.ROLE_TASK_DEGRADATION_FLOOR
             non_degraded = score_delta >= -0.01 and role_delta >= self.acceptance_policy.ROLE_TASK_DEGRADATION_FLOOR
@@ -2651,7 +2660,7 @@ class TournamentRunner:
 
             paired.append(
                 PairedSeedResult(
-                    seed=i + 1,
+                    seed=int(bm.metadata.get("tournament_seed", i + 1)),
                     baseline_metrics={"game_id": bm.game_id},
                     candidate_metrics={"game_id": cm.game_id},
                     deltas={
@@ -2699,9 +2708,14 @@ class TournamentRunner:
             total_info_leak_count=sum(
                 int(self._metadata_int(cm, "info_leak_count")) for cm in candidate_results[:num_seeds]
             ),
-            total_invalid_action_count=0,
-            total_patch_caused_fallback_count=0,
-            total_infra_fallback_count=0,
+            total_invalid_action_count=sum(
+                int(cm.metadata.get("invalid_action_count", 0))
+                or int(float(cm.metadata.get("invalid_action_rate", 0)) > 0)
+                for cm in candidate_results
+            ),
+            total_rule_violation_count=sum(int(cm.metadata.get("rule_violation_count", 0)) for cm in candidate_results),
+            total_patch_caused_fallback_count=sum(pair.patch_caused_fallback_count for pair in paired),
+            total_infra_fallback_count=sum(pair.infra_fallback_count for pair in paired),
             camp_win_rate_delta=sum(win_rate_deltas) / len(win_rate_deltas) if win_rate_deltas else 0.0,
         )
 
@@ -2715,10 +2729,13 @@ class TournamentRunner:
         if len(values) < 3:
             m = sum(values) / len(values) if values else 0.0
             return m - 0.05, m + 0.05
+        if n_bootstrap < 1 or not 0 < alpha < 1:
+            raise ValueError("Bootstrap requires positive iterations and alpha in (0, 1)")
         means: list[float] = []
         n = len(values)
+        rng = _random.Random(hashlib.sha256(repr(values).encode()).hexdigest())
         for _ in range(n_bootstrap):
-            sample = [_random.choice(values) for _ in range(n)]
+            sample = [rng.choice(values) for _ in range(n)]
             means.append(sum(sample) / n)
         means.sort()
         lo_idx = int(n_bootstrap * alpha / 2)

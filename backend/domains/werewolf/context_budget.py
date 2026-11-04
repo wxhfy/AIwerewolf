@@ -111,9 +111,7 @@ class ContextTokenBudgetManager:
                 (("decision_context", "public_timeline", index), "public_timeline", self._timeline_priority(item))
             )
         for index, _item in enumerate(decision.get("public_phase_summaries") or []):
-            candidates.append(
-                (("decision_context", "public_phase_summaries", index), "public_phase_summaries", 45)
-            )
+            candidates.append((("decision_context", "public_phase_summaries", index), "public_phase_summaries", 45))
         for index, item in enumerate(decision.get("public_claims") or []):
             candidates.append(
                 (("decision_context", "public_claims", index), "public_claims", self._claim_priority(item))
