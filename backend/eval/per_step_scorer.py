@@ -83,8 +83,32 @@ class PerStepScorer:
         # scores now have scoring_tier ∈ {"deterministic","light_llm","heavy_llm"}
     """
 
-    def __init__(self, llm_client: Any = None):
+    def __init__(
+        self,
+        llm_client: Any = None,
+        *,
+        calibration_profiles: dict[str, dict[str, Any]] | None = None,
+        judge_model: str | None = None,
+    ):
+        from backend.eval.calibration import judge_model_identity
+
         self._llm = llm_client
+        self._calibration_profiles = calibration_profiles or {}
+        self._judge_model = judge_model or judge_model_identity(llm_client)
+
+    def _calibrated_score(self, score: DecisionScore, verdict: Any, mode: str) -> dict[str, Any]:
+        from backend.eval.calibration import apply_judge_calibration
+
+        result = apply_judge_calibration(
+            self._calibration_profiles.get(mode),
+            verdict.overall / 10 if verdict else None,
+            rule_score=score.overall_score,
+            confidence=getattr(verdict, "confidence", 0.0),
+            judge_model=self._judge_model or "unknown",
+            scoring_mode=mode,
+        )
+        score.metadata.setdefault("judge_calibration", {})[mode] = result
+        return result
 
     # ---- Tier 1: Deterministic Scoring ----
 
@@ -243,14 +267,15 @@ class PerStepScorer:
 
             panel = LLMJudgePanel(self._llm)
             result = panel.score_step(decision, context)
-            if result:
-                score.light_llm_score = result.overall / 10.0  # normalize [0,10] → [0,1]
+            calibrated = self._calibrated_score(score, result, "single_step")
+            if result and not calibrated["fallback_used"]:
+                score.light_llm_score = calibrated["score"]
                 score.scoring_tier = "light_llm"
                 score.evidence.append(
                     f"LLM: reasonability={result.reasonability:.1f} depth={result.reasoning_depth:.1f}"
                 )
         except Exception:
-            pass
+            self._calibrated_score(score, None, "single_step")
         return score
 
     # ---- Tier 3: Heavy LLM Scoring (high-impact only) ----
@@ -269,12 +294,13 @@ class PerStepScorer:
             panel = LLMJudgePanel(self._llm)
             # Use per-step rubric with 3-judge panel (not game-level score_game)
             result = panel.score_step_with_panel(decision, game_state)
-            if result:
-                score.heavy_llm_score = result.overall / 10.0  # normalize [0,10] → [0,1]
+            calibrated = self._calibrated_score(score, result, "panel_step")
+            if result and not calibrated["fallback_used"]:
+                score.heavy_llm_score = calibrated["score"]
                 score.scoring_tier = "heavy_llm"
                 score.metadata["judge_agreement"] = getattr(result, "judge_agreement", None)
         except Exception:
-            pass
+            self._calibrated_score(score, None, "panel_step")
         return score
 
     # ---- Full Cascade Orchestration ----

@@ -348,8 +348,8 @@ backend/game_runtime/              通用环境执行契约
 | 上下文组织 | 已分层并输出 Manifest | 已接入结构化 Token 预算与裁剪审计 |
 | Skill / Tool | 通用循环已接通，狼人杀支持可配置 Agentic 模式 | 实验阶段 |
 | 发言语义 | 规则型声明图和矛盾检测 | 基础可用，深层语义不足 |
-| Track B | 三级评分和 Judge Panel | 可用，需人工校准 |
-| Track C | 知识、Patch、配对实验和晋升门槛 | 基础可用，缺并行 Coordinator |
+| Track B | 三级评分、Judge Panel 与人工校准流水线 | 实现校准入口；仍需真实人工标注验证 |
+| Track C | 知识、Patch、并行 Coordinator、配对实验和晋升门槛 | fake 可验证离线闭环；生产自动晋升须匹配人工校准 |
 | 生产容量 | 尚未完成联合压测和模型容量验收 | 未完成 |
 
 因此，当前设计足以继续迭代和跑实验，但还不足以宣布“高质量通用 Agent 平台已经完成”。下一阶段的优先级应是：
@@ -358,7 +358,9 @@ backend/game_runtime/              通用环境执行契约
 2. 实现低置信度语义解析器及增量声明图写入。
 3. 给 Context Envelope 增加 Token 预算、压缩记录和 Prompt 指纹。
 4. 用 `direct` 对 `agentic` 做配对 A/B，验证额外操作是否值得时延。
-5. 实现 Track C Coordinator 和并行 Tournament Worker。
-6. 用人工标注校准 Judge，再允许策略自动晋升。
+5. 验证已实现的 Track C Coordinator 和并行 Tournament Worker 的生产吞吐。
+6. 使用真实人工标注运行校准入口，通过门槛后再允许策略自动晋升；合成标注不能取得晋升资格。
+
+离线闭环、恢复协议和当前限制见 [`TRACK_B_C_OPERATIONS.md`](TRACK_B_C_OPERATIONS.md)。
 
 真实 GLM 链路结果见 [`MODEL_VALIDATION_GLM.md`](MODEL_VALIDATION_GLM.md)。

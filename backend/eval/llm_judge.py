@@ -14,10 +14,13 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import statistics
 from dataclasses import dataclass
+from dataclasses import field
 from typing import Any
 
+from backend.core.observability import log_event
 from backend.eval.judge_rubric import LOGICIAN_RUBRIC
 from backend.eval.judge_rubric import PER_STEP_RUBRIC
 from backend.eval.judge_rubric import PSYCHOLOGIST_RUBRIC
@@ -81,6 +84,8 @@ class PerStepScore:
     evidence: list[str]
     judge_agreement: float = 0.0  # std across judges for panel scoring
     rubric_version: str = RUBRIC_VERSION
+    confidence: float = 0.5
+    calibration_info: dict[str, Any] = field(default_factory=dict)
 
 
 class LLMJudgePanel:
@@ -147,7 +152,13 @@ class LLMJudgePanel:
                     report = self._judge_player(judge_type, rubric, name, role, alignment, decs, game_state)
                     reports.append(report)
                 except Exception as e:
-                    logger.warning(f"Judge {judge_type} failed for {name}: {e}")
+                    log_event(
+                        logger,
+                        "judge.player.failed",
+                        level=logging.WARNING,
+                        judge_type=judge_type,
+                        error_type=type(e).__name__,
+                    )
 
             if not reports:
                 continue
@@ -291,7 +302,7 @@ class LLMJudgePanel:
             else:
                 return {"adjusted": False, "final_score": trimmed_mean, "disagreement": round(disagreement, 3)}
         except Exception as e:
-            logger.warning(f"Critic review failed: {e}")
+            log_event(logger, "judge.critic.failed", level=logging.WARNING, error_type=type(e).__name__)
             return {"adjusted": False, "final_score": trimmed_mean, "disagreement": round(disagreement, 3)}
 
     # ---- Per-Step Scoring (lightweight, single judge) ----
@@ -315,7 +326,7 @@ class LLMJudgePanel:
         raw = self._call_llm(system, prompt, max_tokens=500)
         parsed = self._parse_step_output(raw)
 
-        if parsed:
+        if parsed and self._valid_step_scores(parsed):
             return PerStepScore(
                 decision_id=decision.get("id", ""),
                 player_name=decision.get("player_name", ""),
@@ -326,8 +337,67 @@ class LLMJudgePanel:
                 reasoning_depth=parsed.get("T2_score", 5.0),
                 overall=(parsed.get("T1_score", 5.0) + parsed.get("T2_score", 5.0)) / 2,
                 evidence=parsed.get("evidence", []),
+                confidence=self._step_confidence(parsed),
             )
         return None
+
+    def score_step_calibrated(
+        self,
+        decision: dict,
+        game_context: dict,
+        *,
+        profile: dict[str, Any] | None,
+        rule_score: float,
+        judge_model: str,
+        allow_demonstration: bool = False,
+    ) -> PerStepScore:
+        """Apply persisted calibration or explicitly fall back to a rule score."""
+        from backend.eval.calibration import apply_judge_calibration
+
+        verdict = self.score_step(decision, game_context)
+        info = apply_judge_calibration(
+            profile,
+            verdict.overall / 10 if verdict else None,
+            rule_score=rule_score,
+            confidence=verdict.confidence if verdict else 0.0,
+            judge_model=judge_model,
+            allow_demonstration=allow_demonstration,
+        )
+        return PerStepScore(
+            decision_id=decision.get("id", ""),
+            player_name=decision.get("player_name", ""),
+            action_type=decision.get("action_type", "?"),
+            day=decision.get("day", 0),
+            phase=decision.get("phase", ""),
+            reasonability=verdict.reasonability if verdict else rule_score * 10,
+            reasoning_depth=verdict.reasoning_depth if verdict else rule_score * 10,
+            overall=info["score"] * 10,
+            evidence=verdict.evidence if verdict else [],
+            confidence=verdict.confidence if verdict else 0.0,
+            calibration_info=info,
+        )
+
+    @staticmethod
+    def _valid_step_scores(data: Any) -> bool:
+        return isinstance(data, dict) and all(
+            isinstance(data.get(key), (int, float))
+            and not isinstance(data[key], bool)
+            and math.isfinite(data[key])
+            and 0 <= data[key] <= 10
+            for key in ("T1_score", "T2_score")
+        )
+
+    @staticmethod
+    def _step_confidence(data: dict) -> float:
+        value = data.get("confidence", 0.5)
+        return (
+            float(value)
+            if isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and math.isfinite(value)
+            and 0 <= value <= 1
+            else 0.0
+        )
 
     def score_step_with_panel(
         self,
@@ -340,6 +410,7 @@ class LLMJudgePanel:
         trimmed-mean aggregation. Higher confidence than single-judge score_step.
         """
         scores = []
+        confidences = []
         for judge_type, _ in self._judges.items():
             prompt = _build_per_step_prompt(decision, game_context, PER_STEP_RUBRIC)
             system = (
@@ -350,10 +421,9 @@ class LLMJudgePanel:
             )
             raw = self._call_llm(system, prompt, max_tokens=500)
             parsed = self._parse_step_output(raw)
-            if parsed:
+            if parsed and self._valid_step_scores(parsed):
                 scores.append((parsed.get("T1_score", 5.0) + parsed.get("T2_score", 5.0)) / 2)
-            else:
-                scores.append(5.0)
+                confidences.append(self._step_confidence(parsed))
 
         if not scores:
             return None
@@ -378,6 +448,7 @@ class LLMJudgePanel:
             overall=trimmed_mean,
             evidence=[],
             judge_agreement=judge_agreement,
+            confidence=(len(scores) / 3) * statistics.mean(confidences) * max(0.0, 1.0 - judge_agreement / 5),
         )
 
     def _call_llm(self, system: str, user: str, max_tokens: int = 800) -> str:
@@ -403,7 +474,7 @@ class LLMJudgePanel:
                 return str(resp.get("choices", [{}])[0].get("message", {}).get("content", "{}"))
             return str(resp)
         except Exception as e:
-            logger.error(f"LLM judge call failed after all retries: {e}")
+            log_event(logger, "judge.provider.failed", level=logging.ERROR, error_type=type(e).__name__)
             return "{}"
 
     def _parse_judge_output(self, raw: str, rubric: list) -> list[JudgeVerdict]:
@@ -431,7 +502,7 @@ class LLMJudgePanel:
                     )
             return verdicts
         except (json.JSONDecodeError, KeyError, ValueError) as e:
-            logger.warning(f"Failed to parse judge output: {e}")
+            log_event(logger, "judge.parse.failed", level=logging.WARNING, error_type=type(e).__name__)
             return []
 
     def _parse_step_output(self, raw: str) -> dict | None:
@@ -530,7 +601,7 @@ def _build_per_step_prompt(decision: dict, context: dict, rubric: list) -> str:
         lines.append("")
 
     lines.append(
-        '输出JSON: {"T1_score": <0-10>, "T2_score": <0-10>, "T1_reasoning": "...", "T2_reasoning": "...", "evidence": ["..."]}'
+        '输出JSON: {"T1_score": <0-10>, "T2_score": <0-10>, "T1_reasoning": "...", "T2_reasoning": "...", "evidence": ["..."], "confidence": <0-1>}'
     )
     return "\n".join(lines)
 

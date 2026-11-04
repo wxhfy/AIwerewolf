@@ -10,6 +10,8 @@ import logging
 import re
 from typing import Any
 
+from backend.core.observability import log_event
+
 logger = logging.getLogger(__name__)
 
 
@@ -26,8 +28,11 @@ def run_post_game_scoring(game_state: Any, game_id: str, *, return_details: bool
 
         from backend.application.analysis.repository import AnalysisRepository
         from backend.db.database import SessionLocal
+        from backend.db.judge_calibration import latest_approved_calibration
         from backend.db.models import AgentDecision
         from backend.db.models import StrategyKnowledgeDoc
+        from backend.eval.calibration import judge_model_identity
+        from backend.eval.judge_rubric import RUBRIC_HASH
         from backend.eval.knowledge_abstractor import KnowledgeAbstractor
         from backend.eval.knowledge_abstractor import store_lessons_to_db
         from backend.eval.per_step_scorer import PerStepScorer
@@ -35,7 +40,13 @@ def run_post_game_scoring(game_state: Any, game_id: str, *, return_details: bool
         from backend.eval.per_step_scorer import ScoredStep
         from backend.llm import create_client
     except ImportError as e:
-        logger.warning(f"Post-game scoring skipped (import error): {e}")
+        log_event(
+            logger,
+            "analysis.scoring.import_failed",
+            level=logging.WARNING,
+            match_id=game_id,
+            error_type=type(e).__name__,
+        )
         return {"decisions_scored": 0, "lessons_stored": 0, "promoted_count": 0} if return_details else 0
 
     # 1. Build ground-truth state dict from game state
@@ -108,13 +119,26 @@ def run_post_game_scoring(game_state: Any, game_id: str, *, return_details: bool
                 "Post-game scoring tiers: Tier1=deterministic, Tier2=light_llm (disabled), Tier3=heavy_llm (disabled)"
             )
     except Exception as e:
-        logger.warning(f"Tier 2/3 disabled: LLM client unavailable: {e}")
+        log_event(
+            logger,
+            "analysis.scoring.judge_unavailable",
+            level=logging.WARNING,
+            match_id=game_id,
+            error_type=type(e).__name__,
+        )
         logger.warning(
             "Post-game scoring tiers: Tier1=deterministic, Tier2=light_llm (disabled), Tier3=heavy_llm (disabled)"
         )
 
     # 6. Run PerStepScorer
-    scorer = PerStepScorer(llm_client=llm_client)
+    calibration_profiles = {}
+    judge_model = judge_model_identity(llm_client)
+    if judge_model:
+        for mode in ("single_step", "panel_step"):
+            profile = latest_approved_calibration(judge_model=judge_model, rubric_hash=RUBRIC_HASH, scoring_mode=mode)
+            if profile:
+                calibration_profiles[mode] = profile
+    scorer = PerStepScorer(llm_client=llm_client, calibration_profiles=calibration_profiles, judge_model=judge_model)
     if not light_llm:
         scorer._tiers_disabled = True  # signal for downstream consumers
     scores = scorer.score_all(decision_dicts, state_dict, speech_acts, light_llm=light_llm, heavy_llm=heavy_llm)
@@ -138,7 +162,7 @@ def run_post_game_scoring(game_state: Any, game_id: str, *, return_details: bool
     decisions_scored = AnalysisRepository().save_decision_scores(
         game_id,
         scores,
-        evaluator_version="per-step-v1",
+        evaluator_version="per-step-v2-calibrated",
         evaluator_model=evaluator_model,
     )
 
@@ -200,16 +224,10 @@ def run_post_game_scoring(game_state: Any, game_id: str, *, return_details: bool
     stored = store_lessons_to_db(all_lessons)
     logger.info(f"Post-game knowledge: {stored} lessons stored for game {game_id}")
 
-    # 10. Promote candidates → active (quality + cluster + prune)
+    # Strategy promotion belongs to the fenced offline Coordinator after its
+    # paired experiment and human-calibrated Judge gates. Scoring stores only
+    # candidate evidence and cannot change the active strategy.
     promoted = 0
-    if stored > 0:
-        try:
-            from backend.eval.knowledge_abstractor import promote_after_store
-
-            promoted = promote_after_store(source_game_id=game_id)
-            logger.info(f"Post-game promotion: {promoted} candidates promoted to active")
-        except Exception:
-            logger.debug("Promotion skipped (non-critical)", exc_info=True)
 
     if return_details:
         return {

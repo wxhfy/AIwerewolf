@@ -34,7 +34,7 @@ MODELS_EXIST = (Path("data/health") / "decision_quality_model.pkl").exists()
 # ===================================================================
 
 
-def test_pairwise_generalization_examples_generated() -> None:
+def test_pairwise_generalization_examples_generated(tmp_path) -> None:
     """Generate >= 50 pairwise examples from variant factory."""
     from tests.helpers.track_b_variant_factory import generate_bad_speech_variants
     from tests.helpers.track_b_variant_factory import generate_good_speech_variants
@@ -126,7 +126,7 @@ def test_pairwise_generalization_examples_generated() -> None:
             pair_id += 1
 
     # Save
-    out_path = Path("data/health/pairwise_training_examples_wolf_generalization.jsonl")
+    out_path = tmp_path / "pairwise_training_examples_wolf_generalization.jsonl"
     with open(out_path, "w") as f:
         for p in pairwise:
             f.write(json.dumps(p, ensure_ascii=False) + "\n")
