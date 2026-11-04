@@ -3,13 +3,19 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import asdict
 from datetime import datetime
 from datetime import timedelta
 from datetime import timezone
 from typing import Any
+from uuid import NAMESPACE_URL
+from uuid import uuid4
+from uuid import uuid5
 
 
 def analysis_enabled() -> bool:
@@ -20,7 +26,10 @@ def analysis_enabled() -> bool:
 from sqlalchemy import and_
 from sqlalchemy import func as sa_func
 from sqlalchemy import or_
+from sqlalchemy.exc import IntegrityError
 
+from backend.core.observability import count
+from backend.core.observability import log_event
 from backend.db.database import SessionLocal
 from backend.db.database import init_db
 from backend.db.models import AgentDecision
@@ -69,6 +78,24 @@ from backend.eval.track_b import generate_published_review_document
 from backend.eval.track_b import reconstruct_review_report
 
 _CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+_analysis_logger = logging.getLogger(__name__)
+_analysis_write_claim: ContextVar[tuple[str, str] | None] = ContextVar("analysis_write_claim", default=None)
+
+
+@contextmanager
+def analysis_write_scope(game_id: str, claim_token: str):
+    """Carry the analysis claim through legacy synchronous scorer adapters."""
+    token = _analysis_write_claim.set((game_id, claim_token))
+    try:
+        yield
+    finally:
+        _analysis_write_claim.reset(token)
+
+
+def fence_current_analysis_write(db) -> None:
+    claim = _analysis_write_claim.get()
+    if claim is not None:
+        _fence_analysis_artifact_write(db, *claim)
 
 
 def _now() -> datetime:
@@ -612,17 +639,19 @@ def _ensure_match_analysis_outbox(db, game_id: str, *, source: str) -> OutboxEve
     )
     if event is None:
         event = OutboxEvent(
+            id=str(uuid5(NAMESPACE_URL, f"aiwerewolf:analysis:{game_id}")),
             aggregate_type="match",
             aggregate_id=game_id,
             event_type="match.analysis.requested",
             payload={"game_id": game_id, "source": source},
             status="pending",
         )
-        db.add(event)
-        db.flush()
-    elif event.status == "failed":
-        event.status = "pending"
-        event.updated_at = _now()
+        try:
+            with db.begin_nested():
+                db.add(event)
+                db.flush()
+        except IntegrityError:
+            event = db.query(OutboxEvent).filter(OutboxEvent.id == event.id).one()
     return event
 
 
@@ -635,8 +664,8 @@ def save_game_end(state: GameState, *, include_post_game: bool = True) -> None:
             return
         if include_post_game:
             _save_post_game_metrics(db, state)
-            if analysis_enabled():
-                _ensure_track_c_post_game_job_row(db, state.id, source="game_end")
+            _ensure_track_c_post_game_job_row(db, state.id, source="game_end")
+            _ensure_match_analysis_outbox(db, state.id, source="game_end")
         db.commit()
     finally:
         db.close()
@@ -701,9 +730,9 @@ def complete_match_transaction(state: GameState, *, job_id: str, worker_id: str)
             if snapshot is not None:
                 room.latest_snapshot = snapshot.truth_state
 
-        if analysis_enabled():
-            _ensure_track_c_post_game_job_row(db, state.id, source="match_completion")
-            _ensure_match_analysis_outbox(db, state.id, source="match_completion")
+        # Disabling analysis pauses consumption, never drops durable work.
+        _ensure_track_c_post_game_job_row(db, state.id, source="match_completion")
+        _ensure_match_analysis_outbox(db, state.id, source="match_completion")
         # Keep completion compatible with databases created before the
         # checkpoint migration. Fresh deployments always have this table;
         # legacy test/dev schemas should still be able to finish a match.
@@ -728,14 +757,22 @@ def complete_match_transaction(state: GameState, *, job_id: str, worker_id: str)
         db.close()
 
 
-def dispatch_match_analysis_outbox(*, limit: int = 50) -> int:
-    """Relay committed analysis events into the durable Analysis Job table."""
+def dispatch_match_analysis_outbox(*, limit: int = 50, max_attempts: int = 5) -> int:
+    """Relay due events atomically, with independent backoff and dead letters.
+
+    One bad event must not roll back unrelated deliveries. Publication and the
+    unique game job commit together; PostgreSQL consumers serialize by row lock.
+    """
     init_db()
-    db = SessionLocal()
-    try:
+    published = 0
+    with SessionLocal() as db:
         query = (
             db.query(OutboxEvent)
-            .filter(OutboxEvent.event_type == "match.analysis.requested", OutboxEvent.status == "pending")
+            .filter(
+                OutboxEvent.event_type == "match.analysis.requested",
+                OutboxEvent.status == "pending",
+                OutboxEvent.available_at <= _now(),
+            )
             .order_by(OutboxEvent.created_at.asc())
             .limit(max(1, limit))
         )
@@ -743,15 +780,37 @@ def dispatch_match_analysis_outbox(*, limit: int = 50) -> int:
             query = query.with_for_update(skip_locked=True)
         events = query.all()
         for event in events:
-            game_id = str(event.aggregate_id)
-            _ensure_track_c_post_game_job_row(db, game_id, source="outbox_relay")
-            event.status = "published"
             event.attempts = int(event.attempts or 0) + 1
-            event.published_at = _now()
+            try:
+                with db.begin_nested():
+                    game = db.query(Game).filter(Game.id == event.aggregate_id).first()
+                    if game is None or game.status != "finished":
+                        raise ValueError("Analysis event requires a finished match")
+                    _ensure_track_c_post_game_job_row(db, str(event.aggregate_id), source="outbox_relay")
+            except Exception as exc:
+                event.last_error = f"{type(exc).__name__}: analysis delivery failed"
+                event.status = "dead_letter" if event.attempts >= max(1, max_attempts) else "pending"
+                event.available_at = _now() + timedelta(seconds=min(300, 2**event.attempts))
+                count("outbox.delivery.failed")
+                if event.status == "dead_letter":
+                    count("outbox.delivery.dead_letter")
+                log_event(
+                    _analysis_logger,
+                    "analysis.outbox.delivery_failed",
+                    level=logging.WARNING,
+                    match_id=str(event.aggregate_id),
+                    request_id=event.id,
+                    attempt=event.attempts,
+                    delivery_status=event.status,
+                )
+            else:
+                event.status = "published"
+                event.last_error = ""
+                event.published_at = _now()
+                published += 1
+                count("outbox.delivery.published")
         db.commit()
-        return len(events)
-    finally:
-        db.close()
+    return published
 
 
 def reconcile_finished_match_analysis(*, limit: int = 100) -> int:
@@ -779,8 +838,6 @@ def reconcile_finished_match_analysis(*, limit: int = 100) -> int:
             .all()
         )
         for game in rows:
-            if not analysis_enabled():
-                continue
             _ensure_track_c_post_game_job_row(db, game.id, source="reconciler")
             _ensure_match_analysis_outbox(db, game.id, source="reconciler")
         db.commit()
@@ -823,16 +880,42 @@ def _save_post_game_metrics(db, state: GameState) -> None:
         entry.win_rate = float(entry.wins) / max(1, entry.games_played)
 
 
-def save_post_game_artifacts(state: GameState) -> None:
+class AnalysisClaimLost(RuntimeError):
+    """A stale analysis attempt may no longer write derived artifacts."""
+
+
+def _fence_analysis_artifact_write(db, game_id: str, claim_token: str | None) -> None:
+    current = _analysis_write_claim.get()
+    if claim_token is None and current is not None and current[0] == game_id:
+        claim_token = current[1]
+    if claim_token is None:
+        return
+    # Conditional UPDATE both validates ownership and holds the job write lock
+    # through this artifact transaction on PostgreSQL and SQLite.
+    changed = (
+        db.query(TrackCPostGameJob)
+        .filter(
+            TrackCPostGameJob.game_id == game_id,
+            TrackCPostGameJob.status == "running",
+            TrackCPostGameJob.claim_token == claim_token,
+        )
+        .update({TrackCPostGameJob.locked_at: _now()}, synchronize_session=False)
+    )
+    if changed != 1:
+        raise AnalysisClaimLost("Analysis artifact writer no longer owns its attempt")
+
+
+def save_post_game_artifacts(state: GameState, *, claim_token: str | None = None) -> None:
     """Persist derived metrics and reports owned by the Analysis Worker."""
     init_db()
     db = SessionLocal()
     try:
+        _fence_analysis_artifact_write(db, state.id, claim_token)
         _save_post_game_metrics(db, state)
         db.commit()
     finally:
         db.close()
-    save_published_review(state)
+    save_published_review(state, claim_token=claim_token)
 
 
 def _ensure_track_c_post_game_job_row(db, game_id: str, *, source: str = "") -> TrackCPostGameJob:
@@ -845,61 +928,123 @@ def _ensure_track_c_post_game_job_row(db, game_id: str, *, source: str = "") -> 
             max_attempts=3,
             extra_metadata={"source": source} if source else {},
         )
-        db.add(row)
-        db.flush()
-        return row
-    if row.status in {"failed"} and (row.attempts or 0) < (row.max_attempts or 3):
-        row.status = "pending"
-        row.last_error = ""
-        row.locked_at = None
-        row.updated_at = _now()
+        try:
+            with db.begin_nested():
+                db.add(row)
+                db.flush()
+        except IntegrityError:
+            row = db.query(TrackCPostGameJob).filter(TrackCPostGameJob.game_id == game_id).one()
+    # Merely redelivering an outbox event must never revive a failed job.
     return row
 
 
 def ensure_track_c_post_game_job(game_id: str, *, source: str = "") -> dict[str, Any]:
-    """Create the durable Track C post-game job if it does not exist."""
+    """Create the durable Track B/C job; repeated calls preserve its state."""
     init_db()
-    db = SessionLocal()
-    try:
+    with SessionLocal() as db:
         row = _ensure_track_c_post_game_job_row(db, game_id, source=source)
         db.commit()
         return _track_c_job_to_dict(row)
-    finally:
-        db.close()
+
+
+def _analysis_claimable(now: datetime, stale_after_seconds: int):
+    return or_(
+        and_(
+            TrackCPostGameJob.status == "pending",
+            or_(TrackCPostGameJob.available_at.is_(None), TrackCPostGameJob.available_at <= now),
+        ),
+        and_(
+            TrackCPostGameJob.status == "running",
+            or_(
+                TrackCPostGameJob.locked_at.is_(None),
+                TrackCPostGameJob.locked_at < now - timedelta(seconds=max(1, stale_after_seconds)),
+            ),
+        ),
+    )
 
 
 def claim_track_c_post_game_job(game_id: str, *, stale_after_seconds: int = 900) -> dict[str, Any] | None:
-    """Claim a pending or stale running Track C job for execution."""
+    """Atomically claim one attempt; the token fences late/stale completions."""
     init_db()
-    db = SessionLocal()
-    try:
-        query = db.query(TrackCPostGameJob).filter(TrackCPostGameJob.game_id == game_id)
-        if db.bind is not None and db.bind.dialect.name == "postgresql":
-            query = query.with_for_update()
-        row = query.first()
-        if row is None:
-            game = db.query(Game).filter(Game.id == game_id, Game.status == "finished").first()
-            if game is None:
-                return None
-            row = _ensure_track_c_post_game_job_row(db, game_id, source="claim")
-
-        now = _now()
-        stale_cutoff = now - timedelta(seconds=max(1, stale_after_seconds))
-        status = str(row.status or "")
-        locked_at = _comparable_utc(row.locked_at)
-        is_claimable = status == "pending" or (status == "running" and (locked_at is None or locked_at < stale_cutoff))
-        if status == "completed" or not is_claimable or (row.attempts or 0) >= (row.max_attempts or 3):
+    with SessionLocal() as db:
+        game = db.query(Game).filter(Game.id == game_id, Game.status == "finished").first()
+        if game is None:
             return None
-
-        row.status = "running"
-        row.attempts = int(row.attempts or 0) + 1
-        row.locked_at = now
-        row.started_at = row.started_at or now
-        row.updated_at = now
+        row = _ensure_track_c_post_game_job_row(db, game_id, source="claim")
+        now = _now()
+        token = str(uuid4())
+        changed = (
+            db.query(TrackCPostGameJob)
+            .filter(
+                TrackCPostGameJob.id == row.id,
+                TrackCPostGameJob.attempts < TrackCPostGameJob.max_attempts,
+                _analysis_claimable(now, stale_after_seconds),
+            )
+            .update(
+                {
+                    TrackCPostGameJob.status: "running",
+                    TrackCPostGameJob.attempts: TrackCPostGameJob.attempts + 1,
+                    TrackCPostGameJob.claim_token: token,
+                    TrackCPostGameJob.locked_at: now,
+                    TrackCPostGameJob.started_at: now,
+                    TrackCPostGameJob.finished_at: None,
+                    TrackCPostGameJob.updated_at: now,
+                },
+                synchronize_session=False,
+            )
+        )
         db.commit()
+        if changed != 1:
+            return None
+        db.refresh(row)
         return _track_c_job_to_dict(row)
-    finally:
-        db.close()
+
+
+def heartbeat_track_c_post_game_job(game_id: str, claim_token: str) -> bool:
+    """Extend a claim only while this attempt still owns the job."""
+    with SessionLocal() as db:
+        changed = (
+            db.query(TrackCPostGameJob)
+            .filter(
+                TrackCPostGameJob.game_id == game_id,
+                TrackCPostGameJob.status == "running",
+                TrackCPostGameJob.claim_token == claim_token,
+            )
+            .update(
+                {TrackCPostGameJob.locked_at: _now(), TrackCPostGameJob.updated_at: _now()}, synchronize_session=False
+            )
+        )
+        db.commit()
+        return changed == 1
+
+
+def checkpoint_track_c_post_game_job(game_id: str, claim_token: str, metadata: dict[str, Any]) -> bool:
+    """Persist a completed stage so a retry resumes without repeating it."""
+    with SessionLocal() as db:
+        row = _owned_analysis_query(db, game_id, claim_token).first()
+        if row is None:
+            return False
+        changed = _owned_analysis_query(db, game_id, claim_token).update(
+            {
+                TrackCPostGameJob.extra_metadata: {**(row.extra_metadata or {}), **metadata},
+                TrackCPostGameJob.locked_at: _now(),
+                TrackCPostGameJob.updated_at: _now(),
+            },
+            synchronize_session=False,
+        )
+        db.commit()
+        return changed == 1
+
+
+def _owned_analysis_query(db, game_id: str, claim_token: str | None):
+    query = db.query(TrackCPostGameJob).filter(
+        TrackCPostGameJob.game_id == game_id, TrackCPostGameJob.status == "running"
+    )
+    if claim_token is not None:
+        query = query.filter(TrackCPostGameJob.claim_token == claim_token)
+    if db.bind is not None and db.bind.dialect.name == "postgresql":
+        query = query.with_for_update()
+    return query
 
 
 def complete_track_c_post_game_job(
@@ -908,26 +1053,34 @@ def complete_track_c_post_game_job(
     lessons_stored: int = 0,
     promoted_count: int = 0,
     metadata: dict[str, Any] | None = None,
+    claim_token: str | None = None,
 ) -> dict[str, Any] | None:
     init_db()
-    db = SessionLocal()
-    try:
-        row = db.query(TrackCPostGameJob).filter(TrackCPostGameJob.game_id == game_id).first()
+    with SessionLocal() as db:
+        row = _owned_analysis_query(db, game_id, claim_token).first()
         if row is None:
             return None
         now = _now()
-        row.status = "completed"
-        row.lessons_stored = int(lessons_stored or 0)
-        row.promoted_count = int(promoted_count or 0)
-        row.last_error = ""
-        row.locked_at = None
-        row.finished_at = now
-        row.updated_at = now
-        row.extra_metadata = {**(row.extra_metadata or {}), **(metadata or {})}
+        changed = _owned_analysis_query(db, game_id, claim_token).update(
+            {
+                TrackCPostGameJob.status: "completed",
+                TrackCPostGameJob.lessons_stored: int(lessons_stored or 0),
+                TrackCPostGameJob.promoted_count: int(promoted_count or 0),
+                TrackCPostGameJob.last_error: "",
+                TrackCPostGameJob.locked_at: None,
+                TrackCPostGameJob.claim_token: None,
+                TrackCPostGameJob.available_at: None,
+                TrackCPostGameJob.finished_at: now,
+                TrackCPostGameJob.updated_at: now,
+                TrackCPostGameJob.extra_metadata: {**(row.extra_metadata or {}), **(metadata or {})},
+            },
+            synchronize_session=False,
+        )
         db.commit()
+        if changed != 1:
+            return None
+        db.refresh(row)
         return _track_c_job_to_dict(row)
-    finally:
-        db.close()
 
 
 def fail_track_c_post_game_job(
@@ -936,26 +1089,41 @@ def fail_track_c_post_game_job(
     *,
     retryable: bool = True,
     metadata: dict[str, Any] | None = None,
+    claim_token: str | None = None,
 ) -> dict[str, Any] | None:
     init_db()
-    db = SessionLocal()
-    try:
-        row = db.query(TrackCPostGameJob).filter(TrackCPostGameJob.game_id == game_id).first()
+    with SessionLocal() as db:
+        row = _owned_analysis_query(db, game_id, claim_token).first()
         if row is None:
             return None
         now = _now()
         attempts = int(row.attempts or 0)
         max_attempts = int(row.max_attempts or 3)
-        row.status = "pending" if retryable and attempts < max_attempts else "failed"
-        row.last_error = str(error or "")[:2000]
-        row.locked_at = None
-        row.finished_at = now if row.status == "failed" else None
-        row.updated_at = now
-        row.extra_metadata = {**(row.extra_metadata or {}), **(metadata or {})}
+        status = "pending" if retryable and attempts < max_attempts else "failed"
+        changed = _owned_analysis_query(db, game_id, claim_token).update(
+            {
+                TrackCPostGameJob.status: status,
+                TrackCPostGameJob.last_error: str(error or "")[:2000],
+                TrackCPostGameJob.locked_at: None,
+                TrackCPostGameJob.claim_token: None,
+                TrackCPostGameJob.available_at: now + timedelta(seconds=min(300, 2 ** max(attempts, 1)))
+                if status == "pending"
+                else None,
+                TrackCPostGameJob.finished_at: now if status == "failed" else None,
+                TrackCPostGameJob.updated_at: now,
+                TrackCPostGameJob.extra_metadata: {
+                    **(row.extra_metadata or {}),
+                    **(metadata or {}),
+                    "dead_letter": status == "failed",
+                },
+            },
+            synchronize_session=False,
+        )
         db.commit()
+        if changed != 1:
+            return None
+        db.refresh(row)
         return _track_c_job_to_dict(row)
-    finally:
-        db.close()
 
 
 def list_recoverable_track_c_post_game_jobs(
@@ -963,36 +1131,35 @@ def list_recoverable_track_c_post_game_jobs(
     limit: int = 10,
     stale_after_seconds: int = 900,
 ) -> list[dict[str, Any]]:
-    """List pending and stale running Track C jobs after process recovery."""
+    """Recover due work and terminate exhausted claims left by crashed workers."""
     init_db()
-    db = SessionLocal()
-    try:
+    with SessionLocal() as db:
         now = _now()
-        stale_cutoff = now - timedelta(seconds=max(1, stale_after_seconds))
+        claimable = _analysis_claimable(now, stale_after_seconds)
+        db.query(TrackCPostGameJob).filter(
+            claimable,
+            TrackCPostGameJob.attempts >= TrackCPostGameJob.max_attempts,
+        ).update(
+            {
+                TrackCPostGameJob.status: "failed",
+                TrackCPostGameJob.claim_token: None,
+                TrackCPostGameJob.locked_at: None,
+                TrackCPostGameJob.finished_at: now,
+                TrackCPostGameJob.last_error: "Analysis attempt budget exhausted after worker lease expiry",
+                TrackCPostGameJob.updated_at: now,
+            },
+            synchronize_session=False,
+        )
+        db.commit()
         rows = (
             db.query(TrackCPostGameJob)
             .join(Game, Game.id == TrackCPostGameJob.game_id)
-            .filter(Game.status == "finished")
-            .filter(
-                or_(
-                    TrackCPostGameJob.status == "pending",
-                    and_(
-                        TrackCPostGameJob.status == "running",
-                        or_(
-                            TrackCPostGameJob.locked_at.is_(None),
-                            TrackCPostGameJob.locked_at < stale_cutoff,
-                        ),
-                    ),
-                )
-            )
-            .filter(TrackCPostGameJob.attempts < TrackCPostGameJob.max_attempts)
+            .filter(Game.status == "finished", claimable, TrackCPostGameJob.attempts < TrackCPostGameJob.max_attempts)
             .order_by(TrackCPostGameJob.updated_at.asc(), TrackCPostGameJob.created_at.asc())
             .limit(max(1, limit))
             .all()
         )
         return [_track_c_job_to_dict(row) for row in rows]
-    finally:
-        db.close()
 
 
 def build_post_game_state_from_db(game_id: str) -> GameState | None:
@@ -1180,6 +1347,9 @@ def _track_c_job_to_dict(row: TrackCPostGameJob) -> dict[str, Any]:
         "promoted_count": row.promoted_count,
         "last_error": row.last_error,
         "locked_at": row.locked_at.isoformat() if row.locked_at else None,
+        "claim_token": row.claim_token,
+        "available_at": row.available_at.isoformat() if row.available_at else None,
+        "lifecycle_status": "published" if row.status == "completed" else row.status,
         "started_at": row.started_at.isoformat() if row.started_at else None,
         "finished_at": row.finished_at.isoformat() if row.finished_at else None,
         "metadata": row.extra_metadata or {},
@@ -1708,11 +1878,12 @@ def get_review_markdown(game_id: str) -> str | None:
     return None
 
 
-def save_published_review(state: GameState) -> dict[str, Any]:
+def save_published_review(state: GameState, *, claim_token: str | None = None) -> dict[str, Any]:
     document = generate_published_review_document(state)
     init_db()
     db = SessionLocal()
     try:
+        _fence_analysis_artifact_write(db, state.id, claim_token)
         row = db.query(PublishedReview).filter(PublishedReview.game_id == state.id).first()
         if row is None:
             row = PublishedReview(game_id=state.id)
@@ -1829,9 +2000,10 @@ def _upsert_strategy_knowledge_rows(db, docs: list[StrategyKnowledgeDocData]) ->
     - source_report_ids are unioned
     - usage_count increments
 
-    Promotion: candidate → active when confirmed by ≥3 source games AND
-    confidence ≥ 0.85. English-only and raw player records are rejected.
+    Ingestion only creates/merges candidates. Promotion is separately governed
+    by calibrated Judge and tournament gates. Raw player records are rejected.
     """
+    fence_current_analysis_write(db)
     saved: list[dict[str, Any]] = []
     seen_in_batch: set[str] = set()
 
@@ -1889,10 +2061,11 @@ def _upsert_strategy_knowledge_rows(db, docs: list[StrategyKnowledgeDocData]) ->
 
         if existing is not None:
             # ── Merge with existing ──
-            existing.usage_count = (existing.usage_count or 0) + 1
+            new_source_games = set(source_report_ids) - set(existing.source_report_ids or [])
+            existing.usage_count = (existing.usage_count or 0) + int(bool(new_source_games))
             # Weighted average quality: weight by # of source games
             existing_games = len(existing.source_report_ids or [])
-            new_games = len(doc.source_report_ids or [])
+            new_games = len(new_source_games)
             total_games = existing_games + new_games
             if total_games > 0:
                 existing.quality_score = round(
@@ -1955,8 +2128,12 @@ def _upsert_strategy_knowledge_rows(db, docs: list[StrategyKnowledgeDocData]) ->
             row.usage_count = 1
             row.success_count = 0
             row.failure_count = 0
-            # Start as candidate; promotion happens above when 3+ games confirm
-            row.status = "candidate"
+            # Ingestion never promotes an active strategy.
+            row.status = (
+                "pending_review"
+                if getattr(doc, "confidence_tier", "L3_strategic") in {"L3_strategic", "L4_speculative", None}
+                else "candidate"
+            )
             row.tags = doc.tags or []
             if hasattr(row, "experiment_id"):
                 row.experiment_id = getattr(doc, "experiment_id", None)
@@ -2357,10 +2534,43 @@ def run_evolution_cycle(report_ids: list[str] | None = None, *, seeds: list[int]
                 candidate_version=candidate_version.version,
                 target_role=patch.target_role,
                 seeds=seeds or list(range(1, 21)),
+                candidate_patch_ops=patch.operations,
             )
-            if tournament.decision.get("accepted"):
-                final_version = manager.promote(candidate_version.version)
-                patch_status = "promoted"
+            from backend.db.judge_calibration import latest_approved_calibration
+            from backend.eval.judge_rubric import RUBRIC_HASH
+
+            judge_model = os.getenv("TRACK_B_JUDGE_MODEL", "").strip()
+            calibration = (
+                latest_approved_calibration(
+                    db,
+                    judge_model=judge_model,
+                    rubric_hash=RUBRIC_HASH,
+                    scoring_mode=os.getenv("TRACK_B_JUDGE_SCORING_MODE", "single_step"),
+                )
+                if judge_model
+                else None
+            )
+            human_calibrated = bool(calibration and calibration.get("auto_promotion_allowed"))
+            # A fake-provider smoke run demonstrates wiring, not evidence for
+            # production strategy activation, even if its numerical gates pass.
+            model_backed = os.getenv("LLM_PROVIDER", "").strip().lower() not in {"", "fake"}
+            accepted = bool(tournament.decision.get("accepted"))
+            tournament.decision = {
+                **tournament.decision,
+                "human_judge_calibrated": human_calibrated,
+                "calibration_id": calibration["calibration_id"] if calibration else None,
+                "model_backed": model_backed,
+                "requires_coordinator": True,
+            }
+            # The legacy comparison endpoint does not own the durable role
+            # head or Coordinator DAG. A numerical win never authorizes it to
+            # become a second automatic writer, even after human calibration.
+            if accepted:
+                final_version = candidate_version
+                patch_status = "pending_review"
+                tournament.decision["accepted"] = False
+                tournament.decision["decision"] = "pending_review"
+                tournament.status = "pending_review"
             else:
                 final_version = manager.rollback(candidate_version.version)
                 patch_status = "rolled_back"
@@ -2432,7 +2642,7 @@ def run_evolution_cycle(report_ids: list[str] | None = None, *, seeds: list[int]
                 "info_leak_count": item["tournament"]["comparison"].get("info_leak_count"),
                 "invalid_action_rate": item["tournament"]["comparison"].get("invalid_action_rate"),
                 "fallback_count": item["tournament"]["comparison"].get("candidate_fallback_count"),
-                "decision": "promote" if item["tournament"]["decision"].get("accepted") else "rollback",
+                "decision": item["patch"]["status"],
             }
             for item in patch_results
         ]
@@ -2446,6 +2656,7 @@ def run_evolution_cycle(report_ids: list[str] | None = None, *, seeds: list[int]
                     "validated_patches": len(dream.get("candidate_patches", [])),
                     "promoted": sum(1 for item in patch_results if item["patch"]["status"] == "promoted"),
                     "rolled_back": sum(1 for item in patch_results if item["patch"]["status"] == "rolled_back"),
+                    "pending_review": sum(1 for item in patch_results if item["patch"]["status"] == "pending_review"),
                     "acceptance_pass_rate": acceptance_audit.get("overall_success_rate", 0.0),
                     "acceptance_passed": acceptance_audit.get("passed", False),
                 },

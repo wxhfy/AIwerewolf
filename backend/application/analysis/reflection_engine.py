@@ -26,6 +26,10 @@ from langchain_core.messages import HumanMessage
 from langchain_core.messages import SystemMessage
 from langchain_core.runnables import Runnable
 
+from backend.core.observability import log_event
+from backend.db.persist import AnalysisClaimLost
+from backend.db.persist import fence_current_analysis_write
+
 logger = logging.getLogger(__name__)
 
 # ============================================================
@@ -424,8 +428,8 @@ def reflections_to_knowledge_docs(
 
     Each experience item (what_worked, what_failed, patterns_discovered,
     mistakes_to_avoid) becomes one strategy_knowledge_docs row with
-    doc_type='reflection'. Status is 'active' so the retriever picks them up
-    immediately for the next game.
+    doc_type='reflection'. Reflections stay pending human/tournament review
+    before they can be retrieved in live decisions.
 
     Args:
         reflections: List of reflection results.
@@ -552,6 +556,7 @@ def save_reflections_to_db(
         init_db()
         db = SessionLocal()
         try:
+            fence_current_analysis_write(db)
             saved = 0
             for doc in docs:
                 row = db.query(StrategyKnowledgeDoc).filter(StrategyKnowledgeDoc.id == doc["doc_id"]).first()
@@ -580,7 +585,8 @@ def save_reflections_to_db(
                     usage_count=0,
                     success_count=0,
                     failure_count=0,
-                    status=doc.get("status", "candidate"),
+                    status="pending_review",
+                    source_game_id=game_id,
                     tags=doc.get("tags", []),
                 )
                 db.add(row)
@@ -591,6 +597,14 @@ def save_reflections_to_db(
             return saved
         finally:
             db.close()
-    except Exception as e:
-        logger.error(f"Failed to save reflections to DB: {e}")
+    except AnalysisClaimLost:
+        raise
+    except Exception as exc:
+        log_event(
+            logger,
+            "analysis.reflection.persistence_failed",
+            level=logging.ERROR,
+            match_id=game_id,
+            error_type=type(exc).__name__,
+        )
         return 0

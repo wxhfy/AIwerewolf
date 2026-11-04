@@ -54,7 +54,8 @@ def capabilities() -> dict:
         "transport": {"commands": "rest", "updates": "sse", "websocket": False},
         "execution": {
             "match_worker": True,
-            "analysis_worker": analysis_enabled(),
+            "analysis_worker": True,
+            "analysis_enabled": analysis_enabled(),
             "agent_runtime": "local_harness",
             "human_matches": True,
         },

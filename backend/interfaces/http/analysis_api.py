@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter
-from fastapi import HTTPException
+from fastapi import Header
 from fastapi import Query
 
 from backend.application.analysis.contracts import AnalysisRetryResponse
@@ -10,6 +10,7 @@ from backend.application.analysis.contracts import DecisionTraceItem
 from backend.application.analysis.contracts import MatchAnalysisResponse
 from backend.application.analysis.contracts import StrategyKnowledgeItem
 from backend.application.analysis.repository import AnalysisRepository
+from backend.core.errors import ServiceError
 from backend.core.security import CurrentActor
 
 router = APIRouter(prefix="/api/v1")
@@ -24,7 +25,7 @@ repository = AnalysisRepository()
 def get_match_analysis(match_id: str) -> dict:
     result = repository.get_summary(match_id)
     if result is None:
-        raise HTTPException(status_code=404, detail="Match not found")
+        raise ServiceError(404, "match_not_found", "Match not found")
     return result
 
 
@@ -39,7 +40,7 @@ def list_match_decisions(
     offset: int = Query(default=0, ge=0),
 ) -> list[dict]:
     if repository.get_summary(match_id) is None:
-        raise HTTPException(status_code=404, detail="Match not found")
+        raise ServiceError(404, "match_not_found", "Match not found")
     return repository.list_decisions(match_id, limit=limit, offset=offset)
 
 
@@ -54,7 +55,7 @@ def list_match_decision_evaluations(
     offset: int = Query(default=0, ge=0),
 ) -> list[dict]:
     if repository.get_summary(match_id) is None:
-        raise HTTPException(status_code=404, detail="Match not found")
+        raise ServiceError(404, "match_not_found", "Match not found")
     return repository.list_evaluations(match_id, limit=limit, offset=offset)
 
 
@@ -64,13 +65,12 @@ def list_match_decision_evaluations(
     status_code=202,
     tags=["analysis"],
 )
-def retry_match_analysis(match_id: str, actor: CurrentActor) -> dict:
-    result = repository.retry(match_id, actor_id=actor.actor_id)
-    if result is None:
-        raise HTTPException(status_code=409, detail="Only finished matches can be analyzed")
-    if result["status"] == "running":
-        raise HTTPException(status_code=409, detail="Analysis is already running")
-    return result
+def retry_match_analysis(
+    match_id: str,
+    actor: CurrentActor,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key", min_length=1, max_length=128),
+) -> dict:
+    return repository.retry(match_id, actor_id=actor.actor_id, idempotency_key=idempotency_key)
 
 
 @router.get(
@@ -95,5 +95,5 @@ def list_strategies(
 def get_strategy(strategy_id: str) -> dict:
     result = repository.get_strategy(strategy_id)
     if result is None:
-        raise HTTPException(status_code=404, detail="Strategy not found")
+        raise ServiceError(404, "strategy_not_found", "Strategy not found")
     return result

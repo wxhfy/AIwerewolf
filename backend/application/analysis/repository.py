@@ -4,6 +4,7 @@ from typing import Any
 
 from sqlalchemy import func
 
+from backend.core.errors import ServiceError
 from backend.db.database import SessionLocal
 from backend.db.models import AgentDecision
 from backend.db.models import DecisionEvaluation
@@ -24,7 +25,10 @@ class AnalysisRepository:
         evaluator_version: str = "per-step-v1",
         evaluator_model: str | None = None,
     ) -> int:
+        from backend.db.persist import fence_current_analysis_write
+
         with SessionLocal() as db:
+            fence_current_analysis_write(db)
             persisted = 0
             for score in scores:
                 decision_id = str(score.decision_id)
@@ -74,7 +78,9 @@ class AnalysisRepository:
                 db.query(func.count(AgentDecision.id)).filter(AgentDecision.game_id == game_id).scalar() or 0
             )
             score_query = db.query(DecisionEvaluation).filter(DecisionEvaluation.game_id == game_id)
-            evaluated_count = score_query.count()
+            evaluated_count = (
+                score_query.with_entities(func.count(func.distinct(DecisionEvaluation.decision_id))).scalar() or 0
+            )
             average_score = score_query.with_entities(func.avg(DecisionEvaluation.overall_score)).scalar()
             highlight_count = score_query.filter(DecisionEvaluation.is_highlight.is_(True)).count()
             mistake_count = score_query.filter(DecisionEvaluation.is_mistake.is_(True)).count()
@@ -87,11 +93,20 @@ class AnalysisRepository:
             )
             job_view = {
                 "status": job.status if job else "not_scheduled",
+                "lifecycle_status": "published"
+                if job and job.status == "completed"
+                else job.status
+                if job
+                else "not_scheduled",
                 "attempts": int(job.attempts or 0) if job else 0,
                 "max_attempts": int(job.max_attempts or 0) if job else 0,
                 "last_error": str(job.last_error or "") if job else "",
                 "started_at": job.started_at.isoformat() if job and job.started_at else None,
                 "finished_at": job.finished_at.isoformat() if job and job.finished_at else None,
+                "available_at": job.available_at.isoformat() if job and job.available_at else None,
+                "dead_letter": bool(job and job.status == "failed"),
+                "stage": (job.extra_metadata or {}).get("stage") if job else None,
+                "evolution_status": ((job.extra_metadata or {}).get("track_c") or {}).get("status") if job else None,
             }
             return {
                 "match_id": game_id,
@@ -104,7 +119,20 @@ class AnalysisRepository:
                 "highlight_count": int(highlight_count),
                 "mistake_count": int(mistake_count),
                 "review_status": str(review.status) if review else None,
+                "report_status": (
+                    "published"
+                    if review and review.publish_allowed
+                    else "failed"
+                    if job
+                    and (
+                        job.status == "failed" or (job.status == "completed" and review and not review.publish_allowed)
+                    )
+                    else "running"
+                    if job and job.status == "running"
+                    else "pending"
+                ),
                 "strategy_counts": {str(status): int(count) for status, count in strategy_rows},
+                "evolution": (job.extra_metadata or {}).get("track_c") if job else None,
             }
 
     def list_decisions(self, game_id: str, *, limit: int, offset: int) -> list[dict[str, Any]]:
@@ -194,25 +222,44 @@ class AnalysisRepository:
             row = db.query(StrategyKnowledgeDoc).filter(StrategyKnowledgeDoc.id == strategy_id).first()
             return self._strategy_to_dict(row) if row else None
 
-    def retry(self, game_id: str, *, actor_id: str) -> dict[str, Any] | None:
+    def retry(self, game_id: str, *, actor_id: str, idempotency_key: str | None = None) -> dict[str, Any]:
+        from backend.db.persist import _ensure_track_c_post_game_job_row
+
         with SessionLocal() as db:
-            game = db.query(Game).filter(Game.id == game_id).first()
-            if game is None or game.status != "finished":
-                return None
-            row = db.query(TrackCPostGameJob).filter(TrackCPostGameJob.game_id == game_id).first()
-            if row is None:
-                row = TrackCPostGameJob(game_id=game_id)
-                db.add(row)
-            elif row.status == "running":
-                return {"match_id": game_id, "status": "running", "requested_by": actor_id}
-            row.status = "pending"
-            row.attempts = 0
-            row.last_error = ""
-            row.locked_at = None
-            row.finished_at = None
-            row.extra_metadata = {**(row.extra_metadata or {}), "retry_requested_by": actor_id}
+            query = db.query(Game).filter(Game.id == game_id)
+            if db.bind is not None and db.bind.dialect.name == "postgresql":
+                query = query.with_for_update()
+            game = query.first()
+            if game is None:
+                raise ServiceError(404, "match_not_found", "Match not found")
+            if game.status != "finished":
+                raise ServiceError(409, "match_not_finished", "Only finished matches can be analyzed")
+            row = _ensure_track_c_post_game_job_row(db, game_id, source="manual_retry")
+            metadata = dict(row.extra_metadata or {})
+            keys = list(metadata.get("retry_keys") or [])
+            key = f"{actor_id}:{idempotency_key}" if idempotency_key else None
+            response = {"match_id": game_id, "status": "pending", "requested_by": actor_id}
+            if key and key in keys:
+                return response
+            if row.status == "running":
+                raise ServiceError(409, "analysis_running", "Analysis is already running")
+            # Repeating a pending retry must not reset the attempt budget or
+            # erase backoff. Only a deliberate retry of terminal work resets it.
+            if row.status != "pending":
+                metadata["retry_generation"] = int(metadata.get("retry_generation") or 0) + 1
+                row.status = "pending"
+                row.attempts = 0
+                row.last_error = ""
+                row.locked_at = None
+                row.claim_token = None
+                row.available_at = None
+                row.started_at = None
+                row.finished_at = None
+            if key:
+                keys = [*keys[-99:], key]
+            row.extra_metadata = {**metadata, "retry_requested_by": actor_id, "retry_keys": keys, "dead_letter": False}
             db.commit()
-            return {"match_id": game_id, "status": "pending", "requested_by": actor_id}
+            return response
 
     @staticmethod
     def _strategy_to_dict(row: StrategyKnowledgeDoc) -> dict[str, Any]:

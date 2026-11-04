@@ -668,6 +668,8 @@ class TrackCPostGameJob(Base):
     promoted_count = Column(Integer, default=0)
     last_error = Column(Text, default="")
     locked_at = Column(DateTime, nullable=True, index=True)
+    claim_token = Column(String, nullable=True)
+    available_at = Column(DateTime, nullable=True, index=True)
     started_at = Column(DateTime, nullable=True)
     finished_at = Column(DateTime, nullable=True)
     extra_metadata = Column("metadata", JSON, default=dict)

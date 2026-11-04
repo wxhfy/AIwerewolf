@@ -275,9 +275,9 @@ export function useGamePageController(roomId: string) {
     setStatusTitle(t("statusStreaming", language));
     setGameState(null);
     try {
-      const snapshot = await startRoom(roomId, true);
-      setGameState(snapshot);
-      if (snapshot.winner) {
+      const started = await startRoom(roomId, true);
+      roomStream.attachMatchStream(started.match_id, started.snapshot);
+      if (started.snapshot.winner) {
         setIsPlaying(false);
         setStatusTitle(t("statusLoaded", language));
       }
@@ -292,9 +292,9 @@ export function useGamePageController(roomId: string) {
     setFetchError(null);
     try {
       setIsPlaying(true);
-      const snapshot = await submitHumanAction(roomId, data);
-      setGameState(snapshot);
-      if (snapshot.winner) {
+      const accepted = await submitHumanAction(roomId, data);
+      roomStream.attachMatchStream(accepted.match_id, accepted.snapshot);
+      if (accepted.snapshot.winner) {
         setIsPlaying(false);
         setStatusTitle(t("statusLoaded", language));
       }
