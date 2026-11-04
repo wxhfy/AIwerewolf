@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Language, ViewMode } from "@/types";
 import { Button } from "@/components/ui/Button";
 
@@ -24,6 +24,7 @@ interface SettingsModalProps {
 }
 
 export function SettingsModal({ isOpen, onClose, currentSettings, onSave }: SettingsModalProps) {
+  const dialogRef = useRef<HTMLDivElement>(null);
   const [language, setLanguage] = useState<Language>(currentSettings.language);
   const [seed, setSeed] = useState(currentSettings.seed);
   const [modelProvider, setModelProvider] = useState(currentSettings.modelProvider);
@@ -50,8 +51,26 @@ export function SettingsModal({ isOpen, onClose, currentSettings, onSave }: Sett
   useEffect(() => {
     if (!isOpen) return;
 
+    const previousFocus = document.activeElement as HTMLElement | null;
+    dialogRef.current?.focus();
+    return () => previousFocus?.focus();
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
+      if (event.key !== "Tab") return;
+      const controls = dialogRef.current?.querySelectorAll<HTMLElement>("button:not(:disabled), input:not(:disabled), select:not(:disabled), a[href]");
+      const first = controls?.[0];
+      const last = controls?.[controls.length - 1];
+      if (!first || !last) return;
+      if (event.shiftKey && (document.activeElement === first || document.activeElement === dialogRef.current)) {
+        event.preventDefault(); last.focus();
+      } else if (!event.shiftKey && (document.activeElement === last || document.activeElement === dialogRef.current)) {
+        event.preventDefault(); first.focus();
+      }
     };
 
     window.addEventListener("keydown", handleKeyDown);
@@ -110,7 +129,7 @@ export function SettingsModal({ isOpen, onClose, currentSettings, onSave }: Sett
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6">
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/70 backdrop-blur-sm"
@@ -120,11 +139,16 @@ export function SettingsModal({ isOpen, onClose, currentSettings, onSave }: Sett
       {/* Modal */}
       <div
         data-testid="settings-modal"
-        className="relative w-full max-w-2xl overflow-hidden rounded-card border border-border bg-cardBackground shadow-modal-strong"
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="settings-modal-title"
+        tabIndex={-1}
+        className="relative flex max-h-[90dvh] w-full max-w-2xl flex-col overflow-hidden rounded-card border border-border bg-cardBackground shadow-modal-strong focus:outline-none"
       >
         {/* Header */}
-        <div className="relative border-b border-border bg-background/45 px-6 py-4">
-          <h2 className="text-xl font-bold text-primary flex items-center gap-2">
+        <div className="relative shrink-0 border-b border-border bg-background/40 px-4 py-4 sm:px-6">
+          <h2 id="settings-modal-title" className="flex items-center gap-2 pr-9 font-display text-xl font-bold text-primary">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="12" cy="12" r="3" />
               <path d="M12 1v6m0 6v6m-5.196-13.804l4.243 4.243m0 6.122l4.243 4.243M1 12h6m6 0h6m-13.804 5.196l4.243-4.243m0-6.122l4.243-4.243" />
@@ -132,8 +156,10 @@ export function SettingsModal({ isOpen, onClose, currentSettings, onSave }: Sett
             {t("settings")}
           </h2>
           <button
+            type="button"
             onClick={onClose}
-            className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-full hover:bg-white/10 transition-colors text-text-sub/60 hover:text-text-sub"
+            aria-label={language === "zh" ? "关闭设置" : "Close settings"}
+            className="absolute right-3 top-3 flex h-10 w-10 items-center justify-center rounded-button text-textSecondary transition-colors duration-200 hover:bg-primary/10 hover:text-textPrimary"
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M18 6L6 18M6 6l12 12" />
@@ -142,7 +168,7 @@ export function SettingsModal({ isOpen, onClose, currentSettings, onSave }: Sett
         </div>
 
         {/* Content */}
-        <div className="max-h-[72vh] space-y-6 overflow-y-auto px-6 py-6">
+        <div className="min-h-0 space-y-6 overflow-y-auto overscroll-contain px-4 py-5 timeline-scroll sm:px-6 sm:py-6">
           {/* Language */}
           <div>
             <label className="block text-sm font-medium text-textPrimary mb-3">
@@ -151,20 +177,22 @@ export function SettingsModal({ isOpen, onClose, currentSettings, onSave }: Sett
             <div className="flex gap-3">
               <button
                 onClick={() => setLanguage(Language.ZH)}
-                className={`flex-1 px-4 py-3 rounded-lg border transition-all ${
+                aria-pressed={language === "zh"}
+                className={`min-h-11 min-w-0 flex-1 rounded-button border px-4 py-3 transition-colors duration-200 ${
                   language === "zh"
                     ? "border-primary bg-primary/10 text-primary font-medium"
-                    : "border-border/40 hover:border-border/60 bg-background/50 text-text-sub"
+                    : "border-border hover:border-primary/40 bg-background/50 text-text-sub"
                 }`}
               >
                 {t("chinese")}
               </button>
               <button
                 onClick={() => setLanguage(Language.EN)}
-                className={`flex-1 px-4 py-3 rounded-lg border transition-all ${
+                aria-pressed={language === "en"}
+                className={`min-h-11 min-w-0 flex-1 rounded-button border px-4 py-3 transition-colors duration-200 ${
                   language === "en"
                     ? "border-primary bg-primary/10 text-primary font-medium"
-                    : "border-border/40 hover:border-border/60 bg-background/50 text-text-sub"
+                    : "border-border hover:border-primary/40 bg-background/50 text-text-sub"
                 }`}
               >
                 {t("english")}
@@ -178,13 +206,13 @@ export function SettingsModal({ isOpen, onClose, currentSettings, onSave }: Sett
               <label className="block text-sm font-medium text-textPrimary mb-1">
                 {t("seed")}
               </label>
-              <p className="mb-2 text-xs text-text-sub/60">{t("seedDesc")}</p>
+              <p className="mb-2 text-xs text-textSecondary">{t("seedDesc")}</p>
               <div className="flex gap-2">
                 <input
                   type="number"
                   value={Number.isFinite(seed) ? seed : 0}
                   onChange={(e) => setSeed(Number(e.target.value) || 0)}
-                  className="h-11 flex-1 rounded-lg border border-border/40 bg-background/50 px-3.5 text-sm text-textPrimary outline-none transition-all focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
+                  className="h-11 min-w-0 flex-1 rounded-button border border-border bg-background/50 px-3.5 text-sm text-textPrimary outline-none transition-colors duration-200 focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
                 />
                 <Button
                   type="button"
@@ -197,42 +225,42 @@ export function SettingsModal({ isOpen, onClose, currentSettings, onSave }: Sett
               </div>
             </div>
 
-            <div className="rounded-lg border border-border/40 bg-background/35 p-4">
+            <div className="rounded-button border border-border bg-background/40 p-4">
               <div className="mb-3 flex items-center justify-between gap-3">
                 <div>
                   <p className="text-sm font-medium text-textPrimary">{t("modelCall")}</p>
-                  <p className="text-xs text-text-sub/60">{t("apiKeyDesc")}</p>
+                  <p className="text-xs text-textSecondary">{t("apiKeyDesc")}</p>
                 </div>
               </div>
               <div className="grid gap-3 md:grid-cols-2">
                 <label className="block">
-                  <span className="mb-1.5 block text-xs font-medium uppercase tracking-wider text-text-sub/70">{t("provider")}</span>
+                  <span className="mb-1.5 block text-xs font-medium uppercase tracking-wider text-textSecondary">{t("provider")}</span>
                   <select
                     value={modelProvider}
                     onChange={(e) => setModelProvider(e.target.value)}
-                    className="h-11 w-full rounded-lg border border-border/40 bg-cardBackground px-3 text-sm text-textPrimary outline-none transition-all focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
+                    className="h-11 w-full rounded-button border border-border bg-cardBackground px-3 text-sm text-textPrimary outline-none transition-colors duration-200 focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
                   >
                     <option value="anthropic">DeepSeek Claude Compatible</option>
                   </select>
                 </label>
                 <label className="block">
-                  <span className="mb-1.5 block text-xs font-medium uppercase tracking-wider text-text-sub/70">{t("modelName")}</span>
+                  <span className="mb-1.5 block text-xs font-medium uppercase tracking-wider text-textSecondary">{t("modelName")}</span>
                   <input
                     value={modelName}
                     onChange={(e) => setModelName(e.target.value)}
-                    className="h-11 w-full rounded-lg border border-border/40 bg-cardBackground px-3 text-sm text-textPrimary outline-none transition-all focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
+                    className="h-11 w-full rounded-button border border-border bg-cardBackground px-3 text-sm text-textPrimary outline-none transition-colors duration-200 focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
                   />
                 </label>
               </div>
               <label className="mt-3 block">
-                <span className="mb-1.5 block text-xs font-medium uppercase tracking-wider text-text-sub/70">{t("requestAddress")}</span>
+                <span className="mb-1.5 block text-xs font-medium uppercase tracking-wider text-textSecondary">{t("requestAddress")}</span>
                 <input
                   value={baseUrl}
                   onChange={(e) => setBaseUrl(e.target.value.replace(/\/+$/, ""))}
                   placeholder="https://api.deepseek.com/anthropic"
-                  className="h-11 w-full rounded-lg border border-border/40 bg-cardBackground px-3 text-sm text-textPrimary placeholder:text-text-sub/40 outline-none transition-all focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
+                  className="h-11 w-full rounded-button border border-border bg-cardBackground px-3 text-sm text-textPrimary placeholder:text-textSecondary/70 outline-none transition-colors duration-200 focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
                 />
-                <p className="mt-1.5 text-xs text-text-sub/60">
+                <p className="mt-1.5 text-xs text-textSecondary">
                   <span className="font-medium text-text-sub">{t("fullUrl")}</span>
                   <span className="mx-1">·</span>
                   https://api.deepseek.com/anthropic
@@ -241,7 +269,7 @@ export function SettingsModal({ isOpen, onClose, currentSettings, onSave }: Sett
               </label>
               <label className="mt-3 block">
                 <div className="mb-1.5 flex items-center justify-between gap-3">
-                  <span className="block text-xs font-medium uppercase tracking-wider text-text-sub/70">{t("apiKey")}</span>
+                  <span className="block text-xs font-medium uppercase tracking-wider text-textSecondary">{t("apiKey")}</span>
                   <a
                     href="https://platform.deepseek.com/api_keys"
                     target="_blank"
@@ -257,41 +285,41 @@ export function SettingsModal({ isOpen, onClose, currentSettings, onSave }: Sett
                     value={apiKey}
                     onChange={(e) => setApiKey(e.target.value)}
                     placeholder={t("apiKeyPlaceholder")}
-                    className="h-11 w-full rounded-lg border border-border/40 bg-cardBackground px-3 pr-20 text-sm text-textPrimary placeholder:text-text-sub/40 outline-none transition-all focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
+                    className="h-11 w-full rounded-button border border-border bg-cardBackground px-3 pr-20 text-sm text-textPrimary placeholder:text-textSecondary/70 outline-none transition-colors duration-200 focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
                   />
                   <button
                     type="button"
                     onClick={() => setShowApiKey(!showApiKey)}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 px-3 py-1.5 text-xs font-medium text-text-sub/60 transition-colors hover:text-primary"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 px-3 py-1.5 text-xs font-medium text-textSecondary transition-colors hover:text-primary"
                   >
                     {showApiKey ? t("hideApiKey") : t("showApiKey")}
                   </button>
                 </div>
               </label>
-              <div className="mt-4 border-t border-border/40 pt-4">
+              <div className="mt-4 border-t border-border pt-4">
                 <p className="mb-3 text-sm font-medium text-textPrimary">{t("advanced")}</p>
                 <div className="grid gap-3 md:grid-cols-2">
                   <label className="block">
-                    <span className="mb-1.5 block text-xs font-medium uppercase tracking-wider text-text-sub/70">{t("apiFormat")}</span>
+                    <span className="mb-1.5 block text-xs font-medium uppercase tracking-wider text-textSecondary">{t("apiFormat")}</span>
                     <select
                       value={apiFormat}
                       onChange={(e) => setApiFormat(e.target.value)}
-                      className="h-11 w-full rounded-lg border border-border/40 bg-cardBackground px-3 text-sm text-textPrimary outline-none transition-all focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
+                      className="h-11 w-full rounded-button border border-border bg-cardBackground px-3 text-sm text-textPrimary outline-none transition-colors duration-200 focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
                     >
                       <option value="anthropic_messages">{t("anthropicNative")}</option>
                     </select>
-                    <p className="mt-1.5 text-xs text-text-sub/60">{t("apiFormatDesc")}</p>
+                    <p className="mt-1.5 text-xs text-textSecondary">{t("apiFormatDesc")}</p>
                   </label>
                   <label className="block">
-                    <span className="mb-1.5 block text-xs font-medium uppercase tracking-wider text-text-sub/70">{t("authField")}</span>
+                    <span className="mb-1.5 block text-xs font-medium uppercase tracking-wider text-textSecondary">{t("authField")}</span>
                     <select
                       value={authEnvVar}
                       onChange={(e) => setAuthEnvVar(e.target.value)}
-                      className="h-11 w-full rounded-lg border border-border/40 bg-cardBackground px-3 text-sm text-textPrimary outline-none transition-all focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
+                      className="h-11 w-full rounded-button border border-border bg-cardBackground px-3 text-sm text-textPrimary outline-none transition-colors duration-200 focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
                     >
                       <option value="ANTHROPIC_AUTH_TOKEN">{t("authTokenDefault")}</option>
                     </select>
-                    <p className="mt-1.5 text-xs text-text-sub/60">{t("authFieldDesc")}</p>
+                    <p className="mt-1.5 text-xs text-textSecondary">{t("authFieldDesc")}</p>
                   </label>
                 </div>
               </div>
@@ -300,11 +328,11 @@ export function SettingsModal({ isOpen, onClose, currentSettings, onSave }: Sett
         </div>
 
         {/* Footer */}
-        <div className="flex justify-end gap-3 border-t border-border/40 bg-background/50 px-6 py-4">
-          <Button variant="secondary" onClick={onClose}>
+        <div className="flex shrink-0 justify-end gap-3 border-t border-border bg-background/50 px-4 py-4 sm:px-6">
+          <Button variant="secondary" onClick={onClose} className="flex-1 sm:flex-none">
             {t("cancel")}
           </Button>
-          <Button onClick={handleSave}>
+          <Button onClick={handleSave} className="flex-1 sm:flex-none">
             {t("save")}
           </Button>
         </div>

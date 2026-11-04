@@ -29,8 +29,8 @@ AI 狼人杀不是把多个模型简单接到聊天室里，而是一套由后�
 | 动态角色认知记忆 | 已实现，按角色隔离并持久化 |
 | 发言声明、站边、承诺与矛盾证据图 | 已实现，驱动主观概率更新 |
 | Harness 独立事件流、修复与超时降级 | 已实现，可按请求审计 |
-| Track B 逐步复盘、报告和运行指标 | 已实现 |
-| Track C 策略知识抽取与检索回流 | 已实现现有链路 |
+| Track B 逐步复盘、报告和运行指标 | 已实现，含人工校准入口与失败重试 |
+| Track C 策略知识抽取与检索回流 | 已实现离线 Coordinator 与并行配对实验；自动晋升须通过真实人工校准 |
 
 ## 总体架构
 
@@ -61,6 +61,8 @@ Analysis Worker
 ```
 
 核心原则是：**前端只展示，API 管生命周期，领域引擎管真相，Agent 只做受约束决策，数据库保存可恢复事实。** Redis 只用于通知与短期协调，不保存唯一一份对局状态。
+
+Track B/C 的校准准入、幂等恢复、晋升边界与运维入口见 [`TRACK_B_C_OPERATIONS.md`](docs/architecture/TRACK_B_C_OPERATIONS.md)。仓库中的合成标注只用于测试演示，不代表已经完成生产人工校准。
 
 完整的设计理念、职责边界和信息流见 [`docs/architecture/SYSTEM_AND_AGENT_DESIGN.md`](docs/architecture/SYSTEM_AND_AGENT_DESIGN.md)。
 
