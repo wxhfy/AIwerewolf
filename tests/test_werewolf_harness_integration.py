@@ -23,11 +23,12 @@ def test_match_worker_path_runs_complete_ai_game_through_harness(monkeypatch) ->
     assert all(record.metadata.get("source") == "agent_harness" for record in state.decision_records)
     assert all(record.metadata.get("harness_request_id") for record in state.decision_records)
     assert all(record.metadata.get("harness_event_count") for record in state.decision_records)
-    assert all(record.metadata.get("harness_trace_storage") == "agent_harness_events" for record in state.decision_records)
+    assert all(
+        record.metadata.get("harness_trace_storage") == "agent_harness_events" for record in state.decision_records
+    )
     assert all("harness_events" not in record.metadata for record in state.decision_records)
     assert all(
-        set(record.metadata["harness_event_types"])
-        >= {"run.started", "action.accepted", "run.completed"}
+        set(record.metadata["harness_event_types"]) >= {"run.started", "action.accepted", "run.completed"}
         for record in state.decision_records
     )
 

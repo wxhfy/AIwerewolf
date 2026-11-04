@@ -21,23 +21,23 @@ export function VoteTargetGrid({ players, selectedId, onSelect, disabled }: Vote
           aria-pressed={selectedId === p.id}
           aria-label={`Vote for ${p.name || p.id}${p.seat ? ` seat ${p.seat}` : ""}`}
           className={cn(
-            "flex flex-col items-center p-3 rounded-card border-2 transition-all duration-150",
-            "hover:-translate-y-0.5 hover:shadow-md",
+            "flex min-w-0 flex-col items-center p-3 rounded-button border transition-[background-color,border-color,box-shadow,transform] duration-200",
+            "enabled:hover:border-primary/40 enabled:active:scale-[0.98] motion-reduce:transform-none",
             "disabled:opacity-50 disabled:cursor-not-allowed",
             selectedId === p.id
-              ? "border-accent bg-accent/10 shadow-accent"
-              : "border-transparent bg-cardBackground hover:border-border",
+              ? "border-accent bg-accent/10 ring-1 ring-accent/30"
+              : "border-border bg-background",
           )}
         >
           <span
             className={cn(
               "w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold mb-1.5",
-              selectedId === p.id ? "bg-accent text-white" : "bg-primary/10 text-primary",
+              selectedId === p.id ? "bg-primary text-onPrimary" : "bg-primary/10 text-primary",
             )}
           >
             {p.seat || "?"}
           </span>
-          <span className="text-xs font-medium text-textPrimary text-center leading-tight">
+          <span className="break-words text-center text-xs font-medium leading-relaxed text-textPrimary">
             {p.name || p.id}
           </span>
           {selectedId === p.id && (

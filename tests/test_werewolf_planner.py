@@ -71,9 +71,7 @@ class CanonicalModelClient:
 
     def complete(self, messages, **kwargs):
         return {
-            "choices": [
-                {"message": {"content": '{"option_id":"vote:P2","response":{},"reasoning":"portable"}'}}
-            ],
+            "choices": [{"message": {"content": '{"option_id":"vote:P2","response":{},"reasoning":"portable"}'}}],
             "usage": {},
         }
 
@@ -94,7 +92,6 @@ def test_planner_uses_provider_neutral_complete_contract() -> None:
     step = LLMActionPlanner(CanonicalModelClient()).next_step(request, PlannerContext(1, 2500, (), (), (), (), ()))
     assert step.action_selection is not None
     assert step.action_selection.option_id == "vote:P2"
-
 
 
 def test_planner_repairs_invalid_json_once_with_remaining_deadline() -> None:

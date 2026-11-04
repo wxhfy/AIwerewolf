@@ -126,12 +126,15 @@ def run_post_game_scoring(game_state: Any, game_id: str, *, return_details: bool
     # retries, but every decision score remains queryable and versioned.
     evaluator_model = None
     if llm_client is not None:
-        evaluator_model = str(
-            getattr(llm_client, "model", None)
-            or getattr(llm_client, "model_name", None)
-            or getattr(llm_client, "provider", None)
-            or ""
-        ) or None
+        evaluator_model = (
+            str(
+                getattr(llm_client, "model", None)
+                or getattr(llm_client, "model_name", None)
+                or getattr(llm_client, "provider", None)
+                or ""
+            )
+            or None
+        )
     decisions_scored = AnalysisRepository().save_decision_scores(
         game_id,
         scores,

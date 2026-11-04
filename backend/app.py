@@ -15,8 +15,8 @@ from fastapi.responses import HTMLResponse
 from fastapi.responses import Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from backend.application.matches.executor import prepare_game
 from backend.application.agents.runtime import LocalAgentRuntime
+from backend.application.matches.executor import prepare_game
 from backend.application.matches.repository import MatchJobRepository
 from backend.application.matches.spec import MatchExecutionSpec
 from backend.core.config import settings
@@ -53,9 +53,11 @@ class ApiAuthenticationMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
         try:
             actor = actor_from_authorization(request.headers.get("authorization"))
-            if request.query_params.get("show_private", "false").lower() == "true" or (
-                request.url.path.endswith("/rooms/snapshot")
-            ) or request.query_params.get("moderator", "false").lower() == "true":
+            if (
+                request.query_params.get("show_private", "false").lower() == "true"
+                or (request.url.path.endswith("/rooms/snapshot"))
+                or request.query_params.get("moderator", "false").lower() == "true"
+            ):
                 if "moderator" not in actor.roles:
                     from fastapi.responses import JSONResponse
 
@@ -110,6 +112,7 @@ def _save_snapshot(state: GameState) -> None:
 def _initialize_database() -> None:
     init_db()
 
+
 def _mark_human_seat(game, human_seat: int | None) -> None:
     if human_seat is None:
         return
@@ -163,7 +166,6 @@ def _start_human_room(room_id: str, *, show_private: bool = False) -> dict:
     else:
         _rooms.set_room_status(room_id, "running")
     return snapshot
-
 
 
 @app.get("/api/health")

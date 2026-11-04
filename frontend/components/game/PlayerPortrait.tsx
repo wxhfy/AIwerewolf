@@ -56,14 +56,14 @@ export function PlayerPortrait({ player, size = "md", isHighlighted = false, cla
         alt={`${player.name} 的立绘`}
         loading="lazy"
         decoding="async"
-        className="relative h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-[1.035]"
+        className="relative h-full w-full object-cover transition-transform duration-200 ease-out motion-safe:group-hover:scale-[1.025]"
         onError={(e) => {
           (e.target as HTMLImageElement).src = "/portraits/1.svg";
         }}
       />
       <div className="pointer-events-none absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-stone-950/18 to-transparent" />
       {isHighlighted && (
-        <div className="absolute inset-0 rounded-2xl ring-4 ring-primary/20 motion-safe:animate-pulse" />
+        <div className="absolute inset-0 rounded-2xl ring-2 ring-primary/20" />
       )}
     </div>
   );

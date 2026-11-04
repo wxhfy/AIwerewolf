@@ -278,7 +278,7 @@ class LLMActionPlanner:
                     {
                         "role": "system",
                         "content": (
-                            "Rewrite one public game speech. Return JSON only as {\"speech\": string}. "
+                            'Rewrite one public game speech. Return JSON only as {"speech": string}. '
                             "Keep the actor's role strategy and visible evidence, but add a new conversational move "
                             "for the current phase. Do not invent facts, reveal private knowledge, or mention this rewrite."
                         ),
@@ -537,7 +537,13 @@ class LLMActionPlanner:
 
     @staticmethod
     def _context_limits(kind: str) -> dict[str, int]:
-        if kind in {"werewolf.talk", "werewolf.badge_speech", "werewolf.pk_speech", "werewolf.sheriff_closing", "werewolf.last_words"}:
+        if kind in {
+            "werewolf.talk",
+            "werewolf.badge_speech",
+            "werewolf.pk_speech",
+            "werewolf.sheriff_closing",
+            "werewolf.last_words",
+        }:
             return {
                 "public_timeline": 10,
                 "phase_summaries": 4,

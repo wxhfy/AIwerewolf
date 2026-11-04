@@ -43,42 +43,38 @@ export function AIStatusBar({ gameState, derived, language }: AIStatusBarProps) 
     : "";
 
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border bg-cardBackground px-5 py-2.5 text-base font-medium">
-      <span className="font-semibold text-textPrimary">{statusTitle}</span>
-      {actionText && (
-        <span className="text-text-sub">
-          · <span className="text-primary font-medium">{actionText}</span>
+    <div className="shrink-0 space-y-2 border-b border-border bg-cardBackground px-3 py-3 sm:px-5" data-phase-aware>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0" role="status" aria-live="polite">
+          {actionText && <p className="mb-0.5 text-xs text-text-sub">{statusTitle}</p>}
+          <p className="text-sm font-semibold leading-relaxed text-textPrimary">{actionText || statusTitle}</p>
+        </div>
+        <span className="shrink-0 rounded-badge border border-border bg-background px-2.5 py-1 text-xs tabular-nums text-text-sub">
+          {t("aliveCount", language)} <strong className="font-semibold text-textPrimary">{derived.aliveCount}/{gameState?.players?.length || 0}</strong>
         </span>
-      )}
-      {thinkingLabel && (
-        <span data-testid="runtime-progress-current" className="text-primary/90 text-sm font-medium">
-          · {thinkingLabel}
-          <span className="inline-flex ml-0.5 text-primary/60">
-            <span className="animate-dot-1">.</span>
-            <span className="animate-dot-2">.</span>
-            <span className="animate-dot-3">.</span>
-          </span>
-        </span>
-      )}
-      {queueLabel && (
-        <span data-testid="runtime-progress-queue" className="text-text-sub text-sm">
-          · {queueLabel}
-          {queue.length > 0 && (
-            <span className="text-text-sub/70">
-              {" "}({queue.slice(0, 3).map((p) => (language === Language.ZH ? `${p.seat}号` : `#${p.seat}`)).join("、")}
-              {queue.length > 3 ? (language === Language.ZH ? "…" : "…") : ""})
+      </div>
+      {(thinkingLabel || queueLabel || etaLabel) && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-border pt-2 text-xs text-text-sub">
+          {thinkingLabel && (
+            <span data-testid="runtime-progress-current" className="inline-flex min-w-0 items-center gap-1.5 text-primary">
+              <span aria-hidden="true" className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
+              {thinkingLabel}
             </span>
           )}
-        </span>
+          {queueLabel && (
+            <span data-testid="runtime-progress-queue">
+              {queueLabel}
+              {queue.length > 0 && (
+                <span className="hidden sm:inline">
+                  {" "}({queue.slice(0, 3).map((p) => (language === Language.ZH ? `${p.seat}号` : `#${p.seat}`)).join("、")}
+                  {queue.length > 3 ? "…" : ""})
+                </span>
+              )}
+            </span>
+          )}
+          {etaLabel && <span data-testid="runtime-progress-eta" className="ml-auto tabular-nums">{etaLabel}</span>}
+        </div>
       )}
-      {etaLabel && (
-        <span data-testid="runtime-progress-eta" className="rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">
-          {etaLabel}
-        </span>
-      )}
-      <span className="text-text-sub/60 ml-auto text-sm">
-        {t("aliveCount", language)}: {derived.aliveCount}/{gameState?.players?.length || 0}
-      </span>
     </div>
   );
 }

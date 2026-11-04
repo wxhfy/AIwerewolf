@@ -36,15 +36,9 @@ def test_create_client_applies_timeout_and_retries(monkeypatch) -> None:
 
 def test_fake_client_returns_harness_selection() -> None:
     client = create_client(provider="fake")
-    payload = {
-        "action_options": [
-            {"option_id": "vote:p2", "action_type": "vote", "parameters": {"target_id": "p2"}}
-        ]
-    }
+    payload = {"action_options": [{"option_id": "vote:p2", "action_type": "vote", "parameters": {"target_id": "p2"}}]}
 
-    response = client.chat_sync(
-        [{"role": "user", "content": "AIWEREWOLF_HARNESS_DECISION\n" + json.dumps(payload)}]
-    )
+    response = client.chat_sync([{"role": "user", "content": "AIWEREWOLF_HARNESS_DECISION\n" + json.dumps(payload)}])
     selection = json.loads(response["choices"][0]["message"]["content"])
 
     assert selection["option_id"] == "vote:p2"

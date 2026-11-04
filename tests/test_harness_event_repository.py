@@ -33,9 +33,7 @@ def test_harness_events_are_persisted_idempotently() -> None:
         actor=ActorRef(actor_id=player_id, agent_definition_id="test"),
         decision_point=DecisionPoint(kind="werewolf.vote", sequence=1),
         information_state=InformationState(schema_id="test", schema_version="1", observation={}),
-        action_space=ActionSpace(
-            options=(ActionOption(option_id="skip", action_type="skip", parameters={}),)
-        ),
+        action_space=ActionSpace(options=(ActionOption(option_id="skip", action_type="skip", parameters={}),)),
         memory_scope=MemoryScope(namespace="match", episode_id=game_id, actor_id=player_id),
     )
 

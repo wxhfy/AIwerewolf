@@ -11,8 +11,9 @@ import { MobilePlayerRail, PlayerRail } from "@/components/game/PlayerRail";
 import { ThinkingBubble } from "@/components/game/ThinkingBubble";
 import { VotePanel } from "@/components/game/VotePanel";
 import { BottomDialogueDock } from "@/components/game/BottomDialogueDock";
-import { BackgroundMusic } from "@/components/game/BackgroundMusic";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
+import { Button } from "@/components/ui/Button";
+import { EmptyState, Skeleton } from "@/components/ui/Feedback";
 import { useGamePageController } from "@/hooks/useGamePageController";
 import { useHumanDisplayState } from "@/hooks/useHumanDisplayState";
 import { useHumanActions } from "@/hooks/useHumanActions";
@@ -78,27 +79,10 @@ export default function GamePage() {
   return (
     <ErrorBoundary>
     <div
-      className="h-screen [height:100dvh] flex flex-col overflow-hidden bg-background night-stars"
+      className="game-shell h-screen [height:100dvh] flex flex-col overflow-hidden bg-background text-textPrimary night-stars"
       data-phase={phase.visualPhaseGroup}
       data-phase-aware
     >
-      <BackgroundMusic language={language} placement="bottom-right" />
-
-      {/* ── Fetch error ── */}
-      {controller.fetchError && (
-        <div className="fixed inset-x-0 top-16 z-[1100] mx-auto max-w-md rounded-card border border-danger/30 bg-cardBackground/95 p-4 shadow-lg backdrop-blur">
-          <p className="text-sm text-danger mb-3">{controller.fetchError}</p>
-          <div className="flex gap-2">
-            <button onClick={controller.retryRoom} className="rounded-button bg-primary px-4 py-1.5 text-xs font-medium text-white hover:bg-primaryHover transition-colors">
-              {t("retry", language)}
-            </button>
-            <button onClick={() => controller.router.push("/")} className="rounded-button border border-border px-4 py-1.5 text-xs font-medium text-text-sub hover:text-textPrimary transition-colors">
-              {t("backToLobby", language)}
-            </button>
-          </div>
-        </div>
-      )}
-
       {showNightOverlay && (
         <div className="fixed inset-0 pointer-events-none z-0 bg-night-overlay transition-opacity duration-500 motion-reduce:transition-none" />
       )}
@@ -119,6 +103,16 @@ export default function GamePage() {
         onPause={controller.pauseGame}
         onResume={controller.resumeGame}
       />
+
+      {controller.fetchError && (
+        <div role="alert" className="relative z-20 flex max-h-[25dvh] shrink-0 flex-wrap items-center justify-between gap-2 overflow-y-auto border-b border-danger/25 bg-cardBackground px-3 py-2 sm:px-5">
+          <p className="min-w-0 flex-1 basis-48 break-words text-sm text-danger">{controller.fetchError}</p>
+          <div className="flex shrink-0 gap-2">
+            <Button size="sm" variant="secondary" onClick={controller.retryRoom}>{t("retry", language)}</Button>
+            <Button size="sm" variant="ghost" onClick={() => controller.router.push("/")}>{t("backToLobby", language)}</Button>
+          </div>
+        </div>
+      )}
 
       {/* ── Mobile player rail ── */}
       <MobilePlayerRail
@@ -142,7 +136,7 @@ export default function GamePage() {
       />
 
       {/* ── Main 3-column layout ── */}
-      <div className="relative z-10 flex flex-1 overflow-hidden">
+      <div className="relative z-10 flex min-h-0 flex-1 overflow-hidden">
         <PlayerRail
           side="left"
           players={derived.leftPlayers}
@@ -150,7 +144,7 @@ export default function GamePage() {
           {...railBase}
         />
 
-        <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden [@media(max-height:600px)]:overflow-y-auto">
           {/* ═══ StatusBar: mode-polymorphic ═══ */}
           {isHuman ? (
             <HumanStatusBar
@@ -184,7 +178,9 @@ export default function GamePage() {
           <div
             ref={scroll.scrollRef}
             onScroll={scroll.handleScroll}
-            className={`flex-1 overflow-y-auto px-4 py-3 timeline-scroll ${isLocked ? "pointer-events-none" : ""}`}
+            aria-label={t("timeline", language)}
+            tabIndex={0}
+            className={`min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-4 sm:px-5 timeline-scroll [@media(max-height:600px)]:min-h-24 [@media(max-height:600px)]:shrink-0 ${isLocked ? "pointer-events-none" : ""}`}
           >
             {gameState?.events?.length ? (
               <>
@@ -226,24 +222,30 @@ export default function GamePage() {
                   );
                 })()}
               </>
-            ) : controller.isPlaying && !controller.fetchError ? (
-              <div className="flex h-full flex-col items-center justify-center py-20 text-center">
-                <div className="mb-5 h-10 w-10 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
-                <p className="mb-2 font-display text-lg text-textPrimary">
-                  {t("statusStreaming", language)}
+            ) : (!gameState || controller.isPlaying) && !controller.fetchError ? (
+              <div role="status" aria-live="polite" className="mx-auto max-w-2xl space-y-4 py-4 sm:py-8">
+                <p className="flex items-center gap-2 text-sm text-textSecondary">
+                  <span aria-hidden="true" className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
+                  {language === "zh" ? "正在同步对局，请稍候…" : "Syncing the match, please wait…"}
                 </p>
-                <p className="text-sm text-text-sub">{t("statusHint", language)}</p>
+                {[0, 1, 2].map((item) => (
+                  <div key={item} aria-hidden="true" className="space-y-3 rounded-card border border-border bg-cardBackground p-4">
+                    <div className="flex items-center gap-3"><Skeleton className="h-8 w-8" /><Skeleton className="h-3 w-24" /></div>
+                    <Skeleton className="h-3 w-full" />
+                    <Skeleton className="h-3 w-3/4" />
+                  </div>
+                ))}
               </div>
             ) : (
-              <div className="flex h-full flex-col items-center justify-center py-20 text-center">
-                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" className="mb-5 text-text-sub/25">
+              <EmptyState
+                title={controller.fetchError ? t("statusError", language) : t("readyHint", language)}
+                description={controller.fetchError
+                  ? (language === "zh" ? "暂时无法连接房间。请重试，或返回大厅选择新对局。" : "The room is unavailable. Retry or return to the lobby.")
+                  : (language === "zh" ? "玩家就位后，发言与关键事件会按顺序显示在这里。" : "Speeches and key events will appear here as the match progresses.")}
+                icon={<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-                </svg>
-                <p className="mb-2 font-display text-lg text-textPrimary">
-                  {t("readyHint", language)}
-                </p>
-                <p className="text-sm text-text-sub">{t("statusHint", language)}</p>
-              </div>
+                </svg>}
+              />
             )}
           </div>
 
@@ -264,7 +266,7 @@ export default function GamePage() {
             players={gameState?.players || []}
             currentChat={controller.currentDialogueChat}
             pendingPlayerId={derived.pendingInput?.player_id || undefined}
-            pendingPlayerName={derived.pendingInput?.player_name || undefined}
+            pendingPlayerName={isHuman && humanDisplay.isMyTurn ? undefined : derived.pendingInput?.player_name || undefined}
             phase={gameState?.phase}
             language={language}
             isLocked={isLocked}
@@ -336,6 +338,7 @@ export default function GamePage() {
           day={gameState.day}
           aliveCount={derived.aliveCount}
           eventCount={gameState.event_count || 0}
+          players={gameState.players}
           language={language}
           showPanel={controller.showWinnerPanel}
           ballPos={controller.ballPos}

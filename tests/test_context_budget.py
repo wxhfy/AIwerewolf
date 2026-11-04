@@ -52,9 +52,7 @@ def test_budget_prunes_complete_low_value_items_and_keeps_invariants() -> None:
     assert context["confirmed_private_facts"] == original["decision_context"]["confirmed_private_facts"]
     assert fitted["action_options"][0]["option_id"] == "talk"
     assert context["public_timeline"][-1]["kind"] == "player_death"
-    assert fitted["context_manifest"]["included"]["public_phase_summaries"] == len(
-        context["public_phase_summaries"]
-    )
+    assert fitted["context_manifest"]["included"]["public_phase_summaries"] == len(context["public_phase_summaries"])
     report = fitted["context_manifest"]["context_budget"]
     assert report["original_estimated_input_tokens"] > report["estimated_input_tokens"]
     assert report["pruned_counts"]

@@ -149,9 +149,7 @@ class ActorMemoryState:
             last_context_phase=str(value.get("last_context_phase") or ""),
             last_context_day=int(value.get("last_context_day") or value.get("last_day") or 0),
             last_delta_event_count=int(value.get("last_delta_event_count") or 0),
-            phase_summaries={
-                str(key): dict(item or {}) for key, item in (value.get("phase_summaries") or {}).items()
-            },
+            phase_summaries={str(key): dict(item or {}) for key, item in (value.get("phase_summaries") or {}).items()},
             last_day=int(value.get("last_day") or 0),
             working_memory=[str(item) for item in value.get("working_memory") or []],
             episodic=[EpisodicMemory(**item) for item in value.get("episodic") or []],

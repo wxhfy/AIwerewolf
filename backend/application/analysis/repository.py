@@ -70,7 +70,9 @@ class AnalysisRepository:
             if game is None:
                 return None
             job = db.query(TrackCPostGameJob).filter(TrackCPostGameJob.game_id == game_id).first()
-            decision_count = db.query(func.count(AgentDecision.id)).filter(AgentDecision.game_id == game_id).scalar() or 0
+            decision_count = (
+                db.query(func.count(AgentDecision.id)).filter(AgentDecision.game_id == game_id).scalar() or 0
+            )
             score_query = db.query(DecisionEvaluation).filter(DecisionEvaluation.game_id == game_id)
             evaluated_count = score_query.count()
             average_score = score_query.with_entities(func.avg(DecisionEvaluation.overall_score)).scalar()

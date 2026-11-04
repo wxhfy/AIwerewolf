@@ -4,54 +4,17 @@ import React from "react";
 import { cn } from "@/lib/utils";
 import { Phase, EventType } from "@/types";
 
-// ── Decorative SVG elements for 100% design restoration ───────────────
-// 装饰元素：星光、菱形、箭头等，完全匹配设计图
-const Decor = {
-  // 大阶段左右的小菱形装饰
-  diamond: (
-    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M6 0L7.5 4.5L12 6L7.5 7.5L6 12L4.5 7.5L0 6L4.5 4.5L6 0Z" fill="currentColor" opacity="0.6"/>
-    </svg>
-  ),
-  // 小星光装饰
-  star: (
-    <svg width="10" height="10" viewBox="0 0 10 10" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M5 0L5.5 2.5L8 2L6 4L8.5 5.5L5.5 5.5L5 8L4.5 5.5L1.5 5.5L4 4L2 2L4.5 2.5L5 0Z" fill="currentColor" opacity="0.7"/>
-    </svg>
-  ),
-  // 两端箭头装饰
-  arrowLeft: (
-    <svg width="16" height="12" viewBox="0 0 16 12" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M16 6H2M2 6L6 10M2 6L6 2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.5"/>
-    </svg>
-  ),
-  arrowRight: (
-    <svg width="16" height="12" viewBox="0 0 16 12" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M0 6H14M14 6L10 2M14 6L10 10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.5"/>
-    </svg>
-  ),
-  // 角色阶段两端装饰
-  sideDotLeft: (
-    <svg width="8" height="12" viewBox="0 0 8 12" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M8 6H2M2 6L5 9M2 6L5 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.4"/>
-    </svg>
-  ),
-  sideDotRight: (
-    <svg width="8" height="12" viewBox="0 0 8 12" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M0 6H6M6 6L3 9M6 6L3 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.4"/>
-    </svg>
-  ),
-  // 月牙图标（天黑请闭眼用）
+// Restrained line icons for major phase dividers.
+const PhaseIcon = {
   moon: (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+    <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
     </svg>
   ),
-  // 太阳图标（天亮了用）
   sun: (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="5"/>
-      <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+    <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="5" />
+      <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
     </svg>
   ),
 };
@@ -114,9 +77,9 @@ const RoleIcon: Record<string, React.ReactNode> = {
 const ROLE_PHASES: Record<string, { icon: keyof typeof RoleIcon; color: string }> = {
   [Phase.NIGHT_GUARD_ACTION]: { icon: "guard", color: "text-primary/90" },
   [Phase.NIGHT_WOLF_ACTION]: { icon: "wolf", color: "text-danger/90" },
-  [Phase.NIGHT_WITCH_ACTION]: { icon: "witch", color: "text-purple-600 dark:text-purple-400/90" },
+  [Phase.NIGHT_WITCH_ACTION]: { icon: "witch", color: "text-info" },
   [Phase.NIGHT_SEER_ACTION]: { icon: "seer", color: "text-info/90" },
-  [Phase.HUNTER_SHOOT]: { icon: "hunter", color: "text-emerald-700 dark:text-emerald-400/90" },
+  [Phase.HUNTER_SHOOT]: { icon: "hunter", color: "text-success" },
 };
 
 // 大阶段枚举，使用PhaseDivider组件
@@ -136,124 +99,77 @@ const RESULT_KEYWORDS = [
   "died", "eliminated", "no one died", "sheriff", "tie", "PK", "self-destruct", "take"
 ];
 
-// ── 组件1: 大阶段提示 ───────────────────────────────────────────────────
-// 居中流程分割节点，细线、轻量装饰、暖金色边框，完全还原设计图
 interface PhaseDividerProps {
   children: React.ReactNode;
 }
+
 function PhaseDivider({ children }: PhaseDividerProps) {
   const content = String(children);
-  // 根据内容显示对应图标
-  let icon = null;
-  if (content.includes("天黑") || content.includes("Night")) icon = Decor.moon;
-  if (content.includes("天亮") || content.includes("Day")) icon = Decor.sun;
+  const icon = content.includes("天黑") || content.includes("Night")
+    ? PhaseIcon.moon
+    : content.includes("天亮") || content.includes("Day")
+      ? PhaseIcon.sun
+      : null;
 
   return (
-    <div className="flex items-center justify-center gap-2 py-5 select-none">
-      {/* 左侧装饰线 + 菱形 */}
-      <div className="flex items-center gap-1 flex-1 justify-end">
-        <div className="h-px flex-1 bg-gradient-to-l from-transparent via-accent/45 to-transparent max-w-[60px]" />
-        <span className="text-accent/85">{Decor.diamond}</span>
-        <span className="text-accent/60">{Decor.arrowLeft}</span>
+    <div className="flex items-center gap-3 py-4">
+      <span aria-hidden="true" className="h-px min-w-3 flex-1 bg-border" />
+      <div className="flex max-w-[85%] items-center justify-center gap-2 rounded-badge border border-border bg-primary/5 px-3 py-1.5 text-center font-display text-xs font-semibold leading-relaxed text-primary sm:px-4 sm:text-sm">
+        {icon && <span aria-hidden="true" className="shrink-0">{icon}</span>}
+        <span className="break-words">{children}</span>
       </div>
-
-      {/* 主体标签 */}
-      <div className="relative px-6 py-2.5 rounded-full border border-accent/45 bg-gradient-to-r from-accent/12 via-accent/8 to-accent/12 font-display text-sm font-bold tracking-[0.1em] text-accent shadow-sm flex items-center gap-2">
-        {/* 上下星光装饰 */}
-        <span className="absolute -top-2 left-1/2 -translate-x-1/2 text-accent/85">{Decor.star}</span>
-        {icon && <span className="text-accent/95">{icon}</span>}
-        {children}
-        <span className="absolute -bottom-2 left-1/2 -translate-x-1/2 text-accent/85">{Decor.star}</span>
-      </div>
-
-      {/* 右侧装饰线 + 菱形 */}
-      <div className="flex items-center gap-1 flex-1 justify-start">
-        <span className="text-accent/60">{Decor.arrowRight}</span>
-        <span className="text-accent/85">{Decor.diamond}</span>
-        <div className="h-px flex-1 bg-gradient-to-r from-transparent via-accent/45 to-transparent max-w-[60px]" />
-      </div>
+      <span aria-hidden="true" className="h-px min-w-3 flex-1 bg-border" />
     </div>
   );
 }
 
-// ── 组件2: 角色阶段提示 ───────────────────────────────────────────────────
-// 小一号角色流程标签，带线性SVG图标，高级低饱和，完全还原设计图
 interface RolePhaseMarkerProps {
   icon: React.ReactNode;
   children: React.ReactNode;
   color?: string;
 }
-function RolePhaseMarker({ icon, children, color = "text-text-sub/80" }: RolePhaseMarkerProps) {
+
+function RolePhaseMarker({ icon, children, color = "text-text-sub" }: RolePhaseMarkerProps) {
   return (
-    <div className="flex justify-center items-center gap-1 py-3 select-none">
-      {/* 左侧装饰 */}
-      <span className={cn("text-current/65", color)}>{Decor.sideDotLeft}</span>
-      
-      {/* 主体标签 */}
-      <div className={cn(
-        "px-4 py-1.5 rounded-full border border-current/30 bg-current/8 flex items-center gap-2",
-        color
-      )}>
-        <span className="shrink-0">
-          {icon}
-        </span>
-        <span className="font-display text-[13px] font-semibold tracking-[0.06em]">
-          {children}
-        </span>
-      </div>
-      
-      {/* 右侧装饰 */}
-      <span className={cn("text-current/65", color)}>{Decor.sideDotRight}</span>
+    <div className={cn("flex items-center justify-center gap-2 py-2.5", color)}>
+      <span aria-hidden="true" className="shrink-0">{icon}</span>
+      <span className="text-center text-xs font-medium leading-relaxed">{children}</span>
     </div>
   );
 }
 
-// ── 组件3: 结算结果提示 ───────────────────────────────────────────────────
-// 轻量公告样式，比普通文本突出，非按钮，完全还原设计图
 interface ResultNoticeProps {
   icon?: React.ReactNode;
   children: React.ReactNode;
   variant?: "default" | "success" | "danger" | "warning";
 }
+
 function ResultNotice({ icon, children, variant = "default" }: ResultNoticeProps) {
   const variantStyles = {
-    default: "border-accent/35 bg-gradient-to-r from-accent/12 via-accent/7 to-accent/12 text-accent",
-    success: "border-success/35 bg-gradient-to-r from-success/12 via-success/7 to-success/12 text-success",
-    danger: "border-danger/35 bg-gradient-to-r from-danger/12 via-danger/7 to-danger/12 text-danger",
-    warning: "border-warning/35 bg-gradient-to-r from-warning/12 via-warning/7 to-warning/12 text-warning",
+    default: "border-border bg-primary/5 text-textPrimary",
+    success: "border-success/20 bg-success/5 text-success",
+    danger: "border-danger/20 bg-danger/5 text-danger",
+    warning: "border-warning/20 bg-warning/5 text-warning",
   };
 
-  const colorClass = variantStyles[variant].split(" ").pop() || "text-accent";
-
   return (
-    <div className="flex justify-center items-center gap-2 py-3 select-none">
-      {/* 左侧菱形装饰 */}
-      <span className={cn("text-current/75", colorClass)}>{Decor.diamond}</span>
-      
-      {/* 主体公告 */}
-      <div className={cn(
-        "px-5 py-2.5 rounded-lg border font-medium text-sm flex items-center gap-2.5 max-w-[85%]",
-        variantStyles[variant]
-      )}>
-        {icon && <span className="shrink-0">{icon}</span>}
-        <span>{children}</span>
+    <div className="flex justify-center py-2.5">
+      <div className={cn("flex w-full max-w-lg items-start gap-2.5 rounded-button border px-3 py-2.5 text-sm font-medium leading-relaxed sm:px-4", variantStyles[variant])}>
+        {icon && <span aria-hidden="true" className="mt-0.5 shrink-0">{icon}</span>}
+        <span className="min-w-0 break-words">{children}</span>
       </div>
-      
-      {/* 右侧菱形装饰 */}
-      <span className={cn("text-current/75", colorClass)}>{Decor.diamond}</span>
     </div>
   );
 }
 
-// ── 组件4: 普通行动说明 ───────────────────────────────────────────────────
-// 左对齐，细竖线，轻量展示
 interface ActionNoteProps {
   children: React.ReactNode;
 }
+
 function ActionNote({ children }: ActionNoteProps) {
   return (
-    <div className="pl-4 py-2 border-l-2 border-accent/30 select-none">
-      <span className="text-sm text-text-sub/90">{children}</span>
+    <div className="my-1 border-l-2 border-border py-1.5 pl-3">
+      <span className="text-xs leading-relaxed text-text-sub">{children}</span>
     </div>
   );
 }
