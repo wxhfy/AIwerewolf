@@ -7,6 +7,7 @@ import uuid
 from datetime import datetime
 from datetime import timezone
 
+from sqlalchemy import BigInteger
 from sqlalchemy import Boolean
 from sqlalchemy import Column
 from sqlalchemy import DateTime
@@ -351,7 +352,7 @@ class AgentHarnessEvent(Base):
     seq = Column(Integer, nullable=False)
     event_type = Column(String, nullable=False, index=True)
     step = Column(Integer, nullable=False, default=0)
-    timestamp_ms = Column(Integer, nullable=False)
+    timestamp_ms = Column(BigInteger, nullable=False)
     payload = Column(JSON, default=dict, nullable=False)
     created_at = Column(DateTime, default=_utcnow, nullable=False)
 

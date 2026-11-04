@@ -77,7 +77,7 @@ export function useGamePageController(roomId: string) {
   // ── Phase timeout: 防止某阶段因缺少事件而永久卡住 ──────────────
   const phaseFirstSeenRef = useRef<{ phase: string; timestamp: number }>({ phase: "", timestamp: 0 });
   const [phaseTimeoutTick, setPhaseTimeoutTick] = useState(0);
-  const PHASE_TIMEOUT_MS = 15000; // 15s 无进展则强制放行
+  const PHASE_TIMEOUT_MS = 45000; // 45s：免费模型发言间隔更长，避免误跳过打字机
   const phaseTimeoutTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // 记录触发超时时的阻塞阶段，防止竞态：超时回调可能在阶段已变化后执行
   const stuckPhaseRef = useRef<string>("");

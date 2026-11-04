@@ -19,15 +19,26 @@ interface HumanStatusBarProps {
   language: string;
   speakerState?: { state: 'thinking' | 'speaking' | 'finished'; speakerId: string | null };
   players?: Array<{ id: string; seat: number; name: string }>;
+  runtimeProgress?: {
+    current?: Array<{ seat: number; name: string }>;
+    queue?: Array<{ seat: number; name: string }>;
+    remaining_count?: number;
+    estimated_wait_seconds?: number | null;
+    simultaneous?: boolean;
+    thinking_count?: number;
+  } | null;
 }
 
-export function HumanStatusBar({ display, displayPhase, language, speakerState }: HumanStatusBarProps) {
+export function HumanStatusBar({ display, displayPhase, language, speakerState, runtimeProgress }: HumanStatusBarProps) {
   const visiblePhase = displayPhase || display.phase;
   const phaseLabel = PHASE_LABEL[visiblePhase] || visiblePhase;
   const lang = language as "zh" | "en";
+  const progressCurrent = runtimeProgress?.current?.[0];
+  const remaining = Number(runtimeProgress?.remaining_count ?? runtimeProgress?.queue?.length ?? 0);
+  const eta = runtimeProgress?.estimated_wait_seconds;
 
   return (
-    <div data-testid="human-status-bar" className="flex items-center gap-3 border-b border-border bg-cardBackground px-5 py-2.5 text-base font-medium">
+    <div data-testid="human-status-bar" className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border bg-cardBackground px-5 py-2.5 text-base font-medium">
       <span className="font-semibold text-textPrimary">
         {display.cycle} · {phaseLabel}
       </span>
@@ -46,6 +57,20 @@ export function HumanStatusBar({ display, displayPhase, language, speakerState }
                   : speakerState.state === "thinking" ? "thinking" : "speaking"
                 : lang === "zh" ? "行动中" : "acting"}
           </span>
+        </span>
+      )}
+      {!display.canAct && progressCurrent && (
+        <span className="text-primary/90 text-sm">
+          · {progressCurrent.seat ? `${progressCurrent.seat}号 ${progressCurrent.name}` : progressCurrent.name}{" "}
+          {lang === "zh" ? "思考中" : "thinking"}
+        </span>
+      )}
+      {!display.canAct && remaining > 0 && (
+        <span className="text-text-sub text-sm">· {lang === "zh" ? `队列剩余 ${remaining}` : `${remaining} left`}</span>
+      )}
+      {!display.canAct && typeof eta === "number" && eta > 0 && (
+        <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">
+          {lang === "zh" ? `约 ${Math.ceil(eta)}s` : `~${Math.ceil(eta)}s`}
         </span>
       )}
       <span className="text-text-sub/60 ml-auto text-sm">

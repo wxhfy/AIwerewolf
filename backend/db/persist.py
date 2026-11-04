@@ -3,12 +3,19 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from dataclasses import asdict
 from datetime import datetime
 from datetime import timedelta
 from datetime import timezone
 from typing import Any
+
+
+def analysis_enabled() -> bool:
+    """Post-match LLM analysis is optional so free quotas go to live play."""
+    return os.getenv("ANALYSIS_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
+
 
 from sqlalchemy import and_
 from sqlalchemy import func as sa_func
@@ -628,7 +635,8 @@ def save_game_end(state: GameState, *, include_post_game: bool = True) -> None:
             return
         if include_post_game:
             _save_post_game_metrics(db, state)
-            _ensure_track_c_post_game_job_row(db, state.id, source="game_end")
+            if analysis_enabled():
+                _ensure_track_c_post_game_job_row(db, state.id, source="game_end")
         db.commit()
     finally:
         db.close()
@@ -693,8 +701,9 @@ def complete_match_transaction(state: GameState, *, job_id: str, worker_id: str)
             if snapshot is not None:
                 room.latest_snapshot = snapshot.truth_state
 
-        _ensure_track_c_post_game_job_row(db, state.id, source="match_completion")
-        _ensure_match_analysis_outbox(db, state.id, source="match_completion")
+        if analysis_enabled():
+            _ensure_track_c_post_game_job_row(db, state.id, source="match_completion")
+            _ensure_match_analysis_outbox(db, state.id, source="match_completion")
         # Keep completion compatible with databases created before the
         # checkpoint migration. Fresh deployments always have this table;
         # legacy test/dev schemas should still be able to finish a match.
@@ -770,6 +779,8 @@ def reconcile_finished_match_analysis(*, limit: int = 100) -> int:
             .all()
         )
         for game in rows:
+            if not analysis_enabled():
+                continue
             _ensure_track_c_post_game_job_row(db, game.id, source="reconciler")
             _ensure_match_analysis_outbox(db, game.id, source="reconciler")
         db.commit()

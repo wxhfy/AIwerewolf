@@ -31,6 +31,7 @@ export function useRoomStream({
 }: UseRoomStreamOptions) {
   const sourceRef = useRef<EventSource | null>(null);
   const lastSeqRef = useRef(-1);
+  const lastProgressSeqRef = useRef(-1);
   const matchIdRef = useRef<string | null>(null);
 
   function closeStream() {
@@ -44,12 +45,17 @@ export function useRoomStream({
 
   function applySnapshot(state: GameState) {
     const incomingSeq = Number(state.seq || state.last_event?.seq || state.event_count || 0);
+    const progressSeq = Number((state as any).progress_seq || 0);
     if (matchIdRef.current !== state.id) {
       matchIdRef.current = state.id;
       lastSeqRef.current = -1;
+      lastProgressSeqRef.current = -1;
     }
-    if (incomingSeq <= lastSeqRef.current) return;
+    // Accept same event seq when runtime progress advances (LLM thinking UX).
+    if (incomingSeq < lastSeqRef.current) return;
+    if (incomingSeq === lastSeqRef.current && progressSeq <= lastProgressSeqRef.current) return;
     lastSeqRef.current = incomingSeq;
+    lastProgressSeqRef.current = progressSeq;
     setGameState(state);
   }
 
@@ -63,6 +69,7 @@ export function useRoomStream({
       const started = await startAiMatch(roomId, showPrivate);
       matchIdRef.current = started.match_id;
       lastSeqRef.current = -1;
+      lastProgressSeqRef.current = -1;
       applySnapshot(started.snapshot);
 
       const params = new URLSearchParams({

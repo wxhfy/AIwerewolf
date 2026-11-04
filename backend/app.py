@@ -16,6 +16,7 @@ from fastapi.responses import Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from backend.application.matches.executor import prepare_game
+from backend.application.agents.runtime import LocalAgentRuntime
 from backend.application.matches.repository import MatchJobRepository
 from backend.application.matches.spec import MatchExecutionSpec
 from backend.core.config import settings
@@ -108,6 +109,61 @@ def _save_snapshot(state: GameState) -> None:
 
 def _initialize_database() -> None:
     init_db()
+
+def _mark_human_seat(game, human_seat: int | None) -> None:
+    if human_seat is None:
+        return
+    for player in game.state.players:
+        if int(player.seat) == int(human_seat):
+            player.is_ai = False
+            player.agent_type = "human"
+            player.model_name = ""
+            return
+    raise HTTPException(status_code=400, detail=f"human_seat {human_seat} is out of range")
+
+
+def _attach_room_runtime(game, room) -> None:
+    if game.decision_runtime is not None:
+        return
+    config = {"type": room.agent_type or "llm", "seed": room.seed, **dict(room.llm_config or {})}
+    LocalAgentRuntime().attach(game, config)
+
+
+def _human_room_observe(room_id: str):
+    def observe(state: GameState) -> None:
+        _save_snapshot(state)
+        _rooms.record_snapshot(room_id, state.snapshot(show_private=True))
+
+    return observe
+
+
+def _start_human_room(room_id: str, *, show_private: bool = False) -> dict:
+    room = _rooms.get_room(room_id)
+    game = _rooms.get_active_game(room_id)
+    if game is None:
+        prepare_room_game(room_id, show_private=True)
+        room = _rooms.get_room(room_id)
+        game = _rooms.get_active_game(room_id)
+    if game is None:
+        raise HTTPException(status_code=500, detail="Prepared human match is unavailable")
+    _mark_human_seat(game, room.human_seat)
+    _attach_room_runtime(game, room)
+    game.observer = _human_room_observe(room_id)
+    state = game.play_until_blocked()
+    _save_snapshot(state)
+    snapshot = state.snapshot(show_private=show_private)
+    _rooms.record_snapshot(room_id, state.snapshot(show_private=True))
+    if state.winner is not None:
+        from backend.db.persist import save_game_end
+
+        save_game_end(state, include_post_game=True)
+        _rooms.set_room_status(room_id, "completed")
+    elif state.pending_input is not None:
+        _rooms.set_room_status(room_id, "waiting_human")
+    else:
+        _rooms.set_room_status(room_id, "running")
+    return snapshot
+
 
 
 @app.get("/api/health")
@@ -677,8 +733,8 @@ def create_room(
     if agent_type.strip().lower() not in {"llm", "cognitive"}:
         raise HTTPException(status_code=400, detail="Only LLM-backed AI rooms are supported")
     human_seat = _payload_optional_int(body, "human_seat", human_seat)
-    if human_seat is not None:
-        raise HTTPException(status_code=501, detail="Human matches are temporarily disabled; use an AI-only room")
+    if human_seat is not None and (human_seat < 1 or human_seat > player_count):
+        raise HTTPException(status_code=400, detail="human_seat must be between 1 and player_count")
     rule_pack_id = str(body.get("rule_pack_id", rule_pack_id))
     llm_config = _sanitize_room_llm_config(body.get("llm_config"))
     request = RoomCreateRequest(
@@ -775,19 +831,22 @@ def prepare_room_game(room_id: str, show_private: bool = False):
         player_count=room.player_count,
         rule_pack_id=room.rule_pack_id,
     )
+    _mark_human_seat(game, room.human_seat)
     _rooms.set_active_game(room_id, game)
 
     _save_game_start(game.state)
     _save_snapshot(game.state)
-    spec = MatchExecutionSpec.from_game(
-        game,
-        room_id=room_id,
-        seed=room.seed,
-        agent_type=room.agent_type,
-        rule_pack_id=room.rule_pack_id,
-        llm_config=room.llm_config,
-    )
-    _match_jobs.prepare(game_id=game.state.id, room_id=room_id, payload=spec.to_dict())
+    # Human rooms stay in-process; AI rooms still use durable Match Jobs.
+    if room.human_seat is None:
+        spec = MatchExecutionSpec.from_game(
+            game,
+            room_id=room_id,
+            seed=room.seed,
+            agent_type=room.agent_type,
+            rule_pack_id=room.rule_pack_id,
+            llm_config=room.llm_config,
+        )
+        _match_jobs.prepare(game_id=game.state.id, room_id=room_id, payload=spec.to_dict())
     _rooms.set_room_status(room_id, "prepared")
     snapshot = game.state.snapshot(show_private=show_private)
     _rooms.record_snapshot(room_id, snapshot)
@@ -802,7 +861,7 @@ def start_or_resume_room_game(room_id: str, show_private: bool = False):
         raise HTTPException(status_code=404, detail="Room not found")
     game = _rooms.get_active_game(room_id)
     if room.human_seat is not None:
-        raise HTTPException(status_code=501, detail="Human matches are temporarily disabled")
+        return _start_human_room(room_id, show_private=show_private)
     if game is None and not room.current_game_id:
         prepare_room_game(room_id, show_private=True)
         room = _rooms.get_room(room_id)
@@ -842,12 +901,37 @@ def start_or_resume_room_game(room_id: str, show_private: bool = False):
 
 @app.post("/api/rooms/{room_id}/action")
 def submit_room_action(room_id: str, payload: Dict[str, Any], show_private: bool = False):
-    del payload, show_private
     try:
-        _rooms.get_room(room_id)
+        room = _rooms.get_room(room_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="Room not found")
-    raise HTTPException(status_code=501, detail="Human matches are temporarily disabled")
+    if room.human_seat is None:
+        raise HTTPException(status_code=400, detail="This room is AI-only; human actions are not accepted")
+    game = _rooms.get_active_game(room_id)
+    if game is None:
+        raise HTTPException(status_code=409, detail="No active human match in this process")
+    if game.state.pending_input is None:
+        raise HTTPException(status_code=409, detail="No human input is pending")
+    _mark_human_seat(game, room.human_seat)
+    _attach_room_runtime(game, room)
+    game.observer = _human_room_observe(room_id)
+    try:
+        state = game.submit_human_action(dict(payload or {}))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _save_snapshot(state)
+    snapshot = state.snapshot(show_private=show_private)
+    _rooms.record_snapshot(room_id, state.snapshot(show_private=True))
+    if state.winner is not None:
+        from backend.db.persist import save_game_end
+
+        save_game_end(state, include_post_game=True)
+        _rooms.set_room_status(room_id, "completed")
+    elif state.pending_input is not None:
+        _rooms.set_room_status(room_id, "waiting_human")
+    else:
+        _rooms.set_room_status(room_id, "running")
+    return snapshot
 
 
 @app.post("/api/rooms/{room_id}/pause")

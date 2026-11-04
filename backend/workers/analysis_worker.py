@@ -8,6 +8,7 @@ import threading
 from backend.application.analysis.service import PostGameAnalysisService
 from backend.core.config import validate_production_configuration
 from backend.db.database import init_db
+from backend.db.persist import analysis_enabled
 from backend.db.persist import dispatch_match_analysis_outbox
 from backend.db.persist import list_recoverable_track_c_post_game_jobs
 from backend.db.persist import reconcile_finished_match_analysis
@@ -49,6 +50,11 @@ class AnalysisWorker:
     def run_forever(self) -> None:
         validate_production_configuration()
         init_db()
+        if not analysis_enabled():
+            logger.info("Analysis worker idle: ANALYSIS_ENABLED is false")
+            while not self.stop_event.is_set():
+                self.stop_event.wait(max(self.poll_seconds, 5))
+            return
         logger.info("Analysis worker started")
         while not self.stop_event.is_set():
             processed = self.run_once()

@@ -110,6 +110,8 @@ def _default_concurrency_limit(base_url: str) -> int:
         return 2
     if "open.bigmodel.cn" in base_url.lower():
         return 1
+    if "siliconflow.cn" in base_url.lower():
+        return 3
     return 4
 
 

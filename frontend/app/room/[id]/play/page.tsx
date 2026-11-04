@@ -159,6 +159,7 @@ export default function GamePage() {
               language={language}
               speakerState={derived.speakerState}
               players={gameState?.players}
+              runtimeProgress={gameState?.runtime_progress}
             />
           ) : (
             <AIStatusBar

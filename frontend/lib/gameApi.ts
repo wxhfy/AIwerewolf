@@ -3,7 +3,8 @@ import { apiUrl } from "@/lib/api";
 
 export type GameMode = "ai" | "human";
 
-const requestTimeoutMs = 30000;
+/** Free SiliconFlow turns can exceed 30s (night chain / speeches). */
+const requestTimeoutMs = 180000;
 
 interface CreateRoomParams {
   seed: number;
