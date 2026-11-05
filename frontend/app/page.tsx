@@ -123,11 +123,11 @@ export default function LobbyPage() {
     media.add("(prefers-reduced-motion: no-preference)", () => {
       const timeline = gsap.timeline({ defaults: { ease: "power2.out" } });
       timeline
-        .from("[data-home-intro='moon']", { opacity: 0, y: -8, duration: 0.35 })
-        .from("[data-home-intro='title']", { opacity: 0, y: 8, duration: 0.35 }, "-=0.2")
-        .from("[data-home-intro='subtitle']", { opacity: 0, duration: 0.3 }, "-=0.22")
-        .from("[data-home-intro='card']", { opacity: 0, scale: 0.98, y: 10, duration: 0.4 }, "-=0.2")
-        .from("[data-home-intro='footer']", { opacity: 0, duration: 0.25 }, "-=0.2");
+        .from("[data-home-intro='moon']", { opacity: 0, y: -4, duration: 0.2 })
+        .from("[data-home-intro='title']", { opacity: 0, y: 4, duration: 0.2 }, "-=0.15")
+        .from("[data-home-intro='subtitle']", { opacity: 0, duration: 0.2 }, "-=0.15")
+        .from("[data-home-intro='card']", { opacity: 0, y: 6, duration: 0.25 }, "-=0.15")
+        .from("[data-home-intro='footer']", { opacity: 0, duration: 0.2 }, "-=0.15");
     });
 
     return () => media.revert();
@@ -194,20 +194,22 @@ export default function LobbyPage() {
   }
 
   return (
-    <div ref={pageRef} className="relative min-h-screen flex flex-col items-center justify-start overflow-x-hidden overflow-y-auto bg-background px-4 pb-8 pt-24 sm:justify-center sm:px-6 sm:pt-20">
+    <main ref={pageRef} data-theme="dark" className="relative flex min-h-screen min-h-[100dvh] flex-col items-center overflow-x-hidden bg-background px-4 pb-[max(2rem,env(safe-area-inset-bottom))] pt-24 text-textPrimary sm:px-6 sm:pt-20">
       <AnimatedWerewolfBackground />
+      <div className="pointer-events-none fixed inset-0 z-[1] bg-background/75" aria-hidden="true" />
       <BackgroundMusic language={language} />
 
       {/* ── Top nav ────────────────────────────────────────────── */}
-      <div className="absolute left-3 right-16 top-4 z-20 flex flex-wrap items-center justify-end gap-2 sm:left-auto sm:right-16 sm:flex-nowrap">
-        <Link href="/personas" className="px-3 py-1.5 text-xs font-medium rounded-button border border-border/40 text-text-sub/70 hover:text-primary hover:border-primary/50 transition-colors backdrop-blur-sm">
+      <nav aria-label={language === "zh" ? "大厅导航" : "Lobby navigation"} className="absolute left-4 right-16 top-4 z-20 flex flex-wrap items-center justify-end gap-2 sm:left-auto sm:right-16 sm:flex-nowrap">
+        <Link href="/personas" className="inline-flex min-h-10 items-center rounded-button border border-border bg-cardBackground/80 px-3 text-xs font-medium text-textSecondary backdrop-blur-sm transition-colors duration-200 hover:border-primary/50 hover:text-primary">
           {language === "zh" ? "角色库" : "Personas"}
         </Link>
 
         <button
           data-testid="open-settings-button"
+          type="button"
           onClick={() => setShowSettings(true)}
-          className="px-3 py-1.5 text-xs font-medium rounded-button border border-border/40 text-text-sub/70 hover:text-primary hover:border-primary/50 transition-colors backdrop-blur-sm flex items-center gap-1.5"
+          className="inline-flex min-h-10 items-center gap-2 rounded-button border border-border bg-cardBackground/80 px-3 text-xs font-medium text-textSecondary backdrop-blur-sm transition-colors duration-200 hover:border-primary/50 hover:text-primary"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <circle cx="12" cy="12" r="3" />
@@ -215,27 +217,30 @@ export default function LobbyPage() {
           </svg>
           {language === "zh" ? "设置" : "Settings"}
         </button>
-      </div>
+      </nav>
 
       {/* ── Brand — stable height, no jump on mode switch ────────── */}
-      <div className="relative z-10 mb-5 shrink-0 text-center sm:mb-8">
+      <header className="relative z-10 mb-7 shrink-0 text-center sm:mb-8">
         {/* Moon icon with glow */}
         <div data-home-intro="moon" className="relative mb-3 inline-block sm:mb-4">
-          <div className="absolute inset-0 w-12 h-12 mx-auto rounded-full bg-primary/20 blur-xl animate-[pulse_3s_ease-in-out_infinite]" />
+          <div className="absolute inset-0 mx-auto h-12 w-12 rounded-full bg-primary/15 blur-xl" />
           <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" className="relative h-10 w-10 text-primary drop-shadow-[0_0_12px_rgba(183,131,63,0.4)] sm:h-12 sm:w-12">
             <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
           </svg>
         </div>
-        <h1 data-home-intro="title" className="font-display text-2xl font-bold text-primary tracking-tight sm:text-3xl" style={{ textShadow: "0 0 60px rgba(183,131,63,0.2)" }}>
+        <p className="mb-2 text-xs font-medium tracking-[0.24em] text-textSecondary">
+          {language === "zh" ? "狼人杀 · 对局大厅" : "WEREWOLF · MATCH LOBBY"}
+        </p>
+        <h1 data-home-intro="title" className="font-display text-3xl font-bold tracking-tight text-primary sm:text-4xl">
           AI Werewolf
         </h1>
-        <p data-home-intro="subtitle" className="mx-auto mt-1 max-w-xs text-sm leading-relaxed text-text-sub/60 sm:mt-2">
+        <p data-home-intro="subtitle" className="mx-auto mt-3 max-w-sm text-sm leading-relaxed text-textSecondary">
           {language === "zh" ? "黑夜降临，狼人出没。" : "Night falls. The wolves are among us."}
         </p>
-      </div>
+      </header>
 
       {/* ── Config card ─────────────────────────────────────────── */}
-      <div data-home-intro="card" className="relative z-10 w-full max-w-md">
+      <div data-home-intro="card" className="relative z-10 w-full max-w-lg">
         <LobbyConfigCard
           language={language} playerCount={playerCount} mode={mode} humanSeat={humanSeat}
           isCreating={isCreating} error={showModal ? "" : error}
@@ -246,7 +251,7 @@ export default function LobbyPage() {
       </div>
 
       {/* ── Footer ──────────────────────────────────────────────── */}
-      <p data-home-intro="footer" className="relative z-10 mt-6 text-xs text-text-sub/30">
+      <p data-home-intro="footer" className="relative z-10 mt-7 text-center text-xs leading-relaxed text-textSecondary">
         <span className="font-display">AI Werewolf</span>
         <span className="mx-2">·</span>
         <span>{t("spectateAndPlay", language)}</span>
@@ -270,6 +275,6 @@ export default function LobbyPage() {
         currentSettings={gameSettings}
         onSave={handleSaveSettings}
       />
-    </div>
+    </main>
   );
 }
