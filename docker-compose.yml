@@ -309,6 +309,35 @@ services:
     networks:
       - werewolf-net
 
+  # ------------------------------------------------------------------
+  # Monitoring profile (optional): docker compose --profile monitoring up -d
+  # ------------------------------------------------------------------
+  prometheus:
+    image: ${PROMETHEUS_IMAGE:-prom/prometheus:v2.53.0}
+    container_name: ${PROMETHEUS_CONTAINER_NAME:-werewolf-prometheus}
+    profiles: ["monitoring"]
+    restart: unless-stopped
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"
+    networks:
+      - werewolf-net
+
+  grafana:
+    image: ${GRAFANA_IMAGE:-grafana/grafana:11.1.0}
+    container_name: ${GRAFANA_CONTAINER_NAME:-werewolf-grafana}
+    profiles: ["monitoring"]
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3002}:3000"
+    networks:
+      - werewolf-net
+
 networks:
   werewolf-net:
     name: werewolf-net

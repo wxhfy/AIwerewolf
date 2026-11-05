@@ -149,3 +149,16 @@ RUN_EXTERNAL_DATA_TESTS=true pytest -q
 - 3000 QPM、SSE 并发与 LLM 配额联合压测。
 
 生产路线见 [`docs/architecture/PRODUCTION_PLAN.md`](docs/architecture/PRODUCTION_PLAN.md)。
+
+## Monitoring
+
+The backend exposes Prometheus metrics at `GET /metrics` (aggregate counts only: worker liveness, match/analysis/outbox job status, game status, API-process counters; no IDs or player data). It is served on the backend container only and is not routed through nginx.
+
+Optional Prometheus + Grafana stack (not started by default):
+
+```bash
+docker compose --profile monitoring up -d prometheus grafana
+```
+
+- Prometheus: `http://127.0.0.1:${PROMETHEUS_PORT:-9090}` (scrape config: `monitoring/prometheus.yml`, target `backend:8000`)
+- Grafana: `http://127.0.0.1:${GRAFANA_PORT:-3002}` (admin password `GRAFANA_ADMIN_PASSWORD`, default `admin` — change it); add Prometheus datasource `http://prometheus:9090`.
