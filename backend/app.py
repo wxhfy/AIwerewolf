@@ -85,6 +85,17 @@ app.add_middleware(
 install_middleware(app, settings)
 install_exception_handlers(app)
 app.include_router(api_v1_router)
+
+
+@app.get("/metrics", include_in_schema=False)
+def prometheus_metrics() -> Response:
+    """Prometheus scrape target; aggregate counts only. Not routed by nginx (internal network)."""
+    from backend.ops.prometheus_metrics import render_metrics
+
+    body, content_type = render_metrics()
+    return Response(content=body, media_type=content_type)
+
+
 app.include_router(analysis_api_router)
 app.include_router(match_stream_router)
 
