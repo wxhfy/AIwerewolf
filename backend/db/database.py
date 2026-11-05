@@ -127,6 +127,7 @@ def _ensure_compatibility_schema(connection: Connection | None = None) -> None:
     additions = {
         "match_jobs": {"checkpoint_seq": "INTEGER"},
         "agent_decisions": {"request_id": "VARCHAR"},
+        "track_c_post_game_jobs": {"claim_token": "VARCHAR", "available_at": "TIMESTAMP"},
     }
     owns_transaction = connection is None
     context = engine.begin() if owns_transaction else nullcontext(connection)
@@ -159,6 +160,10 @@ def init_db() -> None:
             conn.close()
         except Exception as e:
             raise RuntimeError(f"STRICT MODE: REQUIRE_DB=true but DB unavailable: {e}")
+    # Register additive worker/evaluation artifacts before metadata bootstrap.
+    import backend.db.evolution_jobs  # noqa: F401
+    import backend.db.judge_calibration  # noqa: F401
+    import backend.ops.worker_health  # noqa: F401
     from backend.db.models import Base
 
     if engine.dialect.name == "postgresql":

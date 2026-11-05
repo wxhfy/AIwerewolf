@@ -2,36 +2,56 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 import uuid
 
 from fastapi import FastAPI
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import JSONResponse
 from starlette.responses import Response
 
 from backend.core.config import Settings
+from backend.core.errors import problem_response
+from backend.core.observability import count
+from backend.core.observability import log_event
+from backend.core.observability import operation_context
 
 logger = logging.getLogger("aiwerewolf.access")
 
 
 class RequestContextMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next) -> Response:
-        request_id = request.headers.get("x-request-id", "").strip()[:128] or str(uuid.uuid4())
+        supplied_id = request.headers.get("x-request-id", "").strip()
+        request_id = supplied_id if re.fullmatch(r"[a-zA-Z0-9_.:-]{1,128}", supplied_id) else str(uuid.uuid4())
         request.state.request_id = request_id
         started = time.perf_counter()
-        response = await call_next(request)
+        with operation_context(request_id=request_id):
+            try:
+                response = await call_next(request)
+            except Exception as exc:
+                count("http.unhandled_errors")
+                log_event(logger, "http.unhandled_error", level=logging.ERROR, error_type=type(exc).__name__)
+                response = problem_response(
+                    request, status=500, code="internal_error", detail="An internal error occurred."
+                )
         elapsed_ms = (time.perf_counter() - started) * 1000
         response.headers["X-Request-ID"] = request_id
         response.headers["X-Process-Time-Ms"] = f"{elapsed_ms:.2f}"
-        logger.info(
-            "%s %s -> %s %.2fms request_id=%s",
-            request.method,
-            request.url.path,
-            response.status_code,
-            elapsed_ms,
-            request_id,
+        params = request.path_params
+        route = request.scope.get("route")
+        count("http.requests")
+        count(f"http.responses.{response.status_code // 100}xx")
+        log_event(
+            logger,
+            "http.request",
+            request_id=request_id,
+            match_id=params.get("match_id") or params.get("game_id"),
+            room_id=params.get("room_id"),
+            method=request.method,
+            route=getattr(route, "path", "unmatched"),
+            status=response.status_code,
+            elapsed_ms=round(elapsed_ms, 2),
         )
         return response
 
@@ -58,10 +78,7 @@ class RequestBodyLimitMiddleware(BaseHTTPMiddleware):
         except ValueError:
             too_large = False
         if too_large:
-            return JSONResponse(
-                status_code=413,
-                content={"detail": "Request body too large", "code": "request_body_too_large"},
-            )
+            return problem_response(request, status=413, code="request_body_too_large", detail="Request body too large")
         return await call_next(request)
 
 
@@ -95,12 +112,15 @@ class RedisRateLimitMiddleware(BaseHTTPMiddleware):
         try:
             count = await asyncio.to_thread(self._consume, key)
         except Exception:
-            logger.warning("Rate limiter unavailable; allowing request", exc_info=True)
+            count("http.rate_limit.unavailable")
+            log_event(logger, "http.rate_limit.unavailable", level=logging.WARNING)
             return await call_next(request)
         if count > self.requests:
-            return JSONResponse(
-                status_code=429,
-                content={"detail": "Rate limit exceeded", "code": "rate_limit_exceeded"},
+            return problem_response(
+                request,
+                status=429,
+                code="rate_limit_exceeded",
+                detail="Rate limit exceeded",
                 headers={"Retry-After": str(self.window_seconds)},
             )
         response = await call_next(request)
