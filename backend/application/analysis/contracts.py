@@ -8,11 +8,16 @@ from pydantic import Field
 
 class AnalysisJobView(BaseModel):
     status: str = "not_scheduled"
+    lifecycle_status: str = "not_scheduled"
     attempts: int = 0
     max_attempts: int = 0
     last_error: str = ""
     started_at: str | None = None
     finished_at: str | None = None
+    available_at: str | None = None
+    dead_letter: bool = False
+    stage: str | None = None
+    evolution_status: str | None = None
 
 
 class MatchAnalysisResponse(BaseModel):
@@ -26,6 +31,8 @@ class MatchAnalysisResponse(BaseModel):
     highlight_count: int = 0
     mistake_count: int = 0
     review_status: str | None = None
+    report_status: str = "pending"
+    evolution: dict[str, Any] | None = None
     strategy_counts: dict[str, int] = Field(default_factory=dict)
 
 

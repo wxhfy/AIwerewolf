@@ -72,15 +72,15 @@ export function ActionPanel({ pendingInput, onAction, language, players }: Actio
   const btnLabel = btnTextFn(language);
 
   return (
-    <div className="border-t border-border bg-cardBackground px-4 py-2">
+    <section aria-label={language === "zh" ? "当前行动" : "Current action"} className="timeline-scroll max-h-[32dvh] shrink-0 overflow-y-auto overscroll-contain border-t border-border bg-cardBackground px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-5">
       {/* Header row: guidance + timer */}
-      <div className="flex items-center justify-between mb-2">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0">
-          <p className="text-xs font-medium text-textPrimary truncate">{pi.player_name} · {tPhase(pi.phase, language)}</p>
-          <p className="text-[11px] text-text-sub truncate">{pi.prompt || t("selectTarget", language)}</p>
+          <p className="text-xs font-semibold text-textPrimary">{pi.player_name} · {tPhase(pi.phase, language)}</p>
+          <p className="mt-1 break-words text-xs leading-relaxed text-text-sub">{pi.prompt || t("selectTarget", language)}</p>
         </div>
         {hasTimer && (
-          <div className="w-32 shrink-0 ml-3">
+          <div className="w-24 shrink-0 sm:w-32">
             <CountdownTimer key={timerKey.current} seconds={HUMAN_TIMER_SECONDS} onExpire={handleTimerExpire} isActive={timerActive && !submitted} />
           </div>
         )}
@@ -99,12 +99,13 @@ export function ActionPanel({ pendingInput, onAction, language, players }: Actio
         <div className="space-y-2">
           <textarea value={speech} onChange={(e) => setSpeech(e.target.value)}
             placeholder={pi.placeholder || t("typeSpeech", language)}
-            className="h-16 w-full resize-none rounded-lg border border-border bg-background px-3 py-2 text-sm text-textPrimary"
+            aria-label={t("typeSpeech", language)}
+            className="h-16 w-full resize-none rounded-button border border-border bg-background px-3 py-2 text-sm text-textPrimary"
             disabled={submitted}
             onKeyDown={(e) => { if (e.key === "Enter" && e.ctrlKey) submit(); }} />
           <div className="flex justify-between items-center">
             <button onClick={() => { setSpeech(""); submit(); }} disabled={submitted}
-              className="text-[11px] text-text-sub/60 hover:text-text-sub">
+              className="min-h-9 rounded-button px-2 text-xs text-text-sub transition-colors duration-200 hover:text-primary">
               {pi.request === "BADGE_SPEECH" ? (language === "zh" ? "不竞选" : "Decline") : (language === "zh" ? "跳过发言" : "Skip")}
             </button>
             <Button onClick={submit} disabled={submitted} size="sm">{btnLabel}</Button>
@@ -122,13 +123,13 @@ export function ActionPanel({ pendingInput, onAction, language, players }: Actio
               {t("useHealingPotion", language)}
             </label>
           )}
-          <div className="flex justify-between items-center">
-            <span className="text-xs text-text-sub/60">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="min-w-0 break-words text-xs text-text-sub">
               {targetPlayer ? `${language === "zh" ? "已选择" : "Selected"}：${targetPlayer.seat}号 ${targetPlayer.name}` : (language === "zh" ? "请选择目标" : "Select target")}
             </span>
             <div className="flex gap-2 items-center">
               {pi.can_skip && (
-                <button onClick={() => { setTargetId(""); submit(); }} disabled={submitted} className="text-[11px] text-text-sub/60 hover:text-text-sub">
+                <button onClick={() => { setTargetId(""); submit(); }} disabled={submitted} className="min-h-9 rounded-button px-2 text-xs text-text-sub transition-colors duration-200 hover:text-primary">
                   {t("skip", language)}
                 </button>
               )}
@@ -137,6 +138,6 @@ export function ActionPanel({ pendingInput, onAction, language, players }: Actio
           </div>
         </div>
       )}
-    </div>
+    </section>
   );
 }

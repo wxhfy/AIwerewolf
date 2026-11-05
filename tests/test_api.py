@@ -388,23 +388,25 @@ def test_match_job_uses_sanitized_room_llm_config() -> None:
     assert "example-room-credential" not in serialized
 
 
-def test_human_room_creation_is_explicitly_disabled() -> None:
+def test_human_room_creation_is_accepted() -> None:
     client = TestClient(app)
     response = client.post("/api/rooms?name=HumanRoom&seed=7&player_count=7&agent_type=llm&human_seat=1")
-    assert response.status_code == 501
-    assert "temporarily disabled" in response.json()["detail"]
+    assert response.status_code == 200
+    body = response.json()
+    assert body["human_seat"] == 1
 
 
-def test_human_action_endpoint_is_explicitly_disabled() -> None:
+def test_human_action_requires_pending_input() -> None:
     client = TestClient(app)
-    room_response = client.post("/api/rooms?name=AiOnly&seed=1&player_count=7&agent_type=llm")
+    room_response = client.post("/api/rooms?name=HumanPending&seed=1&player_count=7&agent_type=llm&human_seat=1")
     assert room_response.status_code == 200
     room = room_response.json()
+    # Without starting, there is no active in-process human match.
     action_response = client.post(
         f"/api/rooms/{room['id']}/action",
-        json={"target_id": "P1", "reasoning": "not enabled"},
+        json={"target_id": "P1", "reasoning": "too early"},
     )
-    assert action_response.status_code == 501
+    assert action_response.status_code in {409, 400}
 
 
 def test_room_pause_resume_control_api() -> None:

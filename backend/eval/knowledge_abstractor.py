@@ -401,6 +401,7 @@ def store_lessons_to_db(
     from backend.db.database import SessionLocal
     from backend.db.persist import StrategyKnowledgeDocData
     from backend.db.persist import _upsert_strategy_knowledge_rows
+    from backend.db.persist import fence_current_analysis_write
 
     logger = logging.getLogger(__name__)
 
@@ -415,6 +416,7 @@ def store_lessons_to_db(
 
     db = SessionLocal()
     try:
+        fence_current_analysis_write(db)
         saved = _upsert_strategy_knowledge_rows(db, docs)
         db.commit()
 
@@ -998,12 +1000,35 @@ def run_strategy_knowledge_lifecycle(
         db.close()
 
 
+def _automatic_promotion_calibrated() -> bool:
+    """Automatic lifecycle entrypoints fail closed without the exact Judge calibration."""
+    import os
+
+    from backend.db.judge_calibration import latest_approved_calibration
+    from backend.eval.judge_rubric import RUBRIC_HASH
+
+    model = os.getenv("TRACK_B_JUDGE_MODEL", "")
+    if not model:
+        return False
+    try:
+        profile = latest_approved_calibration(
+            judge_model=model,
+            rubric_hash=RUBRIC_HASH,
+            scoring_mode=os.getenv("TRACK_B_JUDGE_SCORING_MODE", "single_step"),
+        )
+        return bool(profile and profile.get("human_verified") and not profile.get("synthetic"))
+    except Exception:
+        return False
+
+
 def promote_after_store(source_game_id: str | None = None) -> int:
     """Run automatic post-game candidate promotion and pool governance.
 
     Called from post_game.py after each game's lessons are stored.
     Returns total number of candidates promoted to active.
     """
+    if not _automatic_promotion_calibrated():
+        return 0
     if not source_game_id:
         result = run_strategy_knowledge_lifecycle(maintenance_batch_size=AUTO_MAINTENANCE_BATCH_SIZE)
         return result["feedback_promoted"] + result["quality_promoted"] + result["cluster_promoted"]

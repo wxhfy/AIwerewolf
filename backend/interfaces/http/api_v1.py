@@ -13,6 +13,7 @@ from backend.core.config import settings
 from backend.core.errors import NotImplementedServiceError
 from backend.core.security import CurrentActor
 from backend.db.database import engine
+from backend.db.persist import analysis_enabled
 from backend.db.persist import get_match_checkpoint
 from backend.infrastructure.messaging.match_notifications import match_notifications
 from backend.infrastructure.persistence.match_feed import MatchFeedRepository
@@ -54,8 +55,9 @@ def capabilities() -> dict:
         "execution": {
             "match_worker": True,
             "analysis_worker": True,
+            "analysis_enabled": analysis_enabled(),
             "agent_runtime": "local_harness",
-            "human_matches": False,
+            "human_matches": True,
         },
         "persistence": {
             "games": "games" in tables,

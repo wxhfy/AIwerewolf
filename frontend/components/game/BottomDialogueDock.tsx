@@ -85,42 +85,42 @@ export function BottomDialogueDock({
   return (
     <section
       key={typewriterKey}
-      className="h-[168px] shrink-0 border-t border-border bg-cardBackground/92 px-4 py-3 shadow-[0_-10px_36px_rgba(0,0,0,0.08)] backdrop-blur-xl"
+      className="relative h-[clamp(6rem,19dvh,9.5rem)] shrink-0 border-t border-border bg-cardBackground px-3 py-2.5 sm:px-4 sm:py-3 [@media(max-height:600px)]:h-24 [@media(max-height:600px)]:py-2"
       data-phase-aware
       data-testid="bottom-dialogue-dock"
       data-chat-event-ids={completionIds.join(",")}
     >
-      <div className="mx-auto flex h-full max-w-5xl gap-3">
+      <div className="mx-auto flex h-full max-w-4xl gap-2.5 sm:gap-3">
         <div
           className={cn(
-            "relative flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-border bg-background",
+            "relative flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-button border border-border bg-primary/5 sm:h-14 sm:w-14",
             latestChat && !finished && "ring-2 ring-primary/25",
           )}
         >
-          <span className="font-display text-2xl font-bold text-primary">
+          <span className="font-display text-xl font-semibold text-primary">
             {getPlayerInitial(player, speakerName)}
           </span>
           {speakerSeat != null && (
-            <span className="absolute bottom-1 right-1 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
+            <span className="absolute bottom-0.5 right-0.5 rounded bg-primary px-1 py-0.5 text-[10px] font-bold leading-none text-onPrimary">
               {speakerSeat}
             </span>
           )}
         </div>
 
         <div
-          className="flex h-full min-h-0 min-w-0 flex-1 flex-col rounded-2xl border border-amber-100/60 bg-[#FFFBF7] px-5 py-4 text-gray-700 shadow-[0_2px_8px_rgba(0,0,0,0.06),0_1px_2px_rgba(0,0,0,0.04)]"
+          className="flex h-full min-h-0 min-w-0 flex-1 flex-col rounded-button border border-border bg-background/50 px-3 py-2 sm:px-4"
           data-testid="bottom-dialogue-bubble"
         >
-          <div className="mb-2 flex shrink-0 items-center justify-between gap-3">
+          <div className="mb-1.5 flex shrink-0 items-start justify-between gap-2">
             <div className="min-w-0">
-              <p className="truncate text-base font-medium text-gray-800">
+              <p className="truncate text-sm font-semibold text-textPrimary">
                 {speakerName}
               </p>
               <p className="text-[11px] text-text-sub">
                 {getPhaseHint(latestChat?.phase || phase, language)}
               </p>
             </div>
-            <span className="shrink-0 text-[11px] text-text-sub/70">
+            <span className="shrink-0 rounded-badge bg-primary/10 px-2 py-0.5 text-[11px] text-primary">
               {isThinking
                 ? language === Language.ZH ? "思考中" : "Thinking"
                 : !finished && latestChat
@@ -130,7 +130,7 @@ export function BottomDialogueDock({
           </div>
 
           <div
-            className="min-h-0 flex-1 overflow-y-auto pr-1 whitespace-pre-wrap break-words text-base leading-relaxed text-gray-700 [scrollbar-width:thin]"
+            className="timeline-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain whitespace-pre-wrap break-words pr-1 text-sm leading-relaxed text-textPrimary sm:text-base"
             data-testid="bottom-dialogue-text-wrap"
           >
             <span data-testid="bottom-dialogue-text">

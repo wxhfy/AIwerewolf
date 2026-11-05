@@ -185,6 +185,27 @@ export interface PendingInput {
   placeholder?: string | null;
 }
 
+export interface RuntimeProgressActor {
+  id: string;
+  seat: number;
+  name: string;
+}
+
+export interface RuntimeProgress {
+  status?: string;
+  request?: string;
+  phase?: string;
+  day?: number;
+  simultaneous?: boolean;
+  current?: RuntimeProgressActor[];
+  queue?: RuntimeProgressActor[];
+  thinking_count?: number;
+  remaining_count?: number;
+  estimated_wait_seconds?: number | null;
+  avg_decision_ms?: number | null;
+  started_at_ms?: number | null;
+}
+
 export interface GameState {
   id: string;
   seq: number;
@@ -202,6 +223,8 @@ export interface GameState {
   pk_targets?: string[];
   pk_source?: string | null;
   pending_input?: PendingInput | null;
+  runtime_progress?: RuntimeProgress | null;
+  progress_seq?: number;
   phase_cursor?: JsonRecord;
   decision_records?: JsonRecord[];
   daily_summaries: Record<number, string[]>;

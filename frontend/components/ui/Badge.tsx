@@ -15,15 +15,15 @@ export function Badge({ className, variant = "default", ...props }: BadgeProps) 
     warning: "bg-warning/10 text-warning",
     info: "bg-info/10 text-info",
     phase: "bg-primary/10 text-primary font-display text-sm px-4 py-1.5 rounded-badge",
-    speech: "bg-accent/15 text-accent animate-breathe",
-    seat: "bg-primary text-white font-display text-lg rounded-full w-8 h-8 flex items-center justify-center",
+    speech: "bg-accent/10 text-accent",
+    seat: "bg-primary text-onPrimary font-display text-sm rounded-full h-8 min-w-8 justify-center px-1",
     dead: "bg-text-sub/15 text-text-sub line-through",
   };
 
   return (
     <span
       className={cn(
-        "inline-flex items-center px-3 py-1 rounded-badge text-xs font-medium",
+        "inline-flex max-w-full items-center gap-1 rounded-badge px-2.5 py-1 text-xs font-medium leading-snug",
         variants[variant],
         className
       )}

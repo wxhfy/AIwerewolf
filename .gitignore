@@ -331,3 +331,4 @@ data/werewolf.db.bak
 
 # Agent skill caches
 .agents/
+.run/

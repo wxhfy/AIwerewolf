@@ -8,6 +8,8 @@ from fastapi import HTTPException
 from fastapi import Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import SQLAlchemyError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 
 @dataclass
@@ -17,6 +19,7 @@ class ServiceError(Exception):
     detail: str
     title: str = "Request failed"
     extra: dict[str, Any] | None = None
+    headers: dict[str, str] | None = None
 
 
 class NotImplementedServiceError(ServiceError):
@@ -61,9 +64,10 @@ def install_exception_handlers(app: FastAPI) -> None:
                 extra=exc.extra,
             ),
             media_type="application/problem+json",
+            headers=exc.headers,
         )
 
-    @app.exception_handler(HTTPException)
+    @app.exception_handler(StarletteHTTPException)
     async def handle_http_error(request: Request, exc: HTTPException) -> JSONResponse:
         return JSONResponse(
             status_code=exc.status_code,
@@ -88,7 +92,29 @@ def install_exception_handlers(app: FastAPI) -> None:
                 title="Validation failed",
                 detail="Request data did not match the API contract.",
                 code="validation_error",
-                extra={"errors": exc.errors()},
+                extra={"errors": [{key: error[key] for key in ("type", "loc", "msg")} for error in exc.errors()]},
             ),
             media_type="application/problem+json",
         )
+
+    @app.exception_handler(SQLAlchemyError)
+    async def handle_database_error(request: Request, _exc: SQLAlchemyError) -> JSONResponse:
+        return problem_response(
+            request,
+            status=503,
+            code="persistence_unavailable",
+            detail="Persistence is temporarily unavailable. Retry later.",
+            headers={"Retry-After": "1"},
+        )
+
+
+def problem_response(
+    request: Request, *, status: int, code: str, detail: str, headers: dict[str, str] | None = None
+) -> JSONResponse:
+    """The same envelope for middleware and endpoint errors."""
+    return JSONResponse(
+        status_code=status,
+        media_type="application/problem+json",
+        headers=headers,
+        content=_problem(request, status=status, title="Request failed", detail=detail, code=code),
+    )

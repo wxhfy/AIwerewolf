@@ -178,6 +178,8 @@ def confidence_allowed(doc: dict[str, Any]) -> bool:
     Rejected by human: never allowed
     L3_strategic with low agreement/confidence: blocked
     """
+    if doc.get("status") == "pending_review":
+        return False
     tier = doc.get("confidence_tier", "L3_strategic")
     if tier == "L4_speculative":
         return False

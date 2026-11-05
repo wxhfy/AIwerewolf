@@ -293,6 +293,8 @@ class GameState:
     pk_targets: list[str] = field(default_factory=list)
     pk_source: str | None = None
     pending_input: PendingInput | None = None
+    runtime_progress: dict[str, Any] | None = None
+    progress_seq: int = 0
     phase_cursor: dict[str, Any] = field(default_factory=dict)
     daily_summaries: dict[int, list[str]] = field(default_factory=dict)
     daily_summary_facts: dict[int, list[dict[str, Any]]] = field(default_factory=dict)
@@ -338,6 +340,8 @@ class GameState:
             "pk_targets": list(self.pk_targets),
             "pk_source": self.pk_source,
             "pending_input": self._public_pending_input(),
+            "runtime_progress": self._public_runtime_progress(),
+            "progress_seq": int(self.progress_seq or 0),
             "winner": self.winner.value if self.winner else None,
         }
 
@@ -391,6 +395,28 @@ class GameState:
             }
         return self.pending_input.to_dict()
 
+    def _public_runtime_progress(self) -> dict[str, Any] | None:
+        progress = self.runtime_progress
+        if not progress:
+            return None
+        # Public observers should not learn which night seat is currently deciding.
+        if self.phase.value.startswith("NIGHT_") and self.phase not in {Phase.NIGHT_START, Phase.NIGHT_RESOLVE}:
+            return {
+                "status": progress.get("status") or "thinking",
+                "request": "NIGHT_ACTION",
+                "phase": Phase.NIGHT_START.value,
+                "day": progress.get("day", self.day),
+                "simultaneous": bool(progress.get("simultaneous")),
+                "current": [{"id": "", "seat": 0, "name": "夜晚行动"}],
+                "queue": [],
+                "thinking_count": int(progress.get("thinking_count") or 1),
+                "remaining_count": int(progress.get("remaining_count") or 0),
+                "estimated_wait_seconds": progress.get("estimated_wait_seconds"),
+                "avg_decision_ms": progress.get("avg_decision_ms"),
+                "started_at_ms": progress.get("started_at_ms"),
+            }
+        return dict(progress)
+
     def snapshot(self, *, show_private: bool = False) -> dict[str, Any]:
         data = self.moderator_dict() if show_private else self.public_dict()
         data["seq"] = max((event.seq for event in self.events), default=0)
@@ -408,6 +434,8 @@ class GameState:
         data["players"] = [player.private_dict() for player in self.players]
         data["events"] = [event.to_dict() for event in self.events]
         data["pending_input"] = self.pending_input.to_dict() if self.pending_input else None
+        data["runtime_progress"] = dict(self.runtime_progress) if self.runtime_progress else None
+        data["progress_seq"] = int(self.progress_seq or 0)
         data["night_actions"] = {
             "guard_target_id": self.night_actions.guard_target_id,
             "last_guard_target_id": self.night_actions.last_guard_target_id,
@@ -520,6 +548,8 @@ class GameState:
             pk_targets=list(snapshot.get("pk_targets") or []),
             pk_source=snapshot.get("pk_source"),
             pending_input=pending,
+            runtime_progress=dict(snapshot.get("runtime_progress") or {}) or None,
+            progress_seq=int(snapshot.get("progress_seq") or 0),
             phase_cursor=dict(snapshot.get("phase_cursor") or {}),
             daily_summaries={int(day): value for day, value in dict(snapshot.get("daily_summaries") or {}).items()},
             daily_summary_facts={

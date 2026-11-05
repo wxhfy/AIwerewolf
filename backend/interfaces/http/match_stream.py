@@ -55,6 +55,7 @@ async def stream_match(
 
     async def generate():
         cursor = initial_seq
+        last_progress_seq = -1
         last_heartbeat = time.monotonic()
         subscription = await match_notifications.subscribe(match_id)
         try:
@@ -67,20 +68,42 @@ async def stream_match(
                     after_seq=cursor,
                     moderator=moderator,
                 )
+                emitted = False
                 for snapshot in snapshots:
                     seq = int(snapshot.get("seq") or 0)
                     if seq <= cursor:
                         continue
                     cursor = seq
+                    last_progress_seq = max(last_progress_seq, int(snapshot.get("progress_seq") or 0))
                     payload = json.dumps(snapshot, ensure_ascii=False, separators=(",", ":"))
                     yield f"id: {seq}\nevent: snapshot\ndata: {payload}\n\n"
                     last_heartbeat = time.monotonic()
+                    emitted = True
+
+                # Progress-only updates reuse the same event seq (upsert). Emit them
+                # explicitly so the UI can show who is thinking during LLM waits.
+                latest = await asyncio.to_thread(
+                    repository.latest_snapshot,
+                    match_id,
+                    moderator=moderator,
+                )
+                if latest is not None:
+                    latest_seq = int(latest.get("seq") or 0)
+                    progress_seq = int(latest.get("progress_seq") or 0)
+                    if latest_seq >= cursor and progress_seq > last_progress_seq:
+                        cursor = max(cursor, latest_seq)
+                        last_progress_seq = progress_seq
+                        payload = json.dumps(latest, ensure_ascii=False, separators=(",", ":"))
+                        # Keep EventSource id monotonic on event seq; clients key off progress_seq.
+                        yield f"id: {latest_seq}\nevent: snapshot\ndata: {payload}\n\n"
+                        last_heartbeat = time.monotonic()
+                        emitted = True
 
                 status = await asyncio.to_thread(repository.match_status, match_id)
-                if status in {"finished", "completed"} and not snapshots:
+                if status in {"finished", "completed"} and not emitted:
                     yield f'event: complete\ndata: {{"match_id":"{match_id}","seq":{cursor}}}\n\n'
                     return
-                if status == "failed" and not snapshots:
+                if status == "failed" and not emitted:
                     payload = json.dumps({"match_id": match_id, "seq": cursor, "status": "failed"})
                     yield f"event: failed\ndata: {payload}\n\n"
                     return
@@ -88,7 +111,7 @@ async def stream_match(
                 if subscription is not None:
                     await subscription.wait(timeout=15)
                 else:
-                    await asyncio.sleep(1)
+                    await asyncio.sleep(0.5)
 
                 now = time.monotonic()
                 if now - last_heartbeat >= 15:

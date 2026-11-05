@@ -103,16 +103,16 @@ export function DayEventBlock({
   const voteResultReady = true;
 
   return (
-    <div className="mb-5">
+    <section className="mb-6" aria-label={day === 0 ? t("dayHeaderSetup", language) : t("dayHeaderLabel", language).replace("{n}", String(day))}>
       {!hideDayHeaders && (
-        <div className="mb-3 flex items-center gap-3 border-b border-border pb-2">
-          <span className="font-display text-lg font-bold text-primary tracking-wide">
+        <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border pb-2">
+          <span className="font-display text-sm font-semibold tracking-wide text-primary">
             {day === 0
-              ? `🎭 ${t("dayHeaderSetup", language)}`
-              : `🌅 ${t("dayHeaderLabel", language).replace("{n}", String(day))}`}
+              ? t("dayHeaderSetup", language)
+              : t("dayHeaderLabel", language).replace("{n}", String(day))}
           </span>
           {deaths.length > 0 && (
-            <span className="truncate text-xs text-danger">
+            <span className="break-words text-xs leading-relaxed text-danger">
               {deaths.map(d => d.payload.player_name || d.payload.target_name || "?").join(" · ")} {t("playerDied", language)}
             </span>
           )}
@@ -120,7 +120,7 @@ export function DayEventBlock({
       )}
 
       {/* Events — wolf deliberation inserted inline after NIGHT_WOLF_ACTION phase change */}
-      <div className="space-y-0.5">
+      <div className="space-y-1">
         {(() => {
           const nodes: React.ReactNode[] = [];
           const preCutoff = Math.min(voteCutoff, visibleEvents.length);
@@ -202,13 +202,13 @@ export function DayEventBlock({
             : `#${exiled.seat} ${exiled.name} was exiled by vote`;
           return (
             <div className="flex justify-center py-2">
-              <span className="text-xs text-danger/60 font-medium tracking-wide">
-                ◆ {text}
+              <span className="rounded-button border border-danger/20 bg-danger/5 px-3 py-2 text-center text-xs font-medium leading-relaxed text-danger">
+                {text}
               </span>
             </div>
           );
         })()}
       </div>
-    </div>
+    </section>
   );
 }

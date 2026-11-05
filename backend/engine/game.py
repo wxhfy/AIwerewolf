@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import re
+import time
 from collections import Counter
 from random import Random
 from typing import Any
@@ -289,6 +290,56 @@ class WerewolfGame:
         """Attach the actor-scoped harness runtime used by the Match Worker."""
         self.decision_runtime = runtime
 
+    def _avg_decision_ms(self) -> int:
+        try:
+            return max(500, int(os.getenv("LLM_AVG_DECISION_MS", "3500")))
+        except ValueError:
+            return 3500
+
+    def _publish_runtime_progress(
+        self,
+        *,
+        request: str,
+        current: list[Player],
+        queue: list[Player] | None = None,
+        simultaneous: bool = False,
+    ) -> None:
+        """Expose who is thinking / remaining queue before a slow LLM wait."""
+        queue = list(queue or [])
+        current = list(current or [])
+        avg_ms = self._avg_decision_ms()
+        if simultaneous:
+            eta = avg_ms / 1000.0
+        else:
+            eta = max(1, len(current) + len(queue)) * avg_ms / 1000.0
+        with self._shared_lock:
+            self.state.progress_seq = int(self.state.progress_seq or 0) + 1
+            self.state.runtime_progress = {
+                "status": "thinking",
+                "request": request,
+                "phase": self.state.phase.value,
+                "day": self.state.day,
+                "simultaneous": simultaneous,
+                "current": [{"id": p.id, "seat": p.seat, "name": p.name} for p in current],
+                "queue": [{"id": p.id, "seat": p.seat, "name": p.name} for p in queue],
+                "thinking_count": len(current),
+                "remaining_count": len(queue),
+                "estimated_wait_seconds": round(eta, 1),
+                "avg_decision_ms": avg_ms,
+                "started_at_ms": int(time.time() * 1000),
+            }
+        if self.observer is not None:
+            self.observer(self.state)
+
+    def _clear_runtime_progress(self) -> None:
+        if self.state.runtime_progress is None:
+            return
+        with self._shared_lock:
+            self.state.progress_seq = int(self.state.progress_seq or 0) + 1
+            self.state.runtime_progress = None
+        if self.observer is not None:
+            self.observer(self.state)
+
     # ------------------------------------------------------------------
     # Resume safety helpers
     # ------------------------------------------------------------------
@@ -511,7 +562,13 @@ class WerewolfGame:
             self._run_post_game_hook()
         return self.state
 
-    def submit_human_action(self, payload: dict[str, object]) -> GameState:
+    def apply_human_action(self, payload: dict[str, object]) -> GameState:
+        """Record a human decision without advancing AI seats.
+
+        Clears pending_input and buffers the coerced decisions so a later
+        play_until_blocked() call can resume the phase. Callers that need a
+        non-blocking HTTP response should apply then continue in background.
+        """
         pending = self.state.pending_input
         if pending is None:
             raise ValueError("No human input is pending.")
@@ -519,6 +576,11 @@ class WerewolfGame:
         decisions = self._coerce_human_decisions(player, pending, payload)
         self.human_action_buffer[player.id] = decisions
         self.state.pending_input = None
+        return self.state
+
+    def submit_human_action(self, payload: dict[str, object]) -> GameState:
+        """Apply human input then run until the next human block or GAME_END."""
+        self.apply_human_action(payload)
         return self.play_until_blocked()
 
     def _begin_night(self) -> None:
@@ -1521,19 +1583,30 @@ class WerewolfGame:
         )
         prior_speaker = self.state.current_speaker_id
         self.state.current_speaker_id = player.id
-        if self.observer is not None:
-            self.observer(self.state)
+        # Prefer keeping any queue already published by _run_actor_sequence.
+        existing_queue = []
+        if self.state.runtime_progress and isinstance(self.state.runtime_progress.get("queue"), list):
+            existing_queue_ids = {item.get("id") for item in self.state.runtime_progress.get("queue") or []}
+            existing_queue = [p for p in self.state.players if p.id in existing_queue_ids]
+        self._publish_runtime_progress(
+            request=request,
+            current=[player],
+            queue=existing_queue,
+            simultaneous=False,
+        )
         if self.decision_replayer is not None:
             replayed = self.decision_replayer(decision_request.request_id, player, request)
             if replayed is not None:
                 replayed.metadata = {**replayed.metadata, "replayed": True}
                 self._record_decision(player, request, view.__dict__, replayed, raw_output="[replayed]")
+                self._clear_runtime_progress()
                 return replayed
         try:
             result = runtime.run(decision_request)
         finally:
             if self.state.current_speaker_id == player.id and prior_speaker != player.id:
                 self.state.current_speaker_id = prior_speaker
+            self._clear_runtime_progress()
         decisions = self.decision_adapter.to_engine_decisions(player, decision_request, result)
         view_record = self.decision_adapter.view_record(view)
         for decision in decisions:
@@ -1560,8 +1633,6 @@ class WerewolfGame:
         return decisions[0] if decisions else None
 
     def _batch_ask_harness(self, players: list[Player], request: str) -> list[Any]:
-        import concurrent.futures as _futures
-
         runtime = self.decision_runtime
         if runtime is None:
             raise RuntimeError("Decision runtime is not attached")
@@ -1581,7 +1652,6 @@ class WerewolfGame:
             )
             prepared.append((player, view, decision_request))
 
-        results_by_index: dict[int, Any] = {}
         replayed_by_index: dict[int, Decision] = {}
         missing = []
         if self.decision_replayer is not None:
@@ -1594,10 +1664,37 @@ class WerewolfGame:
                     missing.append((index, decision_request))
         else:
             missing = [(index, decision_request) for index, (_, _, decision_request) in enumerate(prepared)]
+        if prepared:
+            self.state.current_speaker_id = prepared[0][0].id
+            # Preserve any remaining-seat queue published by _run_actor_sequence.
+            # Single-seat "batches" are sequential speech/vote steps, not parallel.
+            preserved_queue: list = []
+            if (
+                len(prepared) == 1
+                and self.state.runtime_progress
+                and isinstance(self.state.runtime_progress.get("queue"), list)
+            ):
+                queue_ids = {item.get("id") for item in self.state.runtime_progress.get("queue") or []}
+                preserved_queue = [p for p in self.state.players if p.id in queue_ids and p.alive]
+            self._publish_runtime_progress(
+                request=request,
+                current=[player for player, _view, _req in prepared],
+                queue=preserved_queue,
+                simultaneous=len(prepared) > 1,
+            )
+        try:
+            batch_result = self._run_batch_harness(prepared, missing, replayed_by_index, request)
+        finally:
+            self._clear_runtime_progress()
+        return batch_result
+
+    def _run_batch_harness(self, prepared, missing, replayed_by_index, request: str) -> list[Any]:
+        import concurrent.futures as _futures
+
+        runtime = self.decision_runtime
+        results_by_index: dict[int, Any] = {}
         with _futures.ThreadPoolExecutor(max_workers=max(1, len(prepared))) as pool:
-            futures = {
-                pool.submit(runtime.run, decision_request): index for index, decision_request in missing
-            }
+            futures = {pool.submit(runtime.run, decision_request): index for index, decision_request in missing}
             for future in _futures.as_completed(futures):
                 results_by_index[futures[future]] = future.result()
 
@@ -1956,9 +2053,14 @@ class WerewolfGame:
             player = players[index]
             self.state.phase_cursor[cursor_key] = index
             self.state.current_speaker_id = player.id
-            # Notify observer BEFORE LLM call so frontend sees phase transition + speaker
-            if self.observer is not None:
-                self.observer(self.state)
+            remaining = list(players[index + 1 :])
+            # Notify before the (possibly slow) actor decision with remaining queue.
+            self._publish_runtime_progress(
+                request=phase.value,
+                current=[player],
+                queue=remaining,
+                simultaneous=False,
+            )
             try:
                 handler(player)
             except GamePaused:
@@ -1967,6 +2069,8 @@ class WerewolfGame:
                 logger.exception(f"Handler failed for {player.name} (seat={player.seat}) in phase {phase.value}")
                 if self._requires_strict_llm_decision(player):
                     raise
+            finally:
+                self._clear_runtime_progress()
         self.state.current_speaker_id = None
         self.state.phase_cursor.pop(cursor_key, None)
 

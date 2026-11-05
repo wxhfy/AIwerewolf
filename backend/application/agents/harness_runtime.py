@@ -65,7 +65,10 @@ def build_harness_runtime(players: list[Player], config: dict[str, Any]) -> Rout
     tools = build_tool_gateway()
     policy = build_capability_policy()
 
-    for player in players:
+    ai_players = [player for player in players if bool(getattr(player, "is_ai", True))]
+    if not ai_players:
+        raise RuntimeError("At least one AI seat is required to build a harness runtime")
+    for player in ai_players:
         player_config = deepcopy(config)
         player_config.pop("role_models", None)
         role_config = role_models.get(player.role.value) or role_models.get(player.role.name)

@@ -4,7 +4,6 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
 
 concurrency:
   group: ci-${{github.workflow}}-${{github.ref}}
@@ -90,7 +89,7 @@ jobs:
       - name: Validate frontend image build
         uses: docker/build-push-action@v6
         with:
-          context: .
+          context: ./frontend
           file: ./frontend/Dockerfile
           push: false
           tags: aiwerewolf/frontend:ci

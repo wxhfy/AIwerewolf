@@ -31,6 +31,7 @@ export function useRoomStream({
 }: UseRoomStreamOptions) {
   const sourceRef = useRef<EventSource | null>(null);
   const lastSeqRef = useRef(-1);
+  const lastProgressSeqRef = useRef(-1);
   const matchIdRef = useRef<string | null>(null);
 
   function closeStream() {
@@ -44,13 +45,66 @@ export function useRoomStream({
 
   function applySnapshot(state: GameState) {
     const incomingSeq = Number(state.seq || state.last_event?.seq || state.event_count || 0);
+    const progressSeq = Number((state as any).progress_seq || 0);
     if (matchIdRef.current !== state.id) {
       matchIdRef.current = state.id;
       lastSeqRef.current = -1;
+      lastProgressSeqRef.current = -1;
     }
-    if (incomingSeq <= lastSeqRef.current) return;
+    // Accept same event seq when runtime progress advances (LLM thinking UX).
+    if (incomingSeq < lastSeqRef.current) return;
+    if (incomingSeq === lastSeqRef.current && progressSeq <= lastProgressSeqRef.current) return;
     lastSeqRef.current = incomingSeq;
+    lastProgressSeqRef.current = progressSeq;
     setGameState(state);
+    if (state.winner) {
+      setIsPlaying(false);
+      setStatusTitle(t("statusLoaded", language));
+    } else {
+      setIsPlaying(true);
+      setStatusTitle(t("statusStreaming", language));
+    }
+  }
+
+  function attachMatchStream(matchId: string, seedSnapshot?: GameState | null) {
+    if (!matchId) return;
+    if (sourceRef.current && matchIdRef.current === matchId) {
+      if (seedSnapshot) applySnapshot(seedSnapshot);
+      return;
+    }
+    closeStream();
+    matchIdRef.current = matchId;
+    lastSeqRef.current = -1;
+    lastProgressSeqRef.current = -1;
+    if (seedSnapshot) applySnapshot(seedSnapshot);
+
+    const params = new URLSearchParams({
+      after_seq: String(Math.max(0, lastSeqRef.current)),
+      moderator: showPrivate ? "true" : "false",
+    });
+    const source = new EventSource(apiUrl(`/api/matches/${matchId}/stream?${params.toString()}`));
+    sourceRef.current = source;
+
+    source.addEventListener("snapshot", (event) => {
+      try {
+        applySnapshot(JSON.parse((event as MessageEvent<string>).data) as GameState);
+      } catch {
+        setStatusTitle(t("statusError", language));
+      }
+    });
+
+    source.addEventListener("complete", () => {
+      setIsPlaying(false);
+      setStatusTitle(t("statusLoaded", language));
+      closeStream();
+    });
+
+    source.onerror = () => {
+      if (source.readyState === EventSource.CLOSED) {
+        setIsPlaying(false);
+        setStatusTitle(t("statusError", language));
+      }
+    };
   }
 
   async function runGame() {
@@ -61,37 +115,7 @@ export function useRoomStream({
 
     try {
       const started = await startAiMatch(roomId, showPrivate);
-      matchIdRef.current = started.match_id;
-      lastSeqRef.current = -1;
-      applySnapshot(started.snapshot);
-
-      const params = new URLSearchParams({
-        after_seq: String(Math.max(0, lastSeqRef.current)),
-        moderator: showPrivate ? "true" : "false",
-      });
-      const source = new EventSource(apiUrl(`/api/matches/${started.match_id}/stream?${params.toString()}`));
-      sourceRef.current = source;
-
-      source.addEventListener("snapshot", (event) => {
-        try {
-          applySnapshot(JSON.parse((event as MessageEvent<string>).data) as GameState);
-        } catch {
-          setStatusTitle(t("statusError", language));
-        }
-      });
-
-      source.addEventListener("complete", () => {
-        setIsPlaying(false);
-        setStatusTitle(t("statusLoaded", language));
-        closeStream();
-      });
-
-      source.onerror = () => {
-        if (source.readyState === EventSource.CLOSED) {
-          setIsPlaying(false);
-          setStatusTitle(t("statusError", language));
-        }
-      };
+      attachMatchStream(started.match_id, started.snapshot);
     } catch {
       setIsPlaying(false);
       setStatusTitle(t("statusError", language));
@@ -99,5 +123,5 @@ export function useRoomStream({
     }
   }
 
-  return { runGame, closeStream, isStreamActive };
+  return { runGame, closeStream, isStreamActive, attachMatchStream };
 }

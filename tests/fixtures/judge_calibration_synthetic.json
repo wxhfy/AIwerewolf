@@ -1,0 +1,248 @@
+{
+  "dataset_id": "synthetic-calibration-demo-v1",
+  "synthetic": true,
+  "annotation_source": "synthetic",
+  "description": "Small synthetic labels for offline tests only. These are not real human annotations and cannot authorize automatic promotion.",
+  "samples": [
+    {
+      "sample_id": "synthetic-train-0",
+      "game_id": "synthetic-train-game-0",
+      "annotator_id": "synthetic-fixture-not-a-human",
+      "split": "train",
+      "confidence": "high",
+      "human_score": 0.0,
+      "decision": {
+        "id": "synthetic-train-0",
+        "player_name": "Synthetic player",
+        "player_role": "Villager",
+        "action_type": "vote",
+        "day": 1,
+        "phase": "DAY_VOTE",
+        "raw_text": "Synthetic example only: [synthetic_evidence:0]"
+      },
+      "visible_context": {
+        "visible_info": "Synthetic public discussion only; no real match or production annotations."
+      }
+    },
+    {
+      "sample_id": "synthetic-train-1",
+      "game_id": "synthetic-train-game-1",
+      "annotator_id": "synthetic-fixture-not-a-human",
+      "split": "train",
+      "confidence": "high",
+      "human_score": 0.2,
+      "decision": {
+        "id": "synthetic-train-1",
+        "player_name": "Synthetic player",
+        "player_role": "Villager",
+        "action_type": "vote",
+        "day": 1,
+        "phase": "DAY_VOTE",
+        "raw_text": "Synthetic example only: [synthetic_evidence:2]"
+      },
+      "visible_context": {
+        "visible_info": "Synthetic public discussion only; no real match or production annotations."
+      }
+    },
+    {
+      "sample_id": "synthetic-train-2",
+      "game_id": "synthetic-train-game-2",
+      "annotator_id": "synthetic-fixture-not-a-human",
+      "split": "train",
+      "confidence": "high",
+      "human_score": 0.4,
+      "decision": {
+        "id": "synthetic-train-2",
+        "player_name": "Synthetic player",
+        "player_role": "Villager",
+        "action_type": "vote",
+        "day": 1,
+        "phase": "DAY_VOTE",
+        "raw_text": "Synthetic example only: [synthetic_evidence:4]"
+      },
+      "visible_context": {
+        "visible_info": "Synthetic public discussion only; no real match or production annotations."
+      }
+    },
+    {
+      "sample_id": "synthetic-train-3",
+      "game_id": "synthetic-train-game-3",
+      "annotator_id": "synthetic-fixture-not-a-human",
+      "split": "train",
+      "confidence": "high",
+      "human_score": 0.6,
+      "decision": {
+        "id": "synthetic-train-3",
+        "player_name": "Synthetic player",
+        "player_role": "Villager",
+        "action_type": "vote",
+        "day": 1,
+        "phase": "DAY_VOTE",
+        "raw_text": "Synthetic example only: [synthetic_evidence:6]"
+      },
+      "visible_context": {
+        "visible_info": "Synthetic public discussion only; no real match or production annotations."
+      }
+    },
+    {
+      "sample_id": "synthetic-train-4",
+      "game_id": "synthetic-train-game-4",
+      "annotator_id": "synthetic-fixture-not-a-human",
+      "split": "train",
+      "confidence": "high",
+      "human_score": 0.8,
+      "decision": {
+        "id": "synthetic-train-4",
+        "player_name": "Synthetic player",
+        "player_role": "Villager",
+        "action_type": "vote",
+        "day": 1,
+        "phase": "DAY_VOTE",
+        "raw_text": "Synthetic example only: [synthetic_evidence:8]"
+      },
+      "visible_context": {
+        "visible_info": "Synthetic public discussion only; no real match or production annotations."
+      }
+    },
+    {
+      "sample_id": "synthetic-train-5",
+      "game_id": "synthetic-train-game-5",
+      "annotator_id": "synthetic-fixture-not-a-human",
+      "split": "train",
+      "confidence": "high",
+      "human_score": 1.0,
+      "decision": {
+        "id": "synthetic-train-5",
+        "player_name": "Synthetic player",
+        "player_role": "Villager",
+        "action_type": "vote",
+        "day": 1,
+        "phase": "DAY_VOTE",
+        "raw_text": "Synthetic example only: [synthetic_evidence:10]"
+      },
+      "visible_context": {
+        "visible_info": "Synthetic public discussion only; no real match or production annotations."
+      }
+    },
+    {
+      "sample_id": "synthetic-validation-0",
+      "game_id": "synthetic-validation-game-0",
+      "annotator_id": "synthetic-fixture-not-a-human",
+      "split": "validation",
+      "confidence": "high",
+      "human_score": 0.0,
+      "decision": {
+        "id": "synthetic-validation-0",
+        "player_name": "Synthetic player",
+        "player_role": "Villager",
+        "action_type": "vote",
+        "day": 1,
+        "phase": "DAY_VOTE",
+        "raw_text": "Synthetic example only: [synthetic_evidence:0]"
+      },
+      "visible_context": {
+        "visible_info": "Synthetic public discussion only; no real match or production annotations."
+      }
+    },
+    {
+      "sample_id": "synthetic-validation-1",
+      "game_id": "synthetic-validation-game-1",
+      "annotator_id": "synthetic-fixture-not-a-human",
+      "split": "validation",
+      "confidence": "high",
+      "human_score": 0.2,
+      "decision": {
+        "id": "synthetic-validation-1",
+        "player_name": "Synthetic player",
+        "player_role": "Villager",
+        "action_type": "vote",
+        "day": 1,
+        "phase": "DAY_VOTE",
+        "raw_text": "Synthetic example only: [synthetic_evidence:2]"
+      },
+      "visible_context": {
+        "visible_info": "Synthetic public discussion only; no real match or production annotations."
+      }
+    },
+    {
+      "sample_id": "synthetic-validation-2",
+      "game_id": "synthetic-validation-game-2",
+      "annotator_id": "synthetic-fixture-not-a-human",
+      "split": "validation",
+      "confidence": "high",
+      "human_score": 0.4,
+      "decision": {
+        "id": "synthetic-validation-2",
+        "player_name": "Synthetic player",
+        "player_role": "Villager",
+        "action_type": "vote",
+        "day": 1,
+        "phase": "DAY_VOTE",
+        "raw_text": "Synthetic example only: [synthetic_evidence:4]"
+      },
+      "visible_context": {
+        "visible_info": "Synthetic public discussion only; no real match or production annotations."
+      }
+    },
+    {
+      "sample_id": "synthetic-validation-3",
+      "game_id": "synthetic-validation-game-3",
+      "annotator_id": "synthetic-fixture-not-a-human",
+      "split": "validation",
+      "confidence": "high",
+      "human_score": 0.6,
+      "decision": {
+        "id": "synthetic-validation-3",
+        "player_name": "Synthetic player",
+        "player_role": "Villager",
+        "action_type": "vote",
+        "day": 1,
+        "phase": "DAY_VOTE",
+        "raw_text": "Synthetic example only: [synthetic_evidence:6]"
+      },
+      "visible_context": {
+        "visible_info": "Synthetic public discussion only; no real match or production annotations."
+      }
+    },
+    {
+      "sample_id": "synthetic-validation-4",
+      "game_id": "synthetic-validation-game-4",
+      "annotator_id": "synthetic-fixture-not-a-human",
+      "split": "validation",
+      "confidence": "high",
+      "human_score": 0.8,
+      "decision": {
+        "id": "synthetic-validation-4",
+        "player_name": "Synthetic player",
+        "player_role": "Villager",
+        "action_type": "vote",
+        "day": 1,
+        "phase": "DAY_VOTE",
+        "raw_text": "Synthetic example only: [synthetic_evidence:8]"
+      },
+      "visible_context": {
+        "visible_info": "Synthetic public discussion only; no real match or production annotations."
+      }
+    },
+    {
+      "sample_id": "synthetic-validation-5",
+      "game_id": "synthetic-validation-game-5",
+      "annotator_id": "synthetic-fixture-not-a-human",
+      "split": "validation",
+      "confidence": "high",
+      "human_score": 1.0,
+      "decision": {
+        "id": "synthetic-validation-5",
+        "player_name": "Synthetic player",
+        "player_role": "Villager",
+        "action_type": "vote",
+        "day": 1,
+        "phase": "DAY_VOTE",
+        "raw_text": "Synthetic example only: [synthetic_evidence:10]"
+      },
+      "visible_context": {
+        "visible_info": "Synthetic public discussion only; no real match or production annotations."
+      }
+    }
+  ]
+}

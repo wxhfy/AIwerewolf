@@ -47,7 +47,7 @@ export function PlayerRail({
     }
   }
   return (
-    <aside className={`hidden w-[21%] min-w-[150px] flex-col gap-2 overflow-y-auto p-3 lg:flex timeline-scroll ${side === "left" ? "border-r" : "border-l"} border-border`}>
+    <aside aria-label={side === "left" ? "玩家席位 1" : "玩家席位 2"} className={`hidden w-[23%] min-w-[220px] max-w-[320px] shrink-0 flex-col gap-3 overflow-y-auto overscroll-contain bg-cardBackground/20 p-3 lg:flex timeline-scroll ${side === "left" ? "border-r" : "border-l"} border-border`}>
       {visiblePlayers.map((player, index) => (
         <PlayerCard
           key={player.id || index}
@@ -106,10 +106,11 @@ export function MobilePlayerRail({
     }
   }
   return (
-    <div className="relative z-10 flex gap-2 overflow-x-auto px-4 py-2 lg:hidden">
+    <div role="region" aria-label="玩家席位 · 横向滚动查看" tabIndex={0} className="relative z-10 flex shrink-0 snap-x snap-proximity gap-2 overflow-x-auto overscroll-x-contain border-b border-border bg-cardBackground/30 px-3 py-2 lg:hidden timeline-scroll [@media(max-height:500px)]:py-1">
       {visiblePlayers.map((player, index) => (
-        <div key={player.id || index} className="w-[100px] flex-shrink-0">
+        <div key={player.id || index} className="w-[164px] shrink-0 snap-start">
           <PlayerCard
+            compact
             player={player}
             isSpeaking={
               // 仅发言阶段用统一speakerState判断，其他阶段走原逻辑

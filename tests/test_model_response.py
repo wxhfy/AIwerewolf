@@ -9,8 +9,8 @@ def test_content_text_accepts_provider_content_blocks() -> None:
             {
                 "message": {
                     "content": [
-                        {"type": "text", "text": "{\"option_id\":"},
-                        {"type": "text", "text": "\"vote:P2\"}"},
+                        {"type": "text", "text": '{"option_id":'},
+                        {"type": "text", "text": '"vote:P2"}'},
                     ]
                 }
             }
@@ -24,9 +24,7 @@ def test_tool_arguments_accepts_already_parsed_objects() -> None:
         "choices": [
             {
                 "message": {
-                    "tool_calls": [
-                        {"function": {"name": "submit_action", "arguments": {"option_id": "vote:P2"}}}
-                    ]
+                    "tool_calls": [{"function": {"name": "submit_action", "arguments": {"option_id": "vote:P2"}}}]
                 }
             }
         ]
