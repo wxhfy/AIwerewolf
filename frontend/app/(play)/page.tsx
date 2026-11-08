@@ -201,8 +201,12 @@ export default function LobbyPage() {
 
       {/* ── Top nav ────────────────────────────────────────────── */}
       <nav aria-label={language === "zh" ? "大厅导航" : "Lobby navigation"} className="absolute left-4 right-16 top-4 z-20 flex flex-wrap items-center justify-end gap-2 sm:left-auto sm:right-16 sm:flex-nowrap">
-        <Link href="/personas" className="inline-flex min-h-10 items-center rounded-button border border-border bg-cardBackground/80 px-3 text-xs font-medium text-textSecondary backdrop-blur-sm transition-colors duration-200 hover:border-primary/50 hover:text-primary">
+        <Link href="/admin/personas" className="inline-flex min-h-10 items-center rounded-button border border-border bg-cardBackground/80 px-3 text-xs font-medium text-textSecondary backdrop-blur-sm transition-colors duration-200 hover:border-primary/50 hover:text-primary">
           {language === "zh" ? "角色库" : "Personas"}
+        </Link>
+
+        <Link href="/admin" className="inline-flex min-h-10 items-center rounded-button border border-border bg-cardBackground/80 px-3 text-xs font-medium text-textSecondary backdrop-blur-sm transition-colors duration-200 hover:border-primary/50 hover:text-primary">
+          {language === "zh" ? "管理后台" : "Admin"}
         </Link>
 
         <button

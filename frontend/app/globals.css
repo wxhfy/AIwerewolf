@@ -64,6 +64,70 @@
   color-scheme: light;
 }
 
+/* Moonlit Village — Night theme (deep indigo #0f1a2e, moon-white text, candle amber accents, elimination dark red #8b1e1e) */
+[data-theme="night"] {
+  --color-bg: #0f1a2e;
+  --color-card: #152238;
+  --color-primary: #f6ad55;
+  --color-primary-hover: #ed8936;
+  --color-gold: #f6ad55;
+  --color-village: #48bb78;
+  --color-danger: #8b1e1e;
+  --color-text: #eef2f7;
+  --color-text-sub: #94a3b8;
+  --color-border: rgba(238, 242, 247, 0.12);
+  --color-overlay: rgba(10, 18, 32, 0.75);
+  --card-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  --float-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  --modal-shadow: 0 24px 80px rgba(0, 0, 0, 0.6);
+  --color-on-primary: #0f1a2e;
+  --color-bg-rgb: 15 26 46;
+  --color-card-rgb: 21 34 56;
+  --color-border-rgb: 238 242 247;
+  --border-opacity: 0.12;
+
+  --color-primary-rgb: 246 173 85;
+  --color-gold-rgb: 246 173 85;
+  --color-village-rgb: 72 187 120;
+  --color-danger-rgb: 139 30 30;
+  --color-info-rgb: 147 197 253;
+  --color-text-rgb: 238 242 247;
+  --color-text-sub-rgb: 148 163 184;
+  color-scheme: dark;
+}
+
+/* Moonlit Village — Day theme (parchment warm beige, wood brown #6b3e18, elimination dark red #8b1e1e) */
+[data-theme="day"] {
+  --color-bg: #f5efe6;
+  --color-card: #fdfaf5;
+  --color-primary: #6b3e18;
+  --color-primary-hover: #834f20;
+  --color-gold: #b37d26;
+  --color-village: #276749;
+  --color-danger: #8b1e1e;
+  --color-text: #2c251e;
+  --color-text-sub: #6c5f52;
+  --color-border: rgba(107, 62, 24, 0.16);
+  --color-overlay: rgba(44, 37, 30, 0.35);
+  --card-shadow: 0 2px 10px rgba(107, 62, 24, 0.08);
+  --float-shadow: 0 8px 28px rgba(107, 62, 24, 0.14);
+  --modal-shadow: 0 24px 80px rgba(107, 62, 24, 0.25);
+  --color-on-primary: #ffffff;
+  --color-bg-rgb: 245 239 230;
+  --color-card-rgb: 253 250 245;
+  --color-border-rgb: 107 62 24;
+  --border-opacity: 0.16;
+
+  --color-primary-rgb: 107 62 24;
+  --color-gold-rgb: 179 125 38;
+  --color-village-rgb: 39 103 73;
+  --color-danger-rgb: 139 30 30;
+  --color-info-rgb: 37 99 235;
+  --color-text-rgb: 44 37 30;
+  --color-text-sub-rgb: 108 95 82;
+  color-scheme: light;
+}
+
 /* Night phase — deep indigo with moon-gold accents */
 [data-theme="dark"],
 [data-phase="night"] {

@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 export interface PhaseAnnouncementProps {
   group: "ready" | "day" | "night" | "end";
   visible: boolean;
+  text?: string;
 }
 
 const keyMap: Record<string, string> = {
@@ -24,9 +25,9 @@ const styleMap: Record<string, { text: string; glow: string; icon: string }> = {
   end:   { text: "text-rose-200", glow: "shadow-rose-500/30", icon: "✦" },
 };
 
-export function PhaseAnnouncement({ group, visible }: PhaseAnnouncementProps) {
+export function PhaseAnnouncement({ group, visible, text: customText }: PhaseAnnouncementProps) {
   const { language } = useAppContext();
-  const text = t(keyMap[group] as any, language);
+  const text = customText || t(keyMap[group] as any, language);
   const style = styleMap[group];
 
   return (

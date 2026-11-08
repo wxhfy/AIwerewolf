@@ -66,7 +66,24 @@ export function useGamePageController(roomId: string) {
   const latestGameStateRef = useRef(gameState);
   const autoStartedRef = useRef(false);
   const isHumanMode = mode === "human";
-  const showPrivateView = true;
+  const isGodRequested = useMemo(() => {
+    return (
+      process.env.NEXT_PUBLIC_AW_ADMIN_UI === "1" &&
+      searchParams.get("view") === "god"
+    );
+  }, [searchParams]);
+
+  const [showPrivateView, setShowPrivateView] = useState(isGodRequested);
+  const [godViewNotice, setGodViewNotice] = useState<string | null>(null);
+
+  const handleForbidden = useCallback(() => {
+    setShowPrivateView(false);
+    setGodViewNotice(
+      language === Language.ZH
+        ? "无上帝视角权限（403 Forbidden），已自动切换为公开视角。"
+        : "Forbidden from god view (403), falling back to public view."
+    );
+  }, [language]);
   const [fetchError, setFetchError] = useState<string | null>(null);
 
   // ── Typewriter-driven display phase ─────────────────────────────
@@ -120,6 +137,7 @@ export function useGamePageController(roomId: string) {
     setIsPlaying,
     setStatusTitle,
     showPrivate: showPrivateView,
+    onForbidden: handleForbidden,
   });
 
   // 眨眼 + settling 结束后，对齐缓冲的最新状态。
@@ -478,6 +496,10 @@ export function useGamePageController(roomId: string) {
     onChatComplete,
     currentDialogueChat,
     voteDisplay,
+    showPrivateView,
+    godViewNotice,
+    setGodViewNotice,
+    isReconnecting: roomStream.isReconnecting,
     // Blink transition passthrough
     isBlinking: phase.isBlinking,
     isTransitioning: phase.isTransitioning,

@@ -21,6 +21,7 @@ import { AIStatusBar } from "./_components/AIStatusBar";
 import { HumanStatusBar } from "./_components/HumanStatusBar";
 import { HumanActionBar, SubmittedIndicator } from "./_components/HumanActionBar";
 import { RoleRevealOverlay } from "./_components/RoleRevealOverlay";
+import { MoonlitVillageSpectator } from "@/components/game/MoonlitVillageSpectator";
 import { ViewMode, type Player } from "@/types";
 
 export default function GamePage() {
@@ -33,6 +34,19 @@ export default function GamePage() {
   const { gameState, derived, phase, scroll, voteDisplay } = controller;
   const language = controller.language;
   const isGlobalView = controller.viewMode === ViewMode.MODERATOR || isHuman;
+
+  if (!isHuman) {
+    return (
+      <ErrorBoundary>
+        <MoonlitVillageSpectator
+          roomId={params.id}
+          gameState={gameState}
+          phase={phase}
+          controller={controller}
+        />
+      </ErrorBoundary>
+    );
+  }
 
   const isEndPhase = phase.visualPhaseGroup === "end" || Boolean(gameState?.winner);
   const showNightOverlay = phase.isVisualNight && !isEndPhase;

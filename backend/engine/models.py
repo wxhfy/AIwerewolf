@@ -316,11 +316,20 @@ class GameState:
         return next((player for player in self.players if player.role == role), None)
 
     def public_dict(self) -> dict[str, Any]:
+        is_finished = bool(self.winner) or self.phase == Phase.GAME_END
+        players = []
+        for player in self.players:
+            p_dict = player.public_dict()
+            if is_finished:
+                p_dict["role"] = player.role.value if hasattr(player.role, "value") else str(player.role)
+            players.append(p_dict)
+
         return {
             "id": self.id,
             "phase": self._public_phase(),
             "day": self.day,
-            "players": [player.public_dict() for player in self.players],
+            "players": players,
+            "disclosed": is_finished,
             "events": [self._public_event_dict(event) for event in self.events if event.visibility == "public"],
             "votes": dict(self.votes),
             "vote_history": dict(self.vote_history),

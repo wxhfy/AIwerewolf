@@ -10,6 +10,7 @@ from typing import Dict
 from typing import Optional
 
 from fastapi import Body
+from fastapi import Depends
 from fastapi import FastAPI
 from fastapi import HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -29,6 +30,9 @@ from backend.core.errors import install_exception_handlers
 from backend.core.errors import problem_response
 from backend.core.middleware import install_middleware
 from backend.core.security import actor_from_authorization
+from backend.core.security import actor_from_request
+from backend.core.security import private_view_allowed
+from backend.core.security import require_admin_dep
 from backend.db.database import init_db
 from backend.engine.models import GameState
 from backend.infrastructure.messaging.match_notifications import match_notifications
@@ -51,19 +55,29 @@ app = FastAPI(title=settings.app_name, version=settings.app_version, lifespan=_l
 
 class ApiAuthenticationMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
-        auth_mode = os.getenv("AUTH_MODE", settings.auth_mode).strip().lower()
-        if auth_mode == "disabled" or not request.url.path.startswith("/api/"):
+        if not request.url.path.startswith("/api/"):
             return await call_next(request)
         if request.url.path in {"/api/v1/health/live", "/api/v1/health/ready", "/api/health"}:
             return await call_next(request)
+
+        auth_mode = os.getenv("AUTH_MODE", settings.auth_mode).strip().lower()
+        has_private_intent = (
+            request.query_params.get("show_private", "false").lower() == "true"
+            or request.query_params.get("moderator", "false").lower() == "true"
+        )
+        if auth_mode == "disabled":
+            if has_private_intent:
+                actor = actor_from_request(request)
+                if not private_view_allowed(actor):
+                    return problem_response(
+                        request, status=403, code="moderator_required", detail="Moderator role required"
+                    )
+            return await call_next(request)
+
         try:
             actor = actor_from_authorization(request.headers.get("authorization"))
-            if (
-                request.query_params.get("show_private", "false").lower() == "true"
-                or (request.url.path.endswith("/rooms/snapshot"))
-                or request.query_params.get("moderator", "false").lower() == "true"
-            ):
-                if "moderator" not in actor.roles:
+            if has_private_intent:
+                if not private_view_allowed(actor):
                     return problem_response(
                         request, status=403, code="moderator_required", detail="Moderator role required"
                     )
@@ -98,8 +112,13 @@ def prometheus_metrics() -> Response:
 
 app.include_router(analysis_api_router)
 app.include_router(match_stream_router)
+from backend.interfaces.http.fixture_api import bind_room_store as bind_fixture_rooms
+from backend.interfaces.http.fixture_api import router as fixture_api_router
+
+app.include_router(fixture_api_router)
 
 _rooms = RoomManager()
+bind_fixture_rooms(_rooms)
 _match_jobs = MatchJobRepository()
 
 _logger = logging.getLogger("aiwerewolf.app")
@@ -669,7 +688,7 @@ def list_agent_versions():
     return list_agent_versions()
 
 
-@app.post("/api/agents")
+@app.post("/api/agents", dependencies=[Depends(require_admin_dep)])
 def register_agent_version(payload: Dict[str, Any]):
     """Register a new agent version (Track C).
 
@@ -767,7 +786,7 @@ def eval_role_scores(role: Optional[str] = None):
     }
 
 
-@app.post("/api/evolution/cycle")
+@app.post("/api/evolution/cycle", dependencies=[Depends(require_admin_dep)])
 def run_evolution_cycle(payload: Optional[Dict[str, Any]] = None):
     from backend.db.persist import run_evolution_cycle
 
@@ -780,7 +799,7 @@ def run_evolution_cycle(payload: Optional[Dict[str, Any]] = None):
     )
 
 
-@app.post("/api/evolution/dream")
+@app.post("/api/evolution/dream", dependencies=[Depends(require_admin_dep)])
 def run_track_c_dream_job(payload: Optional[Dict[str, Any]] = None):
     from backend.db.persist import run_dream_job
 
@@ -799,14 +818,14 @@ def list_strategy_knowledge(
     return list_strategy_knowledge(role=role, phase=phase, status=status, limit=limit)
 
 
-@app.post("/api/strategy/knowledge/extract/{game_id}")
+@app.post("/api/strategy/knowledge/extract/{game_id}", dependencies=[Depends(require_admin_dep)])
 def extract_strategy_knowledge(game_id: str):
     from backend.db.persist import extract_strategy_knowledge_from_game
 
     return extract_strategy_knowledge_from_game(game_id)
 
 
-@app.post("/api/strategy/knowledge/{doc_id}/deprecate")
+@app.post("/api/strategy/knowledge/{doc_id}/deprecate", dependencies=[Depends(require_admin_dep)])
 def deprecate_strategy_knowledge(doc_id: str, payload: Optional[Dict[str, Any]] = None):
     from backend.db.persist import deprecate_strategy_knowledge
 
@@ -823,7 +842,7 @@ def list_strategy_cards(role: Optional[str] = None):
     return list_role_strategy_cards(role=role)
 
 
-@app.post("/api/strategy/patches/{patch_id}/apply")
+@app.post("/api/strategy/patches/{patch_id}/apply", dependencies=[Depends(require_admin_dep)])
 def apply_strategy_patch(patch_id: str):
     from backend.db.persist import apply_strategy_patch
 
@@ -848,7 +867,7 @@ def list_personas_endpoint():
         return []
 
 
-@app.post("/api/personas")
+@app.post("/api/personas", dependencies=[Depends(require_admin_dep)])
 def create_persona(payload: Dict[str, Any]):
     """Add a new persona to the library."""
     try:
@@ -859,7 +878,7 @@ def create_persona(payload: Dict[str, Any]):
         raise HTTPException(status_code=409, detail=str(exc))
 
 
-@app.put("/api/personas/{name}")
+@app.put("/api/personas/{name}", dependencies=[Depends(require_admin_dep)])
 def update_persona(name: str, payload: Dict[str, Any]):
     """Update an existing persona."""
     try:
@@ -870,7 +889,7 @@ def update_persona(name: str, payload: Dict[str, Any]):
         raise HTTPException(status_code=404, detail=f"Persona '{name}' not found")
 
 
-@app.delete("/api/personas/{name}")
+@app.delete("/api/personas/{name}", dependencies=[Depends(require_admin_dep)])
 def delete_persona(name: str):
     """Soft-delete a persona."""
     try:
@@ -939,8 +958,40 @@ def list_room_games(room_id: str):
     return _match_jobs.list_for_room(room_id)
 
 
+def _public_view(snapshot: dict[str, Any]) -> dict[str, Any]:
+    view = dict(snapshot)
+    for key in ("truth", "private_events", "night_actions", "role_abilities"):
+        view.pop(key, None)
+
+    if "events" in view and isinstance(view["events"], list):
+        view["events"] = [
+            e for e in view["events"]
+            if isinstance(e, dict) and e.get("visibility", "public") == "public"
+        ]
+        view["event_count"] = len(view["events"])
+        view["last_event"] = view["events"][-1] if view["events"] else None
+
+    is_finished = bool(view.get("winner")) or view.get("phase") == "GAME_END" or view.get("status") == "completed"
+    view["disclosed"] = is_finished
+
+    if "players" in view and isinstance(view["players"], list):
+        filtered_players = []
+        for p in view["players"]:
+            if isinstance(p, dict):
+                p_copy = dict(p)
+                if not is_finished:
+                    p_copy.pop("role", None)
+                    p_copy.pop("alignment", None)
+                filtered_players.append(p_copy)
+            else:
+                filtered_players.append(p)
+        view["players"] = filtered_players
+
+    return view
+
+
 @app.get("/api/rooms/{room_id}/snapshot")
-def get_room_snapshot(room_id: str):
+def get_room_snapshot(room_id: str, show_private: bool = False):
     try:
         room = _rooms.get_room(room_id)
     except KeyError:
@@ -949,9 +1000,9 @@ def get_room_snapshot(room_id: str):
     if room.current_game_id:
         from backend.infrastructure.persistence.match_feed import MatchFeedRepository
 
-        snapshot = MatchFeedRepository().latest_snapshot(room.current_game_id, moderator=True)
-    if snapshot is None:
-        snapshot = room.latest_snapshot
+        snapshot = MatchFeedRepository().latest_snapshot(room.current_game_id, moderator=show_private)
+    if snapshot is None and room.latest_snapshot:
+        snapshot = room.latest_snapshot if show_private else _public_view(room.latest_snapshot)
     if snapshot is None:
         raise HTTPException(status_code=404, detail="Snapshot not found")
     return snapshot

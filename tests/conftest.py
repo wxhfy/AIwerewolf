@@ -34,6 +34,7 @@ os.environ.setdefault("LLM_PROVIDER", "fake")
 os.environ.setdefault("AIWEREWOLF_DEFAULT_AGENT_TYPE", "llm")
 os.environ["MODEL_POOL"] = "fake:fake-llm"
 os.environ["DOUBAO_MODEL_POOL"] = "fake:fake-llm"
+os.environ.setdefault("AW_DEV_ALLOW_PRIVATE", "1")
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
