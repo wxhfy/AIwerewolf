@@ -38,6 +38,17 @@ export function usePhaseTransition(
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
+    if (hasWinner || visualPhaseGroup === "end") {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+      setAnnouncement(null);
+      prevPhaseRef.current = gameState?.phase;
+      prevGroupRef.current = "end";
+      return;
+    }
+
     const currentPhase = gameState?.phase;
     if (!currentPhase) return;
     const prevPhase = prevPhaseRef.current;
@@ -70,12 +81,12 @@ export function usePhaseTransition(
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [gameState?.phase, gameState?.day, visualPhaseGroup]);
+  }, [gameState?.phase, gameState?.day, visualPhaseGroup, hasWinner]);
 
   return {
     visualPhaseGroup,
     isVisualNight: visualPhaseGroup === "night",
-    phaseAnnouncement: announcement,
+    phaseAnnouncement: hasWinner || visualPhaseGroup === "end" ? null : announcement,
     isBlinking: false,
     blinkPhase: null,
     isTransitioning: false,
