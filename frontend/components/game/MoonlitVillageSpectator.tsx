@@ -6,6 +6,7 @@ import { GameState, Alignment, Role, Player } from "@/types";
 import { useSpeechQueue } from "@/hooks/useSpeechQueue";
 import { PhaseAnnouncement } from "@/components/game/PhaseAnnouncement";
 import { DayNightBlinkTransition } from "@/components/game/DayNightBlinkTransition";
+import styles from "./MoonlitVillageSpectator.module.css";
 
 interface MoonlitVillageSpectatorProps {
   roomId: string;
@@ -145,7 +146,7 @@ export function MoonlitVillageSpectator({
     return controller.statusTitle || "等待游戏进程推进...";
   }, [winner, gameState?.pending_input, currentPhase, activeSpeakerId, players, controller.statusTitle]);
 
-  // Seat ellipse geometry for desktop
+  // Seat ellipse geometry for desktop: tokens placed at the rim of the central table
   const seatPositions = useMemo(() => {
     const coords: Record<number, { x: number; y: number }> = {};
     for (let i = 0; i < playerCount; i++) {
@@ -194,7 +195,8 @@ export function MoonlitVillageSpectator({
     <div
       data-theme={currentTheme}
       data-phase={phase.visualPhaseGroup}
-      className="relative flex h-screen [height:100dvh] w-full max-w-full flex-col overflow-hidden bg-[var(--color-bg)] text-[var(--color-text)] transition-colors duration-700"
+      data-phase-aware
+      className={`${styles.spectatorRoom} relative flex h-screen [height:100dvh] w-full max-w-full flex-col overflow-hidden`}
     >
       {/* ── DayNight Blink Transition ── */}
       <DayNightBlinkTransition
@@ -213,48 +215,48 @@ export function MoonlitVillageSpectator({
         />
       )}
 
-      {/* ── Top Bar / Header ── */}
-      <header className="relative z-30 flex h-14 shrink-0 items-center justify-between border-b border-[var(--color-border)] bg-[var(--color-card)]/80 px-4 backdrop-blur-sm sm:px-6">
+      {/* ── Top Bar / HUD ── */}
+      <header className={styles.topHud}>
         <div className="flex items-center gap-3">
           <Link
             href="/"
-            className="flex items-center gap-1.5 text-xs text-[var(--color-text-sub)] transition-colors hover:text-[var(--color-primary)]"
+            className="flex items-center gap-1.5 text-xs text-amber-200/70 transition-colors hover:text-amber-100 font-serif"
           >
             <span>←</span>
             <span className="hidden sm:inline">大厅</span>
           </Link>
-          <div className="h-4 w-px bg-[var(--color-border)]" />
+          <div className="h-3.5 w-px bg-amber-900/50" />
           <div className="flex items-center gap-2">
-            <span className="text-base" role="img" aria-label="moon-village">
+            <span className="text-sm select-none" role="img" aria-label="phase-icon">
               {isNight ? "🌙" : "☀️"}
             </span>
-            <h1 className="font-display text-sm font-bold tracking-wider text-[var(--color-text)] sm:text-base">
+            <h1 className="font-display text-xs sm:text-sm font-semibold tracking-wider text-amber-100/90">
               月下村庄 · AI 观战
             </h1>
           </div>
-          <span className="hidden rounded-full border border-[var(--color-border)] bg-[var(--color-bg)]/50 px-2.5 py-0.5 text-xs font-mono text-[var(--color-text-sub)] sm:inline">
+          <span className="hidden rounded border border-amber-900/40 bg-[#120a05]/70 px-2 py-0.5 text-[11px] font-mono text-amber-300/70 sm:inline">
             房间: {roomId.slice(0, 8)}
           </span>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5">
           {/* Reconnect Indicator */}
           {controller.isReconnecting && (
             <div
               data-testid="reconnect-indicator"
               role="status"
-              className="flex items-center gap-1.5 rounded-full border border-amber-500/40 bg-amber-500/20 px-2.5 py-1 text-xs font-medium text-amber-300 animate-pulse"
+              className="flex items-center gap-1.5 rounded-full border border-amber-500/50 bg-amber-950/70 px-2.5 py-0.5 text-xs font-medium text-amber-300 animate-pulse"
             >
-              <span className="h-2 w-2 rounded-full bg-amber-400" />
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
               <span>网络重连中...</span>
             </div>
           )}
 
-          {/* God view 403 fallback notice */}
+          {/* God view notice */}
           {controller.godViewNotice && (
             <div
               role="alert"
-              className="flex items-center gap-1.5 rounded-md border border-[var(--color-danger)]/30 bg-[var(--color-danger)]/15 px-2.5 py-1 text-xs text-[var(--color-danger)]"
+              className="flex items-center gap-1.5 rounded border border-red-700/50 bg-red-950/70 px-2 py-0.5 text-xs text-red-300"
             >
               <span>{controller.godViewNotice}</span>
               <button
@@ -270,12 +272,12 @@ export function MoonlitVillageSpectator({
 
           {/* Pause / Resume Controls */}
           {!winner && (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
               {controller.isPaused ? (
                 <button
                   type="button"
                   onClick={controller.resumeGame}
-                  className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-1 text-xs font-medium text-[var(--color-text)] hover:border-[var(--color-primary)]"
+                  className="rounded border border-amber-700/60 bg-amber-950/60 hover:bg-amber-900/60 px-2.5 py-0.5 text-xs font-medium text-amber-200 transition-colors"
                 >
                   继续
                 </button>
@@ -283,7 +285,7 @@ export function MoonlitVillageSpectator({
                 <button
                   type="button"
                   onClick={controller.pauseGame}
-                  className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-1 text-xs font-medium text-[var(--color-text-sub)] hover:text-[var(--color-text)]"
+                  className="rounded border border-amber-900/50 bg-[#140c06]/80 hover:bg-amber-950/60 px-2.5 py-0.5 text-xs font-medium text-amber-300/70 hover:text-amber-200 transition-colors"
                 >
                   暂停
                 </button>
@@ -293,11 +295,11 @@ export function MoonlitVillageSpectator({
         </div>
       </header>
 
-      {/* ── Main View: Full Width Village Circle Arena ── */}
+      {/* ── Main View: Retro Village Table Arena ── */}
       <main className="relative flex flex-1 min-h-0 w-full flex-col overflow-hidden p-2 sm:p-4">
-        {/* Mobile Top Seats Strip (<768px): Two rows horizontally scrollable */}
+        {/* Mobile Top Seats Strip (<768px): Two rows horizontally scrollable with table token chips */}
         <div className="block md:hidden w-full shrink-0 overflow-x-auto pb-2 scrollbar-none">
-          <div className="grid grid-rows-2 grid-flow-col auto-cols-[105px] gap-2 min-w-max px-2">
+          <div className="grid grid-rows-2 grid-flow-col auto-cols-[115px] gap-2 min-w-max px-2">
             {players.map((player) => {
               const isActive = player.id === activeSpeakerId || player.seat === activeSpeakerId;
               const isAlive = player.alive;
@@ -307,26 +309,28 @@ export function MoonlitVillageSpectator({
                   data-testid={`seat-${player.seat}`}
                   data-alive={isAlive ? "true" : "false"}
                   data-active={isActive ? "true" : "false"}
-                  className={`flex items-center gap-2 rounded-xl border p-2 text-xs transition-all duration-300 ${
+                  className={`flex items-center gap-2 rounded-lg border p-1.5 text-xs transition-all duration-300 ${
                     isActive
-                      ? "border-[var(--color-primary)] bg-[var(--color-card)] ring-2 ring-[var(--color-primary)] shadow-[0_0_12px_rgba(246,173,85,0.4)]"
+                      ? "border-amber-400 bg-[#2f1b0e] shadow-[0_0_12px_rgba(245,158,11,0.5)]"
                       : isAlive
-                      ? "border-[var(--color-border)] bg-[var(--color-card)]/80"
-                      : "border-stone-800/60 bg-stone-900/60 opacity-40 grayscale"
+                      ? "border-amber-950/70 bg-[#1e130a]/90 text-amber-100"
+                      : "border-stone-800 bg-stone-950/75 opacity-50 grayscale text-stone-400"
                   }`}
                 >
                   <div
-                    className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
-                      isAlive
-                        ? "bg-[var(--color-primary)]/20 text-[var(--color-primary)]"
-                        : "bg-stone-800 text-stone-400"
+                    className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold font-display ${
+                      isActive
+                        ? "bg-amber-600 text-amber-100 shadow-sm"
+                        : isAlive
+                        ? "bg-amber-950/80 border border-amber-700/40 text-amber-300"
+                        : "bg-stone-850 text-stone-500"
                     }`}
                   >
                     {isAlive ? player.seat : "🪦"}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate font-semibold">{player.name}</p>
-                    <p className="truncate text-[10px] text-[var(--color-text-sub)]">
+                    <p className="truncate font-display font-semibold text-amber-100">{player.name}</p>
+                    <p className="truncate text-[10px] text-amber-300/60">
                       {isAlive ? (isActive ? "发言中" : `${player.seat}号位`) : "阵亡"}
                     </p>
                   </div>
@@ -339,13 +343,13 @@ export function MoonlitVillageSpectator({
         {/* Mobile Vote Notice Strip (<768px) */}
         {voteList.length > 0 && (
           <div className="block md:hidden shrink-0 px-2 py-1 mb-1">
-            <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-card)]/90 p-2 text-xs">
-              <span className="font-semibold text-[var(--color-text-sub)]">投票:</span>
+            <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-amber-950/70 bg-[#170e07]/90 p-2 text-xs">
+              <span className="font-semibold text-amber-300/80 font-serif">投票:</span>
               {voteList.map((item) => (
                 <span
                   key={`${item.voterSeat}-${item.targetSeat}`}
                   data-testid="vote-arrow"
-                  className="rounded bg-[var(--color-primary)]/10 px-1.5 py-0.5 font-mono text-[11px] text-[var(--color-primary)]"
+                  className="rounded border border-amber-800/40 bg-amber-950/70 px-1.5 py-0.5 font-mono text-[11px] text-amber-300"
                 >
                   {item.voterSeat}号 → {item.targetSeat}号
                 </span>
@@ -354,9 +358,12 @@ export function MoonlitVillageSpectator({
           </div>
         )}
 
-        {/* Desktop Circular Ellipse Arena (>=768px) */}
-        <div className="hidden md:flex relative flex-1 min-h-0 w-full items-center justify-center p-4 lg:p-6">
-          <div className="relative w-full max-w-[880px] aspect-[16/10] max-h-full">
+        {/* Desktop Wooden Table Arena (>=768px) */}
+        <div className="hidden md:flex relative flex-1 min-h-0 w-full items-center justify-center p-3 lg:p-6">
+          <div className={styles.tableOuterWrap}>
+            {/* The Real Central Wooden Table (Oval Surface with Carved Rim & Wood Grain) */}
+            <div className={styles.tableSurface} />
+
             {/* SVG Vote Arrows Overlay */}
             <svg className="absolute inset-0 h-full w-full pointer-events-none z-10" viewBox="0 0 100 100">
               <defs>
@@ -368,7 +375,7 @@ export function MoonlitVillageSpectator({
                   refY="3"
                   orient="auto"
                 >
-                  <polygon points="0 0, 6 3, 0 6" fill="var(--color-primary)" />
+                  <polygon points="0 0, 6 3, 0 6" fill="#f59e0b" />
                 </marker>
               </defs>
               {voteList.map((vote) => {
@@ -383,41 +390,43 @@ export function MoonlitVillageSpectator({
                     y1={from.y}
                     x2={to.x}
                     y2={to.y}
-                    stroke="var(--color-primary)"
-                    strokeWidth="0.8"
-                    strokeDasharray="2,1"
+                    stroke="#f59e0b"
+                    strokeWidth="0.85"
+                    strokeDasharray="2.5,1.5"
                     markerEnd="url(#arrowhead)"
-                    className="opacity-80"
+                    className="opacity-85"
                   />
                 );
               })}
             </svg>
 
-            {/* Center "Campfire" Panel */}
-            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-20 w-64 rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)]/90 p-4 text-center shadow-lg backdrop-blur-md">
-              {/* Campfire glow icon */}
-              <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-[var(--color-primary)]/15 text-lg shadow-[0_0_16px_rgba(246,173,85,0.3)]">
-                {isNight ? "🕯️" : "🔥"}
-              </div>
+            {/* Center Table Inlaid Plaque: Brass / Carved Wood Disk */}
+            <div className={styles.centerPlaque}>
+              {/* Brass rivets at four cardinal points */}
+              <span className={`${styles.rivet} ${styles.rivetTop}`} />
+              <span className={`${styles.rivet} ${styles.rivetBottom}`} />
+              <span className={`${styles.rivet} ${styles.rivetLeft}`} />
+              <span className={`${styles.rivet} ${styles.rivetRight}`} />
 
               {/* Phase Banner */}
               <div data-testid="phase-banner" data-phase={currentPhase}>
-                <p className="text-xs font-semibold tracking-wider text-[var(--color-primary)]">
+                <p className="font-display text-[11px] font-semibold tracking-widest text-amber-400/90 uppercase">
                   第 {day} {isNight ? "夜" : "天"}
                 </p>
-                <h2 className="font-display text-base font-bold text-[var(--color-text)]">
+                <h2 className="font-display text-base lg:text-lg font-bold text-amber-100 tracking-wider mt-0.5 drop-shadow">
                   {PHASE_LABEL[currentPhase] || currentPhase}
                 </h2>
               </div>
 
-              <div className="mt-2 border-t border-[var(--color-border)]/50 pt-2">
-                <p className="line-clamp-2 text-xs leading-relaxed text-[var(--color-text-sub)]">
+              {/* Short judge announcement line */}
+              <div className="mt-2 border-t border-amber-900/40 pt-1.5">
+                <p className="line-clamp-2 text-[11px] leading-relaxed text-amber-200/75 font-sans">
                   {judgeAnnouncement}
                 </p>
               </div>
             </div>
 
-            {/* Circular Seats Ring */}
+            {/* Circular Seats Ring on Table Rim */}
             {players.map((player) => {
               const pos = seatPositions[player.seat] || { x: 50, y: 50 };
               const isActive = player.id === activeSpeakerId || player.seat === activeSpeakerId;
@@ -434,41 +443,43 @@ export function MoonlitVillageSpectator({
                     top: `${pos.y}%`,
                     transform: "translate(-50%, -50%)",
                   }}
-                  className={`absolute z-20 flex w-28 flex-col items-center rounded-2xl border p-2.5 text-center transition-all duration-300 ${
-                    isActive
-                      ? "border-[var(--color-primary)] bg-[var(--color-card)] ring-4 ring-[var(--color-primary)]/50 shadow-[0_0_24px_rgba(246,173,85,0.5)] scale-105"
-                      : isAlive
-                      ? "border-[var(--color-border)] bg-[var(--color-card)]/85 hover:border-[var(--color-primary)]/40 shadow-sm"
-                      : "rounded-t-2xl rounded-b-md border-stone-800/80 bg-stone-900/80 opacity-40 grayscale"
-                  }`}
+                  className={`${styles.seatTokenContainer} ${isActive ? "z-30" : "z-20"}`}
                 >
-                  {/* Seat number seal */}
+                  {/* Circular Seat Token Medallion */}
                   <div
-                    className={`mb-1.5 flex h-10 w-10 items-center justify-center rounded-full text-sm font-bold transition-transform ${
-                      isAlive
-                        ? isActive
-                          ? "bg-[var(--color-primary)] text-[var(--color-on-primary)] shadow-md"
-                          : "bg-[var(--color-primary)]/15 text-[var(--color-primary)]"
-                        : "bg-stone-800 text-stone-400"
+                    className={`${styles.tokenMedallion} ${
+                      isActive
+                        ? styles.tokenActive
+                        : isAlive
+                        ? styles.tokenAlive
+                        : styles.tokenDead
                     }`}
                   >
-                    {isAlive ? `${player.seat}号` : "🪦"}
+                    {isAlive ? (
+                      <span className="font-display font-bold text-sm select-none">
+                        {player.seat}
+                      </span>
+                    ) : (
+                      <span className="text-base select-none">🪦</span>
+                    )}
                   </div>
 
-                  <p className="w-full truncate text-xs font-semibold text-[var(--color-text)]">
-                    {player.name}
-                  </p>
+                  {/* Compact Nameplate beneath Token */}
+                  <div className={styles.seatNameplate}>
+                    <p className="w-full truncate font-display text-[11px] font-semibold text-amber-100/95">
+                      {player.name}
+                    </p>
+                    <p className="text-[10px] leading-tight text-amber-300/70">
+                      {isAlive ? (isActive ? "发言中" : `${player.seat}号`) : "出局"}
+                    </p>
 
-                  <p className="mt-0.5 text-[10px] text-[var(--color-text-sub)]">
-                    {isAlive ? (isActive ? "发言中" : "就席") : "阵亡"}
-                  </p>
-
-                  {/* Revealed role (if post-game disclosure or public role) */}
-                  {winner && player.role && (
-                    <span className="mt-1 rounded bg-[var(--color-primary)]/15 px-1.5 py-0.5 text-[10px] font-medium text-[var(--color-primary)]">
-                      {roleNames[player.role] || player.role}
-                    </span>
-                  )}
+                    {/* Revealed role (post-game disclosure) */}
+                    {winner && player.role && (
+                      <span className="mt-0.5 inline-block rounded bg-amber-950/90 border border-amber-700/60 px-1 py-0.2 text-[9px] font-medium text-amber-300">
+                        {roleNames[player.role] || player.role}
+                      </span>
+                    )}
+                  </div>
                 </div>
               );
             })}
@@ -479,76 +490,76 @@ export function MoonlitVillageSpectator({
       {/* ── Collapsible History Strip (if toggled) ── */}
       {showHistory && displayedSpeeches.length > 0 && (
         <div className="relative z-20 w-full px-3 sm:px-6">
-          <div className="mx-auto max-h-48 w-full max-w-4xl overflow-y-auto rounded-xl border border-[var(--color-border)] bg-[var(--color-card)]/95 p-3 shadow-xl backdrop-blur-md timeline-scroll space-y-2">
-            <div className="flex items-center justify-between border-b border-[var(--color-border)]/50 pb-1.5 text-xs text-[var(--color-text-sub)]">
-              <span className="font-semibold text-[var(--color-text)]">发言历史记录 ({displayedSpeeches.length})</span>
+          <div className="mx-auto max-h-48 w-full max-w-4xl overflow-y-auto rounded-xl border border-amber-900/60 bg-[#160f08]/98 p-3 shadow-2xl backdrop-blur-md timeline-scroll space-y-2">
+            <div className="flex items-center justify-between border-b border-amber-900/40 pb-1.5 text-xs text-amber-300/70">
+              <span className="font-display font-semibold text-amber-100">
+                发言历史记录 ({displayedSpeeches.length})
+              </span>
               <button
                 type="button"
                 onClick={() => setShowHistory(false)}
-                className="opacity-70 hover:opacity-100 text-xs px-1"
+                className="opacity-70 hover:opacity-100 text-xs px-1 text-amber-200"
                 aria-label="关闭历史记录"
               >
                 ✕
               </button>
             </div>
             {displayedSpeeches.map((item, idx) => (
-              <div key={`${item.id}-${idx}`} className="border-b border-[var(--color-border)]/30 pb-1.5 last:border-0 text-xs">
-                <div className="flex items-center gap-2 text-[11px] text-[var(--color-primary)] font-medium">
-                  <span>{item.actorSeat > 0 ? `${item.actorSeat}号 ` : ""}{item.actorName}</span>
-                  <span className="text-[10px] text-[var(--color-text-sub)]">({PHASE_LABEL[item.phase] || item.phase})</span>
+              <div key={`${item.id}-${idx}`} className="border-b border-amber-950/50 pb-1.5 last:border-0 text-xs">
+                <div className="flex items-center gap-2 text-[11px] text-amber-400 font-medium">
+                  <span className="font-display">{item.actorSeat > 0 ? `${item.actorSeat}号 ` : ""}{item.actorName}</span>
+                  <span className="text-[10px] text-amber-300/60">({PHASE_LABEL[item.phase] || item.phase})</span>
                   <span className="opacity-60 text-[10px]">第 {item.day} 天</span>
                 </div>
-                <p className="mt-0.5 text-[var(--color-text)] leading-relaxed whitespace-pre-wrap">{item.fullText}</p>
+                <p className="mt-0.5 text-amber-100/90 leading-relaxed whitespace-pre-wrap">{item.fullText}</p>
               </div>
             ))}
           </div>
         </div>
       )}
 
-      {/* ── Bottom Dialogue Dock ── */}
+      {/* ── Bottom Dialogue Dock: Dark Wood Rail Attached to Table Edge ── */}
       <footer
         data-testid="bottom-dialogue-dock"
         data-phase-aware
-        className="relative z-20 shrink-0 border-t border-[var(--color-border)] bg-[var(--color-card)]/95 px-3 py-2 sm:px-6 sm:py-2.5 backdrop-blur-md transition-colors"
+        className={styles.bottomRail}
       >
-        <div className="mx-auto flex w-full max-w-4xl items-center gap-2.5 sm:gap-3">
+        <div className="mx-auto flex w-full max-w-4xl items-center gap-2.5 sm:gap-3.5">
           {/* Avatar & Seat Seal */}
           <div
-            className={`relative flex h-11 w-11 sm:h-13 sm:w-13 shrink-0 items-center justify-center rounded-2xl border transition-all ${
-              isTyping
-                ? "border-[var(--color-primary)] bg-[var(--color-primary)]/15 ring-2 ring-[var(--color-primary)]/40 shadow-[0_0_12px_rgba(246,173,85,0.3)]"
-                : "border-[var(--color-border)] bg-[var(--color-card)]"
+            className={`${styles.dockAvatarSeal} ${
+              isTyping ? "ring-2 ring-amber-400/80 shadow-[0_0_14px_rgba(245,158,11,0.5)]" : ""
             }`}
           >
-            <span className="font-display text-lg sm:text-xl font-bold text-[var(--color-primary)]">
+            <span className="font-display text-base sm:text-lg font-bold text-amber-200">
               {speakerInitial}
             </span>
             {speakerSeat != null && (
-              <span className="absolute -bottom-1 -right-1 flex h-4 w-4 sm:h-5 sm:w-5 items-center justify-center rounded-full bg-[var(--color-primary)] text-[9px] sm:text-[10px] font-bold text-[var(--color-on-primary)] shadow-sm">
+              <span className="absolute -bottom-1 -right-1 flex h-4 w-4 sm:h-5 sm:w-5 items-center justify-center rounded-full bg-amber-700 border border-amber-400/50 text-[9px] sm:text-[10px] font-bold text-amber-100 shadow-sm font-display">
                 {speakerSeat}
               </span>
             )}
           </div>
 
-          {/* Dialogue Bubble */}
+          {/* Recessed Speech Panel (Talk Strip) */}
           <div
             data-testid={activeSpeech ? "speech-item" : undefined}
             data-event-id={activeSpeech?.id}
-            className="flex min-h-[64px] sm:min-h-[72px] min-w-0 flex-1 flex-col justify-center rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg)]/80 px-3 py-1.5 sm:px-4 sm:py-2 backdrop-blur-sm shadow-sm"
+            className={styles.recessedSpeechBox}
           >
             {/* Header: Name, Phase, Status, Controls */}
             <div className="mb-0.5 sm:mb-1 flex items-center justify-between gap-2">
               <div className="flex items-center gap-2 min-w-0">
-                <p className="truncate text-xs sm:text-sm font-bold text-[var(--color-text)]">
+                <p className="truncate text-xs sm:text-sm font-display font-bold text-amber-100">
                   {speakerSeat != null ? `${speakerSeat}号 ` : ""}{speakerName}
                 </p>
-                <span className="truncate rounded bg-[var(--color-primary)]/10 px-1.5 py-0.5 text-[10px] text-[var(--color-primary)]">
+                <span className="truncate rounded border border-amber-800/40 bg-amber-950/60 px-1.5 py-0.5 text-[10px] font-medium text-amber-300">
                   {speechPhaseLabel}
                 </span>
               </div>
 
               <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-                <span className="rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-[10px] font-medium text-[var(--color-primary)]">
+                <span className="rounded-full border border-amber-800/30 bg-amber-950/40 px-2 py-0.5 text-[10px] font-medium text-amber-300">
                   {isTyping ? "发言中" : activeSpeech ? "当前发言" : "等待中"}
                 </span>
 
@@ -556,7 +567,7 @@ export function MoonlitVillageSpectator({
                   <button
                     type="button"
                     onClick={() => setShowHistory((prev) => !prev)}
-                    className="rounded border border-[var(--color-border)] bg-[var(--color-card)] px-2 py-0.5 text-[10px] text-[var(--color-text-sub)] hover:text-[var(--color-text)] transition-colors"
+                    className="rounded border border-amber-800/40 bg-[#1c120a] hover:bg-[#281a0e] px-2 py-0.5 text-[10px] text-amber-200/80 hover:text-amber-100 transition-colors"
                   >
                     {showHistory ? "收起历史" : `历史 (${displayedSpeeches.length})`}
                   </button>
@@ -567,10 +578,10 @@ export function MoonlitVillageSpectator({
                   data-testid="skip-typing"
                   onClick={skipCurrent}
                   disabled={!isTyping}
-                  className={`rounded-lg border px-2.5 py-0.5 sm:px-3 sm:py-1 text-[11px] sm:text-xs font-medium transition-all ${
+                  className={`rounded border px-2.5 py-0.5 sm:px-3 sm:py-1 text-[11px] sm:text-xs font-medium transition-all ${
                     isTyping
-                      ? "border-[var(--color-primary)] bg-[var(--color-primary)]/15 text-[var(--color-primary)] hover:bg-[var(--color-primary)]/25 cursor-pointer shadow-sm"
-                      : "border-[var(--color-border)] text-[var(--color-text-sub)]/40 cursor-not-allowed opacity-50"
+                      ? "border-amber-600/70 bg-gradient-to-b from-amber-700 to-amber-900 text-amber-100 hover:brightness-110 cursor-pointer shadow-sm"
+                      : "border-stone-800/60 bg-stone-900/30 text-stone-600 cursor-not-allowed opacity-50"
                   }`}
                 >
                   跳过
@@ -581,53 +592,53 @@ export function MoonlitVillageSpectator({
             {/* Typewriter Speech Text */}
             <div
               data-testid="bottom-dialogue-text-wrap"
-              className="max-h-14 sm:max-h-16 overflow-y-auto timeline-scroll text-xs sm:text-sm leading-relaxed text-[var(--color-text)]"
+              className="max-h-14 sm:max-h-16 overflow-y-auto timeline-scroll text-xs sm:text-sm leading-relaxed text-amber-100/90 font-sans"
             >
               <span data-testid="bottom-dialogue-text" className="whitespace-pre-wrap break-words">
                 {speechBody}
               </span>
               {isTyping && (
-                <span className="inline-block h-3.5 w-1 bg-[var(--color-primary)] ml-1 animate-pulse align-middle" />
+                <span className="inline-block h-3.5 w-1 bg-amber-400 ml-1 animate-pulse align-middle" />
               )}
             </div>
           </div>
         </div>
       </footer>
 
-      {/* ── Game End Settlement Panel ── */}
+      {/* ── Game End Settlement Panel: Wooden Ledger Board ── */}
       {winner && (
         <div
           data-testid="game-end-panel"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-md"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4 backdrop-blur-md"
         >
-          <div className="w-full max-w-lg rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-6 shadow-2xl text-center">
+          <div className={styles.settlementBoard}>
             {/* Winner Icon */}
-            <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-full bg-[var(--color-primary)]/20 text-3xl">
+            <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full border-2 border-amber-600/60 bg-amber-950/70 text-3xl shadow-[0_0_20px_rgba(245,158,11,0.3)]">
               {winner === Alignment.WOLF ? "🐺" : "🌿"}
             </div>
 
-            <h2 className="font-display text-2xl font-bold text-[var(--color-text)]">
+            <h2 className="font-display text-2xl font-bold text-amber-100 drop-shadow">
               {winner === Alignment.WOLF ? "狼人阵营获胜" : "好人阵营获胜"}
             </h2>
 
-            <p className="mt-1 text-xs text-[var(--color-text-sub)]">
+            <p className="mt-1 text-xs text-amber-300/70 font-serif">
               历经 {day} 天对决，胜负已分。公开身份已揭示：
             </p>
 
-            {/* Revealed Roles Grid */}
-            <div className="mt-4 max-h-56 overflow-y-auto rounded-xl border border-[var(--color-border)]/60 bg-[var(--color-bg)]/60 p-3">
+            {/* Revealed Roles Ledger Grid */}
+            <div className="mt-4 max-h-56 overflow-y-auto rounded-xl border border-amber-900/40 bg-[#120a06]/80 p-3 timeline-scroll">
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {players.map((p) => (
                   <div
                     key={p.seat}
-                    className="flex items-center gap-2 rounded-lg border border-[var(--color-border)]/40 bg-[var(--color-card)] p-2 text-left text-xs"
+                    className="flex items-center gap-2 rounded-lg border border-amber-950/80 bg-[#1e130a]/85 p-2 text-left text-xs"
                   >
-                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--color-primary)]/15 font-bold text-[var(--color-primary)]">
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-amber-700/50 bg-amber-950 font-display font-bold text-amber-300">
                       {p.seat}
                     </span>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate font-semibold text-[var(--color-text)]">{p.name}</p>
-                      <p className="truncate text-[10px] text-[var(--color-text-sub)]">
+                      <p className="truncate font-display font-semibold text-amber-100">{p.name}</p>
+                      <p className="truncate text-[10px] text-amber-300/60">
                         {p.role ? roleNames[p.role] || p.role : "未知"}
                         <span className="ml-1 opacity-70">({p.alive ? "存活" : "出局"})</span>
                       </p>
@@ -641,14 +652,14 @@ export function MoonlitVillageSpectator({
             <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
               <Link
                 href="/"
-                className="rounded-button border border-[var(--color-border)] bg-[var(--color-bg)] px-4 py-2 text-xs font-semibold text-[var(--color-text)] hover:border-[var(--color-primary)]"
+                className="rounded border border-amber-800/60 bg-[#1e1208] px-4 py-2 text-xs font-semibold text-amber-100 hover:border-amber-600 transition-colors"
               >
                 返回大厅
               </Link>
               {gameState?.id && (
                 <Link
                   href={`/games/${gameState.id}/report`}
-                  className="rounded-button bg-[var(--color-primary)] px-4 py-2 text-xs font-semibold text-[var(--color-on-primary)] hover:opacity-90"
+                  className="rounded border border-amber-600 bg-gradient-to-b from-amber-700 to-amber-900 px-4 py-2 text-xs font-semibold text-amber-100 hover:brightness-110 transition-all shadow-sm"
                 >
                   查看对局复盘
                 </Link>
@@ -656,7 +667,7 @@ export function MoonlitVillageSpectator({
               <button
                 type="button"
                 onClick={controller.exportGameRecord}
-                className="rounded-button border border-[var(--color-border)] px-4 py-2 text-xs font-medium text-[var(--color-text-sub)] hover:text-[var(--color-text)]"
+                className="rounded border border-amber-900/50 bg-transparent px-4 py-2 text-xs font-medium text-amber-300/70 hover:text-amber-100 transition-colors"
               >
                 导出记录
               </button>

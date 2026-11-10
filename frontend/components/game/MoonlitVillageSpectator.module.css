@@ -1,0 +1,384 @@
+/* ── Moonlit Village Spectator: Retro Tavern Table & Hall Room Presence ── */
+
+/* ── Room Backdrop Container ── */
+.spectatorRoom {
+  position: relative;
+  display: flex;
+  height: 100vh;
+  height: 100dvh;
+  width: 100%;
+  max-width: 100%;
+  flex-direction: column;
+  overflow: hidden;
+  transition: background 700ms ease, color 700ms ease;
+  user-select: none;
+}
+
+/* Day Tavern Room: dim warm tavern interior (#1c120c to #3a2416) */
+.spectatorRoom[data-theme="day"] {
+  background-color: #23160e;
+  background-image:
+    /* High dormer window / skylight warm illumination beam from above */
+    radial-gradient(ellipse 75% 45% at 50% -8%, rgba(245, 205, 140, 0.18) 0%, transparent 70%),
+    /* Ambient warm candle / fireplace reflection near center table */
+    radial-gradient(ellipse 65% 55% at 50% 50%, rgba(217, 130, 43, 0.09) 0%, transparent 65%),
+    /* Subtle horizontal tavern floor plank grooves */
+    repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.28) 0px, rgba(0, 0, 0, 0.28) 2px, transparent 2px, transparent 44px),
+    /* Deep tavern corner vignette */
+    radial-gradient(circle at 50% 50%, transparent 40%, rgba(15, 8, 4, 0.88) 100%);
+  color: #f7eedf;
+}
+
+/* Night Hall Room: actually dark indigo/black hall (#080c14 to #121927) */
+.spectatorRoom[data-theme="night"] {
+  background-color: #0b101c;
+  background-image:
+    /* Cool faint moonlight shaft from an upper arch window */
+    radial-gradient(ellipse 70% 45% at 50% -10%, rgba(160, 195, 245, 0.16) 0%, transparent 70%),
+    /* Lingering warm candle glow pool over the table */
+    radial-gradient(ellipse 55% 45% at 50% 50%, rgba(245, 158, 11, 0.07) 0%, transparent 65%),
+    /* Dark floor plank shadows */
+    repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.38) 0px, rgba(0, 0, 0, 0.38) 2px, transparent 2px, transparent 44px),
+    /* Deep night vignette */
+    radial-gradient(circle at 50% 50%, transparent 35%, rgba(3, 5, 10, 0.95) 100%);
+  color: #ede9e1;
+}
+
+/* ── Top Bar HUD ── */
+.topHud {
+  position: relative;
+  z-index: 30;
+  display: flex;
+  height: 3.25rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(80, 50, 30, 0.35);
+  background: rgba(18, 12, 8, 0.75);
+  backdrop-filter: blur(8px);
+  padding: 0 1rem;
+}
+.spectatorRoom[data-theme="night"] .topHud {
+  border-bottom: 1px solid rgba(40, 55, 80, 0.4);
+  background: rgba(8, 12, 20, 0.8);
+}
+
+/* ── Central Table (The Table Surface) ── */
+.tableOuterWrap {
+  position: relative;
+  width: 100%;
+  max-width: 920px;
+  aspect-ratio: 16 / 10;
+  max-height: 100%;
+}
+
+.tableSurface {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 88%;
+  height: 80%;
+  border-radius: 50%;
+  pointer-events: none;
+  transition: background 700ms ease, border-color 700ms ease, box-shadow 700ms ease;
+}
+
+/* Day table: warm aged oak table rim and wood grain */
+.spectatorRoom[data-theme="day"] .tableSurface {
+  border: 11px solid #28170d;
+  box-shadow:
+    0 25px 60px -5px rgba(0, 0, 0, 0.92),
+    0 10px 24px -5px rgba(0, 0, 0, 0.75),
+    inset 0 2px 4px rgba(255, 230, 180, 0.2),
+    inset 0 -6px 12px rgba(0, 0, 0, 0.85);
+  background:
+    /* Concentric decorative ring groove */
+    radial-gradient(ellipse 88% 84% at 50% 50%, transparent 96.5%, rgba(190, 135, 60, 0.25) 97%, transparent 99%),
+    /* Warm table surface ambient lighting */
+    radial-gradient(ellipse 72% 62% at 50% 48%, rgba(200, 135, 55, 0.24) 0%, rgba(48, 26, 14, 0.8) 60%, #150b06 100%),
+    /* Repeating vertical wood plank grain */
+    repeating-linear-gradient(90deg, #2b170c 0px, #2b170c 24px, #201108 25px, #361e10 26px, #29160b 54px, #1c0e06 56px);
+}
+
+/* Night table: dark stained mahogany/ebony under faint moonlight and candle warmth */
+.spectatorRoom[data-theme="night"] .tableSurface {
+  border: 11px solid #161a25;
+  box-shadow:
+    0 25px 60px -5px rgba(0, 0, 0, 0.98),
+    0 10px 24px -5px rgba(0, 0, 0, 0.85),
+    inset 0 2px 4px rgba(180, 210, 255, 0.15),
+    inset 0 -6px 12px rgba(0, 0, 0, 0.9);
+  background:
+    radial-gradient(ellipse 88% 84% at 50% 50%, transparent 96.5%, rgba(140, 160, 210, 0.18) 97%, transparent 99%),
+    radial-gradient(ellipse 72% 62% at 50% 48%, rgba(140, 115, 80, 0.14) 0%, rgba(18, 20, 30, 0.82) 60%, #07080e 100%),
+    repeating-linear-gradient(90deg, #181723 0px, #181723 24px, #100f18 25px, #222030 26px, #171624 54px, #0b0a11 56px);
+}
+
+/* Inner decorative groove on the table */
+.tableSurface::before {
+  content: "";
+  position: absolute;
+  inset: 12px;
+  border-radius: 50%;
+  border: 1px dashed rgba(200, 150, 75, 0.22);
+  pointer-events: none;
+}
+.spectatorRoom[data-theme="night"] .tableSurface::before {
+  border-color: rgba(160, 185, 230, 0.18);
+}
+
+/* ── Center Inlaid Plaque (Brass / Carved Wood Medallion) ── */
+.centerPlaque {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 20;
+  width: 16.5rem;
+  border-radius: 1.25rem;
+  padding: 1rem 1.25rem;
+  text-align: center;
+  transition: all 500ms ease;
+}
+
+.spectatorRoom[data-theme="day"] .centerPlaque {
+  border: 2px solid rgba(180, 130, 50, 0.55);
+  background: radial-gradient(circle at 48% 38%, #3a2214 0%, #22130a 65%, #130a05 100%);
+  box-shadow:
+    inset 0 2px 6px rgba(0, 0, 0, 0.85),
+    inset 0 1px 1px rgba(255, 220, 150, 0.2),
+    0 10px 25px rgba(0, 0, 0, 0.65);
+}
+
+.spectatorRoom[data-theme="night"] .centerPlaque {
+  border: 2px solid rgba(130, 150, 190, 0.45);
+  background: radial-gradient(circle at 48% 38%, #1c1e2b 0%, #11131c 65%, #08090f 100%);
+  box-shadow:
+    inset 0 2px 6px rgba(0, 0, 0, 0.9),
+    inset 0 1px 1px rgba(180, 210, 255, 0.15),
+    0 10px 25px rgba(0, 0, 0, 0.8);
+}
+
+/* Brass Rivets on Center Plaque */
+.rivet {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #a17838;
+  border: 1px solid rgba(255, 230, 160, 0.6);
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.3), 0 1px 2px rgba(0, 0, 0, 0.8);
+}
+.spectatorRoom[data-theme="night"] .rivet {
+  background: #7084a4;
+  border-color: rgba(200, 220, 255, 0.6);
+}
+.rivetTop { top: 8px; left: 50%; transform: translateX(-50%); }
+.rivetBottom { bottom: 8px; left: 50%; transform: translateX(-50%); }
+.rivetLeft { left: 8px; top: 50%; transform: translateY(-50%); }
+.rivetRight { right: 8px; top: 50%; transform: translateY(-50%); }
+
+/* ── Seats as Table Tokens ── */
+.seatTokenContainer {
+  position: absolute;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transition: transform 300ms ease, opacity 300ms ease;
+  user-select: none;
+}
+
+.tokenMedallion {
+  position: relative;
+  display: flex;
+  height: 3rem;
+  width: 3rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: all 300ms ease;
+}
+
+/* Alive normal token */
+.tokenAlive {
+  border: 2px solid rgba(180, 130, 60, 0.65);
+  background: radial-gradient(circle at 40% 35%, #3c2415 0%, #24140a 70%, #150b05 100%);
+  box-shadow:
+    0 4px 10px rgba(0, 0, 0, 0.65),
+    inset 0 1px 2px rgba(255, 220, 150, 0.25),
+    inset 0 -2px 4px rgba(0, 0, 0, 0.8);
+  color: #f7eedc;
+}
+.spectatorRoom[data-theme="night"] .tokenAlive {
+  border: 2px solid rgba(130, 150, 190, 0.55);
+  background: radial-gradient(circle at 40% 35%, #202436 0%, #131724 70%, #0a0d15 100%);
+  box-shadow:
+    0 4px 10px rgba(0, 0, 0, 0.75),
+    inset 0 1px 2px rgba(180, 210, 255, 0.2),
+    inset 0 -2px 4px rgba(0, 0, 0, 0.85);
+  color: #ede8dc;
+}
+
+/* Active Speaker: warm candle-ring glow on token, slight scale */
+.tokenActive {
+  transform: scale(1.1);
+  border-color: #f59e0b !important;
+  background: radial-gradient(circle at 40% 35%, #5a351c 0%, #3a2010 70%, #221208 100%) !important;
+  box-shadow:
+    0 0 0 2px rgba(245, 158, 11, 0.9),
+    0 0 20px rgba(245, 158, 11, 0.75),
+    0 0 35px rgba(245, 158, 11, 0.4),
+    inset 0 1px 2px rgba(255, 240, 190, 0.5) !important;
+  animation: candleAura 2.4s ease-in-out infinite;
+  color: #fffbeb !important;
+}
+
+@keyframes candleAura {
+  0%, 100% {
+    box-shadow:
+      0 0 0 2px rgba(245, 158, 11, 0.85),
+      0 0 18px rgba(245, 158, 11, 0.7),
+      0 0 32px rgba(245, 158, 11, 0.35),
+      inset 0 1px 2px rgba(255, 240, 190, 0.45);
+  }
+  50% {
+    box-shadow:
+      0 0 0 2.5px rgba(245, 158, 11, 0.95),
+      0 0 24px rgba(245, 158, 11, 0.85),
+      0 0 44px rgba(245, 158, 11, 0.5),
+      inset 0 1px 3px rgba(255, 240, 190, 0.6);
+  }
+}
+
+/* Dead token: desaturated fallen mark / black-cloth shroud */
+.tokenDead {
+  border: 2px solid rgba(80, 80, 90, 0.45) !important;
+  background: radial-gradient(circle at 40% 35%, #1e1e24 0%, #141418 70%, #0a0a0d 100%) !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.7) !important;
+  opacity: 0.55;
+  filter: grayscale(1);
+  color: #8a8885 !important;
+}
+
+/* Nameplate beneath the token */
+.seatNameplate {
+  margin-top: 0.35rem;
+  border-radius: 0.375rem;
+  padding: 0.15rem 0.5rem;
+  max-width: 5.75rem;
+  border: 1px solid rgba(80, 50, 30, 0.45);
+  background: rgba(18, 11, 6, 0.88);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.55);
+  text-align: center;
+}
+.spectatorRoom[data-theme="night"] .seatNameplate {
+  border-color: rgba(45, 60, 85, 0.45);
+  background: rgba(8, 12, 20, 0.88);
+}
+
+/* ── Bottom Dialogue Rail (Table Edge Dock) ── */
+.bottomRail {
+  position: relative;
+  z-index: 20;
+  flex-shrink: 0;
+  border-top: 1px solid rgba(90, 55, 30, 0.6);
+  background: #150e08;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 220, 150, 0.08),
+    0 -8px 24px rgba(0, 0, 0, 0.75);
+  padding: 0.5rem 0.75rem;
+  transition: background 500ms ease, border-color 500ms ease;
+}
+.spectatorRoom[data-theme="night"] .bottomRail {
+  border-top: 1px solid rgba(40, 55, 80, 0.5);
+  background: #090e18;
+  box-shadow:
+    inset 0 1px 0 rgba(180, 210, 255, 0.06),
+    0 -8px 24px rgba(0, 0, 0, 0.85);
+}
+
+@media (min-width: 640px) {
+  .bottomRail {
+    padding: 0.625rem 1.5rem;
+  }
+}
+
+/* Recessed Speech Panel (trough / talk strip) */
+.recessedSpeechBox {
+  display: flex;
+  min-height: 4rem;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  justify-content: center;
+  border-radius: 0.875rem;
+  border: 1px solid rgba(80, 48, 24, 0.5);
+  background: rgba(13, 8, 4, 0.85);
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.85);
+  padding: 0.375rem 0.75rem;
+  backdrop-filter: blur(4px);
+}
+.spectatorRoom[data-theme="night"] .recessedSpeechBox {
+  border-color: rgba(35, 48, 70, 0.55);
+  background: rgba(6, 9, 16, 0.88);
+}
+
+@media (min-width: 640px) {
+  .recessedSpeechBox {
+    min-height: 4.5rem;
+    padding: 0.5rem 1rem;
+  }
+}
+
+/* Avatar seal in bottom dock */
+.dockAvatarSeal {
+  position: relative;
+  display: flex;
+  height: 2.85rem;
+  width: 2.85rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 2px solid rgba(180, 130, 60, 0.6);
+  background: radial-gradient(circle at 40% 35%, #3c2314 0%, #201208 70%, #120904 100%);
+  box-shadow:
+    0 4px 8px rgba(0, 0, 0, 0.6),
+    inset 0 1px 2px rgba(255, 230, 170, 0.25);
+  transition: all 300ms ease;
+}
+.spectatorRoom[data-theme="night"] .dockAvatarSeal {
+  border-color: rgba(130, 150, 190, 0.5);
+  background: radial-gradient(circle at 40% 35%, #1e2234 0%, #101420 70%, #070912 100%);
+  box-shadow:
+    0 4px 8px rgba(0, 0, 0, 0.7),
+    inset 0 1px 2px rgba(180, 210, 255, 0.2);
+}
+
+@media (min-width: 640px) {
+  .dockAvatarSeal {
+    height: 3.25rem;
+    width: 3.25rem;
+  }
+}
+
+/* ── Settlement Board (Game End Panel) ── */
+.settlementBoard {
+  width: 100%;
+  max-width: 32rem;
+  border-radius: 1.25rem;
+  border: 2px solid rgba(180, 130, 60, 0.65);
+  background: radial-gradient(circle at 50% 30%, #2b180d 0%, #1a0f07 60%, #100804 100%);
+  box-shadow:
+    0 25px 65px rgba(0, 0, 0, 0.95),
+    inset 0 2px 4px rgba(255, 220, 150, 0.2),
+    inset 0 -4px 10px rgba(0, 0, 0, 0.85);
+  padding: 1.5rem;
+  text-align: center;
+}
+.spectatorRoom[data-theme="night"] .settlementBoard {
+  border-color: rgba(140, 160, 200, 0.55);
+  background: radial-gradient(circle at 50% 30%, #1c2030 0%, #101420 60%, #080a12 100%);
+}
