@@ -6,6 +6,7 @@ import { GameState, Alignment, Role, Player } from "@/types";
 import { useSpeechQueue } from "@/hooks/useSpeechQueue";
 import { PhaseAnnouncement } from "@/components/game/PhaseAnnouncement";
 import { DayNightBlinkTransition } from "@/components/game/DayNightBlinkTransition";
+import { seatAvatarSrc } from "@/lib/seatAvatar";
 import styles from "./MoonlitVillageSpectator.module.css";
 
 interface MoonlitVillageSpectatorProps {
@@ -299,7 +300,7 @@ export function MoonlitVillageSpectator({
       <main className="relative flex flex-1 min-h-0 w-full flex-col overflow-hidden p-2 sm:p-4">
         {/* Mobile Top Seats Strip (<768px): Two rows horizontally scrollable with table token chips */}
         <div className="block md:hidden w-full shrink-0 overflow-x-auto pb-2 scrollbar-none">
-          <div className="grid grid-rows-2 grid-flow-col auto-cols-[115px] gap-2 min-w-max px-2">
+          <div className="grid grid-rows-2 grid-flow-col auto-cols-[135px] gap-2 min-w-max px-2">
             {players.map((player) => {
               const isActive = player.id === activeSpeakerId || player.seat === activeSpeakerId;
               const isAlive = player.alive;
@@ -314,20 +315,51 @@ export function MoonlitVillageSpectator({
                       ? "border-amber-400 bg-[#2f1b0e] shadow-[0_0_12px_rgba(245,158,11,0.5)]"
                       : isAlive
                       ? "border-amber-950/70 bg-[#1e130a]/90 text-amber-100"
-                      : "border-stone-800 bg-stone-950/75 opacity-50 grayscale text-stone-400"
+                      : "border-stone-800 bg-stone-950/80 text-stone-400"
                   }`}
                 >
-                  <div
-                    className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold font-display ${
-                      isActive
-                        ? "bg-amber-600 text-amber-100 shadow-sm"
-                        : isAlive
-                        ? "bg-amber-950/80 border border-amber-700/40 text-amber-300"
-                        : "bg-stone-850 text-stone-500"
-                    }`}
-                  >
-                    {isAlive ? player.seat : "🪦"}
+                  {/* ~2rem Circular Portrait + Badges */}
+                  <div className="relative shrink-0">
+                    <div
+                      className={`relative h-8 w-8 overflow-hidden rounded-full border shadow-sm ${
+                        isActive
+                          ? "border-amber-400 ring-2 ring-amber-400/80"
+                          : isAlive
+                          ? "border-amber-700/60 bg-[#25150b]"
+                          : "border-stone-700 bg-stone-950"
+                      }`}
+                    >
+                      <img
+                        src={seatAvatarSrc(player.seat)}
+                        alt={`${player.name} 的头像`}
+                        loading="eager"
+                        decoding="async"
+                        className={`h-full w-full object-cover object-[center_top] ${
+                          !isAlive ? "grayscale contrast-75 brightness-75 opacity-70" : ""
+                        }`}
+                        onError={(e) => {
+                          (e.currentTarget as HTMLImageElement).style.display = "none";
+                        }}
+                      />
+                    </div>
+
+                    {/* Wax / Brass Seat number badge */}
+                    <span className="absolute -bottom-1 -right-1 z-10 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-gradient-to-br from-amber-700 to-amber-900 border border-amber-400/60 text-[9px] font-bold text-amber-100 font-display select-none shadow-sm">
+                      {player.seat}
+                    </span>
+
+                    {/* Tombstone badge on dead seats */}
+                    {!isAlive && (
+                      <span
+                        className="absolute -top-1 -left-1 z-10 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-stone-900 border border-stone-600 text-[8px] select-none shadow-sm"
+                        title="出局"
+                        aria-label="出局"
+                      >
+                        🪦
+                      </span>
+                    )}
                   </div>
+
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-display font-semibold text-amber-100">{player.name}</p>
                     <p className="truncate text-[10px] text-amber-300/60">
@@ -455,21 +487,46 @@ export function MoonlitVillageSpectator({
                         : styles.tokenDead
                     }`}
                   >
-                    {isAlive ? (
-                      <span className="font-display font-bold text-sm select-none">
-                        {player.seat}
+                    {/* Circular Portrait Image */}
+                    <div className={styles.tokenAvatarWrap}>
+                      <img
+                        src={seatAvatarSrc(player.seat)}
+                        alt={`${player.name} 的头像`}
+                        loading="eager"
+                        decoding="async"
+                        className={styles.tokenAvatarImg}
+                        onError={(e) => {
+                          (e.currentTarget as HTMLImageElement).style.display = "none";
+                        }}
+                      />
+                      <span className={styles.tokenAvatarFallback}>
+                        {player.name ? player.name.slice(0, 1) : player.seat}
                       </span>
-                    ) : (
-                      <span className="text-base select-none">🪦</span>
+                    </div>
+
+                    {/* Corner Wax/Brass Seat Number Badge */}
+                    <span className={styles.tokenSeatBadge}>
+                      {player.seat}
+                    </span>
+
+                    {/* Tombstone badge on dead seats */}
+                    {!isAlive && (
+                      <span
+                        className={styles.tokenTombstoneBadge}
+                        title="出局"
+                        aria-label="出局"
+                      >
+                        🪦
+                      </span>
                     )}
                   </div>
 
                   {/* Compact Nameplate beneath Token */}
                   <div className={styles.seatNameplate}>
-                    <p className="w-full truncate font-display text-[11px] font-semibold text-amber-100/95">
+                    <p className="w-full truncate font-display text-xs font-semibold text-amber-100 drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
                       {player.name}
                     </p>
-                    <p className="text-[10px] leading-tight text-amber-300/70">
+                    <p className="text-[10px] font-medium leading-tight text-amber-300/85">
                       {isAlive ? (isActive ? "发言中" : `${player.seat}号`) : "出局"}
                     </p>
 
@@ -505,13 +562,33 @@ export function MoonlitVillageSpectator({
               </button>
             </div>
             {displayedSpeeches.map((item, idx) => (
-              <div key={`${item.id}-${idx}`} className="border-b border-amber-950/50 pb-1.5 last:border-0 text-xs">
+              <div key={`${item.id}-${idx}`} className="border-b border-amber-950/50 pb-2 last:border-0 text-xs">
                 <div className="flex items-center gap-2 text-[11px] text-amber-400 font-medium">
-                  <span className="font-display">{item.actorSeat > 0 ? `${item.actorSeat}号 ` : ""}{item.actorName}</span>
+                  {item.actorSeat > 0 ? (
+                    <div className="relative h-6 w-6 sm:h-7 sm:w-7 shrink-0 overflow-hidden rounded-full border border-amber-600/50 bg-[#25150c] shadow-sm">
+                      <img
+                        src={seatAvatarSrc(item.actorSeat)}
+                        alt={`${item.actorName} 的头像`}
+                        loading="eager"
+                        decoding="async"
+                        className="h-full w-full object-cover object-[center_top]"
+                        onError={(e) => {
+                          (e.currentTarget as HTMLImageElement).style.display = "none";
+                        }}
+                      />
+                    </div>
+                  ) : (
+                    <div className="flex h-6 w-6 sm:h-7 sm:w-7 shrink-0 items-center justify-center rounded-full border border-amber-700/40 bg-amber-950/80 text-[11px]">
+                      {item.actorName ? item.actorName.slice(0, 1) : "📜"}
+                    </div>
+                  )}
+                  <span className="font-display font-semibold text-amber-200">
+                    {item.actorSeat > 0 ? `${item.actorSeat}号 ` : ""}{item.actorName}
+                  </span>
                   <span className="text-[10px] text-amber-300/60">({PHASE_LABEL[item.phase] || item.phase})</span>
                   <span className="opacity-60 text-[10px]">第 {item.day} 天</span>
                 </div>
-                <p className="mt-0.5 text-amber-100/90 leading-relaxed whitespace-pre-wrap">{item.fullText}</p>
+                <p className="mt-1 pl-8 sm:pl-9 text-amber-100/90 leading-relaxed whitespace-pre-wrap">{item.fullText}</p>
               </div>
             ))}
           </div>
@@ -528,14 +605,32 @@ export function MoonlitVillageSpectator({
           {/* Avatar & Seat Seal */}
           <div
             className={`${styles.dockAvatarSeal} ${
-              isTyping ? "ring-2 ring-amber-400/80 shadow-[0_0_14px_rgba(245,158,11,0.5)]" : ""
+              isTyping ? styles.dockAvatarActive : ""
             }`}
           >
-            <span className="font-display text-base sm:text-lg font-bold text-amber-200">
-              {speakerInitial}
-            </span>
+            {speakerSeat != null && speakerSeat > 0 ? (
+              <div className={styles.dockAvatarWrap}>
+                <img
+                  src={seatAvatarSrc(speakerSeat)}
+                  alt={`${speakerName} 的头像`}
+                  loading="eager"
+                  decoding="async"
+                  className={styles.dockAvatarImg}
+                  onError={(e) => {
+                    (e.currentTarget as HTMLImageElement).style.display = "none";
+                  }}
+                />
+                <span className={styles.dockAvatarFallback}>
+                  {speakerInitial}
+                </span>
+              </div>
+            ) : (
+              <span className="font-display text-base sm:text-lg font-bold text-amber-200">
+                {speakerInitial}
+              </span>
+            )}
             {speakerSeat != null && (
-              <span className="absolute -bottom-1 -right-1 flex h-4 w-4 sm:h-5 sm:w-5 items-center justify-center rounded-full bg-amber-700 border border-amber-400/50 text-[9px] sm:text-[10px] font-bold text-amber-100 shadow-sm font-display">
+              <span className="absolute -bottom-1 -right-1 z-10 flex h-4 w-4 sm:h-5 sm:w-5 items-center justify-center rounded-full bg-gradient-to-br from-amber-700 to-amber-900 border border-amber-400/60 text-[9px] sm:text-[10px] font-bold text-amber-100 shadow-sm font-display select-none">
                 {speakerSeat}
               </span>
             )}
@@ -631,14 +726,52 @@ export function MoonlitVillageSpectator({
                 {players.map((p) => (
                   <div
                     key={p.seat}
-                    className="flex items-center gap-2 rounded-lg border border-amber-950/80 bg-[#1e130a]/85 p-2 text-left text-xs"
+                    className={`flex items-center gap-2 rounded-lg border p-2 text-left text-xs transition-colors ${
+                      p.alive
+                        ? "border-amber-950/80 bg-[#1e130a]/85"
+                        : "border-stone-800/80 bg-stone-950/70 opacity-75"
+                    }`}
                   >
-                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-amber-700/50 bg-amber-950 font-display font-bold text-amber-300">
-                      {p.seat}
-                    </span>
+                    <div className="relative shrink-0">
+                      <div
+                        className={`relative h-8 w-8 sm:h-9 sm:w-9 overflow-hidden rounded-full border shadow-sm ${
+                          p.alive
+                            ? "border-amber-600/60 bg-[#25150b]"
+                            : "border-stone-700 bg-stone-950"
+                        }`}
+                      >
+                        <img
+                          src={seatAvatarSrc(p.seat)}
+                          alt={`${p.name} 的头像`}
+                          loading="eager"
+                          decoding="async"
+                          className={`h-full w-full object-cover object-[center_top] ${
+                            !p.alive ? "grayscale contrast-75 brightness-75 opacity-70" : ""
+                          }`}
+                          onError={(e) => {
+                            (e.currentTarget as HTMLImageElement).style.display = "none";
+                          }}
+                        />
+                      </div>
+                      {/* Seat badge */}
+                      <span className="absolute -bottom-1 -right-1 z-10 flex h-3.5 w-3.5 sm:h-4 sm:w-4 items-center justify-center rounded-full bg-gradient-to-br from-amber-700 to-amber-900 border border-amber-400/60 text-[9px] sm:text-[10px] font-bold text-amber-100 font-display select-none shadow-sm">
+                        {p.seat}
+                      </span>
+                      {/* Tombstone badge if dead */}
+                      {!p.alive && (
+                        <span
+                          className="absolute -top-1 -left-1 z-10 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-stone-900 border border-stone-600 text-[8px] select-none shadow-sm"
+                          title="出局"
+                          aria-label="出局"
+                        >
+                          🪦
+                        </span>
+                      )}
+                    </div>
+
                     <div className="min-w-0 flex-1">
                       <p className="truncate font-display font-semibold text-amber-100">{p.name}</p>
-                      <p className="truncate text-[10px] text-amber-300/60">
+                      <p className="truncate text-[10px] text-amber-300/70">
                         {p.role ? roleNames[p.role] || p.role : "未知"}
                         <span className="ml-1 opacity-70">({p.alive ? "存活" : "出局"})</span>
                       </p>

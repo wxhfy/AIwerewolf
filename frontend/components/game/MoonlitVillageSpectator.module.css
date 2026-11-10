@@ -86,33 +86,35 @@
 
 /* Day table: warm aged oak table rim and wood grain */
 .spectatorRoom[data-theme="day"] .tableSurface {
-  border: 11px solid #28170d;
+  border: 15px solid #28160b;
   box-shadow:
-    0 25px 60px -5px rgba(0, 0, 0, 0.92),
-    0 10px 24px -5px rgba(0, 0, 0, 0.75),
-    inset 0 2px 4px rgba(255, 230, 180, 0.2),
-    inset 0 -6px 12px rgba(0, 0, 0, 0.85);
+    0 30px 70px -5px rgba(0, 0, 0, 0.95),
+    0 12px 28px -5px rgba(0, 0, 0, 0.8),
+    inset 0 3px 6px rgba(255, 230, 180, 0.3),
+    inset 0 0 0 2px rgba(180, 130, 60, 0.4),
+    inset 0 -8px 16px rgba(0, 0, 0, 0.92);
   background:
     /* Concentric decorative ring groove */
-    radial-gradient(ellipse 88% 84% at 50% 50%, transparent 96.5%, rgba(190, 135, 60, 0.25) 97%, transparent 99%),
+    radial-gradient(ellipse 88% 84% at 50% 50%, transparent 96.5%, rgba(190, 135, 60, 0.28) 97%, transparent 99%),
     /* Warm table surface ambient lighting */
-    radial-gradient(ellipse 72% 62% at 50% 48%, rgba(200, 135, 55, 0.24) 0%, rgba(48, 26, 14, 0.8) 60%, #150b06 100%),
-    /* Repeating vertical wood plank grain */
-    repeating-linear-gradient(90deg, #2b170c 0px, #2b170c 24px, #201108 25px, #361e10 26px, #29160b 54px, #1c0e06 56px);
+    radial-gradient(ellipse 72% 62% at 50% 48%, rgba(215, 145, 60, 0.28) 0%, rgba(48, 26, 14, 0.85) 60%, #150b06 100%),
+    /* Repeating vertical wood plank grain with rich oak undertones */
+    repeating-linear-gradient(90deg, #2b170c 0px, #2b170c 18px, #231209 19px, #361e10 20px, #2d180c 42px, #1a0d05 44px, #331b0e 45px, #26140a 60px);
 }
 
 /* Night table: dark stained mahogany/ebony under faint moonlight and candle warmth */
 .spectatorRoom[data-theme="night"] .tableSurface {
-  border: 11px solid #161a25;
+  border: 15px solid #141722;
   box-shadow:
-    0 25px 60px -5px rgba(0, 0, 0, 0.98),
-    0 10px 24px -5px rgba(0, 0, 0, 0.85),
-    inset 0 2px 4px rgba(180, 210, 255, 0.15),
-    inset 0 -6px 12px rgba(0, 0, 0, 0.9);
+    0 30px 70px -5px rgba(0, 0, 0, 0.98),
+    0 12px 28px -5px rgba(0, 0, 0, 0.88),
+    inset 0 3px 6px rgba(180, 210, 255, 0.22),
+    inset 0 0 0 2px rgba(130, 150, 190, 0.3),
+    inset 0 -8px 16px rgba(0, 0, 0, 0.94);
   background:
-    radial-gradient(ellipse 88% 84% at 50% 50%, transparent 96.5%, rgba(140, 160, 210, 0.18) 97%, transparent 99%),
-    radial-gradient(ellipse 72% 62% at 50% 48%, rgba(140, 115, 80, 0.14) 0%, rgba(18, 20, 30, 0.82) 60%, #07080e 100%),
-    repeating-linear-gradient(90deg, #181723 0px, #181723 24px, #100f18 25px, #222030 26px, #171624 54px, #0b0a11 56px);
+    radial-gradient(ellipse 88% 84% at 50% 50%, transparent 96.5%, rgba(140, 160, 210, 0.2) 97%, transparent 99%),
+    radial-gradient(ellipse 72% 62% at 50% 48%, rgba(150, 125, 90, 0.16) 0%, rgba(18, 20, 30, 0.88) 60%, #07080e 100%),
+    repeating-linear-gradient(90deg, #181723 0px, #181723 18px, #12111b 19px, #242233 20px, #191826 42px, #0c0b12 44px, #211f2e 45px, #151421 60px);
 }
 
 /* Inner decorative groove on the table */
@@ -193,89 +195,205 @@
 .tokenMedallion {
   position: relative;
   display: flex;
-  height: 3rem;
-  width: 3rem;
+  height: 4.85rem;
+  width: 4.85rem;
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  transition: all 300ms ease;
+  padding: 3px;
+  box-sizing: border-box;
+  transition: transform 300ms ease, box-shadow 300ms ease, border-color 300ms ease;
 }
 
-/* Alive normal token */
+@media (min-width: 1024px) {
+  .tokenMedallion {
+    height: 5.15rem;
+    width: 5.15rem;
+  }
+}
+
+.tokenAvatarWrap {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #1a0f08;
+}
+
+.tokenAvatarImg {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center top;
+  border-radius: 50%;
+  display: block;
+  transition: filter 300ms ease, opacity 300ms ease;
+}
+
+.tokenAvatarFallback {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display, inherit);
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #fbbf24;
+  user-select: none;
+  pointer-events: none;
+}
+
+/* Alive normal token: engraved copper / brass bezel frame */
 .tokenAlive {
-  border: 2px solid rgba(180, 130, 60, 0.65);
-  background: radial-gradient(circle at 40% 35%, #3c2415 0%, #24140a 70%, #150b05 100%);
+  border: 3px solid #b87b32;
+  background: radial-gradient(circle at 40% 35%, #4a2815 0%, #2a160b 70%, #150a05 100%);
   box-shadow:
-    0 4px 10px rgba(0, 0, 0, 0.65),
-    inset 0 1px 2px rgba(255, 220, 150, 0.25),
-    inset 0 -2px 4px rgba(0, 0, 0, 0.8);
+    0 5px 12px rgba(0, 0, 0, 0.72),
+    0 0 0 1px rgba(255, 220, 150, 0.25),
+    inset 0 2px 4px rgba(255, 230, 170, 0.35),
+    inset 0 -2px 5px rgba(0, 0, 0, 0.85);
   color: #f7eedc;
 }
 .spectatorRoom[data-theme="night"] .tokenAlive {
-  border: 2px solid rgba(130, 150, 190, 0.55);
-  background: radial-gradient(circle at 40% 35%, #202436 0%, #131724 70%, #0a0d15 100%);
+  border: 3px solid #6b7f9e;
+  background: radial-gradient(circle at 40% 35%, #252a3e 0%, #151926 70%, #0a0d15 100%);
   box-shadow:
-    0 4px 10px rgba(0, 0, 0, 0.75),
-    inset 0 1px 2px rgba(180, 210, 255, 0.2),
-    inset 0 -2px 4px rgba(0, 0, 0, 0.85);
+    0 5px 12px rgba(0, 0, 0, 0.82),
+    0 0 0 1px rgba(180, 210, 255, 0.2),
+    inset 0 2px 4px rgba(180, 210, 255, 0.3),
+    inset 0 -2px 5px rgba(0, 0, 0, 0.9);
   color: #ede8dc;
 }
 
-/* Active Speaker: warm candle-ring glow on token, slight scale */
+/* Active Speaker: warm candle-ring glow on token, obviously stronger aura, slight scale */
 .tokenActive {
-  transform: scale(1.1);
-  border-color: #f59e0b !important;
+  transform: scale(1.12);
+  border: 3.5px solid #fbbf24 !important;
   background: radial-gradient(circle at 40% 35%, #5a351c 0%, #3a2010 70%, #221208 100%) !important;
   box-shadow:
-    0 0 0 2px rgba(245, 158, 11, 0.9),
-    0 0 20px rgba(245, 158, 11, 0.75),
-    0 0 35px rgba(245, 158, 11, 0.4),
-    inset 0 1px 2px rgba(255, 240, 190, 0.5) !important;
-  animation: candleAura 2.4s ease-in-out infinite;
+    0 0 0 3px rgba(251, 191, 36, 0.95),
+    0 0 26px rgba(245, 158, 11, 0.85),
+    0 0 48px rgba(245, 158, 11, 0.5),
+    inset 0 0 8px rgba(251, 191, 36, 0.4) !important;
+  animation: candleAura 2.2s ease-in-out infinite;
   color: #fffbeb !important;
+}
+
+.tokenActive .tokenAvatarImg {
+  filter: none !important;
+  opacity: 1 !important;
 }
 
 @keyframes candleAura {
   0%, 100% {
     box-shadow:
-      0 0 0 2px rgba(245, 158, 11, 0.85),
-      0 0 18px rgba(245, 158, 11, 0.7),
-      0 0 32px rgba(245, 158, 11, 0.35),
-      inset 0 1px 2px rgba(255, 240, 190, 0.45);
+      0 0 0 3px rgba(251, 191, 36, 0.9),
+      0 0 24px rgba(245, 158, 11, 0.8),
+      0 0 45px rgba(245, 158, 11, 0.45),
+      inset 0 0 8px rgba(251, 191, 36, 0.35);
   }
   50% {
     box-shadow:
-      0 0 0 2.5px rgba(245, 158, 11, 0.95),
-      0 0 24px rgba(245, 158, 11, 0.85),
-      0 0 44px rgba(245, 158, 11, 0.5),
-      inset 0 1px 3px rgba(255, 240, 190, 0.6);
+      0 0 0 4px #fde68a,
+      0 0 34px rgba(245, 158, 11, 1),
+      0 0 60px rgba(245, 158, 11, 0.65),
+      inset 0 0 14px rgba(251, 191, 36, 0.55);
   }
 }
 
-/* Dead token: desaturated fallen mark / black-cloth shroud */
+@media (prefers-reduced-motion: reduce) {
+  .tokenActive {
+    animation: none;
+    box-shadow:
+      0 0 0 3.5px rgba(251, 191, 36, 0.95),
+      0 0 28px rgba(245, 158, 11, 0.85),
+      0 0 50px rgba(245, 158, 11, 0.5),
+      inset 0 0 10px rgba(251, 191, 36, 0.4) !important;
+  }
+}
+
+/* Dead token: portrait remains visible but desaturated / darkened shroud */
 .tokenDead {
-  border: 2px solid rgba(80, 80, 90, 0.45) !important;
+  border: 2.5px solid rgba(90, 90, 105, 0.55) !important;
   background: radial-gradient(circle at 40% 35%, #1e1e24 0%, #141418 70%, #0a0a0d 100%) !important;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.7) !important;
-  opacity: 0.55;
-  filter: grayscale(1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.8) !important;
   color: #8a8885 !important;
 }
 
-/* Nameplate beneath the token */
+.tokenDead .tokenAvatarImg {
+  filter: grayscale(0.85) contrast(0.85) brightness(0.6);
+  opacity: 0.65;
+}
+
+/* Wax / Brass Seat Number Badge at Token Corner */
+.tokenSeatBadge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  z-index: 10;
+  display: flex;
+  height: 1.45rem;
+  width: 1.45rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 220, 150, 0.85);
+  background: radial-gradient(circle at 40% 35%, #a83d20 0%, #7c240f 70%, #4d1306 100%);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.75), inset 0 1px 1px rgba(255, 255, 255, 0.3);
+  font-family: var(--font-display, inherit);
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #fff1d6;
+  user-select: none;
+}
+.spectatorRoom[data-theme="night"] .tokenSeatBadge {
+  border-color: rgba(200, 220, 255, 0.75);
+  background: radial-gradient(circle at 40% 35%, #8f341c 0%, #631d0b 70%, #3e0f04 100%);
+}
+
+/* Tombstone badge on dead tokens */
+.tokenTombstoneBadge {
+  position: absolute;
+  bottom: -3px;
+  left: -3px;
+  z-index: 10;
+  display: flex;
+  height: 1.35rem;
+  width: 1.35rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 1.5px solid rgba(140, 140, 150, 0.65);
+  background: radial-gradient(circle at 40% 35%, #2e2e38 0%, #1a1a20 70%, #0d0d12 100%);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.85);
+  font-size: 0.7rem;
+  user-select: none;
+}
+
+/* Clearer Nameplate beneath the token */
 .seatNameplate {
-  margin-top: 0.35rem;
-  border-radius: 0.375rem;
-  padding: 0.15rem 0.5rem;
-  max-width: 5.75rem;
-  border: 1px solid rgba(80, 50, 30, 0.45);
-  background: rgba(18, 11, 6, 0.88);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.55);
+  margin-top: 0.45rem;
+  border-radius: 0.45rem;
+  padding: 0.2rem 0.55rem;
+  min-width: 5.25rem;
+  max-width: 6.85rem;
+  border: 1px solid rgba(160, 110, 50, 0.45);
+  background: linear-gradient(180deg, rgba(32, 18, 10, 0.94) 0%, rgba(16, 9, 5, 0.96) 100%);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.65), inset 0 1px 1px rgba(255, 230, 160, 0.2);
   text-align: center;
 }
 .spectatorRoom[data-theme="night"] .seatNameplate {
-  border-color: rgba(45, 60, 85, 0.45);
-  background: rgba(8, 12, 20, 0.88);
+  border-color: rgba(55, 75, 105, 0.45);
+  background: linear-gradient(180deg, rgba(16, 22, 34, 0.94) 0%, rgba(7, 10, 18, 0.96) 100%);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.75), inset 0 1px 1px rgba(180, 210, 255, 0.15);
 }
 
 /* ── Bottom Dialogue Rail (Table Edge Dock) ── */
@@ -283,25 +401,27 @@
   position: relative;
   z-index: 20;
   flex-shrink: 0;
-  border-top: 1px solid rgba(90, 55, 30, 0.6);
-  background: #150e08;
+  border-top: 2px solid rgba(140, 90, 45, 0.7);
+  background: linear-gradient(180deg, #1d1209 0%, #120a05 100%);
   box-shadow:
-    inset 0 1px 0 rgba(255, 220, 150, 0.08),
-    0 -8px 24px rgba(0, 0, 0, 0.75);
-  padding: 0.5rem 0.75rem;
+    inset 0 1px 0 rgba(255, 220, 150, 0.15),
+    inset 0 3px 6px rgba(0, 0, 0, 0.5),
+    0 -10px 30px rgba(0, 0, 0, 0.85);
+  padding: 0.625rem 0.875rem;
   transition: background 500ms ease, border-color 500ms ease;
 }
 .spectatorRoom[data-theme="night"] .bottomRail {
-  border-top: 1px solid rgba(40, 55, 80, 0.5);
-  background: #090e18;
+  border-top: 2px solid rgba(60, 80, 115, 0.65);
+  background: linear-gradient(180deg, #0d1320 0%, #060910 100%);
   box-shadow:
-    inset 0 1px 0 rgba(180, 210, 255, 0.06),
-    0 -8px 24px rgba(0, 0, 0, 0.85);
+    inset 0 1px 0 rgba(180, 210, 255, 0.12),
+    inset 0 3px 6px rgba(0, 0, 0, 0.6),
+    0 -10px 30px rgba(0, 0, 0, 0.9);
 }
 
 @media (min-width: 640px) {
   .bottomRail {
-    padding: 0.625rem 1.5rem;
+    padding: 0.75rem 1.5rem;
   }
 }
 
@@ -336,49 +456,128 @@
 .dockAvatarSeal {
   position: relative;
   display: flex;
-  height: 2.85rem;
-  width: 2.85rem;
+  height: 3.5rem;
+  width: 3.5rem;
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  border: 2px solid rgba(180, 130, 60, 0.6);
+  border: 2.5px solid rgba(190, 140, 65, 0.7);
   background: radial-gradient(circle at 40% 35%, #3c2314 0%, #201208 70%, #120904 100%);
   box-shadow:
-    0 4px 8px rgba(0, 0, 0, 0.6),
-    inset 0 1px 2px rgba(255, 230, 170, 0.25);
+    0 4px 10px rgba(0, 0, 0, 0.7),
+    inset 0 1px 2px rgba(255, 230, 170, 0.3);
   transition: all 300ms ease;
+  padding: 2.5px;
+  box-sizing: border-box;
 }
 .spectatorRoom[data-theme="night"] .dockAvatarSeal {
-  border-color: rgba(130, 150, 190, 0.5);
+  border-color: rgba(140, 165, 205, 0.6);
   background: radial-gradient(circle at 40% 35%, #1e2234 0%, #101420 70%, #070912 100%);
   box-shadow:
-    0 4px 8px rgba(0, 0, 0, 0.7),
-    inset 0 1px 2px rgba(180, 210, 255, 0.2);
+    0 4px 10px rgba(0, 0, 0, 0.8),
+    inset 0 1px 2px rgba(180, 210, 255, 0.25);
 }
 
 @media (min-width: 640px) {
   .dockAvatarSeal {
-    height: 3.25rem;
-    width: 3.25rem;
+    height: 4rem;
+    width: 4rem;
+  }
+}
+
+.dockAvatarWrap {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dockAvatarImg {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center top;
+  border-radius: 50%;
+  display: block;
+}
+
+.dockAvatarFallback {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display, inherit);
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #fbbf24;
+  pointer-events: none;
+}
+
+/* Typist active highlight on dock avatar */
+.dockAvatarActive {
+  border-color: #fbbf24 !important;
+  box-shadow:
+    0 0 0 2.5px rgba(251, 191, 36, 0.95),
+    0 0 20px rgba(245, 158, 11, 0.85),
+    inset 0 1px 3px rgba(255, 240, 190, 0.5) !important;
+  animation: candleAuraDock 2.2s ease-in-out infinite;
+}
+
+@keyframes candleAuraDock {
+  0%, 100% {
+    box-shadow:
+      0 0 0 2.5px rgba(251, 191, 36, 0.9),
+      0 0 18px rgba(245, 158, 11, 0.8),
+      inset 0 1px 2px rgba(255, 240, 190, 0.45);
+  }
+  50% {
+    box-shadow:
+      0 0 0 3.5px #fde68a,
+      0 0 26px rgba(245, 158, 11, 0.95),
+      inset 0 1px 3px rgba(255, 240, 190, 0.6);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dockAvatarActive {
+    animation: none;
+    box-shadow:
+      0 0 0 2.5px rgba(251, 191, 36, 0.95),
+      0 0 20px rgba(245, 158, 11, 0.85),
+      inset 0 1px 3px rgba(255, 240, 190, 0.5) !important;
   }
 }
 
 /* ── Settlement Board (Game End Panel) ── */
 .settlementBoard {
   width: 100%;
-  max-width: 32rem;
+  max-width: 34rem;
   border-radius: 1.25rem;
-  border: 2px solid rgba(180, 130, 60, 0.65);
-  background: radial-gradient(circle at 50% 30%, #2b180d 0%, #1a0f07 60%, #100804 100%);
+  border: 3px solid rgba(190, 140, 65, 0.75);
+  background: radial-gradient(circle at 50% 25%, #341d10 0%, #1e1107 55%, #100804 100%);
   box-shadow:
-    0 25px 65px rgba(0, 0, 0, 0.95),
-    inset 0 2px 4px rgba(255, 220, 150, 0.2),
-    inset 0 -4px 10px rgba(0, 0, 0, 0.85);
-  padding: 1.5rem;
+    0 30px 80px rgba(0, 0, 0, 0.98),
+    0 0 0 1px rgba(0, 0, 0, 0.9),
+    inset 0 2px 5px rgba(255, 230, 160, 0.25),
+    inset 0 -6px 14px rgba(0, 0, 0, 0.9);
+  padding: 1.75rem 1.5rem;
   text-align: center;
 }
 .spectatorRoom[data-theme="night"] .settlementBoard {
-  border-color: rgba(140, 160, 200, 0.55);
-  background: radial-gradient(circle at 50% 30%, #1c2030 0%, #101420 60%, #080a12 100%);
+  border: 3px solid rgba(130, 155, 195, 0.65);
+  background: radial-gradient(circle at 50% 25%, #22263a 0%, #131724 55%, #080a12 100%);
+  box-shadow:
+    0 30px 80px rgba(0, 0, 0, 0.98),
+    0 0 0 1px rgba(0, 0, 0, 0.9),
+    inset 0 2px 5px rgba(180, 210, 255, 0.2),
+    inset 0 -6px 14px rgba(0, 0, 0, 0.92);
 }

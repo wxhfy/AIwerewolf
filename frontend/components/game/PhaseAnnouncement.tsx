@@ -70,6 +70,15 @@ export function PhaseAnnouncement({ group, visible, text: customText }: PhaseAnn
   const text = customText || t(keyMap[group] as any, language);
   const style = plaqueStyles[group] || plaqueStyles.ready;
 
+  const hasDot = typeof text === "string" && text.includes(" · ");
+  let eyebrow: string | null = null;
+  let phrase = text;
+  if (hasDot) {
+    const parts = text.split(" · ");
+    eyebrow = parts[0];
+    phrase = parts.slice(1).join(" · ");
+  }
+
   return (
     <div
       data-testid="phase-announcement"
@@ -101,14 +110,27 @@ export function PhaseAnnouncement({ group, visible, text: customText }: PhaseAnn
           <div className="text-2xl sm:text-3xl mb-2 drop-shadow-md select-none">{style.icon}</div>
         )}
 
-        {/* Engraved plaque title text */}
+        {/* Top line for '第 N 夜/天' when split by ' · ' */}
+        {hasDot && eyebrow && (
+          <p
+            className={cn(
+              "font-display text-xs sm:text-sm font-semibold tracking-wider mb-1 select-none drop-shadow",
+              style.subtext,
+            )}
+          >
+            {eyebrow}
+          </p>
+        )}
+
+        {/* Engraved plaque title text - tightened letter-spacing, nowrap when split */}
         <h1
           className={cn(
-            "font-display text-3xl sm:text-5xl font-bold tracking-widest drop-shadow-[0_2px_6px_rgba(0,0,0,0.9)] select-none",
+            "font-display text-2xl sm:text-4xl md:text-5xl font-bold tracking-normal sm:tracking-wide drop-shadow-[0_2px_6px_rgba(0,0,0,0.9)] select-none",
+            hasDot ? "whitespace-nowrap" : "break-words",
             style.text,
           )}
         >
-          {text}
+          {phrase}
         </h1>
       </div>
     </div>
