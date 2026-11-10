@@ -32,6 +32,7 @@ os.environ.setdefault("AIWEREWOLF_SQLITE_PATH", str(_TEST_DB_PATH))
 os.environ["DATABASE_URL"] = ""
 os.environ.setdefault("LLM_PROVIDER", "fake")
 os.environ.setdefault("AIWEREWOLF_DEFAULT_AGENT_TYPE", "llm")
+os.environ["MATCH_WORKER_IN_PROCESS"] = "false"
 os.environ["MODEL_POOL"] = "fake:fake-llm"
 os.environ["DOUBAO_MODEL_POOL"] = "fake:fake-llm"
 os.environ.setdefault("AW_DEV_ALLOW_PRIVATE", "1")

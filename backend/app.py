@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import threading
+import uuid
 from contextlib import asynccontextmanager
 from typing import Any
 from typing import Dict
@@ -20,6 +21,7 @@ from fastapi.responses import Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from backend.application.agents.runtime import LocalAgentRuntime
+from backend.application.matches.executor import MatchExecutor
 from backend.application.matches.executor import prepare_game
 from backend.application.matches.repository import MatchJobRepository
 from backend.application.matches.spec import MatchExecutionSpec
@@ -124,6 +126,53 @@ _match_jobs = MatchJobRepository()
 _logger = logging.getLogger("aiwerewolf.app")
 _human_runners: dict[str, threading.Thread] = {}
 _human_runner_lock = threading.Lock()
+_local_fake_match_runners: dict[str, threading.Thread] = {}
+_local_fake_match_runner_lock = threading.Lock()
+
+
+def _local_fake_match_execution_enabled(room) -> bool:
+    """Run fake-provider jobs locally in development; real providers stay worker-owned."""
+    if os.getenv("APP_ENV", "development").strip().lower() == "production":
+        return False
+    if os.getenv("_TEST_ALLOW_FAKE_LLM", "").strip().lower() != "true":
+        return False
+    provider = str((room.llm_config or {}).get("provider") or os.getenv("LLM_PROVIDER", "")).strip().lower()
+    if provider not in {"fake", "fake_llm", "offline_llm"}:
+        return False
+    configured = os.getenv("MATCH_WORKER_IN_PROCESS")
+    return configured is None or configured.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _start_local_fake_match_runner(match_id: str) -> None:
+    """Claim and execute one queued fake match without requiring a separate worker process."""
+    with _local_fake_match_runner_lock:
+        current = _local_fake_match_runners.get(match_id)
+        if current is not None and current.is_alive():
+            return
+
+        worker_id = f"api-local-{os.getpid()}-{uuid.uuid4().hex[:8]}"
+
+        def run() -> None:
+            job = None
+            try:
+                job = _match_jobs.claim_game(match_id, worker_id)
+                if job is not None:
+                    MatchExecutor(_match_jobs, worker_id=worker_id).execute(job)
+            except Exception as exc:
+                _logger.exception("Local fake match runner failed for match %s", match_id)
+                if job is not None:
+                    try:
+                        _match_jobs.fail(job.id, worker_id, str(exc))
+                    except Exception:
+                        _logger.exception("Could not mark local fake match %s as failed", match_id)
+            finally:
+                with _local_fake_match_runner_lock:
+                    if _local_fake_match_runners.get(match_id) is threading.current_thread():
+                        _local_fake_match_runners.pop(match_id, None)
+
+        thread = threading.Thread(target=run, name=f"local-fake-match-{match_id}", daemon=True)
+        _local_fake_match_runners[match_id] = thread
+        thread.start()
 
 
 def _save_game_start(state: GameState) -> None:
@@ -1107,6 +1156,8 @@ def start_or_resume_room_game(room_id: str, show_private: bool = False):
     snapshot = MatchFeedRepository().latest_snapshot(match_id, moderator=show_private)
     if snapshot is None:
         raise HTTPException(status_code=500, detail="Prepared match snapshot is unavailable")
+    if job.get("status") == "queued" and _local_fake_match_execution_enabled(room):
+        _start_local_fake_match_runner(match_id)
     return {
         "match_id": match_id,
         "room_id": room_id,
