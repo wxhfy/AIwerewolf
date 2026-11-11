@@ -22,12 +22,12 @@ const defaultGameSettings: GameSettings = {
   viewMode: ViewMode.PUBLIC,
   language: Language.ZH,
   seed: Math.floor(Math.random() * 1000),
-  modelProvider: "anthropic",
-  modelName: "deepseek-v4-flash",
+  modelProvider: "siliconflow",
+  modelName: "THUDM/GLM-4-9B-0414",
   apiKey: "",
-  baseUrl: "https://api.deepseek.com/anthropic",
-  apiFormat: "anthropic_messages",
-  authEnvVar: "ANTHROPIC_AUTH_TOKEN",
+  baseUrl: "https://api.siliconflow.cn/v1",
+  apiFormat: "openai_chat",
+  authEnvVar: "SILICONFLOW_API_KEY",
 };
 
 function normalizeGameSettings(raw: unknown): GameSettings {

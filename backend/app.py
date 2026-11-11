@@ -140,6 +140,14 @@ def _dev_fake_llm_forced() -> bool:
     return provider in {"fake", "fake_llm", "offline_llm"}
 
 
+def _dev_siliconflow_pinned() -> bool:
+    """Preview/dev only: keep the server on free SiliconFlow, ignoring leftover lobby providers."""
+    if os.getenv("APP_ENV", "development").strip().lower() == "production":
+        return False
+    provider = os.getenv("LLM_PROVIDER", "").strip().lower()
+    return provider in {"siliconflow", "silicon_flow"}
+
+
 def _effective_llm_config(room) -> dict:
     if _dev_fake_llm_forced():
         config = dict(room.llm_config or {})
@@ -147,7 +155,19 @@ def _effective_llm_config(room) -> dict:
         config.setdefault("model", "fake-llm")
         config.pop("base_url", None)
         return config
-    return dict(room.llm_config or {})
+    config = dict(room.llm_config or {})
+    if _dev_siliconflow_pinned():
+        model = os.getenv("SILICONFLOW_MODEL", "THUDM/GLM-4-9B-0414").strip() or "THUDM/GLM-4-9B-0414"
+        base_url = (
+            os.getenv("SILICONFLOW_BASE_URL", "https://api.siliconflow.cn/v1").strip()
+            or "https://api.siliconflow.cn/v1"
+        )
+        config["provider"] = "siliconflow"
+        config["model"] = model
+        config["base_url"] = base_url.rstrip("/")
+        config.pop("api_key", None)
+        config.pop("api_format", None)
+    return config
 
 
 def _local_fake_match_execution_enabled(room) -> bool:

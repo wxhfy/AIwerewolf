@@ -233,3 +233,42 @@ def test_production_does_not_start_local_fake_runner(monkeypatch: pytest.MonkeyP
     status = client.get(f"/api/matches/{match_id}")
     assert status.status_code == 200
     assert status.json()["status"] == "queued"
+
+
+def test_dev_siliconflow_pin_overrides_lobby_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("APP_ENV", "development")
+    monkeypatch.setenv("LLM_PROVIDER", "siliconflow")
+    monkeypatch.setenv("SILICONFLOW_MODEL", "THUDM/GLM-4-9B-0414")
+    monkeypatch.setenv("SILICONFLOW_BASE_URL", "https://api.siliconflow.cn/v1")
+    monkeypatch.delenv("_TEST_ALLOW_FAKE_LLM", raising=False)
+
+    room = SimpleNamespace(
+        llm_config={
+            "provider": "anthropic",
+            "model": "deepseek-v4-flash",
+            "base_url": "https://api.deepseek.com/anthropic",
+        }
+    )
+    config = _effective_llm_config(room)
+    assert config["provider"] == "siliconflow"
+    assert config["model"] == "THUDM/GLM-4-9B-0414"
+    assert config["base_url"] == "https://api.siliconflow.cn/v1"
+    assert "api_key" not in config
+    assert _local_fake_match_execution_enabled(room) is False
+
+
+def test_production_does_not_pin_siliconflow(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("LLM_PROVIDER", "siliconflow")
+    monkeypatch.setenv("SILICONFLOW_MODEL", "THUDM/GLM-4-9B-0414")
+
+    room = SimpleNamespace(
+        llm_config={
+            "provider": "anthropic",
+            "model": "deepseek-v4-flash",
+            "base_url": "https://api.deepseek.com/anthropic",
+        }
+    )
+    config = _effective_llm_config(room)
+    assert config["provider"] == "anthropic"
+    assert config["model"] == "deepseek-v4-flash"
