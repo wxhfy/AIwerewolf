@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { GameState, Alignment, Role, Player } from "@/types";
 import { useSpeechQueue } from "@/hooks/useSpeechQueue";
@@ -150,6 +150,50 @@ export function MoonlitVillageSpectator({
   } = useSpeechQueue(gameState?.events, {
     onSpeechComplete: controller.onChatComplete,
   });
+
+  // Live player typist currently active in typewriter queue (excludes broadcast wait lines / system messages)
+  const hasLivePlayerSpeaker = useMemo(() => {
+    if (!isTyping || !currentSpeech) return false;
+    const seat = currentSpeech.actorSeat;
+    if (typeof seat === "number" && seat > 0) return true;
+    const actorId = currentSpeech.actorId;
+    if (actorId && players.some((p) => p.id === actorId || String(p.seat) === actorId)) {
+      return true;
+    }
+    const actorName = currentSpeech.actorName;
+    if (actorName && players.some((p) => p.name === actorName)) {
+      return true;
+    }
+    return false;
+  }, [isTyping, currentSpeech, players]);
+
+  // Phase announcement dismissal:
+  // When a real player starts speaking, dismiss the center overlay plaque immediately so the table is visible.
+  // We keep it dismissed for this specific announcement so it doesn't pop back up if speech ends before the 2.2s timer.
+  const [dismissedAnnouncementKey, setDismissedAnnouncementKey] = useState<string | null>(null);
+  const dismissedAnnouncementKeyRef = useRef<string | null>(null);
+
+  const activeAnnouncementKey =
+    phase.phaseAnnouncement && phase.phaseAnnouncement.visible
+      ? `${phase.phaseAnnouncement.group}:${phase.phaseAnnouncement.text || ""}`
+      : null;
+
+  if (hasLivePlayerSpeaker && activeAnnouncementKey) {
+    dismissedAnnouncementKeyRef.current = activeAnnouncementKey;
+  }
+
+  useEffect(() => {
+    if (hasLivePlayerSpeaker && activeAnnouncementKey) {
+      setDismissedAnnouncementKey(activeAnnouncementKey);
+    }
+  }, [hasLivePlayerSpeaker, activeAnnouncementKey]);
+
+  const isAnnouncementDismissed = Boolean(
+    activeAnnouncementKey &&
+      (dismissedAnnouncementKey === activeAnnouncementKey ||
+        dismissedAnnouncementKeyRef.current === activeAnnouncementKey ||
+        hasLivePlayerSpeaker)
+  );
 
   const [showHistory, setShowHistory] = useState(false);
 
@@ -344,8 +388,8 @@ export function MoonlitVillageSpectator({
         onOpenComplete={phase.onBlinkOpenComplete}
       />
 
-      {/* ── Phase Announcement Overlay (hidden on winner) ── */}
-      {!winner && phase.phaseAnnouncement && (
+      {/* ── Phase Announcement Overlay (hidden on winner or when live player speaker starts) ── */}
+      {!winner && !isAnnouncementDismissed && phase.phaseAnnouncement && (
         <PhaseAnnouncement
           group={phase.phaseAnnouncement.group}
           visible={phase.phaseAnnouncement.visible}
