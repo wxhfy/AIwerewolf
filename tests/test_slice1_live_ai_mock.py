@@ -76,3 +76,7 @@ def test_live_ai_match_runs_without_dev_fixture(monkeypatch: pytest.MonkeyPatch)
     assert snapshot is not None
     assert len({event.get("phase") for event in phase_changes}) > 1
     assert speech_events
+    speeches = [event["payload"]["speech"].strip() for event in speech_events]
+    assert all(any("\u4e00" <= char <= "\u9fff" for char in speech) for speech in speeches)
+    assert all("speaks from the visible evidence" not in speech for speech in speeches)
+    assert all("player speaks" not in speech.lower() for speech in speeches)
