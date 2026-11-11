@@ -16,31 +16,31 @@
 
 /* Day Tavern Room: dim warm tavern interior (#1c120c to #3a2416) */
 .spectatorRoom[data-theme="day"] {
-  background-color: #23160e;
+  background-color: #20130a;
   background-image:
     /* High dormer window / skylight warm illumination beam from above */
-    radial-gradient(ellipse 75% 45% at 50% -8%, rgba(245, 205, 140, 0.18) 0%, transparent 70%),
+    radial-gradient(ellipse 75% 45% at 50% -8%, rgba(245, 205, 140, 0.22) 0%, transparent 70%),
     /* Ambient warm candle / fireplace reflection near center table */
-    radial-gradient(ellipse 65% 55% at 50% 50%, rgba(217, 130, 43, 0.09) 0%, transparent 65%),
+    radial-gradient(ellipse 68% 58% at 50% 50%, rgba(234, 138, 48, 0.12) 0%, transparent 68%),
     /* Subtle horizontal tavern floor plank grooves */
     repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.28) 0px, rgba(0, 0, 0, 0.28) 2px, transparent 2px, transparent 44px),
     /* Deep tavern corner vignette */
-    radial-gradient(circle at 50% 50%, transparent 40%, rgba(15, 8, 4, 0.88) 100%);
+    radial-gradient(circle at 50% 50%, transparent 38%, rgba(15, 8, 4, 0.9) 100%);
   color: #f7eedf;
 }
 
-/* Night Hall Room: actually dark indigo/black hall (#080c14 to #121927) */
+/* Night Hall Room: dark indigo/black hall (#080c14 to #121927) */
 .spectatorRoom[data-theme="night"] {
-  background-color: #0b101c;
+  background-color: #090d18;
   background-image:
     /* Cool faint moonlight shaft from an upper arch window */
-    radial-gradient(ellipse 70% 45% at 50% -10%, rgba(160, 195, 245, 0.16) 0%, transparent 70%),
-    /* Lingering warm candle glow pool over the table */
-    radial-gradient(ellipse 55% 45% at 50% 50%, rgba(245, 158, 11, 0.07) 0%, transparent 65%),
+    radial-gradient(ellipse 75% 45% at 50% -10%, rgba(165, 200, 255, 0.20) 0%, transparent 70%),
+    /* Lingering faint moonlight pool over the table */
+    radial-gradient(ellipse 58% 48% at 50% 50%, rgba(140, 175, 235, 0.08) 0%, transparent 65%),
     /* Dark floor plank shadows */
-    repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.38) 0px, rgba(0, 0, 0, 0.38) 2px, transparent 2px, transparent 44px),
+    repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.4) 0px, rgba(0, 0, 0, 0.4) 2px, transparent 2px, transparent 44px),
     /* Deep night vignette */
-    radial-gradient(circle at 50% 50%, transparent 35%, rgba(3, 5, 10, 0.95) 100%);
+    radial-gradient(circle at 50% 50%, transparent 32%, rgba(2, 4, 8, 0.97) 100%);
   color: #ede9e1;
 }
 
@@ -80,41 +80,79 @@
   width: 88%;
   height: 80%;
   border-radius: 50%;
+  overflow: hidden;
   pointer-events: none;
-  transition: background 700ms ease, border-color 700ms ease, box-shadow 700ms ease;
+  transition: border-color 700ms ease, box-shadow 700ms ease, background-color 700ms ease;
 }
 
-/* Day table: warm aged oak table rim and wood grain */
+/* Day table: warm aged oak table rim and rich shadows */
 .spectatorRoom[data-theme="day"] .tableSurface {
   border: 15px solid #28160b;
+  background-color: #24150b;
   box-shadow:
-    0 30px 70px -5px rgba(0, 0, 0, 0.95),
-    0 12px 28px -5px rgba(0, 0, 0, 0.8),
-    inset 0 3px 6px rgba(255, 230, 180, 0.3),
-    inset 0 0 0 2px rgba(180, 130, 60, 0.4),
-    inset 0 -8px 16px rgba(0, 0, 0, 0.92);
-  background:
-    /* Concentric decorative ring groove */
-    radial-gradient(ellipse 88% 84% at 50% 50%, transparent 96.5%, rgba(190, 135, 60, 0.28) 97%, transparent 99%),
-    /* Warm table surface ambient lighting */
-    radial-gradient(ellipse 72% 62% at 50% 48%, rgba(215, 145, 60, 0.28) 0%, rgba(48, 26, 14, 0.85) 60%, #150b06 100%),
-    /* Repeating vertical wood plank grain with rich oak undertones */
-    repeating-linear-gradient(90deg, #2b170c 0px, #2b170c 18px, #231209 19px, #361e10 20px, #2d180c 42px, #1a0d05 44px, #331b0e 45px, #26140a 60px);
+    0 32px 75px -5px rgba(0, 0, 0, 0.95),
+    0 14px 30px -5px rgba(0, 0, 0, 0.85);
 }
 
 /* Night table: dark stained mahogany/ebony under faint moonlight and candle warmth */
 .spectatorRoom[data-theme="night"] .tableSurface {
   border: 15px solid #141722;
+  background-color: #0c101a;
   box-shadow:
-    0 30px 70px -5px rgba(0, 0, 0, 0.98),
-    0 12px 28px -5px rgba(0, 0, 0, 0.88),
-    inset 0 3px 6px rgba(180, 210, 255, 0.22),
-    inset 0 0 0 2px rgba(130, 150, 190, 0.3),
-    inset 0 -8px 16px rgba(0, 0, 0, 0.94);
+    0 32px 75px -5px rgba(0, 0, 0, 0.98),
+    0 14px 30px -5px rgba(0, 0, 0, 0.9);
+}
+
+/* Tavern Table Wood Still Texture from lobby-tavern.webp */
+.tableSurfaceImg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 74%;
+  pointer-events: none;
+  transition: filter 700ms ease, opacity 700ms ease;
+}
+
+.spectatorRoom[data-theme="day"] .tableSurfaceImg {
+  filter: brightness(0.95) contrast(1.15) saturate(1.1);
+}
+
+.spectatorRoom[data-theme="night"] .tableSurfaceImg {
+  filter: brightness(0.5) contrast(1.18) saturate(0.65) hue-rotate(195deg);
+}
+
+/* Table Surface Day/Night Lighting Overlay: carved rim inset shadows + hearth/moonlight wash */
+.tableSurfaceLighting {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  pointer-events: none;
+  transition: background 700ms ease, box-shadow 700ms ease;
+}
+
+.spectatorRoom[data-theme="day"] .tableSurfaceLighting {
+  box-shadow:
+    inset 0 3px 8px rgba(255, 230, 180, 0.35),
+    inset 0 0 0 2px rgba(180, 130, 60, 0.4),
+    inset 0 -10px 20px rgba(0, 0, 0, 0.92);
   background:
-    radial-gradient(ellipse 88% 84% at 50% 50%, transparent 96.5%, rgba(140, 160, 210, 0.2) 97%, transparent 99%),
-    radial-gradient(ellipse 72% 62% at 50% 48%, rgba(150, 125, 90, 0.16) 0%, rgba(18, 20, 30, 0.88) 60%, #07080e 100%),
-    repeating-linear-gradient(90deg, #181723 0px, #181723 18px, #12111b 19px, #242233 20px, #191826 42px, #0c0b12 44px, #211f2e 45px, #151421 60px);
+    /* Concentric decorative ring groove */
+    radial-gradient(ellipse 88% 84% at 50% 50%, transparent 96.5%, rgba(190, 135, 60, 0.3) 97%, transparent 99%),
+    /* Warm table surface ambient lighting from hearth and hanging oil lamps */
+    radial-gradient(ellipse 75% 65% at 50% 46%, rgba(245, 175, 75, 0.22) 0%, rgba(180, 100, 35, 0.18) 45%, rgba(20, 10, 5, 0.52) 80%, rgba(10, 5, 2, 0.85) 100%);
+}
+
+.spectatorRoom[data-theme="night"] .tableSurfaceLighting {
+  box-shadow:
+    inset 0 3px 8px rgba(180, 210, 255, 0.25),
+    inset 0 0 0 2px rgba(130, 150, 190, 0.3),
+    inset 0 -10px 20px rgba(0, 0, 0, 0.95);
+  background:
+    radial-gradient(ellipse 88% 84% at 50% 50%, transparent 96.5%, rgba(140, 160, 210, 0.22) 97%, transparent 99%),
+    /* Cool faint moonlight shaft from upper arch + dimmer stained wood */
+    radial-gradient(ellipse 75% 65% at 50% 46%, rgba(140, 180, 240, 0.15) 0%, rgba(20, 30, 55, 0.4) 45%, rgba(8, 11, 20, 0.78) 80%, rgba(4, 6, 12, 0.94) 100%);
 }
 
 /* Inner decorative groove on the table */
@@ -125,6 +163,7 @@
   border-radius: 50%;
   border: 1px dashed rgba(200, 150, 75, 0.22);
   pointer-events: none;
+  z-index: 2;
 }
 .spectatorRoom[data-theme="night"] .tableSurface::before {
   border-color: rgba(160, 185, 230, 0.18);

@@ -9,12 +9,14 @@ import { DayNightBlinkTransition } from "@/components/game/DayNightBlinkTransiti
 import { seatAvatarSrc } from "@/lib/seatAvatar";
 import styles from "./MoonlitVillageSpectator.module.css";
 
-// Preload all 7 seat portraits once at module load
+// Preload all 7 seat portraits and the lobby tavern still once at module load
 if (typeof window !== "undefined") {
   for (let i = 1; i <= 7; i++) {
     const img = new Image();
     img.src = seatAvatarSrc(i);
   }
+  const tavernImg = new Image();
+  tavernImg.src = "/images/lobby-tavern.webp";
 }
 
 interface SafeSeatAvatarProps {
@@ -130,11 +132,14 @@ export function MoonlitVillageSpectator({
   const day = gameState?.day || 1;
   const winner = gameState?.winner;
 
-  // Active speaker ID
-  const activeSpeakerId =
-    gameState?.current_speaker_id ||
-    gameState?.pending_input?.player_id ||
-    controller.derived?.activeSpeakerId;
+  const players: Player[] = useMemo(() => {
+    if (gameState?.players && gameState.players.length > 0) {
+      return [...gameState.players].sort((a, b) => a.seat - b.seat);
+    }
+    return controller.placeholder(1, 7);
+  }, [gameState?.players, controller]);
+
+  const playerCount = players.length;
 
   // Typewriter speech queue
   const {
@@ -148,14 +153,105 @@ export function MoonlitVillageSpectator({
 
   const [showHistory, setShowHistory] = useState(false);
 
-  const players: Player[] = useMemo(() => {
-    if (gameState?.players && gameState.players.length > 0) {
-      return [...gameState.players].sort((a, b) => a.seat - b.seat);
-    }
-    return controller.placeholder(1, 7);
-  }, [gameState?.players, controller]);
+  // Active speech for bottom dialogue dock
+  const activeSpeech =
+    currentSpeech ||
+    (displayedSpeeches.length > 0 ? displayedSpeeches[displayedSpeeches.length - 1] : null);
 
-  const playerCount = players.length;
+  const speakerPlayer = useMemo(() => {
+    if (!activeSpeech) return null;
+    if (activeSpeech.actorId) {
+      const byId = players.find((p) => p.id === activeSpeech.actorId);
+      if (byId) return byId;
+    }
+    if (typeof activeSpeech.actorSeat === "number" && activeSpeech.actorSeat > 0) {
+      const bySeat = players.find((p) => p.seat === activeSpeech.actorSeat);
+      if (bySeat) return bySeat;
+    }
+    return null;
+  }, [activeSpeech, players]);
+
+  const speakerSeat =
+    speakerPlayer?.seat ??
+    (typeof activeSpeech?.actorSeat === "number" && activeSpeech.actorSeat > 0
+      ? activeSpeech.actorSeat
+      : undefined);
+
+  const speakerName =
+    speakerPlayer?.name ||
+    activeSpeech?.actorName ||
+    (isNight ? "月下村庄" : "村庄广播");
+
+  const speakerInitial = speakerPlayer?.name
+    ? speakerPlayer.name.slice(0, 1)
+    : activeSpeech?.actorName
+    ? activeSpeech.actorName.slice(0, 1)
+    : isNight
+    ? "🌙"
+    : "☀️";
+
+  const speechPhaseLabel = activeSpeech
+    ? PHASE_LABEL[activeSpeech.phase] || activeSpeech.phase
+    : PHASE_LABEL[currentPhase] || "等待中";
+
+  const speechBody = activeSpeech
+    ? activeSpeech.displayedText || "..."
+    : isNight
+    ? "夜幕低垂，村庄寂静。等待玩家发言..."
+    : "天亮了，等待玩家开始发言...";
+
+  // ── Unified Active Speaker Resolution (Single source of truth) ──
+  // 1. Definite typist from typewriter queue (dock presentation)
+  const dockTypistPlayer = useMemo(() => {
+    if (winner || isNight || currentPhase.includes("NIGHT")) return null;
+    if (speakerPlayer) return speakerPlayer;
+    if (speakerSeat != null && speakerSeat > 0) {
+      return players.find((p) => p.seat === speakerSeat) || null;
+    }
+    return null;
+  }, [winner, isNight, currentPhase, speakerPlayer, speakerSeat, players]);
+
+  // 2. Engine speaker fallback ONLY when dock has no player typist (broadcast/waiting)
+  const engineSpeakerPlayer = useMemo(() => {
+    if (winner || isNight || currentPhase.includes("NIGHT")) return null;
+    const raw =
+      gameState?.current_speaker_id ||
+      gameState?.pending_input?.player_id ||
+      controller.derived?.activeSpeakerId;
+    if (!raw) return null;
+
+    const rawStr = String(raw).trim();
+    // Compare ID to ID
+    const byId = players.find((p) => p.id === rawStr);
+    if (byId) return byId;
+
+    // Compare Seat to Seat ONLY if raw is numeric (1-30), NOT a UUID
+    const num = Number(rawStr);
+    if (!isNaN(num) && Number.isInteger(num) && num > 0 && num <= 30 && !rawStr.includes("-")) {
+      const bySeat = players.find((p) => p.seat === num);
+      if (bySeat) return bySeat;
+    }
+
+    return null;
+  }, [
+    winner,
+    isNight,
+    currentPhase,
+    gameState?.current_speaker_id,
+    gameState?.pending_input?.player_id,
+    controller.derived?.activeSpeakerId,
+    players,
+  ]);
+
+  // Unified single speaker: dock typist takes strict precedence over engine speaker
+  const activeSpeaker = dockTypistPlayer || engineSpeakerPlayer;
+
+  // Dock avatar active ring matches the one active speaker
+  const isDockAvatarActive = Boolean(
+    activeSpeaker &&
+      ((speakerPlayer && speakerPlayer.id === activeSpeaker.id) ||
+        (speakerSeat != null && speakerSeat === activeSpeaker.seat))
+  );
 
   // Extract votes for display
   const votes = useMemo(() => {
@@ -205,11 +301,19 @@ export function MoonlitVillageSpectator({
       return "放逐投票进行中，请村民们做出裁决。";
     }
     if (currentPhase.includes("SPEECH")) {
-      const activePlayer = players.find((p) => p.id === activeSpeakerId);
+      const activePlayer = activeSpeaker || players.find((p) => p.id === gameState?.current_speaker_id);
       return activePlayer ? `请 ${activePlayer.seat} 号玩家 ${activePlayer.name} 发言` : "自由发言讨论中...";
     }
     return controller.statusTitle || "等待游戏进程推进...";
-  }, [winner, gameState?.pending_input, currentPhase, activeSpeakerId, players, controller.statusTitle]);
+  }, [
+    winner,
+    gameState?.pending_input,
+    currentPhase,
+    activeSpeaker,
+    gameState?.current_speaker_id,
+    players,
+    controller.statusTitle,
+  ]);
 
   // Seat ellipse geometry for desktop: tokens placed at the rim of the central table
   const seatPositions = useMemo(() => {
@@ -224,37 +328,6 @@ export function MoonlitVillageSpectator({
     }
     return coords;
   }, [playerCount, players]);
-
-  // Active speech for bottom dialogue dock
-  const activeSpeech =
-    currentSpeech ||
-    (displayedSpeeches.length > 0 ? displayedSpeeches[displayedSpeeches.length - 1] : null);
-
-  const speakerPlayer = activeSpeech
-    ? players.find((p) => p.id === activeSpeech.actorId || p.seat === activeSpeech.actorSeat)
-    : null;
-  const speakerName =
-    speakerPlayer?.name ||
-    activeSpeech?.actorName ||
-    (isNight ? "月下村庄" : "村庄广播");
-  const speakerSeat =
-    speakerPlayer?.seat ??
-    (activeSpeech?.actorSeat && activeSpeech.actorSeat > 0 ? activeSpeech.actorSeat : undefined);
-  const speakerInitial = speakerPlayer?.name
-    ? speakerPlayer.name.slice(0, 1)
-    : activeSpeech?.actorName
-    ? activeSpeech.actorName.slice(0, 1)
-    : isNight
-    ? "🌙"
-    : "☀️";
-  const speechPhaseLabel = activeSpeech
-    ? PHASE_LABEL[activeSpeech.phase] || activeSpeech.phase
-    : PHASE_LABEL[currentPhase] || "等待中";
-  const speechBody = activeSpeech
-    ? activeSpeech.displayedText || "..."
-    : isNight
-    ? "夜幕低垂，村庄寂静。等待玩家发言..."
-    : "天亮了，等待玩家开始发言...";
 
   return (
     <div
@@ -366,7 +439,9 @@ export function MoonlitVillageSpectator({
         <div className="block md:hidden w-full shrink-0 overflow-x-auto pb-2 scrollbar-none">
           <div className="grid grid-rows-2 grid-flow-col auto-cols-[135px] gap-2 min-w-max px-2">
             {players.map((player) => {
-              const isActive = player.id === activeSpeakerId || player.seat === activeSpeakerId;
+              const isActive = Boolean(
+                activeSpeaker && (player.id === activeSpeaker.id || player.seat === activeSpeaker.seat)
+              );
               const isAlive = player.alive;
               return (
                 <div
@@ -453,7 +528,15 @@ export function MoonlitVillageSpectator({
         <div className="hidden md:flex relative flex-1 min-h-0 w-full items-center justify-center p-3 lg:p-6">
           <div className={styles.tableOuterWrap}>
             {/* The Real Central Wooden Table (Oval Surface with Carved Rim & Wood Grain) */}
-            <div className={styles.tableSurface} />
+            <div className={styles.tableSurface}>
+              <img
+                src="/images/lobby-tavern.webp"
+                alt=""
+                aria-hidden="true"
+                className={styles.tableSurfaceImg}
+              />
+              <div className={styles.tableSurfaceLighting} />
+            </div>
 
             {/* SVG Vote Arrows Overlay */}
             <svg className="absolute inset-0 h-full w-full pointer-events-none z-10" viewBox="0 0 100 100">
@@ -520,7 +603,9 @@ export function MoonlitVillageSpectator({
             {/* Circular Seats Ring on Table Rim */}
             {players.map((player) => {
               const pos = seatPositions[player.seat] || { x: 50, y: 50 };
-              const isActive = player.id === activeSpeakerId || player.seat === activeSpeakerId;
+              const isActive = Boolean(
+                activeSpeaker && (player.id === activeSpeaker.id || player.seat === activeSpeaker.seat)
+              );
               const isAlive = player.alive;
 
               return (
@@ -654,7 +739,7 @@ export function MoonlitVillageSpectator({
           {/* Avatar & Seat Seal */}
           <div
             className={`${styles.dockAvatarSeal} ${
-              isTyping ? styles.dockAvatarActive : ""
+              isDockAvatarActive ? styles.dockAvatarActive : ""
             }`}
           >
             {speakerSeat != null && speakerSeat > 0 ? (
