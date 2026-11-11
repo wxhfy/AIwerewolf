@@ -1,114 +1,216 @@
 "use client";
 
+import React from "react";
 import { Language } from "@/types";
 import { t } from "@/lib/i18n";
 import { Button } from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
 
 interface LobbyConfigCardProps {
-  language: Language; playerCount: number; mode: "ai" | "human";
-  humanSeat: number; isCreating: boolean; error: string;
+  language: Language;
+  playerCount: number;
+  mode: "ai" | "human";
+  humanSeat: number;
+  isCreating: boolean;
+  error: string;
   onPlayerCountChange: (value: number) => void;
   onModeChange: (mode: "ai" | "human") => void;
   onHumanSeatChange: (seat: number) => void;
   onCreateRoom: () => void;
+  onOpenSettings?: () => void;
 }
 
 export function LobbyConfigCard(props: LobbyConfigCardProps) {
-  const { language, playerCount, mode, humanSeat, isCreating, error,
-    onPlayerCountChange, onModeChange, onHumanSeatChange, onCreateRoom } = props;
+  const {
+    language,
+    playerCount,
+    mode,
+    humanSeat,
+    isCreating,
+    error,
+    onPlayerCountChange,
+    onModeChange,
+    onHumanSeatChange,
+    onCreateRoom,
+    onOpenSettings,
+  } = props;
 
   const isAi = mode === "ai";
-  const modeDesc = isAi
-    ? (language === "zh" ? "所有玩家由 AI 控制，以全局视角观看完整对局。" : "All players are AI-controlled. Watch the full match from a global view.")
-    : (language === "zh" ? "选择一个座位亲自参与，其余玩家由 AI 扮演。" : "Pick a seat to join. Other players are AI-controlled.");
-  const buttonText = isAi
-    ? (language === "zh" ? "创建 AI 对局" : "Create AI Match")
+  const primaryButtonText = isAi
+    ? (language === "zh" ? "开一局 AI 观战" : "Start AI Spectate")
     : (language === "zh" ? "创建真人参与对局" : "Create Human Match");
-  const selectionStyles = "min-h-11 rounded-button border text-sm font-medium transition-[background-color,border-color,color,transform] duration-200 active:scale-[0.98] disabled:cursor-wait disabled:opacity-60";
-  const selectedStyles = "border-primary/50 bg-primary/10 text-primary shadow-sm";
-  const idleStyles = "border-border bg-background/60 text-textSecondary hover:border-primary/40 hover:bg-primary/5 hover:text-textPrimary";
+
+  const modeDesc = isAi
+    ? (language === "zh"
+        ? "7 位性格迥异的酒馆旅人齐聚圆桌，各自推理、辩驳与决断。以全局视角观赏完整暗涌。"
+        : "7 tavern guests gather around the table. Watch their deductions, debates, and votes from a global view.")
+    : (language === "zh"
+        ? "选择一个席位亲自入局，其余座位由 AI 旅人扮演。"
+        : "Pick a seat to join the tavern table. Other guests are AI-controlled.");
 
   return (
-    <Card className="w-full overflow-hidden shadow-float" aria-busy={isCreating}>
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4 sm:px-7 sm:py-5">
-        <div>
-          <h2 className="font-display text-lg font-semibold text-textPrimary">
-            {language === "zh" ? "创建新对局" : "Create a match"}
-          </h2>
-          <p className="mt-1 text-xs leading-relaxed text-textSecondary">
-            {language === "zh" ? "选择模式与人数，准备落座。" : "Choose your mode and take a seat."}
-          </p>
+    <div
+      className="w-full overflow-hidden rounded-2xl border-2 border-amber-700/60 bg-gradient-to-b from-[#24170d] via-[#1a1009] to-[#120a06] shadow-[0_20px_50px_rgba(0,0,0,0.85)]"
+      aria-busy={isCreating}
+    >
+      {/* Tavern Board Header: Brass Plate & Lamp Ambiance */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-amber-900/60 bg-[#160d07]/90 px-5 py-4 sm:px-7 sm:py-5">
+        <div className="flex items-center gap-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-amber-500/50 bg-amber-950/80 text-xl shadow-[0_0_12px_rgba(245,158,11,0.25)]">
+            🕯️
+          </span>
+          <div>
+            <h2 className="font-display text-lg sm:text-xl font-bold tracking-wide text-amber-100 drop-shadow">
+              {language === "zh" ? "月下酒馆 · 圆桌对局" : "Moonlit Tavern · Match Setup"}
+            </h2>
+            <p className="mt-0.5 text-xs text-amber-300/70 font-serif">
+              {language === "zh" ? "推门围炉入座，静待钟声敲响。" : "Gather round the hearth as the bells toll."}
+            </p>
+          </div>
         </div>
-        <span className="rounded-badge border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-medium tabular-nums text-primary">
-          {playerCount} {language === "zh" ? "人局" : "players"}
+        <span className="rounded-full border border-amber-600/50 bg-amber-950/80 px-3 py-1 text-xs font-semibold tabular-nums text-amber-300 shadow-inner">
+          {playerCount} {language === "zh" ? "人圆桌" : "Players"}
         </span>
       </div>
 
       <div className="space-y-6 p-5 sm:p-7">
+        {/* Mode Selector */}
         <fieldset disabled={isCreating} aria-describedby="lobby-mode-description">
-          <legend className="mb-3 text-sm font-medium text-textPrimary">{t("gameMode", language)}</legend>
-          <div className="grid grid-cols-2 gap-2 rounded-card bg-background/60 p-1.5">
-            {(["ai", "human"] as const).map((m) => (
-              <button key={m} type="button" data-testid={`mode-${m}-button`} onClick={() => onModeChange(m)}
-                aria-pressed={mode === m}
-                className={`${selectionStyles} px-2 py-2.5 ${
-                  mode === m ? "border-primary/40 bg-cardBackground text-primary shadow-card" : "border-transparent text-textSecondary hover:bg-cardBackground/60 hover:text-textPrimary"
-                }`}>
-                {m === "ai" ? t("aiVsAi", language) : t("humanPlay", language)}
-              </button>
-            ))}
+          <legend className="mb-2.5 text-xs font-semibold uppercase tracking-wider text-amber-300/80">
+            {language === "zh" ? "对局模式" : t("gameMode", language)}
+          </legend>
+          <div className="grid grid-cols-2 gap-2 rounded-xl border border-amber-950/80 bg-[#130b06]/90 p-1.5 shadow-inner">
+            <button
+              type="button"
+              data-testid="mode-ai-button"
+              onClick={() => onModeChange("ai")}
+              aria-pressed={isAi}
+              className={`min-h-11 rounded-lg border text-sm font-semibold transition-all duration-200 ${
+                isAi
+                  ? "border-amber-500/70 bg-gradient-to-b from-amber-700/80 to-amber-900/80 text-amber-100 shadow-[0_2px_8px_rgba(0,0,0,0.5)]"
+                  : "border-transparent text-amber-200/60 hover:text-amber-100 hover:bg-amber-950/40"
+              }`}
+            >
+              {language === "zh" ? "AI 观战（推荐）" : t("aiVsAi", language)}
+            </button>
+            <button
+              type="button"
+              data-testid="mode-human-button"
+              onClick={() => onModeChange("human")}
+              aria-pressed={!isAi}
+              className={`min-h-11 rounded-lg border text-sm font-semibold transition-all duration-200 ${
+                !isAi
+                  ? "border-amber-500/70 bg-gradient-to-b from-amber-700/80 to-amber-900/80 text-amber-100 shadow-[0_2px_8px_rgba(0,0,0,0.5)]"
+                  : "border-transparent text-amber-200/60 hover:text-amber-100 hover:bg-amber-950/40"
+              }`}
+            >
+              {language === "zh" ? "真人入局" : t("humanPlay", language)}
+            </button>
           </div>
-          <p id="lobby-mode-description" className="mt-3 min-h-[3em] text-xs leading-relaxed text-textSecondary">{modeDesc}</p>
-        </fieldset>
-
-        <fieldset disabled={isCreating}>
-          <legend className="mb-3 text-sm font-medium text-textPrimary">{t("playerCount", language)}</legend>
-          <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
-            {[7, 8, 9, 10, 11, 12].map((count) => (
-              <button key={count} type="button" onClick={() => onPlayerCountChange(count)}
-                aria-pressed={playerCount === count}
-                aria-label={language === "zh" ? `${count} 人局` : `${count} players`}
-                className={`${selectionStyles} tabular-nums ${playerCount === count ? selectedStyles : idleStyles}`}>
-                {count}
-              </button>
-            ))}
-          </div>
-        </fieldset>
-
-        {/* Hidden mode controls are unmounted so they cannot receive keyboard focus. */}
-        {!isAi && <fieldset disabled={isCreating} className="animate-scale-in border-t border-border pt-5">
-          <legend className="sr-only">{t("yourSeat", language)}</legend>
-          <p className="mb-3 flex items-center justify-between gap-2 text-sm font-medium text-textPrimary" aria-hidden="true">
-            {t("yourSeat", language)}
-            <span className="text-xs font-normal text-primary">{humanSeat} {language === "zh" ? "号位" : "seat"}</span>
+          <p id="lobby-mode-description" className="mt-2.5 text-xs leading-relaxed text-amber-200/70">
+            {modeDesc}
           </p>
-          <div className="grid grid-cols-4 gap-2 sm:grid-cols-6">
-            {Array.from({ length: playerCount }, (_, i) => i + 1).map((seat) => (
-              <button key={seat} type="button" onClick={() => onHumanSeatChange(seat)}
-                data-testid={`human-seat-${seat}-button`}
-                aria-pressed={humanSeat === seat}
-                aria-label={language === "zh" ? `${seat} 号位` : `Seat ${seat}`}
-                className={`${selectionStyles} tabular-nums ${humanSeat === seat ? selectedStyles : idleStyles}`}>
-                {seat}
-              </button>
-            ))}
+        </fieldset>
+
+        {/* Player Count Selection (default 7) */}
+        <fieldset disabled={isCreating}>
+          <div className="mb-2.5 flex items-center justify-between">
+            <legend className="text-xs font-semibold uppercase tracking-wider text-amber-300/80">
+              {language === "zh" ? "圆桌人数" : t("playerCount", language)}
+            </legend>
+            <span className="text-[11px] text-amber-400/80 font-serif">
+              {playerCount === 7 ? (language === "zh" ? "标准 7 人局（推荐）" : "Standard 7-seat match") : ""}
+            </span>
           </div>
-        </fieldset>}
+          <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+            {[7, 8, 9, 10, 11, 12].map((count) => {
+              const isSelected = playerCount === count;
+              return (
+                <button
+                  key={count}
+                  type="button"
+                  onClick={() => onPlayerCountChange(count)}
+                  aria-pressed={isSelected}
+                  aria-label={language === "zh" ? `${count} 人局` : `${count} players`}
+                  className={`min-h-11 rounded-lg border text-sm font-bold tabular-nums transition-all duration-200 ${
+                    isSelected
+                      ? "border-amber-500 bg-amber-600/30 text-amber-200 ring-1 ring-amber-400/50 shadow-[0_0_10px_rgba(245,158,11,0.25)]"
+                      : "border-amber-900/40 bg-[#160d07]/70 text-amber-300/60 hover:border-amber-700/60 hover:text-amber-200"
+                  }`}
+                >
+                  {count} {language === "zh" ? "人" : ""}
+                </button>
+              );
+            })}
+          </div>
+        </fieldset>
 
-        {error && <div role="alert" className="rounded-card border border-danger/25 bg-danger/10 px-4 py-3 text-sm leading-relaxed text-danger">{error}</div>}
+        {/* Human Seat Selection (Secondary hook only when human mode is selected) */}
+        {!isAi && (
+          <fieldset disabled={isCreating} className="border-t border-amber-900/50 pt-5 animate-scale-in">
+            <legend className="sr-only">{t("yourSeat", language)}</legend>
+            <div className="mb-2.5 flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-amber-300/80">
+              <span>{t("yourSeat", language)}</span>
+              <span className="text-amber-400 font-bold">{humanSeat} {language === "zh" ? "号位" : "seat"}</span>
+            </div>
+            <div className="grid grid-cols-4 gap-2 sm:grid-cols-6">
+              {Array.from({ length: playerCount }, (_, i) => i + 1).map((seat) => (
+                <button
+                  key={seat}
+                  type="button"
+                  onClick={() => onHumanSeatChange(seat)}
+                  data-testid={`human-seat-${seat}-button`}
+                  aria-pressed={humanSeat === seat}
+                  aria-label={language === "zh" ? `${seat} 号位` : `Seat ${seat}`}
+                  className={`min-h-10 rounded-lg border text-xs font-bold tabular-nums transition-all ${
+                    humanSeat === seat
+                      ? "border-amber-500 bg-amber-600/30 text-amber-200 ring-1 ring-amber-400/50 shadow-sm"
+                      : "border-amber-900/40 bg-[#160d07]/70 text-amber-300/60 hover:border-amber-700/60 hover:text-amber-200"
+                  }`}
+                >
+                  {seat} 号
+                </button>
+              ))}
+            </div>
+          </fieldset>
+        )}
 
-        <div className="space-y-3 border-t border-border pt-5">
-          <Button onClick={onCreateRoom} loading={isCreating} size="lg" className="w-full font-semibold">
-            {isCreating ? t("creating", language) : buttonText}
+        {/* Collapsed Dev / Advanced settings disclosure (clean & out of the way) */}
+        {onOpenSettings && (
+          <div className="border-t border-amber-950/70 pt-2">
+            <button
+              type="button"
+              onClick={onOpenSettings}
+              className="text-xs text-amber-300/60 hover:text-amber-200 transition-colors flex items-center gap-1.5 py-1"
+            >
+              <span>⚙️</span>
+              <span>{language === "zh" ? "进阶 / 开发设置" : "Advanced / Dev Settings"}</span>
+            </button>
+          </div>
+        )}
+
+        {error && (
+          <div role="alert" className="rounded-xl border border-red-700/60 bg-red-950/80 px-4 py-3 text-xs leading-relaxed text-red-200 shadow-md">
+            {error}
+          </div>
+        )}
+
+        {/* Big Primary CTA */}
+        <div className="space-y-3 border-t border-amber-900/60 pt-5">
+          <Button
+            onClick={onCreateRoom}
+            loading={isCreating}
+            size="lg"
+            className="w-full min-h-14 rounded-xl border border-amber-400/80 bg-gradient-to-b from-amber-500 via-amber-600 to-amber-700 text-base sm:text-lg font-bold text-amber-50 shadow-[0_0_25px_rgba(245,158,11,0.45)] hover:brightness-110 active:scale-[0.99] transition-all"
+          >
+            {isCreating ? t("creating", language) : primaryButtonText}
           </Button>
-          <p role="status" className="text-center text-xs leading-relaxed text-textSecondary">
+          <p role="status" className="text-center text-xs leading-relaxed text-amber-300/70 font-serif">
             {isCreating
-              ? language === "zh" ? "正在准备玩家与席位，请稍候…" : "Preparing players and seats. One moment…"
-              : language === "zh" ? "创建后可确认对局配置，再正式开始。" : "Review your setup before the match begins."}
+              ? (language === "zh" ? "酒馆掌柜正在安排座位，请稍候…" : "Arranging table and seats...")
+              : (language === "zh" ? "点击开局，推门入席观摩 7 位旅人的暗夜较量" : "Take your seat and watch the story unfold.")}
           </p>
         </div>
       </div>
-    </Card>
+    </div>
   );
 }

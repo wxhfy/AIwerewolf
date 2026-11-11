@@ -81,7 +81,7 @@ export function SettingsModal({ isOpen, onClose, currentSettings, onSave }: Sett
 
   const handleSave = () => {
     onSave({
-      viewMode: ViewMode.MODERATOR,
+      viewMode: currentSettings.viewMode ?? ViewMode.PUBLIC,
       language,
       seed: Number.isFinite(seed) ? Math.trunc(seed) : 7,
       modelProvider: modelProvider.trim() || "ark",

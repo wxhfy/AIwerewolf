@@ -64,18 +64,24 @@ export function PrepareModal({
         }}
         onClick={(event) => event.stopPropagation()}>
         <div className="shrink-0 border-b border-border px-5 py-5 text-center sm:px-7">
-          <h2 id="prepare-modal-title" className="font-display text-xl font-bold text-primary">{t("readyToStart", language)}</h2>
-          <p className="mt-1 text-sm text-text-sub">{t("confirmSettingsToStart", language)}</p>
+          <h2 id="prepare-modal-title" className="font-display text-xl font-bold text-primary">
+            {mode === "ai" && language === "zh" ? "酒馆已备好 · 准备入席" : t("readyToStart", language)}
+          </h2>
+          <p className="mt-1 text-sm text-text-sub">
+            {mode === "ai" && language === "zh" ? "圆桌席位已就绪，各位客人即将入座。" : t("confirmSettingsToStart", language)}
+          </p>
         </div>
 
         <div className="min-h-0 space-y-5 overflow-y-auto overscroll-contain p-5 timeline-scroll sm:p-7">
           <div className="space-y-1 text-sm">
-            {roomInfoRows.map(({ label, value }) => (
-              <div key={label} className="flex items-start justify-between gap-4 border-b border-border py-2 last:border-0">
-                <span className="shrink-0 text-textSecondary">{label}</span>
-                <span className="min-w-0 break-words text-right font-medium text-textPrimary [overflow-wrap:anywhere]">{value}</span>
-              </div>
-            ))}
+            {roomInfoRows
+              .filter(({ label }) => (mode === "ai" ? !/模型|model|api|seed|agent/i.test(label) : true))
+              .map(({ label, value }) => (
+                <div key={label} className="flex items-start justify-between gap-4 border-b border-border py-2 last:border-0">
+                  <span className="shrink-0 text-textSecondary">{label}</span>
+                  <span className="min-w-0 break-words text-right font-medium text-textPrimary [overflow-wrap:anywhere]">{value}</span>
+                </div>
+              ))}
           </div>
 
           <div>
@@ -126,8 +132,12 @@ export function PrepareModal({
           <Button variant="secondary" onClick={onClose} disabled={isStarting} className="flex-1">
             {t("cancel", language)}
           </Button>
-          <Button onClick={onConfirm} loading={isStarting} className="flex-1">
-            {isStarting ? t("starting", language) : t("confirmAndStart", language)}
+          <Button onClick={onConfirm} loading={isStarting} className="flex-1 font-semibold">
+            {isStarting
+              ? t("starting", language)
+              : mode === "ai" && language === "zh"
+              ? "推门入席 · 开始观战"
+              : t("confirmAndStart", language)}
           </Button>
         </div>
       </div>

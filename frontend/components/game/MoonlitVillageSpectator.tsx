@@ -9,6 +9,70 @@ import { DayNightBlinkTransition } from "@/components/game/DayNightBlinkTransiti
 import { seatAvatarSrc } from "@/lib/seatAvatar";
 import styles from "./MoonlitVillageSpectator.module.css";
 
+// Preload all 7 seat portraits once at module load
+if (typeof window !== "undefined") {
+  for (let i = 1; i <= 7; i++) {
+    const img = new Image();
+    img.src = seatAvatarSrc(i);
+  }
+}
+
+interface SafeSeatAvatarProps {
+  seat: number;
+  name?: string;
+  isAlive?: boolean;
+  className?: string;
+  fallbackClassName?: string;
+  fallbackText?: string;
+}
+
+function SafeSeatAvatar({
+  seat,
+  name,
+  isAlive = true,
+  className = "",
+  fallbackClassName = "",
+  fallbackText,
+}: SafeSeatAvatarProps) {
+  const [hasError, setHasError] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
+  const [isLoaded, setIsLoaded] = useState(false);
+  const baseSrc = seatAvatarSrc(seat);
+  const src = retryCount > 0 ? `${baseSrc}?retry=${retryCount}` : baseSrc;
+  const monogram = fallbackText || (name ? name.slice(0, 1) : String(seat));
+
+  return (
+    <>
+      <img
+        src={src}
+        alt={name ? `${name} 的头像` : `座位 ${seat} 头像`}
+        loading="eager"
+        decoding="async"
+        className={`${className} ${
+          !isAlive ? "grayscale contrast-75 brightness-75 opacity-70" : ""
+        }`}
+        style={hasError && !isLoaded ? { display: "none" } : undefined}
+        onLoad={() => {
+          setIsLoaded(true);
+          setHasError(false);
+        }}
+        onError={() => {
+          if (retryCount < 1) {
+            setRetryCount(1);
+          } else {
+            setHasError(true);
+          }
+        }}
+      />
+      {hasError && !isLoaded && (
+        <span className={fallbackClassName}>
+          {monogram}
+        </span>
+      )}
+    </>
+  );
+}
+
 interface MoonlitVillageSpectatorProps {
   roomId: string;
   gameState: GameState | null;
@@ -329,17 +393,12 @@ export function MoonlitVillageSpectator({
                           : "border-stone-700 bg-stone-950"
                       }`}
                     >
-                      <img
-                        src={seatAvatarSrc(player.seat)}
-                        alt={`${player.name} 的头像`}
-                        loading="eager"
-                        decoding="async"
-                        className={`h-full w-full object-cover object-[center_top] ${
-                          !isAlive ? "grayscale contrast-75 brightness-75 opacity-70" : ""
-                        }`}
-                        onError={(e) => {
-                          (e.currentTarget as HTMLImageElement).style.display = "none";
-                        }}
+                      <SafeSeatAvatar
+                        seat={player.seat}
+                        name={player.name}
+                        isAlive={isAlive}
+                        className="h-full w-full object-cover object-[center_top]"
+                        fallbackClassName="flex h-full w-full items-center justify-center font-display text-xs font-bold text-amber-400"
                       />
                     </div>
 
@@ -489,19 +548,13 @@ export function MoonlitVillageSpectator({
                   >
                     {/* Circular Portrait Image */}
                     <div className={styles.tokenAvatarWrap}>
-                      <img
-                        src={seatAvatarSrc(player.seat)}
-                        alt={`${player.name} 的头像`}
-                        loading="eager"
-                        decoding="async"
+                      <SafeSeatAvatar
+                        seat={player.seat}
+                        name={player.name}
+                        isAlive={isAlive}
                         className={styles.tokenAvatarImg}
-                        onError={(e) => {
-                          (e.currentTarget as HTMLImageElement).style.display = "none";
-                        }}
+                        fallbackClassName={styles.tokenAvatarFallback}
                       />
-                      <span className={styles.tokenAvatarFallback}>
-                        {player.name ? player.name.slice(0, 1) : player.seat}
-                      </span>
                     </div>
 
                     {/* Corner Wax/Brass Seat Number Badge */}
@@ -566,15 +619,11 @@ export function MoonlitVillageSpectator({
                 <div className="flex items-center gap-2 text-[11px] text-amber-400 font-medium">
                   {item.actorSeat > 0 ? (
                     <div className="relative h-6 w-6 sm:h-7 sm:w-7 shrink-0 overflow-hidden rounded-full border border-amber-600/50 bg-[#25150c] shadow-sm">
-                      <img
-                        src={seatAvatarSrc(item.actorSeat)}
-                        alt={`${item.actorName} 的头像`}
-                        loading="eager"
-                        decoding="async"
+                      <SafeSeatAvatar
+                        seat={item.actorSeat}
+                        name={item.actorName}
                         className="h-full w-full object-cover object-[center_top]"
-                        onError={(e) => {
-                          (e.currentTarget as HTMLImageElement).style.display = "none";
-                        }}
+                        fallbackClassName="flex h-full w-full items-center justify-center font-display text-[10px] font-bold text-amber-400"
                       />
                     </div>
                   ) : (
@@ -610,19 +659,13 @@ export function MoonlitVillageSpectator({
           >
             {speakerSeat != null && speakerSeat > 0 ? (
               <div className={styles.dockAvatarWrap}>
-                <img
-                  src={seatAvatarSrc(speakerSeat)}
-                  alt={`${speakerName} 的头像`}
-                  loading="eager"
-                  decoding="async"
+                <SafeSeatAvatar
+                  seat={speakerSeat}
+                  name={speakerName}
                   className={styles.dockAvatarImg}
-                  onError={(e) => {
-                    (e.currentTarget as HTMLImageElement).style.display = "none";
-                  }}
+                  fallbackClassName={styles.dockAvatarFallback}
+                  fallbackText={speakerInitial}
                 />
-                <span className={styles.dockAvatarFallback}>
-                  {speakerInitial}
-                </span>
               </div>
             ) : (
               <span className="font-display text-base sm:text-lg font-bold text-amber-200">
@@ -740,17 +783,12 @@ export function MoonlitVillageSpectator({
                             : "border-stone-700 bg-stone-950"
                         }`}
                       >
-                        <img
-                          src={seatAvatarSrc(p.seat)}
-                          alt={`${p.name} 的头像`}
-                          loading="eager"
-                          decoding="async"
-                          className={`h-full w-full object-cover object-[center_top] ${
-                            !p.alive ? "grayscale contrast-75 brightness-75 opacity-70" : ""
-                          }`}
-                          onError={(e) => {
-                            (e.currentTarget as HTMLImageElement).style.display = "none";
-                          }}
+                        <SafeSeatAvatar
+                          seat={p.seat}
+                          name={p.name}
+                          isAlive={p.alive}
+                          className="h-full w-full object-cover object-[center_top]"
+                          fallbackClassName="flex h-full w-full items-center justify-center font-display text-xs font-bold text-amber-400"
                         />
                       </div>
                       {/* Seat badge */}
@@ -785,14 +823,21 @@ export function MoonlitVillageSpectator({
             <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
               <Link
                 href="/"
-                className="rounded border border-amber-800/60 bg-[#1e1208] px-4 py-2 text-xs font-semibold text-amber-100 hover:border-amber-600 transition-colors"
+                data-testid="play-again-button"
+                className="rounded-lg border border-amber-500/80 bg-gradient-to-b from-amber-500 via-amber-600 to-amber-800 px-6 py-2.5 text-xs sm:text-sm font-bold text-amber-50 hover:brightness-110 active:scale-[0.98] transition-all shadow-[0_0_18px_rgba(245,158,11,0.45)]"
+              >
+                再来一局
+              </Link>
+              <Link
+                href="/"
+                className="rounded border border-amber-800/60 bg-[#1e1208]/90 px-4 py-2 text-xs font-semibold text-amber-200 hover:text-amber-100 hover:border-amber-600 transition-colors"
               >
                 返回大厅
               </Link>
               {gameState?.id && (
                 <Link
                   href={`/games/${gameState.id}/report`}
-                  className="rounded border border-amber-600 bg-gradient-to-b from-amber-700 to-amber-900 px-4 py-2 text-xs font-semibold text-amber-100 hover:brightness-110 transition-all shadow-sm"
+                  className="rounded border border-amber-700/60 bg-[#25160c]/80 px-4 py-2 text-xs font-semibold text-amber-200 hover:text-amber-100 hover:border-amber-500 transition-colors"
                 >
                   查看对局复盘
                 </Link>

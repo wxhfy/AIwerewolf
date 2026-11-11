@@ -239,7 +239,7 @@
 .tokenAvatarFallback {
   position: absolute;
   inset: 0;
-  z-index: 0;
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -248,6 +248,7 @@
   font-weight: 700;
   color: #fbbf24;
   user-select: none;
+  background-color: #1a0f08;
   pointer-events: none;
 }
 
@@ -511,7 +512,7 @@
 .dockAvatarFallback {
   position: absolute;
   inset: 0;
-  z-index: 0;
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -519,6 +520,7 @@
   font-size: 1.15rem;
   font-weight: 700;
   color: #fbbf24;
+  background-color: #1a0f08;
   pointer-events: none;
 }
 
