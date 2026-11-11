@@ -162,7 +162,7 @@ export default function LobbyPage() {
         llmConfig: buildRoomLlmConfig(gameSettings),
       });
       setCreatedRoom(room);
-      if (mode === "ai") setPrepareSnapshot(await prepareRoom(room.id, true));
+      if (mode === "ai") setPrepareSnapshot(await prepareRoom(room.id, false));
       setShowModal(true);
     } catch (e) { setError(getErrorMessage(e, "创建房间失败")); }
     finally { setIsCreating(false); }
@@ -182,7 +182,7 @@ export default function LobbyPage() {
     setIsStarting(true); setError("");
     try {
       if (mode === "ai") {
-        setGameState(prepareSnapshot ?? await prepareRoom(createdRoom.id, true));
+        setGameState(prepareSnapshot ?? await prepareRoom(createdRoom.id, false));
       } else {
         setGameState(null);
       }

@@ -130,13 +130,33 @@ _local_fake_match_runners: dict[str, threading.Thread] = {}
 _local_fake_match_runner_lock = threading.Lock()
 
 
+def _dev_fake_llm_forced() -> bool:
+    """Preview/dev only: honor LLM_PROVIDER=fake even if the lobby sent another provider."""
+    if os.getenv("APP_ENV", "development").strip().lower() == "production":
+        return False
+    if os.getenv("_TEST_ALLOW_FAKE_LLM", "").strip().lower() != "true":
+        return False
+    provider = os.getenv("LLM_PROVIDER", "").strip().lower()
+    return provider in {"fake", "fake_llm", "offline_llm"}
+
+
+def _effective_llm_config(room) -> dict:
+    if _dev_fake_llm_forced():
+        config = dict(room.llm_config or {})
+        config["provider"] = "fake"
+        config.setdefault("model", "fake-llm")
+        config.pop("base_url", None)
+        return config
+    return dict(room.llm_config or {})
+
+
 def _local_fake_match_execution_enabled(room) -> bool:
     """Run fake-provider jobs locally in development; real providers stay worker-owned."""
     if os.getenv("APP_ENV", "development").strip().lower() == "production":
         return False
     if os.getenv("_TEST_ALLOW_FAKE_LLM", "").strip().lower() != "true":
         return False
-    provider = str((room.llm_config or {}).get("provider") or os.getenv("LLM_PROVIDER", "")).strip().lower()
+    provider = str((_effective_llm_config(room).get("provider") or os.getenv("LLM_PROVIDER", ""))).strip().lower()
     if provider not in {"fake", "fake_llm", "offline_llm"}:
         return False
     configured = os.getenv("MATCH_WORKER_IN_PROCESS")
@@ -1110,7 +1130,7 @@ def prepare_room_game(room_id: str, show_private: bool = False):
             seed=room.seed,
             agent_type=room.agent_type,
             rule_pack_id=room.rule_pack_id,
-            llm_config=room.llm_config,
+            llm_config=_effective_llm_config(room),
         )
         _match_jobs.prepare(game_id=game.state.id, room_id=room_id, payload=spec.to_dict())
     _rooms.set_room_status(room_id, "prepared")
@@ -1142,7 +1162,7 @@ def start_or_resume_room_game(room_id: str, show_private: bool = False):
             seed=room.seed,
             agent_type=room.agent_type,
             rule_pack_id=room.rule_pack_id,
-            llm_config=room.llm_config,
+            llm_config=_effective_llm_config(room),
         ).to_dict()
     if not match_id:
         raise HTTPException(status_code=500, detail="Prepared match is unavailable")

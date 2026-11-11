@@ -4,8 +4,8 @@ import { chromium } from 'playwright';
 
 const BASE = process.env.E2E_BASE || 'http://127.0.0.1:3001';
 const API = process.env.E2E_API || 'http://127.0.0.1:8000';
-const SCREEN_DIR = process.env.E2E_SCREEN_DIR || '/workspace/aw-slice1-logs/screens';
-const SUMMARY_PATH = '/workspace/aw-slice1-logs/e2e-summary.json';
+const SCREEN_DIR = process.env.E2E_SCREEN_DIR || '/workspace/aw-be-slice-logs/screens';
+const SUMMARY_PATH = process.env.E2E_SUMMARY_PATH || '/workspace/aw-be-slice-logs/e2e-summary.json';
 
 fs.mkdirSync(SCREEN_DIR, { recursive: true });
 fs.mkdirSync(path.dirname(SUMMARY_PATH), { recursive: true });
@@ -16,7 +16,7 @@ const summary = {
   gameId: null,
   passed: false,
   checks: {
-    fixture_started: false,
+    live_started: false,
     desktop_seats_rendered: false,
     phase_transitions: false,
     no_duplicate_speech_events: false,
@@ -33,48 +33,45 @@ const summary = {
 };
 
 async function main() {
-  console.log(`[Step 1] Starting fixture replay on ${API}...`);
-  const startRes = await fetch(`${API}/api/dev/fixture/start`, {
+  console.log(`[Step 1] Starting live mock match on ${API}...`);
+  const createdRes = await fetch(`${API}/api/rooms`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ interval_ms: 800 }),
+    body: JSON.stringify({
+      name: 'E2E Live Mock',
+      seed: 7,
+      player_count: 7,
+      agent_type: 'llm',
+      llm_config: { provider: 'fake', model: 'fake-llm' },
+    }),
   });
-  if (!startRes.ok) throw new Error(`Fixture start failed: ${startRes.status} ${await startRes.text()}`);
-  const startData = await startRes.json();
-  if (!startData.fixture?.includes('FIXTURE/MOCK')) throw new Error(`Invalid fixture marker: ${JSON.stringify(startData)}`);
-  const roomId = startData.room_id;
-  const gameId = startData.game_id;
+  if (!createdRes.ok) throw new Error(`Create room failed: ${createdRes.status} ${await createdRes.text()}`);
+  const created = await createdRes.json();
+  const roomId = created.id;
+  const preparedRes = await fetch(`${API}/api/rooms/${roomId}/prepare`, { method: 'POST' });
+  if (!preparedRes.ok) throw new Error(`Prepare failed: ${preparedRes.status} ${await preparedRes.text()}`);
   summary.roomId = roomId;
-  summary.gameId = gameId;
-  summary.checks.fixture_started = true;
-  console.log(`Fixture started: roomId=${roomId}, gameId=${gameId}`);
-
-  const attachRoute = async (context) => {
-    await context.route(`**/api/rooms/${roomId}/start*`, async (route) => {
-      try {
-        const snapRes = await fetch(`${API}/api/rooms/${roomId}/snapshot`);
-        const snap = await snapRes.json();
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({ match_id: gameId, room_id: roomId, status: 'running', seq: snap.seq || 0, snapshot: snap }),
-        });
-      } catch {
-        await route.continue();
-      }
-    });
-  };
+  summary.checks.live_started = true;
+  console.log(`Live room prepared: roomId=${roomId}`);
 
   console.log(`[Step 2] Launching chromium headless for desktop view...`);
   const browser = await chromium.launch({ headless: true });
   const defaultContext = await browser.newContext({ viewport: { width: 1280, height: 800 } });
-  await attachRoute(defaultContext);
   const page = await defaultContext.newPage();
 
   await page.goto(`${BASE}/room/${roomId}/play`, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => document.querySelectorAll('[data-testid^=seat-]').length >= 7, { timeout: 30000 });
   summary.checks.desktop_seats_rendered = true;
   console.log('Desktop seats rendered (count >= 7).');
+
+  try {
+    const startedSnap = await page.evaluate(async (rid) => {
+      const r = await fetch(`/api/rooms/${rid}/snapshot`);
+      return await r.json();
+    }, roomId);
+    summary.gameId = startedSnap?.id || startedSnap?.match_id || null;
+  } catch (_) {}
+
 
   console.log(`[Step 3] Polling phases and draining speech queue...`);
   let lastPhase = null;
@@ -176,7 +173,6 @@ async function main() {
 
   console.log(`[Step 6] Testing mobile viewport (390x844)...`);
   const mobileContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
-  await attachRoute(mobileContext);
   const mobilePage = await mobileContext.newPage();
   await mobilePage.goto(`${BASE}/room/${roomId}/play`, { waitUntil: 'domcontentloaded' });
   await mobilePage.waitForFunction(() => document.querySelectorAll('[data-testid^=seat-]').length >= 7, { timeout: 30000 });
@@ -190,7 +186,6 @@ async function main() {
 
   console.log(`[Step 7] Testing prefers-reduced-motion...`);
   const motionContext = await browser.newContext({ reducedMotion: 'reduce', viewport: { width: 1280, height: 800 } });
-  await attachRoute(motionContext);
   const motionPage = await motionContext.newPage();
   await motionPage.goto(`${BASE}/room/${roomId}/play`, { waitUntil: 'domcontentloaded' });
   await motionPage.waitForFunction(() => document.querySelectorAll('[data-testid^=seat-]').length >= 7, { timeout: 30000 });

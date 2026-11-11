@@ -23,7 +23,13 @@ def test_live_ai_match_runs_without_dev_fixture(monkeypatch: pytest.MonkeyPatch)
     client = TestClient(app)
     created = client.post(
         "/api/rooms",
-        json={"name": "Slice1LiveFake", "seed": 7, "player_count": 7, "agent_type": "llm"},
+        json={
+            "name": "Slice1LiveFake",
+            "seed": 7,
+            "player_count": 7,
+            "agent_type": "llm",
+            "llm_config": {"provider": "anthropic", "model": "deepseek-v4-flash"},
+        },
     )
     assert created.status_code == 200
     room_id = created.json()["id"]
