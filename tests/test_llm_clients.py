@@ -42,3 +42,30 @@ def test_fake_client_returns_harness_selection() -> None:
     selection = json.loads(response["choices"][0]["message"]["content"])
 
     assert selection["option_id"] == "vote:p2"
+
+
+def test_fake_client_harness_speech_is_chinese() -> None:
+    client = create_client(provider="fake")
+    payload = {
+        "decision_context": {
+            "identity": {"name": "苏晓晓", "actor_id": "p1"},
+            "situation": {"roster": [{"id": "p2", "name": "云锦"}]},
+        },
+        "action_options": [
+            {
+                "option_id": "talk",
+                "action_type": "talk",
+                "parameters": {"target_id": "p2"},
+                "response_schema": {"properties": {"speech": {"type": "string"}}},
+            }
+        ],
+    }
+
+    response = client.chat_sync([{"role": "user", "content": "AIWEREWOLF_HARNESS_DECISION\n" + json.dumps(payload)}])
+    selection = json.loads(response["choices"][0]["message"]["content"])
+    speech = selection["response"]["speech"]
+
+    assert "speaks from the visible evidence" not in speech
+    assert "云锦" in speech
+    assert any("\u4e00" <= char <= "\u9fff" for char in speech)
+    assert not any("a" <= char.lower() <= "z" for char in speech)

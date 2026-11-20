@@ -31,7 +31,14 @@ export function useGamePageController(roomId: string) {
   const winnerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reviewStatus = useReviewStatus(gameState?.id, { enabled: Boolean(gameState?.winner) });
   const reportReady = reviewStatus.isReady;
-  const reportChecking = reviewStatus.isChecking || (Boolean(gameState?.winner) && reviewStatus.isLoading);
+  const isTerminalReviewState =
+    reviewStatus.isReady ||
+    reviewStatus.failed ||
+    reviewStatus.analysisDisabled ||
+    reviewStatus.status.status === "error";
+  const reportChecking =
+    !isTerminalReviewState &&
+    (reviewStatus.isChecking || (Boolean(gameState?.winner) && reviewStatus.isLoading));
 
   // Auto-open result modal when game ends — delay to let end animation finish first
   useEffect(() => {
@@ -66,7 +73,24 @@ export function useGamePageController(roomId: string) {
   const latestGameStateRef = useRef(gameState);
   const autoStartedRef = useRef(false);
   const isHumanMode = mode === "human";
-  const showPrivateView = true;
+  const isGodRequested = useMemo(() => {
+    return (
+      process.env.NEXT_PUBLIC_AW_ADMIN_UI === "1" &&
+      searchParams.get("view") === "god"
+    );
+  }, [searchParams]);
+
+  const [showPrivateView, setShowPrivateView] = useState(isGodRequested);
+  const [godViewNotice, setGodViewNotice] = useState<string | null>(null);
+
+  const handleForbidden = useCallback(() => {
+    setShowPrivateView(false);
+    setGodViewNotice(
+      language === Language.ZH
+        ? "无上帝视角权限（403 Forbidden），已自动切换为公开视角。"
+        : "Forbidden from god view (403), falling back to public view."
+    );
+  }, [language]);
   const [fetchError, setFetchError] = useState<string | null>(null);
 
   // ── Typewriter-driven display phase ─────────────────────────────
@@ -120,6 +144,7 @@ export function useGamePageController(roomId: string) {
     setIsPlaying,
     setStatusTitle,
     showPrivate: showPrivateView,
+    onForbidden: handleForbidden,
   });
 
   // 眨眼 + settling 结束后，对齐缓冲的最新状态。
@@ -456,6 +481,11 @@ export function useGamePageController(roomId: string) {
     setShowWinnerPanel,
     reportReady,
     reportChecking,
+    reportDisabled: reviewStatus.analysisDisabled,
+    reportFailed: reviewStatus.failed,
+    reportRetryable: reviewStatus.retryable,
+    reportLifecycleStatus: reviewStatus.lifecycleStatus,
+    reviewStatus,
     ballPos,
     setBallPos,
     dragRef,
@@ -478,6 +508,10 @@ export function useGamePageController(roomId: string) {
     onChatComplete,
     currentDialogueChat,
     voteDisplay,
+    showPrivateView,
+    godViewNotice,
+    setGodViewNotice,
+    isReconnecting: roomStream.isReconnecting,
     // Blink transition passthrough
     isBlinking: phase.isBlinking,
     isTransitioning: phase.isTransitioning,

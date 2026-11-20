@@ -29,8 +29,7 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [language, setLanguage] = useState<Language>(Language.ZH);
-  const [viewMode, setViewModeState] = useState<ViewMode>(ViewMode.MODERATOR);
-  const setViewMode = (_mode: ViewMode) => setViewModeState(ViewMode.MODERATOR);
+  const [viewMode, setViewMode] = useState<ViewMode>(ViewMode.PUBLIC);
   // AI-only rooms are executed by the server-owned Harness runtime.
   // Keep the deprecated UI selector fixed to its only supported value.
   const [agentType, setAgentType] = useState<AgentType>(AgentType.LLM);
@@ -52,11 +51,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           if (parsed.language === Language.EN || parsed.language === Language.ZH) {
             setLanguage(parsed.language);
           }
-          setViewMode(ViewMode.MODERATOR);
-          localStorage.setItem(
-            "gameSettings",
-            JSON.stringify({ ...parsed, viewMode: ViewMode.MODERATOR }),
-          );
+          if (parsed.viewMode && Object.values(ViewMode).includes(parsed.viewMode as ViewMode)) {
+            setViewMode(parsed.viewMode as ViewMode);
+          } else {
+            setViewMode(ViewMode.PUBLIC);
+          }
           if (typeof parsed.seed === "number" && Number.isFinite(parsed.seed)) {
             setSeed(Math.trunc(parsed.seed));
           }

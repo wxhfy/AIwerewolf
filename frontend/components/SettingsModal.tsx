@@ -81,7 +81,7 @@ export function SettingsModal({ isOpen, onClose, currentSettings, onSave }: Sett
 
   const handleSave = () => {
     onSave({
-      viewMode: ViewMode.MODERATOR,
+      viewMode: currentSettings.viewMode ?? ViewMode.PUBLIC,
       language,
       seed: Number.isFinite(seed) ? Math.trunc(seed) : 7,
       modelProvider: modelProvider.trim() || "ark",
@@ -240,6 +240,7 @@ export function SettingsModal({ isOpen, onClose, currentSettings, onSave }: Sett
                     onChange={(e) => setModelProvider(e.target.value)}
                     className="h-11 w-full rounded-button border border-border bg-cardBackground px-3 text-sm text-textPrimary outline-none transition-colors duration-200 focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
                   >
+                    <option value="siliconflow">SiliconFlow</option>
                     <option value="anthropic">DeepSeek Claude Compatible</option>
                   </select>
                 </label>
@@ -306,6 +307,7 @@ export function SettingsModal({ isOpen, onClose, currentSettings, onSave }: Sett
                       onChange={(e) => setApiFormat(e.target.value)}
                       className="h-11 w-full rounded-button border border-border bg-cardBackground px-3 text-sm text-textPrimary outline-none transition-colors duration-200 focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
                     >
+                      <option value="openai_chat">OpenAI Chat Completions</option>
                       <option value="anthropic_messages">{t("anthropicNative")}</option>
                     </select>
                     <p className="mt-1.5 text-xs text-textSecondary">{t("apiFormatDesc")}</p>
@@ -317,6 +319,7 @@ export function SettingsModal({ isOpen, onClose, currentSettings, onSave }: Sett
                       onChange={(e) => setAuthEnvVar(e.target.value)}
                       className="h-11 w-full rounded-button border border-border bg-cardBackground px-3 text-sm text-textPrimary outline-none transition-colors duration-200 focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
                     >
+                      <option value="SILICONFLOW_API_KEY">SILICONFLOW_API_KEY</option>
                       <option value="ANTHROPIC_AUTH_TOKEN">{t("authTokenDefault")}</option>
                     </select>
                     <p className="mt-1.5 text-xs text-textSecondary">{t("authFieldDesc")}</p>

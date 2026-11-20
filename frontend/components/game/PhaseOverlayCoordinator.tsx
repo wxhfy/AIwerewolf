@@ -37,6 +37,7 @@ export function PhaseOverlayCoordinator({ phaseAnnouncement }: PhaseOverlayCoord
         <PhaseAnnouncement
           group={effectiveAnnouncement.group}
           visible={effectiveAnnouncement.visible}
+          text={(effectiveAnnouncement as any).text}
         />
       )}
     </>

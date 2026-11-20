@@ -9,6 +9,7 @@ from typing import Protocol
 from fastapi import Depends
 from fastapi import Header
 from fastapi import HTTPException
+from fastapi import Request
 
 from backend.core.config import settings
 
@@ -52,10 +53,31 @@ def get_actor(authorization: str | None = Header(default=None)) -> ActorContext:
     return actor_from_authorization(authorization)
 
 
+def private_view_allowed(actor: ActorContext | None) -> bool:
+    auth_mode = os.getenv("AUTH_MODE", settings.auth_mode).strip().lower()
+    if auth_mode == "disabled":
+        return os.getenv("AW_DEV_ALLOW_PRIVATE", "0") == "1"
+    if actor is None:
+        return False
+    return "moderator" in actor.roles or "admin" in actor.roles
+
+
+def actor_from_request(request: Request) -> ActorContext:
+    authorization = request.headers.get("authorization")
+    if not authorization:
+        return ActorContext(actor_id="anonymous", actor_type="anonymous", roles=())
+    return actor_from_authorization(authorization)
+
+
 def require_moderator(actor: ActorContext) -> ActorContext:
-    if os.getenv("AUTH_MODE", settings.auth_mode).strip().lower() != "disabled" and "moderator" not in actor.roles:
+    if not private_view_allowed(actor):
         raise HTTPException(status_code=403, detail="Moderator role required")
     return actor
+
+
+def require_admin_dep(authorization: str | None = Header(None)) -> ActorContext:
+    actor = actor_from_authorization(authorization)
+    return require_moderator(actor)
 
 
 CurrentActor = Annotated[ActorContext, Depends(get_actor)]

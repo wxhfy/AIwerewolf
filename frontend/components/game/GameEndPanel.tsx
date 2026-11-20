@@ -22,6 +22,10 @@ interface GameEndPanelProps {
   onExport?: () => void;
   reportReady?: boolean;
   reportChecking?: boolean;
+  reportDisabled?: boolean;
+  reportFailed?: boolean;
+  reportRetryable?: boolean;
+  reportLifecycleStatus?: string;
   players?: Player[];
 }
 
@@ -43,6 +47,10 @@ export function GameEndPanel({
   winner, day, aliveCount, eventCount, language, showPanel, ballPos, dragRef, onOpen, onClose, onBallMove, onLobby, onReport, onExport,
   reportReady = true,
   reportChecking = false,
+  reportDisabled = false,
+  reportFailed = false,
+  reportRetryable = false,
+  reportLifecycleStatus,
   players = [],
 }: GameEndPanelProps) {
   const isVillageWinner = winner === Alignment.VILLAGE;
@@ -178,27 +186,60 @@ export function GameEndPanel({
               </section>
             )}
 
-            <div className="flex flex-col gap-2">
-              {onReport && (
-                <Button onClick={onReport} disabled={!reportReady || reportChecking} loading={!reportReady || reportChecking} className="w-full">
-                  {!reportReady || reportChecking
-                    ? language === "zh" ? "复盘生成中..." : "Generating Review..."
-                    : t("viewReview", language)}
-                </Button>
-              )}
-              {onExport && (
-                <Button variant="secondary" onClick={onExport} className="w-full">
-                  {t("exportGameRecord", language)}
-                </Button>
-              )}
+            <div className="flex flex-col gap-2.5">
+              <Button onClick={onLobby} size="lg" className="w-full font-bold shadow-md">
+                {language === "zh" ? "再来一局" : "Play Again"}
+              </Button>
               <div className="flex gap-2">
-                <Button variant="secondary" onClick={onLobby} className="flex-1">
-                  {language === "zh" ? "再来一局" : "Play Again"}
-                </Button>
-                <Button variant="ghost" onClick={onLobby} className="flex-1">
-                  {t("backToLobby", language)}
-                </Button>
+                {onReport && (() => {
+                  const isAnalysisDisabled = reportDisabled || reportLifecycleStatus === "not_scheduled";
+                  const isAnalysisFailed = reportFailed || reportLifecycleStatus === "failed";
+
+                  let reviewLabel: string;
+                  let isReviewLoading = false;
+                  let isReviewDisabled = false;
+
+                  if (isAnalysisDisabled) {
+                    reviewLabel = language === "zh" ? "分析未开启" : "Analysis Disabled";
+                    isReviewLoading = false;
+                    isReviewDisabled = true;
+                  } else if (isAnalysisFailed) {
+                    reviewLabel = reportRetryable
+                      ? (language === "zh" ? "失败，可重试" : "Failed, Retryable")
+                      : (language === "zh" ? "复盘失败" : "Review Failed");
+                    isReviewLoading = false;
+                    isReviewDisabled = true;
+                  } else if (!reportReady || reportChecking) {
+                    reviewLabel = language === "zh" ? "复盘生成中..." : "Generating Review...";
+                    isReviewLoading = true;
+                    isReviewDisabled = true;
+                  } else {
+                    reviewLabel = t("viewReview", language);
+                    isReviewLoading = false;
+                    isReviewDisabled = false;
+                  }
+
+                  return (
+                    <Button
+                      variant="secondary"
+                      onClick={onReport}
+                      disabled={isReviewDisabled}
+                      loading={isReviewLoading}
+                      className="flex-1"
+                    >
+                      {reviewLabel}
+                    </Button>
+                  );
+                })()}
+                {onExport && (
+                  <Button variant="secondary" onClick={onExport} className="flex-1">
+                    {t("exportGameRecord", language)}
+                  </Button>
+                )}
               </div>
+              <Button variant="ghost" onClick={onLobby} className="w-full text-xs text-textSecondary">
+                {t("backToLobby", language)}
+              </Button>
               <button
                 type="button"
                 onClick={onClose}

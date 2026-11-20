@@ -70,7 +70,37 @@ export default function GameReportPage() {
           </div>
         )}
 
-        {!reviewStatus.isLoading && meta.status !== "ready" && (
+        {!reviewStatus.isLoading && reviewStatus.analysisDisabled && (
+          <div className="rounded-card border px-4 py-12 text-center text-sm text-text-sub" style={{ borderColor: "var(--color-border)" }}>
+            <p className="font-semibold text-textPrimary mb-2">
+              {t("分析未开启", "Analysis Not Enabled")}
+            </p>
+            <p>
+              {t(
+                "本局游戏未开启复盘分析。",
+                "Review analysis was not enabled for this game.",
+              )}
+            </p>
+          </div>
+        )}
+
+        {!reviewStatus.isLoading && reviewStatus.failed && (
+          <div className="rounded-card border px-4 py-12 text-center text-sm text-text-sub" style={{ borderColor: "var(--color-border)" }}>
+            <p className="font-semibold text-danger mb-2">
+              {reviewStatus.retryable
+                ? t("失败，可重试", "Failed, Retryable")
+                : t("复盘失败", "Review Failed")}
+            </p>
+            <p>
+              {t(
+                "复盘分析任务执行失败，无法生成报告。",
+                "Review analysis failed; artifact could not be generated.",
+              )}
+            </p>
+          </div>
+        )}
+
+        {!reviewStatus.isLoading && !reviewStatus.isReady && !reviewStatus.analysisDisabled && !reviewStatus.failed && (
           <div className="rounded-card border px-4 py-12 text-center text-sm text-text-sub" style={{ borderColor: "var(--color-border)" }}>
             <div className="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
             <p className="font-semibold text-textPrimary mb-2">

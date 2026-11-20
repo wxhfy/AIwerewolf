@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter
+from fastapi import Depends
 from fastapi import Header
 from fastapi import Query
 
@@ -12,6 +13,7 @@ from backend.application.analysis.contracts import StrategyKnowledgeItem
 from backend.application.analysis.repository import AnalysisRepository
 from backend.core.errors import ServiceError
 from backend.core.security import CurrentActor
+from backend.core.security import require_admin_dep
 
 router = APIRouter(prefix="/api/v1")
 repository = AnalysisRepository()
@@ -63,6 +65,7 @@ def list_match_decision_evaluations(
     "/matches/{match_id}/analysis/retry",
     response_model=AnalysisRetryResponse,
     status_code=202,
+    dependencies=[Depends(require_admin_dep)],
     tags=["analysis"],
 )
 def retry_match_analysis(

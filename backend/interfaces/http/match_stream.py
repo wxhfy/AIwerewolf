@@ -11,6 +11,8 @@ from fastapi import Query
 from fastapi import Request
 from fastapi.responses import StreamingResponse
 
+from backend.core.security import actor_from_request
+from backend.core.security import private_view_allowed
 from backend.infrastructure.messaging.match_notifications import match_notifications
 from backend.infrastructure.persistence.match_feed import MatchFeedRepository
 
@@ -44,6 +46,9 @@ async def stream_match(
     moderator: bool = Query(default=False),
     last_event_id: str | None = Header(default=None, alias="Last-Event-ID"),
 ) -> StreamingResponse:
+    if moderator and not private_view_allowed(actor_from_request(request)):
+        raise HTTPException(status_code=403, detail="Moderator role required")
+
     if repository.match_status(match_id) is None:
         raise HTTPException(status_code=404, detail="Match not found")
 

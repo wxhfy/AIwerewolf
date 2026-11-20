@@ -92,8 +92,7 @@ class FakeLLMClient:
         response: dict[str, Any] = {}
         schema = option.get("response_schema") or {}
         if "speech" in (schema.get("properties") or {}):
-            actor = payload.get("actor") or {}
-            response["speech"] = f"{actor.get('actor_id', 'player')} speaks from the visible evidence."
+            response["speech"] = FakeLLMClient._harness_speech(payload)
         content = json.dumps(
             {
                 "option_id": option["option_id"],
@@ -110,6 +109,41 @@ class FakeLLMClient:
 
     async def chat(self, messages: list[dict], **kwargs: Any) -> dict[str, Any]:
         return self.chat_sync(messages, **kwargs)
+
+    @staticmethod
+    def _harness_speech(payload: dict[str, Any]) -> str:
+        """Public mock speech must stay Chinese; never leak actor IDs or English stubs."""
+        context = payload.get("decision_context") or {}
+        identity = context.get("identity") or {}
+        actor = payload.get("actor") or {}
+        name = str(identity.get("name") or actor.get("name") or "").strip()
+        target = FakeLLMClient._harness_public_target(payload)
+        if target and target != name:
+            return f"我先按公开信息发言，重点观察{target}的站边和票型。"
+        if name:
+            return f"我是{name}，先跟一下场上已公开的发言和票型，暂不急着下结论。"
+        return "我先按公开信息发言，跟一下当前的票型和站边，暂不急着下结论。"
+
+    @staticmethod
+    def _harness_public_target(payload: dict[str, Any]) -> str:
+        context = payload.get("decision_context") or {}
+        roster = ((context.get("situation") or {}).get("roster")) or []
+        names_by_id = {
+            str(player.get("id") or ""): str(player.get("name") or "").strip()
+            for player in roster
+            if isinstance(player, dict)
+        }
+        for option in payload.get("action_options") or []:
+            if not isinstance(option, dict):
+                continue
+            params = option.get("parameters") or {}
+            target_name = str(params.get("target_name") or params.get("name") or "").strip()
+            if target_name:
+                return target_name
+            target_id = str(params.get("target_id") or "").strip()
+            if target_id and names_by_id.get(target_id):
+                return names_by_id[target_id]
+        return ""
 
     @staticmethod
     def _forced_tool_name(tool_choice: Any) -> str:
