@@ -31,7 +31,14 @@ export function useGamePageController(roomId: string) {
   const winnerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reviewStatus = useReviewStatus(gameState?.id, { enabled: Boolean(gameState?.winner) });
   const reportReady = reviewStatus.isReady;
-  const reportChecking = reviewStatus.isChecking || (Boolean(gameState?.winner) && reviewStatus.isLoading);
+  const isTerminalReviewState =
+    reviewStatus.isReady ||
+    reviewStatus.failed ||
+    reviewStatus.analysisDisabled ||
+    reviewStatus.status.status === "error";
+  const reportChecking =
+    !isTerminalReviewState &&
+    (reviewStatus.isChecking || (Boolean(gameState?.winner) && reviewStatus.isLoading));
 
   // Auto-open result modal when game ends — delay to let end animation finish first
   useEffect(() => {
@@ -474,6 +481,11 @@ export function useGamePageController(roomId: string) {
     setShowWinnerPanel,
     reportReady,
     reportChecking,
+    reportDisabled: reviewStatus.analysisDisabled,
+    reportFailed: reviewStatus.failed,
+    reportRetryable: reviewStatus.retryable,
+    reportLifecycleStatus: reviewStatus.lifecycleStatus,
+    reviewStatus,
     ballPos,
     setBallPos,
     dragRef,

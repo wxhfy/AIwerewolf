@@ -365,6 +365,10 @@ export default function GamePage() {
           onExport={() => controller.exportGameRecord()}
           reportReady={controller.reportReady}
           reportChecking={controller.reportChecking}
+          reportDisabled={controller.reportDisabled}
+          reportFailed={controller.reportFailed}
+          reportRetryable={controller.reportRetryable}
+          reportLifecycleStatus={controller.reportLifecycleStatus}
         />
       )}
     </div>
